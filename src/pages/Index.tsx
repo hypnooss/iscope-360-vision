@@ -5,32 +5,97 @@ import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport } from '@/types/compliance';
 import { generateMockReport } from '@/data/mockCompliance';
 import { Shield, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [report, setReport] = useState<ComplianceReport | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [connectionConfig, setConnectionConfig] = useState<{ url: string; apiKey: string } | null>(null);
 
   const handleConnect = async (url: string, apiKey: string) => {
     setIsConnecting(true);
+    setConnectionConfig({ url, apiKey });
     
-    // Simulate API connection and analysis
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsConnected(true);
-    setIsConnecting(false);
-    
-    // Generate mock report after short delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    setReport(generateMockReport());
+    try {
+      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
+        body: { url, apiKey },
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        toast.error('Erro ao conectar', {
+          description: error.message || 'Não foi possível conectar ao FortiGate',
+        });
+        // Fallback para mock se a API real falhar
+        toast.info('Usando dados de demonstração');
+        setReport(generateMockReport());
+      } else if (data.error) {
+        console.error('FortiGate API error:', data.error);
+        toast.error('Erro na API FortiGate', {
+          description: data.details || data.error,
+        });
+        // Fallback para mock
+        toast.info('Usando dados de demonstração');
+        setReport(generateMockReport());
+      } else {
+        // Converter a data para objeto Date
+        const reportData: ComplianceReport = {
+          ...data,
+          generatedAt: new Date(data.generatedAt),
+        };
+        setReport(reportData);
+        toast.success('Análise concluída!', {
+          description: `${data.passed} de ${data.totalChecks} verificações aprovadas`,
+        });
+      }
+      
+      setIsConnected(true);
+    } catch (err) {
+      console.error('Connection error:', err);
+      toast.error('Erro de conexão', {
+        description: 'Usando dados de demonstração',
+      });
+      setReport(generateMockReport());
+      setIsConnected(true);
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const handleRefresh = async () => {
+    if (!connectionConfig) {
+      setReport(generateMockReport());
+      return;
+    }
+
     setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setReport(generateMockReport());
-    setIsRefreshing(false);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
+        body: connectionConfig,
+      });
+
+      if (error || data.error) {
+        toast.error('Erro ao atualizar', {
+          description: 'Usando dados anteriores',
+        });
+      } else {
+        const reportData: ComplianceReport = {
+          ...data,
+          generatedAt: new Date(data.generatedAt),
+        };
+        setReport(reportData);
+        toast.success('Análise atualizada!');
+      }
+    } catch (err) {
+      console.error('Refresh error:', err);
+      toast.error('Erro ao atualizar');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   return (
