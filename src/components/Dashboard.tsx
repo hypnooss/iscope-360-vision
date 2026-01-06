@@ -2,16 +2,17 @@ import { ComplianceReport } from '@/types/compliance';
 import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
-import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface DashboardProps {
   report: ComplianceReport;
   onRefresh: () => void;
   isRefreshing: boolean;
+  onDisconnect: () => void;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: DashboardProps) {
   return (
     <div className="min-h-screen p-6 lg:p-8 cyber-grid">
       <div className="max-w-7xl mx-auto">
@@ -26,6 +27,10 @@ export function Dashboard({ report, onRefresh, isRefreshing }: DashboardProps) {
             </p>
           </div>
           <div className="flex gap-3">
+            <Button variant="outline" size="lg" onClick={onDisconnect}>
+              <LogOut className="w-4 h-4" />
+              Desconectar
+            </Button>
             <Button variant="outline" size="lg">
               <FileText className="w-4 h-4" />
               Exportar PDF

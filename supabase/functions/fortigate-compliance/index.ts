@@ -651,6 +651,55 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
   return checks;
 }
 
+// Função para testar conectividade com o FortiGate
+async function testFortiGateConnection(config: FortiGateConfig): Promise<{ success: boolean; error?: string }> {
+  try {
+    const url = `${config.url}/api/v2/monitor/system/status`;
+    console.log(`Testing connection to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`Connection test failed: ${response.status} - ${text}`);
+      
+      if (response.status === 401 || response.status === 403) {
+        return { success: false, error: 'API Key inválida ou sem permissões' };
+      }
+      if (response.status === 404) {
+        return { success: false, error: 'Endpoint FortiGate não encontrado. Verifique a URL.' };
+      }
+      return { success: false, error: `Erro ${response.status}: ${text.substring(0, 100)}` };
+    }
+
+    // Verificar se a resposta é JSON válido
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return { success: false, error: 'Resposta inválida. O endereço não parece ser uma API FortiGate.' };
+    }
+
+    const data = await response.json();
+    if (!data.results && !data.version) {
+      return { success: false, error: 'Resposta não reconhecida como FortiGate' };
+    }
+
+    console.log('Connection test successful');
+    return { success: true };
+  } catch (error) {
+    console.error('Connection test error:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return { success: false, error: 'Não foi possível conectar. Verifique se a URL está acessível.' };
+    }
+    return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido ao conectar' };
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -667,9 +716,29 @@ serve(async (req) => {
       );
     }
 
-    const config: FortiGateConfig = { url: url.replace(/\/$/, ''), apiKey };
+    // Validar formato da URL
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
+    normalizedUrl = normalizedUrl.replace(/\/$/, '');
+
+    const config: FortiGateConfig = { url: normalizedUrl, apiKey: apiKey.trim() };
     
     console.log(`Starting compliance check for: ${config.url}`);
+    
+    // PRIMEIRO: Testar conectividade
+    const connectionTest = await testFortiGateConnection(config);
+    if (!connectionTest.success) {
+      console.error('Connection test failed:', connectionTest.error);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Falha na conexão com FortiGate',
+          details: connectionTest.error
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Executar todas as verificações em paralelo
     const [
