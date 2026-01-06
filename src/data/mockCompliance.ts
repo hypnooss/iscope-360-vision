@@ -32,6 +32,48 @@ export const mockComplianceChecks: ComplianceCheck[] = [
     details: 'Timeout atual: 60 minutos. Recomendado: 15 minutos',
   },
 
+  // Interface Security - NEW
+  {
+    id: 'int-001',
+    name: 'Protocolo HTTP na Interface de Gerência',
+    description: 'Verifica se HTTP (não criptografado) está habilitado nas interfaces',
+    category: 'Segurança de Interfaces',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Desabilitar HTTP e utilizar apenas HTTPS para acesso administrativo',
+    details: 'HTTP habilitado nas interfaces: port1 (WAN), port3 (DMZ). Isso expõe credenciais em texto claro.',
+  },
+  {
+    id: 'int-002',
+    name: 'Protocolo Telnet Ativo',
+    description: 'Verifica se Telnet está habilitado nas interfaces de gerenciamento',
+    category: 'Segurança de Interfaces',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Desabilitar Telnet imediatamente e utilizar apenas SSH',
+    details: 'Telnet habilitado nas interfaces: port1 (WAN), port2 (LAN). Telnet transmite dados sem criptografia.',
+  },
+  {
+    id: 'int-003',
+    name: 'SSH em Interface Externa',
+    description: 'Verifica se SSH está exposto em interfaces WAN',
+    category: 'Segurança de Interfaces',
+    status: 'warning',
+    severity: 'high',
+    recommendation: 'Restringir acesso SSH apenas a IPs de gerenciamento confiáveis',
+    details: 'SSH habilitado na interface port1 (WAN) sem trusted hosts configurados',
+  },
+  {
+    id: 'int-004',
+    name: 'PING (ICMP) em Interface WAN',
+    description: 'Verifica se ICMP está habilitado em interfaces externas',
+    category: 'Segurança de Interfaces',
+    status: 'warning',
+    severity: 'low',
+    recommendation: 'Considerar desabilitar PING na interface WAN para reduzir superfície de ataque',
+    details: 'PING habilitado em port1 (WAN). Pode facilitar reconhecimento por atacantes.',
+  },
+
   // Network Configuration
   {
     id: 'net-001',
@@ -60,6 +102,48 @@ export const mockComplianceChecks: ComplianceCheck[] = [
     severity: 'critical',
     recommendation: 'Remover ou restringir regras any-any identificadas',
     details: '3 regras com source e destination "any" encontradas',
+  },
+
+  // Inbound Rules - NEW
+  {
+    id: 'inb-001',
+    name: 'Regras de Entrada sem Restrição de Origem',
+    description: 'Identifica regras de entrada (WAN→LAN) que aceitam qualquer IP de origem',
+    category: 'Regras de Entrada',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Restringir origem das regras para IPs ou ranges específicos',
+    details: '5 regras de entrada com source "all" detectadas:\n• Regra #12: WAN→DMZ porta 443 (origem: all)\n• Regra #15: WAN→LAN porta 3389/RDP (origem: all) ⚠️ CRÍTICO\n• Regra #18: WAN→DMZ porta 22/SSH (origem: all)\n• Regra #23: WAN→LAN porta 445/SMB (origem: all) ⚠️ CRÍTICO\n• Regra #31: WAN→DMZ portas 80,443 (origem: all)',
+  },
+  {
+    id: 'inb-002',
+    name: 'RDP Exposto para Internet',
+    description: 'Verifica se há regras expondo RDP (3389) para a internet',
+    category: 'Regras de Entrada',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Remover acesso RDP direto da internet. Utilizar VPN ou bastion host',
+    details: 'Regra #15 permite acesso RDP de qualquer IP externo. RDP é alvo frequente de ataques de força bruta e ransomware.',
+  },
+  {
+    id: 'inb-003',
+    name: 'SMB/CIFS Exposto para Internet',
+    description: 'Verifica se há regras expondo portas SMB (445, 139) para a internet',
+    category: 'Regras de Entrada',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Bloquear imediatamente portas SMB da internet',
+    details: 'Regra #23 permite acesso SMB de qualquer IP externo. Vetor conhecido para ransomware (WannaCry, NotPetya).',
+  },
+  {
+    id: 'inb-004',
+    name: 'Regras de Entrada com Geo-Blocking',
+    description: 'Verifica se há restrição geográfica nas regras de entrada',
+    category: 'Regras de Entrada',
+    status: 'warning',
+    severity: 'medium',
+    recommendation: 'Implementar geo-blocking para países sem necessidade de acesso',
+    details: 'Nenhuma regra de entrada possui restrição geográfica configurada',
   },
 
   // VPN Configuration
@@ -138,7 +222,9 @@ export function generateMockReport(): ComplianceReport {
   
   const categories = [
     'Políticas de Segurança',
+    'Segurança de Interfaces',
     'Configuração de Rede',
+    'Regras de Entrada',
     'Configuração VPN',
     'Logging e Monitoramento',
     'Atualizações',
@@ -169,7 +255,9 @@ export function generateMockReport(): ComplianceReport {
 function getCategoryIcon(category: string): string {
   const icons: Record<string, string> = {
     'Políticas de Segurança': 'shield',
+    'Segurança de Interfaces': 'monitor',
     'Configuração de Rede': 'network',
+    'Regras de Entrada': 'arrowDownToLine',
     'Configuração VPN': 'lock',
     'Logging e Monitoramento': 'activity',
     'Atualizações': 'download',
