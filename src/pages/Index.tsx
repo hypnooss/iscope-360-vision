@@ -28,6 +28,13 @@ const Index = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [connectionConfig, setConnectionConfig] = useState<{ url: string; apiKey: string } | null>(null);
 
+  const handleDisconnect = () => {
+    setReport(null);
+    setIsConnected(false);
+    setConnectionConfig(null);
+    toast.info('Desconectado do FortiGate');
+  };
+
   const handleConnect = async (url: string, apiKey: string) => {
     setIsConnecting(true);
     setConnectionConfig({ url, apiKey });
@@ -198,6 +205,7 @@ const Index = () => {
           report={report} 
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
+          onDisconnect={handleDisconnect}
         />
       )}
     </div>
