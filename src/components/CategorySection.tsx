@@ -1,6 +1,6 @@
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from './ComplianceCard';
-import { Shield, Network, Lock, Activity, Download, ChevronDown, ChevronUp, Monitor, ArrowDownToLine } from 'lucide-react';
+import { Shield, Network, Lock, Activity, Download, ChevronDown, ChevronUp, Monitor, ArrowDownToLine, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +17,7 @@ const iconMap: Record<string, typeof Shield> = {
   download: Download,
   monitor: Monitor,
   arrowDownToLine: ArrowDownToLine,
+  shieldCheck: ShieldCheck,
 };
 
 export function CategorySection({ category, index }: CategorySectionProps) {
