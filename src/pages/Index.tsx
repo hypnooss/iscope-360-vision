@@ -5,8 +5,21 @@ import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport } from '@/types/compliance';
 import { generateMockReport } from '@/data/mockCompliance';
 import { Shield, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+// Helper to check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+};
+
+// Dynamic import of supabase client only when configured
+const getSupabaseClient = async () => {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+  const { supabase } = await import('@/integrations/supabase/client');
+  return supabase;
+};
 
 const Index = () => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -20,6 +33,20 @@ const Index = () => {
     setConnectionConfig({ url, apiKey });
     
     try {
+      const supabase = await getSupabaseClient();
+      
+      if (!supabase) {
+        // Supabase not configured, use mock data
+        console.log('Supabase not configured, using mock data');
+        toast.info('Modo demonstração', {
+          description: 'Usando dados de exemplo',
+        });
+        setReport(generateMockReport());
+        setIsConnected(true);
+        setIsConnecting(false);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
         body: { url, apiKey },
       });
@@ -29,7 +56,6 @@ const Index = () => {
         toast.error('Erro ao conectar', {
           description: error.message || 'Não foi possível conectar ao FortiGate',
         });
-        // Fallback para mock se a API real falhar
         toast.info('Usando dados de demonstração');
         setReport(generateMockReport());
       } else if (data.error) {
@@ -37,11 +63,9 @@ const Index = () => {
         toast.error('Erro na API FortiGate', {
           description: data.details || data.error,
         });
-        // Fallback para mock
         toast.info('Usando dados de demonstração');
         setReport(generateMockReport());
       } else {
-        // Converter a data para objeto Date
         const reportData: ComplianceReport = {
           ...data,
           generatedAt: new Date(data.generatedAt),
@@ -74,6 +98,15 @@ const Index = () => {
     setIsRefreshing(true);
     
     try {
+      const supabase = await getSupabaseClient();
+      
+      if (!supabase) {
+        setReport(generateMockReport());
+        toast.info('Dados atualizados (demonstração)');
+        setIsRefreshing(false);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
         body: connectionConfig,
       });
