@@ -1,0 +1,35 @@
+export type ComplianceStatus = 'pass' | 'fail' | 'warning' | 'pending';
+
+export interface ComplianceCheck {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  status: ComplianceStatus;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  recommendation?: string;
+  details?: string;
+}
+
+export interface ComplianceCategory {
+  name: string;
+  icon: string;
+  checks: ComplianceCheck[];
+  passRate: number;
+}
+
+export interface ConnectionConfig {
+  url: string;
+  apiKey: string;
+  verified: boolean;
+}
+
+export interface ComplianceReport {
+  overallScore: number;
+  totalChecks: number;
+  passed: number;
+  failed: number;
+  warnings: number;
+  categories: ComplianceCategory[];
+  generatedAt: Date;
+}

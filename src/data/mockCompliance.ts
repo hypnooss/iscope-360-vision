@@ -1,0 +1,178 @@
+import { ComplianceCheck, ComplianceReport } from '@/types/compliance';
+
+export const mockComplianceChecks: ComplianceCheck[] = [
+  // Security Policies
+  {
+    id: 'sec-001',
+    name: 'Política de Senha Forte',
+    description: 'Verifica se políticas de senha forte estão configuradas',
+    category: 'Políticas de Segurança',
+    status: 'pass',
+    severity: 'critical',
+    recommendation: 'Manter configuração atual',
+  },
+  {
+    id: 'sec-002',
+    name: 'Autenticação de Dois Fatores',
+    description: 'Verifica se 2FA está habilitado para acesso administrativo',
+    category: 'Políticas de Segurança',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Habilitar autenticação de dois fatores para todos os administradores',
+    details: 'Apenas 2 de 5 administradores possuem 2FA habilitado',
+  },
+  {
+    id: 'sec-003',
+    name: 'Timeout de Sessão',
+    description: 'Verifica configuração de timeout de sessão administrativa',
+    category: 'Políticas de Segurança',
+    status: 'warning',
+    severity: 'medium',
+    recommendation: 'Reduzir timeout de sessão para 15 minutos',
+    details: 'Timeout atual: 60 minutos. Recomendado: 15 minutos',
+  },
+
+  // Network Configuration
+  {
+    id: 'net-001',
+    name: 'Segmentação de Rede',
+    description: 'Verifica se VLANs estão corretamente segmentadas',
+    category: 'Configuração de Rede',
+    status: 'pass',
+    severity: 'high',
+  },
+  {
+    id: 'net-002',
+    name: 'Regras de Firewall Obsoletas',
+    description: 'Identifica regras de firewall não utilizadas há mais de 90 dias',
+    category: 'Configuração de Rede',
+    status: 'warning',
+    severity: 'medium',
+    recommendation: 'Revisar e remover 23 regras não utilizadas',
+    details: '23 regras não receberam tráfego nos últimos 90 dias',
+  },
+  {
+    id: 'net-003',
+    name: 'Regras "Any-Any"',
+    description: 'Verifica existência de regras permissivas demais',
+    category: 'Configuração de Rede',
+    status: 'fail',
+    severity: 'critical',
+    recommendation: 'Remover ou restringir regras any-any identificadas',
+    details: '3 regras com source e destination "any" encontradas',
+  },
+
+  // VPN Configuration
+  {
+    id: 'vpn-001',
+    name: 'Criptografia VPN',
+    description: 'Verifica se algoritmos de criptografia fortes estão em uso',
+    category: 'Configuração VPN',
+    status: 'pass',
+    severity: 'critical',
+  },
+  {
+    id: 'vpn-002',
+    name: 'Certificados VPN',
+    description: 'Verifica validade dos certificados SSL/TLS',
+    category: 'Configuração VPN',
+    status: 'warning',
+    severity: 'high',
+    recommendation: 'Renovar certificado que expira em 30 dias',
+    details: 'Certificado "vpn-main" expira em 28/02/2026',
+  },
+
+  // Logging & Monitoring
+  {
+    id: 'log-001',
+    name: 'Log de Eventos',
+    description: 'Verifica se logging está habilitado para eventos críticos',
+    category: 'Logging e Monitoramento',
+    status: 'pass',
+    severity: 'high',
+  },
+  {
+    id: 'log-002',
+    name: 'Retenção de Logs',
+    description: 'Verifica política de retenção de logs',
+    category: 'Logging e Monitoramento',
+    status: 'pass',
+    severity: 'medium',
+  },
+  {
+    id: 'log-003',
+    name: 'Alertas de Segurança',
+    description: 'Verifica configuração de alertas para eventos de segurança',
+    category: 'Logging e Monitoramento',
+    status: 'warning',
+    severity: 'medium',
+    recommendation: 'Configurar alertas por email para tentativas de login falhas',
+  },
+
+  // Updates & Patches
+  {
+    id: 'upd-001',
+    name: 'Versão do Firmware',
+    description: 'Verifica se o firmware está atualizado',
+    category: 'Atualizações',
+    status: 'fail',
+    severity: 'high',
+    recommendation: 'Atualizar para FortiOS 7.4.3',
+    details: 'Versão atual: 7.2.5. Última versão: 7.4.3',
+  },
+  {
+    id: 'upd-002',
+    name: 'Assinaturas IPS',
+    description: 'Verifica atualização das assinaturas de IPS',
+    category: 'Atualizações',
+    status: 'pass',
+    severity: 'critical',
+  },
+];
+
+export function generateMockReport(): ComplianceReport {
+  const checks = mockComplianceChecks;
+  const passed = checks.filter(c => c.status === 'pass').length;
+  const failed = checks.filter(c => c.status === 'fail').length;
+  const warnings = checks.filter(c => c.status === 'warning').length;
+  
+  const categories = [
+    'Políticas de Segurança',
+    'Configuração de Rede',
+    'Configuração VPN',
+    'Logging e Monitoramento',
+    'Atualizações',
+  ];
+
+  const categoryData = categories.map(cat => {
+    const catChecks = checks.filter(c => c.category === cat);
+    const catPassed = catChecks.filter(c => c.status === 'pass').length;
+    return {
+      name: cat,
+      icon: getCategoryIcon(cat),
+      checks: catChecks,
+      passRate: catChecks.length > 0 ? Math.round((catPassed / catChecks.length) * 100) : 0,
+    };
+  });
+
+  return {
+    overallScore: Math.round((passed / checks.length) * 100),
+    totalChecks: checks.length,
+    passed,
+    failed,
+    warnings,
+    categories: categoryData,
+    generatedAt: new Date(),
+  };
+}
+
+function getCategoryIcon(category: string): string {
+  const icons: Record<string, string> = {
+    'Políticas de Segurança': 'shield',
+    'Configuração de Rede': 'network',
+    'Configuração VPN': 'lock',
+    'Logging e Monitoramento': 'activity',
+    'Atualizações': 'download',
+  };
+  return icons[category] || 'check';
+}
