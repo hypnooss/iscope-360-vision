@@ -21,6 +21,13 @@ interface ComplianceCheck {
   details?: string;
 }
 
+// Criar cliente HTTP que ignora verificação SSL (FortiGates usam certificados auto-assinados)
+const httpClient = Deno.createHttpClient({
+  caCerts: [],
+  // @ts-ignore - propriedade para ignorar verificação SSL
+  certVerification: "none",
+});
+
 // Função para fazer requisição à API do FortiGate
 async function fortigateRequest(config: FortiGateConfig, endpoint: string) {
   const url = `${config.url}/api/v2${endpoint}`;
@@ -32,6 +39,8 @@ async function fortigateRequest(config: FortiGateConfig, endpoint: string) {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
     },
+    // @ts-ignore - cliente HTTP customizado para ignorar SSL
+    client: httpClient,
   });
 
   if (!response.ok) {
@@ -663,6 +672,8 @@ async function testFortiGateConnection(config: FortiGateConfig): Promise<{ succe
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
       },
+      // @ts-ignore - cliente HTTP customizado para ignorar SSL
+      client: httpClient,
     });
 
     if (!response.ok) {
