@@ -710,7 +710,7 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
         description: 'Verifica se backup automático de configuração está habilitado',
         category: 'Backup e Recovery',
         status: backupScripts.length === 0 ? 'fail' : 'pass',
-        severity: 'critical',
+        severity: 'high',
         recommendation: backupScripts.length === 0
           ? 'Configurar backup automático para servidor TFTP/SCP ou FortiManager'
           : 'Manter configuração atual',
@@ -743,7 +743,7 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
         description: 'Verifica se backup automático de configuração está habilitado',
         category: 'Backup e Recovery',
         status: 'warning',
-        severity: 'critical',
+        severity: 'high',
         recommendation: 'Verificar configuração de backup manualmente',
         details: 'Não foi possível verificar configuração de auto-backup',
         apiEndpoint: '/api/v2/cmdb/system/auto-script',
@@ -824,20 +824,54 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
   const checks: ComplianceCheck[] = [];
   
   try {
-    const systemStatus = await fortigateRequest(config, '/monitor/system/status');
-    // A API /monitor/system/status retorna diretamente os dados, não dentro de 'results'
-    // Pode ser systemStatus.results ou diretamente systemStatus
+    // Buscar informações de múltiplos endpoints
+    const [systemStatus, globalSettings] = await Promise.all([
+      fortigateRequest(config, '/monitor/system/status'),
+      fortigateRequest(config, '/cmdb/system/global'),
+    ]);
+    
+    // A API /monitor/system/status pode retornar dados em 'results' ou diretamente
     const status = systemStatus.results || systemStatus || {};
+    const global = globalSettings.results || {};
     
     console.log('System status response:', JSON.stringify(status, null, 2));
+    console.log('Global settings response:', JSON.stringify(global, null, 2));
     
-    const rawVersion = status.version || '';
-    const currentVersion = extractVersion(rawVersion) || 'Desconhecida';
+    // Tentar obter a versão de múltiplas fontes
+    // 1. Primeiro tenta do /monitor/system/status
+    // 2. Depois tenta do /cmdb/system/global (campo version)
+    // 3. Tenta do campo 'current_version' ou 'fos_version'
+    const rawVersion = status.version || 
+                       status.current_version || 
+                       status.fos_version ||
+                       global.version ||
+                       '';
+    
+    // Extrair a versão do hostname se contiver padrão de versão (backup)
+    let currentVersion = extractVersion(rawVersion);
+    
+    // Se não encontrou, tentar buscar via firmware status
+    if (!currentVersion) {
+      try {
+        const firmwareStatus = await fortigateRequest(config, '/monitor/system/firmware');
+        const fw = firmwareStatus.results || firmwareStatus || {};
+        console.log('Firmware status response:', JSON.stringify(fw, null, 2));
+        if (fw.current && fw.current.version) {
+          currentVersion = extractVersion(fw.current.version);
+        }
+      } catch (fwErr) {
+        console.log('Could not fetch firmware status:', fwErr);
+      }
+    }
+    
+    currentVersion = currentVersion || 'Desconhecida';
+    
     const serial = status.serial || 'N/A';
     const hostname = status.hostname || 'N/A';
     const model = status.model_name || status.model || 'N/A';
+    const modelNumber = status.model_number || '';
     const uptime = status.uptime || 'N/A';
-    const build = status.build || 'N/A';
+    const build = status.build || global.build || 'N/A';
     
     // Determinar versão recomendada com base no modelo
     const recommendedVersion = FORTINET_RECOMMENDED_VERSIONS[model] || FORTINET_RECOMMENDED_VERSIONS['default'];
