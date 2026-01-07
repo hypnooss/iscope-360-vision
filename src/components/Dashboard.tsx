@@ -4,6 +4,8 @@ import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
 import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
+import { exportReportToPDF } from '@/utils/pdfExport';
+import { toast } from 'sonner';
 
 interface DashboardProps {
   report: ComplianceReport;
@@ -13,6 +15,16 @@ interface DashboardProps {
 }
 
 export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: DashboardProps) {
+  const handleExportPDF = () => {
+    try {
+      exportReportToPDF(report);
+      toast.success('PDF exportado com sucesso!');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Erro ao exportar PDF');
+    }
+  };
+
   return (
     <div className="min-h-screen p-6 lg:p-8 cyber-grid">
       <div className="max-w-7xl mx-auto">
@@ -31,7 +43,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
               <LogOut className="w-4 h-4" />
               Desconectar
             </Button>
-            <Button variant="outline" size="lg">
+            <Button variant="outline" size="lg" onClick={handleExportPDF}>
               <FileText className="w-4 h-4" />
               Exportar PDF
             </Button>
