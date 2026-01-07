@@ -649,7 +649,7 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
       description: 'Verifica se alta disponibilidade está configurada',
       category: 'Alta Disponibilidade',
       status: haMode === 'standalone' ? 'warning' : 'pass',
-      severity: 'critical',
+      severity: 'medium',
       recommendation: haMode === 'standalone'
         ? 'Considerar configurar HA para alta disponibilidade'
         : 'Manter configuração atual',
@@ -825,7 +825,11 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
   
   try {
     const systemStatus = await fortigateRequest(config, '/monitor/system/status');
-    const status = systemStatus.results || {};
+    // A API /monitor/system/status retorna diretamente os dados, não dentro de 'results'
+    // Pode ser systemStatus.results ou diretamente systemStatus
+    const status = systemStatus.results || systemStatus || {};
+    
+    console.log('System status response:', JSON.stringify(status, null, 2));
     
     const rawVersion = status.version || '';
     const currentVersion = extractVersion(rawVersion) || 'Desconhecida';
