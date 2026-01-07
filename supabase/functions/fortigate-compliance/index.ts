@@ -771,6 +771,54 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
   return checks;
 }
 
+// Versões recomendadas pela Fortinet (atualizado em Dezembro 2025)
+// Fonte: https://community.fortinet.com/t5/FortiGate/Technical-Tip-Recommended-Release-for-FortiOS/ta-p/227178
+const FORTINET_RECOMMENDED_VERSIONS: Record<string, string> = {
+  // Versão recomendada geral para a maioria dos modelos modernos
+  'default': '7.4.8',
+  // Modelos Low End antigos
+  'FortiGate-30E': '6.2.16',
+  'FortiWiFi-30E': '6.2.16',
+  'FortiGate-50E': '6.2.16',
+  'FortiWiFi-50E': '6.2.16',
+  'FortiGate-51E': '6.2.16',
+  'FortiGate-52E': '6.2.16',
+  'FortiGate-98D': '6.0.18',
+  'FortiGate-240D': '6.0.18',
+  'FortiGate-280D': '6.0.18',
+  // Mid Range antigos
+  'FortiGate-100E': '7.2.11',
+  'FortiGate-101E': '7.2.11',
+  // High End antigos
+  'FortiGate-1200D': '7.0.17',
+  'FortiGate-1500D': '7.2.11',
+  'FortiGate-1500DT': '7.2.11',
+};
+
+// Função para extrair versão numérica do FortiOS (ex: "v7.4.8" -> "7.4.8")
+function extractVersion(versionString: string): string {
+  const match = versionString.match(/v?(\d+\.\d+\.\d+)/i);
+  return match ? match[1] : versionString;
+}
+
+// Função para comparar versões semânticas
+function compareVersions(current: string, recommended: string): 'up-to-date' | 'outdated' | 'unknown' {
+  try {
+    const currentParts = current.split('.').map(Number);
+    const recommendedParts = recommended.split('.').map(Number);
+    
+    for (let i = 0; i < 3; i++) {
+      const c = currentParts[i] || 0;
+      const r = recommendedParts[i] || 0;
+      if (c > r) return 'up-to-date';
+      if (c < r) return 'outdated';
+    }
+    return 'up-to-date';
+  } catch {
+    return 'unknown';
+  }
+}
+
 // Verificar firmware e atualizações
 async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
@@ -779,36 +827,64 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     const systemStatus = await fortigateRequest(config, '/monitor/system/status');
     const status = systemStatus.results || {};
     
-    const currentVersion = status.version || 'Desconhecida';
+    const rawVersion = status.version || '';
+    const currentVersion = extractVersion(rawVersion) || 'Desconhecida';
     const serial = status.serial || 'N/A';
     const hostname = status.hostname || 'N/A';
     const model = status.model_name || status.model || 'N/A';
     const uptime = status.uptime || 'N/A';
+    const build = status.build || 'N/A';
+    
+    // Determinar versão recomendada com base no modelo
+    const recommendedVersion = FORTINET_RECOMMENDED_VERSIONS[model] || FORTINET_RECOMMENDED_VERSIONS['default'];
+    const versionStatus = compareVersions(currentVersion, recommendedVersion);
+    
+    let checkStatus: 'pass' | 'fail' | 'warning' = 'pass';
+    let recommendation = 'Firmware está atualizado conforme recomendação Fortinet';
+    let details = `Versão atual: FortiOS ${currentVersion} | Recomendada: ${recommendedVersion}`;
+    
+    if (versionStatus === 'outdated') {
+      checkStatus = 'fail';
+      recommendation = `Atualizar para FortiOS ${recommendedVersion} conforme recomendação Fortinet (Dezembro 2025)`;
+      details = `Versão DESATUALIZADA: FortiOS ${currentVersion} → Recomendada: ${recommendedVersion}`;
+    } else if (versionStatus === 'unknown') {
+      checkStatus = 'warning';
+      recommendation = 'Não foi possível comparar versões. Verificar manualmente no suporte Fortinet';
+      details = `Versão atual: ${rawVersion || 'Não identificada'}`;
+    }
     
     checks.push({
       id: 'upd-001',
       name: 'Versão do Firmware',
-      description: 'Verifica a versão atual do firmware',
+      description: 'Verifica se o firmware está na versão recomendada pela Fortinet',
       category: 'Atualizações',
-      status: 'pass',
+      status: checkStatus,
       severity: 'high',
-      details: `Versão atual: FortiOS ${currentVersion}`,
-      recommendation: 'Verificar se há atualizações disponíveis no suporte Fortinet',
+      details,
+      recommendation,
       apiEndpoint: '/api/v2/monitor/system/status',
       evidence: [
-        { label: 'Versão FortiOS', value: currentVersion, type: 'text' as const },
+        { label: 'Versão FortiOS Atual', value: currentVersion || rawVersion || 'Não identificada', type: 'text' as const },
+        { label: 'Versão Recomendada Fortinet', value: recommendedVersion, type: 'text' as const },
+        { label: 'Status', value: versionStatus === 'up-to-date' ? '✅ Atualizado' : versionStatus === 'outdated' ? '❌ Desatualizado' : '⚠️ Verificar manualmente', type: 'text' as const },
         { label: 'Modelo', value: model, type: 'text' as const },
+        { label: 'Build', value: String(build), type: 'text' as const },
         { label: 'Hostname', value: hostname, type: 'text' as const },
         { label: 'Serial Number', value: serial, type: 'code' as const },
         { label: 'Uptime', value: String(uptime), type: 'text' as const },
+        { label: 'Fonte da recomendação', value: 'Fortinet Community - Technical Tip (Dezembro 2025)', type: 'text' as const },
       ],
       rawData: {
         version: currentVersion,
+        rawVersion,
+        recommendedVersion,
+        versionStatus,
         serial,
         hostname,
         model,
         uptime,
-        build: status.build,
+        build,
+        source: 'https://community.fortinet.com/t5/FortiGate/Technical-Tip-Recommended-Release-for-FortiOS/ta-p/227178',
       },
     });
   } catch (error) {
@@ -885,48 +961,143 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     
-    const expiringCerts = certs.filter((c: any) => {
-      if (!c['valid-to']) return false;
-      const expDate = new Date(c['valid-to']);
-      return expDate < thirtyDaysFromNow;
+    // Função para parsear datas de certificado em diferentes formatos
+    const parseCertDate = (dateStr: string): Date | null => {
+      if (!dateStr) return null;
+      
+      // Tentar formatos comuns do FortiGate
+      // Formato 1: "2024-04-22 08:47:47  GMT"
+      // Formato 2: "Apr 22 08:47:47 2024 GMT"
+      // Formato 3: timestamp em segundos
+      // Formato 4: ISO 8601
+      
+      // Se for número (timestamp em segundos)
+      if (!isNaN(Number(dateStr))) {
+        return new Date(Number(dateStr) * 1000);
+      }
+      
+      // Tentar parse direto
+      const directParse = new Date(dateStr);
+      if (!isNaN(directParse.getTime())) {
+        return directParse;
+      }
+      
+      // Tentar formato "YYYY-MM-DD HH:MM:SS GMT"
+      const match1 = dateStr.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+      if (match1) {
+        return new Date(`${match1[1]}-${match1[2]}-${match1[3]}T${match1[4]}:${match1[5]}:${match1[6]}Z`);
+      }
+      
+      return null;
+    };
+    
+    // Função para formatar data de forma legível
+    const formatCertDate = (dateStr: string): string => {
+      const date = parseCertDate(dateStr);
+      if (!date) return dateStr || 'Data não disponível';
+      return date.toLocaleDateString('pt-BR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    };
+    
+    // Calcular dias restantes
+    const getDaysRemaining = (dateStr: string): number | null => {
+      const date = parseCertDate(dateStr);
+      if (!date) return null;
+      const diffTime = date.getTime() - now.getTime();
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    };
+    
+    interface CertDetails {
+      name: string;
+      validTo: string;
+      validToFormatted: string;
+      validFrom: string;
+      validFromFormatted: string;
+      issuer: string;
+      subject: string;
+      daysRemaining: number | null;
+      status: 'unknown' | 'expired' | 'expiring' | 'valid';
+      type: string;
+      source: string;
+    }
+    
+    const certsWithDetails: CertDetails[] = certs.map((c: any) => {
+      const validTo = c['valid-to'] || c['not_after'] || c['notAfter'] || c['end_time'] || '';
+      const validFrom = c['valid-from'] || c['not_before'] || c['notBefore'] || c['start_time'] || '';
+      const daysRemaining = getDaysRemaining(validTo);
+      
+      return {
+        name: c.name || 'Sem nome',
+        validTo,
+        validToFormatted: formatCertDate(validTo),
+        validFrom,
+        validFromFormatted: formatCertDate(validFrom),
+        issuer: c.issuer || c.ca || 'N/A',
+        subject: c.subject || c.cn || 'N/A',
+        daysRemaining,
+        status: daysRemaining === null ? 'unknown' as const : daysRemaining < 0 ? 'expired' as const : daysRemaining < 30 ? 'expiring' as const : 'valid' as const,
+        type: c.type || 'local',
+        source: c.source || 'N/A',
+      };
     });
     
-    const validCerts = certs.filter((c: any) => {
-      if (!c['valid-to']) return true;
-      const expDate = new Date(c['valid-to']);
-      return expDate >= thirtyDaysFromNow;
-    });
+    const expiredCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'expired');
+    const expiringCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'expiring');
+    const validCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'valid');
+    const unknownCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'unknown');
+    
+    let certStatus: 'pass' | 'fail' | 'warning' = 'pass';
+    let certDetails = 'Todos os certificados estão válidos';
+    let certRecommendation = 'Manter monitoramento de certificados';
+    
+    if (expiredCerts.length > 0) {
+      certStatus = 'fail';
+      certDetails = `${expiredCerts.length} certificado(s) EXPIRADO(S)!`;
+      certRecommendation = 'Renovar certificados expirados imediatamente';
+    } else if (expiringCerts.length > 0) {
+      certStatus = 'warning';
+      certDetails = `${expiringCerts.length} certificado(s) expira(m) nos próximos 30 dias`;
+      certRecommendation = 'Renovar certificados que expiram em breve';
+    } else if (unknownCerts.length > 0 && validCerts.length === 0) {
+      certStatus = 'warning';
+      certDetails = 'Não foi possível determinar validade dos certificados';
+      certRecommendation = 'Verificar certificados manualmente no FortiGate';
+    }
     
     checks.push({
       id: 'vpn-002',
-      name: 'Certificados VPN',
-      description: 'Verifica validade dos certificados SSL/TLS',
+      name: 'Certificados VPN/SSL',
+      description: 'Verifica validade dos certificados SSL/TLS locais',
       category: 'Configuração VPN',
-      status: expiringCerts.length > 0 ? 'warning' : 'pass',
-      severity: 'high',
-      recommendation: expiringCerts.length > 0
-        ? 'Renovar certificados que expiram em breve'
-        : 'Manter monitoramento de certificados',
-      details: expiringCerts.length > 0
-        ? `${expiringCerts.length} certificado(s) expira(m) nos próximos 30 dias`
-        : 'Todos os certificados estão válidos',
+      status: certStatus,
+      severity: expiredCerts.length > 0 ? 'critical' : 'high',
+      recommendation: certRecommendation,
+      details: certDetails,
       apiEndpoint: '/api/v2/cmdb/certificate/local',
-      evidence: certs.length > 0
-        ? certs.map((c: any) => ({
-            label: `Certificado: ${c.name}`,
-            value: `válido até: ${c['valid-to'] || 'N/A'}, issuer: ${c.issuer || 'N/A'}`,
+      evidence: certsWithDetails.length > 0
+        ? certsWithDetails.map((c: CertDetails) => ({
+            label: `📜 ${c.name}`,
+            value: `Válido: ${c.validFromFormatted} → ${c.validToFormatted} | ${c.daysRemaining !== null ? (c.daysRemaining < 0 ? `❌ EXPIRADO há ${Math.abs(c.daysRemaining)} dias` : c.daysRemaining < 30 ? `⚠️ Expira em ${c.daysRemaining} dias` : `✅ ${c.daysRemaining} dias restantes`) : '⚠️ Data não disponível'} | Emissor: ${c.issuer}`,
             type: 'code' as const,
           }))
         : [{
             label: 'Certificados locais',
-            value: 'Nenhum certificado local encontrado',
+            value: 'Nenhum certificado local encontrado no FortiGate',
             type: 'text' as const,
           }],
       rawData: {
-        total: certs.length,
+        total: certsWithDetails.length,
+        expired: expiredCerts.length,
         expiring: expiringCerts.length,
         valid: validCerts.length,
-        certificates: certs.map((c: any) => ({ name: c.name, validTo: c['valid-to'], issuer: c.issuer })),
+        unknown: unknownCerts.length,
+        certificates: certsWithDetails,
+        rawCertificates: certs,
       },
     });
   } catch (error) {
