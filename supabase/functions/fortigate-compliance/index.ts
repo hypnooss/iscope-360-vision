@@ -955,151 +955,75 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       },
     });
     
-    // Verificar certificados
-    const certificates = await fortigateRequest(config, '/cmdb/certificate/local');
-    const certs = certificates.results || [];
-    const now = new Date();
-    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    
-    // Função para parsear datas de certificado em diferentes formatos
-    const parseCertDate = (dateStr: string): Date | null => {
-      if (!dateStr) return null;
+    // Verificar certificado SSL VPN
+    try {
+      const sslvpnSettings = await fortigateRequest(config, '/cmdb/vpn.ssl/settings');
+      const sslvpn = sslvpnSettings.results || {};
+      const sslCertName = sslvpn['servercert'] || sslvpn['server-cert'] || '';
       
-      // Tentar formatos comuns do FortiGate
-      // Formato 1: "2024-04-22 08:47:47  GMT"
-      // Formato 2: "Apr 22 08:47:47 2024 GMT"
-      // Formato 3: timestamp em segundos
-      // Formato 4: ISO 8601
+      // Buscar detalhes do certificado usado pelo SSL VPN
+      let sslCertValid = false;
+      let sslCertDetails = 'Certificado não identificado';
+      let certEvidence: EvidenceItem[] = [];
       
-      // Se for número (timestamp em segundos)
-      if (!isNaN(Number(dateStr))) {
-        return new Date(Number(dateStr) * 1000);
+      if (sslCertName && sslCertName !== 'Fortinet_Factory') {
+        // Certificado customizado configurado
+        sslCertValid = true;
+        sslCertDetails = `Certificado customizado: ${sslCertName}`;
+        certEvidence = [
+          { label: 'Certificado SSL VPN', value: sslCertName, type: 'code' as const },
+          { label: 'Status', value: '✅ Usando certificado customizado (não é Fortinet_Factory)', type: 'text' as const },
+        ];
+      } else if (sslCertName === 'Fortinet_Factory') {
+        sslCertValid = false;
+        sslCertDetails = 'Usando certificado padrão de fábrica (Fortinet_Factory)';
+        certEvidence = [
+          { label: 'Certificado SSL VPN', value: 'Fortinet_Factory', type: 'code' as const },
+          { label: 'Status', value: '❌ Certificado padrão de fábrica - não confiável por navegadores', type: 'text' as const },
+        ];
+      } else {
+        sslCertDetails = 'Não foi possível identificar o certificado configurado';
+        certEvidence = [
+          { label: 'Certificado SSL VPN', value: 'Não identificado', type: 'text' as const },
+        ];
       }
       
-      // Tentar parse direto
-      const directParse = new Date(dateStr);
-      if (!isNaN(directParse.getTime())) {
-        return directParse;
-      }
-      
-      // Tentar formato "YYYY-MM-DD HH:MM:SS GMT"
-      const match1 = dateStr.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
-      if (match1) {
-        return new Date(`${match1[1]}-${match1[2]}-${match1[3]}T${match1[4]}:${match1[5]}:${match1[6]}Z`);
-      }
-      
-      return null;
-    };
-    
-    // Função para formatar data de forma legível
-    const formatCertDate = (dateStr: string): string => {
-      const date = parseCertDate(dateStr);
-      if (!date) return dateStr || 'Data não disponível';
-      return date.toLocaleDateString('pt-BR', { 
-        day: '2-digit', 
-        month: '2-digit', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+      checks.push({
+        id: 'vpn-002',
+        name: 'Certificado SSL VPN',
+        description: 'Verifica se SSL VPN usa um certificado válido (não padrão de fábrica)',
+        category: 'Configuração VPN',
+        status: sslCertValid ? 'pass' : 'fail',
+        severity: 'high',
+        recommendation: !sslCertValid
+          ? 'Substituir certificado Fortinet_Factory por um certificado válido de uma CA confiável'
+          : 'Manter configuração atual',
+        details: sslCertDetails,
+        apiEndpoint: '/api/v2/cmdb/vpn.ssl/settings',
+        evidence: certEvidence,
+        rawData: {
+          servercert: sslCertName,
+          sslvpnSettings: sslvpn,
+        },
       });
-    };
-    
-    // Calcular dias restantes
-    const getDaysRemaining = (dateStr: string): number | null => {
-      const date = parseCertDate(dateStr);
-      if (!date) return null;
-      const diffTime = date.getTime() - now.getTime();
-      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    };
-    
-    interface CertDetails {
-      name: string;
-      validTo: string;
-      validToFormatted: string;
-      validFrom: string;
-      validFromFormatted: string;
-      issuer: string;
-      subject: string;
-      daysRemaining: number | null;
-      status: 'unknown' | 'expired' | 'expiring' | 'valid';
-      type: string;
-      source: string;
+    } catch {
+      checks.push({
+        id: 'vpn-002',
+        name: 'Certificado SSL VPN',
+        description: 'Verifica se SSL VPN usa um certificado válido',
+        category: 'Configuração VPN',
+        status: 'warning',
+        severity: 'high',
+        recommendation: 'Verificar configuração SSL VPN manualmente',
+        details: 'Não foi possível verificar configuração SSL VPN',
+        apiEndpoint: '/api/v2/cmdb/vpn.ssl/settings',
+        evidence: [{
+          label: 'Status',
+          value: 'Endpoint não disponível ou SSL VPN não configurado',
+          type: 'text' as const,
+        }],
+      });
     }
-    
-    const certsWithDetails: CertDetails[] = certs.map((c: any) => {
-      const validTo = c['valid-to'] || c['not_after'] || c['notAfter'] || c['end_time'] || '';
-      const validFrom = c['valid-from'] || c['not_before'] || c['notBefore'] || c['start_time'] || '';
-      const daysRemaining = getDaysRemaining(validTo);
-      
-      return {
-        name: c.name || 'Sem nome',
-        validTo,
-        validToFormatted: formatCertDate(validTo),
-        validFrom,
-        validFromFormatted: formatCertDate(validFrom),
-        issuer: c.issuer || c.ca || 'N/A',
-        subject: c.subject || c.cn || 'N/A',
-        daysRemaining,
-        status: daysRemaining === null ? 'unknown' as const : daysRemaining < 0 ? 'expired' as const : daysRemaining < 30 ? 'expiring' as const : 'valid' as const,
-        type: c.type || 'local',
-        source: c.source || 'N/A',
-      };
-    });
-    
-    const expiredCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'expired');
-    const expiringCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'expiring');
-    const validCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'valid');
-    const unknownCerts = certsWithDetails.filter((c: CertDetails) => c.status === 'unknown');
-    
-    let certStatus: 'pass' | 'fail' | 'warning' = 'pass';
-    let certDetails = 'Todos os certificados estão válidos';
-    let certRecommendation = 'Manter monitoramento de certificados';
-    
-    if (expiredCerts.length > 0) {
-      certStatus = 'fail';
-      certDetails = `${expiredCerts.length} certificado(s) EXPIRADO(S)!`;
-      certRecommendation = 'Renovar certificados expirados imediatamente';
-    } else if (expiringCerts.length > 0) {
-      certStatus = 'warning';
-      certDetails = `${expiringCerts.length} certificado(s) expira(m) nos próximos 30 dias`;
-      certRecommendation = 'Renovar certificados que expiram em breve';
-    } else if (unknownCerts.length > 0 && validCerts.length === 0) {
-      certStatus = 'warning';
-      certDetails = 'Não foi possível determinar validade dos certificados';
-      certRecommendation = 'Verificar certificados manualmente no FortiGate';
-    }
-    
-    checks.push({
-      id: 'vpn-002',
-      name: 'Certificados VPN/SSL',
-      description: 'Verifica validade dos certificados SSL/TLS locais',
-      category: 'Configuração VPN',
-      status: certStatus,
-      severity: expiredCerts.length > 0 ? 'critical' : 'high',
-      recommendation: certRecommendation,
-      details: certDetails,
-      apiEndpoint: '/api/v2/cmdb/certificate/local',
-      evidence: certsWithDetails.length > 0
-        ? certsWithDetails.map((c: CertDetails) => ({
-            label: `📜 ${c.name}`,
-            value: `Válido: ${c.validFromFormatted} → ${c.validToFormatted} | ${c.daysRemaining !== null ? (c.daysRemaining < 0 ? `❌ EXPIRADO há ${Math.abs(c.daysRemaining)} dias` : c.daysRemaining < 30 ? `⚠️ Expira em ${c.daysRemaining} dias` : `✅ ${c.daysRemaining} dias restantes`) : '⚠️ Data não disponível'} | Emissor: ${c.issuer}`,
-            type: 'code' as const,
-          }))
-        : [{
-            label: 'Certificados locais',
-            value: 'Nenhum certificado local encontrado no FortiGate',
-            type: 'text' as const,
-          }],
-      rawData: {
-        total: certsWithDetails.length,
-        expired: expiredCerts.length,
-        expiring: expiringCerts.length,
-        valid: validCerts.length,
-        unknown: unknownCerts.length,
-        certificates: certsWithDetails,
-        rawCertificates: certs,
-      },
-    });
   } catch (error) {
     console.error('Error checking VPN:', error);
     checks.push({
@@ -1159,44 +1083,82 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
       },
     });
     
-    // Verificar syslog
-    const syslogSettings = await fortigateRequest(config, '/cmdb/log.syslogd/setting');
-    const syslog = syslogSettings.results || {};
+    // Verificar FortiAnalyzer
+    let fortiAnalyzerEnabled = false;
+    let fortiAnalyzerServer = 'N/A';
+    let fortiAnalyzerEvidence: EvidenceItem[] = [];
     
-    const syslogStatus = syslog.status || 'disable';
-    const syslogServer = syslog.server || 'N/A';
-    const syslogPort = syslog.port || '514';
-    const syslogFacility = syslog.facility || 'N/A';
-    const syslogFormat = syslog.format || 'N/A';
+    try {
+      const fazSettings = await fortigateRequest(config, '/cmdb/log.fortianalyzer/setting');
+      const faz = fazSettings.results || {};
+      fortiAnalyzerEnabled = faz.status === 'enable';
+      fortiAnalyzerServer = faz.server || 'N/A';
+      fortiAnalyzerEvidence = [
+        { label: 'FortiAnalyzer Status', value: faz.status || 'disable', type: 'code' as const },
+        { label: 'FortiAnalyzer Server', value: fortiAnalyzerServer, type: 'code' as const },
+        { label: 'upload-option', value: faz['upload-option'] || 'N/A', type: 'code' as const },
+        { label: 'reliable', value: faz.reliable || 'N/A', type: 'code' as const },
+      ];
+    } catch {
+      fortiAnalyzerEvidence = [
+        { label: 'FortiAnalyzer', value: 'Não configurado ou sem permissão para verificar', type: 'text' as const },
+      ];
+    }
+    
+    // Verificar FortiCloud
+    let fortiCloudEnabled = false;
+    let fortiCloudEvidence: EvidenceItem[] = [];
+    
+    try {
+      const cloudSettings = await fortigateRequest(config, '/cmdb/log.fortiguard/setting');
+      const cloud = cloudSettings.results || {};
+      fortiCloudEnabled = cloud.status === 'enable';
+      fortiCloudEvidence = [
+        { label: 'FortiCloud Status', value: cloud.status || 'disable', type: 'code' as const },
+        { label: 'upload-option', value: cloud['upload-option'] || 'N/A', type: 'code' as const },
+      ];
+    } catch {
+      fortiCloudEvidence = [
+        { label: 'FortiCloud', value: 'Não configurado ou sem permissão para verificar', type: 'text' as const },
+      ];
+    }
+    
+    const logForwardingEnabled = fortiAnalyzerEnabled || fortiCloudEnabled;
+    let logForwardingDetails = '';
+    let logForwardingRecommendation = '';
+    
+    if (fortiAnalyzerEnabled && fortiCloudEnabled) {
+      logForwardingDetails = `FortiAnalyzer (${fortiAnalyzerServer}) e FortiCloud habilitados`;
+      logForwardingRecommendation = 'Manter configuração atual';
+    } else if (fortiAnalyzerEnabled) {
+      logForwardingDetails = `FortiAnalyzer configurado: ${fortiAnalyzerServer}`;
+      logForwardingRecommendation = 'Manter configuração atual';
+    } else if (fortiCloudEnabled) {
+      logForwardingDetails = 'FortiCloud habilitado';
+      logForwardingRecommendation = 'Manter configuração atual';
+    } else {
+      logForwardingDetails = 'Nenhum sistema de centralização de logs configurado';
+      logForwardingRecommendation = 'Configurar envio de logs para FortiAnalyzer ou FortiCloud para centralização e análise';
+    }
     
     checks.push({
       id: 'log-002',
-      name: 'Envio de Logs para SIEM',
-      description: 'Verifica se logs são enviados para servidor syslog/SIEM',
+      name: 'Envio de Logs para FortiAnalyzer/FortiCloud',
+      description: 'Verifica se logs são enviados para FortiAnalyzer ou FortiCloud',
       category: 'Logging e Monitoramento',
-      status: syslogStatus === 'enable' ? 'pass' : 'warning',
+      status: logForwardingEnabled ? 'pass' : 'warning',
       severity: 'medium',
-      recommendation: syslogStatus !== 'enable'
-        ? 'Configurar envio de logs para SIEM centralizado'
-        : 'Manter configuração atual',
-      details: syslogStatus === 'enable'
-        ? `Syslog configurado: ${syslogServer}`
-        : 'Syslog não configurado',
-      apiEndpoint: '/api/v2/cmdb/log.syslogd/setting',
+      recommendation: logForwardingRecommendation,
+      details: logForwardingDetails,
+      apiEndpoint: '/api/v2/cmdb/log.fortianalyzer/setting',
       evidence: [
-        { label: 'status', value: syslogStatus, type: 'code' as const },
-        { label: 'server', value: syslogServer, type: 'code' as const },
-        { label: 'port', value: String(syslogPort), type: 'code' as const },
-        { label: 'facility', value: syslogFacility, type: 'code' as const },
-        { label: 'format', value: syslogFormat, type: 'code' as const },
+        ...fortiAnalyzerEvidence,
+        ...fortiCloudEvidence,
       ],
       rawData: {
-        status: syslogStatus,
-        server: syslogServer,
-        port: syslogPort,
-        facility: syslogFacility,
-        format: syslogFormat,
-        mode: syslog.mode,
+        fortiAnalyzerEnabled,
+        fortiAnalyzerServer,
+        fortiCloudEnabled,
       },
     });
   } catch (error) {
