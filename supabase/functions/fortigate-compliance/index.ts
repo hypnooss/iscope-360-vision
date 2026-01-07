@@ -639,6 +639,10 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
     const haSettings = haStatus.results || {};
     
     const haMode = haSettings.mode || 'standalone';
+    const haGroupName = haSettings['group-name'] || 'N/A';
+    const haPriority = haSettings.priority || 'N/A';
+    const haSchedule = haSettings.schedule || 'N/A';
+    
     checks.push({
       id: 'ha-001',
       name: 'Cluster HA Configurado',
@@ -650,26 +654,53 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
         ? 'Considerar configurar HA para alta disponibilidade'
         : 'Manter configuração atual',
       details: `Modo HA: ${haMode}`,
+      apiEndpoint: '/api/v2/cmdb/system/ha',
+      evidence: [
+        { label: 'Modo HA', value: haMode, type: 'text' as const },
+        { label: 'Nome do Grupo', value: haGroupName, type: 'text' as const },
+        { label: 'Prioridade', value: String(haPriority), type: 'text' as const },
+        { label: 'Schedule', value: haSchedule, type: 'text' as const },
+      ],
+      rawData: {
+        mode: haMode,
+        groupName: haGroupName,
+        priority: haPriority,
+        schedule: haSchedule,
+        override: haSettings.override,
+        encryption: haSettings.encryption,
+      },
     });
     
     if (haMode !== 'standalone') {
       const hbInterfaces = haSettings['hbdev'] || '';
+      const hbInterfaceList = hbInterfaces.split(' ').filter((i: string) => i.trim());
+      
       checks.push({
         id: 'ha-003',
         name: 'Heartbeat HA',
         description: 'Verifica configuração dos links de heartbeat',
         category: 'Alta Disponibilidade',
-        status: hbInterfaces.split(' ').length < 2 ? 'warning' : 'pass',
+        status: hbInterfaceList.length < 2 ? 'warning' : 'pass',
         severity: 'high',
         recommendation: 'Configurar múltiplos links de heartbeat para redundância',
         details: `Interfaces de heartbeat: ${hbInterfaces || 'Nenhuma configurada'}`,
+        apiEndpoint: '/api/v2/cmdb/system/ha',
+        evidence: [
+          { label: 'Interfaces Heartbeat', value: hbInterfaces || 'Nenhuma', type: 'code' as const },
+          { label: 'Quantidade', value: `${hbInterfaceList.length} interface(s)`, type: 'text' as const },
+        ],
+        rawData: {
+          hbdev: hbInterfaces,
+          interfaceCount: hbInterfaceList.length,
+        },
       });
     }
     
     // Backup - verificar configuração de auto-backup
     try {
       const autoBackup = await fortigateRequest(config, '/cmdb/system/auto-script');
-      const backupScripts = (autoBackup.results || []).filter((s: any) => 
+      const allScripts = autoBackup.results || [];
+      const backupScripts = allScripts.filter((s: any) => 
         s.script?.toLowerCase().includes('backup') || s.name?.toLowerCase().includes('backup')
       );
       
@@ -686,6 +717,24 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
         details: backupScripts.length > 0
           ? `${backupScripts.length} script(s) de backup configurado(s)`
           : 'Nenhum backup automático configurado',
+        apiEndpoint: '/api/v2/cmdb/system/auto-script',
+        evidence: backupScripts.length > 0
+          ? backupScripts.map((s: any) => ({
+              label: `Script: ${s.name}`,
+              value: `interval: ${s.interval || 'N/A'}, start: ${s.start || 'N/A'}`,
+              type: 'code' as const,
+            }))
+          : [{
+              label: 'Scripts encontrados',
+              value: allScripts.length > 0 
+                ? `${allScripts.length} script(s) encontrado(s), nenhum relacionado a backup`
+                : 'Nenhum auto-script configurado',
+              type: 'text' as const,
+            }],
+        rawData: {
+          totalScripts: allScripts.length,
+          backupScripts: backupScripts.map((s: any) => ({ name: s.name, interval: s.interval })),
+        },
       });
     } catch {
       checks.push({
@@ -697,6 +746,12 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
         severity: 'critical',
         recommendation: 'Verificar configuração de backup manualmente',
         details: 'Não foi possível verificar configuração de auto-backup',
+        apiEndpoint: '/api/v2/cmdb/system/auto-script',
+        evidence: [{
+          label: 'Status',
+          value: 'Endpoint não disponível ou sem permissão',
+          type: 'text' as const,
+        }],
       });
     }
   } catch (error) {
@@ -709,6 +764,7 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/system/ha',
     });
   }
   
@@ -724,6 +780,10 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     const status = systemStatus.results || {};
     
     const currentVersion = status.version || 'Desconhecida';
+    const serial = status.serial || 'N/A';
+    const hostname = status.hostname || 'N/A';
+    const model = status.model_name || status.model || 'N/A';
+    const uptime = status.uptime || 'N/A';
     
     checks.push({
       id: 'upd-001',
@@ -734,6 +794,22 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       severity: 'high',
       details: `Versão atual: FortiOS ${currentVersion}`,
       recommendation: 'Verificar se há atualizações disponíveis no suporte Fortinet',
+      apiEndpoint: '/api/v2/monitor/system/status',
+      evidence: [
+        { label: 'Versão FortiOS', value: currentVersion, type: 'text' as const },
+        { label: 'Modelo', value: model, type: 'text' as const },
+        { label: 'Hostname', value: hostname, type: 'text' as const },
+        { label: 'Serial Number', value: serial, type: 'code' as const },
+        { label: 'Uptime', value: String(uptime), type: 'text' as const },
+      ],
+      rawData: {
+        version: currentVersion,
+        serial,
+        hostname,
+        model,
+        uptime,
+        build: status.build,
+      },
     });
   } catch (error) {
     console.error('Error checking firmware:', error);
@@ -745,6 +821,7 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/monitor/system/status',
     });
   }
   
@@ -764,6 +841,11 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       return proposal.includes('des') || proposal.includes('md5');
     });
     
+    const strongCrypto = vpnPhase1.filter((v: any) => {
+      const proposal = v.proposal || '';
+      return !proposal.includes('des') && !proposal.includes('md5');
+    });
+    
     checks.push({
       id: 'vpn-001',
       name: 'Criptografia VPN',
@@ -777,6 +859,24 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       details: weakCrypto.length > 0
         ? `${weakCrypto.length} VPN(s) com criptografia fraca detectada(s)`
         : 'Todas as VPNs utilizam criptografia forte',
+      apiEndpoint: '/api/v2/cmdb/vpn.ipsec/phase1-interface',
+      evidence: vpnPhase1.length > 0
+        ? vpnPhase1.map((v: any) => ({
+            label: `VPN: ${v.name}`,
+            value: `proposal: ${v.proposal || 'N/A'}, ike-version: ${v['ike-version'] || 'N/A'}, dhgrp: ${v.dhgrp || 'N/A'}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'VPNs IPSec',
+            value: 'Nenhuma VPN IPSec configurada',
+            type: 'text' as const,
+          }],
+      rawData: {
+        total: vpnPhase1.length,
+        withWeakCrypto: weakCrypto.length,
+        withStrongCrypto: strongCrypto.length,
+        vpns: vpnPhase1.map((v: any) => ({ name: v.name, proposal: v.proposal, ikeVersion: v['ike-version'] })),
+      },
     });
     
     // Verificar certificados
@@ -789,6 +889,12 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       if (!c['valid-to']) return false;
       const expDate = new Date(c['valid-to']);
       return expDate < thirtyDaysFromNow;
+    });
+    
+    const validCerts = certs.filter((c: any) => {
+      if (!c['valid-to']) return true;
+      const expDate = new Date(c['valid-to']);
+      return expDate >= thirtyDaysFromNow;
     });
     
     checks.push({
@@ -804,6 +910,24 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       details: expiringCerts.length > 0
         ? `${expiringCerts.length} certificado(s) expira(m) nos próximos 30 dias`
         : 'Todos os certificados estão válidos',
+      apiEndpoint: '/api/v2/cmdb/certificate/local',
+      evidence: certs.length > 0
+        ? certs.map((c: any) => ({
+            label: `Certificado: ${c.name}`,
+            value: `válido até: ${c['valid-to'] || 'N/A'}, issuer: ${c.issuer || 'N/A'}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Certificados locais',
+            value: 'Nenhum certificado local encontrado',
+            type: 'text' as const,
+          }],
+      rawData: {
+        total: certs.length,
+        expiring: expiringCerts.length,
+        valid: validCerts.length,
+        certificates: certs.map((c: any) => ({ name: c.name, validTo: c['valid-to'], issuer: c.issuer })),
+      },
     });
   } catch (error) {
     console.error('Error checking VPN:', error);
@@ -815,6 +939,7 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/vpn.ipsec/phase1-interface',
     });
   }
   
@@ -829,8 +954,12 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
     const logSettings = await fortigateRequest(config, '/cmdb/log/setting');
     const settings = logSettings.results || {};
     
-    const logEnabled = settings['log-invalid-packet'] === 'enable' || 
-                       settings['resolve-ip'] === 'enable';
+    const logInvalidPacket = settings['log-invalid-packet'] || 'disable';
+    const resolveIp = settings['resolve-ip'] || 'disable';
+    const logUserInfo = settings['log-user-in-upper'] || 'disable';
+    const briefTrafficFormat = settings['brief-traffic-format'] || 'disable';
+    
+    const logEnabled = logInvalidPacket === 'enable' || resolveIp === 'enable';
     
     checks.push({
       id: 'log-001',
@@ -842,25 +971,62 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
       recommendation: !logEnabled
         ? 'Habilitar logging para eventos de segurança'
         : 'Manter configuração atual',
+      apiEndpoint: '/api/v2/cmdb/log/setting',
+      evidence: [
+        { label: 'log-invalid-packet', value: logInvalidPacket, type: 'code' as const },
+        { label: 'resolve-ip', value: resolveIp, type: 'code' as const },
+        { label: 'log-user-in-upper', value: logUserInfo, type: 'code' as const },
+        { label: 'brief-traffic-format', value: briefTrafficFormat, type: 'code' as const },
+      ],
+      rawData: {
+        logInvalidPacket,
+        resolveIp,
+        logUserInfo,
+        briefTrafficFormat,
+        fwpolicyImplicitLog: settings['fwpolicy-implicit-log'],
+        fwpolicy6ImplicitLog: settings['fwpolicy6-implicit-log'],
+      },
     });
     
     // Verificar syslog
     const syslogSettings = await fortigateRequest(config, '/cmdb/log.syslogd/setting');
     const syslog = syslogSettings.results || {};
     
+    const syslogStatus = syslog.status || 'disable';
+    const syslogServer = syslog.server || 'N/A';
+    const syslogPort = syslog.port || '514';
+    const syslogFacility = syslog.facility || 'N/A';
+    const syslogFormat = syslog.format || 'N/A';
+    
     checks.push({
       id: 'log-002',
       name: 'Envio de Logs para SIEM',
       description: 'Verifica se logs são enviados para servidor syslog/SIEM',
       category: 'Logging e Monitoramento',
-      status: syslog.status === 'enable' ? 'pass' : 'warning',
+      status: syslogStatus === 'enable' ? 'pass' : 'warning',
       severity: 'medium',
-      recommendation: syslog.status !== 'enable'
+      recommendation: syslogStatus !== 'enable'
         ? 'Configurar envio de logs para SIEM centralizado'
         : 'Manter configuração atual',
-      details: syslog.status === 'enable'
-        ? `Syslog configurado: ${syslog.server || 'N/A'}`
+      details: syslogStatus === 'enable'
+        ? `Syslog configurado: ${syslogServer}`
         : 'Syslog não configurado',
+      apiEndpoint: '/api/v2/cmdb/log.syslogd/setting',
+      evidence: [
+        { label: 'status', value: syslogStatus, type: 'code' as const },
+        { label: 'server', value: syslogServer, type: 'code' as const },
+        { label: 'port', value: String(syslogPort), type: 'code' as const },
+        { label: 'facility', value: syslogFacility, type: 'code' as const },
+        { label: 'format', value: syslogFormat, type: 'code' as const },
+      ],
+      rawData: {
+        status: syslogStatus,
+        server: syslogServer,
+        port: syslogPort,
+        facility: syslogFacility,
+        format: syslogFormat,
+        mode: syslog.mode,
+      },
     });
   } catch (error) {
     console.error('Error checking logging:', error);
@@ -872,6 +1038,7 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
       status: 'pending',
       severity: 'medium',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/log/setting',
     });
   }
   
