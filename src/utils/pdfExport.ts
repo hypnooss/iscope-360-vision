@@ -278,7 +278,7 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(80, 80, 80);
   
-  const statsText = `Total: ${report.totalChecks} verificações  |  ✓ ${report.passed} aprovadas  |  ✗ ${report.failed} falhas  |  ⚠ ${report.warnings} alertas`;
+  const statsText = `Total: ${report.totalChecks} verificacoes  |  ${report.passed} aprovadas  |  ${report.failed} falhas  |  ${report.warnings} alertas`;
   doc.text(statsText, pageWidth / 2, yPos, { align: 'center' });
   
   yPos += 5;
