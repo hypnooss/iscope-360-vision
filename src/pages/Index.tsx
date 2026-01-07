@@ -63,34 +63,34 @@ const Index = () => {
         toast.error('Erro ao conectar', {
           description: error.message || 'Não foi possível conectar ao FortiGate',
         });
-        toast.info('Usando dados de demonstração');
-        setReport(generateMockReport());
+        setConnectionConfig(null);
+        setIsConnecting(false);
+        return;
       } else if (data.error) {
         console.error('FortiGate API error:', data.error);
         toast.error('Erro na API FortiGate', {
           description: data.details || data.error,
         });
-        toast.info('Usando dados de demonstração');
-        setReport(generateMockReport());
+        setConnectionConfig(null);
+        setIsConnecting(false);
+        return;
       } else {
         const reportData: ComplianceReport = {
           ...data,
           generatedAt: new Date(data.generatedAt),
         };
         setReport(reportData);
+        setIsConnected(true);
         toast.success('Análise concluída!', {
           description: `${data.passed} de ${data.totalChecks} verificações aprovadas`,
         });
       }
-      
-      setIsConnected(true);
     } catch (err) {
       console.error('Connection error:', err);
       toast.error('Erro de conexão', {
-        description: 'Usando dados de demonstração',
+        description: 'Verifique a URL e API Key fornecidas',
       });
-      setReport(generateMockReport());
-      setIsConnected(true);
+      setConnectionConfig(null);
     } finally {
       setIsConnecting(false);
     }
