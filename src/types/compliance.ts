@@ -1,5 +1,11 @@
 export type ComplianceStatus = 'pass' | 'fail' | 'warning' | 'pending';
 
+export interface EvidenceItem {
+  label: string;
+  value: string;
+  type?: 'text' | 'code' | 'list' | 'json';
+}
+
 export interface ComplianceCheck {
   id: string;
   name: string;
@@ -9,6 +15,9 @@ export interface ComplianceCheck {
   severity: 'critical' | 'high' | 'medium' | 'low';
   recommendation?: string;
   details?: string;
+  evidence?: EvidenceItem[];
+  rawData?: Record<string, unknown>;
+  apiEndpoint?: string;
 }
 
 export interface ComplianceCategory {
