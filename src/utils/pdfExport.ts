@@ -131,13 +131,16 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.text(`Gerado em: ${report.generatedAt.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
 
   // ═══════════════════════════════════════════════════════════════
-  // BLOCO 1: Score de Compliance Geral (Ponderado)
+  // BLOCO 1: Score de Compliance Geral (mesmo do dashboard)
   // ═══════════════════════════════════════════════════════════════
   yPos += 18;
   
   const allChecks = report.categories.flatMap(c => c.checks);
   const weightedScore = calculateWeightedScore(allChecks);
-  const riskClass = getRiskClassification(weightedScore);
+  
+  // Usar o score do report (mesmo do dashboard)
+  const displayScore = report.overallScore;
+  const riskClass = getRiskClassification(displayScore);
   
   // Box background
   doc.setFillColor(245, 245, 250);
@@ -149,14 +152,14 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.setTextColor(60, 60, 60);
   doc.text('COMPLIANCE GERAL', 41.5, yPos + 2, { align: 'center' });
   
-  // Score circle
+  // Score circle - usar displayScore (mesmo do dashboard)
   const scoreColor = riskClass.color;
   doc.setFillColor(scoreColor[0], scoreColor[1], scoreColor[2]);
   doc.circle(41.5, yPos + 20, 12, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text(`${weightedScore}%`, 41.5, yPos + 23, { align: 'center' });
+  doc.text(`${displayScore}%`, 41.5, yPos + 23, { align: 'center' });
   
   // Risk label
   doc.setFontSize(9);
@@ -280,10 +283,10 @@ export function exportReportToPDF(report: ComplianceReport) {
   
   yPos += 5;
   
-  // Score explanation
+  // Score ponderado como informação adicional
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text('* Score ponderado: Crítico (peso 5), Alto (peso 3), Médio (peso 1)', pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Score Ponderado (risco): ${weightedScore}% | Pesos: Crítico (5), Alto (3), Médio (1)`, pageWidth / 2, yPos, { align: 'center' });
 
   yPos += 12;
 
