@@ -21,26 +21,37 @@ interface ComplianceCheck {
   details?: string;
 }
 
-// Criar cliente HTTP que ignora verificação SSL (FortiGates usam certificados auto-assinados)
-const httpClient = Deno.createHttpClient({
-  caCerts: [],
-  // @ts-ignore - propriedade para ignorar verificação SSL
-  certVerification: "none",
-});
+// Função customizada para fazer fetch ignorando SSL (FortiGates usam certificados auto-assinados)
+async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
+  // Criar um cliente HTTP que ignora verificação de certificado
+  const client = Deno.createHttpClient({
+    caCerts: [],
+  });
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      // @ts-ignore - Deno permite passar client para ignorar SSL
+      client,
+    });
+    return response;
+  } finally {
+    // Fechar o cliente após uso
+    client.close();
+  }
+}
 
 // Função para fazer requisição à API do FortiGate
 async function fortigateRequest(config: FortiGateConfig, endpoint: string) {
   const url = `${config.url}/api/v2${endpoint}`;
   console.log(`Fetching: ${url}`);
   
-  const response = await fetch(url, {
+  const response = await fetchWithoutSSLVerification(url, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
     },
-    // @ts-ignore - cliente HTTP customizado para ignorar SSL
-    client: httpClient,
   });
 
   if (!response.ok) {
@@ -666,14 +677,12 @@ async function testFortiGateConnection(config: FortiGateConfig): Promise<{ succe
     const url = `${config.url}/api/v2/monitor/system/status`;
     console.log(`Testing connection to: ${url}`);
     
-    const response = await fetch(url, {
+    const response = await fetchWithoutSSLVerification(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
       },
-      // @ts-ignore - cliente HTTP customizado para ignorar SSL
-      client: httpClient,
     });
 
     if (!response.ok) {
