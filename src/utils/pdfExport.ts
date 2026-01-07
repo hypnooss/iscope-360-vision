@@ -25,11 +25,93 @@ const getSeverityText = (severity: string) => {
 const getStatusColor = (status: string): [number, number, number] => {
   switch (status) {
     case 'pass': return [34, 197, 94]; // green
-    case 'fail': return [239, 68, 68]; // red
-    case 'warning': return [234, 179, 8]; // yellow
+    case 'fail': return [220, 38, 38]; // red-600 (mais escuro para diferenciar)
+    case 'warning': return [245, 158, 11]; // amber-500 (mais laranja para diferenciar de falha)
     default: return [107, 114, 128]; // gray
   }
 };
+
+const getSeverityColor = (severity: string): [number, number, number] => {
+  switch (severity) {
+    case 'critical': return [220, 38, 38]; // red-600
+    case 'high': return [234, 88, 12]; // orange-600
+    case 'medium': return [202, 138, 4]; // yellow-600
+    case 'low': return [22, 163, 74]; // green-600
+    default: return [107, 114, 128]; // gray
+  }
+};
+
+// Calcular score ponderado por criticidade
+function calculateWeightedScore(checks: ComplianceCheck[]): number {
+  const weights = { critical: 5, high: 3, medium: 1, low: 1 };
+  
+  let totalWeight = 0;
+  let passedWeight = 0;
+  
+  for (const check of checks) {
+    const weight = weights[check.severity] || 1;
+    totalWeight += weight;
+    if (check.status === 'pass') {
+      passedWeight += weight;
+    }
+  }
+  
+  return totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
+}
+
+// Obter classificação de risco baseado no score
+function getRiskClassification(score: number): { label: string; color: [number, number, number] } {
+  if (score >= 80) return { label: 'Risco Baixo', color: [22, 163, 74] };
+  if (score >= 60) return { label: 'Risco Moderado', color: [202, 138, 4] };
+  if (score >= 40) return { label: 'Risco Elevado', color: [234, 88, 12] };
+  return { label: 'Risco Crítico', color: [220, 38, 38] };
+}
+
+// Calcular cobertura UTM
+function calculateUTMCoverage(report: ComplianceReport): { full: number; partial: number; total: number } {
+  const utmCategory = report.categories.find(c => c.name === 'Perfis de Segurança UTM');
+  if (!utmCategory) return { full: 0, partial: 0, total: 0 };
+  
+  // Extrair informações dos checks UTM
+  const ipsCheck = utmCategory.checks.find(c => c.id === 'utm-001');
+  const webFilterCheck = utmCategory.checks.find(c => c.id === 'utm-004');
+  const appControlCheck = utmCategory.checks.find(c => c.id === 'utm-007');
+  const avCheck = utmCategory.checks.find(c => c.id === 'utm-009');
+  
+  // Extrair total de políticas do rawData
+  const totalPolicies = Number(ipsCheck?.rawData?.total) || 0;
+  
+  // Contar políticas com cobertura completa (todos os 4 perfis)
+  const ipsCount = Number(ipsCheck?.rawData?.withIPS) || 0;
+  const webFilterCount = Number(webFilterCheck?.rawData?.withWebFilter) || 0;
+  const appControlCount = Number(appControlCheck?.rawData?.withAppControl) || 0;
+  const avCount = Number(avCheck?.rawData?.withAV) || 0;
+  
+  // Políticas com cobertura completa (estimativa: menor valor entre todos)
+  const fullCoverage = Math.min(ipsCount, webFilterCount, appControlCount, avCount);
+  
+  // Políticas com pelo menos algum perfil UTM
+  const partialCoverage = Math.max(ipsCount, webFilterCount, appControlCount, avCount) - fullCoverage;
+  
+  return { 
+    full: fullCoverage, 
+    partial: partialCoverage, 
+    total: Number(totalPolicies) || 0 
+  };
+}
+
+// Contar issues por severidade
+function countBySeverity(report: ComplianceReport): { critical: number; high: number; medium: number; low: number } {
+  const allChecks = report.categories.flatMap(c => c.checks);
+  const failedAndWarning = allChecks.filter(c => c.status === 'fail' || c.status === 'warning');
+  
+  return {
+    critical: failedAndWarning.filter(c => c.severity === 'critical').length,
+    high: failedAndWarning.filter(c => c.severity === 'high').length,
+    medium: failedAndWarning.filter(c => c.severity === 'medium').length,
+    low: failedAndWarning.filter(c => c.severity === 'low').length,
+  };
+}
 
 export function exportReportToPDF(report: ComplianceReport) {
   const doc = new jsPDF();
@@ -39,46 +121,171 @@ export function exportReportToPDF(report: ComplianceReport) {
   // Header
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 200, 200);
+  doc.setTextColor(0, 180, 180);
   doc.text('FortiGate Compliance Report', pageWidth / 2, yPos, { align: 'center' });
   
-  yPos += 15;
+  yPos += 12;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   doc.text(`Gerado em: ${report.generatedAt.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
 
-  // Score section
-  yPos += 20;
+  // ═══════════════════════════════════════════════════════════════
+  // BLOCO 1: Score de Compliance Geral (Ponderado)
+  // ═══════════════════════════════════════════════════════════════
+  yPos += 18;
+  
+  const allChecks = report.categories.flatMap(c => c.checks);
+  const weightedScore = calculateWeightedScore(allChecks);
+  const riskClass = getRiskClassification(weightedScore);
+  
+  // Box background
+  doc.setFillColor(245, 245, 250);
+  doc.roundedRect(14, yPos - 5, 55, 45, 3, 3, 'F');
+  
+  // Title
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(60, 60, 60);
+  doc.text('COMPLIANCE GERAL', 41.5, yPos + 2, { align: 'center' });
+  
+  // Score circle
+  const scoreColor = riskClass.color;
+  doc.setFillColor(scoreColor[0], scoreColor[1], scoreColor[2]);
+  doc.circle(41.5, yPos + 20, 12, 'F');
+  doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text('Resumo Executivo', 14, yPos);
-
-  yPos += 10;
+  doc.text(`${weightedScore}%`, 41.5, yPos + 23, { align: 'center' });
   
-  // Score circle approximation
-  const scoreColor = report.overallScore >= 70 ? [34, 197, 94] : report.overallScore >= 40 ? [234, 179, 8] : [239, 68, 68];
-  doc.setFillColor(scoreColor[0], scoreColor[1], scoreColor[2]);
-  doc.circle(35, yPos + 15, 18, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
+  // Risk label
+  doc.setFontSize(9);
+  doc.setTextColor(scoreColor[0], scoreColor[1], scoreColor[2]);
   doc.setFont('helvetica', 'bold');
-  doc.text(`${report.overallScore}%`, 35, yPos + 18, { align: 'center' });
-  
-  // Stats
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(11);
-  const statsStartX = 70;
-  doc.text(`Total de Verificações: ${report.totalChecks}`, statsStartX, yPos + 5);
-  doc.setTextColor(34, 197, 94);
-  doc.text(`Aprovadas: ${report.passed}`, statsStartX, yPos + 13);
-  doc.setTextColor(239, 68, 68);
-  doc.text(`Falhas: ${report.failed}`, statsStartX, yPos + 21);
-  doc.setTextColor(234, 179, 8);
-  doc.text(`Alertas: ${report.warnings}`, statsStartX, yPos + 29);
+  doc.text(riskClass.label, 41.5, yPos + 38, { align: 'center' });
 
-  yPos += 45;
+  // ═══════════════════════════════════════════════════════════════
+  // BLOCO 2: Exposição ao Risco
+  // ═══════════════════════════════════════════════════════════════
+  const severityCounts = countBySeverity(report);
+  
+  // Box background
+  doc.setFillColor(245, 245, 250);
+  doc.roundedRect(74, yPos - 5, 55, 45, 3, 3, 'F');
+  
+  // Title
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(60, 60, 60);
+  doc.text('EXPOSIÇÃO AO RISCO', 101.5, yPos + 2, { align: 'center' });
+  
+  // Risk counts
+  const riskItems = [
+    { label: 'Críticos', count: severityCounts.critical, color: [220, 38, 38] as [number, number, number] },
+    { label: 'Altos', count: severityCounts.high, color: [234, 88, 12] as [number, number, number] },
+    { label: 'Médios', count: severityCounts.medium, color: [202, 138, 4] as [number, number, number] },
+  ];
+  
+  let riskY = yPos + 14;
+  for (const item of riskItems) {
+    // Icon circle
+    doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+    doc.circle(82, riskY, 3, 'F');
+    
+    // Count
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(item.color[0], item.color[1], item.color[2]);
+    doc.text(String(item.count), 89, riskY + 1);
+    
+    // Label
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    doc.text(item.label, 97, riskY + 1);
+    
+    riskY += 10;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // BLOCO 3: Cobertura de Segurança (UTM)
+  // ═══════════════════════════════════════════════════════════════
+  const utmCoverage = calculateUTMCoverage(report);
+  
+  // Box background
+  doc.setFillColor(245, 245, 250);
+  doc.roundedRect(134, yPos - 5, 62, 45, 3, 3, 'F');
+  
+  // Title
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(60, 60, 60);
+  doc.text('COBERTURA UTM', 165, yPos + 2, { align: 'center' });
+  
+  // UTM stats
+  let utmY = yPos + 14;
+  
+  // Full coverage
+  doc.setFillColor(22, 163, 74);
+  doc.circle(142, utmY, 3, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(22, 163, 74);
+  doc.text(`${utmCoverage.full}/${utmCoverage.total}`, 150, utmY + 1);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('UTM Completo', 168, utmY + 1);
+  
+  utmY += 10;
+  
+  // Partial coverage
+  doc.setFillColor(202, 138, 4);
+  doc.circle(142, utmY, 3, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(202, 138, 4);
+  doc.text(`${utmCoverage.partial}/${utmCoverage.total}`, 150, utmY + 1);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('UTM Parcial', 168, utmY + 1);
+  
+  utmY += 10;
+  
+  // No coverage
+  const noCoverage = utmCoverage.total - utmCoverage.full - utmCoverage.partial;
+  doc.setFillColor(220, 38, 38);
+  doc.circle(142, utmY, 3, 'F');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(220, 38, 38);
+  doc.text(`${noCoverage}/${utmCoverage.total}`, 150, utmY + 1);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('Sem UTM', 168, utmY + 1);
+
+  yPos += 50;
+
+  // ═══════════════════════════════════════════════════════════════
+  // Stats Row
+  // ═══════════════════════════════════════════════════════════════
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  
+  const statsText = `Total: ${report.totalChecks} verificações  |  ✓ ${report.passed} aprovadas  |  ✗ ${report.failed} falhas  |  ⚠ ${report.warnings} alertas`;
+  doc.text(statsText, pageWidth / 2, yPos, { align: 'center' });
+  
+  yPos += 5;
+  
+  // Score explanation
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text('* Score ponderado: Crítico (peso 5), Alto (peso 3), Médio (peso 1)', pageWidth / 2, yPos, { align: 'center' });
+
+  yPos += 12;
 
   // Categories summary
   doc.setTextColor(0, 0, 0);
@@ -119,7 +326,7 @@ export function exportReportToPDF(report: ComplianceReport) {
 
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(239, 68, 68);
+    doc.setTextColor(220, 38, 38);
     doc.text('Problemas Críticos e de Alta Prioridade', 14, yPos);
     yPos += 5;
 
@@ -144,6 +351,16 @@ export function exportReportToPDF(report: ComplianceReport) {
         3: { cellWidth: 55 },
       },
       margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 1) {
+          const severity = criticalIssues[data.row.index]?.severity;
+          if (severity) {
+            const color = getSeverityColor(severity);
+            data.cell.styles.textColor = color;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
     });
 
     yPos = (doc as any).lastAutoTable.finalY + 15;
@@ -185,12 +402,19 @@ export function exportReportToPDF(report: ComplianceReport) {
       },
       margin: { left: 14, right: 14 },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 0) {
-          const status = category.checks[data.row.index]?.status;
-          if (status) {
-            const color = getStatusColor(status);
-            data.cell.styles.textColor = color;
-            data.cell.styles.fontStyle = 'bold';
+        if (data.section === 'body') {
+          const check = category.checks[data.row.index];
+          if (check) {
+            if (data.column.index === 0) {
+              const color = getStatusColor(check.status);
+              data.cell.styles.textColor = color;
+              data.cell.styles.fontStyle = 'bold';
+            }
+            if (data.column.index === 2) {
+              const color = getSeverityColor(check.severity);
+              data.cell.styles.textColor = color;
+              data.cell.styles.fontStyle = 'bold';
+            }
           }
         }
       },

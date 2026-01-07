@@ -512,13 +512,17 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
     const policiesWithoutIPS = (policies.results || []).filter((p: any) => !p['ips-sensor']);
     const totalPolicies = (policies.results || []).length;
     
+    // IPS parcial = High (não crítico, pois há alguma cobertura)
+    const ipsStatus = policiesWithIPS.length === 0 ? 'fail' : 
+                      policiesWithIPS.length < totalPolicies * 0.7 ? 'warning' : 'pass';
+    
     checks.push({
       id: 'utm-001',
       name: 'Perfil IPS/IDS Ativo',
       description: 'Verifica se perfis de Intrusion Prevention estão aplicados nas políticas',
       category: 'Perfis de Segurança UTM',
-      status: policiesWithIPS.length < totalPolicies * 0.7 ? 'warning' : 'pass',
-      severity: 'critical',
+      status: ipsStatus,
+      severity: 'high',
       recommendation: policiesWithIPS.length < totalPolicies
         ? 'Aplicar perfil IPS em todas as regras de tráfego de entrada'
         : 'Manter configuração atual',
@@ -565,13 +569,17 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
     const policiesWithAppCtrl = (policies.results || []).filter((p: any) => p['application-list']);
     const policiesWithoutAppCtrl = (policies.results || []).filter((p: any) => !p['application-list']);
     
+    // Application Control = High (ajustado de médio para alto)
+    const appCtrlStatus = policiesWithAppCtrl.length === 0 ? 'fail' :
+                          policiesWithAppCtrl.length < totalPolicies * 0.5 ? 'warning' : 'pass';
+    
     checks.push({
       id: 'utm-007',
       name: 'Application Control Ativo',
       description: 'Verifica se controle de aplicações está aplicado nas políticas',
       category: 'Perfis de Segurança UTM',
-      status: policiesWithAppCtrl.length < totalPolicies * 0.5 ? 'warning' : 'pass',
-      severity: 'medium',
+      status: appCtrlStatus,
+      severity: 'high',
       recommendation: policiesWithAppCtrl.length < totalPolicies
         ? 'Aplicar Application Control para visibilidade e controle de aplicações'
         : 'Manter configuração atual',
