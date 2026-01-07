@@ -10,6 +10,12 @@ interface FortiGateConfig {
   apiKey: string;
 }
 
+interface EvidenceItem {
+  label: string;
+  value: string;
+  type?: 'text' | 'code' | 'list' | 'json';
+}
+
 interface ComplianceCheck {
   id: string;
   name: string;
@@ -19,6 +25,9 @@ interface ComplianceCheck {
   severity: 'critical' | 'high' | 'medium' | 'low';
   recommendation?: string;
   details?: string;
+  evidence?: EvidenceItem[];
+  rawData?: Record<string, unknown>;
+  apiEndpoint?: string;
 }
 
 // Função customizada para fazer fetch ignorando SSL (FortiGates usam certificados auto-assinados)
@@ -70,21 +79,28 @@ async function checkInsecureProtocols(config: FortiGateConfig): Promise<Complian
   try {
     const interfaces = await fortigateRequest(config, '/cmdb/system/interface');
     
-    const insecureHttpInterfaces: string[] = [];
-    const insecureTelnetInterfaces: string[] = [];
-    const sshWanInterfaces: string[] = [];
+    const insecureHttpInterfaces: { name: string; allowaccess: string }[] = [];
+    const insecureTelnetInterfaces: { name: string; allowaccess: string }[] = [];
+    const sshWanInterfaces: { name: string; type: string; role: string; allowaccess: string }[] = [];
+    const allInterfacesData: { name: string; allowaccess: string; type: string; role: string }[] = [];
     
     for (const iface of interfaces.results || []) {
       const allowAccess = iface.allowaccess || '';
+      allInterfacesData.push({
+        name: iface.name,
+        allowaccess: allowAccess,
+        type: iface.type || 'N/A',
+        role: iface.role || 'N/A',
+      });
       
       if (allowAccess.includes('http') && !allowAccess.includes('https')) {
-        insecureHttpInterfaces.push(iface.name);
+        insecureHttpInterfaces.push({ name: iface.name, allowaccess: allowAccess });
       }
       if (allowAccess.includes('telnet')) {
-        insecureTelnetInterfaces.push(iface.name);
+        insecureTelnetInterfaces.push({ name: iface.name, allowaccess: allowAccess });
       }
       if (iface.type === 'physical' && iface.role === 'wan' && allowAccess.includes('ssh')) {
-        sshWanInterfaces.push(iface.name);
+        sshWanInterfaces.push({ name: iface.name, type: iface.type, role: iface.role, allowaccess: allowAccess });
       }
     }
     
@@ -99,8 +115,21 @@ async function checkInsecureProtocols(config: FortiGateConfig): Promise<Complian
         ? 'Desabilitar HTTP e utilizar apenas HTTPS para acesso administrativo'
         : 'Manter configuração atual',
       details: insecureHttpInterfaces.length > 0
-        ? `HTTP habilitado nas interfaces: ${insecureHttpInterfaces.join(', ')}`
+        ? `HTTP habilitado nas interfaces: ${insecureHttpInterfaces.map(i => i.name).join(', ')}`
         : 'Nenhuma interface com HTTP inseguro',
+      apiEndpoint: '/api/v2/cmdb/system/interface',
+      evidence: insecureHttpInterfaces.length > 0
+        ? insecureHttpInterfaces.map(i => ({
+            label: `Interface: ${i.name}`,
+            value: `allowaccess: ${i.allowaccess}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Interfaces analisadas',
+            value: `${allInterfacesData.length} interfaces verificadas - nenhuma com HTTP inseguro`,
+            type: 'text' as const,
+          }],
+      rawData: { interfaces: insecureHttpInterfaces.length > 0 ? insecureHttpInterfaces : allInterfacesData.slice(0, 5) },
     });
     
     checks.push({
@@ -114,8 +143,21 @@ async function checkInsecureProtocols(config: FortiGateConfig): Promise<Complian
         ? 'Desabilitar Telnet imediatamente e utilizar apenas SSH'
         : 'Manter configuração atual',
       details: insecureTelnetInterfaces.length > 0
-        ? `Telnet habilitado nas interfaces: ${insecureTelnetInterfaces.join(', ')}`
+        ? `Telnet habilitado nas interfaces: ${insecureTelnetInterfaces.map(i => i.name).join(', ')}`
         : 'Telnet desabilitado em todas as interfaces',
+      apiEndpoint: '/api/v2/cmdb/system/interface',
+      evidence: insecureTelnetInterfaces.length > 0
+        ? insecureTelnetInterfaces.map(i => ({
+            label: `Interface: ${i.name}`,
+            value: `allowaccess: ${i.allowaccess}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Interfaces analisadas',
+            value: `${allInterfacesData.length} interfaces verificadas - nenhuma com Telnet`,
+            type: 'text' as const,
+          }],
+      rawData: { interfaces: insecureTelnetInterfaces.length > 0 ? insecureTelnetInterfaces : allInterfacesData.slice(0, 5) },
     });
     
     checks.push({
@@ -129,8 +171,21 @@ async function checkInsecureProtocols(config: FortiGateConfig): Promise<Complian
         ? 'Restringir acesso SSH apenas a IPs de gerenciamento confiáveis'
         : 'Manter configuração atual',
       details: sshWanInterfaces.length > 0
-        ? `SSH habilitado em interfaces WAN: ${sshWanInterfaces.join(', ')}`
+        ? `SSH habilitado em interfaces WAN: ${sshWanInterfaces.map(i => i.name).join(', ')}`
         : 'SSH não exposto em interfaces WAN',
+      apiEndpoint: '/api/v2/cmdb/system/interface',
+      evidence: sshWanInterfaces.length > 0
+        ? sshWanInterfaces.map(i => ({
+            label: `Interface: ${i.name}`,
+            value: `type: ${i.type}, role: ${i.role}, allowaccess: ${i.allowaccess}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Interfaces WAN analisadas',
+            value: `Nenhuma interface WAN com SSH exposto`,
+            type: 'text' as const,
+          }],
+      rawData: { wanInterfaces: sshWanInterfaces },
     });
   } catch (error) {
     console.error('Error checking interfaces:', error);
@@ -142,51 +197,61 @@ async function checkInsecureProtocols(config: FortiGateConfig): Promise<Complian
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/system/interface',
     });
   }
   
   return checks;
 }
 
-// Verificar regras de firewall
 async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
   try {
     const policies = await fortigateRequest(config, '/cmdb/firewall/policy');
     
-    const anySourceRules: string[] = [];
-    const rdpExposed: string[] = [];
-    const smbExposed: string[] = [];
-    const anyAnyRules: string[] = [];
+    const anySourceRules: { id: string; name: string; srcaddr: string; srcintf: string }[] = [];
+    const rdpExposed: { id: string; name: string; srcaddr: string; service: string }[] = [];
+    const smbExposed: { id: string; name: string; srcaddr: string; service: string }[] = [];
+    const anyAnyRules: { id: string; name: string; srcaddr: string; dstaddr: string }[] = [];
+    const totalPoliciesData: { id: string; name: string; srcaddr: string; dstaddr: string; service: string }[] = [];
     
     for (const policy of policies.results || []) {
       const srcaddr = policy.srcaddr?.map((s: any) => s.name).join(',') || '';
       const dstaddr = policy.dstaddr?.map((d: any) => d.name).join(',') || '';
       const service = policy.service?.map((s: any) => s.name).join(',') || '';
+      const srcintf = policy.srcintf?.map((i: any) => i.name).join(',') || '';
+      
+      totalPoliciesData.push({
+        id: `#${policy.policyid}`,
+        name: policy.name || 'Sem nome',
+        srcaddr,
+        dstaddr,
+        service,
+      });
       
       // Regras de entrada sem restrição
-      if (srcaddr.includes('all') && policy.srcintf?.[0]?.name?.toLowerCase().includes('wan')) {
-        anySourceRules.push(`Regra #${policy.policyid}`);
+      if (srcaddr.includes('all') && srcintf.toLowerCase().includes('wan')) {
+        anySourceRules.push({ id: `#${policy.policyid}`, name: policy.name || 'Sem nome', srcaddr, srcintf });
       }
       
       // RDP exposto
       if (service.toLowerCase().includes('rdp') || service.includes('3389')) {
         if (srcaddr.includes('all')) {
-          rdpExposed.push(`Regra #${policy.policyid}`);
+          rdpExposed.push({ id: `#${policy.policyid}`, name: policy.name || 'Sem nome', srcaddr, service });
         }
       }
       
       // SMB exposto
       if (service.toLowerCase().includes('smb') || service.includes('445') || service.includes('139')) {
         if (srcaddr.includes('all')) {
-          smbExposed.push(`Regra #${policy.policyid}`);
+          smbExposed.push({ id: `#${policy.policyid}`, name: policy.name || 'Sem nome', srcaddr, service });
         }
       }
       
       // Regras any-any
       if (srcaddr.includes('all') && dstaddr.includes('all')) {
-        anyAnyRules.push(`Regra #${policy.policyid}`);
+        anyAnyRules.push({ id: `#${policy.policyid}`, name: policy.name || 'Sem nome', srcaddr, dstaddr });
       }
     }
     
@@ -201,8 +266,21 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
         ? 'Restringir origem das regras para IPs ou ranges específicos'
         : 'Manter configuração atual',
       details: anySourceRules.length > 0
-        ? `${anySourceRules.length} regras com source "all": ${anySourceRules.join(', ')}`
+        ? `${anySourceRules.length} regras com source "all": ${anySourceRules.map(r => r.id).join(', ')}`
         : 'Todas as regras possuem origem restrita',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: anySourceRules.length > 0
+        ? anySourceRules.map(r => ({
+            label: `Regra ${r.id}: ${r.name}`,
+            value: `srcaddr: ${r.srcaddr}, srcintf: ${r.srcintf}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Políticas analisadas',
+            value: `${totalPoliciesData.length} regras verificadas - nenhuma com source "all" em interface WAN`,
+            type: 'text' as const,
+          }],
+      rawData: { rules: anySourceRules.length > 0 ? anySourceRules : { total: totalPoliciesData.length } },
     });
     
     checks.push({
@@ -216,8 +294,21 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
         ? 'Remover acesso RDP direto da internet. Utilizar VPN ou bastion host'
         : 'Manter configuração atual',
       details: rdpExposed.length > 0
-        ? `RDP exposto: ${rdpExposed.join(', ')}`
+        ? `RDP exposto: ${rdpExposed.map(r => r.id).join(', ')}`
         : 'RDP não exposto para internet',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: rdpExposed.length > 0
+        ? rdpExposed.map(r => ({
+            label: `Regra ${r.id}: ${r.name}`,
+            value: `srcaddr: ${r.srcaddr}, service: ${r.service}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Verificação RDP',
+            value: `Nenhuma regra encontrada com RDP/3389 exposto para "all"`,
+            type: 'text' as const,
+          }],
+      rawData: { rules: rdpExposed },
     });
     
     checks.push({
@@ -231,8 +322,21 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
         ? 'Bloquear imediatamente portas SMB da internet'
         : 'Manter configuração atual',
       details: smbExposed.length > 0
-        ? `SMB exposto: ${smbExposed.join(', ')}`
+        ? `SMB exposto: ${smbExposed.map(r => r.id).join(', ')}`
         : 'SMB não exposto para internet',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: smbExposed.length > 0
+        ? smbExposed.map(r => ({
+            label: `Regra ${r.id}: ${r.name}`,
+            value: `srcaddr: ${r.srcaddr}, service: ${r.service}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Verificação SMB',
+            value: `Nenhuma regra encontrada com SMB/445/139 exposto para "all"`,
+            type: 'text' as const,
+          }],
+      rawData: { rules: smbExposed },
     });
     
     checks.push({
@@ -246,8 +350,21 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
         ? 'Remover ou restringir regras any-any identificadas'
         : 'Manter configuração atual',
       details: anyAnyRules.length > 0
-        ? `${anyAnyRules.length} regras any-any: ${anyAnyRules.join(', ')}`
+        ? `${anyAnyRules.length} regras any-any: ${anyAnyRules.map(r => r.id).join(', ')}`
         : 'Nenhuma regra any-any encontrada',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: anyAnyRules.length > 0
+        ? anyAnyRules.map(r => ({
+            label: `Regra ${r.id}: ${r.name}`,
+            value: `srcaddr: ${r.srcaddr}, dstaddr: ${r.dstaddr}`,
+            type: 'code' as const,
+          }))
+        : [{
+            label: 'Verificação Any-Any',
+            value: `${totalPoliciesData.length} regras verificadas - nenhuma com srcaddr="all" E dstaddr="all"`,
+            type: 'text' as const,
+          }],
+      rawData: { rules: anyAnyRules.length > 0 ? anyAnyRules : { total: totalPoliciesData.length } },
     });
   } catch (error) {
     console.error('Error checking firewall rules:', error);
@@ -259,6 +376,7 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
     });
   }
   
@@ -278,6 +396,8 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
     
     // 2FA
     const adminsWithout2FA = adminList.filter((a: any) => a['two-factor'] === 'disable');
+    const adminsWith2FA = adminList.filter((a: any) => a['two-factor'] !== 'disable');
+    
     checks.push({
       id: 'sec-002',
       name: 'Autenticação de Dois Fatores',
@@ -291,10 +411,30 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
       details: adminsWithout2FA.length > 0
         ? `${adminList.length - adminsWithout2FA.length} de ${adminList.length} administradores possuem 2FA`
         : 'Todos os administradores possuem 2FA habilitado',
+      apiEndpoint: '/api/v2/cmdb/system/admin',
+      evidence: adminsWithout2FA.length > 0
+        ? adminsWithout2FA.map((a: any) => ({
+            label: `Admin: ${a.name}`,
+            value: `two-factor: ${a['two-factor'] || 'disable'}, accprofile: ${a.accprofile || 'N/A'}`,
+            type: 'code' as const,
+          }))
+        : adminList.map((a: any) => ({
+            label: `Admin: ${a.name}`,
+            value: `two-factor: ${a['two-factor'] || 'N/A'}, accprofile: ${a.accprofile || 'N/A'}`,
+            type: 'code' as const,
+          })),
+      rawData: { 
+        totalAdmins: adminList.length,
+        with2FA: adminsWith2FA.length,
+        without2FA: adminsWithout2FA.length,
+        admins: adminList.map((a: any) => ({ name: a.name, twoFactor: a['two-factor'], accprofile: a.accprofile })),
+      },
     });
     
     // Timeout de sessão
     const adminTimeout = settings['admin-lockout-threshold'] || 0;
+    const admintimeout = settings.admintimeout || 'N/A';
+    
     checks.push({
       id: 'sec-003',
       name: 'Timeout de Sessão',
@@ -306,10 +446,21 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
         ? 'Reduzir timeout de sessão para 15-30 minutos'
         : 'Manter configuração atual',
       details: `Timeout atual: ${adminTimeout} minutos`,
+      apiEndpoint: '/api/v2/cmdb/system/global',
+      evidence: [{
+        label: 'Configuração de Timeout',
+        value: `admin-lockout-threshold: ${adminTimeout}, admintimeout: ${admintimeout}`,
+        type: 'code' as const,
+      }],
+      rawData: { 
+        adminLockoutThreshold: adminTimeout,
+        admintimeout,
+      },
     });
     
     // Política de senha
     const strongCrypto = settings['strong-crypto'] === 'enable';
+    
     checks.push({
       id: 'sec-001',
       name: 'Criptografia Forte',
@@ -320,6 +471,16 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
       recommendation: !strongCrypto
         ? 'Habilitar strong-crypto para forçar uso de algoritmos seguros'
         : 'Manter configuração atual',
+      apiEndpoint: '/api/v2/cmdb/system/global',
+      evidence: [{
+        label: 'Configuração de Criptografia',
+        value: `strong-crypto: ${settings['strong-crypto'] || 'disable'}`,
+        type: 'code' as const,
+      }],
+      rawData: { 
+        strongCrypto: settings['strong-crypto'],
+        sslMinProtoVersion: settings['ssl-min-proto-version'],
+      },
     });
   } catch (error) {
     console.error('Error checking admin security:', error);
@@ -331,6 +492,7 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/system/admin',
     });
   }
   
@@ -347,6 +509,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
     const policies = await fortigateRequest(config, '/cmdb/firewall/policy');
     
     const policiesWithIPS = (policies.results || []).filter((p: any) => p['ips-sensor']);
+    const policiesWithoutIPS = (policies.results || []).filter((p: any) => !p['ips-sensor']);
     const totalPolicies = (policies.results || []).length;
     
     checks.push({
@@ -360,10 +523,22 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         ? 'Aplicar perfil IPS em todas as regras de tráfego de entrada'
         : 'Manter configuração atual',
       details: `IPS aplicado em ${policiesWithIPS.length} de ${totalPolicies} políticas`,
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: [
+        { label: 'Com IPS', value: policiesWithIPS.map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'} (${p['ips-sensor']})`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem IPS', value: policiesWithoutIPS.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+      ],
+      rawData: { 
+        total: totalPolicies,
+        withIPS: policiesWithIPS.length,
+        ipsProfiles: (ipsProfiles.results || []).map((p: any) => p.name),
+      },
     });
     
     // Web Filter
     const policiesWithWebFilter = (policies.results || []).filter((p: any) => p['webfilter-profile']);
+    const policiesWithoutWebFilter = (policies.results || []).filter((p: any) => !p['webfilter-profile']);
+    
     checks.push({
       id: 'utm-004',
       name: 'Web Filter Ativo',
@@ -375,10 +550,21 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         ? 'Aplicar Web Filter em todas as políticas de acesso à internet'
         : 'Manter configuração atual',
       details: `Web Filter aplicado em ${policiesWithWebFilter.length} de ${totalPolicies} políticas`,
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: [
+        { label: 'Com WebFilter', value: policiesWithWebFilter.map((p: any) => `#${p.policyid}: ${p['webfilter-profile']}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem WebFilter', value: policiesWithoutWebFilter.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+      ],
+      rawData: { 
+        total: totalPolicies,
+        withWebFilter: policiesWithWebFilter.length,
+      },
     });
     
     // Application Control
     const policiesWithAppCtrl = (policies.results || []).filter((p: any) => p['application-list']);
+    const policiesWithoutAppCtrl = (policies.results || []).filter((p: any) => !p['application-list']);
+    
     checks.push({
       id: 'utm-007',
       name: 'Application Control Ativo',
@@ -390,10 +576,21 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         ? 'Aplicar Application Control para visibilidade e controle de aplicações'
         : 'Manter configuração atual',
       details: `Application Control aplicado em ${policiesWithAppCtrl.length} de ${totalPolicies} políticas`,
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: [
+        { label: 'Com AppControl', value: policiesWithAppCtrl.map((p: any) => `#${p.policyid}: ${p['application-list']}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem AppControl', value: policiesWithoutAppCtrl.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+      ],
+      rawData: { 
+        total: totalPolicies,
+        withAppControl: policiesWithAppCtrl.length,
+      },
     });
     
     // Antivírus
     const policiesWithAV = (policies.results || []).filter((p: any) => p['av-profile']);
+    const policiesWithoutAV = (policies.results || []).filter((p: any) => !p['av-profile']);
+    
     checks.push({
       id: 'utm-009',
       name: 'Antivírus de Gateway',
@@ -405,6 +602,15 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         ? 'Aplicar perfil de antivírus em todas as políticas'
         : 'Manter configuração atual',
       details: `Antivírus aplicado em ${policiesWithAV.length} de ${totalPolicies} políticas`,
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
+      evidence: [
+        { label: 'Com Antivírus', value: policiesWithAV.map((p: any) => `#${p.policyid}: ${p['av-profile']}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem Antivírus', value: policiesWithoutAV.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+      ],
+      rawData: { 
+        total: totalPolicies,
+        withAV: policiesWithAV.length,
+      },
     });
   } catch (error) {
     console.error('Error checking UTM profiles:', error);
@@ -416,6 +622,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       status: 'pending',
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/cmdb/firewall/policy',
     });
   }
   
