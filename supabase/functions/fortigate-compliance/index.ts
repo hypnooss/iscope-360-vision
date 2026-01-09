@@ -504,15 +504,65 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
   const checks: ComplianceCheck[] = [];
   
   try {
+    // Buscar interfaces para identificar WAN e SDWAN
+    const interfaces = await fortigateRequest(config, '/cmdb/system/interface');
+    const sdwanZones = await fortigateRequest(config, '/cmdb/system/sdwan').catch(() => ({ results: [] }));
+    
+    // Identificar interfaces de saída para internet (WAN ou SDWAN)
+    const wanInterfaces = new Set<string>();
+    const sdwanInterfaceNames = new Set<string>();
+    
+    // Interfaces com role WAN
+    for (const iface of interfaces.results || []) {
+      if (iface.role === 'wan') {
+        wanInterfaces.add(iface.name);
+      }
+    }
+    
+    // Interfaces do SDWAN (membros e zones)
+    const sdwanConfig = sdwanZones.results || {};
+    const sdwanMembers = sdwanConfig.members || [];
+    for (const member of sdwanMembers) {
+      if (member.interface) {
+        sdwanInterfaceNames.add(member.interface);
+        wanInterfaces.add(member.interface);
+      }
+    }
+    
+    // Zones SDWAN
+    const sdwanZoneList = sdwanConfig.zone || [];
+    for (const zone of sdwanZoneList) {
+      if (zone.name) {
+        wanInterfaces.add(zone.name);
+      }
+    }
+    
+    // Também incluir "virtual-wan-link" usado em versões antigas
+    wanInterfaces.add('virtual-wan-link');
+    
+    console.log('WAN/SDWAN interfaces identificadas:', Array.from(wanInterfaces));
+    
     // IPS
     const ipsProfiles = await fortigateRequest(config, '/cmdb/ips/sensor');
     const policies = await fortigateRequest(config, '/cmdb/firewall/policy');
     
-    const policiesWithIPS = (policies.results || []).filter((p: any) => p['ips-sensor']);
-    const policiesWithoutIPS = (policies.results || []).filter((p: any) => !p['ips-sensor']);
-    const totalPolicies = (policies.results || []).length;
+    const allPolicies = policies.results || [];
+    const totalPolicies = allPolicies.length;
     
-    // IPS parcial = High (não crítico, pois há alguma cobertura)
+    // Filtrar políticas de saída para internet (destino WAN/SDWAN)
+    const internetOutboundPolicies = allPolicies.filter((p: any) => {
+      const dstintf = p.dstintf?.map((i: any) => i.name) || [];
+      return dstintf.some((ifname: string) => wanInterfaces.has(ifname));
+    });
+    
+    const totalInternetPolicies = internetOutboundPolicies.length;
+    
+    console.log(`Políticas de saída internet: ${totalInternetPolicies} de ${totalPolicies} total`);
+    
+    // IPS - considera todas as políticas (entrada e saída)
+    const policiesWithIPS = allPolicies.filter((p: any) => p['ips-sensor']);
+    const policiesWithoutIPS = allPolicies.filter((p: any) => !p['ips-sensor']);
+    
     const ipsStatus = policiesWithIPS.length === 0 ? 'fail' : 
                       policiesWithIPS.length < totalPolicies * 0.7 ? 'warning' : 'pass';
     
@@ -539,59 +589,69 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       },
     });
     
-    // Web Filter
-    const policiesWithWebFilter = (policies.results || []).filter((p: any) => p['webfilter-profile']);
-    const policiesWithoutWebFilter = (policies.results || []).filter((p: any) => !p['webfilter-profile']);
+    // Web Filter - APENAS políticas de saída para internet (WAN/SDWAN)
+    const internetPoliciesWithWebFilter = internetOutboundPolicies.filter((p: any) => p['webfilter-profile']);
+    const internetPoliciesWithoutWebFilter = internetOutboundPolicies.filter((p: any) => !p['webfilter-profile']);
+    
+    const webFilterStatus = totalInternetPolicies === 0 ? 'pass' :
+                            internetPoliciesWithWebFilter.length === 0 ? 'fail' :
+                            internetPoliciesWithWebFilter.length < totalInternetPolicies * 0.5 ? 'warning' : 'pass';
     
     checks.push({
       id: 'utm-004',
       name: 'Web Filter Ativo',
-      description: 'Verifica se filtro de conteúdo web está aplicado nas políticas de saída',
+      description: 'Verifica se filtro de conteúdo web está aplicado nas políticas de saída para internet (WAN/SDWAN)',
       category: 'Perfis de Segurança UTM',
-      status: policiesWithWebFilter.length < totalPolicies * 0.5 ? 'warning' : 'pass',
+      status: webFilterStatus,
       severity: 'high',
-      recommendation: policiesWithWebFilter.length < totalPolicies
+      recommendation: internetPoliciesWithWebFilter.length < totalInternetPolicies
         ? 'Aplicar Web Filter em todas as políticas de acesso à internet'
         : 'Manter configuração atual',
-      details: `Web Filter aplicado em ${policiesWithWebFilter.length} de ${totalPolicies} políticas`,
+      details: `Web Filter aplicado em ${internetPoliciesWithWebFilter.length} de ${totalInternetPolicies} políticas de saída internet`,
       apiEndpoint: '/api/v2/cmdb/firewall/policy',
       evidence: [
-        { label: 'Com WebFilter', value: policiesWithWebFilter.map((p: any) => `#${p.policyid}: ${p['webfilter-profile']}`).join(', ') || 'Nenhuma', type: 'text' as const },
-        { label: 'Sem WebFilter', value: policiesWithoutWebFilter.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaces).join(', ') || 'Nenhuma identificada', type: 'text' as const },
+        { label: 'Com WebFilter', value: internetPoliciesWithWebFilter.map((p: any) => `#${p.policyid}: ${p['webfilter-profile']}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem WebFilter', value: internetPoliciesWithoutWebFilter.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
       ],
       rawData: { 
         total: totalPolicies,
-        withWebFilter: policiesWithWebFilter.length,
+        internetPolicies: totalInternetPolicies,
+        withWebFilter: internetPoliciesWithWebFilter.length,
+        wanInterfaces: Array.from(wanInterfaces),
       },
     });
     
-    // Application Control
-    const policiesWithAppCtrl = (policies.results || []).filter((p: any) => p['application-list']);
-    const policiesWithoutAppCtrl = (policies.results || []).filter((p: any) => !p['application-list']);
+    // Application Control - APENAS políticas de saída para internet (WAN/SDWAN)
+    const internetPoliciesWithAppCtrl = internetOutboundPolicies.filter((p: any) => p['application-list']);
+    const internetPoliciesWithoutAppCtrl = internetOutboundPolicies.filter((p: any) => !p['application-list']);
     
-    // Application Control = High (ajustado de médio para alto)
-    const appCtrlStatus = policiesWithAppCtrl.length === 0 ? 'fail' :
-                          policiesWithAppCtrl.length < totalPolicies * 0.5 ? 'warning' : 'pass';
+    const appCtrlStatus = totalInternetPolicies === 0 ? 'pass' :
+                          internetPoliciesWithAppCtrl.length === 0 ? 'fail' :
+                          internetPoliciesWithAppCtrl.length < totalInternetPolicies * 0.5 ? 'warning' : 'pass';
     
     checks.push({
       id: 'utm-007',
       name: 'Application Control Ativo',
-      description: 'Verifica se controle de aplicações está aplicado nas políticas',
+      description: 'Verifica se controle de aplicações está aplicado nas políticas de saída para internet (WAN/SDWAN)',
       category: 'Perfis de Segurança UTM',
       status: appCtrlStatus,
       severity: 'high',
-      recommendation: policiesWithAppCtrl.length < totalPolicies
-        ? 'Aplicar Application Control para visibilidade e controle de aplicações'
+      recommendation: internetPoliciesWithAppCtrl.length < totalInternetPolicies
+        ? 'Aplicar Application Control para visibilidade e controle de aplicações de internet'
         : 'Manter configuração atual',
-      details: `Application Control aplicado em ${policiesWithAppCtrl.length} de ${totalPolicies} políticas`,
+      details: `Application Control aplicado em ${internetPoliciesWithAppCtrl.length} de ${totalInternetPolicies} políticas de saída internet`,
       apiEndpoint: '/api/v2/cmdb/firewall/policy',
       evidence: [
-        { label: 'Com AppControl', value: policiesWithAppCtrl.map((p: any) => `#${p.policyid}: ${p['application-list']}`).join(', ') || 'Nenhuma', type: 'text' as const },
-        { label: 'Sem AppControl', value: policiesWithoutAppCtrl.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaces).join(', ') || 'Nenhuma identificada', type: 'text' as const },
+        { label: 'Com AppControl', value: internetPoliciesWithAppCtrl.map((p: any) => `#${p.policyid}: ${p['application-list']}`).join(', ') || 'Nenhuma', type: 'text' as const },
+        { label: 'Sem AppControl', value: internetPoliciesWithoutAppCtrl.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
       ],
       rawData: { 
         total: totalPolicies,
-        withAppControl: policiesWithAppCtrl.length,
+        internetPolicies: totalInternetPolicies,
+        withAppControl: internetPoliciesWithAppCtrl.length,
+        wanInterfaces: Array.from(wanInterfaces),
       },
     });
     

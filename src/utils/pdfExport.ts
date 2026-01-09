@@ -67,7 +67,7 @@ function getRiskClassification(score: number): { label: string; color: [number, 
   return { label: 'Risco Crítico', color: [220, 38, 38] };
 }
 
-// Calcular cobertura UTM
+// Calcular cobertura UTM (baseado em políticas de saída internet)
 function calculateUTMCoverage(report: ComplianceReport): { full: number; partial: number; total: number } {
   const utmCategory = report.categories.find(c => c.name === 'Perfis de Segurança UTM');
   if (!utmCategory) return { full: 0, partial: 0, total: 0 };
@@ -78,25 +78,31 @@ function calculateUTMCoverage(report: ComplianceReport): { full: number; partial
   const appControlCheck = utmCategory.checks.find(c => c.id === 'utm-007');
   const avCheck = utmCategory.checks.find(c => c.id === 'utm-009');
   
-  // Extrair total de políticas do rawData
-  const totalPolicies = Number(ipsCheck?.rawData?.total) || 0;
+  // Para WebFilter e AppControl, usar políticas de internet
+  // Para IPS e AV, usar todas as políticas
+  const totalInternetPolicies = Number(webFilterCheck?.rawData?.internetPolicies) || 0;
+  const totalAllPolicies = Number(ipsCheck?.rawData?.total) || 0;
   
-  // Contar políticas com cobertura completa (todos os 4 perfis)
-  const ipsCount = Number(ipsCheck?.rawData?.withIPS) || 0;
+  // Usar o total de políticas de internet como base para UTM de saída
+  const totalPolicies = totalInternetPolicies > 0 ? totalInternetPolicies : totalAllPolicies;
+  
+  // Contar cobertura UTM
   const webFilterCount = Number(webFilterCheck?.rawData?.withWebFilter) || 0;
   const appControlCount = Number(appControlCheck?.rawData?.withAppControl) || 0;
   const avCount = Number(avCheck?.rawData?.withAV) || 0;
   
-  // Políticas com cobertura completa (estimativa: menor valor entre todos)
-  const fullCoverage = Math.min(ipsCount, webFilterCount, appControlCount, avCount);
+  // Para políticas de saída internet: WebFilter + AppControl + AV
+  // Cobertura completa = todos os 3 perfis aplicados
+  const fullCoverage = Math.min(webFilterCount, appControlCount, avCount);
   
   // Políticas com pelo menos algum perfil UTM
-  const partialCoverage = Math.max(ipsCount, webFilterCount, appControlCount, avCount) - fullCoverage;
+  const maxCoverage = Math.max(webFilterCount, appControlCount, avCount);
+  const partialCoverage = maxCoverage - fullCoverage;
   
   return { 
     full: fullCoverage, 
     partial: partialCoverage, 
-    total: Number(totalPolicies) || 0 
+    total: totalPolicies
   };
 }
 
