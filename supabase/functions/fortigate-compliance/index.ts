@@ -603,7 +603,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       description: 'Verifica se filtro de conteúdo web está aplicado nas políticas de saída para internet (WAN/SDWAN)',
       category: 'Perfis de Segurança UTM',
       status: webFilterStatus,
-      severity: 'high',
+      severity: 'medium',
       recommendation: internetPoliciesWithWebFilter.length < totalInternetPolicies
         ? 'Aplicar Web Filter em todas as políticas de acesso à internet'
         : 'Manter configuração atual',
@@ -636,7 +636,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       description: 'Verifica se controle de aplicações está aplicado nas políticas de saída para internet (WAN/SDWAN)',
       category: 'Perfis de Segurança UTM',
       status: appCtrlStatus,
-      severity: 'high',
+      severity: 'medium',
       recommendation: internetPoliciesWithAppCtrl.length < totalInternetPolicies
         ? 'Aplicar Application Control para visibilidade e controle de aplicações de internet'
         : 'Manter configuração atual',
@@ -665,7 +665,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       description: 'Verifica se antivírus está habilitado para escanear arquivos',
       category: 'Perfis de Segurança UTM',
       status: policiesWithAV.length < totalPolicies * 0.5 ? 'warning' : 'pass',
-      severity: 'critical',
+      severity: 'high',
       recommendation: policiesWithAV.length < totalPolicies
         ? 'Aplicar perfil de antivírus em todas as políticas'
         : 'Manter configuração atual',
