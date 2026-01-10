@@ -41,4 +41,5 @@ export interface ComplianceReport {
   warnings: number;
   categories: ComplianceCategory[];
   generatedAt: Date;
+  firmwareVersion?: string;
 }

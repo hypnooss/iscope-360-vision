@@ -1448,6 +1448,10 @@ serve(async (req) => {
     // Score = 100 - pontos de falha (mínimo 0)
     const calculatedScore = Math.max(0, 100 - failedPoints);
     
+    // Extrair versão do firmware para CVE lookup
+    const firmwareCheck = allChecks.find(c => c.id === 'FIRMWARE_001');
+    const firmwareVersion = firmwareCheck?.rawData?.version as string || '';
+    
     const report = {
       overallScore: calculatedScore,
       totalChecks: allChecks.length,
@@ -1456,6 +1460,7 @@ serve(async (req) => {
       warnings,
       categories: categoryData,
       generatedAt: new Date().toISOString(),
+      firmwareVersion,
     };
     
     console.log(`Compliance check completed: ${passed}/${allChecks.length} passed`);
