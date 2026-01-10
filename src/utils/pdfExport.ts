@@ -61,10 +61,10 @@ function calculateWeightedScore(checks: ComplianceCheck[]): number {
 
 // Obter classificação de risco baseado no score
 function getRiskClassification(score: number): { label: string; color: [number, number, number] } {
-  if (score >= 80) return { label: 'Risco Baixo', color: [22, 163, 74] };
-  if (score >= 60) return { label: 'Risco Moderado', color: [202, 138, 4] };
-  if (score >= 40) return { label: 'Risco Elevado', color: [234, 88, 12] };
-  return { label: 'Risco Crítico', color: [220, 38, 38] };
+  if (score >= 90) return { label: 'EXCELENTE', color: [34, 197, 94] };
+  if (score >= 75) return { label: 'BOM', color: [74, 222, 128] };
+  if (score >= 60) return { label: 'ATENÇÃO', color: [234, 179, 8] };
+  return { label: 'RISCO ALTO', color: [239, 68, 68] };
 }
 
 // Calcular cobertura UTM (baseado em políticas de saída internet)
@@ -292,7 +292,7 @@ export function exportReportToPDF(report: ComplianceReport) {
   // Informação sobre cálculo do score
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text(`Score Ponderado | Pesos: Crítico (5), Alto (3), Médio (1)`, pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Score = 100 - Pontos de Falha | Pesos: Crítico (5), Alto (3), Médio (1)`, pageWidth / 2, yPos, { align: 'center' });
 
   yPos += 12;
 

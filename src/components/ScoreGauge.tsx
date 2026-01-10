@@ -32,15 +32,17 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
   const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
   
   const getColor = () => {
-    if (score >= 80) return 'hsl(var(--success))';
+    if (score >= 90) return 'hsl(var(--success))';
+    if (score >= 75) return 'hsl(142, 71%, 45%)'; // Verde mais claro para "Bom"
     if (score >= 60) return 'hsl(var(--warning))';
     return 'hsl(var(--destructive))';
   };
 
   const getLabel = () => {
-    if (score >= 80) return 'Excelente';
+    if (score >= 90) return 'Excelente';
+    if (score >= 75) return 'Bom';
     if (score >= 60) return 'Atenção';
-    return 'Crítico';
+    return 'Risco Alto';
   };
 
   return (

@@ -1433,24 +1433,23 @@ serve(async (req) => {
       };
     }).filter(cat => cat.checks.length > 0);
     
-    // Calcular score ponderado por severidade
-    // Pesos: Critical = 5, High = 3, Medium = 1, Low = 1
-    const weights: Record<string, number> = { critical: 5, high: 3, medium: 1, low: 1 };
-    let totalWeight = 0;
-    let passedWeight = 0;
+    // Calcular score: 100 - pontos de falha
+    // Pesos: Critical = 5, High = 3, Medium = 1, Low = 0
+    const weights: Record<string, number> = { critical: 5, high: 3, medium: 1, low: 0 };
+    let failedPoints = 0;
     
     for (const check of allChecks) {
-      const weight = weights[check.severity] || 1;
-      totalWeight += weight;
-      if (check.status === 'pass') {
-        passedWeight += weight;
+      if (check.status === 'fail' || check.status === 'warning') {
+        const weight = weights[check.severity] || 0;
+        failedPoints += weight;
       }
     }
     
-    const weightedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100) : 0;
+    // Score = 100 - pontos de falha (mínimo 0)
+    const calculatedScore = Math.max(0, 100 - failedPoints);
     
     const report = {
-      overallScore: weightedScore,
+      overallScore: calculatedScore,
       totalChecks: allChecks.length,
       passed,
       failed,
