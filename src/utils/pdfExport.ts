@@ -137,14 +137,14 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.text(`Gerado em: ${report.generatedAt.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
 
   // ═══════════════════════════════════════════════════════════════
-  // BLOCO 1: Score de Compliance Geral (mesmo do dashboard)
+  // BLOCO 1: Score de Compliance Geral (ponderado - mesmo do dashboard)
   // ═══════════════════════════════════════════════════════════════
   yPos += 18;
   
   const allChecks = report.categories.flatMap(c => c.checks);
-  const weightedScore = calculateWeightedScore(allChecks);
   
-  // Usar o score do report (mesmo do dashboard)
+  // O score do report já é ponderado (calculado na edge function)
+  // Usar o mesmo score do dashboard para consistência
   const displayScore = report.overallScore;
   const riskClass = getRiskClassification(displayScore);
   
@@ -289,10 +289,10 @@ export function exportReportToPDF(report: ComplianceReport) {
   
   yPos += 5;
   
-  // Score ponderado como informação adicional
+  // Informação sobre cálculo do score
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text(`Score Ponderado (risco): ${weightedScore}% | Pesos: Crítico (5), Alto (3), Médio (1)`, pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Score Ponderado | Pesos: Crítico (5), Alto (3), Médio (1)`, pageWidth / 2, yPos, { align: 'center' });
 
   yPos += 12;
 
