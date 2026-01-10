@@ -2,6 +2,7 @@ import { ComplianceReport } from '@/types/compliance';
 import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
+import { CVESection } from './CVESection';
 import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { exportReportToPDF } from '@/utils/pdfExport';
@@ -113,6 +114,13 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* CVE Section */}
+        {report.firmwareVersion && (
+          <div className="mb-8">
+            <CVESection firmwareVersion={report.firmwareVersion} />
           </div>
         )}
 
