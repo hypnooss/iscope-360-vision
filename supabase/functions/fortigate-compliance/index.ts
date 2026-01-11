@@ -934,12 +934,24 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     
     currentVersion = currentVersion || 'Desconhecida';
     
-    const serial = status.serial || 'N/A';
-    const hostname = status.hostname || 'N/A';
-    const model = status.model_name || status.model || 'N/A';
-    const modelNumber = status.model_number || '';
-    const uptime = status.uptime || 'N/A';
-    const build = status.build || global.build || 'N/A';
+    // Buscar serial de múltiplos campos possíveis
+    const serial = status.serial || status.serial_number || status.sn || global.serial || '';
+    const hostname = status.hostname || global.hostname || '';
+    const model = status.model_name || status.model || global.model || '';
+    
+    // Uptime pode vir em diferentes formatos: segundos, string formatada, ou objeto
+    let uptimeStr = '';
+    if (status.uptime !== undefined && status.uptime !== null) {
+      if (typeof status.uptime === 'number') {
+        // Converter segundos para formato legível
+        const days = Math.floor(status.uptime / 86400);
+        const hours = Math.floor((status.uptime % 86400) / 3600);
+        const minutes = Math.floor((status.uptime % 3600) / 60);
+        uptimeStr = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+      } else {
+        uptimeStr = String(status.uptime);
+      }
+    }
     
     // Determinar versão recomendada com base no modelo
     const recommendedVersion = FORTINET_RECOMMENDED_VERSIONS[model] || FORTINET_RECOMMENDED_VERSIONS['default'];
@@ -959,6 +971,19 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       details = `Versão atual: ${rawVersion || 'Não identificada'}`;
     }
     
+    // Montar evidence apenas com campos que têm valor
+    const evidence: EvidenceItem[] = [
+      { label: 'Versão FortiOS Atual', value: currentVersion || rawVersion || 'Não identificada', type: 'text' as const },
+      { label: 'Versão Recomendada Fortinet', value: recommendedVersion, type: 'text' as const },
+      { label: 'Status', value: versionStatus === 'up-to-date' ? '✅ Atualizado' : versionStatus === 'outdated' ? '❌ Desatualizado' : '⚠️ Verificar manualmente', type: 'text' as const },
+    ];
+    
+    if (model) evidence.push({ label: 'Modelo', value: model, type: 'text' as const });
+    if (hostname) evidence.push({ label: 'Hostname', value: hostname, type: 'text' as const });
+    if (serial) evidence.push({ label: 'Serial Number', value: serial, type: 'code' as const });
+    if (uptimeStr) evidence.push({ label: 'Uptime', value: uptimeStr, type: 'text' as const });
+    evidence.push({ label: 'Fonte da recomendação', value: 'Fortinet Community - Technical Tip (Dezembro 2025)', type: 'text' as const });
+    
     checks.push({
       id: 'upd-001',
       name: 'Versão do Firmware',
@@ -969,17 +994,7 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       details,
       recommendation,
       apiEndpoint: '/api/v2/monitor/system/status',
-      evidence: [
-        { label: 'Versão FortiOS Atual', value: currentVersion || rawVersion || 'Não identificada', type: 'text' as const },
-        { label: 'Versão Recomendada Fortinet', value: recommendedVersion, type: 'text' as const },
-        { label: 'Status', value: versionStatus === 'up-to-date' ? '✅ Atualizado' : versionStatus === 'outdated' ? '❌ Desatualizado' : '⚠️ Verificar manualmente', type: 'text' as const },
-        { label: 'Modelo', value: model, type: 'text' as const },
-        { label: 'Build', value: String(build), type: 'text' as const },
-        { label: 'Hostname', value: hostname, type: 'text' as const },
-        { label: 'Serial Number', value: serial, type: 'code' as const },
-        { label: 'Uptime', value: String(uptime), type: 'text' as const },
-        { label: 'Fonte da recomendação', value: 'Fortinet Community - Technical Tip (Dezembro 2025)', type: 'text' as const },
-      ],
+      evidence,
       rawData: {
         version: currentVersion,
         rawVersion,
@@ -988,8 +1003,7 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
         serial,
         hostname,
         model,
-        uptime,
-        build,
+        uptime: uptimeStr,
         source: 'https://community.fortinet.com/t5/FortiGate/Technical-Tip-Recommended-Release-for-FortiOS/ta-p/227178',
       },
     });
