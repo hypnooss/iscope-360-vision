@@ -1449,7 +1449,7 @@ serve(async (req) => {
     const calculatedScore = Math.max(0, 100 - failedPoints);
     
     // Extrair versão do firmware para CVE lookup
-    const firmwareCheck = allChecks.find(c => c.id === 'FIRMWARE_001');
+    const firmwareCheck = allChecks.find(c => c.id === 'upd-001');
     const firmwareVersion = firmwareCheck?.rawData?.version as string || '';
     
     const report = {

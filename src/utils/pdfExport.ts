@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { ComplianceReport, ComplianceCheck } from '@/types/compliance';
+import { ComplianceReport, ComplianceCheck, CVEInfo } from '@/types/compliance';
 
 const getStatusText = (status: string) => {
   switch (status) {
@@ -320,6 +320,93 @@ export function exportReportToPDF(report: ComplianceReport) {
   });
 
   yPos = (doc as any).lastAutoTable.finalY + 15;
+
+  // ═══════════════════════════════════════════════════════════════
+  // CVE Section (if available)
+  // ═══════════════════════════════════════════════════════════════
+  if (report.cves && report.cves.length > 0) {
+    // Check if we need a new page
+    if (yPos > 200) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    const criticalCVEs = report.cves.filter(c => c.severity === 'CRITICAL').length;
+    const highCVEs = report.cves.filter(c => c.severity === 'HIGH').length;
+    const mediumCVEs = report.cves.filter(c => c.severity === 'MEDIUM').length;
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(128, 0, 128); // Purple
+    doc.text(`CVEs Conhecidos - FortiOS ${report.firmwareVersion || ''}`, 14, yPos);
+    yPos += 6;
+    
+    // CVE Summary
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Total: ${report.cves.length} CVEs | ${criticalCVEs} Críticos | ${highCVEs} Altos | ${mediumCVEs} Médios`, 14, yPos);
+    yPos += 4;
+    
+    // Disclaimer
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Fonte: NIST NVD. Verifique advisories oficiais da Fortinet para informações precisas.', 14, yPos);
+    yPos += 5;
+
+    const cveData = report.cves.slice(0, 15).map(cve => [
+      cve.id,
+      cve.severity,
+      cve.score.toFixed(1),
+      new Date(cve.publishedDate).toLocaleDateString('pt-BR'),
+      (cve.description || '-').substring(0, 60) + ((cve.description?.length || 0) > 60 ? '...' : '')
+    ]);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['CVE ID', 'Severidade', 'Score', 'Publicado', 'Descrição']],
+      body: cveData,
+      theme: 'striped',
+      headStyles: { fillColor: [128, 0, 128], textColor: 255 },
+      styles: { fontSize: 7, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: 28, fontStyle: 'bold' },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 15 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 89 },
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 1) {
+          const cve = report.cves![data.row.index];
+          if (cve) {
+            const severity = cve.severity.toUpperCase();
+            if (severity === 'CRITICAL') {
+              data.cell.styles.textColor = [220, 38, 38];
+              data.cell.styles.fontStyle = 'bold';
+            } else if (severity === 'HIGH') {
+              data.cell.styles.textColor = [234, 88, 12];
+              data.cell.styles.fontStyle = 'bold';
+            } else if (severity === 'MEDIUM') {
+              data.cell.styles.textColor = [202, 138, 4];
+            }
+          }
+        }
+      },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 10;
+    
+    if (report.cves.length > 15) {
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`... e mais ${report.cves.length - 15} CVEs. Consulte o NIST NVD para lista completa.`, 14, yPos);
+      yPos += 10;
+    }
+  }
+
+  yPos += 5;
 
   // Critical and High issues
   const criticalIssues = report.categories.flatMap(cat => 

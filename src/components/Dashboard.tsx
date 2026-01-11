@@ -1,4 +1,5 @@
-import { ComplianceReport } from '@/types/compliance';
+import { useState } from 'react';
+import { ComplianceReport, CVEInfo } from '@/types/compliance';
 import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
@@ -16,9 +17,16 @@ interface DashboardProps {
 }
 
 export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: DashboardProps) {
+  const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
+
+  const handleCVEsLoaded = (cves: CVEInfo[]) => {
+    setLoadedCVEs(cves);
+  };
+
   const handleExportPDF = () => {
     try {
-      exportReportToPDF(report);
+      const reportWithCVEs = { ...report, cves: loadedCVEs };
+      exportReportToPDF(reportWithCVEs);
       toast.success('PDF exportado com sucesso!');
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -120,7 +128,10 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
         {/* CVE Section */}
         {report.firmwareVersion && (
           <div className="mb-8">
-            <CVESection firmwareVersion={report.firmwareVersion} />
+            <CVESection 
+              firmwareVersion={report.firmwareVersion} 
+              onCVEsLoaded={handleCVEsLoaded}
+            />
           </div>
         )}
 

@@ -42,4 +42,15 @@ export interface ComplianceReport {
   categories: ComplianceCategory[];
   generatedAt: Date;
   firmwareVersion?: string;
+  cves?: CVEInfo[];
+}
+
+export interface CVEInfo {
+  id: string;
+  description: string;
+  severity: string;
+  score: number;
+  publishedDate: string;
+  lastModifiedDate: string;
+  references: string[];
 }
