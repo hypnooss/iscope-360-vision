@@ -971,16 +971,16 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       details = `Versão atual: ${rawVersion || 'Não identificada'}`;
     }
     
-    // Montar evidence apenas com campos que têm valor
+    // Montar evidence - Serial Number sempre aparece
     const evidence: EvidenceItem[] = [
       { label: 'Versão FortiOS Atual', value: currentVersion || rawVersion || 'Não identificada', type: 'text' as const },
       { label: 'Versão Recomendada Fortinet', value: recommendedVersion, type: 'text' as const },
       { label: 'Status', value: versionStatus === 'up-to-date' ? '✅ Atualizado' : versionStatus === 'outdated' ? '❌ Desatualizado' : '⚠️ Verificar manualmente', type: 'text' as const },
+      { label: 'Modelo', value: model || 'Não identificado', type: 'text' as const },
+      { label: 'Hostname', value: hostname || 'Não identificado', type: 'text' as const },
+      { label: 'Serial Number', value: serial || 'Não identificado', type: 'code' as const },
     ];
     
-    if (model) evidence.push({ label: 'Modelo', value: model, type: 'text' as const });
-    if (hostname) evidence.push({ label: 'Hostname', value: hostname, type: 'text' as const });
-    if (serial) evidence.push({ label: 'Serial Number', value: serial, type: 'code' as const });
     if (uptimeStr) evidence.push({ label: 'Uptime', value: uptimeStr, type: 'text' as const });
     evidence.push({ label: 'Fonte da recomendação', value: 'Fortinet Community - Technical Tip (Dezembro 2025)', type: 'text' as const });
     
@@ -1018,6 +1018,198 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       severity: 'high',
       details: error instanceof Error ? error.message : 'Erro desconhecido',
       apiEndpoint: '/api/v2/monitor/system/status',
+    });
+  }
+  
+  return checks;
+}
+
+// Verificar Licenças FortiGuard e Suporte
+async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<ComplianceCheck[]> {
+  const checks: ComplianceCheck[] = [];
+  
+  try {
+    // Buscar status das licenças FortiGuard
+    const licenseStatus = await fortigateRequest(config, '/monitor/license/status');
+    const licenses = licenseStatus.results || licenseStatus || {};
+    
+    console.log('License status response:', JSON.stringify(licenses, null, 2));
+    
+    // Mapear nomes de serviços para exibição
+    const serviceNames: Record<string, string> = {
+      'forticare': 'FortiCare Support',
+      'fortiguard': 'FortiGuard Services',
+      'antivirus': 'Antivírus',
+      'ips': 'IPS (Intrusion Prevention)',
+      'webfilter': 'Web Filter',
+      'appctrl': 'Application Control',
+      'antispam': 'AntiSpam',
+      'industrial_db': 'Industrial Database',
+      'security_rating': 'Security Rating',
+      'botnet_domain': 'Botnet Domain',
+      'botnet_ip': 'Botnet IP',
+      'malicious_urls': 'Malicious URLs',
+      'mobile_malware': 'Mobile Malware',
+      'outbreak_prevention': 'Outbreak Prevention',
+      'device_os_id': 'Device/OS Identification',
+      'fsa_sandbox': 'FortiSandbox Cloud',
+      'fsae': 'FortiSandbox',
+      'faz_cloud': 'FortiAnalyzer Cloud',
+      'fgd_wf': 'FortiGuard Web Filter',
+    };
+    
+    // Verificar FortiCare/Suporte
+    const forticareInfo = licenses.forticare || licenses.support || {};
+    const supportStatus = forticareInfo.status || forticareInfo.entitlement || 'unknown';
+    const supportExpiry = forticareInfo.expires || forticareInfo.expiry_date || '';
+    
+    let supportActive = false;
+    let supportDaysRemaining = 0;
+    let supportExpiryDate = '';
+    
+    if (supportExpiry) {
+      const expiryDate = new Date(supportExpiry * 1000); // Unix timestamp
+      supportExpiryDate = expiryDate.toLocaleDateString('pt-BR');
+      supportDaysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      supportActive = supportDaysRemaining > 0;
+    } else if (supportStatus === 'licensed' || supportStatus === 'valid' || supportStatus === 'active') {
+      supportActive = true;
+    }
+    
+    let supportCheckStatus: 'pass' | 'fail' | 'warning' = 'pass';
+    let supportDetails = 'Suporte FortiCare ativo';
+    let supportRecommendation = 'Manter contrato de suporte ativo';
+    
+    if (!supportActive) {
+      supportCheckStatus = 'fail';
+      supportDetails = 'Suporte FortiCare EXPIRADO ou não identificado';
+      supportRecommendation = 'Renovar contrato FortiCare imediatamente para ter acesso a atualizações e suporte técnico';
+    } else if (supportDaysRemaining > 0 && supportDaysRemaining <= 30) {
+      supportCheckStatus = 'warning';
+      supportDetails = `Suporte FortiCare expira em ${supportDaysRemaining} dias (${supportExpiryDate})`;
+      supportRecommendation = 'Renovar contrato FortiCare antes da expiração';
+    } else if (supportDaysRemaining > 30) {
+      supportDetails = `Suporte FortiCare ativo até ${supportExpiryDate} (${supportDaysRemaining} dias restantes)`;
+    }
+    
+    const supportEvidence: EvidenceItem[] = [
+      { label: 'Status', value: supportActive ? '✅ Ativo' : '❌ Expirado/Inativo', type: 'text' as const },
+    ];
+    if (supportExpiryDate) {
+      supportEvidence.push({ label: 'Data de Expiração', value: supportExpiryDate, type: 'text' as const });
+      supportEvidence.push({ label: 'Dias Restantes', value: supportDaysRemaining > 0 ? String(supportDaysRemaining) : 'Expirado', type: 'text' as const });
+    }
+    
+    checks.push({
+      id: 'lic-001',
+      name: 'Suporte FortiCare',
+      description: 'Verifica se o contrato de suporte FortiCare está ativo',
+      category: 'Licenciamento',
+      status: supportCheckStatus,
+      severity: 'critical',
+      details: supportDetails,
+      recommendation: supportRecommendation,
+      apiEndpoint: '/api/v2/monitor/license/status',
+      evidence: supportEvidence,
+      rawData: { forticare: forticareInfo, daysRemaining: supportDaysRemaining },
+    });
+    
+    // Verificar licenças de segurança FortiGuard
+    const securityServices = ['antivirus', 'ips', 'webfilter', 'appctrl', 'antispam'];
+    const activeServices: string[] = [];
+    const expiredServices: string[] = [];
+    const expiringServices: string[] = [];
+    const licenseEvidence: EvidenceItem[] = [];
+    
+    for (const service of securityServices) {
+      const serviceInfo = licenses[service] || {};
+      const status = serviceInfo.status || serviceInfo.entitlement || 'unknown';
+      const expiry = serviceInfo.expires || serviceInfo.expiry_date || 0;
+      const serviceName = serviceNames[service] || service;
+      
+      let isActive = false;
+      let daysRemaining = 0;
+      let expiryDateStr = '';
+      
+      if (expiry) {
+        const expiryDate = new Date(expiry * 1000);
+        expiryDateStr = expiryDate.toLocaleDateString('pt-BR');
+        daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        isActive = daysRemaining > 0;
+      } else if (status === 'licensed' || status === 'valid' || status === 'active') {
+        isActive = true;
+      }
+      
+      if (isActive) {
+        if (daysRemaining > 0 && daysRemaining <= 30) {
+          expiringServices.push(serviceName);
+          licenseEvidence.push({ 
+            label: serviceName, 
+            value: `⚠️ Expira em ${daysRemaining} dias (${expiryDateStr})`, 
+            type: 'text' as const 
+          });
+        } else {
+          activeServices.push(serviceName);
+          licenseEvidence.push({ 
+            label: serviceName, 
+            value: expiryDateStr ? `✅ Ativo até ${expiryDateStr}` : '✅ Ativo', 
+            type: 'text' as const 
+          });
+        }
+      } else {
+        expiredServices.push(serviceName);
+        licenseEvidence.push({ 
+          label: serviceName, 
+          value: '❌ Expirado/Inativo', 
+          type: 'text' as const 
+        });
+      }
+    }
+    
+    let licenseCheckStatus: 'pass' | 'fail' | 'warning' = 'pass';
+    let licenseDetails = `${activeServices.length + expiringServices.length} de ${securityServices.length} serviços FortiGuard ativos`;
+    let licenseRecommendation = 'Manter todas as licenças FortiGuard atualizadas';
+    
+    if (expiredServices.length > 0) {
+      licenseCheckStatus = 'fail';
+      licenseDetails = `${expiredServices.length} serviços FortiGuard expirados: ${expiredServices.join(', ')}`;
+      licenseRecommendation = 'Renovar licenças FortiGuard expiradas para manter proteção ativa';
+    } else if (expiringServices.length > 0) {
+      licenseCheckStatus = 'warning';
+      licenseDetails = `${expiringServices.length} serviços expirando em breve: ${expiringServices.join(', ')}`;
+      licenseRecommendation = 'Renovar licenças FortiGuard antes da expiração';
+    }
+    
+    checks.push({
+      id: 'lic-002',
+      name: 'Licenças FortiGuard',
+      description: 'Verifica status das licenças de segurança FortiGuard (AV, IPS, WebFilter, AppControl)',
+      category: 'Licenciamento',
+      status: licenseCheckStatus,
+      severity: 'high',
+      details: licenseDetails,
+      recommendation: licenseRecommendation,
+      apiEndpoint: '/api/v2/monitor/license/status',
+      evidence: licenseEvidence,
+      rawData: { 
+        active: activeServices, 
+        expired: expiredServices, 
+        expiring: expiringServices,
+        licenses 
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error checking licenses:', error);
+    checks.push({
+      id: 'lic-err',
+      name: 'Erro ao verificar licenças',
+      description: 'Não foi possível verificar o status das licenças',
+      category: 'Licenciamento',
+      status: 'pending',
+      severity: 'high',
+      details: error instanceof Error ? error.message : 'Erro desconhecido',
+      apiEndpoint: '/api/v2/monitor/license/status',
     });
   }
   
@@ -1397,6 +1589,7 @@ serve(async (req) => {
       firmwareChecks,
       vpnChecks,
       loggingChecks,
+      licenseChecks,
     ] = await Promise.all([
       checkInsecureProtocols(config),
       checkFirewallRules(config),
@@ -1406,6 +1599,7 @@ serve(async (req) => {
       checkFirmware(config),
       checkVPN(config),
       checkLogging(config),
+      checkFortiGuardLicenses(config),
     ]);
     
     const allChecks = [
@@ -1417,6 +1611,7 @@ serve(async (req) => {
       ...vpnChecks,
       ...loggingChecks,
       ...firmwareChecks,
+      ...licenseChecks,
     ];
     
     const passed = allChecks.filter(c => c.status === 'pass').length;
@@ -1433,6 +1628,7 @@ serve(async (req) => {
       'Backup e Recovery',
       'Configuração VPN',
       'Logging e Monitoramento',
+      'Licenciamento',
       'Atualizações',
     ];
     
@@ -1505,6 +1701,7 @@ function getCategoryIcon(category: string): string {
     'Backup e Recovery': 'hardDrive',
     'Configuração VPN': 'lock',
     'Logging e Monitoramento': 'activity',
+    'Licenciamento': 'key',
     'Atualizações': 'download',
   };
   return icons[category] || 'check';
