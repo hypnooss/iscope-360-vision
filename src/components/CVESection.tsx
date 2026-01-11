@@ -3,23 +3,15 @@ import { Shield, ExternalLink, AlertTriangle, Loader2, Info, ChevronDown, Chevro
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-
-interface CVE {
-  id: string;
-  description: string;
-  severity: string;
-  score: number;
-  publishedDate: string;
-  lastModifiedDate: string;
-  references: string[];
-}
+import { CVEInfo } from '@/types/compliance';
 
 interface CVESectionProps {
   firmwareVersion: string;
+  onCVEsLoaded?: (cves: CVEInfo[]) => void;
 }
 
-export function CVESection({ firmwareVersion }: CVESectionProps) {
-  const [cves, setCves] = useState<CVE[]>([]);
+export function CVESection({ firmwareVersion, onCVEsLoaded }: CVESectionProps) {
+  const [cves, setCves] = useState<CVEInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -41,7 +33,9 @@ export function CVESection({ firmwareVersion }: CVESectionProps) {
       }
 
       if (data.success) {
-        setCves(data.cves || []);
+        const loadedCves = data.cves || [];
+        setCves(loadedCves);
+        onCVEsLoaded?.(loadedCves);
       } else {
         throw new Error(data.error || 'Failed to fetch CVEs');
       }
