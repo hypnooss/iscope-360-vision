@@ -1,213 +1,97 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
-import { ConnectionForm } from '@/components/ConnectionForm';
-import { Dashboard } from '@/components/Dashboard';
-import { ComplianceReport } from '@/types/compliance';
-import { generateMockReport } from '@/data/mockCompliance';
-import { Shield, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
-import { toast } from 'sonner';
-
-// Helper to check if Supabase is configured
-const isSupabaseConfigured = () => {
-  return !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-};
-
-// Dynamic import of supabase client only when configured
-const getSupabaseClient = async () => {
-  if (!isSupabaseConfigured()) {
-    return null;
-  }
-  const { supabase } = await import('@/integrations/supabase/client');
-  return supabase;
-};
+import { Shield, CheckCircle2, AlertTriangle, TrendingUp, LogIn } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [report, setReport] = useState<ComplianceReport | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [connectionConfig, setConnectionConfig] = useState<{ url: string; apiKey: string } | null>(null);
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
 
-  const handleDisconnect = () => {
-    setReport(null);
-    setIsConnected(false);
-    setConnectionConfig(null);
-    toast.info('Desconectado do FortiGate');
-  };
-
-  const handleConnect = async (url: string, apiKey: string) => {
-    setIsConnecting(true);
-    setConnectionConfig({ url, apiKey });
-    
-    try {
-      const supabase = await getSupabaseClient();
-      
-      if (!supabase) {
-        // Supabase not configured, use mock data
-        console.log('Supabase not configured, using mock data');
-        toast.info('Modo demonstração', {
-          description: 'Usando dados de exemplo',
-        });
-        setReport(generateMockReport());
-        setIsConnected(true);
-        setIsConnecting(false);
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
-        body: { url, apiKey },
-      });
-
-      if (error) {
-        console.error('Edge function error:', error);
-        toast.error('Erro ao conectar', {
-          description: error.message || 'Não foi possível conectar ao FortiGate',
-        });
-        setConnectionConfig(null);
-        setIsConnecting(false);
-        return;
-      } else if (data.error) {
-        console.error('FortiGate API error:', data.error);
-        toast.error('Erro na API FortiGate', {
-          description: data.details || data.error,
-        });
-        setConnectionConfig(null);
-        setIsConnecting(false);
-        return;
-      } else {
-        const reportData: ComplianceReport = {
-          ...data,
-          generatedAt: new Date(data.generatedAt),
-        };
-        setReport(reportData);
-        setIsConnected(true);
-        toast.success('Análise concluída!', {
-          description: `${data.passed} de ${data.totalChecks} verificações aprovadas`,
-        });
-      }
-    } catch (err) {
-      console.error('Connection error:', err);
-      toast.error('Erro de conexão', {
-        description: 'Verifique a URL e API Key fornecidas',
-      });
-      setConnectionConfig(null);
-    } finally {
-      setIsConnecting(false);
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/dashboard');
     }
-  };
+  }, [user, loading, navigate]);
 
-  const handleRefresh = async () => {
-    if (!connectionConfig) {
-      setReport(generateMockReport());
-      return;
-    }
-
-    setIsRefreshing(true);
-    
-    try {
-      const supabase = await getSupabaseClient();
-      
-      if (!supabase) {
-        setReport(generateMockReport());
-        toast.info('Dados atualizados (demonstração)');
-        setIsRefreshing(false);
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
-        body: connectionConfig,
-      });
-
-      if (error || data.error) {
-        toast.error('Erro ao atualizar', {
-          description: 'Usando dados anteriores',
-        });
-      } else {
-        const reportData: ComplianceReport = {
-          ...data,
-          generatedAt: new Date(data.generatedAt),
-        };
-        setReport(reportData);
-        toast.success('Análise atualizada!');
-      }
-    } catch (err) {
-      console.error('Refresh error:', err);
-      toast.error('Erro ao atualizar');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      {!report ? (
-        <main className="px-6 py-12">
-          {/* Hero Section */}
-          <div className="max-w-4xl mx-auto text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in">
-              <Shield className="w-4 h-4" />
-              Ferramenta de Auditoria FortiGate
-            </div>
-            <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-              Valide seu Firewall em
-              <span className="text-primary"> Minutos</span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.2s' }}>
-              Conecte-se ao seu FortiGate e receba uma análise completa de compliance, 
-              segurança e boas práticas com recomendações acionáveis.
-            </p>
+      <main className="px-6 py-12">
+        {/* Hero Section */}
+        <div className="max-w-4xl mx-auto text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in">
+            <Shield className="w-4 h-4" />
+            Ferramenta de Auditoria FortiGate
           </div>
+          <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+            Valide seu Firewall em
+            <span className="text-primary"> Minutos</span>
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.2s' }}>
+            Conecte-se ao seu FortiGate e receba uma análise completa de compliance, 
+            segurança e boas práticas com recomendações acionáveis.
+          </p>
+        </div>
 
-          {/* Features Grid */}
-          <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            {[
-              {
-                icon: CheckCircle2,
-                title: 'Verificações Automáticas',
-                description: 'Mais de 50 pontos de verificação baseados em boas práticas',
-              },
-              {
-                icon: AlertTriangle,
-                title: 'Detecção de Riscos',
-                description: 'Identifica vulnerabilidades e configurações inseguras',
-              },
-              {
-                icon: TrendingUp,
-                title: 'Recomendações',
-                description: 'Sugestões práticas para melhorar sua postura de segurança',
-              },
-            ].map((feature, index) => (
-              <div 
-                key={feature.title}
-                className="glass-card rounded-xl p-6 text-center animate-fade-in"
-                style={{ animationDelay: `${0.3 + index * 0.1}s` }}
-              >
-                <div className="inline-flex p-3 rounded-lg bg-primary/10 mb-4">
-                  <feature.icon className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="font-semibold text-foreground mb-2">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground">{feature.description}</p>
+        {/* Features Grid */}
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {[
+            {
+              icon: CheckCircle2,
+              title: 'Verificações Automáticas',
+              description: 'Mais de 50 pontos de verificação baseados em boas práticas',
+            },
+            {
+              icon: AlertTriangle,
+              title: 'Detecção de Riscos',
+              description: 'Identifica vulnerabilidades e configurações inseguras',
+            },
+            {
+              icon: TrendingUp,
+              title: 'Recomendações',
+              description: 'Sugestões práticas para melhorar sua postura de segurança',
+            },
+          ].map((feature, index) => (
+            <div 
+              key={feature.title}
+              className="glass-card rounded-xl p-6 text-center animate-fade-in"
+              style={{ animationDelay: `${0.3 + index * 0.1}s` }}
+            >
+              <div className="inline-flex p-3 rounded-lg bg-primary/10 mb-4">
+                <feature.icon className="w-6 h-6 text-primary" />
               </div>
-            ))}
-          </div>
+              <h3 className="font-semibold text-foreground mb-2">{feature.title}</h3>
+              <p className="text-sm text-muted-foreground">{feature.description}</p>
+            </div>
+          ))}
+        </div>
 
-          {/* Connection Form */}
-          <ConnectionForm 
-            onConnect={handleConnect}
-            isConnecting={isConnecting}
-            isConnected={isConnected}
-          />
-        </main>
-      ) : (
-        <Dashboard 
-          report={report} 
-          onRefresh={handleRefresh}
-          isRefreshing={isRefreshing}
-          onDisconnect={handleDisconnect}
-        />
-      )}
+        {/* CTA Section */}
+        <div className="max-w-md mx-auto text-center animate-fade-in" style={{ animationDelay: '0.5s' }}>
+          <Button 
+            onClick={() => navigate('/auth')}
+            size="lg"
+            className="gap-2"
+          >
+            <LogIn className="w-5 h-5" />
+            Acessar Plataforma
+          </Button>
+          <p className="text-sm text-muted-foreground mt-4">
+            Faça login para gerenciar seus firewalls e visualizar relatórios de compliance
+          </p>
+        </div>
+      </main>
     </div>
   );
 };
