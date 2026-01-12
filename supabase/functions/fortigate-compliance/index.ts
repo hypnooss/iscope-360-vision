@@ -1693,9 +1693,12 @@ serve(async (req) => {
     // Score = 100 - pontos de falha (mínimo 0)
     const calculatedScore = Math.max(0, 100 - failedPoints);
     
-    // Extrair versão do firmware para CVE lookup
+    // Extrair versão do firmware e serial number para CVE lookup
     const firmwareCheck = allChecks.find(c => c.id === 'upd-001');
     const firmwareVersion = firmwareCheck?.rawData?.version as string || '';
+    const serialNumber = firmwareCheck?.rawData?.serial as string || '';
+    const hostname = firmwareCheck?.rawData?.hostname as string || '';
+    const model = firmwareCheck?.rawData?.model as string || '';
     
     const report = {
       overallScore: calculatedScore,
@@ -1706,6 +1709,9 @@ serve(async (req) => {
       categories: categoryData,
       generatedAt: new Date().toISOString(),
       firmwareVersion,
+      serialNumber,
+      hostname,
+      model,
     };
     
     console.log(`Compliance check completed: ${passed}/${allChecks.length} passed`);
