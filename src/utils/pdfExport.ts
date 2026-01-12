@@ -444,12 +444,32 @@ export function exportReportToPDF(report: ComplianceReport) {
     yPos += 5;
 
     const licenseData = licensingCategory.checks.map(check => {
-      // Extrair evidências de forma legível
-      const evidenceStr = check.evidence?.map(e => `${e.label}: ${e.value}`).join(' | ') || check.details || '-';
+      // Extrair evidências de forma resumida para caber na tabela
+      let detailsStr = '';
+      if (check.evidence && check.evidence.length > 0) {
+        // Pegar apenas status e dias restantes/data de expiração
+        const statusEvidence = check.evidence.find(e => e.label === 'Status');
+        const daysEvidence = check.evidence.find(e => e.label === 'Dias Restantes');
+        const expiryEvidence = check.evidence.find(e => e.label === 'Data de Expiração');
+        
+        if (statusEvidence) {
+          detailsStr = statusEvidence.value.replace(/[✅❌⚠️]/g, '').trim();
+        }
+        if (expiryEvidence) {
+          detailsStr += detailsStr ? ` | Expira: ${expiryEvidence.value}` : `Expira: ${expiryEvidence.value}`;
+        }
+        if (daysEvidence && daysEvidence.value !== 'Expirado') {
+          detailsStr += ` (${daysEvidence.value} dias)`;
+        }
+      }
+      if (!detailsStr) {
+        detailsStr = check.details || '-';
+      }
+      
       return [
         getStatusText(check.status),
         check.name,
-        evidenceStr.substring(0, 100) + (evidenceStr.length > 100 ? '...' : '')
+        detailsStr.substring(0, 60) + (detailsStr.length > 60 ? '...' : '')
       ];
     });
 
@@ -459,12 +479,13 @@ export function exportReportToPDF(report: ComplianceReport) {
       body: licenseData,
       theme: 'striped',
       headStyles: { fillColor: [0, 128, 0], textColor: 255 },
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
       columnStyles: {
         0: { cellWidth: 22 },
-        1: { cellWidth: 45 },
-        2: { cellWidth: 107 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 'auto' },
       },
+      tableWidth: 'auto',
       margin: { left: 14, right: 14 },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 0) {
