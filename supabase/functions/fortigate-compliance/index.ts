@@ -1058,10 +1058,21 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       'fgd_wf': 'FortiGuard Web Filter',
     };
     
-    // Verificar FortiCare/Suporte
-    const forticareInfo = licenses.forticare || licenses.support || {};
-    const supportStatus = forticareInfo.status || forticareInfo.entitlement || 'unknown';
-    const supportExpiry = forticareInfo.expires || forticareInfo.expiry_date || '';
+    // Verificar FortiCare/Suporte - estrutura real: forticare.support.hardware ou forticare.support.enhanced
+    const forticareInfo = licenses.forticare || {};
+    const supportInfo = forticareInfo.support || {};
+    
+    // Pegar a licença hardware ou enhanced (premium)
+    const hardwareSupport = supportInfo.hardware || {};
+    const enhancedSupport = supportInfo.enhanced || {};
+    
+    // Usar a licença com maior tempo restante
+    const hardwareExpiry = hardwareSupport.expires || 0;
+    const enhancedExpiry = enhancedSupport.expires || 0;
+    const supportExpiry = Math.max(hardwareExpiry, enhancedExpiry);
+    const supportStatus = hardwareSupport.status || enhancedSupport.status || forticareInfo.status || 'unknown';
+    const supportLevel = enhancedSupport.support_level || hardwareSupport.support_level || '';
+    const registrationStatus = forticareInfo.registration_status || forticareInfo.status || '';
     
     let supportActive = false;
     let supportDaysRemaining = 0;
@@ -1072,7 +1083,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       supportExpiryDate = expiryDate.toLocaleDateString('pt-BR');
       supportDaysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
       supportActive = supportDaysRemaining > 0;
-    } else if (supportStatus === 'licensed' || supportStatus === 'valid' || supportStatus === 'active') {
+    } else if (supportStatus === 'licensed' || supportStatus === 'valid' || supportStatus === 'active' || registrationStatus === 'registered') {
       supportActive = true;
     }
     
@@ -1095,6 +1106,12 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     const supportEvidence: EvidenceItem[] = [
       { label: 'Status', value: supportActive ? '✅ Ativo' : '❌ Expirado/Inativo', type: 'text' as const },
     ];
+    if (supportLevel) {
+      supportEvidence.push({ label: 'Nível de Suporte', value: supportLevel, type: 'text' as const });
+    }
+    if (registrationStatus) {
+      supportEvidence.push({ label: 'Registro', value: registrationStatus, type: 'text' as const });
+    }
     if (supportExpiryDate) {
       supportEvidence.push({ label: 'Data de Expiração', value: supportExpiryDate, type: 'text' as const });
       supportEvidence.push({ label: 'Dias Restantes', value: supportDaysRemaining > 0 ? String(supportDaysRemaining) : 'Expirado', type: 'text' as const });
@@ -1115,17 +1132,35 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     });
     
     // Verificar licenças de segurança FortiGuard
-    const securityServices = ['antivirus', 'ips', 'webfilter', 'appctrl', 'antispam'];
+    // Nota: webfilter pode estar como 'web_filter', 'webfiltering', 'web_filtering' ou 'fgd_wf'
+    const securityServicesMap: { key: string; altKeys: string[]; name: string }[] = [
+      { key: 'antivirus', altKeys: ['av'], name: 'Antivírus' },
+      { key: 'ips', altKeys: ['nids', 'intrusion_prevention'], name: 'IPS' },
+      { key: 'web_filter', altKeys: ['webfilter', 'webfiltering', 'web_filtering', 'fgd_wf'], name: 'Web Filter' },
+      { key: 'appctrl', altKeys: ['app_ctrl', 'application_control'], name: 'App Control' },
+      { key: 'antispam', altKeys: ['anti_spam', 'fortimail'], name: 'AntiSpam' },
+    ];
     const activeServices: string[] = [];
     const expiredServices: string[] = [];
     const expiringServices: string[] = [];
     const licenseEvidence: EvidenceItem[] = [];
     
-    for (const service of securityServices) {
-      const serviceInfo = licenses[service] || {};
+    for (const serviceMapping of securityServicesMap) {
+      // Tentar encontrar o serviço com a chave principal ou alternativas
+      let serviceInfo = licenses[serviceMapping.key];
+      if (!serviceInfo || Object.keys(serviceInfo).length === 0) {
+        for (const altKey of serviceMapping.altKeys) {
+          if (licenses[altKey] && Object.keys(licenses[altKey]).length > 0) {
+            serviceInfo = licenses[altKey];
+            break;
+          }
+        }
+      }
+      serviceInfo = serviceInfo || {};
+      
       const status = serviceInfo.status || serviceInfo.entitlement || 'unknown';
       const expiry = serviceInfo.expires || serviceInfo.expiry_date || 0;
-      const serviceName = serviceNames[service] || service;
+      const serviceName = serviceMapping.name;
       
       let isActive = false;
       let daysRemaining = 0;
@@ -1167,7 +1202,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     }
     
     let licenseCheckStatus: 'pass' | 'fail' | 'warning' = 'pass';
-    let licenseDetails = `${activeServices.length + expiringServices.length} de ${securityServices.length} serviços FortiGuard ativos`;
+    let licenseDetails = `${activeServices.length + expiringServices.length} de ${securityServicesMap.length} serviços FortiGuard ativos`;
     let licenseRecommendation = 'Manter todas as licenças FortiGuard atualizadas';
     
     if (expiredServices.length > 0) {
