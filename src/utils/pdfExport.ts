@@ -67,6 +67,19 @@ function getRiskClassification(score: number): { label: string; color: [number, 
   return { label: 'RISCO ALTO', color: [239, 68, 68] };
 }
 
+// Descritivos de cada categoria de análise
+const categoryDescriptions: Record<string, string> = {
+  'Segurança de Interfaces': 'Verifica configurações de acesso às interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
+  'Regras de Entrada': 'Analisa políticas de firewall que permitem tráfego de entrada da internet, identificando exposições de serviços críticos.',
+  'Configuração de Rede': 'Avalia configurações gerais de rede, incluindo regras permissivas e segmentação.',
+  'Políticas de Segurança': 'Examina configurações de autenticação administrativa, incluindo 2FA, políticas de senha e timeout.',
+  'Atualização de Firmware': 'Verifica a versão do FortiOS instalada e identifica atualizações disponíveis.',
+  'Perfis de Segurança UTM': 'Analisa a aplicação de perfis de segurança (IPS, AV, WebFilter, AppControl) nas políticas.',
+  'Configuração VPN': 'Avalia configurações de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
+  'Logging e Monitoramento': 'Verifica configurações de log e integração com FortiAnalyzer/FortiCloud.',
+  'Licenciamento': 'Verifica status do FortiCare e licenças FortiGuard (AV, IPS, WebFilter, AppControl).',
+};
+
 // Calcular cobertura UTM (baseado em políticas de saída internet)
 function calculateUTMCoverage(report: ComplianceReport): { full: number; partial: number; total: number } {
   const utmCategory = report.categories.find(c => c.name === 'Perfis de Segurança UTM');
@@ -406,6 +419,68 @@ export function exportReportToPDF(report: ComplianceReport) {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Licensing Section (if available)
+  // ═══════════════════════════════════════════════════════════════
+  const licensingCategory = report.categories.find(c => c.name === 'Licenciamento');
+  if (licensingCategory) {
+    // Check if we need a new page
+    if (yPos > 200) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 128, 0); // Green
+    doc.text('Status de Licenciamento', 14, yPos);
+    yPos += 6;
+    
+    // Description
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Verifica status do contrato FortiCare e licenças de segurança FortiGuard para garantir proteção ativa.', 14, yPos);
+    yPos += 5;
+
+    const licenseData = licensingCategory.checks.map(check => {
+      // Extrair evidências de forma legível
+      const evidenceStr = check.evidence?.map(e => `${e.label}: ${e.value}`).join(' | ') || check.details || '-';
+      return [
+        getStatusText(check.status),
+        check.name,
+        evidenceStr.substring(0, 100) + (evidenceStr.length > 100 ? '...' : '')
+      ];
+    });
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Status', 'Licença', 'Detalhes']],
+      body: licenseData,
+      theme: 'striped',
+      headStyles: { fillColor: [0, 128, 0], textColor: 255 },
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 107 },
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 0) {
+          const check = licensingCategory.checks[data.row.index];
+          if (check) {
+            const color = getStatusColor(check.status);
+            data.cell.styles.textColor = color;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 10;
+  }
+
   yPos += 5;
 
   // Critical and High issues
@@ -475,6 +550,16 @@ export function exportReportToPDF(report: ComplianceReport) {
     doc.setTextColor(0, 100, 100);
     doc.text(`${category.name} (${category.passRate}% aprovação)`, 14, yPos);
     yPos += 5;
+    
+    // Adicionar descritivo da categoria
+    const description = categoryDescriptions[category.name];
+    if (description) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(100, 100, 100);
+      doc.text(description, 14, yPos);
+      yPos += 5;
+    }
 
     const checksData = category.checks.map(check => [
       getStatusText(check.status),

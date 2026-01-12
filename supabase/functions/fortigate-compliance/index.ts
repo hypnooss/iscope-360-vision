@@ -1736,7 +1736,7 @@ function getCategoryIcon(category: string): string {
     'Backup e Recovery': 'hardDrive',
     'Configuração VPN': 'lock',
     'Logging e Monitoramento': 'activity',
-    'Licenciamento': 'key',
+    'Licenciamento': 'award',
     'Atualizações': 'download',
   };
   return icons[category] || 'check';

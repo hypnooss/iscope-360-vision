@@ -1,6 +1,6 @@
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from './ComplianceCard';
-import { Shield, Network, Lock, Activity, Download, ChevronDown, ChevronUp, Monitor, ArrowDownToLine, ShieldCheck, ServerCog, HardDrive } from 'lucide-react';
+import { Shield, Network, Lock, Activity, Download, ChevronDown, ChevronUp, Monitor, ArrowDownToLine, ShieldCheck, ServerCog, HardDrive, Award } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +20,20 @@ const iconMap: Record<string, typeof Shield> = {
   shieldCheck: ShieldCheck,
   serverCog: ServerCog,
   hardDrive: HardDrive,
+  award: Award,
+};
+
+// Descritivos de cada categoria de análise
+const categoryDescriptions: Record<string, string> = {
+  'Segurança de Interfaces': 'Verifica configurações de acesso às interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet, e exposição de serviços administrativos em interfaces externas.',
+  'Regras de Entrada': 'Analisa políticas de firewall que permitem tráfego de entrada da internet, identificando exposições de serviços críticos como RDP e SMB, e regras sem restrição de origem.',
+  'Configuração de Rede': 'Avalia configurações gerais de rede, incluindo regras permissivas (any-any), segmentação e políticas de acesso entre zonas.',
+  'Políticas de Segurança': 'Examina configurações de autenticação administrativa, incluindo 2FA, políticas de senha, timeout de sessão e lockout de conta.',
+  'Atualização de Firmware': 'Verifica a versão do FortiOS instalada, identifica atualizações disponíveis e compara com as releases mais recentes recomendadas pela Fortinet.',
+  'Perfis de Segurança UTM': 'Analisa a aplicação de perfis de segurança (IPS, Antivírus, Web Filter, App Control) nas políticas de firewall, especialmente em regras de saída para internet.',
+  'Configuração VPN': 'Avalia configurações de VPN IPSec e SSL VPN, incluindo algoritmos de criptografia, certificados e práticas de segurança.',
+  'Logging e Monitoramento': 'Verifica configurações de log, integração com FortiAnalyzer/FortiCloud e habilitação de logging para eventos de segurança.',
+  'Licenciamento': 'Verifica o status do contrato FortiCare e licenças de segurança FortiGuard (AV, IPS, WebFilter, AppControl), incluindo datas de expiração.',
 };
 
 export function CategorySection({ category, index }: CategorySectionProps) {
@@ -50,6 +64,11 @@ export function CategorySection({ category, index }: CategorySectionProps) {
             <p className="text-sm text-muted-foreground">
               {category.checks.length} verificações
             </p>
+            {categoryDescriptions[category.name] && (
+              <p className="text-xs text-muted-foreground/80 mt-1 max-w-xl">
+                {categoryDescriptions[category.name]}
+              </p>
+            )}
           </div>
         </div>
 
