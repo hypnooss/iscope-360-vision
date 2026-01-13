@@ -52,11 +52,12 @@ export default function FirewallAnalysis() {
       .eq('firewall_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (data?.report_data) {
+      const reportData = data.report_data as unknown as ComplianceReport;
       setReport({
-        ...data.report_data as unknown as ComplianceReport,
+        ...reportData,
         generatedAt: new Date(data.created_at),
       });
     }

@@ -137,6 +137,11 @@ export function exportReportToPDF(report: ComplianceReport) {
   const pageWidth = doc.internal.pageSize.width;
   let yPos = 20;
 
+  // Ensure generatedAt is a Date object
+  const generatedAtDate = report.generatedAt instanceof Date 
+    ? report.generatedAt 
+    : new Date(report.generatedAt);
+
   // Header
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
@@ -147,7 +152,7 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
-  doc.text(`Gerado em: ${report.generatedAt.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Gerado em: ${generatedAtDate.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
 
   // ═══════════════════════════════════════════════════════════════
   // BLOCO 1: Score de Compliance Geral (ponderado - mesmo do dashboard)

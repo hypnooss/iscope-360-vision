@@ -77,20 +77,51 @@ export default function FirewallsPage() {
 
   const fetchData = async () => {
     try {
-      const [firewallsRes, clientsRes] = await Promise.all([
-        supabase
-          .from('firewalls')
-          .select(`
-            *,
-            clients(name),
-            analysis_schedules(frequency, is_active)
-          `)
-        .order('created_at', { ascending: false }),
-        supabase.from('clients').select('*').order('name'),
-      ]);
+      // Fetch clients first
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('*')
+        .order('name');
+      
+      if (clientsData) setClients(clientsData);
 
-      if (firewallsRes.data) setFirewalls(firewallsRes.data as unknown as Firewall[]);
-      if (clientsRes.data) setClients(clientsRes.data);
+      // Fetch firewalls
+      const { data: firewallsData } = await supabase
+        .from('firewalls')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!firewallsData || firewallsData.length === 0) {
+        setFirewalls([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch schedules for firewalls
+      const firewallIds = firewallsData.map(f => f.id);
+      const { data: schedulesData } = await supabase
+        .from('analysis_schedules')
+        .select('firewall_id, frequency, is_active')
+        .in('firewall_id', firewallIds);
+
+      // Create lookup maps
+      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+      const scheduleMap = new Map<string, { frequency: string; is_active: boolean }[]>();
+      
+      for (const schedule of (schedulesData || [])) {
+        const existing = scheduleMap.get(schedule.firewall_id) || [];
+        existing.push({ frequency: schedule.frequency, is_active: schedule.is_active });
+        scheduleMap.set(schedule.firewall_id, existing);
+      }
+
+      // Combine data
+      const combined = firewallsData.map(fw => ({
+        ...fw,
+        clients: clientMap.get(fw.client_id) ? { name: clientMap.get(fw.client_id)!.name } : null,
+        analysis_schedules: scheduleMap.get(fw.id) || null,
+      }));
+
+      setFirewalls(combined as unknown as Firewall[]);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
