@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, Edit, Shield, Loader2 } from 'lucide-react';
+import { Users, Edit, Shield, Loader2, Building } from 'lucide-react';
 import { toast } from 'sonner';
 
 type AppRole = 'super_admin' | 'admin' | 'user';
@@ -35,10 +35,11 @@ interface Client {
 const MODULES = ['dashboard', 'firewall', 'reports'] as const;
 
 export default function UsersPage() {
-  const { user, loading: authLoading, isSuperAdmin } = useAuth();
+  const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [myClientIds, setMyClientIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<AppRole>('user');
@@ -46,45 +47,59 @@ export default function UsersPage() {
   const [editClientIds, setEditClientIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const canAccessPage = isSuperAdmin() || isAdmin();
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/auth');
-    } else if (!authLoading && !isSuperAdmin()) {
+    } else if (!authLoading && !canAccessPage) {
       navigate('/dashboard');
       toast.error('Acesso não autorizado');
     }
-  }, [user, authLoading, navigate, isSuperAdmin]);
+  }, [user, authLoading, navigate, canAccessPage]);
 
   useEffect(() => {
-    if (user && isSuperAdmin()) {
+    if (user && canAccessPage) {
       fetchData();
     }
-  }, [user]);
+  }, [user, canAccessPage]);
 
   const fetchData = async () => {
     try {
-      // Fetch all profiles
+      // First, get my client associations if I'm an admin (not super admin)
+      let adminClientIds: string[] = [];
+      if (!isSuperAdmin()) {
+        const { data: myClients } = await supabase
+          .from('user_clients')
+          .select('client_id')
+          .eq('user_id', user!.id);
+        
+        adminClientIds = (myClients || []).map(c => c.client_id);
+        setMyClientIds(adminClientIds);
+      }
+
+      // Fetch profiles - RLS will filter based on permissions
       const { data: profiles } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
-      // Fetch all roles
+      // Fetch roles - RLS will filter
       const { data: roles } = await supabase
         .from('user_roles')
         .select('user_id, role');
 
-      // Fetch all permissions
+      // Fetch permissions - RLS will filter
       const { data: permissions } = await supabase
         .from('user_module_permissions')
         .select('user_id, module_name, permission');
 
-      // Fetch all user-client associations
+      // Fetch user-client associations - RLS will filter
       const { data: userClients } = await supabase
         .from('user_clients')
         .select('user_id, client_id');
 
-      // Fetch clients
+      // Fetch clients I have access to
       const { data: clientsData } = await supabase
         .from('clients')
         .select('id, name')
@@ -205,7 +220,57 @@ export default function UsersPage() {
     }
   };
 
-  if (authLoading || !isSuperAdmin()) return null;
+  // Get client names for a user
+  const getClientNames = (clientIds: string[] | undefined) => {
+    if (!clientIds || clientIds.length === 0) return [];
+    return clients
+      .filter(c => clientIds.includes(c.id))
+      .map(c => c.name);
+  };
+
+  // Check if current user can edit this user
+  const canEditUser = (targetUser: UserProfile): boolean => {
+    // Can't edit yourself
+    if (targetUser.id === user?.id) return false;
+    
+    // Super admin can edit anyone except other super admins
+    if (isSuperAdmin()) {
+      return targetUser.role !== 'super_admin';
+    }
+    
+    // Admin can edit users but not super admins or other admins
+    if (isAdmin()) {
+      return targetUser.role === 'user';
+    }
+    
+    return false;
+  };
+
+  // Get available roles for dropdown based on current user's role
+  const getAvailableRoles = (): { value: AppRole; label: string }[] => {
+    if (isSuperAdmin()) {
+      return [
+        { value: 'user', label: 'Usuário' },
+        { value: 'admin', label: 'Admin' },
+        { value: 'super_admin', label: 'Super Admin' },
+      ];
+    }
+    // Admin can only assign user role
+    return [
+      { value: 'user', label: 'Usuário' },
+    ];
+  };
+
+  // Get clients that current user can assign to others
+  const getAssignableClients = (): Client[] => {
+    if (isSuperAdmin()) {
+      return clients;
+    }
+    // Admin can only assign their own clients
+    return clients.filter(c => myClientIds.includes(c.id));
+  };
+
+  if (authLoading || !canAccessPage) return null;
 
   return (
     <AppLayout>
@@ -213,7 +278,12 @@ export default function UsersPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
-          <p className="text-muted-foreground">Gerencie usuários e permissões do sistema</p>
+          <p className="text-muted-foreground">
+            {isSuperAdmin() 
+              ? 'Gerencie todos os usuários e permissões do sistema' 
+              : 'Gerencie usuários dos seus clientes'
+            }
+          </p>
         </div>
 
         {/* Users Table */}
@@ -223,12 +293,19 @@ export default function UsersPage() {
               <Users className="w-5 h-5" />
               Lista de Usuários
             </CardTitle>
-            <CardDescription>{users.length} usuário(s) cadastrado(s)</CardDescription>
+            <CardDescription>
+              {users.length} usuário(s) {!isSuperAdmin() && 'nos seus clientes'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : users.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Nenhum usuário encontrado</p>
               </div>
             ) : (
               <Table>
@@ -265,16 +342,29 @@ export default function UsersPage() {
                         {u.role === 'super_admin' ? (
                           <span className="text-xs text-muted-foreground">Todos</span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {u.client_ids?.length || 0} cliente(s)
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {getClientNames(u.client_ids).slice(0, 2).map((name, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">
+                                <Building className="w-3 h-3 mr-1" />
+                                {name}
+                              </Badge>
+                            ))}
+                            {(u.client_ids?.length || 0) > 2 && (
+                              <Badge variant="secondary" className="text-xs">
+                                +{(u.client_ids?.length || 0) - 2}
+                              </Badge>
+                            )}
+                            {(u.client_ids?.length || 0) === 0 && (
+                              <span className="text-xs text-muted-foreground">Nenhum</span>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(u.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {u.id !== user?.id && (
+                        {canEditUser(u) && (
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)}>
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -310,11 +400,18 @@ export default function UsersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">Usuário</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="super_admin">Super Admin</SelectItem>
+                    {getAvailableRoles().map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {!isSuperAdmin() && (
+                  <p className="text-xs text-muted-foreground">
+                    Como Admin, você só pode atribuir o role de Usuário
+                  </p>
+                )}
               </div>
 
               {/* Module Permissions */}
@@ -347,7 +444,7 @@ export default function UsersPage() {
                 <div className="space-y-3">
                   <Label>Acesso a Clientes</Label>
                   <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
-                    {clients.map((client) => (
+                    {getAssignableClients().map((client) => (
                       <div key={client.id} className="flex items-center gap-2">
                         <Checkbox
                           id={client.id}
@@ -359,10 +456,17 @@ export default function UsersPage() {
                         </label>
                       </div>
                     ))}
-                    {clients.length === 0 && (
-                      <p className="text-xs text-muted-foreground">Nenhum cliente cadastrado</p>
+                    {getAssignableClients().length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {isSuperAdmin() ? 'Nenhum cliente cadastrado' : 'Você não possui clientes atribuídos'}
+                      </p>
                     )}
                   </div>
+                  {!isSuperAdmin() && (
+                    <p className="text-xs text-muted-foreground">
+                      Você só pode atribuir clientes aos quais você tem acesso
+                    </p>
+                  )}
                 </div>
               )}
             </div>

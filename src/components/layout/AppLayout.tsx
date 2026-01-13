@@ -73,9 +73,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const visibleNavItems = navItems.filter((item) => {
-    // Users page only visible to super_admin
+    // Users page visible to admins and super_admins
     if (item.module === 'users') {
-      return role === 'super_admin';
+      return role === 'super_admin' || role === 'admin';
     }
     return hasPermission(item.module, 'view');
   });

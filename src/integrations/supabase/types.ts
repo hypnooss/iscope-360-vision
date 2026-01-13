@@ -276,6 +276,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_user: {
+        Args: { _admin_id: string; _target_user_id: string }
+        Returns: boolean
+      }
       get_module_permission: {
         Args: { _module_name: string; _user_id: string }
         Returns: Database["public"]["Enums"]["module_permission"]
@@ -292,6 +296,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_client_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "user"
