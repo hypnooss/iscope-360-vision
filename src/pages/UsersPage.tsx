@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Users, Edit, Shield, Loader2, Building } from 'lucide-react';
 import { toast } from 'sonner';
+import { InviteUserDialog } from '@/components/InviteUserDialog';
 
 type AppRole = 'super_admin' | 'admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
@@ -276,14 +277,21 @@ export default function UsersPage() {
     <AppLayout>
       <div className="p-6 lg:p-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
-          <p className="text-muted-foreground">
-            {isSuperAdmin() 
-              ? 'Gerencie todos os usuários e permissões do sistema' 
-              : 'Gerencie usuários dos seus clientes'
-            }
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
+            <p className="text-muted-foreground">
+              {isSuperAdmin() 
+                ? 'Gerencie todos os usuários e permissões do sistema' 
+                : 'Gerencie usuários dos seus clientes'
+              }
+            </p>
+          </div>
+          <InviteUserDialog 
+            clients={clients} 
+            myClientIds={myClientIds}
+            onUserCreated={fetchData}
+          />
         </div>
 
         {/* Users Table */}

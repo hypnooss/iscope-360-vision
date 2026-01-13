@@ -34,7 +34,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
-  { label: 'Firewalls', href: '/firewalls', icon: Server, module: 'firewall' },
+  { label: 'Scope Firewall', href: '/firewalls', icon: Server, module: 'firewall' },
   { label: 'Relatórios', href: '/reports', icon: FileText, module: 'reports' },
   { label: 'Usuários', href: '/users', icon: Users, module: 'users' },
 ];
@@ -86,7 +86,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">
           <Shield className="w-6 h-6 text-primary" />
-          <span className="font-bold text-foreground">FortiAudit</span>
+          <span className="font-bold text-foreground">InfraScope 360</span>
         </div>
         <Button
           variant="ghost"
@@ -115,7 +115,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-primary" />
-            <span className="font-bold text-sidebar-foreground">FortiAudit</span>
+            <span className="font-bold text-sidebar-foreground">InfraScope 360</span>
           </div>
         </div>
         <nav className="p-4 space-y-1">
@@ -150,7 +150,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
             <div className={cn('flex items-center gap-2', !sidebarOpen && 'justify-center')}>
               <Shield className="w-6 h-6 text-primary flex-shrink-0" />
-              {sidebarOpen && <span className="font-bold text-sidebar-foreground">FortiAudit</span>}
+              {sidebarOpen && <span className="font-bold text-sidebar-foreground">InfraScope 360</span>}
             </div>
             <Button
               variant="ghost"
