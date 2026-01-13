@@ -934,10 +934,20 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     
     currentVersion = currentVersion || 'Desconhecida';
     
-    // Buscar serial de múltiplos campos possíveis
+    // Buscar serial de múltiplos campos possíveis - FortiGate API retorna em 'serial'
+    // Log para debug
+    console.log('System status fields for serial:', {
+      serial: status.serial,
+      serial_number: status.serial_number,
+      sn: status.sn,
+      globalSerial: global.serial
+    });
+    
     const serial = status.serial || status.serial_number || status.sn || global.serial || '';
     const hostname = status.hostname || global.hostname || '';
     const model = status.model_name || status.model || global.model || '';
+    
+    console.log('Extracted device info:', { serial, hostname, model });
     
     // Uptime pode vir em diferentes formatos: segundos, string formatada, ou objeto
     let uptimeStr = '';
