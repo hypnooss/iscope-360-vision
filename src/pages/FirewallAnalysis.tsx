@@ -76,18 +76,24 @@ export default function FirewallAnalysis() {
       if (error) throw error;
       if (data.error) throw new Error(data.details || data.error);
 
-      // Save to history
-      await supabase.from('analysis_history').insert({
+      // Save to history - use overallScore from edge function
+      const score = data.overallScore ?? data.score ?? 0;
+
+      const { error: historyError } = await supabase.from('analysis_history').insert({
         firewall_id: id,
-        score: data.score,
+        score: score,
         report_data: data,
         analyzed_by: user?.id,
       });
 
+      if (historyError) {
+        console.error('Error saving analysis history:', historyError);
+      }
+
       // Update firewall
       await supabase.from('firewalls').update({
         last_analysis_at: new Date().toISOString(),
-        last_score: data.score,
+        last_score: score,
         serial_number: data.serialNumber,
       }).eq('id', id);
 
