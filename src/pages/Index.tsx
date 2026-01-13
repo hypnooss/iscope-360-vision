@@ -32,15 +32,15 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center mb-12">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in">
             <Shield className="w-4 h-4" />
-            Ferramenta de Auditoria FortiGate
+            InfraScope 360 - Scope Firewall
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-            Valide seu Firewall em
-            <span className="text-primary"> Minutos</span>
+            Gerencie sua Infraestrutura
+            <span className="text-primary"> com Inteligência</span>
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.2s' }}>
-            Conecte-se ao seu FortiGate e receba uma análise completa de compliance, 
-            segurança e boas práticas com recomendações acionáveis.
+            Plataforma completa para análise de compliance, segurança e 
+            boas práticas da sua infraestrutura de rede.
           </p>
         </div>
 
@@ -88,7 +88,7 @@ const Index = () => {
             Acessar Plataforma
           </Button>
           <p className="text-sm text-muted-foreground mt-4">
-            Faça login para gerenciar seus firewalls e visualizar relatórios de compliance
+            Acesso restrito. Contate o administrador para obter credenciais.
           </p>
         </div>
       </main>

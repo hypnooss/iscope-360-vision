@@ -10,8 +10,8 @@ export function Header() {
             <Shield className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-foreground">FortiGuard Compliance</h1>
-            <p className="text-xs text-muted-foreground">Validação de Boas Práticas</p>
+            <h1 className="text-lg font-bold text-foreground">InfraScope 360</h1>
+            <p className="text-xs text-muted-foreground">Gestão de Infraestrutura</p>
           </div>
         </div>
 
