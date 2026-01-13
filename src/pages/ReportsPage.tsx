@@ -43,21 +43,58 @@ export default function ReportsPage() {
 
   const fetchHistory = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch analysis history
+      const { data: historyData, error: historyError } = await supabase
         .from('analysis_history')
-        .select(`
-          id,
-          score,
-          created_at,
-          firewall_id,
-          report_data,
-          firewalls(name, serial_number, clients(name))
-        `)
+        .select('id, score, created_at, firewall_id, report_data')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (error) throw error;
-      setHistory(data || []);
+      if (historyError) throw historyError;
+
+      if (!historyData || historyData.length === 0) {
+        setHistory([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get unique firewall IDs
+      const firewallIds = [...new Set(historyData.map(a => a.firewall_id))];
+      
+      // Fetch firewalls
+      const { data: firewallsData } = await supabase
+        .from('firewalls')
+        .select('id, name, serial_number, client_id')
+        .in('id', firewallIds);
+
+      // Get unique client IDs
+      const clientIds = [...new Set((firewallsData || []).map(f => f.client_id))];
+      
+      // Fetch clients
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', clientIds);
+
+      // Create maps for quick lookup
+      const firewallMap = new Map((firewallsData || []).map(f => [f.id, f]));
+      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+
+      // Combine data
+      const combined = historyData.map(item => {
+        const firewall = firewallMap.get(item.firewall_id);
+        const client = firewall ? clientMap.get(firewall.client_id) : null;
+        return {
+          ...item,
+          firewalls: firewall ? {
+            name: firewall.name,
+            serial_number: firewall.serial_number,
+            clients: client ? { name: client.name } : undefined,
+          } : undefined,
+        };
+      });
+
+      setHistory(combined);
     } catch (error: any) {
       toast.error('Erro ao carregar histórico: ' + error.message);
     } finally {

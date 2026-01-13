@@ -61,25 +61,49 @@ export default function DashboardPage() {
         ? Math.round(analyses.reduce((sum, a) => sum + a.score, 0) / analyses.length)
         : 0;
 
-      // Fetch recent analyses with firewall and client info
-      const { data: recentData } = await supabase
+      // Fetch recent analyses with firewall info
+      const { data: recentData, error: recentError } = await supabase
         .from('analysis_history')
-        .select(`
-          id,
-          score,
-          created_at,
-          firewalls!inner(name, clients!inner(name))
-        `)
+        .select('id, score, created_at, firewall_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
-      const formattedRecent: RecentAnalysis[] = (recentData || []).map((item: any) => ({
-        id: item.id,
-        firewall_name: item.firewalls?.name || 'N/A',
-        client_name: item.firewalls?.clients?.name || 'N/A',
-        score: item.score,
-        created_at: item.created_at,
-      }));
+      if (recentError) {
+        console.error('Error fetching recent analyses:', recentError);
+      }
+
+      // Get firewall and client info separately
+      const formattedRecent: RecentAnalysis[] = [];
+      if (recentData && recentData.length > 0) {
+        const firewallIds = [...new Set(recentData.map(a => a.firewall_id))];
+        
+        const { data: firewallsData } = await supabase
+          .from('firewalls')
+          .select('id, name, client_id')
+          .in('id', firewallIds);
+
+        const clientIds = [...new Set((firewallsData || []).map(f => f.client_id))];
+        
+        const { data: clientsData } = await supabase
+          .from('clients')
+          .select('id, name')
+          .in('id', clientIds);
+
+        const firewallMap = new Map((firewallsData || []).map(f => [f.id, f]));
+        const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+
+        for (const item of recentData) {
+          const firewall = firewallMap.get(item.firewall_id);
+          const client = firewall ? clientMap.get(firewall.client_id) : null;
+          formattedRecent.push({
+            id: item.id,
+            firewall_name: firewall?.name || 'N/A',
+            client_name: client?.name || 'N/A',
+            score: item.score,
+            created_at: item.created_at,
+          });
+        }
+      }
 
       setStats({
         totalClients,
