@@ -44,7 +44,9 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
               Análise de Compliance
             </h1>
             <p className="text-muted-foreground">
-              Relatório gerado em {report.generatedAt.toLocaleString('pt-BR')}
+              Relatório gerado em {report.generatedAt instanceof Date 
+                ? report.generatedAt.toLocaleString('pt-BR')
+                : new Date(report.generatedAt).toLocaleString('pt-BR')}
             </p>
           </div>
           <div className="flex gap-3">
