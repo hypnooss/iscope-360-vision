@@ -898,11 +898,18 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       fortigateRequest(config, '/cmdb/system/global'),
     ]);
     
-    // A API /monitor/system/status pode retornar dados em 'results' ou diretamente
+    // A API FortiGate retorna dados de duas formas:
+    // - Metadados (serial, version, build) no nível raiz da resposta
+    // - Dados específicos em 'results'
     const status = systemStatus.results || systemStatus || {};
     const global = globalSettings.results || {};
     
-    console.log('System status response:', JSON.stringify(status, null, 2));
+    // Serial number e version vêm no nível raiz da resposta, não em 'results'
+    const rootSerial = systemStatus.serial || '';
+    const rootVersion = systemStatus.version || '';
+    
+    console.log('System status root level:', { serial: rootSerial, version: rootVersion, build: systemStatus.build });
+    console.log('System status results:', JSON.stringify(status, null, 2));
     console.log('Global settings response:', JSON.stringify(global, null, 2));
     
     // Tentar obter a versão de múltiplas fontes
@@ -934,16 +941,37 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     
     currentVersion = currentVersion || 'Desconhecida';
     
-    // Buscar serial de múltiplos campos possíveis - FortiGate API retorna em 'serial'
-    // Log para debug
-    console.log('System status fields for serial:', {
-      serial: status.serial,
-      serial_number: status.serial_number,
-      sn: status.sn,
-      globalSerial: global.serial
-    });
+    // FortiGate API returns serial number at ROOT level of response, NOT in 'results'
+    // This is the standard format: { "results": {...}, "serial": "FGT...", "version": "v7.x.x", "build": xxx }
     
-    const serial = status.serial || status.serial_number || status.sn || global.serial || '';
+    // Try multiple sources for serial number - ROOT LEVEL FIRST
+    let serial = rootSerial; // From root level (most common)
+    
+    // Fallback to other sources if root level doesn't have it
+    if (!serial) {
+      // 1. Direct fields in status results
+      if (status.serial) serial = status.serial;
+      else if (status.serial_number) serial = status.serial_number;
+      else if (status['serial-number']) serial = status['serial-number'];
+      else if (status.sn) serial = status.sn;
+      
+      // 2. Try from global settings
+      if (!serial && global.serial) serial = global.serial;
+      
+      // 3. Try to find any field containing 'serial' in the value pattern (FGT...)
+      if (!serial) {
+        for (const [key, value] of Object.entries(status)) {
+          if (typeof value === 'string' && value.startsWith('FGT')) {
+            console.log(`Found potential serial in field '${key}': ${value}`);
+            serial = value;
+            break;
+          }
+        }
+      }
+    }
+    
+    console.log('Serial number search result:', serial || 'NOT FOUND');
+    
     const hostname = status.hostname || global.hostname || '';
     const model = status.model_name || status.model || global.model || '';
     
