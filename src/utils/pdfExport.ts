@@ -645,6 +645,6 @@ export function exportReportToPDF(report: ComplianceReport) {
   }
 
   // Save
-  const fileName = `fortigate-compliance-${report.generatedAt.toISOString().split('T')[0]}.pdf`;
+  const fileName = `fortigate-compliance-${generatedAtDate.toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }

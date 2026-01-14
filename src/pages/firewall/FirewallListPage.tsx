@@ -13,8 +13,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, Plus, Play, Trash2, Eye, EyeOff, Loader2, Building } from 'lucide-react';
+import { Server, Plus, Play, Trash2, Eye, EyeOff, Loader2, Building, Edit, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 interface Client {
   id: string;
@@ -47,6 +49,9 @@ export default function FirewallListPage() {
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showClientDialog, setShowClientDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingFirewall, setEditingFirewall] = useState<Firewall | null>(null);
+  const [deletingFirewall, setDeletingFirewall] = useState<Firewall | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [analyzing, setAnalyzing] = useState<string | null>(null);
 
@@ -57,6 +62,14 @@ export default function FirewallListPage() {
     api_key: '',
     client_id: '',
     schedule: 'manual' as ScheduleFrequency,
+  });
+
+  const [editFirewallData, setEditFirewallData] = useState({
+    name: '',
+    description: '',
+    fortigate_url: '',
+    api_key: '',
+    client_id: '',
   });
 
   const [newClient, setNewClient] = useState({
@@ -237,17 +250,59 @@ export default function FirewallListPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este firewall?')) return;
-
+  const handleDelete = async (fw: Firewall) => {
     try {
-      const { error } = await supabase.from('firewalls').delete().eq('id', id);
+      const { error } = await supabase.from('firewalls').delete().eq('id', fw.id);
       if (error) throw error;
 
-      setFirewalls(firewalls.filter(f => f.id !== id));
+      setFirewalls(firewalls.filter(f => f.id !== fw.id));
+      setDeletingFirewall(null);
       toast.success('Firewall excluído com sucesso!');
     } catch (error: any) {
       toast.error('Erro ao excluir: ' + error.message);
+    }
+  };
+
+  const openEditDialog = (fw: Firewall) => {
+    setEditingFirewall(fw);
+    setEditFirewallData({
+      name: fw.name,
+      description: fw.description || '',
+      fortigate_url: fw.fortigate_url,
+      api_key: fw.api_key,
+      client_id: fw.client_id,
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleEditFirewall = async () => {
+    if (!editingFirewall) return;
+
+    if (!editFirewallData.name.trim() || !editFirewallData.fortigate_url.trim() || !editFirewallData.api_key.trim() || !editFirewallData.client_id) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('firewalls')
+        .update({
+          name: editFirewallData.name.trim(),
+          description: editFirewallData.description.trim() || null,
+          fortigate_url: editFirewallData.fortigate_url.trim(),
+          api_key: editFirewallData.api_key.trim(),
+          client_id: editFirewallData.client_id,
+        })
+        .eq('id', editingFirewall.id);
+
+      if (error) throw error;
+
+      await fetchData();
+      setShowEditDialog(false);
+      setEditingFirewall(null);
+      toast.success('Firewall atualizado com sucesso!');
+    } catch (error: any) {
+      toast.error('Erro ao atualizar firewall: ' + error.message);
     }
   };
 
@@ -496,6 +551,7 @@ export default function FirewallListPage() {
                               size="icon"
                               onClick={() => handleAnalyze(fw)}
                               disabled={analyzing === fw.id}
+                              title="Analisar"
                             >
                               {analyzing === fw.id ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -507,6 +563,7 @@ export default function FirewallListPage() {
                               variant="ghost"
                               size="icon"
                               onClick={() => setShowApiKey({ ...showApiKey, [fw.id]: !showApiKey[fw.id] })}
+                              title={showApiKey[fw.id] ? 'Ocultar API Key' : 'Mostrar API Key'}
                             >
                               {showApiKey[fw.id] ? (
                                 <EyeOff className="w-4 h-4" />
@@ -515,14 +572,26 @@ export default function FirewallListPage() {
                               )}
                             </Button>
                             {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete(fw.id)}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openEditDialog(fw)}>
+                                    <Edit className="w-4 h-4 mr-2" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => setDeletingFirewall(fw)}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                           </div>
                           {showApiKey[fw.id] && (
@@ -539,6 +608,98 @@ export default function FirewallListPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Edit Firewall Dialog */}
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar Firewall</DialogTitle>
+              <DialogDescription>Atualize as informações do FortiGate</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-client">Cliente *</Label>
+                <Select
+                  value={editFirewallData.client_id}
+                  onValueChange={(v) => setEditFirewallData({ ...editFirewallData, client_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-name">Nome do Firewall *</Label>
+                <Input
+                  id="edit-fw-name"
+                  value={editFirewallData.name}
+                  onChange={(e) => setEditFirewallData({ ...editFirewallData, name: e.target.value })}
+                  placeholder="Ex: FW-HQ-01"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-url">URL do FortiGate *</Label>
+                <Input
+                  id="edit-fw-url"
+                  value={editFirewallData.fortigate_url}
+                  onChange={(e) => setEditFirewallData({ ...editFirewallData, fortigate_url: e.target.value })}
+                  placeholder="https://192.168.1.1:8443"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-api">API Key *</Label>
+                <Input
+                  id="edit-fw-api"
+                  type="password"
+                  value={editFirewallData.api_key}
+                  onChange={(e) => setEditFirewallData({ ...editFirewallData, api_key: e.target.value })}
+                  placeholder="Token da REST API"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-desc">Descrição</Label>
+                <Textarea
+                  id="edit-fw-desc"
+                  value={editFirewallData.description}
+                  onChange={(e) => setEditFirewallData({ ...editFirewallData, description: e.target.value })}
+                  placeholder="Descrição opcional do firewall"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
+              <Button onClick={handleEditFirewall}>Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deletingFirewall} onOpenChange={() => setDeletingFirewall(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja excluir o firewall{' '}
+                <strong>{deletingFirewall?.name}</strong>?
+                Esta ação não pode ser desfeita e todo o histórico de análises será perdido.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => deletingFirewall && handleDelete(deletingFirewall)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { FileText, Download, Eye, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { exportReportToPDF } from '@/utils/pdfExport';
 
 interface AnalysisReport {
   id: string;
@@ -106,6 +107,20 @@ export default function FirewallReportsPage() {
     });
   };
 
+  const handleDownloadPDF = (report: AnalysisReport) => {
+    try {
+      const reportData = {
+        ...report.report_data,
+        generatedAt: new Date(report.created_at),
+      };
+      exportReportToPDF(reportData);
+      toast.success('PDF exportado com sucesso!');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Erro ao exportar PDF');
+    }
+  };
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'bg-success/10 text-success';
     if (score >= 60) return 'bg-warning/10 text-warning';
@@ -189,13 +204,24 @@ export default function FirewallReportsPage() {
                         })}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleViewReport(report)}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleViewReport(report)}
+                            title="Visualizar"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDownloadPDF(report)}
+                            title="Baixar PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
