@@ -8,10 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, Edit, Shield, Loader2, Building, Layers } from 'lucide-react';
+import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { InviteUserDialog } from '@/components/InviteUserDialog';
 
@@ -63,7 +65,8 @@ export default function UsersPage() {
   const [editClientIds, setEditClientIds] = useState<string[]>([]);
   const [editModuleIds, setEditModuleIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const canAccessPage = isSuperAdmin() || isAdmin();
 
   useEffect(() => {
@@ -225,6 +228,28 @@ export default function UsersPage() {
       toast.error('Erro ao salvar: ' + error.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return;
+
+    setIsDeleting(true);
+    try {
+      // Delete user-related data in order
+      await supabase.from('user_module_permissions').delete().eq('user_id', deletingUser.id);
+      await supabase.from('user_modules').delete().eq('user_id', deletingUser.id);
+      await supabase.from('user_clients').delete().eq('user_id', deletingUser.id);
+      await supabase.from('user_roles').delete().eq('user_id', deletingUser.id);
+      await supabase.from('profiles').delete().eq('id', deletingUser.id);
+
+      toast.success('Usuário excluído com sucesso!');
+      setDeletingUser(null);
+      fetchData();
+    } catch (error: any) {
+      toast.error('Erro ao excluir usuário: ' + error.message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -439,9 +464,26 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         {canEditUser(u) && (
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditDialog(u)}>
+                                <Edit className="w-4 h-4 mr-2" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => setDeletingUser(u)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </TableCell>
                     </TableRow>
@@ -583,6 +625,31 @@ export default function UsersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deletingUser} onOpenChange={() => setDeletingUser(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja excluir o usuário{' '}
+                <strong>{deletingUser?.full_name || deletingUser?.email}</strong>?
+                Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleDeleteUser} 
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

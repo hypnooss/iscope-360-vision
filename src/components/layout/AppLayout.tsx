@@ -32,7 +32,6 @@ import {
   Shield,
   Network,
   Cloud,
-  ArrowLeftRight,
 } from 'lucide-react';
 import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 
@@ -236,17 +235,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <Users className="w-5 h-5 flex-shrink-0" />
           {sidebarOpen && 'Usuários'}
         </Link>
-      )}
-
-      {/* Switch Module (when more than 1) */}
-      {userModules.length > 1 && sidebarOpen && (
-        <button
-          onClick={() => navigate('/modules')}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-muted-foreground hover:bg-sidebar-accent/50 w-full"
-        >
-          <ArrowLeftRight className="w-5 h-5 flex-shrink-0" />
-          Trocar Módulo
-        </button>
       )}
     </>
   );
