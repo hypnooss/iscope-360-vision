@@ -57,7 +57,7 @@ serve(async (req) => {
     const isSuperAdmin = requesterRole.role === "super_admin";
 
     // Parse request body
-    const { email, password, fullName, role, permissions, clientIds } = await req.json();
+    const { email, password, fullName, role, permissions, clientIds, moduleIds } = await req.json();
 
     // Validate input
     if (!email || !password || !fullName) {
@@ -71,6 +71,28 @@ serve(async (req) => {
 
     if (role === "admin" && !isSuperAdmin) {
       throw new Error("Only super admins can create admin users");
+    }
+
+    // Non-super_admin users must have at least one module
+    if (role !== "super_admin" && (!moduleIds || moduleIds.length === 0)) {
+      throw new Error("Users must have access to at least one module");
+    }
+
+    // Validate module IDs exist
+    if (moduleIds && moduleIds.length > 0) {
+      const { data: validModules, error: moduleError } = await supabaseAdmin
+        .from("modules")
+        .select("id")
+        .in("id", moduleIds)
+        .eq("is_active", true);
+
+      if (moduleError) {
+        throw new Error("Error validating modules: " + moduleError.message);
+      }
+
+      if (!validModules || validModules.length !== moduleIds.length) {
+        throw new Error("One or more invalid module IDs provided");
+      }
     }
 
     // If admin (not super_admin), verify they have access to the assigned clients
@@ -159,6 +181,21 @@ serve(async (req) => {
 
       if (clientError) {
         console.error("Error creating client associations:", clientError);
+      }
+    }
+
+    // 6. Create module associations (only if not super_admin)
+    if (role !== "super_admin" && moduleIds && moduleIds.length > 0) {
+      const moduleInserts = moduleIds.map((moduleId: string) => ({
+        user_id: userId,
+        module_id: moduleId,
+        created_by: requestingUser.id,
+      }));
+
+      const { error: moduleError } = await supabaseAdmin.from("user_modules").insert(moduleInserts);
+
+      if (moduleError) {
+        console.error("Error creating module associations:", moduleError);
       }
     }
 
