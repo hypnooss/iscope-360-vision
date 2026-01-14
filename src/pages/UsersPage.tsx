@@ -11,12 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, Edit, Shield, Loader2, Building } from 'lucide-react';
+import { Users, Edit, Shield, Loader2, Building, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { InviteUserDialog } from '@/components/InviteUserDialog';
 
 type AppRole = 'super_admin' | 'admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
+type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
 
 interface UserProfile {
   id: string;
@@ -26,6 +27,7 @@ interface UserProfile {
   role?: AppRole;
   permissions?: Record<string, ModulePermission>;
   client_ids?: string[];
+  module_ids?: string[];
 }
 
 interface Client {
@@ -33,19 +35,33 @@ interface Client {
   name: string;
 }
 
+interface Module {
+  id: string;
+  code: ScopeModule;
+  name: string;
+}
+
 const MODULES = ['dashboard', 'firewall', 'reports'] as const;
+
+const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
+  scope_firewall: 'Scope Firewall',
+  scope_network: 'Scope Network',
+  scope_cloud: 'Scope Cloud',
+};
 
 export default function UsersPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [modules, setModules] = useState<Module[]>([]);
   const [myClientIds, setMyClientIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<AppRole>('user');
   const [editPermissions, setEditPermissions] = useState<Record<string, ModulePermission>>({});
   const [editClientIds, setEditClientIds] = useState<string[]>([]);
+  const [editModuleIds, setEditModuleIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
@@ -100,17 +116,29 @@ export default function UsersPage() {
         .from('user_clients')
         .select('user_id, client_id');
 
+      // Fetch user-module associations
+      const { data: userModules } = await supabase
+        .from('user_modules')
+        .select('user_id, module_id');
+
       // Fetch clients I have access to
       const { data: clientsData } = await supabase
         .from('clients')
         .select('id, name')
         .order('name');
 
+      // Fetch available modules
+      const { data: modulesData } = await supabase
+        .from('modules')
+        .select('id, code, name')
+        .eq('is_active', true);
+
       // Merge data
       const mergedUsers: UserProfile[] = (profiles || []).map((profile) => {
         const userRole = roles?.find((r) => r.user_id === profile.id);
         const userPerms = permissions?.filter((p) => p.user_id === profile.id) || [];
         const userClientAssocs = userClients?.filter((uc) => uc.user_id === profile.id) || [];
+        const userModuleAssocs = userModules?.filter((um) => um.user_id === profile.id) || [];
 
         const permsObj: Record<string, ModulePermission> = {};
         userPerms.forEach((p) => {
@@ -122,11 +150,13 @@ export default function UsersPage() {
           role: (userRole?.role as AppRole) || 'user',
           permissions: permsObj,
           client_ids: userClientAssocs.map((uc) => uc.client_id),
+          module_ids: userModuleAssocs.map((um) => um.module_id),
         };
       });
 
       setUsers(mergedUsers);
       setClients(clientsData || []);
+      setModules((modulesData || []) as Module[]);
     } catch (error: any) {
       toast.error('Erro ao carregar usuários: ' + error.message);
     } finally {
@@ -139,6 +169,7 @@ export default function UsersPage() {
     setEditRole(userProfile.role || 'user');
     setEditPermissions(userProfile.permissions || {});
     setEditClientIds(userProfile.client_ids || []);
+    setEditModuleIds(userProfile.module_ids || []);
   };
 
   const handleSave = async () => {
@@ -172,12 +203,18 @@ export default function UsersPage() {
       }
 
       // Update client associations
-      // First remove old ones
       await supabase.from('user_clients').delete().eq('user_id', editingUser.id);
-      // Then add new ones
       if (editClientIds.length > 0) {
         await supabase.from('user_clients').insert(
           editClientIds.map((clientId) => ({ user_id: editingUser.id, client_id: clientId }))
+        );
+      }
+
+      // Update module associations
+      await supabase.from('user_modules').delete().eq('user_id', editingUser.id);
+      if (editRole !== 'super_admin' && editModuleIds.length > 0) {
+        await supabase.from('user_modules').insert(
+          editModuleIds.map((moduleId) => ({ user_id: editingUser.id, module_id: moduleId }))
         );
       }
 
@@ -221,12 +258,28 @@ export default function UsersPage() {
     }
   };
 
+  const toggleModule = (moduleId: string) => {
+    if (editModuleIds.includes(moduleId)) {
+      setEditModuleIds(editModuleIds.filter((id) => id !== moduleId));
+    } else {
+      setEditModuleIds([...editModuleIds, moduleId]);
+    }
+  };
+
   // Get client names for a user
   const getClientNames = (clientIds: string[] | undefined) => {
     if (!clientIds || clientIds.length === 0) return [];
     return clients
       .filter(c => clientIds.includes(c.id))
       .map(c => c.name);
+  };
+
+  // Get module names for a user
+  const getModuleNames = (moduleIds: string[] | undefined) => {
+    if (!moduleIds || moduleIds.length === 0) return [];
+    return modules
+      .filter(m => moduleIds.includes(m.id))
+      .map(m => SCOPE_MODULE_LABELS[m.code] || m.name);
   };
 
   // Check if current user can edit this user
@@ -321,7 +374,7 @@ export default function UsersPage() {
                   <TableRow>
                     <TableHead>Usuário</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Permissões</TableHead>
+                    <TableHead>Módulos</TableHead>
                     <TableHead>Clientes</TableHead>
                     <TableHead>Cadastro</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -338,13 +391,26 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell>{getRoleBadge(u.role || 'user')}</TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {MODULES.map((mod) => (
-                            <Badge key={mod} variant="outline" className="text-xs">
-                              {mod}: {getPermissionLabel(u.permissions?.[mod] || 'view')}
-                            </Badge>
-                          ))}
-                        </div>
+                        {u.role === 'super_admin' ? (
+                          <span className="text-xs text-muted-foreground">Todos</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {getModuleNames(u.module_ids).slice(0, 2).map((name, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">
+                                <Layers className="w-3 h-3 mr-1" />
+                                {name}
+                              </Badge>
+                            ))}
+                            {(u.module_ids?.length || 0) > 2 && (
+                              <Badge variant="secondary" className="text-xs">
+                                +{(u.module_ids?.length || 0) - 2}
+                              </Badge>
+                            )}
+                            {(u.module_ids?.length || 0) === 0 && (
+                              <span className="text-xs text-muted-foreground">Nenhum</span>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {u.role === 'super_admin' ? (
@@ -388,7 +454,7 @@ export default function UsersPage() {
 
         {/* Edit Dialog */}
         <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />
@@ -422,12 +488,39 @@ export default function UsersPage() {
                 )}
               </div>
 
+              {/* Scope Modules Access */}
+              {editRole !== 'super_admin' && (
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2">
+                    <Layers className="w-4 h-4" />
+                    Módulos com Acesso
+                  </Label>
+                  <div className="space-y-2 border rounded-lg p-3">
+                    {modules.map((mod) => (
+                      <div key={mod.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`edit-mod-${mod.id}`}
+                          checked={editModuleIds.includes(mod.id)}
+                          onCheckedChange={() => toggleModule(mod.id)}
+                        />
+                        <label htmlFor={`edit-mod-${mod.id}`} className="text-sm cursor-pointer">
+                          {SCOPE_MODULE_LABELS[mod.code] || mod.name}
+                        </label>
+                      </div>
+                    ))}
+                    {modules.length === 0 && (
+                      <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Module Permissions */}
               <div className="space-y-3">
-                <Label>Permissões por Módulo</Label>
+                <Label>Permissões por Área</Label>
                 {MODULES.map((mod) => (
                   <div key={mod} className="flex items-center justify-between">
-                    <span className="text-sm capitalize">{mod}</span>
+                    <span className="text-sm capitalize">{mod === 'firewall' ? 'Scope Firewall' : mod}</span>
                     <Select
                       value={editPermissions[mod] || 'view'}
                       onValueChange={(v) =>

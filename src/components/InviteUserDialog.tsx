@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -15,15 +15,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Loader2, UserPlus, Building } from 'lucide-react';
+import { Loader2, UserPlus, Building, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
 type AppRole = 'super_admin' | 'admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
+type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
 
 interface Client {
   id: string;
+  name: string;
+}
+
+interface Module {
+  id: string;
+  code: ScopeModule;
   name: string;
 }
 
@@ -34,7 +41,12 @@ interface InviteUserDialogProps {
 }
 
 const MODULES = ['dashboard', 'firewall', 'reports'] as const;
-const SCOPE_MODULES = ['scope_firewall', 'scope_network', 'scope_cloud'] as const;
+
+const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
+  scope_firewall: 'Scope Firewall',
+  scope_network: 'Scope Network',
+  scope_cloud: 'Scope Cloud',
+};
 
 const inviteSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -46,6 +58,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
   const { isSuperAdmin, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [availableModules, setAvailableModules] = useState<Module[]>([]);
 
   // Form state
   const [email, setEmail] = useState('');
@@ -58,6 +71,19 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
     reports: 'view',
   });
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
+  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+
+  // Fetch available modules
+  useEffect(() => {
+    const fetchModules = async () => {
+      const { data } = await supabase
+        .from('modules')
+        .select('id, code, name')
+        .eq('is_active', true);
+      setAvailableModules((data || []) as Module[]);
+    };
+    fetchModules();
+  }, []);
 
   const resetForm = () => {
     setEmail('');
@@ -70,6 +96,15 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
       reports: 'view',
     });
     setSelectedClientIds([]);
+    setSelectedModuleIds([]);
+  };
+
+  const toggleModule = (moduleId: string) => {
+    if (selectedModuleIds.includes(moduleId)) {
+      setSelectedModuleIds(selectedModuleIds.filter((id) => id !== moduleId));
+    } else {
+      setSelectedModuleIds([...selectedModuleIds, moduleId]);
+    }
   };
 
   const handleSubmit = async () => {
@@ -84,9 +119,13 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
       return;
     }
 
+    if (role !== 'super_admin' && selectedModuleIds.length === 0) {
+      toast.error('Selecione pelo menos um módulo para o usuário');
+      return;
+    }
+
     setSaving(true);
     try {
-      // 1. Create the user via Supabase Auth admin (using edge function)
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
           email,
@@ -95,6 +134,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
           role,
           permissions,
           clientIds: role === 'super_admin' ? [] : selectedClientIds,
+          moduleIds: role === 'super_admin' ? [] : selectedModuleIds,
         },
       });
 
@@ -218,9 +258,39 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
             )}
           </div>
 
+          {/* Scope Modules Access */}
+          {role !== 'super_admin' && (
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <Layers className="w-4 h-4" />
+                Módulos com Acesso
+              </Label>
+              <div className="space-y-2 border rounded-lg p-3">
+                {availableModules.map((mod) => (
+                  <div key={mod.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`mod-${mod.id}`}
+                      checked={selectedModuleIds.includes(mod.id)}
+                      onCheckedChange={() => toggleModule(mod.id)}
+                    />
+                    <label htmlFor={`mod-${mod.id}`} className="text-sm cursor-pointer">
+                      {SCOPE_MODULE_LABELS[mod.code] || mod.name}
+                    </label>
+                  </div>
+                ))}
+                {availableModules.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Selecione os módulos que o usuário terá acesso
+              </p>
+            </div>
+          )}
+
           {/* Module Permissions */}
           <div className="space-y-3">
-            <Label>Permissões por Módulo</Label>
+            <Label>Permissões por Área</Label>
             {MODULES.map((mod) => (
               <div key={mod} className="flex items-center justify-between">
                 <span className="text-sm capitalize">{mod === 'firewall' ? 'Scope Firewall' : mod}</span>
