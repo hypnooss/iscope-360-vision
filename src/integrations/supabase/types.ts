@@ -170,6 +170,39 @@ export type Database = {
           },
         ]
       }
+      modules: {
+        Row: {
+          code: Database["public"]["Enums"]["scope_module"]
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          code: Database["public"]["Enums"]["scope_module"]
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          code?: Database["public"]["Enums"]["scope_module"]
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -250,6 +283,38 @@ export type Database = {
         }
         Relationships: []
       }
+      user_modules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          module_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          module_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          module_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_modules_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -284,8 +349,25 @@ export type Database = {
         Args: { _module_name: string; _user_id: string }
         Returns: Database["public"]["Enums"]["module_permission"]
       }
+      get_user_modules: {
+        Args: { _user_id: string }
+        Returns: {
+          code: Database["public"]["Enums"]["scope_module"]
+          description: string
+          icon: string
+          module_id: string
+          name: string
+        }[]
+      }
       has_client_access: {
         Args: { _client_id: string; _user_id: string }
+        Returns: boolean
+      }
+      has_module_access: {
+        Args: {
+          _module_code: Database["public"]["Enums"]["scope_module"]
+          _user_id: string
+        }
         Returns: boolean
       }
       has_role: {
@@ -302,6 +384,7 @@ export type Database = {
       app_role: "super_admin" | "admin" | "user"
       module_permission: "view" | "edit" | "full"
       schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
+      scope_module: "scope_firewall" | "scope_network" | "scope_cloud"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -432,6 +515,7 @@ export const Constants = {
       app_role: ["super_admin", "admin", "user"],
       module_permission: ["view", "edit", "full"],
       schedule_frequency: ["daily", "weekly", "monthly", "manual"],
+      scope_module: ["scope_firewall", "scope_network", "scope_cloud"],
     },
   },
 } as const

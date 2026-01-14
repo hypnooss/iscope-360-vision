@@ -34,6 +34,7 @@ interface InviteUserDialogProps {
 }
 
 const MODULES = ['dashboard', 'firewall', 'reports'] as const;
+const SCOPE_MODULES = ['scope_firewall', 'scope_network', 'scope_cloud'] as const;
 
 const inviteSchema = z.object({
   email: z.string().email('Email inválido'),
