@@ -32,7 +32,7 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center mb-12">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in">
             <Shield className="w-4 h-4" />
-            InfraScope 360 - Scope Firewall
+            InfraScope 360 - Gestão de Infraestrutura
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
             Gerencie sua Infraestrutura

@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
+import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -70,10 +71,8 @@ export default function Auth() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Shield className="w-8 h-8 text-primary" />
-            </div>
+          <div className="flex flex-col items-center gap-4 mb-4">
+            <img src={logoPrecisio} alt="Precisio Analytics" className="h-12 w-auto" />
             <span className="text-2xl font-bold text-foreground">InfraScope 360</span>
           </div>
           <p className="text-muted-foreground">Plataforma de Gestão de Infraestrutura</p>
