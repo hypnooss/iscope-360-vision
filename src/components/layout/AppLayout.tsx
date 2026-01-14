@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useModules, ScopeModule } from '@/contexts/ModuleContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -13,7 +14,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Shield,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   LayoutDashboard,
   Server,
   FileText,
@@ -22,29 +27,84 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChevronDown,
   Settings,
+  Shield,
+  Network,
+  Cloud,
+  ArrowLeftRight,
 } from 'lucide-react';
+import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  module: 'dashboard' | 'firewall' | 'reports' | 'users';
 }
 
-const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
-  { label: 'Scope Firewall', href: '/firewalls', icon: Server, module: 'firewall' },
-  { label: 'Relatórios', href: '/reports', icon: FileText, module: 'reports' },
-  { label: 'Usuários', href: '/users', icon: Users, module: 'users' },
+interface ModuleNavConfig {
+  code: ScopeModule;
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  items: NavItem[];
+}
+
+const moduleNavConfigs: ModuleNavConfig[] = [
+  {
+    code: 'scope_firewall',
+    name: 'Scope Firewall',
+    icon: Shield,
+    color: 'text-orange-500',
+    items: [
+      { label: 'Dashboard', href: '/scope-firewall/dashboard', icon: LayoutDashboard },
+      { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
+      { label: 'Relatórios', href: '/scope-firewall/reports', icon: FileText },
+    ],
+  },
+  {
+    code: 'scope_network',
+    name: 'Scope Network',
+    icon: Network,
+    color: 'text-blue-500',
+    items: [
+      { label: 'Dashboard', href: '/scope-network/dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    code: 'scope_cloud',
+    name: 'Scope Cloud',
+    icon: Cloud,
+    color: 'text-purple-500',
+    items: [
+      { label: 'Dashboard', href: '/scope-cloud/dashboard', icon: LayoutDashboard },
+    ],
+  },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, role, permissions, signOut, hasPermission } = useAuth();
+  const { profile, role, signOut } = useAuth();
+  const { userModules, activeModule, setActiveModule, hasModuleAccess } = useModules();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+
+  // Detect active module from URL
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/scope-firewall')) {
+      setActiveModule('scope_firewall');
+      setExpandedModules(prev => ({ ...prev, scope_firewall: true }));
+    } else if (path.startsWith('/scope-network')) {
+      setActiveModule('scope_network');
+      setExpandedModules(prev => ({ ...prev, scope_network: true }));
+    } else if (path.startsWith('/scope-cloud')) {
+      setActiveModule('scope_cloud');
+      setExpandedModules(prev => ({ ...prev, scope_cloud: true }));
+    }
+  }, [location.pathname, setActiveModule]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -72,20 +132,131 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const visibleNavItems = navItems.filter((item) => {
-    // Users page visible to admins and super_admins
-    if (item.module === 'users') {
-      return role === 'super_admin' || role === 'admin';
-    }
-    return hasPermission(item.module, 'view');
-  });
+  const toggleModule = (moduleCode: string) => {
+    setExpandedModules(prev => ({
+      ...prev,
+      [moduleCode]: !prev[moduleCode],
+    }));
+  };
+
+  const isActiveRoute = (href: string) => location.pathname === href;
+  const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
+
+  const accessibleModuleConfigs = moduleNavConfigs.filter(m => hasModuleAccess(m.code));
+  const canAccessUsers = role === 'super_admin' || role === 'admin';
+
+  const NavContent = () => (
+    <>
+      {/* Dashboard Geral */}
+      <Link
+        to="/dashboard"
+        onClick={() => setMobileMenuOpen(false)}
+        className={cn(
+          'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+          location.pathname === '/dashboard'
+            ? 'bg-sidebar-accent text-sidebar-primary'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+          !sidebarOpen && 'justify-center'
+        )}
+        title={!sidebarOpen ? 'Dashboard' : undefined}
+      >
+        <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
+        {sidebarOpen && 'Dashboard'}
+      </Link>
+
+      {/* Modules */}
+      {accessibleModuleConfigs.map((moduleConfig) => (
+        <Collapsible
+          key={moduleConfig.code}
+          open={sidebarOpen && expandedModules[moduleConfig.code]}
+          onOpenChange={() => sidebarOpen && toggleModule(moduleConfig.code)}
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isModuleActive(moduleConfig.code)
+                  ? 'bg-sidebar-accent text-sidebar-primary'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+                !sidebarOpen && 'justify-center'
+              )}
+              title={!sidebarOpen ? moduleConfig.name : undefined}
+            >
+              <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
+              {sidebarOpen && (
+                <>
+                  <span className="flex-1 text-left">{moduleConfig.name}</span>
+                  {expandedModules[moduleConfig.code] ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </>
+              )}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pl-4 space-y-1 mt-1">
+            {moduleConfig.items.map((item) => (
+              <Link
+                key={item.href}
+                to={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                  isActiveRoute(item.href)
+                    ? 'bg-sidebar-accent/70 text-sidebar-primary font-medium'
+                    : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/30'
+                )}
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </Link>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
+      ))}
+
+      {/* Divider */}
+      {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
+
+      {/* Users */}
+      {canAccessUsers && (
+        <Link
+          to="/users"
+          onClick={() => setMobileMenuOpen(false)}
+          className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            location.pathname === '/users'
+              ? 'bg-sidebar-accent text-sidebar-primary'
+              : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+            !sidebarOpen && 'justify-center'
+          )}
+          title={!sidebarOpen ? 'Usuários' : undefined}
+        >
+          <Users className="w-5 h-5 flex-shrink-0" />
+          {sidebarOpen && 'Usuários'}
+        </Link>
+      )}
+
+      {/* Switch Module (when more than 1) */}
+      {userModules.length > 1 && sidebarOpen && (
+        <button
+          onClick={() => navigate('/modules')}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-muted-foreground hover:bg-sidebar-accent/50 w-full"
+        >
+          <ArrowLeftRight className="w-5 h-5 flex-shrink-0" />
+          Trocar Módulo
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="min-h-screen bg-background">
       {/* Mobile Header */}
       <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">
-          <Shield className="w-6 h-6 text-primary" />
+          <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto" />
           <span className="font-bold text-foreground">InfraScope 360</span>
         </div>
         <Button
@@ -114,27 +285,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <Shield className="w-6 h-6 text-primary" />
+            <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto" />
             <span className="font-bold text-sidebar-foreground">InfraScope 360</span>
           </div>
         </div>
-        <nav className="p-4 space-y-1">
-          {visibleNavItems.map((item) => (
-            <Link
-              key={item.href}
-              to={item.href}
-              onClick={() => setMobileMenuOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                location.pathname === item.href
-                  ? 'bg-sidebar-accent text-sidebar-primary'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
-              )}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.label}
-            </Link>
-          ))}
+        <nav className="p-3 space-y-1">
+          <NavContent />
         </nav>
       </aside>
 
@@ -149,7 +305,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
             <div className={cn('flex items-center gap-2', !sidebarOpen && 'justify-center')}>
-              <Shield className="w-6 h-6 text-primary flex-shrink-0" />
+              <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto flex-shrink-0" />
               {sidebarOpen && <span className="font-bold text-sidebar-foreground">InfraScope 360</span>}
             </div>
             <Button
@@ -163,24 +319,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
-            {visibleNavItems.map((item) => (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  location.pathname === item.href
-                    ? 'bg-sidebar-accent text-sidebar-primary'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-                  !sidebarOpen && 'justify-center'
-                )}
-                title={!sidebarOpen ? item.label : undefined}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
-                {sidebarOpen && item.label}
-              </Link>
-            ))}
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+            <NavContent />
           </nav>
 
           {/* Collapse Button */}
