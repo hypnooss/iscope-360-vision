@@ -30,9 +30,24 @@ interface ComplianceCheck {
   apiEndpoint?: string;
 }
 
+interface InterfaceClassification {
+  name: string;
+  role: 'wan' | 'lan' | 'dmz' | 'undefined';
+  reason: string;
+}
+
+interface InboundWANPolicy {
+  policyid: number;
+  name: string;
+  srcintf: string[];
+  dstintf: string[];
+  hasIPS: boolean;
+  ipsSensor: string;
+  utmStatus: string;
+}
+
 // Função customizada para fazer fetch ignorando SSL (FortiGates usam certificados auto-assinados)
 async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
-  // Criar um cliente HTTP que ignora verificação de certificado
   const client = Deno.createHttpClient({
     caCerts: [],
   });
@@ -45,7 +60,6 @@ async function fetchWithoutSSLVerification(url: string, options: RequestInit): P
     });
     return response;
   } finally {
-    // Fechar o cliente após uso
     client.close();
   }
 }
@@ -71,6 +85,320 @@ async function fortigateRequest(config: FortiGateConfig, endpoint: string) {
 
   return await response.json();
 }
+
+// ==================== CLASSIFICAÇÃO DE INTERFACES ====================
+// Classifica interfaces conforme prioridade:
+// 1. virtual-wan-link → WAN
+// 2. SD-WAN members → WAN
+// 3. Campo role da API
+// 4. Nome indicando WAN (wan, wan1, wan2, internet, isp) → WAN
+// 5. Caso contrário → undefined
+
+async function classifyInterfaces(config: FortiGateConfig): Promise<{
+  classifications: InterfaceClassification[];
+  wanInterfaceNames: Set<string>;
+  sdwanMembers: string[];
+}> {
+  const classifications: InterfaceClassification[] = [];
+  const wanInterfaceNames = new Set<string>();
+  const sdwanMembers: string[] = [];
+  
+  try {
+    const interfaces = await fortigateRequest(config, '/cmdb/system/interface');
+    const sdwanConfig = await fortigateRequest(config, '/cmdb/system/sdwan').catch(() => ({ results: {} }));
+    
+    // Identificar membros do SD-WAN
+    const sdwan = sdwanConfig.results || {};
+    const members = sdwan.members || [];
+    for (const member of members) {
+      if (member.interface) {
+        sdwanMembers.push(member.interface);
+      }
+    }
+    
+    // Adicionar zones SD-WAN
+    const zones = sdwan.zone || [];
+    for (const zone of zones) {
+      if (zone.name) {
+        wanInterfaceNames.add(zone.name);
+      }
+    }
+    
+    // Sempre incluir virtual-wan-link
+    wanInterfaceNames.add('virtual-wan-link');
+    
+    // Padrões de nome que indicam WAN
+    const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
+    
+    for (const iface of interfaces.results || []) {
+      let role: 'wan' | 'lan' | 'dmz' | 'undefined' = 'undefined';
+      let reason = '';
+      
+      // Prioridade 1: virtual-wan-link
+      if (iface.name === 'virtual-wan-link') {
+        role = 'wan';
+        reason = 'Interface virtual-wan-link (SD-WAN)';
+      }
+      // Prioridade 2: Membro do SD-WAN
+      else if (sdwanMembers.includes(iface.name)) {
+        role = 'wan';
+        reason = 'Membro do SD-WAN';
+      }
+      // Prioridade 3: Campo role da API
+      else if (iface.role && iface.role !== 'undefined') {
+        role = iface.role.toLowerCase() as 'wan' | 'lan' | 'dmz';
+        reason = `Definido na configuração (role=${iface.role})`;
+      }
+      // Prioridade 4: Nome indica WAN
+      else if (wanNamePatterns.test(iface.name)) {
+        role = 'wan';
+        reason = 'Nome da interface indica WAN';
+      }
+      // Prioridade 5: undefined
+      else {
+        role = 'undefined';
+        reason = 'Role não definido';
+      }
+      
+      classifications.push({
+        name: iface.name,
+        role,
+        reason,
+      });
+      
+      if (role === 'wan') {
+        wanInterfaceNames.add(iface.name);
+      }
+    }
+    
+    console.log('Interface classifications:', classifications.map(c => `${c.name}=${c.role}`).join(', '));
+    console.log('WAN interfaces:', Array.from(wanInterfaceNames));
+    
+  } catch (error) {
+    console.error('Error classifying interfaces:', error);
+  }
+  
+  return { classifications, wanInterfaceNames, sdwanMembers };
+}
+
+// ==================== IDENTIFICAÇÃO DE INBOUND WAN ====================
+// Uma policy é Inbound WAN se:
+// - status = enable
+// - action = accept
+// - srcintf contém virtual-wan-link OU referencia interface WAN
+// - NÃO é túnel VPN (REMOTE-VPN, etc.)
+
+function isVPNTunnel(interfaceName: string): boolean {
+  // Padrões comuns de túneis VPN
+  const vpnPatterns = /^(vpn|ipsec|ssl\.|remote|tunnel|gre|l2tp|pptp)/i;
+  return vpnPatterns.test(interfaceName);
+}
+
+function identifyInboundWANPolicies(
+  policies: any[],
+  wanInterfaceNames: Set<string>
+): InboundWANPolicy[] {
+  const inboundWAN: InboundWANPolicy[] = [];
+  
+  for (const policy of policies) {
+    // Verificar status e action
+    if (policy.status !== 'enable' || policy.action !== 'accept') {
+      continue;
+    }
+    
+    // Extrair interfaces de origem
+    const srcintf = policy.srcintf?.map((i: any) => i.name) || [];
+    const dstintf = policy.dstintf?.map((i: any) => i.name) || [];
+    
+    // Verificar se é VPN (excluir)
+    const isFromVPN = srcintf.some((name: string) => isVPNTunnel(name));
+    if (isFromVPN) {
+      continue;
+    }
+    
+    // Verificar se srcintf contém interface WAN
+    const isFromWAN = srcintf.some((name: string) => wanInterfaceNames.has(name));
+    
+    if (isFromWAN) {
+      const hasIPS = policy['utm-status'] === 'enable' && !!policy['ips-sensor'];
+      
+      inboundWAN.push({
+        policyid: policy.policyid,
+        name: policy.name || 'Sem nome',
+        srcintf,
+        dstintf,
+        hasIPS,
+        ipsSensor: policy['ips-sensor'] || '',
+        utmStatus: policy['utm-status'] || 'disable',
+      });
+    }
+  }
+  
+  console.log(`Identified ${inboundWAN.length} inbound WAN policies`);
+  return inboundWAN;
+}
+
+// ==================== VERIFICAÇÃO DE BACKUP AUTOMÁTICO ====================
+// Verifica automation-stitch/trigger/action para backup configurado
+
+interface BackupConfig {
+  isConfigured: boolean;
+  status: 'active' | 'inactive' | 'not_configured';
+  frequency: string;
+  detail: string;
+  stitchName: string;
+  triggerName: string;
+  actionName: string;
+}
+
+async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConfig> {
+  const result: BackupConfig = {
+    isConfigured: false,
+    status: 'not_configured',
+    frequency: '',
+    detail: 'Backup automático não configurado',
+    stitchName: '',
+    triggerName: '',
+    actionName: '',
+  };
+  
+  try {
+    // Buscar automation stitches
+    const stitchesResponse = await fortigateRequest(config, '/cmdb/system/automation-stitch').catch(() => ({ results: [] }));
+    const triggersResponse = await fortigateRequest(config, '/cmdb/system/automation-trigger').catch(() => ({ results: [] }));
+    const actionsResponse = await fortigateRequest(config, '/cmdb/system/automation-action').catch(() => ({ results: [] }));
+    
+    const stitches = stitchesResponse.results || [];
+    const triggers = triggersResponse.results || [];
+    const actions = actionsResponse.results || [];
+    
+    console.log(`Found ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
+    
+    // Mapear triggers por nome
+    const triggerMap = new Map<string, any>();
+    for (const trigger of triggers) {
+      triggerMap.set(trigger.name, trigger);
+    }
+    
+    // Mapear actions por nome
+    const actionMap = new Map<string, any>();
+    for (const action of actions) {
+      actionMap.set(action.name, action);
+    }
+    
+    // Procurar stitch de backup
+    for (const stitch of stitches) {
+      if (stitch.status !== 'enable') continue;
+      
+      // Verificar trigger associado
+      const triggerRefs = stitch.trigger || [];
+      const actionRefs = stitch.action || stitch.actions || [];
+      
+      for (const triggerRef of triggerRefs) {
+        const triggerName = typeof triggerRef === 'string' ? triggerRef : triggerRef.name;
+        const trigger = triggerMap.get(triggerName);
+        
+        if (!trigger) continue;
+        
+        // Verificar se é trigger agendado (scheduled)
+        const triggerType = trigger['trigger-type'] || trigger['event-type'] || '';
+        if (triggerType !== 'scheduled' && triggerType !== 'event-based') continue;
+        
+        // Para triggers event-based, pular (não é backup automático agendado)
+        if (triggerType === 'event-based') continue;
+        
+        // Verificar ações de backup
+        for (const actionRef of actionRefs) {
+          const actionName = typeof actionRef === 'string' ? actionRef : actionRef.name;
+          const action = actionMap.get(actionName);
+          
+          if (!action) continue;
+          
+          // Verificar se é ação de backup (cli-script com execute backup config)
+          const actionType = action['action-type'] || '';
+          const script = action.script || '';
+          
+          const isBackupAction = (
+            actionType === 'cli-script' && 
+            script.toLowerCase().includes('execute backup config')
+          ) || (
+            // Também aceitar ações que parecem ser de backup pelo nome
+            actionName.toLowerCase().includes('backup')
+          );
+          
+          if (!isBackupAction) continue;
+          
+          // Encontramos um backup automático válido!
+          result.isConfigured = true;
+          result.status = 'active';
+          result.stitchName = stitch.name;
+          result.triggerName = triggerName;
+          result.actionName = actionName;
+          
+          // Extrair frequência do trigger
+          const frequency = trigger['trigger-frequency'] || trigger.frequency || 'daily';
+          const triggerDay = trigger['trigger-day'] || trigger['trigger-weekday'] || '';
+          const triggerHour = trigger['trigger-hour'] ?? trigger.hour ?? 0;
+          const triggerMinute = trigger['trigger-minute'] ?? trigger.minute ?? 0;
+          
+          result.frequency = frequency;
+          
+          // Formatar detalhe legível
+          const timeStr = `${String(triggerHour).padStart(2, '0')}:${String(triggerMinute).padStart(2, '0')}`;
+          if (frequency === 'weekly' && triggerDay) {
+            result.detail = `${frequency} on ${triggerDay} at ${timeStr}`;
+          } else if (frequency === 'monthly') {
+            result.detail = `${frequency} at ${timeStr}`;
+          } else {
+            result.detail = `${frequency} at ${timeStr}`;
+          }
+          
+          console.log(`Found backup automation: ${result.stitchName} -> ${result.detail}`);
+          return result;
+        }
+      }
+    }
+    
+    // Fallback: verificar auto-script (método antigo)
+    try {
+      const autoScripts = await fortigateRequest(config, '/cmdb/system/auto-script');
+      const scripts = autoScripts.results || [];
+      const backupScripts = scripts.filter((s: any) => 
+        s.script?.toLowerCase().includes('backup') || s.name?.toLowerCase().includes('backup')
+      );
+      
+      if (backupScripts.length > 0) {
+        const script = backupScripts[0];
+        result.isConfigured = true;
+        result.status = 'active';
+        result.stitchName = 'auto-script';
+        result.triggerName = script.name;
+        result.actionName = script.name;
+        result.frequency = 'scheduled';
+        result.detail = `Auto-script: ${script.name} (interval: ${script.interval || 'N/A'})`;
+      }
+    } catch {
+      // Endpoint não disponível
+    }
+    
+  } catch (error) {
+    console.error('Error checking automated backup:', error);
+  }
+  
+  return result;
+}
+
+// Mascarar credenciais em scripts
+function maskCredentials(script: string): string {
+  // Mascarar senhas e tokens
+  return script
+    .replace(/password\s*=?\s*["']?[^"'\s]+["']?/gi, 'password=***MASKED***')
+    .replace(/token\s*=?\s*["']?[^"'\s]+["']?/gi, 'token=***MASKED***')
+    .replace(/key\s*=?\s*["']?[^"'\s]+["']?/gi, 'key=***MASKED***')
+    .replace(/secret\s*=?\s*["']?[^"'\s]+["']?/gi, 'secret=***MASKED***');
+}
+
+// ==================== VERIFICAÇÕES DE COMPLIANCE ====================
 
 // Verificar protocolos inseguros nas interfaces
 async function checkInsecureProtocols(config: FortiGateConfig): Promise<ComplianceCheck[]> {
@@ -499,97 +827,100 @@ async function checkAdminSecurity(config: FortiGateConfig): Promise<ComplianceCh
   return checks;
 }
 
-// Verificar configurações UTM (IPS, Web Filter, App Control)
-async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceCheck[]> {
+// Verificar configurações UTM (IPS, Web Filter, App Control) - CORRIGIDO PARA INBOUND WAN
+async function checkUTMProfiles(
+  config: FortiGateConfig,
+  wanInterfaceNames: Set<string>
+): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
   try {
-    // Buscar interfaces para identificar WAN e SDWAN
-    const interfaces = await fortigateRequest(config, '/cmdb/system/interface');
-    const sdwanZones = await fortigateRequest(config, '/cmdb/system/sdwan').catch(() => ({ results: [] }));
-    
-    // Identificar interfaces de saída para internet (WAN ou SDWAN)
-    const wanInterfaces = new Set<string>();
-    const sdwanInterfaceNames = new Set<string>();
-    
-    // Interfaces com role WAN
-    for (const iface of interfaces.results || []) {
-      if (iface.role === 'wan') {
-        wanInterfaces.add(iface.name);
-      }
-    }
-    
-    // Interfaces do SDWAN (membros e zones)
-    const sdwanConfig = sdwanZones.results || {};
-    const sdwanMembers = sdwanConfig.members || [];
-    for (const member of sdwanMembers) {
-      if (member.interface) {
-        sdwanInterfaceNames.add(member.interface);
-        wanInterfaces.add(member.interface);
-      }
-    }
-    
-    // Zones SDWAN
-    const sdwanZoneList = sdwanConfig.zone || [];
-    for (const zone of sdwanZoneList) {
-      if (zone.name) {
-        wanInterfaces.add(zone.name);
-      }
-    }
-    
-    // Também incluir "virtual-wan-link" usado em versões antigas
-    wanInterfaces.add('virtual-wan-link');
-    
-    console.log('WAN/SDWAN interfaces identificadas:', Array.from(wanInterfaces));
-    
-    // IPS
-    const ipsProfiles = await fortigateRequest(config, '/cmdb/ips/sensor');
     const policies = await fortigateRequest(config, '/cmdb/firewall/policy');
+    const ipsProfiles = await fortigateRequest(config, '/cmdb/ips/sensor');
     
     const allPolicies = policies.results || [];
     const totalPolicies = allPolicies.length;
     
-    // Filtrar políticas de saída para internet (destino WAN/SDWAN)
-    const internetOutboundPolicies = allPolicies.filter((p: any) => {
-      const dstintf = p.dstintf?.map((i: any) => i.name) || [];
-      return dstintf.some((ifname: string) => wanInterfaces.has(ifname));
-    });
+    // ==================== IPS/IDS - SOMENTE INBOUND WAN ====================
+    const inboundWANPolicies = identifyInboundWANPolicies(allPolicies, wanInterfaceNames);
+    const totalInboundWAN = inboundWANPolicies.length;
+    const inboundWithIPS = inboundWANPolicies.filter(p => p.hasIPS);
+    const inboundWithoutIPS = inboundWANPolicies.filter(p => !p.hasIPS);
     
-    const totalInternetPolicies = internetOutboundPolicies.length;
+    let ipsStatus: 'pass' | 'fail' | 'warning' = 'pass';
+    let ipsDetails = '';
+    let ipsRecommendation = 'Manter configuração atual';
     
-    console.log(`Políticas de saída internet: ${totalInternetPolicies} de ${totalPolicies} total`);
+    if (totalInboundWAN === 0) {
+      ipsStatus = 'pass';
+      ipsDetails = 'Nenhuma política inbound WAN identificada';
+    } else if (inboundWithIPS.length === 0) {
+      ipsStatus = 'fail';
+      ipsDetails = `NENHUMA das ${totalInboundWAN} políticas inbound WAN possui IPS/IDS ativo`;
+      ipsRecommendation = 'Aplicar perfil IPS em todas as regras de tráfego inbound WAN';
+    } else if (inboundWithIPS.length < totalInboundWAN) {
+      ipsStatus = 'warning';
+      ipsDetails = `IPS ativo em ${inboundWithIPS.length} de ${totalInboundWAN} políticas inbound WAN`;
+      ipsRecommendation = 'Aplicar perfil IPS nas políticas inbound WAN sem proteção';
+    } else {
+      ipsDetails = `Todas as ${totalInboundWAN} políticas inbound WAN possuem IPS/IDS ativo`;
+    }
     
-    // IPS - considera todas as políticas (entrada e saída)
-    const policiesWithIPS = allPolicies.filter((p: any) => p['ips-sensor']);
-    const policiesWithoutIPS = allPolicies.filter((p: any) => !p['ips-sensor']);
+    const ipsEvidence: EvidenceItem[] = [
+      { label: 'Total políticas inbound WAN', value: String(totalInboundWAN), type: 'text' as const },
+      { label: 'Com IPS ativo', value: String(inboundWithIPS.length), type: 'text' as const },
+    ];
     
-    const ipsStatus = policiesWithIPS.length === 0 ? 'fail' : 
-                      policiesWithIPS.length < totalPolicies * 0.7 ? 'warning' : 'pass';
+    if (inboundWithIPS.length > 0) {
+      ipsEvidence.push({
+        label: 'Políticas protegidas',
+        value: inboundWithIPS.map(p => `#${p.policyid}: ${p.name} (${p.ipsSensor})`).join(', '),
+        type: 'code' as const,
+      });
+    }
+    
+    if (inboundWithoutIPS.length > 0) {
+      ipsEvidence.push({
+        label: 'Políticas SEM IPS (inbound WAN)',
+        value: inboundWithoutIPS.map(p => 
+          `#${p.policyid}: ${p.name} (srcintf: ${p.srcintf.join(',')}, dstintf: ${p.dstintf.join(',')})`
+        ).join(' | '),
+        type: 'code' as const,
+      });
+    }
     
     checks.push({
       id: 'utm-001',
-      name: 'Perfil IPS/IDS Ativo',
-      description: 'Verifica se perfis de Intrusion Prevention estão aplicados nas políticas',
+      name: 'Perfil IPS/IDS Ativo (Inbound WAN)',
+      description: 'Verifica se perfis de Intrusion Prevention estão aplicados nas políticas de entrada da internet (inbound WAN)',
       category: 'Perfis de Segurança UTM',
       status: ipsStatus,
       severity: 'high',
-      recommendation: policiesWithIPS.length < totalPolicies
-        ? 'Aplicar perfil IPS em todas as regras de tráfego de entrada'
-        : 'Manter configuração atual',
-      details: `IPS aplicado em ${policiesWithIPS.length} de ${totalPolicies} políticas`,
+      recommendation: ipsRecommendation,
+      details: ipsDetails,
       apiEndpoint: '/api/v2/cmdb/firewall/policy',
-      evidence: [
-        { label: 'Com IPS', value: policiesWithIPS.map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'} (${p['ips-sensor']})`).join(', ') || 'Nenhuma', type: 'text' as const },
-        { label: 'Sem IPS', value: policiesWithoutIPS.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
-      ],
+      evidence: ipsEvidence,
       rawData: { 
-        total: totalPolicies,
-        withIPS: policiesWithIPS.length,
+        totalInboundWAN,
+        withIPS: inboundWithIPS.length,
+        withoutIPS: inboundWithoutIPS.map(p => ({
+          policyid: p.policyid,
+          name: p.name,
+          srcintf: p.srcintf,
+          dstintf: p.dstintf,
+        })),
         ipsProfiles: (ipsProfiles.results || []).map((p: any) => p.name),
       },
     });
     
-    // Web Filter - APENAS políticas de saída para internet (WAN/SDWAN)
+    // ==================== WEB FILTER - SAÍDA INTERNET ====================
+    // Políticas de saída para internet (destino WAN)
+    const internetOutboundPolicies = allPolicies.filter((p: any) => {
+      const dstintf = p.dstintf?.map((i: any) => i.name) || [];
+      return dstintf.some((ifname: string) => wanInterfaceNames.has(ifname));
+    });
+    const totalInternetPolicies = internetOutboundPolicies.length;
+    
     const internetPoliciesWithWebFilter = internetOutboundPolicies.filter((p: any) => p['webfilter-profile']);
     const internetPoliciesWithoutWebFilter = internetOutboundPolicies.filter((p: any) => !p['webfilter-profile']);
     
@@ -610,7 +941,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       details: `Web Filter aplicado em ${internetPoliciesWithWebFilter.length} de ${totalInternetPolicies} políticas de saída internet`,
       apiEndpoint: '/api/v2/cmdb/firewall/policy',
       evidence: [
-        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaces).join(', ') || 'Nenhuma identificada', type: 'text' as const },
+        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaceNames).join(', ') || 'Nenhuma identificada', type: 'text' as const },
         { label: 'Com WebFilter', value: internetPoliciesWithWebFilter.map((p: any) => `#${p.policyid}: ${p['webfilter-profile']}`).join(', ') || 'Nenhuma', type: 'text' as const },
         { label: 'Sem WebFilter', value: internetPoliciesWithoutWebFilter.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
       ],
@@ -618,11 +949,11 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         total: totalPolicies,
         internetPolicies: totalInternetPolicies,
         withWebFilter: internetPoliciesWithWebFilter.length,
-        wanInterfaces: Array.from(wanInterfaces),
+        wanInterfaces: Array.from(wanInterfaceNames),
       },
     });
     
-    // Application Control - APENAS políticas de saída para internet (WAN/SDWAN)
+    // ==================== APPLICATION CONTROL - SAÍDA INTERNET ====================
     const internetPoliciesWithAppCtrl = internetOutboundPolicies.filter((p: any) => p['application-list']);
     const internetPoliciesWithoutAppCtrl = internetOutboundPolicies.filter((p: any) => !p['application-list']);
     
@@ -643,7 +974,7 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
       details: `Application Control aplicado em ${internetPoliciesWithAppCtrl.length} de ${totalInternetPolicies} políticas de saída internet`,
       apiEndpoint: '/api/v2/cmdb/firewall/policy',
       evidence: [
-        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaces).join(', ') || 'Nenhuma identificada', type: 'text' as const },
+        { label: 'Interfaces WAN/SDWAN', value: Array.from(wanInterfaceNames).join(', ') || 'Nenhuma identificada', type: 'text' as const },
         { label: 'Com AppControl', value: internetPoliciesWithAppCtrl.map((p: any) => `#${p.policyid}: ${p['application-list']}`).join(', ') || 'Nenhuma', type: 'text' as const },
         { label: 'Sem AppControl', value: internetPoliciesWithoutAppCtrl.slice(0, 5).map((p: any) => `#${p.policyid}: ${p.name || 'Sem nome'}`).join(', ') || 'Nenhuma', type: 'text' as const },
       ],
@@ -651,13 +982,13 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
         total: totalPolicies,
         internetPolicies: totalInternetPolicies,
         withAppControl: internetPoliciesWithAppCtrl.length,
-        wanInterfaces: Array.from(wanInterfaces),
+        wanInterfaces: Array.from(wanInterfaceNames),
       },
     });
     
-    // Antivírus
-    const policiesWithAV = (policies.results || []).filter((p: any) => p['av-profile']);
-    const policiesWithoutAV = (policies.results || []).filter((p: any) => !p['av-profile']);
+    // ==================== ANTIVÍRUS ====================
+    const policiesWithAV = allPolicies.filter((p: any) => p['av-profile']);
+    const policiesWithoutAV = allPolicies.filter((p: any) => !p['av-profile']);
     
     checks.push({
       id: 'utm-009',
@@ -697,12 +1028,12 @@ async function checkUTMProfiles(config: FortiGateConfig): Promise<ComplianceChec
   return checks;
 }
 
-// Verificar HA e Backup
+// Verificar HA e Backup - ATUALIZADO COM AUTOMATION STITCH
 async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
   try {
-    // HA Status
+    // ==================== HA STATUS ====================
     const haStatus = await fortigateRequest(config, '/cmdb/system/ha');
     const haSettings = haStatus.results || {};
     
@@ -764,64 +1095,55 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
       });
     }
     
-    // Backup - verificar configuração de auto-backup
-    try {
-      const autoBackup = await fortigateRequest(config, '/cmdb/system/auto-script');
-      const allScripts = autoBackup.results || [];
-      const backupScripts = allScripts.filter((s: any) => 
-        s.script?.toLowerCase().includes('backup') || s.name?.toLowerCase().includes('backup')
+    // ==================== BACKUP AUTOMÁTICO - VIA AUTOMATION STITCH ====================
+    const backupConfig = await checkAutomatedBackup(config);
+    
+    let backupStatus: 'pass' | 'fail' | 'warning' = 'fail';
+    let backupDetails = 'Backup automático não configurado';
+    let backupRecommendation = 'Configurar backup automático usando automation stitch com trigger agendado';
+    
+    if (backupConfig.isConfigured && backupConfig.status === 'active') {
+      backupStatus = 'pass';
+      backupDetails = `Backup Automático Ativo | Frequência: ${backupConfig.frequency} | ${backupConfig.detail}`;
+      backupRecommendation = 'Manter configuração atual';
+    }
+    
+    const backupEvidence: EvidenceItem[] = [
+      { label: 'Status', value: backupConfig.status === 'active' ? '✅ Ativo' : '❌ Não configurado', type: 'text' as const },
+    ];
+    
+    if (backupConfig.isConfigured) {
+      backupEvidence.push(
+        { label: 'Frequência', value: backupConfig.frequency, type: 'text' as const },
+        { label: 'Detalhe', value: backupConfig.detail, type: 'text' as const },
+        { label: 'Stitch', value: backupConfig.stitchName, type: 'code' as const },
+        { label: 'Trigger', value: backupConfig.triggerName, type: 'code' as const },
+        { label: 'Action', value: backupConfig.actionName, type: 'code' as const },
       );
-      
-      checks.push({
-        id: 'bkp-001',
-        name: 'Backup Automático Configurado',
-        description: 'Verifica se backup automático de configuração está habilitado',
-        category: 'Backup e Recovery',
-        status: backupScripts.length === 0 ? 'fail' : 'pass',
-        severity: 'high',
-        recommendation: backupScripts.length === 0
-          ? 'Configurar backup automático para servidor TFTP/SCP ou FortiManager'
-          : 'Manter configuração atual',
-        details: backupScripts.length > 0
-          ? `${backupScripts.length} script(s) de backup configurado(s)`
-          : 'Nenhum backup automático configurado',
-        apiEndpoint: '/api/v2/cmdb/system/auto-script',
-        evidence: backupScripts.length > 0
-          ? backupScripts.map((s: any) => ({
-              label: `Script: ${s.name}`,
-              value: `interval: ${s.interval || 'N/A'}, start: ${s.start || 'N/A'}`,
-              type: 'code' as const,
-            }))
-          : [{
-              label: 'Scripts encontrados',
-              value: allScripts.length > 0 
-                ? `${allScripts.length} script(s) encontrado(s), nenhum relacionado a backup`
-                : 'Nenhum auto-script configurado',
-              type: 'text' as const,
-            }],
-        rawData: {
-          totalScripts: allScripts.length,
-          backupScripts: backupScripts.map((s: any) => ({ name: s.name, interval: s.interval })),
-        },
-      });
-    } catch {
-      checks.push({
-        id: 'bkp-001',
-        name: 'Backup Automático Configurado',
-        description: 'Verifica se backup automático de configuração está habilitado',
-        category: 'Backup e Recovery',
-        status: 'warning',
-        severity: 'high',
-        recommendation: 'Verificar configuração de backup manualmente',
-        details: 'Não foi possível verificar configuração de auto-backup',
-        apiEndpoint: '/api/v2/cmdb/system/auto-script',
-        evidence: [{
-          label: 'Status',
-          value: 'Endpoint não disponível ou sem permissão',
-          type: 'text' as const,
-        }],
+    } else {
+      backupEvidence.push({
+        label: 'Verificação',
+        value: 'Nenhum automation-stitch de backup encontrado',
+        type: 'text' as const,
       });
     }
+    
+    checks.push({
+      id: 'bkp-001',
+      name: 'Backup Automático Configurado',
+      description: 'Verifica se backup automático de configuração está habilitado via automation stitch',
+      category: 'Backup e Recovery',
+      status: backupStatus,
+      severity: 'high',
+      recommendation: backupRecommendation,
+      details: backupDetails,
+      apiEndpoint: '/api/v2/cmdb/system/automation-stitch',
+      evidence: backupEvidence,
+      rawData: {
+        ...backupConfig,
+      },
+    });
+    
   } catch (error) {
     console.error('Error checking HA and backup:', error);
     checks.push({
@@ -840,148 +1162,94 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
 }
 
 // Versões recomendadas pela Fortinet (atualizado em Dezembro 2025)
-// Fonte: https://community.fortinet.com/t5/FortiGate/Technical-Tip-Recommended-Release-for-FortiOS/ta-p/227178
 const FORTINET_RECOMMENDED_VERSIONS: Record<string, string> = {
-  // Versão recomendada geral para a maioria dos modelos modernos
   'default': '7.4.8',
-  // Modelos Low End antigos
   'FortiGate-30E': '6.2.16',
-  'FortiWiFi-30E': '6.2.16',
   'FortiGate-50E': '6.2.16',
-  'FortiWiFi-50E': '6.2.16',
-  'FortiGate-51E': '6.2.16',
-  'FortiGate-52E': '6.2.16',
-  'FortiGate-98D': '6.0.18',
-  'FortiGate-240D': '6.0.18',
-  'FortiGate-280D': '6.0.18',
-  // Mid Range antigos
-  'FortiGate-100E': '7.2.11',
-  'FortiGate-101E': '7.2.11',
-  // High End antigos
-  'FortiGate-1200D': '7.0.17',
-  'FortiGate-1500D': '7.2.11',
-  'FortiGate-1500DT': '7.2.11',
+  'FortiGate-60E': '6.4.15',
+  'FortiGate-80E': '6.4.15',
+  'FortiGate-90E': '6.4.15',
+  'FortiGate-100E': '6.4.15',
+  'FortiGate-200E': '6.4.15',
+  'FortiGate-100F': '7.4.8',
+  'FortiGate-200F': '7.4.8',
+  'FortiGate-400F': '7.4.8',
+  'FortiGate-600F': '7.4.8',
 };
 
-// Função para extrair versão numérica do FortiOS (ex: "v7.4.8" -> "7.4.8")
+// Extrair versão do FortiOS
 function extractVersion(versionString: string): string {
-  const match = versionString.match(/v?(\d+\.\d+\.\d+)/i);
-  return match ? match[1] : versionString;
+  if (!versionString) return '';
+  const match = versionString.match(/(\d+\.\d+\.?\d*)/);
+  return match ? match[1] : '';
 }
 
-// Função para comparar versões semânticas
+// Comparar versões
 function compareVersions(current: string, recommended: string): 'up-to-date' | 'outdated' | 'unknown' {
-  try {
-    const currentParts = current.split('.').map(Number);
-    const recommendedParts = recommended.split('.').map(Number);
+  if (!current || current === 'Desconhecida') return 'unknown';
+  
+  const currentParts = current.split('.').map(Number);
+  const recommendedParts = recommended.split('.').map(Number);
+  
+  for (let i = 0; i < Math.max(currentParts.length, recommendedParts.length); i++) {
+    const curr = currentParts[i] || 0;
+    const rec = recommendedParts[i] || 0;
     
-    for (let i = 0; i < 3; i++) {
-      const c = currentParts[i] || 0;
-      const r = recommendedParts[i] || 0;
-      if (c > r) return 'up-to-date';
-      if (c < r) return 'outdated';
-    }
-    return 'up-to-date';
-  } catch {
-    return 'unknown';
+    if (curr > rec) return 'up-to-date';
+    if (curr < rec) return 'outdated';
   }
+  
+  return 'up-to-date';
 }
 
-// Verificar firmware e atualizações
+// Verificar Firmware
 async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
   try {
-    // Buscar informações de múltiplos endpoints
-    const [systemStatus, globalSettings] = await Promise.all([
-      fortigateRequest(config, '/monitor/system/status'),
-      fortigateRequest(config, '/cmdb/system/global'),
-    ]);
+    const systemStatus = await fortigateRequest(config, '/monitor/system/status');
+    const globalSettings = await fortigateRequest(config, '/cmdb/system/global');
     
-    // A API FortiGate retorna dados de duas formas:
-    // - Metadados (serial, version, build) no nível raiz da resposta
-    // - Dados específicos em 'results'
     const status = systemStatus.results || systemStatus || {};
     const global = globalSettings.results || {};
     
-    // Serial number e version vêm no nível raiz da resposta, não em 'results'
     const rootSerial = systemStatus.serial || '';
     const rootVersion = systemStatus.version || '';
     
-    console.log('System status root level:', { serial: rootSerial, version: rootVersion, build: systemStatus.build });
-    console.log('System status results:', JSON.stringify(status, null, 2));
-    console.log('Global settings response:', JSON.stringify(global, null, 2));
+    console.log('System status:', { serial: rootSerial, version: rootVersion });
     
-    // Tentar obter a versão de múltiplas fontes
-    // 1. Primeiro tenta do /monitor/system/status
-    // 2. Depois tenta do /cmdb/system/global (campo version)
-    // 3. Tenta do campo 'current_version' ou 'fos_version'
-    const rawVersion = status.version || 
-                       status.current_version || 
-                       status.fos_version ||
-                       global.version ||
-                       '';
-    
-    // Extrair a versão do hostname se contiver padrão de versão (backup)
+    const rawVersion = status.version || status.current_version || status.fos_version || global.version || '';
     let currentVersion = extractVersion(rawVersion);
     
-    // Se não encontrou, tentar buscar via firmware status
     if (!currentVersion) {
       try {
         const firmwareStatus = await fortigateRequest(config, '/monitor/system/firmware');
         const fw = firmwareStatus.results || firmwareStatus || {};
-        console.log('Firmware status response:', JSON.stringify(fw, null, 2));
         if (fw.current && fw.current.version) {
           currentVersion = extractVersion(fw.current.version);
         }
-      } catch (fwErr) {
-        console.log('Could not fetch firmware status:', fwErr);
+      } catch {
+        console.log('Could not fetch firmware status');
       }
     }
     
     currentVersion = currentVersion || 'Desconhecida';
     
-    // FortiGate API returns serial number at ROOT level of response, NOT in 'results'
-    // This is the standard format: { "results": {...}, "serial": "FGT...", "version": "v7.x.x", "build": xxx }
-    
-    // Try multiple sources for serial number - ROOT LEVEL FIRST
-    let serial = rootSerial; // From root level (most common)
-    
-    // Fallback to other sources if root level doesn't have it
+    let serial = rootSerial;
     if (!serial) {
-      // 1. Direct fields in status results
       if (status.serial) serial = status.serial;
       else if (status.serial_number) serial = status.serial_number;
       else if (status['serial-number']) serial = status['serial-number'];
       else if (status.sn) serial = status.sn;
-      
-      // 2. Try from global settings
       if (!serial && global.serial) serial = global.serial;
-      
-      // 3. Try to find any field containing 'serial' in the value pattern (FGT...)
-      if (!serial) {
-        for (const [key, value] of Object.entries(status)) {
-          if (typeof value === 'string' && value.startsWith('FGT')) {
-            console.log(`Found potential serial in field '${key}': ${value}`);
-            serial = value;
-            break;
-          }
-        }
-      }
     }
-    
-    console.log('Serial number search result:', serial || 'NOT FOUND');
     
     const hostname = status.hostname || global.hostname || '';
     const model = status.model_name || status.model || global.model || '';
     
-    console.log('Extracted device info:', { serial, hostname, model });
-    
-    // Uptime pode vir em diferentes formatos: segundos, string formatada, ou objeto
     let uptimeStr = '';
     if (status.uptime !== undefined && status.uptime !== null) {
       if (typeof status.uptime === 'number') {
-        // Converter segundos para formato legível
         const days = Math.floor(status.uptime / 86400);
         const hours = Math.floor((status.uptime % 86400) / 3600);
         const minutes = Math.floor((status.uptime % 3600) / 60);
@@ -991,7 +1259,6 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       }
     }
     
-    // Determinar versão recomendada com base no modelo
     const recommendedVersion = FORTINET_RECOMMENDED_VERSIONS[model] || FORTINET_RECOMMENDED_VERSIONS['default'];
     const versionStatus = compareVersions(currentVersion, recommendedVersion);
     
@@ -1001,7 +1268,7 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     
     if (versionStatus === 'outdated') {
       checkStatus = 'fail';
-      recommendation = `Atualizar para FortiOS ${recommendedVersion} conforme recomendação Fortinet (Dezembro 2025)`;
+      recommendation = `Atualizar para FortiOS ${recommendedVersion} conforme recomendação Fortinet`;
       details = `Versão DESATUALIZADA: FortiOS ${currentVersion} → Recomendada: ${recommendedVersion}`;
     } else if (versionStatus === 'unknown') {
       checkStatus = 'warning';
@@ -1009,7 +1276,6 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
       details = `Versão atual: ${rawVersion || 'Não identificada'}`;
     }
     
-    // Montar evidence - Serial Number sempre aparece
     const evidence: EvidenceItem[] = [
       { label: 'Versão FortiOS Atual', value: currentVersion || rawVersion || 'Não identificada', type: 'text' as const },
       { label: 'Versão Recomendada Fortinet', value: recommendedVersion, type: 'text' as const },
@@ -1020,7 +1286,6 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     ];
     
     if (uptimeStr) evidence.push({ label: 'Uptime', value: uptimeStr, type: 'text' as const });
-    evidence.push({ label: 'Fonte da recomendação', value: 'Fortinet Community - Technical Tip (Dezembro 2025)', type: 'text' as const });
     
     checks.push({
       id: 'upd-001',
@@ -1042,7 +1307,6 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
         hostname,
         model,
         uptime: uptimeStr,
-        source: 'https://community.fortinet.com/t5/FortiGate/Technical-Tip-Recommended-Release-for-FortiOS/ta-p/227178',
       },
     });
   } catch (error) {
@@ -1062,54 +1326,24 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
   return checks;
 }
 
-// Verificar Licenças FortiGuard e Suporte
+// Verificar Licenças
 async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
   try {
-    // Buscar status das licenças FortiGuard
     const licenseStatus = await fortigateRequest(config, '/monitor/license/status');
     const licenses = licenseStatus.results || licenseStatus || {};
     
-    console.log('License status response:', JSON.stringify(licenses, null, 2));
-    
-    // Mapear nomes de serviços para exibição
-    const serviceNames: Record<string, string> = {
-      'forticare': 'FortiCare Support',
-      'fortiguard': 'FortiGuard Services',
-      'antivirus': 'Antivírus',
-      'ips': 'IPS (Intrusion Prevention)',
-      'webfilter': 'Web Filter',
-      'appctrl': 'Application Control',
-      'antispam': 'AntiSpam',
-      'industrial_db': 'Industrial Database',
-      'security_rating': 'Security Rating',
-      'botnet_domain': 'Botnet Domain',
-      'botnet_ip': 'Botnet IP',
-      'malicious_urls': 'Malicious URLs',
-      'mobile_malware': 'Mobile Malware',
-      'outbreak_prevention': 'Outbreak Prevention',
-      'device_os_id': 'Device/OS Identification',
-      'fsa_sandbox': 'FortiSandbox Cloud',
-      'fsae': 'FortiSandbox',
-      'faz_cloud': 'FortiAnalyzer Cloud',
-      'fgd_wf': 'FortiGuard Web Filter',
-    };
-    
-    // Verificar FortiCare/Suporte - estrutura real: forticare.support.hardware ou forticare.support.enhanced
+    // FortiCare Support
     const forticareInfo = licenses.forticare || {};
     const supportInfo = forticareInfo.support || {};
-    
-    // Pegar a licença hardware ou enhanced (premium)
     const hardwareSupport = supportInfo.hardware || {};
     const enhancedSupport = supportInfo.enhanced || {};
     
-    // Usar a licença com maior tempo restante
     const hardwareExpiry = hardwareSupport.expires || 0;
     const enhancedExpiry = enhancedSupport.expires || 0;
     const supportExpiry = Math.max(hardwareExpiry, enhancedExpiry);
     const supportStatus = hardwareSupport.status || enhancedSupport.status || forticareInfo.status || 'unknown';
-    const supportLevel = enhancedSupport.support_level || hardwareSupport.support_level || '';
     const registrationStatus = forticareInfo.registration_status || forticareInfo.status || '';
     
     let supportActive = false;
@@ -1117,7 +1351,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     let supportExpiryDate = '';
     
     if (supportExpiry) {
-      const expiryDate = new Date(supportExpiry * 1000); // Unix timestamp
+      const expiryDate = new Date(supportExpiry * 1000);
       supportExpiryDate = expiryDate.toLocaleDateString('pt-BR');
       supportDaysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
       supportActive = supportDaysRemaining > 0;
@@ -1132,7 +1366,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     if (!supportActive) {
       supportCheckStatus = 'fail';
       supportDetails = 'Suporte FortiCare EXPIRADO ou não identificado';
-      supportRecommendation = 'Renovar contrato FortiCare imediatamente para ter acesso a atualizações e suporte técnico';
+      supportRecommendation = 'Renovar contrato FortiCare imediatamente';
     } else if (supportDaysRemaining > 0 && supportDaysRemaining <= 30) {
       supportCheckStatus = 'warning';
       supportDetails = `Suporte FortiCare expira em ${supportDaysRemaining} dias (${supportExpiryDate})`;
@@ -1144,12 +1378,6 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     const supportEvidence: EvidenceItem[] = [
       { label: 'Status', value: supportActive ? '✅ Ativo' : '❌ Expirado/Inativo', type: 'text' as const },
     ];
-    if (supportLevel) {
-      supportEvidence.push({ label: 'Nível de Suporte', value: supportLevel, type: 'text' as const });
-    }
-    if (registrationStatus) {
-      supportEvidence.push({ label: 'Registro', value: registrationStatus, type: 'text' as const });
-    }
     if (supportExpiryDate) {
       supportEvidence.push({ label: 'Data de Expiração', value: supportExpiryDate, type: 'text' as const });
       supportEvidence.push({ label: 'Dias Restantes', value: supportDaysRemaining > 0 ? String(supportDaysRemaining) : 'Expirado', type: 'text' as const });
@@ -1169,22 +1397,21 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       rawData: { forticare: forticareInfo, daysRemaining: supportDaysRemaining },
     });
     
-    // Verificar licenças de segurança FortiGuard
-    // Nota: webfilter pode estar como 'web_filter', 'webfiltering', 'web_filtering' ou 'fgd_wf'
-    const securityServicesMap: { key: string; altKeys: string[]; name: string }[] = [
+    // FortiGuard Services
+    const securityServicesMap = [
       { key: 'antivirus', altKeys: ['av'], name: 'Antivírus' },
-      { key: 'ips', altKeys: ['nids', 'intrusion_prevention'], name: 'IPS' },
-      { key: 'web_filter', altKeys: ['webfilter', 'webfiltering', 'web_filtering', 'fgd_wf'], name: 'Web Filter' },
-      { key: 'appctrl', altKeys: ['app_ctrl', 'application_control'], name: 'App Control' },
-      { key: 'antispam', altKeys: ['anti_spam', 'fortimail'], name: 'AntiSpam' },
+      { key: 'ips', altKeys: ['nids'], name: 'IPS' },
+      { key: 'web_filter', altKeys: ['webfilter', 'fgd_wf'], name: 'Web Filter' },
+      { key: 'appctrl', altKeys: ['app_ctrl'], name: 'App Control' },
+      { key: 'antispam', altKeys: ['anti_spam'], name: 'AntiSpam' },
     ];
+    
     const activeServices: string[] = [];
     const expiredServices: string[] = [];
     const expiringServices: string[] = [];
     const licenseEvidence: EvidenceItem[] = [];
     
     for (const serviceMapping of securityServicesMap) {
-      // Tentar encontrar o serviço com a chave principal ou alternativas
       let serviceInfo = licenses[serviceMapping.key];
       if (!serviceInfo || Object.keys(serviceInfo).length === 0) {
         for (const altKey of serviceMapping.altKeys) {
@@ -1216,26 +1443,14 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       if (isActive) {
         if (daysRemaining > 0 && daysRemaining <= 30) {
           expiringServices.push(serviceName);
-          licenseEvidence.push({ 
-            label: serviceName, 
-            value: `⚠️ Expira em ${daysRemaining} dias (${expiryDateStr})`, 
-            type: 'text' as const 
-          });
+          licenseEvidence.push({ label: serviceName, value: `⚠️ Expira em ${daysRemaining} dias`, type: 'text' as const });
         } else {
           activeServices.push(serviceName);
-          licenseEvidence.push({ 
-            label: serviceName, 
-            value: expiryDateStr ? `✅ Ativo até ${expiryDateStr}` : '✅ Ativo', 
-            type: 'text' as const 
-          });
+          licenseEvidence.push({ label: serviceName, value: expiryDateStr ? `✅ Ativo até ${expiryDateStr}` : '✅ Ativo', type: 'text' as const });
         }
       } else {
         expiredServices.push(serviceName);
-        licenseEvidence.push({ 
-          label: serviceName, 
-          value: '❌ Expirado/Inativo', 
-          type: 'text' as const 
-        });
+        licenseEvidence.push({ label: serviceName, value: '❌ Expirado/Inativo', type: 'text' as const });
       }
     }
     
@@ -1246,17 +1461,17 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     if (expiredServices.length > 0) {
       licenseCheckStatus = 'fail';
       licenseDetails = `${expiredServices.length} serviços FortiGuard expirados: ${expiredServices.join(', ')}`;
-      licenseRecommendation = 'Renovar licenças FortiGuard expiradas para manter proteção ativa';
+      licenseRecommendation = 'Renovar licenças FortiGuard expiradas';
     } else if (expiringServices.length > 0) {
       licenseCheckStatus = 'warning';
-      licenseDetails = `${expiringServices.length} serviços expirando em breve: ${expiringServices.join(', ')}`;
+      licenseDetails = `${expiringServices.length} serviços expirando: ${expiringServices.join(', ')}`;
       licenseRecommendation = 'Renovar licenças FortiGuard antes da expiração';
     }
     
     checks.push({
       id: 'lic-002',
       name: 'Licenças FortiGuard',
-      description: 'Verifica status das licenças de segurança FortiGuard (AV, IPS, WebFilter, AppControl)',
+      description: 'Verifica status das licenças de segurança FortiGuard',
       category: 'Licenciamento',
       status: licenseCheckStatus,
       severity: 'high',
@@ -1264,12 +1479,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       recommendation: licenseRecommendation,
       apiEndpoint: '/api/v2/monitor/license/status',
       evidence: licenseEvidence,
-      rawData: { 
-        active: activeServices, 
-        expired: expiredServices, 
-        expiring: expiringServices,
-        licenses 
-      },
+      rawData: { active: activeServices, expired: expiredServices, expiring: expiringServices },
     });
     
   } catch (error) {
@@ -1297,117 +1507,83 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
     const vpnIpsec = await fortigateRequest(config, '/cmdb/vpn.ipsec/phase1-interface');
     const vpnPhase1 = vpnIpsec.results || [];
     
-    const weakCrypto = vpnPhase1.filter((v: any) => {
-      const proposal = v.proposal || '';
-      return proposal.includes('des') || proposal.includes('md5');
-    });
+    const weakEncryption: { name: string; proposal: string }[] = [];
+    const strongEncryption: { name: string; proposal: string }[] = [];
     
-    const strongCrypto = vpnPhase1.filter((v: any) => {
-      const proposal = v.proposal || '';
-      return !proposal.includes('des') && !proposal.includes('md5');
-    });
+    const weakAlgorithms = ['des', '3des', 'md5', 'sha1'];
     
-    checks.push({
-      id: 'vpn-001',
-      name: 'Criptografia VPN',
-      description: 'Verifica se algoritmos de criptografia fortes estão em uso',
-      category: 'Configuração VPN',
-      status: weakCrypto.length > 0 ? 'fail' : 'pass',
-      severity: 'critical',
-      recommendation: weakCrypto.length > 0
-        ? 'Atualizar para algoritmos de criptografia mais fortes (AES-256, SHA-256)'
-        : 'Manter configuração atual',
-      details: weakCrypto.length > 0
-        ? `${weakCrypto.length} VPN(s) com criptografia fraca detectada(s)`
-        : 'Todas as VPNs utilizam criptografia forte',
-      apiEndpoint: '/api/v2/cmdb/vpn.ipsec/phase1-interface',
-      evidence: vpnPhase1.length > 0
-        ? vpnPhase1.map((v: any) => ({
-            label: `VPN: ${v.name}`,
-            value: `proposal: ${v.proposal || 'N/A'}, ike-version: ${v['ike-version'] || 'N/A'}, dhgrp: ${v.dhgrp || 'N/A'}`,
-            type: 'code' as const,
-          }))
-        : [{
-            label: 'VPNs IPSec',
-            value: 'Nenhuma VPN IPSec configurada',
-            type: 'text' as const,
-          }],
-      rawData: {
-        total: vpnPhase1.length,
-        withWeakCrypto: weakCrypto.length,
-        withStrongCrypto: strongCrypto.length,
-        vpns: vpnPhase1.map((v: any) => ({ name: v.name, proposal: v.proposal, ikeVersion: v['ike-version'] })),
-      },
-    });
-    
-    // Verificar certificado SSL VPN
-    try {
-      const sslvpnSettings = await fortigateRequest(config, '/cmdb/vpn.ssl/settings');
-      const sslvpn = sslvpnSettings.results || {};
-      const sslCertName = sslvpn['servercert'] || sslvpn['server-cert'] || '';
+    for (const vpn of vpnPhase1) {
+      const proposals = vpn.proposal || '';
+      const isWeak = weakAlgorithms.some(alg => proposals.toLowerCase().includes(alg));
       
-      // Buscar detalhes do certificado usado pelo SSL VPN
-      let sslCertValid = false;
-      let sslCertDetails = 'Certificado não identificado';
-      let certEvidence: EvidenceItem[] = [];
-      
-      if (sslCertName && sslCertName !== 'Fortinet_Factory') {
-        // Certificado customizado configurado
-        sslCertValid = true;
-        sslCertDetails = `Certificado customizado: ${sslCertName}`;
-        certEvidence = [
-          { label: 'Certificado SSL VPN', value: sslCertName, type: 'code' as const },
-          { label: 'Status', value: '✅ Usando certificado customizado (não é Fortinet_Factory)', type: 'text' as const },
-        ];
-      } else if (sslCertName === 'Fortinet_Factory') {
-        sslCertValid = false;
-        sslCertDetails = 'Usando certificado padrão de fábrica (Fortinet_Factory)';
-        certEvidence = [
-          { label: 'Certificado SSL VPN', value: 'Fortinet_Factory', type: 'code' as const },
-          { label: 'Status', value: '❌ Certificado padrão de fábrica - não confiável por navegadores', type: 'text' as const },
-        ];
+      if (isWeak) {
+        weakEncryption.push({ name: vpn.name, proposal: proposals });
       } else {
-        sslCertDetails = 'Não foi possível identificar o certificado configurado';
-        certEvidence = [
-          { label: 'Certificado SSL VPN', value: 'Não identificado', type: 'text' as const },
-        ];
+        strongEncryption.push({ name: vpn.name, proposal: proposals });
       }
-      
+    }
+    
+    if (vpnPhase1.length > 0) {
       checks.push({
-        id: 'vpn-002',
-        name: 'Certificado SSL VPN',
-        description: 'Verifica se SSL VPN usa um certificado válido (não padrão de fábrica)',
+        id: 'vpn-001',
+        name: 'Criptografia IPsec VPN',
+        description: 'Verifica força dos algoritmos de criptografia das VPNs',
         category: 'Configuração VPN',
-        status: sslCertValid ? 'pass' : 'fail',
+        status: weakEncryption.length > 0 ? 'warning' : 'pass',
         severity: 'high',
-        recommendation: !sslCertValid
-          ? 'Substituir certificado Fortinet_Factory por um certificado válido de uma CA confiável'
+        recommendation: weakEncryption.length > 0
+          ? 'Atualizar VPNs para usar algoritmos mais fortes (AES-256, SHA-256)'
           : 'Manter configuração atual',
-        details: sslCertDetails,
-        apiEndpoint: '/api/v2/cmdb/vpn.ssl/settings',
-        evidence: certEvidence,
-        rawData: {
-          servercert: sslCertName,
-          sslvpnSettings: sslvpn,
-        },
+        details: weakEncryption.length > 0
+          ? `${weakEncryption.length} VPN(s) com criptografia fraca`
+          : `${vpnPhase1.length} VPN(s) com criptografia forte`,
+        apiEndpoint: '/api/v2/cmdb/vpn.ipsec/phase1-interface',
+        evidence: weakEncryption.length > 0
+          ? weakEncryption.map(v => ({
+              label: `VPN: ${v.name}`,
+              value: `proposal: ${v.proposal}`,
+              type: 'code' as const,
+            }))
+          : strongEncryption.slice(0, 5).map(v => ({
+              label: `VPN: ${v.name}`,
+              value: `proposal: ${v.proposal}`,
+              type: 'code' as const,
+            })),
+        rawData: { weak: weakEncryption, strong: strongEncryption, total: vpnPhase1.length },
       });
+    }
+    
+    // SSL VPN
+    try {
+      const sslSettings = await fortigateRequest(config, '/cmdb/vpn.ssl/settings');
+      const ssl = sslSettings.results || {};
+      
+      const sslvpnEnabled = ssl.status === 'enable' || ssl['login-port'] > 0;
+      const servercert = ssl.servercert || 'Fortinet_Factory';
+      const isFactoryCert = servercert.toLowerCase().includes('factory') || servercert.toLowerCase().includes('self-signed');
+      
+      if (sslvpnEnabled) {
+        checks.push({
+          id: 'vpn-003',
+          name: 'Certificado SSL VPN',
+          description: 'Verifica se SSL VPN usa certificado válido',
+          category: 'Configuração VPN',
+          status: isFactoryCert ? 'warning' : 'pass',
+          severity: 'medium',
+          recommendation: isFactoryCert
+            ? 'Substituir certificado de fábrica por certificado de CA confiável'
+            : 'Manter configuração atual',
+          details: `Certificado: ${servercert}`,
+          apiEndpoint: '/api/v2/cmdb/vpn.ssl/settings',
+          evidence: [
+            { label: 'Certificado', value: servercert, type: 'code' as const },
+            { label: 'Porta', value: String(ssl['login-port'] || 443), type: 'text' as const },
+          ],
+          rawData: { servercert, loginPort: ssl['login-port'] },
+        });
+      }
     } catch {
-      checks.push({
-        id: 'vpn-002',
-        name: 'Certificado SSL VPN',
-        description: 'Verifica se SSL VPN usa um certificado válido',
-        category: 'Configuração VPN',
-        status: 'warning',
-        severity: 'high',
-        recommendation: 'Verificar configuração SSL VPN manualmente',
-        details: 'Não foi possível verificar configuração SSL VPN',
-        apiEndpoint: '/api/v2/cmdb/vpn.ssl/settings',
-        evidence: [{
-          label: 'Status',
-          value: 'Endpoint não disponível ou SSL VPN não configurado',
-          type: 'text' as const,
-        }],
-      });
+      // SSL VPN não configurado
     }
   } catch (error) {
     console.error('Error checking VPN:', error);
@@ -1426,7 +1602,7 @@ async function checkVPN(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   return checks;
 }
 
-// Verificar logging
+// Verificar Logging
 async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]> {
   const checks: ComplianceCheck[] = [];
   
@@ -1436,9 +1612,6 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
     
     const logInvalidPacket = settings['log-invalid-packet'] || 'disable';
     const resolveIp = settings['resolve-ip'] || 'disable';
-    const logUserInfo = settings['log-user-in-upper'] || 'disable';
-    const briefTrafficFormat = settings['brief-traffic-format'] || 'disable';
-    
     const logEnabled = logInvalidPacket === 'enable' || resolveIp === 'enable';
     
     checks.push({
@@ -1448,83 +1621,36 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
       category: 'Logging e Monitoramento',
       status: logEnabled ? 'pass' : 'warning',
       severity: 'high',
-      recommendation: !logEnabled
-        ? 'Habilitar logging para eventos de segurança'
-        : 'Manter configuração atual',
+      recommendation: !logEnabled ? 'Habilitar logging para eventos de segurança' : 'Manter configuração atual',
       apiEndpoint: '/api/v2/cmdb/log/setting',
       evidence: [
         { label: 'log-invalid-packet', value: logInvalidPacket, type: 'code' as const },
         { label: 'resolve-ip', value: resolveIp, type: 'code' as const },
-        { label: 'log-user-in-upper', value: logUserInfo, type: 'code' as const },
-        { label: 'brief-traffic-format', value: briefTrafficFormat, type: 'code' as const },
       ],
-      rawData: {
-        logInvalidPacket,
-        resolveIp,
-        logUserInfo,
-        briefTrafficFormat,
-        fwpolicyImplicitLog: settings['fwpolicy-implicit-log'],
-        fwpolicy6ImplicitLog: settings['fwpolicy6-implicit-log'],
-      },
+      rawData: { logInvalidPacket, resolveIp },
     });
     
-    // Verificar FortiAnalyzer
+    // FortiAnalyzer
     let fortiAnalyzerEnabled = false;
     let fortiAnalyzerServer = 'N/A';
-    let fortiAnalyzerEvidence: EvidenceItem[] = [];
     
     try {
       const fazSettings = await fortigateRequest(config, '/cmdb/log.fortianalyzer/setting');
       const faz = fazSettings.results || {};
       fortiAnalyzerEnabled = faz.status === 'enable';
       fortiAnalyzerServer = faz.server || 'N/A';
-      fortiAnalyzerEvidence = [
-        { label: 'FortiAnalyzer Status', value: faz.status || 'disable', type: 'code' as const },
-        { label: 'FortiAnalyzer Server', value: fortiAnalyzerServer, type: 'code' as const },
-        { label: 'upload-option', value: faz['upload-option'] || 'N/A', type: 'code' as const },
-        { label: 'reliable', value: faz.reliable || 'N/A', type: 'code' as const },
-      ];
-    } catch {
-      fortiAnalyzerEvidence = [
-        { label: 'FortiAnalyzer', value: 'Não configurado ou sem permissão para verificar', type: 'text' as const },
-      ];
-    }
+    } catch {}
     
-    // Verificar FortiCloud
+    // FortiCloud
     let fortiCloudEnabled = false;
-    let fortiCloudEvidence: EvidenceItem[] = [];
     
     try {
       const cloudSettings = await fortigateRequest(config, '/cmdb/log.fortiguard/setting');
       const cloud = cloudSettings.results || {};
       fortiCloudEnabled = cloud.status === 'enable';
-      fortiCloudEvidence = [
-        { label: 'FortiCloud Status', value: cloud.status || 'disable', type: 'code' as const },
-        { label: 'upload-option', value: cloud['upload-option'] || 'N/A', type: 'code' as const },
-      ];
-    } catch {
-      fortiCloudEvidence = [
-        { label: 'FortiCloud', value: 'Não configurado ou sem permissão para verificar', type: 'text' as const },
-      ];
-    }
+    } catch {}
     
     const logForwardingEnabled = fortiAnalyzerEnabled || fortiCloudEnabled;
-    let logForwardingDetails = '';
-    let logForwardingRecommendation = '';
-    
-    if (fortiAnalyzerEnabled && fortiCloudEnabled) {
-      logForwardingDetails = `FortiAnalyzer (${fortiAnalyzerServer}) e FortiCloud habilitados`;
-      logForwardingRecommendation = 'Manter configuração atual';
-    } else if (fortiAnalyzerEnabled) {
-      logForwardingDetails = `FortiAnalyzer configurado: ${fortiAnalyzerServer}`;
-      logForwardingRecommendation = 'Manter configuração atual';
-    } else if (fortiCloudEnabled) {
-      logForwardingDetails = 'FortiCloud habilitado';
-      logForwardingRecommendation = 'Manter configuração atual';
-    } else {
-      logForwardingDetails = 'Nenhum sistema de centralização de logs configurado';
-      logForwardingRecommendation = 'Configurar envio de logs para FortiAnalyzer ou FortiCloud para centralização e análise';
-    }
     
     checks.push({
       id: 'log-002',
@@ -1533,18 +1659,20 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
       category: 'Logging e Monitoramento',
       status: logForwardingEnabled ? 'pass' : 'warning',
       severity: 'medium',
-      recommendation: logForwardingRecommendation,
-      details: logForwardingDetails,
+      recommendation: logForwardingEnabled 
+        ? 'Manter configuração atual'
+        : 'Configurar envio de logs para FortiAnalyzer ou FortiCloud',
+      details: fortiAnalyzerEnabled 
+        ? `FortiAnalyzer: ${fortiAnalyzerServer}` 
+        : fortiCloudEnabled 
+          ? 'FortiCloud habilitado'
+          : 'Nenhum sistema de centralização de logs configurado',
       apiEndpoint: '/api/v2/cmdb/log.fortianalyzer/setting',
       evidence: [
-        ...fortiAnalyzerEvidence,
-        ...fortiCloudEvidence,
+        { label: 'FortiAnalyzer', value: fortiAnalyzerEnabled ? `✅ ${fortiAnalyzerServer}` : '❌ Não configurado', type: 'text' as const },
+        { label: 'FortiCloud', value: fortiCloudEnabled ? '✅ Habilitado' : '❌ Não configurado', type: 'text' as const },
       ],
-      rawData: {
-        fortiAnalyzerEnabled,
-        fortiAnalyzerServer,
-        fortiCloudEnabled,
-      },
+      rawData: { fortiAnalyzerEnabled, fortiAnalyzerServer, fortiCloudEnabled },
     });
   } catch (error) {
     console.error('Error checking logging:', error);
@@ -1563,7 +1691,98 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
   return checks;
 }
 
-// Função para testar conectividade com o FortiGate
+// ==================== SUMÁRIO DE RECOMENDAÇÕES ====================
+function generateRecommendations(
+  interfaceClassifications: InterfaceClassification[],
+  policies: any[],
+  inboundWithoutIPS: InboundWANPolicy[]
+): ComplianceCheck {
+  const recommendations: string[] = [];
+  const evidence: EvidenceItem[] = [];
+  
+  // Interfaces com role undefined
+  const undefinedInterfaces = interfaceClassifications.filter(c => c.role === 'undefined');
+  if (undefinedInterfaces.length > 0) {
+    recommendations.push('Definir corretamente o role das interfaces (LAN/WAN/DMZ) atualmente como undefined');
+    evidence.push({
+      label: 'Interfaces com role undefined',
+      value: undefinedInterfaces.map(i => i.name).join(', '),
+      type: 'code' as const,
+    });
+  }
+  
+  // Interfaces sem policy
+  const allPolicySrcIntf = new Set<string>();
+  const allPolicyDstIntf = new Set<string>();
+  for (const policy of policies) {
+    for (const src of policy.srcintf || []) {
+      allPolicySrcIntf.add(src.name);
+    }
+    for (const dst of policy.dstintf || []) {
+      allPolicyDstIntf.add(dst.name);
+    }
+  }
+  
+  const interfacesWithoutPolicy = interfaceClassifications.filter(iface => 
+    !allPolicySrcIntf.has(iface.name) && !allPolicyDstIntf.has(iface.name)
+  );
+  
+  // Filtrar apenas interfaces relevantes (não loopback, não tunnel, etc.)
+  const relevantWithoutPolicy = interfacesWithoutPolicy.filter(iface => 
+    !iface.name.includes('lo') && 
+    !iface.name.includes('npu') && 
+    !iface.name.includes('ssl.')
+  );
+  
+  if (relevantWithoutPolicy.length > 0) {
+    recommendations.push('Criar ou revisar firewall policies para interfaces sem regras definidas');
+    evidence.push({
+      label: 'Interfaces sem policies',
+      value: relevantWithoutPolicy.map(i => i.name).join(', '),
+      type: 'code' as const,
+    });
+  }
+  
+  // Inbound WAN sem IPS
+  if (inboundWithoutIPS.length > 0) {
+    recommendations.push('Aplicar IPS/IDS nas policies inbound WAN sem proteção');
+    evidence.push({
+      label: 'Policies inbound WAN sem IPS',
+      value: inboundWithoutIPS.map(p => `#${p.policyid}: ${p.name}`).join(', '),
+      type: 'code' as const,
+    });
+  }
+  
+  const hasIssues = recommendations.length > 0;
+  
+  return {
+    id: 'rec-001',
+    name: 'Sumário de Recomendações',
+    description: 'Consolidação de recomendações baseadas na análise de conformidade',
+    category: 'Recomendações',
+    status: hasIssues ? 'warning' : 'pass',
+    severity: 'medium',
+    recommendation: recommendations.length > 0 
+      ? recommendations.join(' | ') 
+      : 'Nenhuma recomendação adicional',
+    details: hasIssues 
+      ? `${recommendations.length} recomendação(ões) identificada(s)`
+      : 'Configuração em conformidade',
+    apiEndpoint: 'Análise agregada',
+    evidence: evidence.length > 0 ? evidence : [{
+      label: 'Status',
+      value: '✅ Sem recomendações pendentes',
+      type: 'text' as const,
+    }],
+    rawData: {
+      undefinedInterfaces: undefinedInterfaces.map(i => i.name),
+      interfacesWithoutPolicy: relevantWithoutPolicy.map(i => i.name),
+      inboundWithoutIPS: inboundWithoutIPS.map(p => ({ id: p.policyid, name: p.name })),
+    },
+  };
+}
+
+// Teste de conectividade
 async function testFortiGateConnection(config: FortiGateConfig): Promise<{ success: boolean; error?: string }> {
   try {
     const url = `${config.url}/api/v2/monitor/system/status`;
@@ -1579,18 +1798,15 @@ async function testFortiGateConnection(config: FortiGateConfig): Promise<{ succe
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`Connection test failed: ${response.status} - ${text}`);
-      
       if (response.status === 401 || response.status === 403) {
         return { success: false, error: 'API Key inválida ou sem permissões' };
       }
       if (response.status === 404) {
-        return { success: false, error: 'Endpoint FortiGate não encontrado. Verifique a URL.' };
+        return { success: false, error: 'Endpoint FortiGate não encontrado' };
       }
       return { success: false, error: `Erro ${response.status}: ${text.substring(0, 100)}` };
     }
 
-    // Verificar se a resposta é JSON válido
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
       return { success: false, error: 'Resposta inválida. O endereço não parece ser uma API FortiGate.' };
@@ -1601,19 +1817,36 @@ async function testFortiGateConnection(config: FortiGateConfig): Promise<{ succe
       return { success: false, error: 'Resposta não reconhecida como FortiGate' };
     }
 
-    console.log('Connection test successful');
     return { success: true };
   } catch (error) {
     console.error('Connection test error:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
       return { success: false, error: 'Não foi possível conectar. Verifique se a URL está acessível.' };
     }
-    return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido ao conectar' };
+    return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
   }
 }
 
+function getCategoryIcon(category: string): string {
+  const icons: Record<string, string> = {
+    'Políticas de Segurança': 'shield',
+    'Segurança de Interfaces': 'monitor',
+    'Configuração de Rede': 'network',
+    'Regras de Entrada': 'arrowDownToLine',
+    'Perfis de Segurança UTM': 'shieldCheck',
+    'Alta Disponibilidade': 'serverCog',
+    'Backup e Recovery': 'hardDrive',
+    'Configuração VPN': 'lock',
+    'Logging e Monitoramento': 'activity',
+    'Licenciamento': 'award',
+    'Atualizações': 'download',
+    'Recomendações': 'lightbulb',
+  };
+  return icons[category] || 'check';
+}
+
+// ==================== HANDLER PRINCIPAL ====================
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -1628,7 +1861,6 @@ serve(async (req) => {
       );
     }
 
-    // Validar formato da URL
     let normalizedUrl = url.trim();
     if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
       normalizedUrl = 'https://' + normalizedUrl;
@@ -1639,20 +1871,27 @@ serve(async (req) => {
     
     console.log(`Starting compliance check for: ${config.url}`);
     
-    // PRIMEIRO: Testar conectividade
+    // Testar conectividade
     const connectionTest = await testFortiGateConnection(config);
     if (!connectionTest.success) {
-      console.error('Connection test failed:', connectionTest.error);
       return new Response(
-        JSON.stringify({ 
-          error: 'Falha na conexão com FortiGate',
-          details: connectionTest.error
-        }),
+        JSON.stringify({ error: 'Falha na conexão com FortiGate', details: connectionTest.error }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    // Executar todas as verificações em paralelo
+    // PRIMEIRO: Classificar interfaces
+    const { classifications, wanInterfaceNames, sdwanMembers } = await classifyInterfaces(config);
+    
+    // Buscar policies para análises
+    const policiesResponse = await fortigateRequest(config, '/cmdb/firewall/policy').catch(() => ({ results: [] }));
+    const allPolicies = policiesResponse.results || [];
+    
+    // Identificar inbound WAN policies
+    const inboundWANPolicies = identifyInboundWANPolicies(allPolicies, wanInterfaceNames);
+    const inboundWithoutIPS = inboundWANPolicies.filter(p => !p.hasIPS);
+    
+    // Executar verificações em paralelo
     const [
       interfaceChecks,
       firewallChecks,
@@ -1667,13 +1906,16 @@ serve(async (req) => {
       checkInsecureProtocols(config),
       checkFirewallRules(config),
       checkAdminSecurity(config),
-      checkUTMProfiles(config),
+      checkUTMProfiles(config, wanInterfaceNames),
       checkHAAndBackup(config),
       checkFirmware(config),
       checkVPN(config),
       checkLogging(config),
       checkFortiGuardLicenses(config),
     ]);
+    
+    // Gerar sumário de recomendações
+    const recommendationsCheck = generateRecommendations(classifications, allPolicies, inboundWithoutIPS);
     
     const allChecks = [
       ...adminChecks,
@@ -1685,6 +1927,7 @@ serve(async (req) => {
       ...loggingChecks,
       ...firmwareChecks,
       ...licenseChecks,
+      recommendationsCheck,
     ];
     
     const passed = allChecks.filter(c => c.status === 'pass').length;
@@ -1703,6 +1946,7 @@ serve(async (req) => {
       'Logging e Monitoramento',
       'Licenciamento',
       'Atualizações',
+      'Recomendações',
     ];
     
     const categoryData = categories.map(cat => {
@@ -1716,22 +1960,18 @@ serve(async (req) => {
       };
     }).filter(cat => cat.checks.length > 0);
     
-    // Calcular score: 100 - pontos de falha
-    // Pesos: Critical = 5, High = 3, Medium = 1, Low = 0
+    // Calcular score
     const weights: Record<string, number> = { critical: 5, high: 3, medium: 1, low: 0 };
     let failedPoints = 0;
     
     for (const check of allChecks) {
       if (check.status === 'fail' || check.status === 'warning') {
-        const weight = weights[check.severity] || 0;
-        failedPoints += weight;
+        failedPoints += weights[check.severity] || 0;
       }
     }
     
-    // Score = 100 - pontos de falha (mínimo 0)
     const calculatedScore = Math.max(0, 100 - failedPoints);
     
-    // Extrair versão do firmware e serial number para CVE lookup
     const firmwareCheck = allChecks.find(c => c.id === 'upd-001');
     const firmwareVersion = firmwareCheck?.rawData?.version as string || '';
     const serialNumber = firmwareCheck?.rawData?.serial as string || '';
@@ -1750,9 +1990,17 @@ serve(async (req) => {
       serialNumber,
       hostname,
       model,
+      interfaceClassifications: classifications,
+      inboundWANPolicies: inboundWANPolicies.map(p => ({
+        policyid: p.policyid,
+        name: p.name,
+        srcintf: p.srcintf,
+        dstintf: p.dstintf,
+        hasIPS: p.hasIPS,
+      })),
     };
     
-    console.log(`Compliance check completed: ${passed}/${allChecks.length} passed`);
+    console.log(`Compliance check completed: ${passed}/${allChecks.length} passed, score: ${calculatedScore}`);
     
     return new Response(JSON.stringify(report), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -1768,20 +2016,3 @@ serve(async (req) => {
     );
   }
 });
-
-function getCategoryIcon(category: string): string {
-  const icons: Record<string, string> = {
-    'Políticas de Segurança': 'shield',
-    'Segurança de Interfaces': 'monitor',
-    'Configuração de Rede': 'network',
-    'Regras de Entrada': 'arrowDownToLine',
-    'Perfis de Segurança UTM': 'shieldCheck',
-    'Alta Disponibilidade': 'serverCog',
-    'Backup e Recovery': 'hardDrive',
-    'Configuração VPN': 'lock',
-    'Logging e Monitoramento': 'activity',
-    'Licenciamento': 'award',
-    'Atualizações': 'download',
-  };
-  return icons[category] || 'check';
-}
