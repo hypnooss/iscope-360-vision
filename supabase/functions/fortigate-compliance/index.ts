@@ -2223,11 +2223,14 @@ serve(async (req) => {
       })
       .filter((cat) => cat.checks.length > 0);
 
-    // Calcular score
+    // Calcular score (excluir categoria Recomendações do cálculo - são apenas sugestões)
     const weights: Record<string, number> = { critical: 5, high: 3, medium: 1, low: 0 };
     let failedPoints = 0;
 
-    for (const check of allChecks) {
+    // Filtrar apenas checks que NÃO são da categoria Recomendações
+    const scoringChecks = allChecks.filter((c) => c.category !== "Recomendações");
+
+    for (const check of scoringChecks) {
       if (check.status === "fail" || check.status === "warning") {
         failedPoints += weights[check.severity] || 0;
       }

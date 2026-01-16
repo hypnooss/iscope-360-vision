@@ -73,12 +73,22 @@ export function CategorySection({ category, index }: CategorySectionProps) {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="text-right">
-            <span className={cn("text-2xl font-bold tabular-nums", getPassRateColor())}>
-              {category.passRate}%
-            </span>
-            <p className="text-xs text-muted-foreground">aprovação</p>
-          </div>
+          {/* Não mostrar percentual para categoria Recomendações - é apenas informativo */}
+          {category.name !== 'Recomendações' && (
+            <div className="text-right">
+              <span className={cn("text-2xl font-bold tabular-nums", getPassRateColor())}>
+                {category.passRate}%
+              </span>
+              <p className="text-xs text-muted-foreground">aprovação</p>
+            </div>
+          )}
+          {category.name === 'Recomendações' && (
+            <div className="text-right">
+              <span className="text-sm text-muted-foreground font-medium">
+                Sugestões de melhoria
+              </span>
+            </div>
+          )}
           {isExpanded ? (
             <ChevronUp className="w-5 h-5 text-muted-foreground" />
           ) : (
