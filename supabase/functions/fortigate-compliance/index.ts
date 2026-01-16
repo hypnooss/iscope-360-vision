@@ -274,7 +274,10 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
     const triggers = triggersResponse.results || [];
     const actions = actionsResponse.results || [];
 
-    console.log(`Found ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
+    console.log(`[BACKUP] Found ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
+    console.log(`[BACKUP] Stitches: ${JSON.stringify(stitches.map((s: any) => ({ name: s.name, status: s.status, trigger: s.trigger, actions: s.actions || s.action })))}`);
+    console.log(`[BACKUP] Triggers: ${JSON.stringify(triggers.map((t: any) => ({ name: t.name, type: t["trigger-type"] || t["event-type"], frequency: t["trigger-frequency"] })))}`);
+    console.log(`[BACKUP] Actions: ${JSON.stringify(actions.map((a: any) => ({ name: a.name, type: a["action-type"], hasScript: !!a.script })))}`);
 
     // Mapear triggers por nome
     const triggerMap = new Map<string, any>();
@@ -290,42 +293,107 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
 
     // Procurar stitch de backup
     for (const stitch of stitches) {
-      if (stitch.status !== "enable") continue;
+      // Aceitar tanto "enable" quanto sem status explícito (alguns FortiGates não retornam)
+      if (stitch.status && stitch.status !== "enable") continue;
 
-      // Verificar trigger associado
-      const triggerRefs = stitch.trigger || [];
-      const actionRefs = stitch.action || stitch.actions || [];
+      // Verificar trigger associado - pode ser array ou objeto direto
+      let triggerRefs = stitch.trigger || stitch.triggers || [];
+      if (!Array.isArray(triggerRefs)) {
+        triggerRefs = [triggerRefs];
+      }
+      
+      // Verificar actions - pode ser "actions" ou "action", array ou objeto
+      let actionRefs = stitch.actions || stitch.action || [];
+      if (!Array.isArray(actionRefs)) {
+        actionRefs = [actionRefs];
+      }
+
+      console.log(`[BACKUP] Checking stitch: ${stitch.name}, triggers: ${JSON.stringify(triggerRefs)}, actions: ${JSON.stringify(actionRefs)}`);
 
       for (const triggerRef of triggerRefs) {
-        const triggerName = typeof triggerRef === "string" ? triggerRef : triggerRef.name;
+        const triggerName = typeof triggerRef === "string" ? triggerRef : triggerRef?.name;
+        if (!triggerName) continue;
+        
         const trigger = triggerMap.get(triggerName);
 
-        if (!trigger) continue;
+        if (!trigger) {
+          console.log(`[BACKUP] Trigger not found in map: ${triggerName}`);
+          continue;
+        }
 
-        // Verificar se é trigger agendado (scheduled)
-        const triggerType = trigger["trigger-type"] || trigger["event-type"] || "";
-        if (triggerType !== "scheduled" && triggerType !== "event-based") continue;
-
-        // Para triggers event-based, pular (não é backup automático agendado)
-        if (triggerType === "event-based") continue;
+        // Verificar se é trigger agendado - aceitar variações
+        const triggerType = trigger["trigger-type"] || trigger["event-type"] || trigger.type || "";
+        console.log(`[BACKUP] Trigger ${triggerName} type: ${triggerType}`);
+        
+        // Aceitar "scheduled", "schedule", ou trigger com frequência definida
+        const hasScheduledFrequency = trigger["trigger-frequency"] || trigger.frequency;
+        const isScheduled = triggerType === "scheduled" || triggerType === "schedule" || hasScheduledFrequency;
+        
+        if (!isScheduled) {
+          console.log(`[BACKUP] Trigger ${triggerName} is not scheduled`);
+          continue;
+        }
 
         // Verificar ações de backup
         for (const actionRef of actionRefs) {
-          const actionName = typeof actionRef === "string" ? actionRef : actionRef.name;
+          const actionName = typeof actionRef === "string" ? actionRef : actionRef?.name;
+          if (!actionName) continue;
+          
           const action = actionMap.get(actionName);
 
-          if (!action) continue;
+          if (!action) {
+            console.log(`[BACKUP] Action not found in map: ${actionName}`);
+            // Mesmo sem action no map, verificar se nome indica backup
+            if (actionName.toLowerCase().includes("backup")) {
+              result.isConfigured = true;
+              result.status = "active";
+              result.stitchName = stitch.name;
+              result.triggerName = triggerName;
+              result.actionName = actionName;
+              
+              const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
+              const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
+              const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
+              const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
+              
+              result.frequency = frequency;
+              const timeStr = `${String(triggerHour).padStart(2, "0")}:${String(triggerMinute).padStart(2, "0")}`;
+              
+              if (frequency === "weekly" && triggerDay) {
+                result.detail = `${frequency} on ${triggerDay} at ${timeStr}`;
+              } else {
+                result.detail = `${frequency} at ${timeStr}`;
+              }
+              
+              console.log(`[BACKUP] Found backup by action name: ${result.stitchName} -> ${result.detail}`);
+              return result;
+            }
+            continue;
+          }
 
-          // Verificar se é ação de backup (cli-script com execute backup config)
-          const actionType = action["action-type"] || "";
-          const script = action.script || "";
+          // Verificar se é ação de backup
+          const actionType = action["action-type"] || action.type || "";
+          const script = action.script || action.command || "";
+          
+          console.log(`[BACKUP] Checking action: ${actionName}, type: ${actionType}, script contains backup: ${script.toLowerCase().includes("backup")}`);
 
+          // Verificar se é ação de backup por múltiplos critérios
           const isBackupAction =
-            (actionType === "cli-script" && script.toLowerCase().includes("execute backup config")) ||
-            // Também aceitar ações que parecem ser de backup pelo nome
-            actionName.toLowerCase().includes("backup");
+            // cli-script com execute backup config
+            (actionType === "cli-script" && script.toLowerCase().includes("execute backup")) ||
+            (actionType === "cli-script" && script.toLowerCase().includes("backup config")) ||
+            // Nome indica backup
+            actionName.toLowerCase().includes("backup") ||
+            // Script contém backup
+            script.toLowerCase().includes("backup") ||
+            // Tipo específico de backup (alguns FortiOS)
+            actionType === "backup" ||
+            actionType === "config-backup";
 
-          if (!isBackupAction) continue;
+          if (!isBackupAction) {
+            console.log(`[BACKUP] Action ${actionName} is not a backup action`);
+            continue;
+          }
 
           // Encontramos um backup automático válido!
           result.isConfigured = true;
@@ -336,7 +404,7 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
 
           // Extrair frequência do trigger
           const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
-          const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || "";
+          const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
           const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
           const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
 
@@ -352,7 +420,7 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
             result.detail = `${frequency} at ${timeStr}`;
           }
 
-          console.log(`Found backup automation: ${result.stitchName} -> ${result.detail}`);
+          console.log(`[BACKUP] Found backup automation: ${result.stitchName} -> ${result.detail}`);
           return result;
         }
       }
@@ -362,6 +430,8 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
     try {
       const autoScripts = await fortigateRequest(config, "/cmdb/system/auto-script");
       const scripts = autoScripts.results || [];
+      console.log(`[BACKUP] Fallback: Found ${scripts.length} auto-scripts`);
+      
       const backupScripts = scripts.filter(
         (s: any) => s.script?.toLowerCase().includes("backup") || s.name?.toLowerCase().includes("backup"),
       );
@@ -375,12 +445,15 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
         result.actionName = script.name;
         result.frequency = "scheduled";
         result.detail = `Auto-script: ${script.name} (interval: ${script.interval || "N/A"})`;
+        console.log(`[BACKUP] Found backup via auto-script: ${script.name}`);
       }
     } catch {
       // Endpoint não disponível
     }
+    
+    console.log(`[BACKUP] Final result: isConfigured=${result.isConfigured}, status=${result.status}`);
   } catch (error) {
-    console.error("Error checking automated backup:", error);
+    console.error("[BACKUP] Error checking automated backup:", error);
   }
 
   return result;
@@ -1518,13 +1591,16 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       rawData: { forticare: forticareInfo, daysRemaining: supportDaysRemaining },
     });
 
-    // FortiGuard Services
+    // FortiGuard Services - Buscar em múltiplas chaves possíveis do JSON
+    // IMPORTANTE: web_filtering é a chave correta para Web Filter no JSON da API
+    console.log("[LICENSE] License keys available:", Object.keys(licenses));
+    
     const securityServicesMap = [
-      { key: "antivirus", altKeys: ["av"], name: "Antivírus" },
-      { key: "ips", altKeys: ["nids"], name: "IPS" },
-      { key: "web_filtering", altKeys: ["webfilter", "fgd_wf"], name: "Web Filter" },
-      { key: "appctrl", altKeys: ["app_ctrl"], name: "App Control" },
-      { key: "antispam", altKeys: ["anti_spam"], name: "AntiSpam" },
+      { key: "antivirus", altKeys: ["av", "fortigate_av", "fgt_av"], name: "Antivírus" },
+      { key: "ips", altKeys: ["nids", "fortigate_ips", "fgt_ips"], name: "IPS" },
+      { key: "web_filtering", altKeys: ["webfilter", "fgd_wf", "webfiltering", "fortiguard_webfilter", "fgt_wf"], name: "Web Filter" },
+      { key: "appctrl", altKeys: ["app_ctrl", "application_control", "fortigate_appctrl"], name: "App Control" },
+      { key: "antispam", altKeys: ["anti_spam", "fortigate_antispam", "fgt_antispam"], name: "AntiSpam" },
     ];
 
     const activeServices: string[] = [];
@@ -1534,31 +1610,62 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
 
     for (const serviceMapping of securityServicesMap) {
       let serviceInfo = licenses[serviceMapping.key];
-      if (!serviceInfo || Object.keys(serviceInfo).length === 0) {
+      let foundKey = serviceMapping.key;
+      
+      if (!serviceInfo || (typeof serviceInfo === 'object' && Object.keys(serviceInfo).length === 0)) {
         for (const altKey of serviceMapping.altKeys) {
-          if (licenses[altKey] && Object.keys(licenses[altKey]).length > 0) {
-            serviceInfo = licenses[altKey];
+          const altInfo = licenses[altKey];
+          if (altInfo && (typeof altInfo !== 'object' || Object.keys(altInfo).length > 0)) {
+            serviceInfo = altInfo;
+            foundKey = altKey;
             break;
           }
         }
       }
+      
+      console.log(`[LICENSE] ${serviceMapping.name}: key=${foundKey}, info=`, JSON.stringify(serviceInfo));
+      
+      // Se ainda não encontrou, pode ser que o valor seja direto (não objeto)
+      if (!serviceInfo && licenses[serviceMapping.key] !== undefined) {
+        serviceInfo = { status: licenses[serviceMapping.key] };
+      }
+      
       serviceInfo = serviceInfo || {};
 
-      const status = serviceInfo.status || serviceInfo.entitlement || "unknown";
-      const expiry = serviceInfo.expires || serviceInfo.expiry_date || 0;
+      // Buscar status em múltiplos campos possíveis
+      const status = serviceInfo.status || serviceInfo.entitlement || serviceInfo.license_status || "unknown";
+      // Buscar expiração em múltiplos campos - alguns FortiOS usam campos diferentes
+      const expiry = serviceInfo.expires || serviceInfo.expiry_date || serviceInfo.expire_time || serviceInfo.expiration || 0;
       const serviceName = serviceMapping.name;
+
+      console.log(`[LICENSE] ${serviceName}: status=${status}, expiry=${expiry}`);
 
       let isActive = false;
       let daysRemaining = 0;
       let expiryDateStr = "";
 
       if (expiry) {
-        const expiryDate = new Date(expiry * 1000);
-        expiryDateStr = expiryDate.toLocaleDateString("pt-BR");
-        daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        isActive = daysRemaining > 0;
-      } else if (status === "licensed" || status === "valid" || status === "active") {
-        isActive = true;
+        // Verificar se expiry é timestamp (número) ou string ISO
+        let expiryDate: Date;
+        if (typeof expiry === 'string') {
+          expiryDate = new Date(expiry);
+        } else {
+          expiryDate = new Date(expiry * 1000);
+        }
+        
+        if (!isNaN(expiryDate.getTime())) {
+          expiryDateStr = expiryDate.toLocaleDateString("pt-BR");
+          daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          isActive = daysRemaining > 0;
+          console.log(`[LICENSE] ${serviceName}: expiryDate=${expiryDateStr}, daysRemaining=${daysRemaining}`);
+        }
+      }
+      
+      // Verificar status se não conseguiu pela data
+      if (!isActive && !expiry) {
+        const activeStatuses = ["licensed", "valid", "active", "enabled", "enable", "registered", "1"];
+        isActive = activeStatuses.includes(String(status).toLowerCase());
+        console.log(`[LICENSE] ${serviceName}: checking status '${status}', isActive=${isActive}`);
       }
 
       if (isActive) {
