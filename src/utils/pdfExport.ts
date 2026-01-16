@@ -323,7 +323,10 @@ export function exportReportToPDF(report: ComplianceReport) {
   doc.text('Resumo por Categoria', 14, yPos);
   yPos += 5;
 
-  const categoryData = report.categories.map(cat => [
+  // Excluir Recomendações do resumo por categoria (não afeta score)
+  const scoringCategories = report.categories.filter(cat => cat.name !== 'Recomendações');
+  
+  const categoryData = scoringCategories.map(cat => [
     cat.name,
     `${cat.passRate}%`,
     `${cat.checks.filter(c => c.status === 'pass').length}/${cat.checks.length}`
@@ -630,7 +633,7 @@ export function exportReportToPDF(report: ComplianceReport) {
             recTableData.push([
               String(i + 1),
               recText,
-              detail.length > 60 ? detail.substring(0, 57) + '...' : detail
+              detail // Não truncar - deixar expandir dinamicamente
             ]);
           }
         } else {
@@ -643,13 +646,14 @@ export function exportReportToPDF(report: ComplianceReport) {
           body: recTableData,
           theme: 'striped',
           headStyles: { fillColor: [180, 130, 0], textColor: 255 },
-          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+          styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
           columnStyles: {
             0: { cellWidth: 12, halign: 'center' },
-            1: { cellWidth: 80 },
-            2: { cellWidth: 80 },
+            1: { cellWidth: 70 },
+            2: { cellWidth: 'auto', minCellWidth: 60 }, // Expansão dinâmica para itens afetados
           },
           margin: { left: 14, right: 14 },
+          tableWidth: 'auto',
           didParseCell: (data) => {
             if (data.section === 'body' && data.column.index === 0) {
               if (recommendationTexts.length > 0) {
@@ -673,6 +677,14 @@ export function exportReportToPDF(report: ComplianceReport) {
       // Para a categoria Atualizações, formatar melhor os detalhes do firmware
       let detailsText = check.details || '-';
       
+      // Função auxiliar para remover emojis unicode que não renderizam bem no PDF
+      const cleanUnicode = (str: string): string => {
+        return str
+          .replace(/[\u2705\u274C\u26A0\uFE0F]/g, '') // Remove ✅❌⚠️
+          .replace(/[\u{1F300}-\u{1F9FF}]/gu, '') // Remove outros emojis
+          .trim();
+      };
+      
       // Se houver evidence, usar para construir detalhes mais legíveis
       if (category.name === 'Atualizações' && check.evidence && check.evidence.length > 0) {
         const versionEv = check.evidence.find(e => e.label === 'Versão Atual' || e.label === 'Versão');
@@ -680,13 +692,16 @@ export function exportReportToPDF(report: ComplianceReport) {
         const buildEv = check.evidence.find(e => e.label === 'Build');
         
         const parts: string[] = [];
-        if (versionEv) parts.push(`Versão: ${versionEv.value.replace(/[✅❌⚠️]/g, '').trim()}`);
-        if (buildEv) parts.push(`Build: ${buildEv.value}`);
-        if (statusEv && !versionEv) parts.push(statusEv.value.replace(/[✅❌⚠️]/g, '').trim());
+        if (versionEv) parts.push(`Versao: ${cleanUnicode(versionEv.value)}`);
+        if (buildEv) parts.push(`Build: ${cleanUnicode(buildEv.value)}`);
+        if (statusEv && !versionEv) parts.push(cleanUnicode(statusEv.value));
         
         if (parts.length > 0) {
           detailsText = parts.join(' | ');
         }
+      } else {
+        // Limpar unicode de qualquer texto de detalhes
+        detailsText = cleanUnicode(detailsText);
       }
       
       return [
