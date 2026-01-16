@@ -336,7 +336,22 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
 
         // Verificar ações de backup
         for (const actionRef of actionRefs) {
-          const actionName = typeof actionRef === "string" ? actionRef : actionRef?.name;
+          // O actionRef pode ser:
+          // - string: nome da action diretamente
+          // - objeto com "name": { name: "Backup" }
+          // - objeto com "action": { action: "Backup", id: 1, ... } (formato real do FortiGate!)
+          let actionName = "";
+          if (typeof actionRef === "string") {
+            actionName = actionRef;
+          } else if (actionRef?.action) {
+            // Formato real: { id: 1, action: "Backup", ... }
+            actionName = actionRef.action;
+          } else if (actionRef?.name) {
+            actionName = actionRef.name;
+          }
+          
+          console.log(`[BACKUP] Extracted action name: "${actionName}" from ref: ${JSON.stringify(actionRef)}`);
+          
           if (!actionName) continue;
           
           const action = actionMap.get(actionName);
