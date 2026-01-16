@@ -74,10 +74,12 @@ const categoryDescriptions: Record<string, string> = {
   'Configuração de Rede': 'Avalia configurações gerais de rede, incluindo regras permissivas e segmentação.',
   'Políticas de Segurança': 'Examina configurações de autenticação administrativa, incluindo 2FA, políticas de senha e timeout.',
   'Atualização de Firmware': 'Verifica a versão do FortiOS instalada e identifica atualizações disponíveis.',
+  'Atualizações': 'Verifica a versão do FortiOS instalada e identifica atualizações disponíveis.',
   'Perfis de Segurança UTM': 'Analisa a aplicação de perfis de segurança (IPS, AV, WebFilter, AppControl) nas políticas.',
   'Configuração VPN': 'Avalia configurações de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
   'Logging e Monitoramento': 'Verifica configurações de log e integração com FortiAnalyzer/FortiCloud.',
   'Licenciamento': 'Verifica status do FortiCare e licenças FortiGuard (AV, IPS, WebFilter, AppControl).',
+  'Recomendações': 'Sumário de recomendações com base na análise de conformidade, incluindo interfaces, políticas e perfis de segurança.',
 };
 
 // Calcular cobertura UTM (baseado em políticas de saída internet)
@@ -587,12 +589,113 @@ export function exportReportToPDF(report: ComplianceReport) {
       yPos += 5;
     }
 
-    const checksData = category.checks.map(check => [
-      getStatusText(check.status),
-      check.name,
-      getSeverityText(check.severity),
-      (check.details || '-').substring(0, 80) + ((check.details?.length || 0) > 80 ? '...' : '')
-    ]);
+    // Tratamento especial para categoria Recomendações - mostrar textos das recomendações
+    if (category.name === 'Recomendações') {
+      const recCheck = category.checks[0]; // Há apenas um check nesta categoria
+      if (recCheck) {
+        // Extrair as recomendações do campo recommendation ou evidence
+        const recommendationTexts: string[] = [];
+        
+        // As recomendações são separadas por " | " no campo recommendation
+        if (recCheck.recommendation && recCheck.recommendation !== 'Nenhuma recomendação adicional') {
+          const recItems = recCheck.recommendation.split(' | ');
+          recommendationTexts.push(...recItems);
+        }
+        
+        // Montar dados da tabela com status, cada recomendação e detalhes do evidence
+        const recTableData: string[][] = [];
+        
+        if (recommendationTexts.length > 0) {
+          // Extrair detalhes do evidence para cada recomendação
+          const evidenceMap: Record<string, string> = {};
+          if (recCheck.evidence) {
+            for (const ev of recCheck.evidence) {
+              evidenceMap[ev.label] = ev.value;
+            }
+          }
+          
+          for (let i = 0; i < recommendationTexts.length; i++) {
+            const recText = recommendationTexts[i];
+            let detail = '-';
+            
+            // Mapear recomendação para seu evidence correspondente
+            if (recText.includes('role das interfaces') && evidenceMap['Interfaces com role undefined']) {
+              detail = evidenceMap['Interfaces com role undefined'];
+            } else if (recText.includes('interfaces sem regras') && evidenceMap['Interfaces sem policies']) {
+              detail = evidenceMap['Interfaces sem policies'];
+            } else if (recText.includes('IPS/IDS') && evidenceMap['Policies inbound WAN sem IPS']) {
+              detail = evidenceMap['Policies inbound WAN sem IPS'];
+            }
+            
+            recTableData.push([
+              String(i + 1),
+              recText,
+              detail.length > 60 ? detail.substring(0, 57) + '...' : detail
+            ]);
+          }
+        } else {
+          recTableData.push(['✓', 'Nenhuma recomendação pendente', 'Configuração em conformidade']);
+        }
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['#', 'Recomendação', 'Itens Afetados']],
+          body: recTableData,
+          theme: 'striped',
+          headStyles: { fillColor: [180, 130, 0], textColor: 255 },
+          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+          columnStyles: {
+            0: { cellWidth: 12, halign: 'center' },
+            1: { cellWidth: 80 },
+            2: { cellWidth: 80 },
+          },
+          margin: { left: 14, right: 14 },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 0) {
+              if (recommendationTexts.length > 0) {
+                data.cell.styles.textColor = [180, 130, 0];
+                data.cell.styles.fontStyle = 'bold';
+              } else {
+                data.cell.styles.textColor = [34, 197, 94];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+          },
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+      }
+      continue; // Pular o processamento padrão para esta categoria
+    }
+
+    // Processamento padrão para outras categorias
+    const checksData = category.checks.map(check => {
+      // Para a categoria Atualizações, formatar melhor os detalhes do firmware
+      let detailsText = check.details || '-';
+      
+      // Se houver evidence, usar para construir detalhes mais legíveis
+      if (category.name === 'Atualizações' && check.evidence && check.evidence.length > 0) {
+        const versionEv = check.evidence.find(e => e.label === 'Versão Atual' || e.label === 'Versão');
+        const statusEv = check.evidence.find(e => e.label === 'Status');
+        const buildEv = check.evidence.find(e => e.label === 'Build');
+        
+        const parts: string[] = [];
+        if (versionEv) parts.push(`Versão: ${versionEv.value.replace(/[✅❌⚠️]/g, '').trim()}`);
+        if (buildEv) parts.push(`Build: ${buildEv.value}`);
+        if (statusEv && !versionEv) parts.push(statusEv.value.replace(/[✅❌⚠️]/g, '').trim());
+        
+        if (parts.length > 0) {
+          detailsText = parts.join(' | ');
+        }
+      }
+      
+      return [
+        getStatusText(check.status),
+        check.name,
+        getSeverityText(check.severity),
+        detailsText.substring(0, 80) + (detailsText.length > 80 ? '...' : '')
+      ];
+    });
 
     autoTable(doc, {
       startY: yPos,
