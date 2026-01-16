@@ -579,7 +579,12 @@ export function exportReportToPDF(report: ComplianceReport) {
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 100, 100);
-    doc.text(`${category.name} (${category.passRate}% aprovação)`, 14, yPos);
+    // Para Recomendações, não mostrar percentual de aprovação
+    if (category.name === 'Recomendações') {
+      doc.text(category.name, 14, yPos);
+    } else {
+      doc.text(`${category.name} (${category.passRate}% aprovação)`, 14, yPos);
+    }
     yPos += 5;
     
     // Adicionar descritivo da categoria
@@ -677,11 +682,13 @@ export function exportReportToPDF(report: ComplianceReport) {
       // Para a categoria Atualizações, formatar melhor os detalhes do firmware
       let detailsText = check.details || '-';
       
-      // Função auxiliar para remover emojis unicode que não renderizam bem no PDF
+      // Função auxiliar para remover emojis e caracteres unicode problemáticos no PDF
       const cleanUnicode = (str: string): string => {
         return str
           .replace(/[\u2705\u274C\u26A0\uFE0F]/g, '') // Remove ✅❌⚠️
           .replace(/[\u{1F300}-\u{1F9FF}]/gu, '') // Remove outros emojis
+          .replace(/[^\x00-\x7F\xC0-\xFF\u00A0-\u00FF]/g, '') // Remove caracteres não-Latin1
+          .replace(/\s+/g, ' ') // Normalizar espaços
           .trim();
       };
       

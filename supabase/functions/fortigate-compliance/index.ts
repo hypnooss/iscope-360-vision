@@ -1954,16 +1954,38 @@ async function checkLogging(config: FortiGateConfig): Promise<ComplianceCheck[]>
 }
 
 // ==================== SUMÁRIO DE RECOMENDAÇÕES ====================
+interface RecommendationsContext {
+  disabledInterfaces: Set<string>;
+  zoneInterfaces: Set<string>;
+  sdwanZoneInterfaces: Set<string>;
+}
+
 function generateRecommendations(
   interfaceClassifications: InterfaceClassification[],
   policies: any[],
   inboundWithoutIPS: InboundWANPolicy[],
+  context: RecommendationsContext,
 ): ComplianceCheck {
   const recommendations: string[] = [];
   const evidence: EvidenceItem[] = [];
+  
+  const { disabledInterfaces, zoneInterfaces, sdwanZoneInterfaces } = context;
+  
+  // Função auxiliar para verificar se a interface deve ser ignorada na análise
+  const shouldIgnoreInterface = (ifaceName: string): boolean => {
+    // Ignorar interfaces desativadas
+    if (disabledInterfaces.has(ifaceName)) return true;
+    // Ignorar interfaces que fazem parte de um zone
+    if (zoneInterfaces.has(ifaceName)) return true;
+    // Ignorar interfaces que fazem parte de um SD-WAN zone
+    if (sdwanZoneInterfaces.has(ifaceName)) return true;
+    return false;
+  };
 
-  // Interfaces com role undefined
-  const undefinedInterfaces = interfaceClassifications.filter((c) => c.role === "undefined");
+  // Interfaces com role undefined (excluir desativadas e em zones)
+  const undefinedInterfaces = interfaceClassifications.filter(
+    (c) => c.role === "undefined" && !shouldIgnoreInterface(c.name)
+  );
   if (undefinedInterfaces.length > 0) {
     recommendations.push("Definir corretamente o role das interfaces (LAN/WAN/DMZ) atualmente como undefined");
     evidence.push({
@@ -1973,7 +1995,7 @@ function generateRecommendations(
     });
   }
 
-  // Interfaces sem policy
+  // Interfaces sem policy (excluir desativadas e em zones)
   const allPolicySrcIntf = new Set<string>();
   const allPolicyDstIntf = new Set<string>();
   for (const policy of policies) {
@@ -1989,9 +2011,13 @@ function generateRecommendations(
     (iface) => !allPolicySrcIntf.has(iface.name) && !allPolicyDstIntf.has(iface.name),
   );
 
-  // Filtrar apenas interfaces relevantes (não loopback, não tunnel, etc.)
+  // Filtrar apenas interfaces relevantes (não loopback, não tunnel, não desativadas, não em zones)
   const relevantWithoutPolicy = interfacesWithoutPolicy.filter(
-    (iface) => !iface.name.includes("lo") && !iface.name.includes("npu") && !iface.name.includes("ssl."),
+    (iface) => 
+      !iface.name.includes("lo") && 
+      !iface.name.includes("npu") && 
+      !iface.name.includes("ssl.") &&
+      !shouldIgnoreInterface(iface.name),
   );
 
   if (relevantWithoutPolicy.length > 0) {
@@ -2148,6 +2174,52 @@ serve(async (req) => {
     const policiesResponse = await fortigateRequest(config, "/cmdb/firewall/policy").catch(() => ({ results: [] }));
     const allPolicies = policiesResponse.results || [];
 
+    // Buscar interfaces raw para verificar status (disabled)
+    const interfacesResponse = await fortigateRequest(config, "/cmdb/system/interface").catch(() => ({ results: [] }));
+    const interfacesRaw = interfacesResponse.results || [];
+    
+    // Buscar zones (interfaces que fazem parte de um zone não precisam de policies próprias)
+    const zonesResponse = await fortigateRequest(config, "/cmdb/system/zone").catch(() => ({ results: [] }));
+    const zones = zonesResponse.results || [];
+    
+    // Buscar SD-WAN config para zones
+    const sdwanResponse = await fortigateRequest(config, "/cmdb/system/sdwan").catch(() => ({ results: {} }));
+    const sdwanConfig = sdwanResponse.results || {};
+    const sdwanZones = sdwanConfig.zone || [];
+    
+    // Construir sets de interfaces a ignorar
+    const disabledInterfaces = new Set<string>();
+    const zoneInterfaces = new Set<string>();
+    const sdwanZoneInterfaces = new Set<string>();
+    
+    // Interfaces desativadas
+    for (const iface of interfacesRaw) {
+      if (iface.status === "down" || iface.status === "disable") {
+        disabledInterfaces.add(iface.name);
+      }
+    }
+    
+    // Interfaces que fazem parte de zones
+    for (const zone of zones) {
+      const zoneIntf = zone.interface || [];
+      for (const intf of zoneIntf) {
+        const intfName = typeof intf === 'string' ? intf : intf['interface-name'] || intf.name;
+        if (intfName) {
+          zoneInterfaces.add(intfName);
+        }
+      }
+    }
+    
+    // Interfaces que fazem parte de SD-WAN zones (membros)
+    const sdwanMembersSet = new Set<string>(sdwanMembers);
+    for (const member of sdwanMembersSet) {
+      sdwanZoneInterfaces.add(member);
+    }
+    
+    console.log(`[RECOMMENDATIONS] Disabled interfaces: ${Array.from(disabledInterfaces).join(', ')}`);
+    console.log(`[RECOMMENDATIONS] Zone interfaces: ${Array.from(zoneInterfaces).join(', ')}`);
+    console.log(`[RECOMMENDATIONS] SD-WAN member interfaces: ${Array.from(sdwanZoneInterfaces).join(', ')}`);
+
     // Identificar inbound WAN policies
     const inboundWANPolicies = identifyInboundWANPolicies(allPolicies, wanInterfaceNames);
     const inboundWithoutIPS = inboundWANPolicies.filter((p) => !p.hasIPS);
@@ -2175,8 +2247,13 @@ serve(async (req) => {
       checkFortiGuardLicenses(config),
     ]);
 
-    // Gerar sumário de recomendações
-    const recommendationsCheck = generateRecommendations(classifications, allPolicies, inboundWithoutIPS);
+    // Gerar sumário de recomendações (com contexto de interfaces a ignorar)
+    const recommendationsContext = {
+      disabledInterfaces,
+      zoneInterfaces,
+      sdwanZoneInterfaces,
+    };
+    const recommendationsCheck = generateRecommendations(classifications, allPolicies, inboundWithoutIPS, recommendationsContext);
 
     const allChecks = [
       ...adminChecks,
