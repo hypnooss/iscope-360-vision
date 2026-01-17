@@ -682,14 +682,110 @@ export function exportReportToPDF(report: ComplianceReport) {
       // Para a categoria Atualizações, formatar melhor os detalhes do firmware
       let detailsText = check.details || '-';
       
-      // Função auxiliar para remover emojis e caracteres unicode problemáticos no PDF
-      const cleanUnicode = (str: string): string => {
-        return str
-          .replace(/[\u2705\u274C\u26A0\uFE0F]/g, '') // Remove ✅❌⚠️
-          .replace(/[\u{1F300}-\u{1F9FF}]/gu, '') // Remove outros emojis
-          .replace(/[^\x00-\x7F\xC0-\xFF\u00A0-\u00FF]/g, '') // Remove caracteres não-Latin1
-          .replace(/\s+/g, ' ') // Normalizar espaços
+      // Função robusta para corrigir mojibake e normalizar texto para PDF
+      // Mojibake ocorre quando UTF-8 é interpretado como Latin-1
+      const sanitizeForPDF = (str: string): string => {
+        if (!str) return '-';
+        
+        let result = str;
+        
+        // Corrigir mojibake comum (UTF-8 interpretado como Latin-1)
+        const mojibakeMap: Record<string, string> = {
+          // Bullet e símbolos
+          'â€¢': '-',
+          '•': '-',
+          '–': '-',
+          '—': '-',
+          '…': '...',
+          // Acentuação portuguesa
+          'Ã£': 'a',
+          'Ã¡': 'a',
+          'Ã¢': 'a',
+          'Ã ': 'a',
+          'Ã©': 'e',
+          'Ãª': 'e',
+          'Ã­': 'i',
+          'Ã³': 'o',
+          'Ã´': 'o',
+          'Ãµ': 'o',
+          'Ãº': 'u',
+          'Ã§': 'c',
+          'Ã±': 'n',
+          'ÃƒO': 'AO',
+          'Ãƒ': 'A',
+          'Ã‰': 'E',
+          'Ã"': 'O',
+          'Ãš': 'U',
+          'Ã‡': 'C',
+          // Caracteres especiais
+          'â€œ': '"',
+          'â€™': "'",
+          'â€˜': "'",
+          'â€"': '-',
+          'Â®': '(R)',
+          'â„¢': '(TM)',
+          'Â©': '(C)',
+          'Â°': 'o',
+          'Â±': '+/-',
+          'Â²': '2',
+          'Â³': '3',
+          'Âµ': 'u',
+          'Â¶': '',
+          'Â·': '-',
+          'Â¹': '1',
+          'Â»': '>>',
+          'Â«': '<<',
+          'Â¿': '?',
+          'Â¡': '!',
+          'Â½': '1/2',
+          'Â¼': '1/4',
+          'Â¾': '3/4',
+        };
+        
+        // Aplicar correções de mojibake
+        for (const [bad, good] of Object.entries(mojibakeMap)) {
+          result = result.split(bad).join(good);
+        }
+        
+        // Substituir caracteres unicode por equivalentes ASCII
+        const unicodeToAscii: Record<string, string> = {
+          'ã': 'a', 'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a',
+          'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+          'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+          'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+          'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+          'ç': 'c', 'ñ': 'n',
+          'Ã': 'A', 'Á': 'A', 'À': 'A', 'Â': 'A', 'Ä': 'A',
+          'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+          'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+          'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+          'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+          'Ç': 'C', 'Ñ': 'N',
+          '\u2705': '[OK]', '\u274C': '[X]', '\u26A0\uFE0F': '[!]', '\u26A0': '[!]',
+          '\u2022': '-', '\u00B7': '-', '\u25CF': '-', '\u25CB': '-',
+          '\u2192': '->', '\u2190': '<-', '\u2191': '^', '\u2193': 'v',
+          '\u2605': '*', '\u2606': '*',
+          '\u201C': '"', '\u201D': '"', '\u2018': "'", '\u2019': "'",
+          '\u2013': '-', '\u2014': '-',
+          '\u2026': '...',
+        };
+        
+        for (const [unicode, ascii] of Object.entries(unicodeToAscii)) {
+          result = result.split(unicode).join(ascii);
+        }
+        
+        // Remover emojis e caracteres não imprimíveis
+        result = result
+          .replace(/[\u{1F300}-\u{1F9FF}]/gu, '') // Emojis
+          .replace(/[\u{2600}-\u{26FF}]/gu, '')   // Misc symbols
+          .replace(/[\u{2700}-\u{27BF}]/gu, '')   // Dingbats
+          .replace(/[\uFE00-\uFE0F]/g, '')         // Variation selectors
+          .replace(/[\u200B-\u200D\uFEFF]/g, '')  // Zero-width chars
+          .replace(/[^\x20-\x7E\n\r\t]/g, '')     // Manter apenas ASCII imprimível
+          .replace(/\s+/g, ' ')                    // Normalizar espaços
           .trim();
+        
+        return result || '-';
       };
       
       // Se houver evidence, usar para construir detalhes mais legíveis
@@ -699,16 +795,16 @@ export function exportReportToPDF(report: ComplianceReport) {
         const buildEv = check.evidence.find(e => e.label === 'Build');
         
         const parts: string[] = [];
-        if (versionEv) parts.push(`Versao: ${cleanUnicode(versionEv.value)}`);
-        if (buildEv) parts.push(`Build: ${cleanUnicode(buildEv.value)}`);
-        if (statusEv && !versionEv) parts.push(cleanUnicode(statusEv.value));
+        if (versionEv) parts.push(`Versao: ${sanitizeForPDF(versionEv.value)}`);
+        if (buildEv) parts.push(`Build: ${sanitizeForPDF(buildEv.value)}`);
+        if (statusEv && !versionEv) parts.push(sanitizeForPDF(statusEv.value));
         
         if (parts.length > 0) {
           detailsText = parts.join(' | ');
         }
       } else {
-        // Limpar unicode de qualquer texto de detalhes
-        detailsText = cleanUnicode(detailsText);
+        // Limpar e sanitizar qualquer texto de detalhes
+        detailsText = sanitizeForPDF(detailsText);
       }
       
       return [
