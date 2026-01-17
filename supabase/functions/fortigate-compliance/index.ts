@@ -1489,9 +1489,9 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
 
     checks.push({
       id: "upd-001",
-      name: "Versao do Firmware",
-      description: "Verifica se o firmware esta na versao recomendada pela Fortinet",
-      category: "Atualizacoes",
+      name: "Versão do Firmware",
+      description: "Verifica se o firmware está na versão recomendada pela Fortinet",
+      category: "Atualizações",
       status: checkStatus,
       severity: "high",
       details,
@@ -1514,8 +1514,8 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     checks.push({
       id: "upd-err",
       name: "Erro ao verificar firmware",
-      description: "Nao foi possivel verificar a versao do firmware",
-      category: "Atualizacoes",
+      description: "Não foi possível verificar a versão do firmware",
+      category: "Atualizações",
       status: "pending",
       severity: "high",
       details: error instanceof Error ? error.message : "Erro desconhecido",

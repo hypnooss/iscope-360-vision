@@ -69,17 +69,17 @@ function getRiskClassification(score: number): { label: string; color: [number, 
 
 // Descritivos de cada categoria de analise
 const categoryDescriptions: Record<string, string> = {
-  'Seguranca de Interfaces': 'Verifica configuracoes de acesso as interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
+  'Segurança de Interfaces': 'Verifica configuracoes de acesso as interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
   'Regras de Entrada': 'Analisa politicas de firewall que permitem trafego de entrada da internet, identificando exposicoes de servicos criticos.',
-  'Configuracao de Rede': 'Avalia configuracoes gerais de rede, incluindo regras permissivas e segmentacao.',
-  'Politicas de Seguranca': 'Examina configuracoes de autenticacao administrativa, incluindo 2FA, politicas de senha e timeout.',
-  'Atualizacao de Firmware': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
-  'Atualizacoes': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
-  'Perfis de Seguranca UTM': 'Analisa a aplicacao de perfis de seguranca (IPS, AV, WebFilter, AppControl) nas politicas.',
-  'Configuracao VPN': 'Avalia configuracoes de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
+  'Configuração de Rede': 'Avalia configuracoes gerais de rede, incluindo regras permissivas e segmentacao.',
+  'Políticas de Segurança': 'Examina configuracoes de autenticacao administrativa, incluindo 2FA, politicas de senha e timeout.',
+  'Atualização de Firmware': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
+  'Atualizações': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
+  'Perfis de Segurança UTM': 'Analisa a aplicacao de perfis de seguranca (IPS, AV, WebFilter, AppControl) nas politicas.',
+  'Configuração VPN': 'Avalia configuracoes de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
   'Logging e Monitoramento': 'Verifica configuracoes de log e integracao com FortiAnalyzer/FortiCloud.',
   'Licenciamento': 'Verifica status do FortiCare e licencas FortiGuard (AV, IPS, WebFilter, AppControl).',
-  'Recomendacoes': 'Sumario de recomendacoes com base na analise de conformidade, incluindo interfaces, politicas e perfis de seguranca.',
+  'Recomendações': 'Sumario de recomendacoes com base na analise de conformidade, incluindo interfaces, politicas e perfis de seguranca.',
 };
 
 // Calcular cobertura UTM (baseado em políticas de saída internet)
@@ -789,8 +789,8 @@ export function exportReportToPDF(report: ComplianceReport) {
       };
       
       // Se houver evidence, usar para construir detalhes mais legíveis
-      if (category.name === 'Atualizacoes' && check.evidence && check.evidence.length > 0) {
-        const versionEv = check.evidence.find(e => e.label === 'Versao FortiOS Atual' || e.label === 'Versao Atual' || e.label === 'Versao');
+      if (category.name === 'Atualizações' && check.evidence && check.evidence.length > 0) {
+        const versionEv = check.evidence.find(e => e.label === 'Versao FortiOS Atual' || e.label === 'Versão Atual' || e.label === 'Versão');
         const statusEv = check.evidence.find(e => e.label === 'Status');
         const buildEv = check.evidence.find(e => e.label === 'Build');
         
