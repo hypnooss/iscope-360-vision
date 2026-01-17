@@ -122,9 +122,10 @@ export default function FirewallReportsPage() {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'bg-success/10 text-success';
-    if (score >= 60) return 'bg-warning/10 text-warning';
-    return 'bg-destructive/10 text-destructive';
+    if (score >= 90) return 'bg-success/10 text-success'; // Excelente
+    if (score >= 75) return 'bg-success/10 text-success'; // Bom (verde mais claro)
+    if (score >= 60) return 'bg-warning/10 text-warning'; // Atenção
+    return 'bg-destructive/10 text-destructive'; // Risco Alto
   };
 
   if (authLoading) return null;

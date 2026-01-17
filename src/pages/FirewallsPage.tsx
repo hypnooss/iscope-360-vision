@@ -263,9 +263,10 @@ export default function FirewallsPage() {
 
   const getScoreColor = (score: number | null) => {
     if (score === null) return 'bg-muted text-muted-foreground';
-    if (score >= 80) return 'bg-success/10 text-success';
-    if (score >= 60) return 'bg-warning/10 text-warning';
-    return 'bg-destructive/10 text-destructive';
+    if (score >= 90) return 'bg-success/10 text-success'; // Excelente
+    if (score >= 75) return 'bg-success/10 text-success'; // Bom (verde mais claro)
+    if (score >= 60) return 'bg-warning/10 text-warning'; // Atenção
+    return 'bg-destructive/10 text-destructive'; // Risco Alto
   };
 
   const getScheduleLabel = (frequency: string) => {

@@ -122,9 +122,10 @@ export default function FirewallDashboardPage() {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-success';
-    if (score >= 60) return 'text-warning';
-    return 'text-destructive';
+    if (score >= 90) return 'text-success'; // Excelente
+    if (score >= 75) return 'text-success'; // Bom
+    if (score >= 60) return 'text-warning'; // Atenção
+    return 'text-destructive'; // Risco Alto
   };
 
   if (authLoading) return null;
