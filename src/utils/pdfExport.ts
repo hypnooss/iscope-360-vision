@@ -788,20 +788,11 @@ export function exportReportToPDF(report: ComplianceReport) {
         return result || '-';
       };
       
-      // Se houver evidence, usar para construir detalhes mais legíveis
-      if (category.name === 'Atualizações' && check.evidence && check.evidence.length > 0) {
-        const versionEv = check.evidence.find(e => e.label === 'Versao FortiOS Atual' || e.label === 'Versão Atual' || e.label === 'Versão');
-        const statusEv = check.evidence.find(e => e.label === 'Status');
-        const buildEv = check.evidence.find(e => e.label === 'Build');
-        
-        const parts: string[] = [];
-        if (versionEv) parts.push(`Versao: ${sanitizeForPDF(versionEv.value)}`);
-        if (buildEv) parts.push(`Build: ${sanitizeForPDF(buildEv.value)}`);
-        if (statusEv && !versionEv) parts.push(sanitizeForPDF(statusEv.value));
-        
-        if (parts.length > 0) {
-          detailsText = parts.join(' | ');
-        }
+      // Para Atualizações, usar o details original que já vem formatado da API
+      // O details já contém: "Versao DESATUALIZADA: FortiOS X.X.X - Recomendada: Y.Y.Y"
+      if (category.name === 'Atualizações') {
+        // Usar details original, apenas sanitizar
+        detailsText = sanitizeForPDF(detailsText);
       } else {
         // Limpar e sanitizar qualquer texto de detalhes
         detailsText = sanitizeForPDF(detailsText);
