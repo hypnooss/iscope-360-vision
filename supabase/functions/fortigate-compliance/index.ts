@@ -1450,48 +1450,48 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     const versionStatus = compareVersions(currentVersion, recommendedVersion);
 
     let checkStatus: "pass" | "fail" | "warning" = "pass";
-    let recommendation = "Firmware está atualizado conforme recomendação Fortinet";
-    let details = `Versão atual: FortiOS ${currentVersion} | Recomendada: ${recommendedVersion}`;
+    let recommendation = "Firmware esta atualizado conforme recomendacao Fortinet";
+    let details = `Versao atual: FortiOS ${currentVersion} | Recomendada: ${recommendedVersion}`;
 
     if (versionStatus === "outdated") {
       checkStatus = "fail";
-      recommendation = `Atualizar para FortiOS ${recommendedVersion} conforme recomendação Fortinet`;
-      details = `Versão DESATUALIZADA: FortiOS ${currentVersion} → Recomendada: ${recommendedVersion}`;
+      recommendation = `Atualizar para FortiOS ${recommendedVersion} conforme recomendacao Fortinet`;
+      details = `Versao DESATUALIZADA: FortiOS ${currentVersion} - Recomendada: ${recommendedVersion}`;
     } else if (versionStatus === "unknown") {
       checkStatus = "warning";
-      recommendation = "Não foi possível comparar versões. Verificar manualmente no suporte Fortinet";
-      details = `Versão atual: ${rawVersion || "Não identificada"}`;
+      recommendation = "Nao foi possivel comparar versoes. Verificar manualmente no suporte Fortinet";
+      details = `Versao atual: ${rawVersion || "Nao identificada"}`;
     }
 
     const evidence: EvidenceItem[] = [
       {
-        label: "Versão FortiOS Atual",
-        value: currentVersion || rawVersion || "Não identificada",
+        label: "Versao FortiOS Atual",
+        value: currentVersion || rawVersion || "Nao identificada",
         type: "text" as const,
       },
-      { label: "Versão Recomendada Fortinet", value: recommendedVersion, type: "text" as const },
+      { label: "Versao Recomendada Fortinet", value: recommendedVersion, type: "text" as const },
       {
         label: "Status",
         value:
           versionStatus === "up-to-date"
-            ? "✅ Atualizado"
+            ? "[OK] Atualizado"
             : versionStatus === "outdated"
-              ? "❌ Desatualizado"
-              : "⚠️ Verificar manualmente",
+              ? "[X] Desatualizado"
+              : "[!] Verificar manualmente",
         type: "text" as const,
       },
-      { label: "Modelo", value: model || "Não identificado", type: "text" as const },
-      { label: "Hostname", value: hostname || "Não identificado", type: "text" as const },
-      { label: "Serial Number", value: serial || "Não identificado", type: "code" as const },
+      { label: "Modelo", value: model || "Nao identificado", type: "text" as const },
+      { label: "Hostname", value: hostname || "Nao identificado", type: "text" as const },
+      { label: "Serial Number", value: serial || "Nao identificado", type: "code" as const },
     ];
 
     if (uptimeStr) evidence.push({ label: "Uptime", value: uptimeStr, type: "text" as const });
 
     checks.push({
       id: "upd-001",
-      name: "Versão do Firmware",
-      description: "Verifica se o firmware está na versão recomendada pela Fortinet",
-      category: "Atualizações",
+      name: "Versao do Firmware",
+      description: "Verifica se o firmware esta na versao recomendada pela Fortinet",
+      category: "Atualizacoes",
       status: checkStatus,
       severity: "high",
       details,
@@ -1514,8 +1514,8 @@ async function checkFirmware(config: FortiGateConfig): Promise<ComplianceCheck[]
     checks.push({
       id: "upd-err",
       name: "Erro ao verificar firmware",
-      description: "Não foi possível verificar a versão do firmware",
-      category: "Atualizações",
+      description: "Nao foi possivel verificar a versao do firmware",
+      category: "Atualizacoes",
       status: "pending",
       severity: "high",
       details: error instanceof Error ? error.message : "Erro desconhecido",

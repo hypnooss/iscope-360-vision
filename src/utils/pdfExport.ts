@@ -67,19 +67,19 @@ function getRiskClassification(score: number): { label: string; color: [number, 
   return { label: 'RISCO ALTO', color: [239, 68, 68] };
 }
 
-// Descritivos de cada categoria de análise
+// Descritivos de cada categoria de analise
 const categoryDescriptions: Record<string, string> = {
-  'Segurança de Interfaces': 'Verifica configurações de acesso às interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
-  'Regras de Entrada': 'Analisa políticas de firewall que permitem tráfego de entrada da internet, identificando exposições de serviços críticos.',
-  'Configuração de Rede': 'Avalia configurações gerais de rede, incluindo regras permissivas e segmentação.',
-  'Políticas de Segurança': 'Examina configurações de autenticação administrativa, incluindo 2FA, políticas de senha e timeout.',
-  'Atualização de Firmware': 'Verifica a versão do FortiOS instalada e identifica atualizações disponíveis.',
-  'Atualizações': 'Verifica a versão do FortiOS instalada e identifica atualizações disponíveis.',
-  'Perfis de Segurança UTM': 'Analisa a aplicação de perfis de segurança (IPS, AV, WebFilter, AppControl) nas políticas.',
-  'Configuração VPN': 'Avalia configurações de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
-  'Logging e Monitoramento': 'Verifica configurações de log e integração com FortiAnalyzer/FortiCloud.',
-  'Licenciamento': 'Verifica status do FortiCare e licenças FortiGuard (AV, IPS, WebFilter, AppControl).',
-  'Recomendações': 'Sumário de recomendações com base na análise de conformidade, incluindo interfaces, políticas e perfis de segurança.',
+  'Seguranca de Interfaces': 'Verifica configuracoes de acesso as interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
+  'Regras de Entrada': 'Analisa politicas de firewall que permitem trafego de entrada da internet, identificando exposicoes de servicos criticos.',
+  'Configuracao de Rede': 'Avalia configuracoes gerais de rede, incluindo regras permissivas e segmentacao.',
+  'Politicas de Seguranca': 'Examina configuracoes de autenticacao administrativa, incluindo 2FA, politicas de senha e timeout.',
+  'Atualizacao de Firmware': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
+  'Atualizacoes': 'Verifica a versao do FortiOS instalada e identifica atualizacoes disponiveis.',
+  'Perfis de Seguranca UTM': 'Analisa a aplicacao de perfis de seguranca (IPS, AV, WebFilter, AppControl) nas politicas.',
+  'Configuracao VPN': 'Avalia configuracoes de VPN IPSec e SSL VPN, incluindo algoritmos e certificados.',
+  'Logging e Monitoramento': 'Verifica configuracoes de log e integracao com FortiAnalyzer/FortiCloud.',
+  'Licenciamento': 'Verifica status do FortiCare e licencas FortiGuard (AV, IPS, WebFilter, AppControl).',
+  'Recomendacoes': 'Sumario de recomendacoes com base na analise de conformidade, incluindo interfaces, politicas e perfis de seguranca.',
 };
 
 // Calcular cobertura UTM (baseado em políticas de saída internet)
@@ -679,7 +679,7 @@ export function exportReportToPDF(report: ComplianceReport) {
 
     // Processamento padrão para outras categorias
     const checksData = category.checks.map(check => {
-      // Para a categoria Atualizações, formatar melhor os detalhes do firmware
+      // Para a categoria Atualizacoes, formatar melhor os detalhes do firmware
       let detailsText = check.details || '-';
       
       // Função robusta para corrigir mojibake e normalizar texto para PDF
@@ -789,8 +789,8 @@ export function exportReportToPDF(report: ComplianceReport) {
       };
       
       // Se houver evidence, usar para construir detalhes mais legíveis
-      if (category.name === 'Atualizações' && check.evidence && check.evidence.length > 0) {
-        const versionEv = check.evidence.find(e => e.label === 'Versão Atual' || e.label === 'Versão');
+      if (category.name === 'Atualizacoes' && check.evidence && check.evidence.length > 0) {
+        const versionEv = check.evidence.find(e => e.label === 'Versao FortiOS Atual' || e.label === 'Versao Atual' || e.label === 'Versao');
         const statusEv = check.evidence.find(e => e.label === 'Status');
         const buildEv = check.evidence.find(e => e.label === 'Build');
         
