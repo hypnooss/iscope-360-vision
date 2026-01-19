@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { Bot, Plus, Loader2, MoreVertical, Eye, Ban, Copy, Check, RefreshCw, Clock, Building } from 'lucide-react';
+import { Bot, Plus, Loader2, MoreVertical, Eye, Ban, Copy, Check, RefreshCw, Clock, Building, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -61,6 +61,12 @@ export default function AgentsPage() {
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [agentToRevoke, setAgentToRevoke] = useState<Agent | null>(null);
   const [revoking, setRevoking] = useState(false);
+
+  // Delete dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
 
@@ -276,6 +282,37 @@ export default function AgentsPage() {
     setRevokeDialogOpen(true);
   };
 
+  const openDeleteDialog = (agent: Agent) => {
+    setAgentToDelete(agent);
+    setDeleteConfirmName('');
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteAgent = async () => {
+    if (!agentToDelete || deleteConfirmName !== agentToDelete.name) return;
+
+    setDeleting(true);
+    try {
+      const { error } = await (supabase
+        .from('agents' as any)
+        .delete()
+        .eq('id', agentToDelete.id) as any);
+
+      if (error) throw error;
+
+      toast.success('Agent deletado com sucesso!');
+      setDeleteDialogOpen(false);
+      setAgentToDelete(null);
+      setDeleteConfirmName('');
+      setDetailsDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      toast.error('Erro ao deletar agent: ' + error.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (authLoading || !canAccessPage) return null;
 
   return (
@@ -474,6 +511,15 @@ export default function AgentsPage() {
                                   Revogar agent
                                 </DropdownMenuItem>
                               )}
+                              {agent.revoked && (
+                                <DropdownMenuItem 
+                                  onClick={() => openDeleteDialog(agent)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Deletar agent
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -599,6 +645,15 @@ export default function AgentsPage() {
                   Revogar Agent
                 </Button>
               )}
+              {selectedAgent && selectedAgent.revoked && (
+                <Button 
+                  variant="destructive" 
+                  onClick={() => openDeleteDialog(selectedAgent)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Deletar Agent
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setDetailsDialogOpen(false)}>
                 Fechar
               </Button>
@@ -629,6 +684,58 @@ export default function AgentsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="text-destructive flex items-center gap-2">
+                <Trash2 className="w-5 h-5" />
+                Deletar Agent
+              </DialogTitle>
+              <DialogDescription>
+                Esta ação é permanente e não pode ser desfeita. Todos os dados do agent serão removidos.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <p className="text-sm text-destructive font-medium">
+                  Para confirmar, digite o nome do agent:
+                </p>
+                <p className="text-sm font-mono mt-1">{agentToDelete?.name}</p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="delete-confirm-name">Nome do Agent</Label>
+                <Input
+                  id="delete-confirm-name"
+                  placeholder="Digite o nome para confirmar"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setAgentToDelete(null);
+                  setDeleteConfirmName('');
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteAgent}
+                disabled={deleting || deleteConfirmName !== agentToDelete?.name}
+              >
+                {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Deletar Agent
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
