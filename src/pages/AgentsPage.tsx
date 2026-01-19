@@ -339,12 +339,12 @@ export default function AgentsPage() {
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="agent-client">Cliente (opcional)</Label>
-                      <Select value={newAgentClientId} onValueChange={setNewAgentClientId}>
+                      <Select value={newAgentClientId || "none"} onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione um cliente" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Nenhum</SelectItem>
+                          <SelectItem value="none">Nenhum</SelectItem>
                           {clients.map((client) => (
                             <SelectItem key={client.id} value={client.id}>
                               {client.name}
