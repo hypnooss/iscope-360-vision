@@ -383,7 +383,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-h-screen">{children}</main>
+        <main className="flex-1 min-h-screen cyber-grid">{children}</main>
       </div>
     </div>
   );

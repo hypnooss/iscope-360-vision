@@ -35,7 +35,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
   };
 
   return (
-    <div className="min-h-screen p-6 lg:p-8 cyber-grid">
+    <div className="min-h-screen p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
