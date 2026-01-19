@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      agents: {
+        Row: {
+          activation_code: string | null
+          activation_code_expires_at: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          jwt_secret: string | null
+          last_seen: string | null
+          name: string
+          revoked: boolean
+        }
+        Insert: {
+          activation_code?: string | null
+          activation_code_expires_at?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          jwt_secret?: string | null
+          last_seen?: string | null
+          name: string
+          revoked?: boolean
+        }
+        Update: {
+          activation_code?: string | null
+          activation_code_expires_at?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          jwt_secret?: string | null
+          last_seen?: string | null
+          name?: string
+          revoked?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analysis_history: {
         Row: {
           analyzed_by: string | null
