@@ -25,20 +25,14 @@ interface Agent {
   created_at: string;
   last_seen: string | null;
   revoked: boolean;
-  activation_code_id: string | null;
+  activation_code: string | null;
+  activation_code_expires_at: string | null;
   client_name?: string;
 }
 
 interface Client {
   id: string;
   name: string;
-}
-
-interface ActivationCode {
-  id: string;
-  code: string;
-  expires_at: string;
-  used_at: string | null;
 }
 
 export default function AgentsPage() {
@@ -61,7 +55,7 @@ export default function AgentsPage() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
-  const [newActivationCode, setNewActivationCode] = useState<ActivationCode | null>(null);
+  const [newActivationCode, setNewActivationCode] = useState<{ id: string; code: string; expires_at: string; used_at: string | null } | null>(null);
 
   // Revoke dialog
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
@@ -134,6 +128,16 @@ export default function AgentsPage() {
     return { label: 'Offline', variant: 'default' };
   };
 
+  const generateActivationCode = (): string => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 16; i++) {
+      if (i > 0 && i % 4 === 0) code += '-';
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
   const handleCreateAgent = async () => {
     if (!newAgentName.trim()) {
       toast.error('Nome do agent é obrigatório');
@@ -144,34 +148,24 @@ export default function AgentsPage() {
     try {
       // Create activation code (expires in 48h)
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      
-      const { data: codeData, error: codeError } = await (supabase
-        .from('activation_codes' as any)
-        .insert({
-          created_by: user!.id,
-          client_id: newAgentClientId || null,
-          expires_at: expiresAt,
-        })
-        .select()
-        .single() as any);
+      const code = generateActivationCode();
 
-      if (codeError) throw codeError;
-
-      // Create agent linked to activation code
+      // Create agent with activation code
       const { data: agentData, error: agentError } = await (supabase
         .from('agents' as any)
         .insert({
           name: newAgentName.trim(),
           client_id: newAgentClientId || null,
           created_by: user!.id,
-          activation_code_id: codeData.id,
+          activation_code: code,
+          activation_code_expires_at: expiresAt,
         })
         .select()
         .single() as any);
 
       if (agentError) throw agentError;
 
-      setActivationCode((codeData as any).code);
+      setActivationCode(code);
       setActivationExpiresAt(expiresAt);
       toast.success('Agent criado com sucesso!');
       fetchData();
@@ -212,30 +206,22 @@ export default function AgentsPage() {
     setGeneratingCode(true);
     try {
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      
-      const { data: codeData, error: codeError } = await (supabase
-        .from('activation_codes' as any)
-        .insert({
-          created_by: user!.id,
-          client_id: selectedAgent.client_id,
-          expires_at: expiresAt,
-        })
-        .select()
-        .single() as any);
-
-      if (codeError) throw codeError;
+      const code = generateActivationCode();
 
       // Update agent with new activation code
       const { error: updateError } = await (supabase
         .from('agents' as any)
-        .update({ activation_code_id: codeData.id })
+        .update({ 
+          activation_code: code,
+          activation_code_expires_at: expiresAt
+        })
         .eq('id', selectedAgent.id) as any);
 
       if (updateError) throw updateError;
 
       setNewActivationCode({
-        id: codeData.id,
-        code: (codeData as any).code,
+        id: selectedAgent.id,
+        code: code,
         expires_at: expiresAt,
         used_at: null,
       });
@@ -261,21 +247,17 @@ export default function AgentsPage() {
 
     setRevoking(true);
     try {
-      // Revoke agent
+      // Revoke agent and clear activation code
       const { error: agentError } = await (supabase
         .from('agents' as any)
-        .update({ revoked: true })
+        .update({ 
+          revoked: true,
+          activation_code: null,
+          activation_code_expires_at: null
+        })
         .eq('id', agentToRevoke.id) as any);
 
       if (agentError) throw agentError;
-
-      // Revoke all tokens for this agent
-      const { error: tokensError } = await (supabase
-        .from('agent_tokens' as any)
-        .update({ revoked: true })
-        .eq('agent_id', agentToRevoke.id) as any);
-
-      if (tokensError) throw tokensError;
 
       toast.success('Agent revogado com sucesso!');
       setRevokeDialogOpen(false);
