@@ -47,7 +47,7 @@ interface InboundWANPolicy {
 }
 
 // Função customizada para fazer fetch ignorando SSL (FortiGates usam certificados auto-assinados)
-async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
+/* async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
   const client = Deno.createHttpClient({
     caCerts: [],
   });
@@ -59,6 +59,24 @@ async function fetchWithoutSSLVerification(url: string, options: RequestInit): P
       client,
     });
     return response;
+  } finally {
+    client.close();
+  }
+}
+*/
+async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
+  const { hostname } = new URL(url);
+
+  const client = Deno.createHttpClient({
+    dangerouslyIgnoreCertificateErrors: [hostname],
+  });
+
+  try {
+    return await fetch(url, {
+      ...options,
+      // @ts-ignore - Deno permite passar client
+      client,
+    });
   } finally {
     client.close();
   }
@@ -275,9 +293,15 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
     const actions = actionsResponse.results || [];
 
     console.log(`[BACKUP] Found ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
-    console.log(`[BACKUP] Stitches: ${JSON.stringify(stitches.map((s: any) => ({ name: s.name, status: s.status, trigger: s.trigger, actions: s.actions || s.action })))}`);
-    console.log(`[BACKUP] Triggers: ${JSON.stringify(triggers.map((t: any) => ({ name: t.name, type: t["trigger-type"] || t["event-type"], frequency: t["trigger-frequency"] })))}`);
-    console.log(`[BACKUP] Actions: ${JSON.stringify(actions.map((a: any) => ({ name: a.name, type: a["action-type"], hasScript: !!a.script })))}`);
+    console.log(
+      `[BACKUP] Stitches: ${JSON.stringify(stitches.map((s: any) => ({ name: s.name, status: s.status, trigger: s.trigger, actions: s.actions || s.action })))}`,
+    );
+    console.log(
+      `[BACKUP] Triggers: ${JSON.stringify(triggers.map((t: any) => ({ name: t.name, type: t["trigger-type"] || t["event-type"], frequency: t["trigger-frequency"] })))}`,
+    );
+    console.log(
+      `[BACKUP] Actions: ${JSON.stringify(actions.map((a: any) => ({ name: a.name, type: a["action-type"], hasScript: !!a.script })))}`,
+    );
 
     // Mapear triggers por nome
     const triggerMap = new Map<string, any>();
@@ -301,19 +325,21 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
       if (!Array.isArray(triggerRefs)) {
         triggerRefs = [triggerRefs];
       }
-      
+
       // Verificar actions - pode ser "actions" ou "action", array ou objeto
       let actionRefs = stitch.actions || stitch.action || [];
       if (!Array.isArray(actionRefs)) {
         actionRefs = [actionRefs];
       }
 
-      console.log(`[BACKUP] Checking stitch: ${stitch.name}, triggers: ${JSON.stringify(triggerRefs)}, actions: ${JSON.stringify(actionRefs)}`);
+      console.log(
+        `[BACKUP] Checking stitch: ${stitch.name}, triggers: ${JSON.stringify(triggerRefs)}, actions: ${JSON.stringify(actionRefs)}`,
+      );
 
       for (const triggerRef of triggerRefs) {
         const triggerName = typeof triggerRef === "string" ? triggerRef : triggerRef?.name;
         if (!triggerName) continue;
-        
+
         const trigger = triggerMap.get(triggerName);
 
         if (!trigger) {
@@ -324,11 +350,11 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
         // Verificar se é trigger agendado - aceitar variações
         const triggerType = trigger["trigger-type"] || trigger["event-type"] || trigger.type || "";
         console.log(`[BACKUP] Trigger ${triggerName} type: ${triggerType}`);
-        
+
         // Aceitar "scheduled", "schedule", ou trigger com frequência definida
         const hasScheduledFrequency = trigger["trigger-frequency"] || trigger.frequency;
         const isScheduled = triggerType === "scheduled" || triggerType === "schedule" || hasScheduledFrequency;
-        
+
         if (!isScheduled) {
           console.log(`[BACKUP] Trigger ${triggerName} is not scheduled`);
           continue;
@@ -349,11 +375,11 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
           } else if (actionRef?.name) {
             actionName = actionRef.name;
           }
-          
+
           console.log(`[BACKUP] Extracted action name: "${actionName}" from ref: ${JSON.stringify(actionRef)}`);
-          
+
           if (!actionName) continue;
-          
+
           const action = actionMap.get(actionName);
 
           if (!action) {
@@ -365,21 +391,21 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
               result.stitchName = stitch.name;
               result.triggerName = triggerName;
               result.actionName = actionName;
-              
+
               const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
               const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
               const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
               const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
-              
+
               result.frequency = frequency;
               const timeStr = `${String(triggerHour).padStart(2, "0")}:${String(triggerMinute).padStart(2, "0")}`;
-              
+
               if (frequency === "weekly" && triggerDay) {
                 result.detail = `${frequency} on ${triggerDay} at ${timeStr}`;
               } else {
                 result.detail = `${frequency} at ${timeStr}`;
               }
-              
+
               console.log(`[BACKUP] Found backup by action name: ${result.stitchName} -> ${result.detail}`);
               return result;
             }
@@ -389,8 +415,10 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
           // Verificar se é ação de backup
           const actionType = action["action-type"] || action.type || "";
           const script = action.script || action.command || "";
-          
-          console.log(`[BACKUP] Checking action: ${actionName}, type: ${actionType}, script contains backup: ${script.toLowerCase().includes("backup")}`);
+
+          console.log(
+            `[BACKUP] Checking action: ${actionName}, type: ${actionType}, script contains backup: ${script.toLowerCase().includes("backup")}`,
+          );
 
           // Verificar se é ação de backup por múltiplos critérios
           const isBackupAction =
@@ -446,7 +474,7 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
       const autoScripts = await fortigateRequest(config, "/cmdb/system/auto-script");
       const scripts = autoScripts.results || [];
       console.log(`[BACKUP] Fallback: Found ${scripts.length} auto-scripts`);
-      
+
       const backupScripts = scripts.filter(
         (s: any) => s.script?.toLowerCase().includes("backup") || s.name?.toLowerCase().includes("backup"),
       );
@@ -465,7 +493,7 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
     } catch {
       // Endpoint não disponível
     }
-    
+
     console.log(`[BACKUP] Final result: isConfigured=${result.isConfigured}, status=${result.status}`);
   } catch (error) {
     console.error("[BACKUP] Error checking automated backup:", error);
@@ -1609,11 +1637,15 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     // FortiGuard Services - Buscar em múltiplas chaves possíveis do JSON
     // IMPORTANTE: web_filtering é a chave correta para Web Filter no JSON da API
     console.log("[LICENSE] License keys available:", Object.keys(licenses));
-    
+
     const securityServicesMap = [
       { key: "antivirus", altKeys: ["av", "fortigate_av", "fgt_av"], name: "Antivírus" },
       { key: "ips", altKeys: ["nids", "fortigate_ips", "fgt_ips"], name: "IPS" },
-      { key: "web_filtering", altKeys: ["webfilter", "fgd_wf", "webfiltering", "fortiguard_webfilter", "fgt_wf"], name: "Web Filter" },
+      {
+        key: "web_filtering",
+        altKeys: ["webfilter", "fgd_wf", "webfiltering", "fortiguard_webfilter", "fgt_wf"],
+        name: "Web Filter",
+      },
       { key: "appctrl", altKeys: ["app_ctrl", "application_control", "fortigate_appctrl"], name: "App Control" },
       { key: "antispam", altKeys: ["anti_spam", "fortigate_antispam", "fgt_antispam"], name: "AntiSpam" },
     ];
@@ -1626,31 +1658,32 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
     for (const serviceMapping of securityServicesMap) {
       let serviceInfo = licenses[serviceMapping.key];
       let foundKey = serviceMapping.key;
-      
-      if (!serviceInfo || (typeof serviceInfo === 'object' && Object.keys(serviceInfo).length === 0)) {
+
+      if (!serviceInfo || (typeof serviceInfo === "object" && Object.keys(serviceInfo).length === 0)) {
         for (const altKey of serviceMapping.altKeys) {
           const altInfo = licenses[altKey];
-          if (altInfo && (typeof altInfo !== 'object' || Object.keys(altInfo).length > 0)) {
+          if (altInfo && (typeof altInfo !== "object" || Object.keys(altInfo).length > 0)) {
             serviceInfo = altInfo;
             foundKey = altKey;
             break;
           }
         }
       }
-      
+
       console.log(`[LICENSE] ${serviceMapping.name}: key=${foundKey}, info=`, JSON.stringify(serviceInfo));
-      
+
       // Se ainda não encontrou, pode ser que o valor seja direto (não objeto)
       if (!serviceInfo && licenses[serviceMapping.key] !== undefined) {
         serviceInfo = { status: licenses[serviceMapping.key] };
       }
-      
+
       serviceInfo = serviceInfo || {};
 
       // Buscar status em múltiplos campos possíveis
       const status = serviceInfo.status || serviceInfo.entitlement || serviceInfo.license_status || "unknown";
       // Buscar expiração em múltiplos campos - alguns FortiOS usam campos diferentes
-      const expiry = serviceInfo.expires || serviceInfo.expiry_date || serviceInfo.expire_time || serviceInfo.expiration || 0;
+      const expiry =
+        serviceInfo.expires || serviceInfo.expiry_date || serviceInfo.expire_time || serviceInfo.expiration || 0;
       const serviceName = serviceMapping.name;
 
       console.log(`[LICENSE] ${serviceName}: status=${status}, expiry=${expiry}`);
@@ -1662,12 +1695,12 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
       if (expiry) {
         // Verificar se expiry é timestamp (número) ou string ISO
         let expiryDate: Date;
-        if (typeof expiry === 'string') {
+        if (typeof expiry === "string") {
           expiryDate = new Date(expiry);
         } else {
           expiryDate = new Date(expiry * 1000);
         }
-        
+
         if (!isNaN(expiryDate.getTime())) {
           expiryDateStr = expiryDate.toLocaleDateString("pt-BR");
           daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -1675,7 +1708,7 @@ async function checkFortiGuardLicenses(config: FortiGateConfig): Promise<Complia
           console.log(`[LICENSE] ${serviceName}: expiryDate=${expiryDateStr}, daysRemaining=${daysRemaining}`);
         }
       }
-      
+
       // Verificar status se não conseguiu pela data
       if (!isActive && !expiry) {
         const activeStatuses = ["licensed", "valid", "active", "enabled", "enable", "registered", "1"];
@@ -1968,9 +2001,9 @@ function generateRecommendations(
 ): ComplianceCheck {
   const recommendations: string[] = [];
   const evidence: EvidenceItem[] = [];
-  
+
   const { disabledInterfaces, zoneInterfaces, sdwanZoneInterfaces } = context;
-  
+
   // Função auxiliar para verificar se a interface deve ser ignorada na análise
   const shouldIgnoreInterface = (ifaceName: string): boolean => {
     // Ignorar interfaces desativadas
@@ -1984,7 +2017,7 @@ function generateRecommendations(
 
   // Interfaces com role undefined (excluir desativadas e em zones)
   const undefinedInterfaces = interfaceClassifications.filter(
-    (c) => c.role === "undefined" && !shouldIgnoreInterface(c.name)
+    (c) => c.role === "undefined" && !shouldIgnoreInterface(c.name),
   );
   if (undefinedInterfaces.length > 0) {
     recommendations.push("Definir corretamente o role das interfaces (LAN/WAN/DMZ) atualmente como undefined");
@@ -2013,9 +2046,9 @@ function generateRecommendations(
 
   // Filtrar apenas interfaces relevantes (não loopback, não tunnel, não desativadas, não em zones)
   const relevantWithoutPolicy = interfacesWithoutPolicy.filter(
-    (iface) => 
-      !iface.name.includes("lo") && 
-      !iface.name.includes("npu") && 
+    (iface) =>
+      !iface.name.includes("lo") &&
+      !iface.name.includes("npu") &&
       !iface.name.includes("ssl.") &&
       !shouldIgnoreInterface(iface.name),
   );
@@ -2177,48 +2210,48 @@ serve(async (req) => {
     // Buscar interfaces raw para verificar status (disabled)
     const interfacesResponse = await fortigateRequest(config, "/cmdb/system/interface").catch(() => ({ results: [] }));
     const interfacesRaw = interfacesResponse.results || [];
-    
+
     // Buscar zones (interfaces que fazem parte de um zone não precisam de policies próprias)
     const zonesResponse = await fortigateRequest(config, "/cmdb/system/zone").catch(() => ({ results: [] }));
     const zones = zonesResponse.results || [];
-    
+
     // Buscar SD-WAN config para zones
     const sdwanResponse = await fortigateRequest(config, "/cmdb/system/sdwan").catch(() => ({ results: {} }));
     const sdwanConfig = sdwanResponse.results || {};
     const sdwanZones = sdwanConfig.zone || [];
-    
+
     // Construir sets de interfaces a ignorar
     const disabledInterfaces = new Set<string>();
     const zoneInterfaces = new Set<string>();
     const sdwanZoneInterfaces = new Set<string>();
-    
+
     // Interfaces desativadas
     for (const iface of interfacesRaw) {
       if (iface.status === "down" || iface.status === "disable") {
         disabledInterfaces.add(iface.name);
       }
     }
-    
+
     // Interfaces que fazem parte de zones
     for (const zone of zones) {
       const zoneIntf = zone.interface || [];
       for (const intf of zoneIntf) {
-        const intfName = typeof intf === 'string' ? intf : intf['interface-name'] || intf.name;
+        const intfName = typeof intf === "string" ? intf : intf["interface-name"] || intf.name;
         if (intfName) {
           zoneInterfaces.add(intfName);
         }
       }
     }
-    
+
     // Interfaces que fazem parte de SD-WAN zones (membros)
     const sdwanMembersSet = new Set<string>(sdwanMembers);
     for (const member of sdwanMembersSet) {
       sdwanZoneInterfaces.add(member);
     }
-    
-    console.log(`[RECOMMENDATIONS] Disabled interfaces: ${Array.from(disabledInterfaces).join(', ')}`);
-    console.log(`[RECOMMENDATIONS] Zone interfaces: ${Array.from(zoneInterfaces).join(', ')}`);
-    console.log(`[RECOMMENDATIONS] SD-WAN member interfaces: ${Array.from(sdwanZoneInterfaces).join(', ')}`);
+
+    console.log(`[RECOMMENDATIONS] Disabled interfaces: ${Array.from(disabledInterfaces).join(", ")}`);
+    console.log(`[RECOMMENDATIONS] Zone interfaces: ${Array.from(zoneInterfaces).join(", ")}`);
+    console.log(`[RECOMMENDATIONS] SD-WAN member interfaces: ${Array.from(sdwanZoneInterfaces).join(", ")}`);
 
     // Identificar inbound WAN policies
     const inboundWANPolicies = identifyInboundWANPolicies(allPolicies, wanInterfaceNames);
@@ -2253,7 +2286,12 @@ serve(async (req) => {
       zoneInterfaces,
       sdwanZoneInterfaces,
     };
-    const recommendationsCheck = generateRecommendations(classifications, allPolicies, inboundWithoutIPS, recommendationsContext);
+    const recommendationsCheck = generateRecommendations(
+      classifications,
+      allPolicies,
+      inboundWithoutIPS,
+      recommendationsContext,
+    );
 
     const allChecks = [
       ...adminChecks,
