@@ -1,22 +1,57 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
-import { Bot, Plus, Loader2, MoreVertical, Eye, Ban, Copy, Check, RefreshCw, Clock, Building, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  Bot,
+  Plus,
+  Loader2,
+  MoreVertical,
+  Eye,
+  Ban,
+  Copy,
+  Check,
+  RefreshCw,
+  Clock,
+  Building,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface Agent {
   id: string;
@@ -41,11 +76,11 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Create agent dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newAgentName, setNewAgentName] = useState('');
-  const [newAgentClientId, setNewAgentClientId] = useState<string>('');
+  const [newAgentName, setNewAgentName] = useState("");
+  const [newAgentClientId, setNewAgentClientId] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [activationCode, setActivationCode] = useState<string | null>(null);
   const [activationExpiresAt, setActivationExpiresAt] = useState<string | null>(null);
@@ -55,7 +90,12 @@ export default function AgentsPage() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
-  const [newActivationCode, setNewActivationCode] = useState<{ id: string; code: string; expires_at: string; used_at: string | null } | null>(null);
+  const [newActivationCode, setNewActivationCode] = useState<{
+    id: string;
+    code: string;
+    expires_at: string;
+    used_at: string | null;
+  } | null>(null);
 
   // Revoke dialog
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
@@ -65,17 +105,17 @@ export default function AgentsPage() {
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
 
   useEffect(() => {
     if (!authLoading && !user) {
-      navigate('/auth');
+      navigate("/auth");
     } else if (!authLoading && !canAccessPage) {
-      navigate('/dashboard');
-      toast.error('Acesso não autorizado');
+      navigate("/dashboard");
+      toast.error("Acesso não autorizado");
     }
   }, [user, authLoading, navigate, canAccessPage]);
 
@@ -89,23 +129,23 @@ export default function AgentsPage() {
     try {
       // Fetch agents - using type assertion since tables may not be in types yet
       const { data: agentsData, error: agentsError } = await (supabase
-        .from('agents' as any)
-        .select('*')
-        .order('created_at', { ascending: false }) as any);
+        .from("agents" as any)
+        .select("*")
+        .order("created_at", { ascending: false }) as any);
 
       if (agentsError) throw agentsError;
 
       // Fetch clients
       const { data: clientsData, error: clientsError } = await supabase
-        .from('clients')
-        .select('id, name')
-        .order('name');
+        .from("clients")
+        .select("id, name")
+        .order("name");
 
       if (clientsError) throw clientsError;
 
       // Map client names to agents
-      const clientMap = new Map((clientsData || []).map(c => [c.id, c.name]));
-      const agentsWithClientNames = ((agentsData as any[]) || []).map(agent => ({
+      const clientMap = new Map((clientsData || []).map((c) => [c.id, c.name]));
+      const agentsWithClientNames = ((agentsData as any[]) || []).map((agent) => ({
         ...agent,
         client_name: agent.client_id ? clientMap.get(agent.client_id) : undefined,
       })) as Agent[];
@@ -113,32 +153,34 @@ export default function AgentsPage() {
       setAgents(agentsWithClientNames);
       setClients(clientsData || []);
     } catch (error: any) {
-      toast.error('Erro ao carregar agents: ' + error.message);
+      toast.error("Erro ao carregar agents: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const getAgentStatus = (agent: Agent): { label: string; variant: 'default' | 'success' | 'warning' | 'destructive' } => {
+  const getAgentStatus = (
+    agent: Agent,
+  ): { label: string; variant: "default" | "success" | "warning" | "destructive" } => {
     if (agent.revoked) {
-      return { label: 'Revogado', variant: 'destructive' };
+      return { label: "Revogado", variant: "destructive" };
     }
     if (!agent.last_seen) {
-      return { label: 'Pendente', variant: 'warning' };
+      return { label: "Pendente", variant: "warning" };
     }
     const lastSeenDate = new Date(agent.last_seen);
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     if (lastSeenDate > fiveMinutesAgo) {
-      return { label: 'Online', variant: 'success' };
+      return { label: "Online", variant: "success" };
     }
-    return { label: 'Offline', variant: 'default' };
+    return { label: "Offline", variant: "default" };
   };
 
   const generateActivationCode = (): string => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
     for (let i = 0; i < 16; i++) {
-      if (i > 0 && i % 4 === 0) code += '-';
+      if (i > 0 && i % 4 === 0) code += "-";
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
@@ -146,7 +188,7 @@ export default function AgentsPage() {
 
   const handleCreateAgent = async () => {
     if (!newAgentName.trim()) {
-      toast.error('Nome do agent é obrigatório');
+      toast.error("Nome do agent é obrigatório");
       return;
     }
 
@@ -158,7 +200,7 @@ export default function AgentsPage() {
 
       // Create agent with activation code
       const { data: agentData, error: agentError } = await (supabase
-        .from('agents' as any)
+        .from("agents" as any)
         .insert({
           name: newAgentName.trim(),
           client_id: newAgentClientId || null,
@@ -173,10 +215,10 @@ export default function AgentsPage() {
 
       setActivationCode(code);
       setActivationExpiresAt(expiresAt);
-      toast.success('Agent criado com sucesso!');
+      toast.success("Agent criado com sucesso!");
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao criar agent: ' + error.message);
+      toast.error("Erro ao criar agent: " + error.message);
     } finally {
       setCreating(false);
     }
@@ -186,15 +228,15 @@ export default function AgentsPage() {
     if (activationCode) {
       await navigator.clipboard.writeText(activationCode);
       setCodeCopied(true);
-      toast.success('Código copiado!');
+      toast.success("Código copiado!");
       setTimeout(() => setCodeCopied(false), 2000);
     }
   };
 
   const handleCloseCreateDialog = () => {
     setCreateDialogOpen(false);
-    setNewAgentName('');
-    setNewAgentClientId('');
+    setNewAgentName("");
+    setNewAgentClientId("");
     setActivationCode(null);
     setActivationExpiresAt(null);
     setCodeCopied(false);
@@ -216,12 +258,12 @@ export default function AgentsPage() {
 
       // Update agent with new activation code
       const { error: updateError } = await (supabase
-        .from('agents' as any)
-        .update({ 
+        .from("agents" as any)
+        .update({
           activation_code: code,
-          activation_code_expires_at: expiresAt
+          activation_code_expires_at: expiresAt,
         })
-        .eq('id', selectedAgent.id) as any);
+        .eq("id", selectedAgent.id) as any);
 
       if (updateError) throw updateError;
 
@@ -231,11 +273,11 @@ export default function AgentsPage() {
         expires_at: expiresAt,
         used_at: null,
       });
-      
-      toast.success('Novo código de ativação gerado!');
+
+      toast.success("Novo código de ativação gerado!");
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao gerar código: ' + error.message);
+      toast.error("Erro ao gerar código: " + error.message);
     } finally {
       setGeneratingCode(false);
     }
@@ -244,7 +286,7 @@ export default function AgentsPage() {
   const handleCopyNewCode = async () => {
     if (newActivationCode) {
       await navigator.clipboard.writeText(newActivationCode.code);
-      toast.success('Código copiado!');
+      toast.success("Código copiado!");
     }
   };
 
@@ -255,23 +297,23 @@ export default function AgentsPage() {
     try {
       // Revoke agent and clear activation code
       const { error: agentError } = await (supabase
-        .from('agents' as any)
-        .update({ 
+        .from("agents" as any)
+        .update({
           revoked: true,
           activation_code: null,
-          activation_code_expires_at: null
+          activation_code_expires_at: null,
         })
-        .eq('id', agentToRevoke.id) as any);
+        .eq("id", agentToRevoke.id) as any);
 
       if (agentError) throw agentError;
 
-      toast.success('Agent revogado com sucesso!');
+      toast.success("Agent revogado com sucesso!");
       setRevokeDialogOpen(false);
       setAgentToRevoke(null);
       setDetailsDialogOpen(false);
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao revogar agent: ' + error.message);
+      toast.error("Erro ao revogar agent: " + error.message);
     } finally {
       setRevoking(false);
     }
@@ -284,7 +326,7 @@ export default function AgentsPage() {
 
   const openDeleteDialog = (agent: Agent) => {
     setAgentToDelete(agent);
-    setDeleteConfirmName('');
+    setDeleteConfirmName("");
     setDeleteDialogOpen(true);
   };
 
@@ -294,20 +336,20 @@ export default function AgentsPage() {
     setDeleting(true);
     try {
       const { error } = await (supabase
-        .from('agents' as any)
+        .from("agents" as any)
         .delete()
-        .eq('id', agentToDelete.id) as any);
+        .eq("id", agentToDelete.id) as any);
 
       if (error) throw error;
 
-      toast.success('Agent deletado com sucesso!');
+      toast.success("Agent deletado com sucesso!");
       setDeleteDialogOpen(false);
       setAgentToDelete(null);
-      setDeleteConfirmName('');
+      setDeleteConfirmName("");
       setDetailsDialogOpen(false);
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao deletar agent: ' + error.message);
+      toast.error("Erro ao deletar agent: " + error.message);
     } finally {
       setDeleting(false);
     }
@@ -322,9 +364,7 @@ export default function AgentsPage() {
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Agents</h1>
-            <p className="text-muted-foreground">
-              Gerencie agents externos (on-prem) conectados ao sistema
-            </p>
+            <p className="text-muted-foreground">Gerencie agents externos</p>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -337,13 +377,12 @@ export default function AgentsPage() {
               <DialogHeader>
                 <DialogTitle>Criar Novo Agent</DialogTitle>
                 <DialogDescription>
-                  {activationCode 
-                    ? 'Agent criado! Copie o código de ativação abaixo.'
-                    : 'Preencha as informações para criar um novo agent.'
-                  }
+                  {activationCode
+                    ? "Agent criado! Copie o código de ativação abaixo."
+                    : "Preencha as informações para criar um novo agent."}
                 </DialogDescription>
               </DialogHeader>
-              
+
               {!activationCode ? (
                 <>
                   <div className="grid gap-4 py-4">
@@ -358,7 +397,10 @@ export default function AgentsPage() {
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="agent-client">Cliente (opcional)</Label>
-                      <Select value={newAgentClientId || "none"} onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}>
+                      <Select
+                        value={newAgentClientId || "none"}
+                        onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione um cliente" />
                         </SelectTrigger>
@@ -398,17 +440,17 @@ export default function AgentsPage() {
                     <div className="flex items-center gap-2 text-sm text-warning">
                       <Clock className="w-4 h-4" />
                       <span>
-                        Este código expira em {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
+                        Este código expira em{" "}
+                        {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser utilizado.
+                      Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser
+                      utilizado.
                     </p>
                   </div>
                   <DialogFooter>
-                    <Button onClick={handleCloseCreateDialog}>
-                      Fechar
-                    </Button>
+                    <Button onClick={handleCloseCreateDialog}>Fechar</Button>
                   </DialogFooter>
                 </>
               )}
@@ -423,9 +465,7 @@ export default function AgentsPage() {
               <Bot className="w-5 h-5" />
               Lista de Agents
             </CardTitle>
-            <CardDescription>
-              {agents.length} agent(s) registrado(s)
-            </CardDescription>
+            <CardDescription>{agents.length} agent(s) registrado(s)</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -472,23 +512,28 @@ export default function AgentsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={status.variant === 'success' ? 'default' : status.variant === 'destructive' ? 'destructive' : 'secondary'}
+                            variant={
+                              status.variant === "success"
+                                ? "default"
+                                : status.variant === "destructive"
+                                  ? "destructive"
+                                  : "secondary"
+                            }
                             className={
-                              status.variant === 'success' 
-                                ? 'bg-success/10 text-success hover:bg-success/20' 
-                                : status.variant === 'warning'
-                                ? 'bg-warning/10 text-warning hover:bg-warning/20'
-                                : ''
+                              status.variant === "success"
+                                ? "bg-success/10 text-success hover:bg-success/20"
+                                : status.variant === "warning"
+                                  ? "bg-warning/10 text-warning hover:bg-warning/20"
+                                  : ""
                             }
                           >
                             {status.label}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {agent.last_seen 
+                          {agent.last_seen
                             ? formatDistanceToNow(new Date(agent.last_seen), { locale: ptBR, addSuffix: true })
-                            : '—'
-                          }
+                            : "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
@@ -503,7 +548,7 @@ export default function AgentsPage() {
                                 Ver detalhes
                               </DropdownMenuItem>
                               {!agent.revoked && (
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => openRevokeDialog(agent)}
                                   className="text-destructive focus:text-destructive"
                                 >
@@ -512,7 +557,7 @@ export default function AgentsPage() {
                                 </DropdownMenuItem>
                               )}
                               {agent.revoked && (
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => openDeleteDialog(agent)}
                                   className="text-destructive focus:text-destructive"
                                 >
@@ -540,11 +585,9 @@ export default function AgentsPage() {
                 <Bot className="w-5 h-5" />
                 {selectedAgent?.name}
               </DialogTitle>
-              <DialogDescription>
-                Detalhes e gerenciamento do agent
-              </DialogDescription>
+              <DialogDescription>Detalhes e gerenciamento do agent</DialogDescription>
             </DialogHeader>
-            
+
             {selectedAgent && (
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -556,13 +599,19 @@ export default function AgentsPage() {
                     <Label className="text-xs text-muted-foreground">Status</Label>
                     <div className="mt-1">
                       <Badge
-                        variant={getAgentStatus(selectedAgent).variant === 'success' ? 'default' : getAgentStatus(selectedAgent).variant === 'destructive' ? 'destructive' : 'secondary'}
+                        variant={
+                          getAgentStatus(selectedAgent).variant === "success"
+                            ? "default"
+                            : getAgentStatus(selectedAgent).variant === "destructive"
+                              ? "destructive"
+                              : "secondary"
+                        }
                         className={
-                          getAgentStatus(selectedAgent).variant === 'success' 
-                            ? 'bg-success/10 text-success' 
-                            : getAgentStatus(selectedAgent).variant === 'warning'
-                            ? 'bg-warning/10 text-warning'
-                            : ''
+                          getAgentStatus(selectedAgent).variant === "success"
+                            ? "bg-success/10 text-success"
+                            : getAgentStatus(selectedAgent).variant === "warning"
+                              ? "bg-warning/10 text-warning"
+                              : ""
                         }
                       >
                         {getAgentStatus(selectedAgent).label}
@@ -571,17 +620,12 @@ export default function AgentsPage() {
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Criado em</Label>
-                    <p className="text-sm">
-                      {new Date(selectedAgent.created_at).toLocaleString('pt-BR')}
-                    </p>
+                    <p className="text-sm">{new Date(selectedAgent.created_at).toLocaleString("pt-BR")}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Last Seen</Label>
                     <p className="text-sm">
-                      {selectedAgent.last_seen 
-                        ? new Date(selectedAgent.last_seen).toLocaleString('pt-BR')
-                        : '—'
-                      }
+                      {selectedAgent.last_seen ? new Date(selectedAgent.last_seen).toLocaleString("pt-BR") : "—"}
                     </p>
                   </div>
                   {selectedAgent.client_name && (
@@ -597,12 +641,7 @@ export default function AgentsPage() {
                   <div className="pt-4 border-t">
                     <div className="flex items-center justify-between mb-2">
                       <Label className="text-sm font-medium">Código de Ativação</Label>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleGenerateNewCode}
-                        disabled={generatingCode}
-                      >
+                      <Button size="sm" variant="outline" onClick={handleGenerateNewCode} disabled={generatingCode}>
                         {generatingCode ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         ) : (
@@ -621,7 +660,11 @@ export default function AgentsPage() {
                         </div>
                         <p className="text-xs text-warning flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Expira em {formatDistanceToNow(new Date(newActivationCode.expires_at), { locale: ptBR, addSuffix: true })}
+                          Expira em{" "}
+                          {formatDistanceToNow(new Date(newActivationCode.expires_at), {
+                            locale: ptBR,
+                            addSuffix: true,
+                          })}
                         </p>
                       </div>
                     )}
@@ -637,19 +680,13 @@ export default function AgentsPage() {
 
             <DialogFooter>
               {selectedAgent && !selectedAgent.revoked && (
-                <Button 
-                  variant="destructive" 
-                  onClick={() => openRevokeDialog(selectedAgent)}
-                >
+                <Button variant="destructive" onClick={() => openRevokeDialog(selectedAgent)}>
                   <Ban className="w-4 h-4 mr-2" />
                   Revogar Agent
                 </Button>
               )}
               {selectedAgent && selectedAgent.revoked && (
-                <Button 
-                  variant="destructive" 
-                  onClick={() => openDeleteDialog(selectedAgent)}
-                >
+                <Button variant="destructive" onClick={() => openDeleteDialog(selectedAgent)}>
                   <Trash2 className="w-4 h-4 mr-2" />
                   Deletar Agent
                 </Button>
@@ -667,8 +704,8 @@ export default function AgentsPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Revogar Agent</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja revogar o agent "{agentToRevoke?.name}"? 
-                Esta ação invalidará todos os tokens do agent e ele não poderá mais se conectar.
+                Tem certeza que deseja revogar o agent "{agentToRevoke?.name}"? Esta ação invalidará todos os tokens do
+                agent e ele não poderá mais se conectar.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -699,9 +736,7 @@ export default function AgentsPage() {
             </DialogHeader>
             <div className="py-4 space-y-4">
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <p className="text-sm text-destructive font-medium">
-                  Para confirmar, digite o nome do agent:
-                </p>
+                <p className="text-sm text-destructive font-medium">Para confirmar, digite o nome do agent:</p>
                 <p className="text-sm font-mono mt-1">{agentToDelete?.name}</p>
               </div>
               <div className="grid gap-2">
@@ -715,12 +750,12 @@ export default function AgentsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   setDeleteDialogOpen(false);
                   setAgentToDelete(null);
-                  setDeleteConfirmName('');
+                  setDeleteConfirmName("");
                 }}
               >
                 Cancelar
