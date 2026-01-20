@@ -33,6 +33,7 @@ import {
   Network,
   Cloud,
   Bot,
+  Building,
 } from 'lucide-react';
 import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 
@@ -254,6 +255,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         >
           <Bot className="w-5 h-5 flex-shrink-0" />
           {sidebarOpen && 'Agents'}
+        </Link>
+      )}
+
+      {/* Clientes */}
+      {canAccessUsers && (
+        <Link
+          to="/clients"
+          onClick={() => setMobileMenuOpen(false)}
+          className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            location.pathname === '/clients'
+              ? 'bg-sidebar-accent text-sidebar-primary'
+              : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+            !sidebarOpen && 'justify-center'
+          )}
+          title={!sidebarOpen ? 'Clientes' : undefined}
+        >
+          <Building className="w-5 h-5 flex-shrink-0" />
+          {sidebarOpen && 'Clientes'}
         </Link>
       )}
     </>
