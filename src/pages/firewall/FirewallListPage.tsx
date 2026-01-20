@@ -338,45 +338,6 @@ export default function FirewallListPage() {
           </div>
           {canEdit && (
             <div className="flex gap-2">
-              <Dialog open={showClientDialog} onOpenChange={setShowClientDialog}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Building className="w-4 h-4 mr-2" />
-                    Novo Cliente
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Adicionar Cliente</DialogTitle>
-                    <DialogDescription>Crie um novo cliente para organizar seus firewalls</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="client-name">Nome *</Label>
-                      <Input
-                        id="client-name"
-                        value={newClient.name}
-                        onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
-                        placeholder="Ex: Empresa ABC"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="client-desc">Descrição</Label>
-                      <Textarea
-                        id="client-desc"
-                        value={newClient.description}
-                        onChange={(e) => setNewClient({ ...newClient, description: e.target.value })}
-                        placeholder="Descrição opcional"
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setShowClientDialog(false)}>Cancelar</Button>
-                    <Button onClick={handleAddClient}>Adicionar</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-
               <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
                 <DialogTrigger asChild>
                   <Button>

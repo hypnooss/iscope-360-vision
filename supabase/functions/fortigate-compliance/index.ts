@@ -67,7 +67,9 @@ interface InboundWANPolicy {
 async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
   const { hostname } = new URL(url);
 
+  // @ts-ignore - Deno.createHttpClient accepts this option
   const client = Deno.createHttpClient({
+    // @ts-ignore - Valid Deno option for ignoring SSL
     dangerouslyIgnoreCertificateErrors: [hostname],
   });
 
