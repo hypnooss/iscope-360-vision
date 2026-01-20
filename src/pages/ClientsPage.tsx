@@ -289,7 +289,7 @@ export default function ClientsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building className="w-5 h-5 text-primary" />
-              Clientes Cadastrados
+              Lista de Clientes
             </CardTitle>
             <CardDescription>{clients.length} cliente(s) registrado(s)</CardDescription>
           </CardHeader>
