@@ -15,14 +15,10 @@ function generateSecureSecret(length: number = 64): string {
 }
 
 // Generate a JWT token signed with the agent's secret
-async function generateAgentToken(
-  agentId: string,
-  jwtSecret: string,
-  expiresIn: string
-): Promise<string> {
+async function generateAgentToken(agentId: string, jwtSecret: string, expiresIn: string): Promise<string> {
   const secretKey = new TextEncoder().encode(jwtSecret);
   const now = Math.floor(Date.now() / 1000);
-  
+
   let exp: number;
   if (expiresIn.endsWith("m")) {
     exp = now + parseInt(expiresIn) * 60;
@@ -53,10 +49,10 @@ serve(async (req) => {
   // Only accept POST
   if (req.method !== "POST") {
     console.log(`[register-agent] Method not allowed: ${req.method}`);
-    return new Response(
-      JSON.stringify({ error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -68,16 +64,16 @@ serve(async (req) => {
 
     if (!activation_code || typeof activation_code !== "string") {
       console.log("[register-agent] Missing or invalid activation_code");
-      return new Response(
-        JSON.stringify({ error: "activation_code is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "activation_code is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Create Supabase client with SERVICE ROLE to bypass RLS
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -87,7 +83,7 @@ serve(async (req) => {
 
     // Step 1: Find agent by activation_code
     console.log("[register-agent] Looking up agent by activation code...");
-    
+
     const { data: agent, error: agentError } = await supabase
       .from("agents")
       .select("*")
@@ -96,10 +92,10 @@ serve(async (req) => {
 
     if (agentError || !agent) {
       console.log(`[register-agent] Agent not found: ${agentError?.message || "No agent with this code"}`);
-      return new Response(
-        JSON.stringify({ error: "Invalid activation code" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Invalid activation code" }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log(`[register-agent] Found agent: ${agent.id} (${agent.name})`);
@@ -108,10 +104,10 @@ serve(async (req) => {
     // Check if revoked
     if (agent.revoked) {
       console.log(`[register-agent] Agent ${agent.id} is revoked`);
-      return new Response(
-        JSON.stringify({ error: "Agent has been revoked" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Agent has been revoked" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Check if code expired
@@ -119,25 +115,25 @@ serve(async (req) => {
       const expiresAt = new Date(agent.activation_code_expires_at);
       if (expiresAt < new Date()) {
         console.log(`[register-agent] Activation code expired at ${agent.activation_code_expires_at}`);
-        return new Response(
-          JSON.stringify({ error: "Activation code has expired" }),
-          { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return new Response(JSON.stringify({ error: "Activation code has expired" }), {
+          status: 410,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 
     // Step 3: Check if already registered (jwt_secret exists)
     if (agent.jwt_secret) {
       console.log(`[register-agent] Agent ${agent.id} is already registered`);
-      return new Response(
-        JSON.stringify({ error: "Agent is already registered" }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Agent is already registered" }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Step 4: Generate secrets and tokens
     console.log(`[register-agent] Generating credentials for agent ${agent.id}...`);
-    
+
     const jwtSecret = generateSecureSecret(64);
     const accessToken = await generateAgentToken(agent.id, jwtSecret, "30m");
     const refreshToken = await generateAgentToken(agent.id, jwtSecret, "90d");
@@ -157,10 +153,10 @@ serve(async (req) => {
 
     if (updateError) {
       console.error(`[register-agent] Failed to update agent: ${updateError.message}`);
-      return new Response(
-        JSON.stringify({ error: "Failed to register agent" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Failed to register agent" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log(`[register-agent] Agent ${agent.id} registered successfully`);
@@ -172,15 +168,14 @@ serve(async (req) => {
         access_token: accessToken,
         refresh_token: refreshToken,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error(`[register-agent] Unexpected error: ${errorMessage}`);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
