@@ -364,7 +364,7 @@ export default function AgentsPage() {
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Agents</h1>
-            <p className="text-muted-foreground">Gerencie agents externos</p>
+            <p className="text-muted-foreground">Gerencie todos os agents externos do sistema</p>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
