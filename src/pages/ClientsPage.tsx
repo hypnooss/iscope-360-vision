@@ -1,21 +1,43 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { supabase } from '@/integrations/supabase/client';
-import { Building, Plus, Loader2, MoreVertical, Edit, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
+import { Building, Plus, Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface Client {
   id: string;
@@ -31,34 +53,34 @@ export default function ClientsPage() {
   const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Create client dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newClientName, setNewClientName] = useState('');
-  const [newClientDescription, setNewClientDescription] = useState('');
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientDescription, setNewClientDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
   // Edit dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [editClientName, setEditClientName] = useState('');
-  const [editClientDescription, setEditClientDescription] = useState('');
+  const [editClientName, setEditClientName] = useState("");
+  const [editClientDescription, setEditClientDescription] = useState("");
   const [editing, setEditing] = useState(false);
 
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
 
   useEffect(() => {
     if (!authLoading && !user) {
-      navigate('/auth');
+      navigate("/auth");
     } else if (!authLoading && !canAccessPage) {
-      navigate('/dashboard');
-      toast.error('Acesso não autorizado');
+      navigate("/dashboard");
+      toast.error("Acesso não autorizado");
     }
   }, [user, authLoading, navigate, canAccessPage]);
 
@@ -71,10 +93,7 @@ export default function ClientsPage() {
   const fetchData = async () => {
     try {
       // Fetch clients
-      const { data: clientsData, error: clientsError } = await supabase
-        .from('clients')
-        .select('*')
-        .order('name');
+      const { data: clientsData, error: clientsError } = await supabase.from("clients").select("*").order("name");
 
       if (clientsError) throw clientsError;
 
@@ -82,8 +101,8 @@ export default function ClientsPage() {
       const clientsWithCounts = await Promise.all(
         (clientsData || []).map(async (client) => {
           const [firewallsResult, agentsResult] = await Promise.all([
-            supabase.from('firewalls').select('id', { count: 'exact', head: true }).eq('client_id', client.id),
-            supabase.from('agents').select('id', { count: 'exact', head: true }).eq('client_id', client.id),
+            supabase.from("firewalls").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+            supabase.from("agents").select("id", { count: "exact", head: true }).eq("client_id", client.id),
           ]);
 
           return {
@@ -91,13 +110,13 @@ export default function ClientsPage() {
             firewalls_count: firewallsResult.count || 0,
             agents_count: agentsResult.count || 0,
           };
-        })
+        }),
       );
 
       setClients(clientsWithCounts);
     } catch (error: unknown) {
-      console.error('Erro ao buscar dados:', error);
-      toast.error('Erro ao carregar clientes');
+      console.error("Erro ao buscar dados:", error);
+      toast.error("Erro ao carregar clientes");
     } finally {
       setLoading(false);
     }
@@ -105,27 +124,27 @@ export default function ClientsPage() {
 
   const handleCreateClient = async () => {
     if (!newClientName.trim()) {
-      toast.error('Nome é obrigatório');
+      toast.error("Nome é obrigatório");
       return;
     }
 
     setCreating(true);
     try {
-      const { error } = await supabase.from('clients').insert({
+      const { error } = await supabase.from("clients").insert({
         name: newClientName.trim(),
         description: newClientDescription.trim() || null,
       });
 
       if (error) throw error;
 
-      toast.success('Cliente criado com sucesso');
+      toast.success("Cliente criado com sucesso");
       setCreateDialogOpen(false);
-      setNewClientName('');
-      setNewClientDescription('');
+      setNewClientName("");
+      setNewClientDescription("");
       fetchData();
     } catch (error: unknown) {
-      console.error('Erro ao criar cliente:', error);
-      toast.error('Erro ao criar cliente');
+      console.error("Erro ao criar cliente:", error);
+      toast.error("Erro ao criar cliente");
     } finally {
       setCreating(false);
     }
@@ -134,35 +153,35 @@ export default function ClientsPage() {
   const openEditDialog = (client: Client) => {
     setEditingClient(client);
     setEditClientName(client.name);
-    setEditClientDescription(client.description || '');
+    setEditClientDescription(client.description || "");
     setEditDialogOpen(true);
   };
 
   const handleEditClient = async () => {
     if (!editingClient || !editClientName.trim()) {
-      toast.error('Nome é obrigatório');
+      toast.error("Nome é obrigatório");
       return;
     }
 
     setEditing(true);
     try {
       const { error } = await supabase
-        .from('clients')
+        .from("clients")
         .update({
           name: editClientName.trim(),
           description: editClientDescription.trim() || null,
         })
-        .eq('id', editingClient.id);
+        .eq("id", editingClient.id);
 
       if (error) throw error;
 
-      toast.success('Cliente atualizado com sucesso');
+      toast.success("Cliente atualizado com sucesso");
       setEditDialogOpen(false);
       setEditingClient(null);
       fetchData();
     } catch (error: unknown) {
-      console.error('Erro ao atualizar cliente:', error);
-      toast.error('Erro ao atualizar cliente');
+      console.error("Erro ao atualizar cliente:", error);
+      toast.error("Erro ao atualizar cliente");
     } finally {
       setEditing(false);
     }
@@ -170,7 +189,7 @@ export default function ClientsPage() {
 
   const openDeleteDialog = (client: Client) => {
     setClientToDelete(client);
-    setDeleteConfirmName('');
+    setDeleteConfirmName("");
     setDeleteDialogOpen(true);
   };
 
@@ -178,27 +197,24 @@ export default function ClientsPage() {
     if (!clientToDelete) return;
 
     if (deleteConfirmName !== clientToDelete.name) {
-      toast.error('Nome do cliente não confere');
+      toast.error("Nome do cliente não confere");
       return;
     }
 
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from('clients')
-        .delete()
-        .eq('id', clientToDelete.id);
+      const { error } = await supabase.from("clients").delete().eq("id", clientToDelete.id);
 
       if (error) throw error;
 
-      toast.success('Cliente deletado com sucesso');
+      toast.success("Cliente deletado com sucesso");
       setDeleteDialogOpen(false);
       setClientToDelete(null);
-      setDeleteConfirmName('');
+      setDeleteConfirmName("");
       fetchData();
     } catch (error: unknown) {
-      console.error('Erro ao deletar cliente:', error);
-      toast.error('Erro ao deletar cliente. Verifique se não há firewalls ou agents associados.');
+      console.error("Erro ao deletar cliente:", error);
+      toast.error("Erro ao deletar cliente. Verifique se não há firewalls ou agents associados.");
     } finally {
       setDeleting(false);
     }
@@ -221,7 +237,7 @@ export default function ClientsPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
-            <p className="text-muted-foreground">Gerencie os clientes da plataforma</p>
+            <p className="text-muted-foreground">Gerencie todos os clientes do sistema</p>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -275,9 +291,7 @@ export default function ClientsPage() {
               <Building className="w-5 h-5 text-primary" />
               Clientes Cadastrados
             </CardTitle>
-            <CardDescription>
-              {clients.length} cliente(s) registrado(s)
-            </CardDescription>
+            <CardDescription>{clients.length} cliente(s) registrado(s)</CardDescription>
           </CardHeader>
           <CardContent>
             {clients.length === 0 ? (
@@ -302,9 +316,7 @@ export default function ClientsPage() {
                   {clients.map((client) => (
                     <TableRow key={client.id}>
                       <TableCell className="font-medium">{client.name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {client.description || '-'}
-                      </TableCell>
+                      <TableCell className="text-muted-foreground">{client.description || "-"}</TableCell>
                       <TableCell className="text-center">{client.firewalls_count}</TableCell>
                       <TableCell className="text-center">{client.agents_count}</TableCell>
                       <TableCell className="text-muted-foreground">
@@ -386,7 +398,7 @@ export default function ClientsPage() {
             <DialogHeader>
               <DialogTitle>Deletar Cliente</DialogTitle>
               <DialogDescription>
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do cliente:{' '}
+                Esta ação não pode ser desfeita. Para confirmar, digite o nome do cliente:{" "}
                 <strong>{clientToDelete?.name}</strong>
               </DialogDescription>
             </DialogHeader>
