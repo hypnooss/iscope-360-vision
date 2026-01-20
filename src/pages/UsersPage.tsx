@@ -1,25 +1,46 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { supabase } from '@/integrations/supabase/client';
-import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { InviteUserDialog } from '@/components/InviteUserDialog';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { InviteUserDialog } from "@/components/InviteUserDialog";
 
-type AppRole = 'super_admin' | 'admin' | 'user';
-type ModulePermission = 'view' | 'edit' | 'full';
-type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
+type AppRole = "super_admin" | "admin" | "user";
+type ModulePermission = "view" | "edit" | "full";
+type ScopeModule = "scope_firewall" | "scope_network" | "scope_cloud";
 
 interface UserProfile {
   id: string;
@@ -43,12 +64,12 @@ interface Module {
   name: string;
 }
 
-const MODULES = ['dashboard', 'firewall', 'reports'] as const;
+const MODULES = ["dashboard", "firewall", "reports"] as const;
 
 const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
-  scope_firewall: 'Scope Firewall',
-  scope_network: 'Scope Network',
-  scope_cloud: 'Scope Cloud',
+  scope_firewall: "Scope Firewall",
+  scope_network: "Scope Network",
+  scope_cloud: "Scope Cloud",
 };
 
 export default function UsersPage() {
@@ -60,7 +81,7 @@ export default function UsersPage() {
   const [myClientIds, setMyClientIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [editRole, setEditRole] = useState<AppRole>('user');
+  const [editRole, setEditRole] = useState<AppRole>("user");
   const [editPermissions, setEditPermissions] = useState<Record<string, ModulePermission>>({});
   const [editClientIds, setEditClientIds] = useState<string[]>([]);
   const [editModuleIds, setEditModuleIds] = useState<string[]>([]);
@@ -71,10 +92,10 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      navigate('/auth');
+      navigate("/auth");
     } else if (!authLoading && !canAccessPage) {
-      navigate('/dashboard');
-      toast.error('Acesso não autorizado');
+      navigate("/dashboard");
+      toast.error("Acesso não autorizado");
     }
   }, [user, authLoading, navigate, canAccessPage]);
 
@@ -89,52 +110,34 @@ export default function UsersPage() {
       // First, get my client associations if I'm an admin (not super admin)
       let adminClientIds: string[] = [];
       if (!isSuperAdmin()) {
-        const { data: myClients } = await supabase
-          .from('user_clients')
-          .select('client_id')
-          .eq('user_id', user!.id);
-        
-        adminClientIds = (myClients || []).map(c => c.client_id);
+        const { data: myClients } = await supabase.from("user_clients").select("client_id").eq("user_id", user!.id);
+
+        adminClientIds = (myClients || []).map((c) => c.client_id);
         setMyClientIds(adminClientIds);
       }
 
       // Fetch profiles - RLS will filter based on permissions
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data: profiles } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
 
       // Fetch roles - RLS will filter
-      const { data: roles } = await supabase
-        .from('user_roles')
-        .select('user_id, role');
+      const { data: roles } = await supabase.from("user_roles").select("user_id, role");
 
       // Fetch permissions - RLS will filter
       const { data: permissions } = await supabase
-        .from('user_module_permissions')
-        .select('user_id, module_name, permission');
+        .from("user_module_permissions")
+        .select("user_id, module_name, permission");
 
       // Fetch user-client associations - RLS will filter
-      const { data: userClients } = await supabase
-        .from('user_clients')
-        .select('user_id, client_id');
+      const { data: userClients } = await supabase.from("user_clients").select("user_id, client_id");
 
       // Fetch user-module associations
-      const { data: userModules } = await supabase
-        .from('user_modules')
-        .select('user_id, module_id');
+      const { data: userModules } = await supabase.from("user_modules").select("user_id, module_id");
 
       // Fetch clients I have access to
-      const { data: clientsData } = await supabase
-        .from('clients')
-        .select('id, name')
-        .order('name');
+      const { data: clientsData } = await supabase.from("clients").select("id, name").order("name");
 
       // Fetch available modules
-      const { data: modulesData } = await supabase
-        .from('modules')
-        .select('id, code, name')
-        .eq('is_active', true);
+      const { data: modulesData } = await supabase.from("modules").select("id, code, name").eq("is_active", true);
 
       // Merge data
       const mergedUsers: UserProfile[] = (profiles || []).map((profile) => {
@@ -150,7 +153,7 @@ export default function UsersPage() {
 
         return {
           ...profile,
-          role: (userRole?.role as AppRole) || 'user',
+          role: (userRole?.role as AppRole) || "user",
           permissions: permsObj,
           client_ids: userClientAssocs.map((uc) => uc.client_id),
           module_ids: userModuleAssocs.map((um) => um.module_id),
@@ -161,7 +164,7 @@ export default function UsersPage() {
       setClients(clientsData || []);
       setModules((modulesData || []) as Module[]);
     } catch (error: any) {
-      toast.error('Erro ao carregar usuários: ' + error.message);
+      toast.error("Erro ao carregar usuários: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -169,7 +172,7 @@ export default function UsersPage() {
 
   const openEditDialog = (userProfile: UserProfile) => {
     setEditingUser(userProfile);
-    setEditRole(userProfile.role || 'user');
+    setEditRole(userProfile.role || "user");
     setEditPermissions(userProfile.permissions || {});
     setEditClientIds(userProfile.client_ids || []);
     setEditModuleIds(userProfile.module_ids || []);
@@ -182,50 +185,46 @@ export default function UsersPage() {
     try {
       // Update role
       await supabase
-        .from('user_roles')
-        .upsert({ user_id: editingUser.id, role: editRole }, { onConflict: 'user_id,role' });
+        .from("user_roles")
+        .upsert({ user_id: editingUser.id, role: editRole }, { onConflict: "user_id,role" });
 
       // If role changed, delete old role first
       if (editingUser.role !== editRole) {
-        await supabase
-          .from('user_roles')
-          .delete()
-          .eq('user_id', editingUser.id)
-          .neq('role', editRole);
+        await supabase.from("user_roles").delete().eq("user_id", editingUser.id).neq("role", editRole);
       }
 
       // Update permissions
       for (const module of MODULES) {
-        const perm = editPermissions[module] || 'view';
+        const perm = editPermissions[module] || "view";
         await supabase
-          .from('user_module_permissions')
+          .from("user_module_permissions")
           .upsert(
             { user_id: editingUser.id, module_name: module, permission: perm },
-            { onConflict: 'user_id,module_name' }
+            { onConflict: "user_id,module_name" },
           );
       }
 
       // Update client associations
-      await supabase.from('user_clients').delete().eq('user_id', editingUser.id);
+      await supabase.from("user_clients").delete().eq("user_id", editingUser.id);
       if (editClientIds.length > 0) {
-        await supabase.from('user_clients').insert(
-          editClientIds.map((clientId) => ({ user_id: editingUser.id, client_id: clientId }))
-        );
+        await supabase
+          .from("user_clients")
+          .insert(editClientIds.map((clientId) => ({ user_id: editingUser.id, client_id: clientId })));
       }
 
       // Update module associations
-      await supabase.from('user_modules').delete().eq('user_id', editingUser.id);
-      if (editRole !== 'super_admin' && editModuleIds.length > 0) {
-        await supabase.from('user_modules').insert(
-          editModuleIds.map((moduleId) => ({ user_id: editingUser.id, module_id: moduleId }))
-        );
+      await supabase.from("user_modules").delete().eq("user_id", editingUser.id);
+      if (editRole !== "super_admin" && editModuleIds.length > 0) {
+        await supabase
+          .from("user_modules")
+          .insert(editModuleIds.map((moduleId) => ({ user_id: editingUser.id, module_id: moduleId })));
       }
 
-      toast.success('Usuário atualizado com sucesso!');
+      toast.success("Usuário atualizado com sucesso!");
       setEditingUser(null);
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao salvar: ' + error.message);
+      toast.error("Erro ao salvar: " + error.message);
     } finally {
       setSaving(false);
     }
@@ -237,17 +236,17 @@ export default function UsersPage() {
     setIsDeleting(true);
     try {
       // Delete user-related data in order
-      await supabase.from('user_module_permissions').delete().eq('user_id', deletingUser.id);
-      await supabase.from('user_modules').delete().eq('user_id', deletingUser.id);
-      await supabase.from('user_clients').delete().eq('user_id', deletingUser.id);
-      await supabase.from('user_roles').delete().eq('user_id', deletingUser.id);
-      await supabase.from('profiles').delete().eq('id', deletingUser.id);
+      await supabase.from("user_module_permissions").delete().eq("user_id", deletingUser.id);
+      await supabase.from("user_modules").delete().eq("user_id", deletingUser.id);
+      await supabase.from("user_clients").delete().eq("user_id", deletingUser.id);
+      await supabase.from("user_roles").delete().eq("user_id", deletingUser.id);
+      await supabase.from("profiles").delete().eq("id", deletingUser.id);
 
-      toast.success('Usuário excluído com sucesso!');
+      toast.success("Usuário excluído com sucesso!");
       setDeletingUser(null);
       fetchData();
     } catch (error: any) {
-      toast.error('Erro ao excluir usuário: ' + error.message);
+      toast.error("Erro ao excluir usuário: " + error.message);
     } finally {
       setIsDeleting(false);
     }
@@ -255,9 +254,9 @@ export default function UsersPage() {
 
   const getRoleBadge = (role: AppRole) => {
     switch (role) {
-      case 'super_admin':
+      case "super_admin":
         return <Badge className="bg-primary/10 text-primary">Super Admin</Badge>;
-      case 'admin':
+      case "admin":
         return <Badge className="bg-warning/10 text-warning">Admin</Badge>;
       default:
         return <Badge variant="outline">Usuário</Badge>;
@@ -266,12 +265,12 @@ export default function UsersPage() {
 
   const getPermissionLabel = (perm: ModulePermission) => {
     switch (perm) {
-      case 'full':
-        return 'Completo';
-      case 'edit':
-        return 'Editar';
+      case "full":
+        return "Completo";
+      case "edit":
+        return "Editar";
       default:
-        return 'Visualizar';
+        return "Visualizar";
     }
   };
 
@@ -294,34 +293,30 @@ export default function UsersPage() {
   // Get client names for a user
   const getClientNames = (clientIds: string[] | undefined) => {
     if (!clientIds || clientIds.length === 0) return [];
-    return clients
-      .filter(c => clientIds.includes(c.id))
-      .map(c => c.name);
+    return clients.filter((c) => clientIds.includes(c.id)).map((c) => c.name);
   };
 
   // Get module names for a user
   const getModuleNames = (moduleIds: string[] | undefined) => {
     if (!moduleIds || moduleIds.length === 0) return [];
-    return modules
-      .filter(m => moduleIds.includes(m.id))
-      .map(m => SCOPE_MODULE_LABELS[m.code] || m.name);
+    return modules.filter((m) => moduleIds.includes(m.id)).map((m) => SCOPE_MODULE_LABELS[m.code] || m.name);
   };
 
   // Check if current user can edit this user
   const canEditUser = (targetUser: UserProfile): boolean => {
     // Can't edit yourself
     if (targetUser.id === user?.id) return false;
-    
+
     // Super admin can edit anyone except other super admins
     if (isSuperAdmin()) {
-      return targetUser.role !== 'super_admin';
+      return targetUser.role !== "super_admin";
     }
-    
+
     // Admin can edit users but not super admins or other admins
     if (isAdmin()) {
-      return targetUser.role === 'user';
+      return targetUser.role === "user";
     }
-    
+
     return false;
   };
 
@@ -329,15 +324,13 @@ export default function UsersPage() {
   const getAvailableRoles = (): { value: AppRole; label: string }[] => {
     if (isSuperAdmin()) {
       return [
-        { value: 'user', label: 'Usuário' },
-        { value: 'admin', label: 'Admin' },
-        { value: 'super_admin', label: 'Super Admin' },
+        { value: "user", label: "Usuário" },
+        { value: "admin", label: "Admin" },
+        { value: "super_admin", label: "Super Admin" },
       ];
     }
     // Admin can only assign user role
-    return [
-      { value: 'user', label: 'Usuário' },
-    ];
+    return [{ value: "user", label: "Usuário" }];
   };
 
   // Get clients that current user can assign to others
@@ -346,7 +339,7 @@ export default function UsersPage() {
       return clients;
     }
     // Admin can only assign their own clients
-    return clients.filter(c => myClientIds.includes(c.id));
+    return clients.filter((c) => myClientIds.includes(c.id));
   };
 
   if (authLoading || !canAccessPage) return null;
@@ -359,17 +352,12 @@ export default function UsersPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
             <p className="text-muted-foreground">
-              {isSuperAdmin() 
-                ? 'Gerencie todos os usuários e permissões do sistema' 
-                : 'Gerencie usuários dos seus clientes'
-              }
+              {isSuperAdmin()
+                ? "Gerencie todos os usuários e permissões do sistema"
+                : "Gerencie usuários dos seus clientes"}
             </p>
           </div>
-          <InviteUserDialog 
-            clients={clients} 
-            myClientIds={myClientIds}
-            onUserCreated={fetchData}
-          />
+          <InviteUserDialog clients={clients} myClientIds={myClientIds} onUserCreated={fetchData} />
         </div>
 
         {/* Users Table */}
@@ -380,7 +368,7 @@ export default function UsersPage() {
               Lista de Usuários
             </CardTitle>
             <CardDescription>
-              {users.length} usuário(s) {!isSuperAdmin() && 'nos seus clientes'}
+              {users.length} usuário(s) registrado(s) {!isSuperAdmin() && "nos seus clientes"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -410,22 +398,24 @@ export default function UsersPage() {
                     <TableRow key={u.id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{u.full_name || 'Sem nome'}</p>
+                          <p className="font-medium">{u.full_name || "Sem nome"}</p>
                           <p className="text-xs text-muted-foreground">{u.email}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{getRoleBadge(u.role || 'user')}</TableCell>
+                      <TableCell>{getRoleBadge(u.role || "user")}</TableCell>
                       <TableCell>
-                        {u.role === 'super_admin' ? (
+                        {u.role === "super_admin" ? (
                           <span className="text-xs text-muted-foreground">Todos</span>
                         ) : (
                           <div className="flex flex-wrap gap-1">
-                            {getModuleNames(u.module_ids).slice(0, 2).map((name, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                <Layers className="w-3 h-3 mr-1" />
-                                {name}
-                              </Badge>
-                            ))}
+                            {getModuleNames(u.module_ids)
+                              .slice(0, 2)
+                              .map((name, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">
+                                  <Layers className="w-3 h-3 mr-1" />
+                                  {name}
+                                </Badge>
+                              ))}
                             {(u.module_ids?.length || 0) > 2 && (
                               <Badge variant="secondary" className="text-xs">
                                 +{(u.module_ids?.length || 0) - 2}
@@ -438,16 +428,18 @@ export default function UsersPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {u.role === 'super_admin' ? (
+                        {u.role === "super_admin" ? (
                           <span className="text-xs text-muted-foreground">Todos</span>
                         ) : (
                           <div className="flex flex-wrap gap-1">
-                            {getClientNames(u.client_ids).slice(0, 2).map((name, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                <Building className="w-3 h-3 mr-1" />
-                                {name}
-                              </Badge>
-                            ))}
+                            {getClientNames(u.client_ids)
+                              .slice(0, 2)
+                              .map((name, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">
+                                  <Building className="w-3 h-3 mr-1" />
+                                  {name}
+                                </Badge>
+                              ))}
                             {(u.client_ids?.length || 0) > 2 && (
                               <Badge variant="secondary" className="text-xs">
                                 +{(u.client_ids?.length || 0) - 2}
@@ -460,7 +452,7 @@ export default function UsersPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {new Date(u.created_at).toLocaleDateString('pt-BR')}
+                        {new Date(u.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -476,7 +468,7 @@ export default function UsersPage() {
                                   <Edit className="w-4 h-4 mr-2" />
                                   Editar
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => setDeletingUser(u)}
                                   className="text-destructive focus:text-destructive"
                                 >
@@ -486,9 +478,9 @@ export default function UsersPage() {
                               </>
                             ) : (
                               <DropdownMenuItem disabled className="text-muted-foreground">
-                                {u.id === user?.id 
-                                  ? 'Não é possível editar seu próprio usuário' 
-                                  : 'Sem permissão para editar'}
+                                {u.id === user?.id
+                                  ? "Não é possível editar seu próprio usuário"
+                                  : "Sem permissão para editar"}
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
@@ -510,9 +502,7 @@ export default function UsersPage() {
                 <Shield className="w-5 h-5" />
                 Editar Permissões
               </DialogTitle>
-              <DialogDescription>
-                {editingUser?.full_name || editingUser?.email}
-              </DialogDescription>
+              <DialogDescription>{editingUser?.full_name || editingUser?.email}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-6 py-4">
@@ -532,14 +522,12 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
                 {!isSuperAdmin() && (
-                  <p className="text-xs text-muted-foreground">
-                    Como Admin, você só pode atribuir o role de Usuário
-                  </p>
+                  <p className="text-xs text-muted-foreground">Como Admin, você só pode atribuir o role de Usuário</p>
                 )}
               </div>
 
               {/* Scope Modules Access */}
-              {editRole !== 'super_admin' && (
+              {editRole !== "super_admin" && (
                 <div className="space-y-3">
                   <Label className="flex items-center gap-2">
                     <Layers className="w-4 h-4" />
@@ -558,9 +546,7 @@ export default function UsersPage() {
                         </label>
                       </div>
                     ))}
-                    {modules.length === 0 && (
-                      <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>
-                    )}
+                    {modules.length === 0 && <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>}
                   </div>
                 </div>
               )}
@@ -570,12 +556,10 @@ export default function UsersPage() {
                 <Label>Permissões por Área</Label>
                 {MODULES.map((mod) => (
                   <div key={mod} className="flex items-center justify-between">
-                    <span className="text-sm capitalize">{mod === 'firewall' ? 'Scope Firewall' : mod}</span>
+                    <span className="text-sm capitalize">{mod === "firewall" ? "Scope Firewall" : mod}</span>
                     <Select
-                      value={editPermissions[mod] || 'view'}
-                      onValueChange={(v) =>
-                        setEditPermissions({ ...editPermissions, [mod]: v as ModulePermission })
-                      }
+                      value={editPermissions[mod] || "view"}
+                      onValueChange={(v) => setEditPermissions({ ...editPermissions, [mod]: v as ModulePermission })}
                     >
                       <SelectTrigger className="w-32">
                         <SelectValue />
@@ -591,7 +575,7 @@ export default function UsersPage() {
               </div>
 
               {/* Client Access */}
-              {editRole !== 'super_admin' && (
+              {editRole !== "super_admin" && (
                 <div className="space-y-3">
                   <Label>Acesso a Clientes</Label>
                   <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
@@ -609,7 +593,7 @@ export default function UsersPage() {
                     ))}
                     {getAssignableClients().length === 0 && (
                       <p className="text-xs text-muted-foreground">
-                        {isSuperAdmin() ? 'Nenhum cliente cadastrado' : 'Você não possui clientes atribuídos'}
+                        {isSuperAdmin() ? "Nenhum cliente cadastrado" : "Você não possui clientes atribuídos"}
                       </p>
                     )}
                   </div>
@@ -640,15 +624,14 @@ export default function UsersPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja excluir o usuário{' '}
-                <strong>{deletingUser?.full_name || deletingUser?.email}</strong>?
-                Esta ação não pode ser desfeita.
+                Tem certeza que deseja excluir o usuário{" "}
+                <strong>{deletingUser?.full_name || deletingUser?.email}</strong>? Esta ação não pode ser desfeita.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={handleDeleteUser} 
+              <AlertDialogAction
+                onClick={handleDeleteUser}
                 disabled={isDeleting}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
