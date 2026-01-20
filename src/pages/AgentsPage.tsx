@@ -370,7 +370,7 @@ export default function AgentsPage() {
             <DialogTrigger asChild>
               <Button onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
-                Criar Agent
+                Novo Agent
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
