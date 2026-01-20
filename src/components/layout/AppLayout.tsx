@@ -269,13 +269,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           className={cn(
             'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
             location.pathname === '/clients'
-              ? 'bg-info/20 text-info border border-info/30'
-              : 'text-info hover:bg-info/10',
+              ? 'bg-warning/20 text-warning border border-warning/30'
+              : 'text-warning hover:bg-warning/10',
             !sidebarOpen && 'justify-center'
           )}
           title={!sidebarOpen ? 'Clientes' : undefined}
         >
-          <Building className="w-5 h-5 flex-shrink-0 text-info" />
+          <Building className="w-5 h-5 flex-shrink-0 text-warning" />
           {sidebarOpen && 'Clientes'}
         </Link>
       )}
