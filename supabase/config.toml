@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.validate-m365-connection]
 verify_jwt = false
+
+[functions.m365-oauth-callback]
+verify_jwt = false
+
+[functions.get-m365-config]
+verify_jwt = false

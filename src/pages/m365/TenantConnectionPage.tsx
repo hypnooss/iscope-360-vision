@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -23,9 +23,43 @@ export default function TenantConnectionPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant } = useTenantConnection();
   const [showWizard, setShowWizard] = useState(false);
+
+  // Handle OAuth callback parameters
+  useEffect(() => {
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    const missingPermissions = searchParams.get('missing');
+
+    if (success === 'true') {
+      toast({
+        title: 'Tenant conectado com sucesso!',
+        description: 'A conexão foi estabelecida e as permissões foram validadas.',
+      });
+      refetch();
+      // Clear params
+      setSearchParams({});
+    } else if (success === 'partial') {
+      toast({
+        title: 'Tenant conectado (parcial)',
+        description: `Conexão OK, mas algumas permissões estão pendentes: ${missingPermissions?.replace(',', ', ')}`,
+        variant: 'default',
+      });
+      refetch();
+      setSearchParams({});
+    } else if (error) {
+      toast({
+        title: 'Erro na conexão',
+        description: errorDescription || error,
+        variant: 'destructive',
+      });
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams, refetch]);
 
   useEffect(() => {
     if (!authLoading && !user) {
