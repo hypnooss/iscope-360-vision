@@ -102,79 +102,107 @@ Deno.serve(async (req) => {
     const accessToken = tokenData.access_token;
     console.log('Token obtained successfully, expires_in:', tokenData.expires_in);
 
-    // Test Graph API access and get tenant info with retry logic for propagation delays
-    console.log('Testing Graph API access...');
+    // Decode and log token claims for debugging
+    try {
+      const tokenParts = accessToken.split('.');
+      const tokenPayload = JSON.parse(atob(tokenParts[1]));
+      console.log('Token claims:', {
+        appid: tokenPayload.appid,
+        tid: tokenPayload.tid,
+        aud: tokenPayload.aud,
+        iss: tokenPayload.iss,
+        exp: new Date(tokenPayload.exp * 1000).toISOString(),
+      });
+    } catch (decodeErr) {
+      console.warn('Could not decode token for logging:', decodeErr);
+    }
+
+    // Test Graph API access using /domains endpoint (more resilient than /organization)
+    console.log('Testing Graph API access with /domains endpoint...');
     
-    const fetchOrganization = async () => {
-      return await fetch('https://graph.microsoft.com/v1.0/organization', {
+    const fetchDomains = async () => {
+      return await fetch('https://graph.microsoft.com/v1.0/domains', {
         headers: { 'Authorization': `Bearer ${accessToken}` },
       });
     };
     
-    let orgResponse = await fetchOrganization();
+    // Retry with exponential backoff: 5s, 10s, 15s (total 30s max wait)
+    const delays = [5000, 10000, 15000];
+    let domainsResponse = await fetchDomains();
+    let lastError: { code?: string; message?: string } = {};
 
-    // If IdentityNotFound, wait and retry once (Admin Consent propagation delay)
-    if (!orgResponse.ok) {
-      const orgErrorText = await orgResponse.text();
-      let orgError;
+    for (let attempt = 0; !domainsResponse.ok && attempt < delays.length; attempt++) {
+      const errorText = await domainsResponse.text();
       try {
-        orgError = JSON.parse(orgErrorText);
+        lastError = JSON.parse(errorText).error || { message: errorText };
       } catch {
-        orgError = { error: { code: 'UnknownError', message: orgErrorText } };
+        lastError = { code: 'UnknownError', message: errorText };
       }
       
-      console.error('Graph API error (attempt 1):', {
-        status: orgResponse.status,
-        code: orgError.error?.code,
-        message: orgError.error?.message,
+      console.error(`Graph API error (attempt ${attempt + 1}):`, {
+        status: domainsResponse.status,
+        code: lastError.code,
+        message: lastError.message,
       });
       
-      // Check if it's an identity propagation issue
-      if (orgError.error?.code === 'Authorization_IdentityNotFound') {
-        console.log('Identity not found, waiting 5 seconds for Admin Consent propagation...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        console.log('Retrying Graph API call...');
-        orgResponse = await fetchOrganization();
-        
-        if (!orgResponse.ok) {
-          const retryErrorText = await orgResponse.text();
-          let retryError;
-          try {
-            retryError = JSON.parse(retryErrorText);
-          } catch {
-            retryError = { error: { code: 'UnknownError', message: retryErrorText } };
-          }
-          
-          console.error('Graph API error (attempt 2):', {
-            status: orgResponse.status,
-            code: retryError.error?.code,
-            message: retryError.error?.message,
-          });
-          
-          return new Response(null, {
-            status: 302,
-            headers: {
-              'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API: ${retryError.error?.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
-            },
-          });
-        }
+      // Only retry on propagation-related errors
+      if (lastError.code === 'Authorization_IdentityNotFound' || 
+          lastError.code === 'Authorization_RequestDenied' ||
+          domainsResponse.status === 401 ||
+          domainsResponse.status === 403) {
+        console.log(`Waiting ${delays[attempt]/1000}s for Admin Consent propagation (attempt ${attempt + 2})...`);
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        domainsResponse = await fetchDomains();
       } else {
-        return new Response(null, {
-          status: 302,
-          headers: {
-            'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API: ${orgError.error?.message || 'Unknown error'}`)}`,
-          },
-        });
+        break; // Don't retry on other errors
       }
     }
 
-    const orgData = await orgResponse.json();
-    const tenantInfo = orgData.value?.[0];
-    const displayName = tenantInfo?.displayName || null;
-    const verifiedDomains = tenantInfo?.verifiedDomains || [];
-    const primaryDomain = verifiedDomains.find((d: any) => d.isDefault)?.name || 
-                          verifiedDomains[0]?.name || null;
+    if (!domainsResponse.ok) {
+      const finalErrorText = await domainsResponse.text();
+      let finalError;
+      try {
+        finalError = JSON.parse(finalErrorText).error || { message: finalErrorText };
+      } catch {
+        finalError = { code: 'UnknownError', message: finalErrorText };
+      }
+      
+      console.error('Graph API error (final):', {
+        status: domainsResponse.status,
+        code: finalError.code,
+        message: finalError.message,
+      });
+      
+      return new Response(null, {
+        status: 302,
+        headers: {
+          'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
+        },
+      });
+    }
+
+    const domainsData = await domainsResponse.json();
+    const domains = domainsData.value || [];
+    console.log('Domains retrieved:', domains.length);
+    
+    // Extract primary domain and display name from domains
+    const defaultDomain = domains.find((d: any) => d.isDefault);
+    const initialDomain = domains.find((d: any) => d.isInitial);
+    const primaryDomain = defaultDomain?.id || initialDomain?.id || domains[0]?.id || null;
+    
+    // Try to get organization display name (optional, don't fail if unavailable)
+    let displayName = primaryDomain; // Fallback to domain
+    try {
+      const orgResponse = await fetch('https://graph.microsoft.com/v1.0/organization', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      if (orgResponse.ok) {
+        const orgData = await orgResponse.json();
+        displayName = orgData.value?.[0]?.displayName || primaryDomain;
+      }
+    } catch (orgErr) {
+      console.warn('Could not fetch organization name, using domain as fallback');
+    }
 
     // Test permissions
     console.log('Testing permissions...');
