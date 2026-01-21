@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
-import { Shield, CheckCircle2, AlertTriangle, TrendingUp, LogIn } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -24,28 +23,24 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Header />
       
-      <main className="px-6 py-12">
+      <main className="flex-1 flex flex-col justify-center px-6 py-12">
         {/* Hero Section */}
         <div className="max-w-4xl mx-auto text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in">
-            <Shield className="w-4 h-4" />
-            InfraScope 360 - Gestão de Infraestrutura
-          </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+          <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-4 animate-fade-in">
             Gerencie sua Infraestrutura
             <span className="text-primary"> com Inteligência</span>
           </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s' }}>
             Plataforma completa para análise de compliance, segurança e 
             boas práticas da sua infraestrutura de rede.
           </p>
         </div>
 
         {/* Features Grid */}
-        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             {
               icon: CheckCircle2,
@@ -66,7 +61,7 @@ const Index = () => {
             <div 
               key={feature.title}
               className="glass-card rounded-xl p-6 text-center animate-fade-in"
-              style={{ animationDelay: `${0.3 + index * 0.1}s` }}
+              style={{ animationDelay: `${0.2 + index * 0.1}s` }}
             >
               <div className="inline-flex p-3 rounded-lg bg-primary/10 mb-4">
                 <feature.icon className="w-6 h-6 text-primary" />
@@ -75,21 +70,6 @@ const Index = () => {
               <p className="text-sm text-muted-foreground">{feature.description}</p>
             </div>
           ))}
-        </div>
-
-        {/* CTA Section */}
-        <div className="max-w-md mx-auto text-center animate-fade-in" style={{ animationDelay: '0.5s' }}>
-          <Button 
-            onClick={() => navigate('/auth')}
-            size="lg"
-            className="gap-2"
-          >
-            <LogIn className="w-5 h-5" />
-            Acessar Plataforma
-          </Button>
-          <p className="text-sm text-muted-foreground mt-4">
-            Acesso restrito. Contate o administrador para obter credenciais.
-          </p>
         </div>
       </main>
     </div>
