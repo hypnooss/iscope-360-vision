@@ -261,7 +261,7 @@ export type Database = {
           {
             foreignKeyName: "m365_app_credentials_tenant_record_id_fkey"
             columns: ["tenant_record_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "m365_tenants"
             referencedColumns: ["id"]
           },
