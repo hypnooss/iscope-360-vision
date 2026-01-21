@@ -41,6 +41,7 @@ export default function Auth() {
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 
   // Password reset state
   const [resetEmail, setResetEmail] = useState('');
@@ -48,15 +49,19 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   useEffect(() => {
+    // Não redirecionar se estiver no fluxo de recuperação de senha
+    if (isRecoveryFlow) return;
+    
     if (!loading && user) {
       navigate('/dashboard');
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, isRecoveryFlow]);
 
   // Detectar evento de recuperação de senha quando usuário clica no link do email
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryFlow(true);
         setCurrentView('reset-password');
       }
     });
@@ -147,6 +152,7 @@ export default function Auth() {
     if (currentView === 'reset-password' || currentView === 'success') {
       await supabase.auth.signOut();
     }
+    setIsRecoveryFlow(false);
     setCurrentView('login');
     setResetEmail('');
     setNewPassword('');
