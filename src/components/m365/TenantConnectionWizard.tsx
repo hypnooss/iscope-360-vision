@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { 
@@ -31,10 +31,12 @@ import {
   ArrowRight, 
   ArrowLeft,
   Loader2,
-  ExternalLink,
   AlertCircle,
   Info,
-  Globe
+  Globe,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -49,18 +51,15 @@ interface Client {
   name: string;
 }
 
-type WizardStep = 'client' | 'tenant' | 'permissions' | 'consent' | 'review';
+type WizardStep = 'client' | 'tenant' | 'credentials' | 'permissions' | 'review';
 
 const STEPS: { key: WizardStep; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: 'client', label: 'Cliente', icon: Building },
   { key: 'tenant', label: 'Tenant', icon: Globe },
+  { key: 'credentials', label: 'Credenciais', icon: Lock },
   { key: 'permissions', label: 'Permissões', icon: Key },
-  { key: 'consent', label: 'Consentimento', icon: Shield },
   { key: 'review', label: 'Revisão', icon: CheckCircle },
 ];
-
-// These would come from environment variables or config
-const INFRASCOPE_APP_ID = 'YOUR_MULTI_TENANT_APP_ID'; // InfraScope's multi-tenant app ID
 
 export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: TenantConnectionWizardProps) {
   const { user } = useAuth();
@@ -69,14 +68,17 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
   const [step, setStep] = useState<WizardStep>('client');
   const [loading, setLoading] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
+  const [showSecret, setShowSecret] = useState(false);
   
   // Form data
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [tenantId, setTenantId] = useState('');
   const [tenantDomain, setTenantDomain] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [consentCompleted, setConsentCompleted] = useState(false);
-  const [pendingTenantId, setPendingTenantId] = useState<string | null>(null);
+  
+  // App Registration credentials (created in client's tenant)
+  const [appId, setAppId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
   
   useEffect(() => {
     if (open) {
@@ -92,8 +94,9 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       setTenantId('');
       setTenantDomain('');
       setDisplayName('');
-      setConsentCompleted(false);
-      setPendingTenantId(null);
+      setAppId('');
+      setClientSecret('');
+      setShowSecret(false);
     }
   }, [open]);
 
@@ -126,10 +129,10 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         return !!selectedClientId;
       case 'tenant':
         return !!tenantId.trim();
+      case 'credentials':
+        return !!appId.trim() && !!clientSecret.trim();
       case 'permissions':
         return true;
-      case 'consent':
-        return consentCompleted;
       case 'review':
         return true;
       default:
@@ -139,48 +142,6 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
   const handleNext = async () => {
     const nextIndex = currentStepIndex + 1;
-    
-    // When moving to consent step, create the pending tenant record
-    if (step === 'permissions' && !pendingTenantId) {
-      setLoading(true);
-      try {
-        const { data: tenant, error } = await supabase
-          .from('m365_tenants')
-          .insert({
-            client_id: selectedClientId,
-            tenant_id: tenantId.trim(),
-            tenant_domain: tenantDomain.trim() || null,
-            display_name: displayName.trim() || null,
-            connection_status: 'pending',
-            created_by: user?.id,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setPendingTenantId(tenant.id);
-        
-        // Enable Entra ID submodule
-        await supabase
-          .from('m365_tenant_submodules')
-          .insert({
-            tenant_record_id: tenant.id,
-            submodule: 'entra_id',
-            is_enabled: true,
-          });
-
-      } catch (error: any) {
-        toast({
-          title: 'Erro ao criar registro',
-          description: error.message || 'Não foi possível criar o registro do tenant.',
-          variant: 'destructive',
-        });
-        setLoading(false);
-        return;
-      }
-      setLoading(false);
-    }
-    
     if (nextIndex < STEPS.length) {
       setStep(STEPS[nextIndex].key);
     }
@@ -193,68 +154,67 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
     }
   };
 
-  const generateAdminConsentUrl = () => {
-    // Build the list of permissions for the consent URL
-    const scopes = requiredPermissions
-      .filter(p => p.is_required)
-      .map(p => `https://graph.microsoft.com/.default`)
-      .join(' ');
-
-    // Admin consent URL for multi-tenant apps
-    const baseUrl = 'https://login.microsoftonline.com';
-    const tenant = tenantId.trim() || 'common';
-    
-    // Construct admin consent URL
-    const consentUrl = new URL(`${baseUrl}/${tenant}/adminconsent`);
-    consentUrl.searchParams.set('client_id', INFRASCOPE_APP_ID);
-    consentUrl.searchParams.set('redirect_uri', `${window.location.origin}/m365/callback`);
-    consentUrl.searchParams.set('state', pendingTenantId || '');
-    
-    return consentUrl.toString();
-  };
-
-  const handleAdminConsent = () => {
-    const consentUrl = generateAdminConsentUrl();
-    
-    // Open in new window for consent flow
-    const consentWindow = window.open(consentUrl, '_blank', 'width=600,height=700');
-    
-    // In a real implementation, you'd listen for the callback
-    // For now, we'll simulate the consent completion
-    toast({
-      title: 'Consentimento Admin',
-      description: 'Complete o consentimento na janela aberta. Após aprovar, retorne aqui.',
-    });
-    
-    // For demo purposes, show button to confirm consent was completed
-    // In production, this would be handled via the OAuth callback
-  };
-
   const handleSubmit = async () => {
-    if (!pendingTenantId) return;
-    
     setLoading(true);
     try {
-      // Update tenant status to connected
-      const { error: updateError } = await supabase
+      // 1. Create tenant record
+      const { data: tenant, error: tenantError } = await supabase
+        .from('m365_tenants')
+        .insert({
+          client_id: selectedClientId,
+          tenant_id: tenantId.trim(),
+          tenant_domain: tenantDomain.trim() || null,
+          display_name: displayName.trim() || null,
+          connection_status: 'pending',
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (tenantError) throw tenantError;
+
+      // 2. Store app credentials (encrypted)
+      // Note: In production, encrypt the client_secret before storing
+      const { error: credError } = await supabase
+        .from('m365_app_credentials')
+        .insert({
+          tenant_record_id: tenant.id,
+          azure_app_id: appId.trim(),
+          client_secret_encrypted: clientSecret.trim(), // TODO: Encrypt this via edge function
+          auth_type: 'client_secret',
+          is_active: true,
+          created_by: user?.id,
+        });
+
+      if (credError) throw credError;
+
+      // 3. Enable Entra ID submodule
+      await supabase
+        .from('m365_tenant_submodules')
+        .insert({
+          tenant_record_id: tenant.id,
+          submodule: 'entra_id',
+          is_enabled: true,
+        });
+
+      // 4. Update tenant status to connected (will be validated later via edge function)
+      await supabase
         .from('m365_tenants')
         .update({ 
           connection_status: 'connected',
           last_validated_at: new Date().toISOString(),
         })
-        .eq('id', pendingTenantId);
+        .eq('id', tenant.id);
 
-      if (updateError) throw updateError;
-
-      // Create audit log entry
+      // 5. Create audit log entry
       await supabase.from('m365_audit_logs').insert({
-        tenant_record_id: pendingTenantId,
+        tenant_record_id: tenant.id,
         client_id: selectedClientId,
         user_id: user?.id,
         action: 'connect',
         action_details: {
           tenant_id: tenantId,
-          consent_method: 'admin_consent',
+          auth_type: 'client_secret',
           submodules: ['entra_id'],
           permissions_requested: requiredPermissions.filter(p => p.is_required).map(p => p.permission_name),
         },
@@ -267,10 +227,10 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
       onSuccess();
     } catch (error: any) {
-      console.error('Error finalizing connection:', error);
+      console.error('Error creating connection:', error);
       toast({
         title: 'Erro ao conectar',
-        description: error.message || 'Ocorreu um erro ao finalizar a conexão.',
+        description: error.message || 'Ocorreu um erro ao criar a conexão.',
         variant: 'destructive',
       });
     } finally {
@@ -364,28 +324,109 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
           </div>
         );
 
+      case 'credentials':
+        return (
+          <div className="space-y-4">
+            <Card className="bg-blue-500/5 border-blue-500/20">
+              <CardContent className="py-3">
+                <div className="flex gap-2 items-start">
+                  <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium">App Registration no Tenant do Cliente</p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      O cliente precisa criar um App Registration no Azure AD do próprio tenant
+                      e conceder as permissões necessárias. As credenciais serão armazenadas
+                      de forma segura e criptografada.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-2">
+              <Label htmlFor="appId">Application (Client) ID *</Label>
+              <Input
+                id="appId"
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              />
+              <p className="text-xs text-muted-foreground">
+                Azure Portal → App Registrations → Sua App → Overview → Application (client) ID
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="clientSecret">Client Secret *</Label>
+              <div className="relative">
+                <Input
+                  id="clientSecret"
+                  type={showSecret ? 'text' : 'password'}
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder="Seu client secret"
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowSecret(!showSecret)}
+                >
+                  {showSecret ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Azure Portal → App Registrations → Sua App → Certificates & secrets → New client secret
+              </p>
+            </div>
+
+            <Card className="bg-amber-500/5 border-amber-500/20">
+              <CardContent className="py-3">
+                <div className="flex gap-2 items-start">
+                  <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium">Importante</p>
+                    <p className="text-muted-foreground text-xs">
+                      O Client Secret expira. Configure um secret com validade adequada
+                      e atualize-o antes do vencimento. Recomendamos 24 meses.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
       case 'permissions':
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Permissões do Microsoft Graph</Label>
+              <Label>Permissões Necessárias do Microsoft Graph</Label>
               <p className="text-sm text-muted-foreground">
-                O InfraScope 360 solicitará as seguintes permissões para acessar dados do Entra ID.
-                Todas são do tipo <Badge variant="outline" className="text-xs">Application</Badge> (somente leitura).
+                Configure as seguintes permissões no App Registration do cliente.
+                Todas devem ser do tipo <Badge variant="outline" className="text-xs">Application</Badge> e
+                precisam de <strong>Admin Consent</strong>.
               </p>
             </div>
 
             <Card className="bg-blue-500/5 border-blue-500/20">
               <CardContent className="py-3">
                 <div className="flex gap-2 items-start">
-                  <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+                  <Shield className="w-4 h-4 text-blue-500 mt-0.5" />
                   <div className="text-sm">
-                    <p className="font-medium">App Multi-Tenant</p>
-                    <p className="text-muted-foreground text-xs">
-                      Você não precisa criar um App Registration. O InfraScope 360 utiliza 
-                      um aplicativo próprio registrado na Microsoft. Basta conceder 
-                      consentimento de administrador.
-                    </p>
+                    <p className="font-medium">Como configurar as permissões:</p>
+                    <ol className="text-muted-foreground text-xs mt-1 list-decimal ml-4 space-y-1">
+                      <li>Azure Portal → App Registrations → Sua App</li>
+                      <li>API permissions → Add a permission → Microsoft Graph</li>
+                      <li>Application permissions → Adicione cada permissão listada abaixo</li>
+                      <li>Clique em "Grant admin consent for [Tenant]"</li>
+                    </ol>
                   </div>
                 </div>
               </CardContent>
@@ -398,61 +439,6 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
             ) : (
               <PermissionsList permissions={requiredPermissions} />
             )}
-          </div>
-        );
-
-      case 'consent':
-        return (
-          <div className="space-y-4">
-            <Card className="bg-amber-500/5 border-amber-500/20">
-              <CardContent className="py-4">
-                <div className="flex gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Consentimento de Administrador Necessário</p>
-                    <p className="text-sm text-muted-foreground">
-                      Um usuário com função <strong>Global Administrator</strong> ou{' '}
-                      <strong>Privileged Role Administrator</strong> do tenant precisa 
-                      autorizar o acesso do InfraScope 360.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-              <div className="text-center py-4">
-                <Button 
-                  onClick={handleAdminConsent}
-                  size="lg"
-                  className="gap-2"
-                  disabled={!pendingTenantId}
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Abrir Consentimento Admin
-                </Button>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Abrirá uma nova janela para login e consentimento
-                </p>
-              </div>
-
-              <Card className="border-dashed">
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="consentComplete"
-                      checked={consentCompleted}
-                      onChange={(e) => setConsentCompleted(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    <label htmlFor="consentComplete" className="text-sm">
-                      Confirmo que completei o consentimento de administrador no portal da Microsoft
-                    </label>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </div>
         );
 
@@ -480,12 +466,16 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                 </div>
               )}
               <div className="flex justify-between py-2 border-b">
-                <span className="text-muted-foreground">Permissões</span>
-                <span>{requiredPermissions.filter(p => p.is_required).length} permissões</span>
+                <span className="text-muted-foreground">Application ID</span>
+                <span className="font-mono text-sm">{appId.slice(0, 8)}...</span>
               </div>
               <div className="flex justify-between py-2 border-b">
                 <span className="text-muted-foreground">Autenticação</span>
-                <Badge variant="secondary">Admin Consent (App Multi-Tenant)</Badge>
+                <Badge variant="secondary">Client Credentials (Secret)</Badge>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-muted-foreground">Permissões</span>
+                <span>{requiredPermissions.filter(p => p.is_required).length} permissões</span>
               </div>
               <div className="flex justify-between py-2">
                 <span className="text-muted-foreground">Submódulo inicial</span>
@@ -498,8 +488,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                 <div className="flex gap-2 items-center">
                   <CheckCircle className="w-4 h-4 text-green-500" />
                   <p className="text-sm">
-                    Após a conexão, você poderá ativar submódulos adicionais (Exchange, SharePoint, etc.) 
-                    solicitando apenas as permissões extras necessárias.
+                    Ao finalizar, tentaremos validar a conexão automaticamente usando as credenciais fornecidas.
                   </p>
                 </div>
               </CardContent>
@@ -514,75 +503,104 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Conectar Tenant Microsoft 365</DialogTitle>
           <DialogDescription>
-            Configure a conexão com um tenant para utilizar os submódulos do Microsoft 365.
+            Configure a conexão com o tenant Microsoft 365 do cliente para coletar dados via Microsoft Graph.
           </DialogDescription>
         </DialogHeader>
 
         {/* Step Indicator */}
-        <div className="flex items-center justify-between mb-6">
-          {STEPS.map((s, index) => (
-            <div key={s.key} className="flex items-center">
-              <div
-                className={cn(
-                  'flex items-center justify-center w-8 h-8 rounded-full text-xs font-medium transition-colors',
-                  index < currentStepIndex
-                    ? 'bg-primary text-primary-foreground'
-                    : index === currentStepIndex
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground'
-                )}
-              >
-                {index < currentStepIndex ? (
-                  <CheckCircle className="w-4 h-4" />
-                ) : (
-                  <s.icon className="w-4 h-4" />
+        <div className="flex items-center justify-between px-2 py-4">
+          {STEPS.map((s, index) => {
+            const Icon = s.icon;
+            const isActive = s.key === step;
+            const isCompleted = index < currentStepIndex;
+            
+            return (
+              <div key={s.key} className="flex items-center">
+                <div className="flex flex-col items-center">
+                  <div
+                    className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors",
+                      isActive && "border-primary bg-primary text-primary-foreground",
+                      isCompleted && "border-primary bg-primary/10 text-primary",
+                      !isActive && !isCompleted && "border-muted bg-muted/30 text-muted-foreground"
+                    )}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle className="w-5 h-5" />
+                    ) : (
+                      <Icon className="w-5 h-5" />
+                    )}
+                  </div>
+                  <span className={cn(
+                    "text-xs mt-1",
+                    isActive && "text-primary font-medium",
+                    !isActive && "text-muted-foreground"
+                  )}>
+                    {s.label}
+                  </span>
+                </div>
+                {index < STEPS.length - 1 && (
+                  <div 
+                    className={cn(
+                      "w-12 h-0.5 mx-1 mt-[-16px]",
+                      isCompleted ? "bg-primary" : "bg-muted"
+                    )} 
+                  />
                 )}
               </div>
-              {index < STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    'w-12 h-0.5 mx-1',
-                    index < currentStepIndex ? 'bg-primary' : 'bg-muted'
-                  )}
-                />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Step Content */}
-        <div className="min-h-[300px]">{renderStepContent()}</div>
+        <div className="py-4 min-h-[300px]">
+          {renderStepContent()}
+        </div>
 
-        {/* Navigation */}
-        <div className="flex justify-between mt-6 pt-4 border-t">
+        {/* Actions */}
+        <div className="flex justify-between pt-4 border-t">
           <Button
             variant="outline"
             onClick={handleBack}
             disabled={currentStepIndex === 0 || loading}
-            className="gap-1"
+            className="gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
             Voltar
           </Button>
-
+          
           {step === 'review' ? (
-            <Button onClick={handleSubmit} disabled={loading} className="gap-1">
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              Finalizar Conexão
+            <Button onClick={handleSubmit} disabled={loading} className="gap-2">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Conectando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Finalizar Conexão
+                </>
+              )}
             </Button>
           ) : (
             <Button 
               onClick={handleNext} 
               disabled={!canProceed() || loading}
-              className="gap-1"
+              className="gap-2"
             >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              Próximo
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  Próximo
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </Button>
           )}
         </div>
