@@ -66,6 +66,9 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [tenantId, setTenantId] = useState('');
   const [tenantDomain, setTenantDomain] = useState('');
+  const [pendingTenantRecordId, setPendingTenantRecordId] = useState<string | null>(null);
+  const [waitingForAuth, setWaitingForAuth] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   
   useEffect(() => {
     if (open) {
@@ -81,6 +84,9 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       setTenantId('');
       setTenantDomain('');
       setAuthorizing(false);
+      setPendingTenantRecordId(null);
+      setWaitingForAuth(false);
+      setVerifying(false);
     }
   }, [open]);
 
@@ -197,8 +203,19 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       adminConsentUrl.searchParams.set('redirect_uri', callbackUrl);
       adminConsentUrl.searchParams.set('state', state);
       
-      // 6. Redirect to Microsoft
-      window.location.href = adminConsentUrl.toString();
+      // 6. Store tenant record ID for verification
+      setPendingTenantRecordId(tenant.id);
+      
+      // 7. Open Microsoft login in new window/tab
+      window.open(
+        adminConsentUrl.toString(),
+        'microsoft_auth',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+      
+      // 8. Show waiting state
+      setAuthorizing(false);
+      setWaitingForAuth(true);
       
     } catch (error: any) {
       console.error('Error initiating authorization:', error);
@@ -208,6 +225,62 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         variant: 'destructive',
       });
       setAuthorizing(false);
+    }
+  };
+
+  const handleVerifyConnection = async () => {
+    if (!pendingTenantRecordId) return;
+    
+    setVerifying(true);
+    
+    try {
+      const { data: tenant, error } = await supabase
+        .from('m365_tenants')
+        .select('connection_status')
+        .eq('id', pendingTenantRecordId)
+        .single();
+      
+      if (error) throw error;
+      
+      if (tenant.connection_status === 'connected') {
+        toast({
+          title: 'Conexão estabelecida!',
+          description: 'O tenant Microsoft 365 foi conectado com sucesso.',
+        });
+        onSuccess();
+        onOpenChange(false);
+      } else if (tenant.connection_status === 'partial') {
+        toast({
+          title: 'Conexão parcial',
+          description: 'O tenant foi conectado, mas algumas permissões estão faltando.',
+          variant: 'default',
+        });
+        onSuccess();
+        onOpenChange(false);
+      } else if (tenant.connection_status === 'failed') {
+        toast({
+          title: 'Erro na conexão',
+          description: 'Ocorreu um erro durante a autorização. Tente novamente.',
+          variant: 'destructive',
+        });
+        setWaitingForAuth(false);
+        setPendingTenantRecordId(null);
+      } else {
+        toast({
+          title: 'Aguardando autorização',
+          description: 'A autorização ainda não foi concluída. Complete o processo na janela da Microsoft.',
+          variant: 'default',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error verifying connection:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível verificar o status da conexão.',
+        variant: 'destructive',
+      });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -339,7 +412,10 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
             <div className="space-y-2">
               <Label>Autorizar Acesso</Label>
               <p className="text-sm text-muted-foreground">
-                Clique no botão abaixo para autorizar o InfraScope 360 a acessar o tenant Microsoft 365.
+                {waitingForAuth 
+                  ? 'Complete a autorização na janela da Microsoft e clique em verificar.'
+                  : 'Clique no botão abaixo para autorizar o InfraScope 360 a acessar o tenant Microsoft 365.'
+                }
               </p>
             </div>
 
@@ -347,35 +423,77 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               <CardContent className="py-4">
                 <div className="flex flex-col items-center text-center space-y-4">
                   <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Key className="w-8 h-8 text-primary" />
+                    {waitingForAuth ? (
+                      <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    ) : (
+                      <Key className="w-8 h-8 text-primary" />
+                    )}
                   </div>
                   
                   <div className="space-y-2">
-                    <p className="font-medium">Consentimento do Administrador</p>
+                    <p className="font-medium">
+                      {waitingForAuth ? 'Aguardando Autorização' : 'Consentimento do Administrador'}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      Você será redirecionado para o login da Microsoft. 
-                      Um administrador do tenant precisa autorizar o acesso.
+                      {waitingForAuth 
+                        ? 'Uma nova janela foi aberta para o login da Microsoft. Complete o processo e clique em "Verificar Conexão".'
+                        : 'Uma nova janela será aberta para o login da Microsoft. Um administrador do tenant precisa autorizar o acesso.'
+                      }
                     </p>
                   </div>
                   
-                  <Button 
-                    onClick={handleAuthorize}
-                    size="lg"
-                    disabled={authorizing}
-                    className="gap-2 min-w-[200px]"
-                  >
-                    {authorizing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Redirecionando...
-                      </>
-                    ) : (
-                      <>
-                        <ExternalLink className="w-4 h-4" />
-                        Autorizar com Microsoft
-                      </>
-                    )}
-                  </Button>
+                  {waitingForAuth ? (
+                    <div className="flex flex-col gap-2 w-full max-w-[250px]">
+                      <Button 
+                        onClick={handleVerifyConnection}
+                        size="lg"
+                        disabled={verifying}
+                        className="gap-2 w-full"
+                      >
+                        {verifying ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Verificando...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4" />
+                            Verificar Conexão
+                          </>
+                        )}
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setWaitingForAuth(false);
+                          setPendingTenantRecordId(null);
+                        }}
+                        className="gap-2"
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      onClick={handleAuthorize}
+                      size="lg"
+                      disabled={authorizing}
+                      className="gap-2 min-w-[200px]"
+                    >
+                      {authorizing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Abrindo janela...
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="w-4 h-4" />
+                          Autorizar com Microsoft
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
