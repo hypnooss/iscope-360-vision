@@ -70,6 +70,7 @@ const moduleNavConfigs: ModuleNavConfig[] = [
     color: 'text-blue-500',
     items: [
       { label: 'Dashboard', href: '/scope-m365/dashboard', icon: LayoutDashboard },
+      { label: 'Conexão com Tenant', href: '/scope-m365/tenant-connection', icon: Building },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
     ],
   },
