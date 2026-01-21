@@ -10,12 +10,14 @@ const moduleIcons: Record<ScopeModule, React.ComponentType<{ className?: string 
   scope_firewall: Shield,
   scope_network: Network,
   scope_cloud: Cloud,
+  scope_m365: Cloud,
 };
 
 const moduleColors: Record<ScopeModule, string> = {
   scope_firewall: 'from-orange-500 to-red-500',
   scope_network: 'from-blue-500 to-cyan-500',
   scope_cloud: 'from-purple-500 to-pink-500',
+  scope_m365: 'from-blue-500 to-indigo-500',
 };
 
 export default function ModuleSelectionPage() {
@@ -43,6 +45,9 @@ export default function ModuleSelectionPage() {
     switch (moduleCode) {
       case 'scope_firewall':
         navigate('/scope-firewall/dashboard');
+        break;
+      case 'scope_m365':
+        navigate('/scope-m365/dashboard');
         break;
       case 'scope_network':
         navigate('/scope-network/dashboard');

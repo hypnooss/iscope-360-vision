@@ -64,10 +64,20 @@ const moduleNavConfigs: ModuleNavConfig[] = [
     ],
   },
   {
+    code: 'scope_m365',
+    name: 'Microsoft 365',
+    icon: Cloud,
+    color: 'text-blue-500',
+    items: [
+      { label: 'Dashboard', href: '/scope-m365/dashboard', icon: LayoutDashboard },
+      { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
+    ],
+  },
+  {
     code: 'scope_network',
     name: 'Scope Network',
     icon: Network,
-    color: 'text-blue-500',
+    color: 'text-cyan-500',
     items: [
       { label: 'Dashboard', href: '/scope-network/dashboard', icon: LayoutDashboard },
     ],
@@ -98,6 +108,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (path.startsWith('/scope-firewall')) {
       setActiveModule('scope_firewall');
       setExpandedModules(prev => ({ ...prev, scope_firewall: true }));
+    } else if (path.startsWith('/scope-m365')) {
+      setActiveModule('scope_m365');
+      setExpandedModules(prev => ({ ...prev, scope_m365: true }));
     } else if (path.startsWith('/scope-network')) {
       setActiveModule('scope_network');
       setExpandedModules(prev => ({ ...prev, scope_network: true }));

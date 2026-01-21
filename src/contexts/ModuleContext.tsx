@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
-export type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
+export type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud' | 'scope_m365';
 
 export interface Module {
   id: string;
