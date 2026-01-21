@@ -440,6 +440,11 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                         : 'Uma nova janela será aberta para o login da Microsoft. Um administrador do tenant precisa autorizar o acesso.'
                       }
                     </p>
+                    {waitingForAuth && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                        ⏳ A propagação do Admin Consent pode levar alguns minutos. Se a verificação falhar, aguarde 2-3 minutos e tente novamente.
+                      </p>
+                    )}
                   </div>
                   
                   {waitingForAuth ? (

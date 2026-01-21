@@ -100,22 +100,73 @@ Deno.serve(async (req) => {
 
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
+    console.log('Token obtained successfully, expires_in:', tokenData.expires_in);
 
-    // Test Graph API access and get tenant info
+    // Test Graph API access and get tenant info with retry logic for propagation delays
     console.log('Testing Graph API access...');
-    const orgResponse = await fetch('https://graph.microsoft.com/v1.0/organization', {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
-    });
-
-    if (!orgResponse.ok) {
-      const orgError = await orgResponse.text();
-      console.error('Graph API error:', orgError);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent('Failed to access Microsoft Graph API.')}`,
-        },
+    
+    const fetchOrganization = async () => {
+      return await fetch('https://graph.microsoft.com/v1.0/organization', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
       });
+    };
+    
+    let orgResponse = await fetchOrganization();
+
+    // If IdentityNotFound, wait and retry once (Admin Consent propagation delay)
+    if (!orgResponse.ok) {
+      const orgErrorText = await orgResponse.text();
+      let orgError;
+      try {
+        orgError = JSON.parse(orgErrorText);
+      } catch {
+        orgError = { error: { code: 'UnknownError', message: orgErrorText } };
+      }
+      
+      console.error('Graph API error (attempt 1):', {
+        status: orgResponse.status,
+        code: orgError.error?.code,
+        message: orgError.error?.message,
+      });
+      
+      // Check if it's an identity propagation issue
+      if (orgError.error?.code === 'Authorization_IdentityNotFound') {
+        console.log('Identity not found, waiting 5 seconds for Admin Consent propagation...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        console.log('Retrying Graph API call...');
+        orgResponse = await fetchOrganization();
+        
+        if (!orgResponse.ok) {
+          const retryErrorText = await orgResponse.text();
+          let retryError;
+          try {
+            retryError = JSON.parse(retryErrorText);
+          } catch {
+            retryError = { error: { code: 'UnknownError', message: retryErrorText } };
+          }
+          
+          console.error('Graph API error (attempt 2):', {
+            status: orgResponse.status,
+            code: retryError.error?.code,
+            message: retryError.error?.message,
+          });
+          
+          return new Response(null, {
+            status: 302,
+            headers: {
+              'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API: ${retryError.error?.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
+            },
+          });
+        }
+      } else {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API: ${orgError.error?.message || 'Unknown error'}`)}`,
+          },
+        });
+      }
     }
 
     const orgData = await orgResponse.json();
