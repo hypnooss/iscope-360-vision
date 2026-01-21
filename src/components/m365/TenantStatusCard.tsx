@@ -11,7 +11,8 @@ import {
   Unplug,
   Clock,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -31,18 +32,22 @@ interface TenantStatusCardProps {
   tenant: TenantConnection;
   onTest: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
   onDisconnect: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
+  onDelete: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
   onUpdatePermissions?: (tenantId: string) => void;
 }
 
 export function TenantStatusCard({ 
   tenant, 
   onTest, 
-  onDisconnect, 
+  onDisconnect,
+  onDelete,
   onUpdatePermissions 
 }: TenantStatusCardProps) {
   const [testing, setTesting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleTest = async () => {
     setTesting(true);
@@ -55,6 +60,13 @@ export function TenantStatusCard({
     await onDisconnect(tenant.id);
     setDisconnecting(false);
     setShowDisconnectDialog(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    await onDelete(tenant.id);
+    setDeleting(false);
+    setShowDeleteDialog(false);
   };
 
   const getStatusBadge = (status: TenantConnection['connection_status']) => {
@@ -172,11 +184,21 @@ export function TenantStatusCard({
             <Button 
               variant="ghost" 
               size="sm" 
-              className="text-destructive hover:text-destructive"
+              className="text-amber-600 hover:text-amber-700"
               onClick={() => setShowDisconnectDialog(true)}
               disabled={tenant.connection_status === 'disconnected'}
+              title="Desconectar (mantém dados)"
             >
               <Unplug className="w-3 h-3" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-destructive hover:text-destructive"
+              onClick={() => setShowDeleteDialog(true)}
+              title="Excluir permanentemente"
+            >
+              <Trash2 className="w-3 h-3" />
             </Button>
           </div>
         </CardContent>
@@ -195,11 +217,47 @@ export function TenantStatusCard({
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleDisconnect}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-amber-600 text-white hover:bg-amber-700"
               disabled={disconnecting}
             >
               {disconnecting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Desconectar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Tenant Permanentemente</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Tem certeza que deseja <strong>excluir permanentemente</strong> o tenant "{tenant.display_name || tenant.tenant_domain}"?
+              </p>
+              <p className="text-destructive font-medium">
+                Esta ação não pode ser desfeita. Serão excluídos:
+              </p>
+              <ul className="list-disc ml-4 text-sm">
+                <li>Credenciais de conexão (App ID, Client Secret)</li>
+                <li>Tokens de acesso</li>
+                <li>Status de permissões</li>
+                <li>Configurações de submódulos</li>
+              </ul>
+              <p className="text-sm text-muted-foreground">
+                Os logs de auditoria serão mantidos para histórico.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Excluir Permanentemente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
