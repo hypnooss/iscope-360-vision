@@ -70,6 +70,7 @@ export default function FirewallListPage() {
     fortigate_url: '',
     api_key: '',
     client_id: '',
+    schedule: 'manual' as ScheduleFrequency,
   });
 
   const [newClient, setNewClient] = useState({
@@ -265,12 +266,23 @@ export default function FirewallListPage() {
 
   const openEditDialog = (fw: Firewall) => {
     setEditingFirewall(fw);
+    // Get current schedule frequency
+    let currentSchedule: ScheduleFrequency = 'manual';
+    if (fw.analysis_schedules) {
+      const schedules = Array.isArray(fw.analysis_schedules) ? fw.analysis_schedules : [fw.analysis_schedules];
+      const activeSchedule = schedules.find(s => s.is_active);
+      if (activeSchedule) {
+        currentSchedule = activeSchedule.frequency as ScheduleFrequency;
+      }
+    }
+    
     setEditFirewallData({
       name: fw.name,
       description: fw.description || '',
       fortigate_url: fw.fortigate_url,
       api_key: fw.api_key,
       client_id: fw.client_id,
+      schedule: currentSchedule,
     });
     setShowEditDialog(true);
   };
@@ -284,6 +296,7 @@ export default function FirewallListPage() {
     }
 
     try {
+      // Update firewall data
       const { error } = await supabase
         .from('firewalls')
         .update({
@@ -296,6 +309,25 @@ export default function FirewallListPage() {
         .eq('id', editingFirewall.id);
 
       if (error) throw error;
+
+      // Update schedule
+      // First, delete existing schedules for this firewall
+      await supabase
+        .from('analysis_schedules')
+        .delete()
+        .eq('firewall_id', editingFirewall.id);
+
+      // Create new schedule if not manual
+      if (editFirewallData.schedule !== 'manual') {
+        await supabase
+          .from('analysis_schedules')
+          .insert({
+            firewall_id: editingFirewall.id,
+            frequency: editFirewallData.schedule,
+            is_active: true,
+            created_by: user?.id,
+          });
+      }
 
       await fetchData();
       setShowEditDialog(false);
@@ -631,6 +663,23 @@ export default function FirewallListPage() {
                   onChange={(e) => setEditFirewallData({ ...editFirewallData, description: e.target.value })}
                   placeholder="Descrição opcional do firewall"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-schedule">Frequência de Análise</Label>
+                <Select
+                  value={editFirewallData.schedule}
+                  onValueChange={(v) => setEditFirewallData({ ...editFirewallData, schedule: v as ScheduleFrequency })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="daily">Diário</SelectItem>
+                    <SelectItem value="weekly">Semanal</SelectItem>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>
