@@ -97,6 +97,67 @@ export function useTenantConnection() {
     }
   };
 
+  const deleteTenant = async (tenantId: string) => {
+    try {
+      const tenant = tenants.find(t => t.id === tenantId);
+      
+      // Log before deletion (while we still have tenant_record_id)
+      if (tenant) {
+        await supabase.from('m365_audit_logs').insert({
+          tenant_record_id: null, // Set to null since tenant will be deleted
+          client_id: tenant.client.id,
+          user_id: user?.id,
+          action: 'delete',
+          action_details: { 
+            reason: 'user_initiated',
+            deleted_tenant_id: tenant.tenant_id,
+            deleted_tenant_domain: tenant.tenant_domain,
+            deleted_display_name: tenant.display_name,
+          },
+        });
+      }
+
+      // Delete related records first (cascade should handle this, but being explicit)
+      // Delete tenant permissions
+      await supabase
+        .from('m365_tenant_permissions')
+        .delete()
+        .eq('tenant_record_id', tenantId);
+
+      // Delete tenant submodules
+      await supabase
+        .from('m365_tenant_submodules')
+        .delete()
+        .eq('tenant_record_id', tenantId);
+
+      // Delete app credentials
+      await supabase
+        .from('m365_app_credentials')
+        .delete()
+        .eq('tenant_record_id', tenantId);
+
+      // Delete tokens
+      await supabase
+        .from('m365_tokens')
+        .delete()
+        .eq('tenant_record_id', tenantId);
+
+      // Finally delete the tenant record
+      const { error } = await supabase
+        .from('m365_tenants')
+        .delete()
+        .eq('id', tenantId);
+
+      if (error) throw error;
+
+      await fetchTenants();
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error deleting tenant:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   const testConnection = async (tenantId: string) => {
     // This would call an edge function to test the Graph API connection
     // For now, just update the last_validated_at timestamp
@@ -126,6 +187,7 @@ export function useTenantConnection() {
     error,
     refetch: fetchTenants,
     disconnectTenant,
+    deleteTenant,
     testConnection,
     hasConnectedTenant: tenants.some(t => t.connection_status === 'connected' || t.connection_status === 'partial'),
   };

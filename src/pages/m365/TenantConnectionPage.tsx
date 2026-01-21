@@ -24,7 +24,7 @@ export default function TenantConnectionPage() {
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
   
-  const { tenants, loading, refetch, testConnection, disconnectTenant } = useTenantConnection();
+  const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant } = useTenantConnection();
   const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
@@ -67,6 +67,23 @@ export default function TenantConnectionPage() {
       toast({
         title: 'Erro ao desconectar',
         description: result.error || 'Não foi possível desconectar o tenant.',
+        variant: 'destructive',
+      });
+    }
+    return result;
+  };
+
+  const handleDelete = async (tenantId: string) => {
+    const result = await deleteTenant(tenantId);
+    if (result.success) {
+      toast({
+        title: 'Tenant excluído',
+        description: 'O tenant e todas as suas configurações foram removidos permanentemente.',
+      });
+    } else {
+      toast({
+        title: 'Erro ao excluir',
+        description: result.error || 'Não foi possível excluir o tenant.',
         variant: 'destructive',
       });
     }
@@ -171,6 +188,7 @@ export default function TenantConnectionPage() {
                       tenant={tenant}
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
+                      onDelete={handleDelete}
                       onUpdatePermissions={handleUpdatePermissions}
                     />
                   ))}
@@ -193,6 +211,7 @@ export default function TenantConnectionPage() {
                       tenant={tenant}
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
+                      onDelete={handleDelete}
                     />
                   ))}
                 </div>
@@ -214,6 +233,7 @@ export default function TenantConnectionPage() {
                       tenant={tenant}
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
+                      onDelete={handleDelete}
                     />
                   ))}
                 </div>
