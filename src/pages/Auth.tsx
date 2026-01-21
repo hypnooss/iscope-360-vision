@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Eye, EyeOff, ArrowLeft, Mail, KeyRound, CheckCircle } from 'lucide-react';
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -29,7 +28,7 @@ const passwordSchema = z.object({
   path: ['confirmPassword'],
 });
 
-type AuthView = 'login' | 'forgot-password' | 'verify-code' | 'reset-password' | 'success';
+type AuthView = 'login' | 'forgot-password' | 'email-sent' | 'reset-password' | 'success';
 
 export default function Auth() {
   const { user, loading, signIn } = useAuth();
@@ -45,7 +44,6 @@ export default function Auth() {
 
   // Password reset state
   const [resetEmail, setResetEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -54,6 +52,17 @@ export default function Auth() {
       navigate('/dashboard');
     }
   }, [user, loading, navigate]);
+
+  // Detectar evento de recuperação de senha quando usuário clica no link do email
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setCurrentView('reset-password');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,38 +109,10 @@ export default function Auth() {
     setIsSubmitting(false);
 
     if (error) {
-      toast.error('Erro ao enviar código. Tente novamente.');
+      toast.error('Erro ao enviar email. Tente novamente.');
       console.error('Reset password error:', error);
     } else {
-      toast.success('Código enviado para seu email!');
-      setCurrentView('verify-code');
-    }
-  };
-
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (otpCode.length !== 6) {
-      toast.error('Digite o código de 6 dígitos');
-      return;
-    }
-
-    setIsSubmitting(true);
-    
-    const { error } = await supabase.auth.verifyOtp({
-      email: resetEmail,
-      token: otpCode,
-      type: 'recovery',
-    });
-    
-    setIsSubmitting(false);
-
-    if (error) {
-      toast.error('Código inválido ou expirado. Tente novamente.');
-      console.error('OTP verification error:', error);
-    } else {
-      toast.success('Código verificado!');
-      setCurrentView('reset-password');
+      setCurrentView('email-sent');
     }
   };
 
@@ -161,10 +142,13 @@ export default function Auth() {
     }
   };
 
-  const resetFlow = () => {
+  const resetFlow = async () => {
+    // Se estamos no fluxo de reset, fazer logout para limpar a sessão de recuperação
+    if (currentView === 'reset-password' || currentView === 'success') {
+      await supabase.auth.signOut();
+    }
     setCurrentView('login');
     setResetEmail('');
-    setOtpCode('');
     setNewPassword('');
     setConfirmPassword('');
   };
@@ -256,7 +240,7 @@ export default function Auth() {
           Recuperar Senha
         </CardTitle>
         <CardDescription>
-          Digite seu email para receber um código de verificação
+          Digite seu email para receber um link de recuperação
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -279,7 +263,7 @@ export default function Auth() {
                 Enviando...
               </>
             ) : (
-              'Enviar Código'
+              'Enviar Link de Recuperação'
             )}
           </Button>
         </form>
@@ -287,61 +271,30 @@ export default function Auth() {
     </Card>
   );
 
-  const renderVerifyCodeView = () => (
+  const renderEmailSentView = () => (
     <Card className="glass-card border-border/50">
-      <CardHeader>
-        <button
-          type="button"
-          onClick={() => setCurrentView('forgot-password')}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Voltar
-        </button>
-        <CardTitle className="flex items-center gap-2">
-          <KeyRound className="w-5 h-5 text-primary" />
-          Verificar Código
-        </CardTitle>
+      <CardHeader className="text-center">
+        <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <Mail className="w-6 h-6 text-primary" />
+        </div>
+        <CardTitle>Verifique seu Email</CardTitle>
         <CardDescription>
-          Digite o código de 6 dígitos enviado para <strong>{resetEmail}</strong>
+          Enviamos um link de recuperação para <strong>{resetEmail}</strong>. 
+          Clique no botão "Reset Password" no email para definir sua nova senha.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleVerifyCode} className="space-y-6">
-          <div className="flex justify-center">
-            <InputOTP
-              maxLength={6}
-              value={otpCode}
-              onChange={(value) => setOtpCode(value)}
-            >
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting || otpCode.length !== 6}>
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Verificando...
-              </>
-            ) : (
-              'Verificar Código'
-            )}
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground text-center">
+          Não recebeu o email? Verifique sua pasta de spam ou tente novamente.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" onClick={() => setCurrentView('forgot-password')}>
+            Reenviar Email
           </Button>
-          <button
-            type="button"
-            className="w-full text-sm text-muted-foreground hover:text-foreground"
-            onClick={handleSendResetCode}
-          >
-            Não recebeu? Reenviar código
-          </button>
-        </form>
+          <Button variant="ghost" onClick={resetFlow}>
+            Voltar ao Login
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -437,8 +390,8 @@ export default function Auth() {
     switch (currentView) {
       case 'forgot-password':
         return renderForgotPasswordView();
-      case 'verify-code':
-        return renderVerifyCodeView();
+      case 'email-sent':
+        return renderEmailSentView();
       case 'reset-password':
         return renderResetPasswordView();
       case 'success':
