@@ -22,6 +22,10 @@ import FirewallListPage from "./pages/firewall/FirewallListPage";
 import FirewallReportsPage from "./pages/firewall/FirewallReportsPage";
 import FirewallAnalysis from "./pages/FirewallAnalysis";
 
+// Microsoft 365 Module Pages
+import M365DashboardPage from "./pages/m365/M365DashboardPage";
+import EntraIdPage from "./pages/m365/EntraIdPage";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -48,6 +52,10 @@ const App = () => (
               <Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
               <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
               <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
+
+              {/* Microsoft 365 Module */}
+              <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
+              <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
 
               {/* Legacy routes - redirect to new structure */}
               <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />

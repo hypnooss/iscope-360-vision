@@ -217,6 +217,313 @@ export type Database = {
           },
         ]
       }
+      m365_app_credentials: {
+        Row: {
+          auth_type: string
+          azure_app_id: string
+          certificate_thumbprint: string | null
+          client_secret_encrypted: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          tenant_record_id: string
+          updated_at: string
+        }
+        Insert: {
+          auth_type?: string
+          azure_app_id: string
+          certificate_thumbprint?: string | null
+          client_secret_encrypted?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          tenant_record_id: string
+          updated_at?: string
+        }
+        Update: {
+          auth_type?: string
+          azure_app_id?: string
+          certificate_thumbprint?: string | null
+          client_secret_encrypted?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          tenant_record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_app_credentials_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_audit_logs: {
+        Row: {
+          action: string
+          action_details: Json | null
+          client_id: string | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          tenant_record_id: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          action_details?: Json | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          tenant_record_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          action_details?: Json | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          tenant_record_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_audit_logs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_audit_logs_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_required_permissions: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_required: boolean
+          permission_name: string
+          permission_type: string
+          submodule: Database["public"]["Enums"]["m365_submodule"]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_required?: boolean
+          permission_name: string
+          permission_type?: string
+          submodule: Database["public"]["Enums"]["m365_submodule"]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_required?: boolean
+          permission_name?: string
+          permission_type?: string
+          submodule?: Database["public"]["Enums"]["m365_submodule"]
+        }
+        Relationships: []
+      }
+      m365_tenant_permissions: {
+        Row: {
+          created_at: string
+          granted_at: string | null
+          granted_by: string | null
+          id: string
+          permission_name: string
+          permission_type: string
+          status: Database["public"]["Enums"]["permission_status"]
+          tenant_record_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          granted_at?: string | null
+          granted_by?: string | null
+          id?: string
+          permission_name: string
+          permission_type?: string
+          status?: Database["public"]["Enums"]["permission_status"]
+          tenant_record_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          granted_at?: string | null
+          granted_by?: string | null
+          id?: string
+          permission_name?: string
+          permission_type?: string
+          status?: Database["public"]["Enums"]["permission_status"]
+          tenant_record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tenant_permissions_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_tenant_submodules: {
+        Row: {
+          created_at: string
+          id: string
+          is_enabled: boolean
+          last_sync_at: string | null
+          submodule: Database["public"]["Enums"]["m365_submodule"]
+          sync_status: string | null
+          tenant_record_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          last_sync_at?: string | null
+          submodule: Database["public"]["Enums"]["m365_submodule"]
+          sync_status?: string | null
+          tenant_record_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          last_sync_at?: string | null
+          submodule?: Database["public"]["Enums"]["m365_submodule"]
+          sync_status?: string | null
+          tenant_record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tenant_submodules_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_tenants: {
+        Row: {
+          client_id: string
+          connection_status: Database["public"]["Enums"]["tenant_connection_status"]
+          created_at: string
+          created_by: string | null
+          display_name: string | null
+          id: string
+          last_validated_at: string | null
+          tenant_domain: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          connection_status?: Database["public"]["Enums"]["tenant_connection_status"]
+          created_at?: string
+          created_by?: string | null
+          display_name?: string | null
+          id?: string
+          last_validated_at?: string | null
+          tenant_domain?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          connection_status?: Database["public"]["Enums"]["tenant_connection_status"]
+          created_at?: string
+          created_by?: string | null
+          display_name?: string | null
+          id?: string
+          last_validated_at?: string | null
+          tenant_domain?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tenants_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_tokens: {
+        Row: {
+          access_token_encrypted: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          refresh_token_encrypted: string | null
+          scope: string | null
+          tenant_record_id: string
+          token_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          refresh_token_encrypted?: string | null
+          scope?: string | null
+          tenant_record_id: string
+          token_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          refresh_token_encrypted?: string | null
+          scope?: string | null
+          tenant_record_id?: string
+          token_type?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tokens_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modules: {
         Row: {
           code: Database["public"]["Enums"]["scope_module"]
@@ -429,13 +736,26 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "admin" | "user"
+      m365_submodule:
+        | "entra_id"
+        | "sharepoint"
+        | "exchange"
+        | "defender"
+        | "intune"
       module_permission: "view" | "edit" | "full"
+      permission_status: "granted" | "pending" | "denied" | "missing"
       schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
       scope_module:
         | "scope_firewall"
         | "scope_network"
         | "scope_cloud"
         | "scope_m365"
+      tenant_connection_status:
+        | "pending"
+        | "connected"
+        | "partial"
+        | "failed"
+        | "disconnected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -564,13 +884,28 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "admin", "user"],
+      m365_submodule: [
+        "entra_id",
+        "sharepoint",
+        "exchange",
+        "defender",
+        "intune",
+      ],
       module_permission: ["view", "edit", "full"],
+      permission_status: ["granted", "pending", "denied", "missing"],
       schedule_frequency: ["daily", "weekly", "monthly", "manual"],
       scope_module: [
         "scope_firewall",
         "scope_network",
         "scope_cloud",
         "scope_m365",
+      ],
+      tenant_connection_status: [
+        "pending",
+        "connected",
+        "partial",
+        "failed",
+        "disconnected",
       ],
     },
   },
