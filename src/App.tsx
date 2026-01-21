@@ -24,6 +24,7 @@ import FirewallAnalysis from "./pages/FirewallAnalysis";
 
 // Microsoft 365 Module Pages
 import M365DashboardPage from "./pages/m365/M365DashboardPage";
+import TenantConnectionPage from "./pages/m365/TenantConnectionPage";
 import EntraIdPage from "./pages/m365/EntraIdPage";
 
 const queryClient = new QueryClient();
@@ -55,6 +56,7 @@ const App = () => (
 
               {/* Microsoft 365 Module */}
               <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
+              <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
               <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
 
               {/* Legacy routes - redirect to new structure */}
