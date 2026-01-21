@@ -431,7 +431,11 @@ export type Database = {
       app_role: "super_admin" | "admin" | "user"
       module_permission: "view" | "edit" | "full"
       schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
-      scope_module: "scope_firewall" | "scope_network" | "scope_cloud"
+      scope_module:
+        | "scope_firewall"
+        | "scope_network"
+        | "scope_cloud"
+        | "scope_m365"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -562,7 +566,12 @@ export const Constants = {
       app_role: ["super_admin", "admin", "user"],
       module_permission: ["view", "edit", "full"],
       schedule_frequency: ["daily", "weekly", "monthly", "manual"],
-      scope_module: ["scope_firewall", "scope_network", "scope_cloud"],
+      scope_module: [
+        "scope_firewall",
+        "scope_network",
+        "scope_cloud",
+        "scope_m365",
+      ],
     },
   },
 } as const
