@@ -161,12 +161,11 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
     }
   };
 
-  const getAvailableRoles = (): { value: AppRole; label: string }[] => {
+const getAvailableRoles = (): { value: AppRole; label: string }[] => {
     if (isSuperAdmin()) {
       return [
         { value: 'user', label: 'Usuário' },
         { value: 'workspace_admin', label: 'Workspace Admin' },
-        { value: 'super_admin', label: 'Super Admin' },
       ];
     }
     return [{ value: 'user', label: 'Usuário' }];
@@ -189,7 +188,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
           Novo Usuário
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -200,7 +199,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Nome Completo</Label>
