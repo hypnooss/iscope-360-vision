@@ -392,10 +392,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground mt-2">
                     ⚠️ Lembre-se de conceder "Admin consent" para todas as permissões após adicioná-las.
                   </p>
+                </div>
 
-                  {/* Automated Validation Status */}
-                  {m365Config.lastValidatedAt && (
-                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border mt-4">
+                {/* Automated Validation Status - Separate Card */}
+                {m365Config.lastValidatedAt && (
+                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-full bg-primary/10">
                           <Bell className="w-4 h-4 text-primary" />
@@ -422,7 +423,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   )}
-                </div>
+
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveM365Config} disabled={saving}>
