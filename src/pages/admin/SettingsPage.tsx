@@ -57,16 +57,22 @@ export default function SettingsPage() {
       if (error) {
         console.error('Error checking M365 config:', error);
         setM365Config({ appId: '', clientSecret: '', isConfigured: false });
-      } else if (data?.app_id) {
+      } else if (data?.configured && data?.app_id) {
+        // Only set as configured if app_id is valid and not a placeholder
         setM365Config({
           appId: data.app_id,
-          clientSecret: '••••••••••••••••••••••••••••••••',
-          isConfigured: true,
+          clientSecret: data.has_client_secret ? '••••••••••••••••' : '',
+          isConfigured: data.has_client_secret,
         });
         setNewAppId(data.app_id);
+      } else {
+        // Not configured or invalid
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false });
+        setNewAppId('');
       }
     } catch (error) {
       console.error('Error:', error);
+      setM365Config({ appId: '', clientSecret: '', isConfigured: false });
     } finally {
       setLoading(false);
     }
