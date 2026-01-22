@@ -7,17 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, Plus, Play, Trash2, Eye, EyeOff, Loader2, Building, Edit, MoreVertical } from 'lucide-react';
+import { Server, Play, Trash2, Eye, EyeOff, Loader2, Building, Edit, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FirewallStatsCards } from '@/components/firewall/FirewallStatsCards';
+import { AddFirewallDialog } from '@/components/firewall/AddFirewallDialog';
+import { EditFirewallDialog } from '@/components/firewall/EditFirewallDialog';
 
 interface Client {
   id: string;
@@ -48,31 +48,12 @@ export default function FirewallListPage() {
   const [firewalls, setFirewalls] = useState<Firewall[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddDialog, setShowAddDialog] = useState(false);
   const [showClientDialog, setShowClientDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingFirewall, setEditingFirewall] = useState<Firewall | null>(null);
   const [deletingFirewall, setDeletingFirewall] = useState<Firewall | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [analyzing, setAnalyzing] = useState<string | null>(null);
-
-  const [newFirewall, setNewFirewall] = useState({
-    name: '',
-    description: '',
-    fortigate_url: '',
-    api_key: '',
-    client_id: '',
-    schedule: 'manual' as ScheduleFrequency,
-  });
-
-  const [editFirewallData, setEditFirewallData] = useState({
-    name: '',
-    description: '',
-    fortigate_url: '',
-    api_key: '',
-    client_id: '',
-    schedule: 'manual' as ScheduleFrequency,
-  });
 
   const [newClient, setNewClient] = useState({
     name: '',
@@ -173,46 +154,50 @@ export default function FirewallListPage() {
     }
   };
 
-  const handleAddFirewall = async () => {
-    if (!newFirewall.name.trim() || !newFirewall.fortigate_url.trim() || !newFirewall.api_key.trim() || !newFirewall.client_id) {
+  const handleAddFirewall = async (formData: {
+    name: string;
+    description: string;
+    fortigate_url: string;
+    api_key: string;
+    client_id: string;
+    schedule: ScheduleFrequency;
+  }) => {
+    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.api_key.trim() || !formData.client_id) {
       toast.error('Preencha todos os campos obrigatórios');
-      return;
+      throw new Error('Campos obrigatórios não preenchidos');
     }
 
-    try {
-      const { data: firewall, error: fwError } = await supabase
-        .from('firewalls')
+    const { data: firewall, error: fwError } = await supabase
+      .from('firewalls')
+      .insert({
+        name: formData.name.trim(),
+        description: formData.description.trim() || null,
+        fortigate_url: formData.fortigate_url.trim(),
+        api_key: formData.api_key.trim(),
+        client_id: formData.client_id,
+        created_by: user?.id,
+      })
+      .select()
+      .single();
+
+    if (fwError) {
+      toast.error('Erro ao adicionar firewall: ' + fwError.message);
+      throw fwError;
+    }
+
+    if (formData.schedule !== 'manual') {
+      await supabase
+        .from('analysis_schedules')
         .insert({
-          name: newFirewall.name.trim(),
-          description: newFirewall.description.trim() || null,
-          fortigate_url: newFirewall.fortigate_url.trim(),
-          api_key: newFirewall.api_key.trim(),
-          client_id: newFirewall.client_id,
+          firewall_id: firewall.id,
+          frequency: formData.schedule,
+          is_active: true,
           created_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (fwError) throw fwError;
-
-      if (newFirewall.schedule !== 'manual') {
-        await supabase
-          .from('analysis_schedules')
-          .insert({
-            firewall_id: firewall.id,
-            frequency: newFirewall.schedule,
-            is_active: true,
-            created_by: user?.id,
-          });
-      }
-
-      await fetchData();
-      setNewFirewall({ name: '', description: '', fortigate_url: '', api_key: '', client_id: '', schedule: 'manual' });
-      setShowAddDialog(false);
-      toast.success('Firewall adicionado com sucesso!');
-    } catch (error: any) {
-      toast.error('Erro ao adicionar firewall: ' + error.message);
+        });
     }
+
+    await fetchData();
+    toast.success('Firewall adicionado com sucesso!');
   };
 
   const handleAnalyze = async (firewall: Firewall) => {
@@ -223,7 +208,6 @@ export default function FirewallListPage() {
         body: { url: firewall.fortigate_url, apiKey: firewall.api_key },
       });
 
-      // Erro de invocação da função
       if (error) {
         toast.error('Erro ao conectar com o servidor', {
           description: 'Não foi possível executar a análise. Verifique sua conexão e tente novamente.',
@@ -232,7 +216,6 @@ export default function FirewallListPage() {
         return;
       }
       
-      // Erro estruturado retornado pela edge function
       if (data.error) {
         toast.error(data.message || 'Erro na análise', {
           description: data.suggestion || data.details || 'Verifique a configuração do firewall.',
@@ -267,7 +250,6 @@ export default function FirewallListPage() {
 
       navigate(`/scope-firewall/firewalls/${firewall.id}/analysis`, { state: { report: data } });
     } catch (error: any) {
-      // Erro inesperado (rede, etc.)
       const errorMessage = error?.message?.toLowerCase() || '';
       
       if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('failed')) {
@@ -307,84 +289,67 @@ export default function FirewallListPage() {
 
   const openEditDialog = (fw: Firewall) => {
     setEditingFirewall(fw);
-    // Get current schedule frequency
-    let currentSchedule: ScheduleFrequency = 'manual';
-    if (fw.analysis_schedules) {
-      const schedules = Array.isArray(fw.analysis_schedules) ? fw.analysis_schedules : [fw.analysis_schedules];
-      const activeSchedule = schedules.find(s => s.is_active);
-      if (activeSchedule) {
-        currentSchedule = activeSchedule.frequency as ScheduleFrequency;
-      }
-    }
-    
-    setEditFirewallData({
-      name: fw.name,
-      description: fw.description || '',
-      fortigate_url: fw.fortigate_url,
-      api_key: fw.api_key,
-      client_id: fw.client_id,
-      schedule: currentSchedule,
-    });
     setShowEditDialog(true);
   };
 
-  const handleEditFirewall = async () => {
+  const handleEditFirewall = async (formData: {
+    name: string;
+    description: string;
+    fortigate_url: string;
+    api_key: string;
+    client_id: string;
+    schedule: ScheduleFrequency;
+  }) => {
     if (!editingFirewall) return;
 
-    if (!editFirewallData.name.trim() || !editFirewallData.fortigate_url.trim() || !editFirewallData.api_key.trim() || !editFirewallData.client_id) {
+    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.api_key.trim() || !formData.client_id) {
       toast.error('Preencha todos os campos obrigatórios');
-      return;
+      throw new Error('Campos obrigatórios não preenchidos');
     }
 
-    try {
-      // Update firewall data
-      const { error } = await supabase
-        .from('firewalls')
-        .update({
-          name: editFirewallData.name.trim(),
-          description: editFirewallData.description.trim() || null,
-          fortigate_url: editFirewallData.fortigate_url.trim(),
-          api_key: editFirewallData.api_key.trim(),
-          client_id: editFirewallData.client_id,
-        })
-        .eq('id', editingFirewall.id);
+    const { error } = await supabase
+      .from('firewalls')
+      .update({
+        name: formData.name.trim(),
+        description: formData.description.trim() || null,
+        fortigate_url: formData.fortigate_url.trim(),
+        api_key: formData.api_key.trim(),
+        client_id: formData.client_id,
+      })
+      .eq('id', editingFirewall.id);
 
-      if (error) throw error;
+    if (error) {
+      toast.error('Erro ao atualizar firewall: ' + error.message);
+      throw error;
+    }
 
-      // Update schedule
-      // First, delete existing schedules for this firewall
+    await supabase
+      .from('analysis_schedules')
+      .delete()
+      .eq('firewall_id', editingFirewall.id);
+
+    if (formData.schedule !== 'manual') {
       await supabase
         .from('analysis_schedules')
-        .delete()
-        .eq('firewall_id', editingFirewall.id);
-
-      // Create new schedule if not manual
-      if (editFirewallData.schedule !== 'manual') {
-        await supabase
-          .from('analysis_schedules')
-          .insert({
-            firewall_id: editingFirewall.id,
-            frequency: editFirewallData.schedule,
-            is_active: true,
-            created_by: user?.id,
-          });
-      }
-
-      await fetchData();
-      setShowEditDialog(false);
-      setEditingFirewall(null);
-      toast.success('Firewall atualizado com sucesso!');
-    } catch (error: any) {
-      toast.error('Erro ao atualizar firewall: ' + error.message);
+        .insert({
+          firewall_id: editingFirewall.id,
+          frequency: formData.schedule,
+          is_active: true,
+          created_by: user?.id,
+        });
     }
+
+    await fetchData();
+    setEditingFirewall(null);
+    toast.success('Firewall atualizado com sucesso!');
   };
 
   const getScoreColor = (score: number | null) => {
     if (score === null) return 'bg-muted text-muted-foreground';
-    if (score >= 90) return 'bg-success/10 text-success'; // Excelente
-    if (score >= 75) return 'bg-success/10 text-success'; // Bom (verde mais claro)
-    if (score >= 60) return 'bg-warning/10 text-warning'; // Atenção
-    return 'bg-destructive/10 text-destructive'; // Risco Alto
+    if (score >= 90) return 'bg-success/10 text-success';
+    if (score >= 75) return 'bg-success/10 text-success';
+    if (score >= 60) return 'bg-warning/10 text-warning';
+    return 'bg-destructive/10 text-destructive';
   };
 
   const getScheduleLabel = (frequency: string) => {
@@ -411,96 +376,10 @@ export default function FirewallListPage() {
           </div>
           {canEdit && (
             <div className="flex gap-2">
-              <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Novo Firewall
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Adicionar Firewall</DialogTitle>
-                    <DialogDescription>Cadastre um novo FortiGate para monitoramento</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-client">Cliente *</Label>
-                      <Select
-                        value={newFirewall.client_id}
-                        onValueChange={(v) => setNewFirewall({ ...newFirewall, client_id: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione um cliente" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {clients.map((client) => (
-                            <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-name">Nome do Firewall *</Label>
-                      <Input
-                        id="fw-name"
-                        value={newFirewall.name}
-                        onChange={(e) => setNewFirewall({ ...newFirewall, name: e.target.value })}
-                        placeholder="Ex: FW-HQ-01"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-url">URL do FortiGate *</Label>
-                      <Input
-                        id="fw-url"
-                        value={newFirewall.fortigate_url}
-                        onChange={(e) => setNewFirewall({ ...newFirewall, fortigate_url: e.target.value })}
-                        placeholder="https://192.168.1.1:8443"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-api">API Key *</Label>
-                      <Input
-                        id="fw-api"
-                        type="password"
-                        value={newFirewall.api_key}
-                        onChange={(e) => setNewFirewall({ ...newFirewall, api_key: e.target.value })}
-                        placeholder="Token da REST API"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-desc">Descrição</Label>
-                      <Textarea
-                        id="fw-desc"
-                        value={newFirewall.description}
-                        onChange={(e) => setNewFirewall({ ...newFirewall, description: e.target.value })}
-                        placeholder="Descrição opcional do firewall"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fw-schedule">Frequência de Análise</Label>
-                      <Select
-                        value={newFirewall.schedule}
-                        onValueChange={(v) => setNewFirewall({ ...newFirewall, schedule: v as ScheduleFrequency })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="manual">Manual</SelectItem>
-                          <SelectItem value="daily">Diário</SelectItem>
-                          <SelectItem value="weekly">Semanal</SelectItem>
-                          <SelectItem value="monthly">Mensal</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancelar</Button>
-                    <Button onClick={handleAddFirewall}>Adicionar</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <AddFirewallDialog 
+                clients={clients} 
+                onFirewallAdded={handleAddFirewall} 
+              />
             </div>
           )}
         </div>
@@ -648,90 +527,13 @@ export default function FirewallListPage() {
         </Card>
 
         {/* Edit Firewall Dialog */}
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Editar Firewall</DialogTitle>
-              <DialogDescription>Atualize as informações do FortiGate</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-client">Cliente *</Label>
-                <Select
-                  value={editFirewallData.client_id}
-                  onValueChange={(v) => setEditFirewallData({ ...editFirewallData, client_id: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-name">Nome do Firewall *</Label>
-                <Input
-                  id="edit-fw-name"
-                  value={editFirewallData.name}
-                  onChange={(e) => setEditFirewallData({ ...editFirewallData, name: e.target.value })}
-                  placeholder="Ex: FW-HQ-01"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-url">URL do FortiGate *</Label>
-                <Input
-                  id="edit-fw-url"
-                  value={editFirewallData.fortigate_url}
-                  onChange={(e) => setEditFirewallData({ ...editFirewallData, fortigate_url: e.target.value })}
-                  placeholder="https://192.168.1.1:8443"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-api">API Key *</Label>
-                <Input
-                  id="edit-fw-api"
-                  type="password"
-                  value={editFirewallData.api_key}
-                  onChange={(e) => setEditFirewallData({ ...editFirewallData, api_key: e.target.value })}
-                  placeholder="Token da REST API"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-desc">Descrição</Label>
-                <Textarea
-                  id="edit-fw-desc"
-                  value={editFirewallData.description}
-                  onChange={(e) => setEditFirewallData({ ...editFirewallData, description: e.target.value })}
-                  placeholder="Descrição opcional do firewall"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-fw-schedule">Frequência de Análise</Label>
-                <Select
-                  value={editFirewallData.schedule}
-                  onValueChange={(v) => setEditFirewallData({ ...editFirewallData, schedule: v as ScheduleFrequency })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="daily">Diário</SelectItem>
-                    <SelectItem value="weekly">Semanal</SelectItem>
-                    <SelectItem value="monthly">Mensal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
-              <Button onClick={handleEditFirewall}>Salvar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <EditFirewallDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          firewall={editingFirewall}
+          clients={clients}
+          onSave={handleEditFirewall}
+        />
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={!!deletingFirewall} onOpenChange={() => setDeletingFirewall(null)}>
