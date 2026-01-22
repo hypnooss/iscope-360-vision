@@ -526,7 +526,7 @@ export default function UsersPage() {
             </DialogHeader>
 
             <ScrollArea className="max-h-[60vh]">
-              <div className="space-y-6 py-2 px-1 mr-3">
+              <div className="space-y-6 py-2 px-6">
               {/* Role */}
               <div className="space-y-2">
                 <Label>Role</Label>
