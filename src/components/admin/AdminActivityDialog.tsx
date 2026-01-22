@@ -107,7 +107,7 @@ export function AdminActivityDialog({
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh]">
-          <div className="py-2 px-6">
+          <div className="space-y-4 py-2 px-6">
             {loading ? (
               <div className="flex items-center justify-center h-32">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -123,46 +123,34 @@ export function AdminActivityDialog({
                 </p>
               </div>
             ) : (
-              <div className="relative">
-                {/* Timeline line */}
-                <div className="absolute left-4 top-2 bottom-2 w-px bg-border" />
-                
-                <div className="space-y-4">
-                  {activityLogs.map((log) => (
-                    <div key={log.id} className="relative pl-10">
-                      {/* Timeline dot */}
-                      <div className="absolute left-2.5 top-1.5 w-3 h-3 rounded-full border-2 border-background bg-primary" />
-                      
-                      <div className="p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2">
-                            {getActionIcon(log.action_type)}
-                            <div>
-                              <p className="text-sm">{log.action}</p>
-                              {log.target_name && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  Alvo: {log.target_name}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(log.created_at), {
-                                addSuffix: true,
-                                locale: ptBR,
-                              })}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(log.created_at), "HH:mm", { locale: ptBR })}
-                            </p>
-                          </div>
-                        </div>
+              activityLogs.map((log) => (
+                <div key={log.id} className="p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2">
+                      {getActionIcon(log.action_type)}
+                      <div>
+                        <p className="text-sm">{log.action}</p>
+                        {log.target_name && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Alvo: {log.target_name}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  ))}
+                    <div className="text-right shrink-0">
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(log.created_at), {
+                          addSuffix: true,
+                          locale: ptBR,
+                        })}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(log.created_at), "HH:mm", { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))
             )}
           </div>
         </ScrollArea>
