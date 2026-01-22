@@ -9,14 +9,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+interface PermissionStatus {
+  name: string;
+  granted: boolean;
+  type: 'required' | 'recommended';
+}
 
 interface M365Config {
   appId: string;
   clientSecret: string;
   isConfigured: boolean;
+  permissions: PermissionStatus[];
+  permissionsValidated: boolean;
 }
 
 export default function SettingsPage() {
@@ -25,13 +33,28 @@ export default function SettingsPage() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [validatingPermissions, setValidatingPermissions] = useState(false);
   const [m365Config, setM365Config] = useState<M365Config>({
     appId: '',
     clientSecret: '',
     isConfigured: false,
+    permissions: [],
+    permissionsValidated: false,
   });
   const [newAppId, setNewAppId] = useState('');
   const [newClientSecret, setNewClientSecret] = useState('');
+  const [tenantIdForValidation, setTenantIdForValidation] = useState('');
+
+  const defaultPermissions: PermissionStatus[] = [
+    { name: 'User.Read.All', granted: false, type: 'required' },
+    { name: 'Directory.Read.All', granted: false, type: 'required' },
+    { name: 'Organization.Read.All', granted: false, type: 'required' },
+    { name: 'Domain.Read.All', granted: false, type: 'required' },
+    { name: 'Group.Read.All', granted: false, type: 'recommended' },
+    { name: 'Application.Read.All', granted: false, type: 'recommended' },
+    { name: 'Policy.Read.All', granted: false, type: 'recommended' },
+    { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
+  ];
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -56,25 +79,66 @@ export default function SettingsPage() {
       
       if (error) {
         console.error('Error checking M365 config:', error);
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false });
       } else if (data?.configured && data?.app_id) {
-        // Only set as configured if app_id is valid and not a placeholder
         setM365Config({
           appId: data.app_id,
           clientSecret: data.masked_secret || '',
           isConfigured: data.has_client_secret,
+          permissions: data.permissions || defaultPermissions,
+          permissionsValidated: data.permissions_validated || false,
         });
         setNewAppId(data.app_id);
       } else {
-        // Not configured or invalid
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false });
         setNewAppId('');
       }
     } catch (error) {
       console.error('Error:', error);
-      setM365Config({ appId: '', clientSecret: '', isConfigured: false });
+      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const validatePermissions = async () => {
+    if (!tenantIdForValidation.trim()) {
+      toast.error('Informe o Tenant ID para validar as permissões');
+      return;
+    }
+
+    setValidatingPermissions(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-m365-config', {
+        body: {},
+      });
+
+      // Need to call with query params - use a different approach
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-m365-config?validate_permissions=true&tenant_id=${encodeURIComponent(tenantIdForValidation)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.permissions) {
+        setM365Config(prev => ({
+          ...prev,
+          permissions: result.permissions,
+          permissionsValidated: result.permissions_validated || true,
+        }));
+        toast.success('Permissões validadas com sucesso');
+      }
+    } catch (error) {
+      console.error('Error validating permissions:', error);
+      toast.error('Erro ao validar permissões');
+    } finally {
+      setValidatingPermissions(false);
     }
   };
 
@@ -231,51 +295,83 @@ export default function SettingsPage() {
 
                 {/* Required Permissions Section */}
                 <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                  <h4 className="font-medium text-sm">Permissões do Microsoft Graph Necessárias:</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Adicione as seguintes permissões de <strong>Application</strong> no Azure AD:
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-sm">Permissões do Microsoft Graph Necessárias:</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Adicione as seguintes permissões de <strong>Application</strong> no Azure AD:
+                      </p>
+                    </div>
+                    {m365Config.permissionsValidated && (
+                      <Badge variant="outline" className="text-green-600 border-green-600">
+                        <ShieldCheck className="w-3 h-3 mr-1" />
+                        Validado
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Validation Section */}
+                  {m365Config.isConfigured && (
+                    <div className="flex items-end gap-3 p-3 bg-background rounded-lg border">
+                      <div className="flex-1 space-y-1">
+                        <Label htmlFor="tenantValidation" className="text-xs">Tenant ID para Validação</Label>
+                        <Input
+                          id="tenantValidation"
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          value={tenantIdForValidation}
+                          onChange={(e) => setTenantIdForValidation(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={validatePermissions}
+                        disabled={validatingPermissions || !tenantIdForValidation.trim()}
+                      >
+                        {validatingPermissions ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-4 h-4 mr-2" />
+                        )}
+                        Validar Permissões
+                      </Button>
+                    </div>
+                  )}
+
                   <div className="grid gap-2 md:grid-cols-2">
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
                       <ul className="text-sm space-y-1">
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">User.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Directory.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Organization.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Domain.Read.All</code>
-                        </li>
+                        {m365Config.permissions
+                          .filter(p => p.type === 'required')
+                          .map(perm => (
+                            <li key={perm.name} className="flex items-center gap-2">
+                              <span 
+                                className={`w-2 h-2 rounded-full ${
+                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
+                                }`}
+                              />
+                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
+                            </li>
+                          ))}
                       </ul>
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Recomendadas</p>
                       <ul className="text-sm space-y-1">
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Group.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Application.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Policy.Read.All</code>
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">RoleManagement.Read.Directory</code>
-                        </li>
+                        {m365Config.permissions
+                          .filter(p => p.type === 'recommended')
+                          .map(perm => (
+                            <li key={perm.name} className="flex items-center gap-2">
+                              <span 
+                                className={`w-2 h-2 rounded-full ${
+                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
+                                }`}
+                              />
+                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
+                            </li>
+                          ))}
                       </ul>
                     </div>
                   </div>

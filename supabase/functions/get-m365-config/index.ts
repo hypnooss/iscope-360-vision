@@ -5,6 +5,126 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Permissions to check
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All',
+  'Organization.Read.All',
+  'Domain.Read.All',
+];
+
+const RECOMMENDED_PERMISSIONS = [
+  'Group.Read.All',
+  'Application.Read.All',
+  'Policy.Read.All',
+  'RoleManagement.Read.Directory',
+];
+
+interface PermissionStatus {
+  name: string;
+  granted: boolean;
+  type: 'required' | 'recommended';
+}
+
+async function testPermission(accessToken: string, permission: string): Promise<boolean> {
+  try {
+    let url = '';
+    switch (permission) {
+      case 'User.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
+        break;
+      case 'Directory.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id';
+        break;
+      case 'Organization.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/organization?$top=1&$select=id';
+        break;
+      case 'Domain.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/domains?$top=1';
+        break;
+      case 'Group.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id';
+        break;
+      case 'Application.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id';
+        break;
+      case 'Policy.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/policies/authorizationPolicy';
+        break;
+      case 'RoleManagement.Read.Directory':
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1';
+        break;
+      default:
+        return false;
+    }
+
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function validatePermissions(tenantId: string, appId: string, clientSecret: string): Promise<PermissionStatus[]> {
+  const results: PermissionStatus[] = [];
+  
+  try {
+    // Get access token using client credentials
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+    const tokenBody = new URLSearchParams({
+      client_id: appId,
+      client_secret: clientSecret,
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    });
+
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenBody.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      // Can't get token, return all as not granted
+      for (const perm of REQUIRED_PERMISSIONS) {
+        results.push({ name: perm, granted: false, type: 'required' });
+      }
+      for (const perm of RECOMMENDED_PERMISSIONS) {
+        results.push({ name: perm, granted: false, type: 'recommended' });
+      }
+      return results;
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Test each permission
+    for (const perm of REQUIRED_PERMISSIONS) {
+      const granted = await testPermission(accessToken, perm);
+      results.push({ name: perm, granted, type: 'required' });
+    }
+    
+    for (const perm of RECOMMENDED_PERMISSIONS) {
+      const granted = await testPermission(accessToken, perm);
+      results.push({ name: perm, granted, type: 'recommended' });
+    }
+
+  } catch (error) {
+    console.error('Error validating permissions:', error);
+    // Return all as not granted on error
+    for (const perm of REQUIRED_PERMISSIONS) {
+      results.push({ name: perm, granted: false, type: 'required' });
+    }
+    for (const perm of RECOMMENDED_PERMISSIONS) {
+      results.push({ name: perm, granted: false, type: 'recommended' });
+    }
+  }
+
+  return results;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -36,6 +156,11 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Check if we should validate permissions (passed as query param or body)
+    const url = new URL(req.url);
+    const shouldValidatePermissions = url.searchParams.get('validate_permissions') === 'true';
+    let tenantIdForValidation = url.searchParams.get('tenant_id');
+
     // Get the multi-tenant app ID (not the secret - that stays server-side)
     const appId = Deno.env.get('M365_MULTI_TENANT_APP_ID');
     const clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
@@ -45,12 +170,20 @@ Deno.serve(async (req) => {
     const isValidAppId = appId && guidRegex.test(appId);
     const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
 
+    // Default permissions status (all pending/yellow)
+    const defaultPermissions: PermissionStatus[] = [
+      ...REQUIRED_PERMISSIONS.map(name => ({ name, granted: false, type: 'required' as const })),
+      ...RECOMMENDED_PERMISSIONS.map(name => ({ name, granted: false, type: 'recommended' as const })),
+    ];
+
     if (!isValidAppId) {
       return new Response(
         JSON.stringify({ 
           configured: false,
           app_id: null,
           has_client_secret: false,
+          permissions: defaultPermissions,
+          permissions_validated: false,
           message: 'M365 multi-tenant app not configured or invalid App ID format.'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -65,14 +198,26 @@ Deno.serve(async (req) => {
       maskedSecret = visiblePart + '•'.repeat(Math.min(hiddenLength, 20));
     }
 
-    // Return only the app ID and masked secret
+    // Validate permissions if requested and we have valid credentials
+    let permissions = defaultPermissions;
+    let permissionsValidated = false;
+
+    if (shouldValidatePermissions && isValidAppId && hasClientSecret && tenantIdForValidation && appId && clientSecret) {
+      console.log('Validating permissions for tenant:', tenantIdForValidation);
+      permissions = await validatePermissions(tenantIdForValidation, appId, clientSecret);
+      permissionsValidated = true;
+    }
+
+    // Return config with permissions status
     return new Response(
       JSON.stringify({
-        configured: true,
+        configured: isValidAppId && hasClientSecret,
         app_id: appId,
         has_client_secret: hasClientSecret,
         masked_secret: maskedSecret,
         callback_url: `${supabaseUrl}/functions/v1/m365-oauth-callback`,
+        permissions,
+        permissions_validated: permissionsValidated,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
