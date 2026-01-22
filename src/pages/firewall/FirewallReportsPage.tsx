@@ -29,6 +29,19 @@ interface FilterOption {
   name: string;
 }
 
+interface GroupedFirewall {
+  firewall_id: string;
+  firewall_name: string;
+  client_id: string;
+  client_name: string;
+  analyses: {
+    id: string;
+    score: number;
+    created_at: string;
+    report_data: any;
+  }[];
+}
+
 export default function FirewallReportsPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
@@ -41,6 +54,9 @@ export default function FirewallReportsPage() {
   const [selectedFirewall, setSelectedFirewall] = useState<string>('all');
   const [clients, setClients] = useState<FilterOption[]>([]);
   const [firewalls, setFirewalls] = useState<FilterOption[]>([]);
+  
+  // State for selected analysis per firewall
+  const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -65,8 +81,7 @@ export default function FirewallReportsPage() {
       const { data: historyData } = await supabase
         .from('analysis_history')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
+        .order('created_at', { ascending: false });
 
       if (!historyData || historyData.length === 0) {
         setReports([]);
@@ -128,6 +143,52 @@ export default function FirewallReportsPage() {
     });
   }, [reports, selectedClient, selectedFirewall]);
 
+  // Group reports by firewall
+  const groupedFirewalls = useMemo(() => {
+    const groups = new Map<string, GroupedFirewall>();
+    
+    filteredReports.forEach(report => {
+      if (!groups.has(report.firewall_id)) {
+        groups.set(report.firewall_id, {
+          firewall_id: report.firewall_id,
+          firewall_name: report.firewall_name,
+          client_id: report.client_id,
+          client_name: report.client_name,
+          analyses: [],
+        });
+      }
+      
+      groups.get(report.firewall_id)!.analyses.push({
+        id: report.id,
+        score: report.score,
+        created_at: report.created_at,
+        report_data: report.report_data,
+      });
+    });
+    
+    // Sort analyses by date (most recent first)
+    groups.forEach(group => {
+      group.analyses.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+    
+    return Array.from(groups.values());
+  }, [filteredReports]);
+
+  // Initialize with most recent analysis for each firewall
+  useEffect(() => {
+    const initial: Record<string, string> = {};
+    groupedFirewalls.forEach(group => {
+      if (group.analyses.length > 0 && !selectedAnalyses[group.firewall_id]) {
+        initial[group.firewall_id] = group.analyses[0].id;
+      }
+    });
+    if (Object.keys(initial).length > 0) {
+      setSelectedAnalyses(prev => ({ ...prev, ...initial }));
+    }
+  }, [groupedFirewalls]);
+
   // Filter firewalls by selected client
   const availableFirewalls = useMemo(() => {
     if (selectedClient === 'all') return firewalls;
@@ -147,17 +208,28 @@ export default function FirewallReportsPage() {
     }
   }, [selectedClient, availableFirewalls, selectedFirewall]);
 
-  const handleViewReport = (report: AnalysisReport) => {
-    navigate(`/scope-firewall/firewalls/${report.firewall_id}/analysis`, { 
-      state: { report: report.report_data } 
+  const getSelectedAnalysis = (group: GroupedFirewall) => {
+    const selectedId = selectedAnalyses[group.firewall_id];
+    return group.analyses.find(a => a.id === selectedId) || group.analyses[0];
+  };
+
+  const handleViewReport = (group: GroupedFirewall) => {
+    const analysis = getSelectedAnalysis(group);
+    if (!analysis) return;
+    
+    navigate(`/scope-firewall/firewalls/${group.firewall_id}/analysis`, { 
+      state: { report: analysis.report_data } 
     });
   };
 
-  const handleDownloadPDF = (report: AnalysisReport) => {
+  const handleDownloadPDF = (group: GroupedFirewall) => {
+    const analysis = getSelectedAnalysis(group);
+    if (!analysis) return;
+    
     try {
       const reportData = {
-        ...report.report_data,
-        generatedAt: new Date(report.created_at),
+        ...analysis.report_data,
+        generatedAt: new Date(analysis.created_at),
       };
       exportReportToPDF(reportData);
       toast.success('PDF exportado com sucesso!');
@@ -168,10 +240,20 @@ export default function FirewallReportsPage() {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 90) return 'bg-success/10 text-success'; // Excelente
-    if (score >= 75) return 'bg-success/10 text-success'; // Bom (verde mais claro)
-    if (score >= 60) return 'bg-warning/10 text-warning'; // Atenção
-    return 'bg-destructive/10 text-destructive'; // Risco Alto
+    if (score >= 90) return 'bg-success/10 text-success';
+    if (score >= 75) return 'bg-success/10 text-success';
+    if (score >= 60) return 'bg-warning/10 text-warning';
+    return 'bg-destructive/10 text-destructive';
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   if (authLoading) return null;
@@ -232,7 +314,7 @@ export default function FirewallReportsPage() {
               Histórico de Análises
             </CardTitle>
             <CardDescription>
-              {filteredReports.length} análise(s) {filteredReports.length !== reports.length && `de ${reports.length}`}
+              {groupedFirewalls.length} firewall(s) com {filteredReports.length} análise(s) no total
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -240,7 +322,7 @@ export default function FirewallReportsPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            ) : filteredReports.length === 0 ? (
+            ) : groupedFirewalls.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>{reports.length === 0 ? 'Nenhum relatório disponível' : 'Nenhum relatório encontrado com os filtros selecionados'}</p>
@@ -266,53 +348,77 @@ export default function FirewallReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredReports.map((report) => (
-                    <TableRow key={report.id}>
-                      <TableCell className="font-medium">{report.firewall_name}</TableCell>
-                      <TableCell>{report.client_name}</TableCell>
-                      <TableCell>
-                        <Badge className={getScoreColor(report.score)}>
-                          <span className="flex items-center gap-1">
-                            {report.score >= 80 ? (
-                              <CheckCircle className="w-3 h-3" />
-                            ) : (
-                              <AlertTriangle className="w-3 h-3" />
-                            )}
-                            {report.score}%
-                          </span>
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(report.created_at).toLocaleDateString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleViewReport(report)}
-                            title="Visualizar"
+                  {groupedFirewalls.map((group) => {
+                    const currentAnalysis = getSelectedAnalysis(group);
+                    
+                    return (
+                      <TableRow key={group.firewall_id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {group.firewall_name}
+                            <Badge variant="secondary" className="text-xs">
+                              {group.analyses.length} análise(s)
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>{group.client_name}</TableCell>
+                        <TableCell>
+                          {currentAnalysis && (
+                            <Badge className={getScoreColor(currentAnalysis.score)}>
+                              <span className="flex items-center gap-1">
+                                {currentAnalysis.score >= 80 ? (
+                                  <CheckCircle className="w-3 h-3" />
+                                ) : (
+                                  <AlertTriangle className="w-3 h-3" />
+                                )}
+                                {currentAnalysis.score}%
+                              </span>
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select 
+                            value={selectedAnalyses[group.firewall_id] || group.analyses[0]?.id}
+                            onValueChange={(value) => setSelectedAnalyses(prev => ({
+                              ...prev,
+                              [group.firewall_id]: value
+                            }))}
                           >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDownloadPDF(report)}
-                            title="Baixar PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            <SelectTrigger className="w-[180px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {group.analyses.map((analysis) => (
+                                <SelectItem key={analysis.id} value={analysis.id}>
+                                  {formatDate(analysis.created_at)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleViewReport(group)}
+                              title="Visualizar"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDownloadPDF(group)}
+                              title="Baixar PDF"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
