@@ -417,8 +417,8 @@ export default function AdministratorsPage() {
               Crie um novo usuário com permissões administrativas
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[60vh]">
-            <div className="space-y-4 py-4 pr-4">
+          <ScrollArea className="max-h-[60vh] -mx-6 px-6">
+            <div className="space-y-4 py-4 pr-6">
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo</Label>
               <Input
@@ -486,8 +486,8 @@ export default function AdministratorsPage() {
               Altere a role de {selectedAdmin?.full_name || selectedAdmin?.email}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[60vh]">
-            <div className="space-y-4 py-4 pr-4">
+          <ScrollArea className="max-h-[60vh] -mx-6 px-6">
+            <div className="space-y-4 py-4 pr-6">
               <div className="space-y-2">
                 <Label htmlFor="editRole">Role</Label>
                 <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
