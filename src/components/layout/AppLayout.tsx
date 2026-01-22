@@ -59,7 +59,6 @@ const moduleNavConfigs: ModuleNavConfig[] = [
     icon: Shield,
     color: 'text-orange-500',
     items: [
-      { label: 'Dashboard', href: '/scope-firewall/dashboard', icon: LayoutDashboard },
       { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
       { label: 'Relatórios', href: '/scope-firewall/reports', icon: FileText },
     ],
