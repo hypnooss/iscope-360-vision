@@ -200,8 +200,8 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-4">
-        <div className="space-y-4 py-4">
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="space-y-4 py-4 pr-4">
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Nome Completo</Label>
@@ -345,7 +345,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
               )}
             </div>
           )}
-        </div>
+          </div>
         </ScrollArea>
 
         <DialogFooter>

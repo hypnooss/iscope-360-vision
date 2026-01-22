@@ -417,8 +417,8 @@ export default function AdministratorsPage() {
               Crie um novo usuário com permissões administrativas
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-4 py-4">
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-4 py-4 pr-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo</Label>
               <Input
@@ -463,7 +463,7 @@ export default function AdministratorsPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
+            </div>
           </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -486,24 +486,24 @@ export default function AdministratorsPage() {
               Altere a role de {selectedAdmin?.full_name || selectedAdmin?.email}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="editRole">Role</Label>
-              <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ADMIN_ROLES.map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-4 py-4 pr-4">
+              <div className="space-y-2">
+                <Label htmlFor="editRole">Role</Label>
+                <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ADMIN_ROLES.map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
           </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
