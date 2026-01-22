@@ -38,7 +38,7 @@ import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } 
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 
-type AppRole = "super_admin" | "admin" | "user";
+type AppRole = "super_admin" | "super_suporte" | "admin" | "user";
 type ModulePermission = "view" | "edit" | "full";
 type ScopeModule = "scope_firewall" | "scope_network" | "scope_cloud";
 
@@ -160,7 +160,12 @@ export default function UsersPage() {
         };
       });
 
-      setUsers(mergedUsers);
+      // Filter out super_admin and super_suporte users - they are managed in Administrators page
+      const filteredUsers = mergedUsers.filter(
+        (u) => u.role !== "super_admin" && u.role !== "super_suporte"
+      );
+
+      setUsers(filteredUsers);
       setClients(clientsData || []);
       setModules((modulesData || []) as Module[]);
     } catch (error: any) {
