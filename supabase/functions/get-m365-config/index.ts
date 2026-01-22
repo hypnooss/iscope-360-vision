@@ -26,6 +26,15 @@ interface PermissionStatus {
   type: 'required' | 'recommended';
 }
 
+// Simple decryption for the client secret
+const decryptSecret = (encrypted: string): string => {
+  try {
+    return atob(encrypted);
+  } catch {
+    return '';
+  }
+};
+
 async function testPermission(accessToken: string, permission: string): Promise<boolean> {
   try {
     let url = '';
@@ -156,25 +165,36 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if we should validate permissions (passed as query param or body)
+    // Check if we should validate permissions (passed as query param)
     const url = new URL(req.url);
     const shouldValidatePermissions = url.searchParams.get('validate_permissions') === 'true';
-    let tenantIdForValidation = url.searchParams.get('tenant_id');
-
-    // Get the multi-tenant app ID (not the secret - that stays server-side)
-    const appId = Deno.env.get('M365_MULTI_TENANT_APP_ID');
-    const clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
-
-    // Validate if app_id is a proper GUID format
-    const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isValidAppId = appId && guidRegex.test(appId);
-    const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
+    const tenantIdForValidation = url.searchParams.get('tenant_id');
 
     // Default permissions status (all pending/yellow)
     const defaultPermissions: PermissionStatus[] = [
       ...REQUIRED_PERMISSIONS.map(name => ({ name, granted: false, type: 'required' as const })),
       ...RECOMMENDED_PERMISSIONS.map(name => ({ name, granted: false, type: 'recommended' as const })),
     ];
+
+    // Get config from database
+    const { data: configData, error: configError } = await supabase
+      .from('m365_global_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    if (configError) {
+      console.error('Error fetching config from database:', configError);
+    }
+
+    // Use database config if available, fallback to env vars for backwards compatibility
+    let appId = configData?.app_id || Deno.env.get('M365_MULTI_TENANT_APP_ID');
+    let clientSecret = configData ? decryptSecret(configData.client_secret_encrypted) : Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
+
+    // Validate if app_id is a proper GUID format
+    const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidAppId = appId && guidRegex.test(appId);
+    const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
 
     if (!isValidAppId) {
       return new Response(
@@ -218,6 +238,7 @@ Deno.serve(async (req) => {
         callback_url: `${supabaseUrl}/functions/v1/m365-oauth-callback`,
         permissions,
         permissions_validated: permissionsValidated,
+        source: configData ? 'database' : 'env_vars',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

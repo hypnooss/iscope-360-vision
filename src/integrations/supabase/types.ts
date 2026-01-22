@@ -360,6 +360,36 @@ export type Database = {
           },
         ]
       }
+      m365_global_config: {
+        Row: {
+          app_id: string
+          client_secret_encrypted: string
+          created_at: string
+          created_by: string | null
+          id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          app_id: string
+          client_secret_encrypted: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          app_id?: string
+          client_secret_encrypted?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       m365_required_permissions: {
         Row: {
           created_at: string

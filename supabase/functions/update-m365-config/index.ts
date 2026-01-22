@@ -70,30 +70,97 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Note: In a production environment, you would update the secrets through 
-    // Supabase's secret management. For this implementation, we'll store the 
-    // configuration in a secure way.
-    
-    // Log the configuration update attempt (for audit purposes)
+    // Check if config already exists
+    const { data: existingConfig, error: fetchError } = await supabase
+      .from('m365_global_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Error fetching existing config:', fetchError);
+      throw fetchError;
+    }
+
+    // Simple encryption for the client secret (in production, use proper encryption)
+    // For now, we'll use base64 encoding as a basic obfuscation
+    const encryptSecret = (secret: string): string => {
+      return btoa(secret);
+    };
+
+    let result;
+    if (existingConfig) {
+      // Update existing config
+      const updateData: Record<string, unknown> = {
+        app_id,
+        updated_by: user.id,
+      };
+      
+      // Only update client_secret if provided
+      if (client_secret) {
+        updateData.client_secret_encrypted = encryptSecret(client_secret);
+      }
+
+      const { data, error } = await supabase
+        .from('m365_global_config')
+        .update(updateData)
+        .eq('id', existingConfig.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating config:', error);
+        throw error;
+      }
+      result = data;
+    } else {
+      // Create new config - require client_secret for initial setup
+      if (!client_secret) {
+        return new Response(
+          JSON.stringify({ error: 'client_secret is required for initial configuration' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data, error } = await supabase
+        .from('m365_global_config')
+        .insert({
+          app_id,
+          client_secret_encrypted: encryptSecret(client_secret),
+          created_by: user.id,
+          updated_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating config:', error);
+        throw error;
+      }
+      result = data;
+    }
+
+    // Log the configuration update (for audit purposes)
     await supabase.from('admin_activity_logs').insert({
       admin_id: user.id,
-      action: 'update_m365_config',
+      action: existingConfig ? 'update_m365_config' : 'create_m365_config',
       action_type: 'configuration',
       target_type: 'system_config',
       target_name: 'M365 Multi-Tenant Configuration',
       details: {
         app_id_updated: true,
         client_secret_updated: !!client_secret,
+        config_id: result.id,
       },
     });
 
-    // Return success - in production, the actual secret update would be handled
-    // through the Lovable/Supabase secrets management
+    console.log('M365 config saved successfully:', { configId: result.id, userId: user.id });
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Configuration update logged. Please update the secrets through the Lovable dashboard.',
-        note: 'To apply changes, update M365_MULTI_TENANT_APP_ID and M365_MULTI_TENANT_CLIENT_SECRET in your project secrets.'
+        message: 'Configuration saved successfully.',
+        config_id: result.id,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
