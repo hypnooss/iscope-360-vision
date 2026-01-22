@@ -2104,8 +2104,16 @@ function generateRecommendations(
   };
 }
 
-// Teste de conectividade
-async function testFortiGateConnection(config: FortiGateConfig): Promise<{ success: boolean; error?: string }> {
+// Tipos de erro estruturados para melhor feedback
+interface FortiGateConnectionError {
+  code: 'CONNECTION_REFUSED' | 'TIMEOUT' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'SSL_ERROR' | 'INVALID_URL' | 'INVALID_RESPONSE' | 'UNKNOWN';
+  message: string;
+  details: string;
+  suggestion: string;
+}
+
+// Teste de conectividade com erros estruturados
+async function testFortiGateConnection(config: FortiGateConfig): Promise<{ success: boolean; error?: FortiGateConnectionError }> {
   try {
     const url = `${config.url}/api/v2/monitor/system/status`;
     console.log(`Testing connection to: ${url}`);
@@ -2120,32 +2128,146 @@ async function testFortiGateConnection(config: FortiGateConfig): Promise<{ succe
 
     if (!response.ok) {
       const text = await response.text();
-      if (response.status === 401 || response.status === 403) {
-        return { success: false, error: "API Key inválida ou sem permissões" };
+      
+      if (response.status === 401) {
+        return { 
+          success: false, 
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'API Key inválida ou expirada',
+            details: 'O FortiGate rejeitou a autenticação com a API Key fornecida.',
+            suggestion: 'Verifique se a API Key está correta, não expirou e possui permissões de leitura (read-only ou superior).'
+          }
+        };
       }
+      
+      if (response.status === 403) {
+        return { 
+          success: false, 
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Acesso negado pelo FortiGate',
+            details: 'A API Key não possui permissões suficientes para acessar este recurso.',
+            suggestion: 'Verifique se a API Key possui perfil de administrador com acesso de leitura à API REST.'
+          }
+        };
+      }
+      
       if (response.status === 404) {
-        return { success: false, error: "Endpoint FortiGate não encontrado" };
+        return { 
+          success: false, 
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Endpoint da API não encontrado',
+            details: `O FortiGate não reconheceu o endpoint da API (HTTP 404).`,
+            suggestion: 'Verifique se a URL está correta e inclui a porta correta (ex: https://192.168.1.1:443). O firmware pode ser muito antigo para suportar a API REST v2.'
+          }
+        };
       }
-      return { success: false, error: `Erro ${response.status}: ${text.substring(0, 100)}` };
+      
+      return { 
+        success: false, 
+        error: {
+          code: 'UNKNOWN',
+          message: `Erro HTTP ${response.status}`,
+          details: text.substring(0, 200) || 'Resposta vazia do servidor',
+          suggestion: 'Verifique os logs do FortiGate para mais detalhes sobre o erro.'
+        }
+      };
     }
 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
-      return { success: false, error: "Resposta inválida. O endereço não parece ser uma API FortiGate." };
+      return { 
+        success: false, 
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'Resposta inválida do servidor',
+          details: 'O servidor não retornou JSON. Pode não ser uma API FortiGate.',
+          suggestion: 'Verifique se a URL aponta para a interface de gerenciamento do FortiGate e não para outro serviço web.'
+        }
+      };
     }
 
     const data = await response.json();
     if (!data.results && !data.version) {
-      return { success: false, error: "Resposta não reconhecida como FortiGate" };
+      return { 
+        success: false, 
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'Resposta não reconhecida como FortiGate',
+          details: 'A resposta JSON não contém os campos esperados de um FortiGate.',
+          suggestion: 'Confirme que a URL está correta e aponta para um FortiGate com firmware 5.6 ou superior.'
+        }
+      };
     }
 
     return { success: true };
   } catch (error) {
     console.error("Connection test error:", error);
-    if (error instanceof TypeError && error.message.includes("fetch")) {
-      return { success: false, error: "Não foi possível conectar. Verifique se a URL está acessível." };
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Erro de certificado SSL
+    if (errorMessage.includes('certificate') || errorMessage.includes('SSL') || errorMessage.includes('TLS') || errorMessage.includes('UnknownIssuer')) {
+      return { 
+        success: false, 
+        error: {
+          code: 'SSL_ERROR',
+          message: 'Erro de certificado SSL',
+          details: 'Não foi possível validar o certificado SSL do FortiGate.',
+          suggestion: 'Isso geralmente ocorre com certificados auto-assinados. Verifique se a URL está correta e se o FortiGate está acessível.'
+        }
+      };
     }
-    return { success: false, error: error instanceof Error ? error.message : "Erro desconhecido" };
+    
+    // Erro de DNS/conexão recusada
+    if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) {
+      return { 
+        success: false, 
+        error: {
+          code: 'CONNECTION_REFUSED',
+          message: 'Não foi possível conectar ao FortiGate',
+          details: 'A conexão foi recusada ou o host não foi encontrado.',
+          suggestion: 'Verifique se: 1) O endereço IP/hostname está correto, 2) A porta está correta (geralmente 443), 3) O FortiGate está ligado e acessível pela rede, 4) Não há firewall bloqueando a conexão.'
+        }
+      };
+    }
+    
+    // Timeout
+    if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+      return { 
+        success: false, 
+        error: {
+          code: 'TIMEOUT',
+          message: 'Tempo limite de conexão excedido',
+          details: 'O FortiGate não respondeu dentro do tempo esperado.',
+          suggestion: 'O FortiGate pode estar offline, sobrecarregado ou inacessível pela rede. Verifique a conectividade e tente novamente.'
+        }
+      };
+    }
+    
+    // URL inválida
+    if (errorMessage.includes('Invalid URL') || errorMessage.includes('URL')) {
+      return { 
+        success: false, 
+        error: {
+          code: 'INVALID_URL',
+          message: 'URL inválida',
+          details: 'O formato da URL fornecida não é válido.',
+          suggestion: 'Use o formato: https://IP_OU_HOSTNAME:PORTA (ex: https://192.168.1.1:443 ou https://firewall.empresa.com:8443)'
+        }
+      };
+    }
+    
+    return { 
+      success: false, 
+      error: {
+        code: 'UNKNOWN',
+        message: 'Erro inesperado na conexão',
+        details: errorMessage,
+        suggestion: 'Verifique a URL e API Key e tente novamente. Se o problema persistir, verifique os logs do FortiGate.'
+      }
+    };
   }
 }
 
@@ -2196,7 +2318,14 @@ serve(async (req) => {
     // Testar conectividade
     const connectionTest = await testFortiGateConnection(config);
     if (!connectionTest.success) {
-      return new Response(JSON.stringify({ error: "Falha na conexão com FortiGate", details: connectionTest.error }), {
+      const errorResponse = {
+        error: true,
+        code: connectionTest.error?.code || 'UNKNOWN',
+        message: connectionTest.error?.message || 'Falha na conexão com FortiGate',
+        details: connectionTest.error?.details || 'Erro desconhecido',
+        suggestion: connectionTest.error?.suggestion || 'Verifique a URL e a API Key fornecidas',
+      };
+      return new Response(JSON.stringify(errorResponse), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -2390,10 +2519,34 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("Error in fortigate-compliance function:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Categorizar erro
+    let errorCode = 'UNKNOWN';
+    let message = 'Erro durante a análise de compliance';
+    let suggestion = 'Tente novamente. Se o problema persistir, verifique a conectividade com o FortiGate.';
+    
+    if (errorMessage.includes('401') || errorMessage.includes('403')) {
+      errorCode = 'UNAUTHORIZED';
+      message = 'Erro de autenticação durante a análise';
+      suggestion = 'A API Key pode ter expirado ou perdido permissões durante a análise.';
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+      errorCode = 'TIMEOUT';
+      message = 'Tempo limite excedido durante a análise';
+      suggestion = 'O FortiGate demorou muito para responder. Pode estar sobrecarregado ou com problemas de rede.';
+    } else if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+      errorCode = 'CONNECTION_REFUSED';
+      message = 'Conexão perdida durante a análise';
+      suggestion = 'A conexão com o FortiGate foi interrompida. Verifique a estabilidade da rede.';
+    }
+    
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Erro ao conectar com FortiGate",
-        details: "Verifique a URL e a API Key fornecidas",
+        error: true,
+        code: errorCode,
+        message,
+        details: errorMessage,
+        suggestion,
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

@@ -223,8 +223,29 @@ export default function FirewallListPage() {
         body: { url: firewall.fortigate_url, apiKey: firewall.api_key },
       });
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.details || data.error);
+      // Erro de invocação da função
+      if (error) {
+        toast.error('Erro ao conectar com o servidor', {
+          description: 'Não foi possível executar a análise. Verifique sua conexão e tente novamente.',
+          duration: 8000,
+        });
+        return;
+      }
+      
+      // Erro estruturado retornado pela edge function
+      if (data.error) {
+        toast.error(data.message || 'Erro na análise', {
+          description: data.suggestion || data.details || 'Verifique a configuração do firewall.',
+          duration: 10000,
+        });
+        console.error('Firewall analysis error:', {
+          code: data.code,
+          message: data.message,
+          details: data.details,
+          suggestion: data.suggestion,
+        });
+        return;
+      }
 
       const score = data.overallScore ?? data.score ?? 0;
       
@@ -246,7 +267,26 @@ export default function FirewallListPage() {
 
       navigate(`/scope-firewall/firewalls/${firewall.id}/analysis`, { state: { report: data } });
     } catch (error: any) {
-      toast.error('Erro na análise: ' + error.message);
+      // Erro inesperado (rede, etc.)
+      const errorMessage = error?.message?.toLowerCase() || '';
+      
+      if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('failed')) {
+        toast.error('Erro de conexão', {
+          description: 'Não foi possível conectar ao servidor. Verifique sua conexão de internet.',
+          duration: 8000,
+        });
+      } else if (errorMessage.includes('timeout')) {
+        toast.error('Tempo limite excedido', {
+          description: 'O servidor demorou muito para responder. Tente novamente.',
+          duration: 8000,
+        });
+      } else {
+        toast.error('Erro inesperado', {
+          description: error.message || 'Ocorreu um erro durante a análise. Tente novamente.',
+          duration: 8000,
+        });
+      }
+      console.error('Firewall analysis exception:', error);
     } finally {
       setAnalyzing(null);
     }
