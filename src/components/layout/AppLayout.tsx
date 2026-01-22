@@ -272,10 +272,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </Link>
       )}
 
-      {/* Divider before Clientes */}
+      {/* Divider before Workspaces */}
       {role === 'super_admin' && sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
 
-      {/* Clientes - Super Admin only */}
+      {/* Workspaces - Super Admin only */}
       {role === 'super_admin' && (
         <Link
           to="/clients"
@@ -287,10 +287,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               : 'text-warning hover:bg-warning/10',
             !sidebarOpen && 'justify-center'
           )}
-          title={!sidebarOpen ? 'Clientes' : undefined}
+          title={!sidebarOpen ? 'Workspaces' : undefined}
         >
           <Building className="w-5 h-5 flex-shrink-0 text-warning" />
-          {sidebarOpen && 'Clientes'}
+          {sidebarOpen && 'Workspaces'}
         </Link>
       )}
     </>
