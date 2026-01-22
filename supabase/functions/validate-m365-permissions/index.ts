@@ -11,18 +11,19 @@ interface PermissionStatus {
   type: 'required' | 'recommended';
 }
 
+// Permissions to check - MUST MATCH get-m365-config function
 const REQUIRED_PERMISSIONS = [
   'User.Read.All',
   'Directory.Read.All',
-  'DeviceManagementConfiguration.Read.All',
-  'SecurityEvents.Read.All',
+  'Organization.Read.All',
+  'Domain.Read.All',
 ];
 
 const RECOMMENDED_PERMISSIONS = [
-  'AuditLog.Read.All',
+  'Group.Read.All',
+  'Application.Read.All',
   'Policy.Read.All',
   'RoleManagement.Read.Directory',
-  'Organization.Read.All',
 ];
 
 function decryptSecret(encrypted: string): string {
@@ -42,25 +43,25 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
         break;
       case 'Directory.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/directoryRoles';
+        break;
+      case 'Organization.Read.All':
         url = 'https://graph.microsoft.com/v1.0/organization?$select=id';
         break;
-      case 'DeviceManagementConfiguration.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id';
+      case 'Domain.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id';
         break;
-      case 'SecurityEvents.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id';
+      case 'Group.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id';
         break;
-      case 'AuditLog.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1&$select=id';
+      case 'Application.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id';
         break;
       case 'Policy.Read.All':
         url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
-        break;
-      case 'Organization.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/organization?$select=id,displayName';
         break;
       default:
         return false;
@@ -69,9 +70,17 @@ async function testPermission(accessToken: string, permission: string): Promise<
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
       },
     });
+
+    // Always consume response body to prevent resource leaks
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`Permission ${permission} test failed (${response.status}): ${errorText.substring(0, 200)}`);
+    } else {
+      await response.text(); // Consume body
+      console.log(`Permission ${permission} test succeeded`);
+    }
 
     return response.ok;
   } catch (error) {
