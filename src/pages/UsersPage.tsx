@@ -63,9 +63,9 @@ interface Module {
 const MODULES = ["dashboard", "firewall", "reports"] as const;
 
 const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
-  scope_firewall: "Scope Firewall",
-  scope_network: "Scope Network",
-  scope_cloud: "Scope Cloud",
+  scope_firewall: "Firewall",
+  scope_network: "Network",
+  scope_cloud: "Cloud",
 };
 
 export default function UsersPage() {
@@ -582,7 +582,7 @@ export default function UsersPage() {
                 <Label>Permissões por Área</Label>
                 {MODULES.map((mod) => (
                   <div key={mod} className="flex items-center justify-between">
-                    <span className="text-sm capitalize">{mod === "firewall" ? "Scope Firewall" : mod}</span>
+                    <span className="text-sm capitalize">{mod === "firewall" ? "Firewall" : mod}</span>
                     <Select
                       value={editPermissions[mod] || "view"}
                       onValueChange={(v) => setEditPermissions({ ...editPermissions, [mod]: v as ModulePermission })}

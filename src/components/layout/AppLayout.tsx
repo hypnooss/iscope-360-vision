@@ -55,7 +55,7 @@ interface ModuleNavConfig {
 const moduleNavConfigs: ModuleNavConfig[] = [
   {
     code: 'scope_firewall',
-    name: 'Scope Firewall',
+    name: 'Firewall',
     icon: Shield,
     color: 'text-orange-500',
     items: [
@@ -77,7 +77,7 @@ const moduleNavConfigs: ModuleNavConfig[] = [
   },
   {
     code: 'scope_network',
-    name: 'Scope Network',
+    name: 'Network',
     icon: Network,
     color: 'text-cyan-500',
     items: [
@@ -86,7 +86,7 @@ const moduleNavConfigs: ModuleNavConfig[] = [
   },
   {
     code: 'scope_cloud',
-    name: 'Scope Cloud',
+    name: 'Cloud',
     icon: Cloud,
     color: 'text-purple-500',
     items: [

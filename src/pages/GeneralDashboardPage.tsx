@@ -83,7 +83,7 @@ export default function GeneralDashboardPage() {
               {/* Firewalls Monitored */}
               <Card className="glass-card border-l-4 border-l-orange-500">
                 <CardHeader className="pb-2">
-                  <CardDescription>Scope Firewall</CardDescription>
+                  <CardDescription>Firewall</CardDescription>
                   <CardTitle className="text-3xl flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-orange-500/10">
                       <Shield className="w-6 h-6 text-orange-500" />
@@ -111,7 +111,7 @@ export default function GeneralDashboardPage() {
               {/* Networks (Placeholder) */}
               <Card className="glass-card border-l-4 border-l-blue-500 opacity-60">
                 <CardHeader className="pb-2">
-                  <CardDescription>Scope Network</CardDescription>
+                  <CardDescription>Network</CardDescription>
                   <CardTitle className="text-3xl flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-500/10">
                       <Network className="w-6 h-6 text-blue-500" />
@@ -129,7 +129,7 @@ export default function GeneralDashboardPage() {
               {/* Cloud (Placeholder) */}
               <Card className="glass-card border-l-4 border-l-purple-500 opacity-60">
                 <CardHeader className="pb-2">
-                  <CardDescription>Scope Cloud</CardDescription>
+                  <CardDescription>Cloud</CardDescription>
                   <CardTitle className="text-3xl flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-purple-500/10">
                       <Cloud className="w-6 h-6 text-purple-500" />
