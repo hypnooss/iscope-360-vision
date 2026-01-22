@@ -15,6 +15,7 @@ import UsersPage from "./pages/UsersPage";
 import AgentsPage from "./pages/AgentsPage";
 import ClientsPage from "./pages/ClientsPage";
 import AdministratorsPage from "./pages/AdministratorsPage";
+import SettingsPage from "./pages/admin/SettingsPage";
 import NotFound from "./pages/NotFound";
 
 // Firewall Module Pages
@@ -71,6 +72,7 @@ const App = () => (
               <Route path="/workspaces" element={<ClientsPage />} />
               <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
               <Route path="/administrators" element={<AdministratorsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
 
               {/* Catch-all */}
               <Route path="*" element={<NotFound />} />
