@@ -56,7 +56,7 @@ const inviteSchema = z.object({
 });
 
 export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: InviteUserDialogProps) {
-  const { isSuperAdmin, isAdmin } = useAuth();
+  const { user, isSuperAdmin, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [availableModules, setAvailableModules] = useState<Module[]>([]);
@@ -141,6 +141,17 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      // Log activity
+      await supabase.from("admin_activity_logs").insert({
+        admin_id: user?.id,
+        action: `Criou o usuário ${fullName} (${email})`,
+        action_type: "user_management",
+        target_type: "user",
+        target_id: data?.userId || null,
+        target_name: fullName,
+        details: { email, role },
+      });
 
       toast.success('Usuário criado com sucesso!');
       setOpen(false);

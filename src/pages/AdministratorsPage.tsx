@@ -185,6 +185,17 @@ export default function AdministratorsPage() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      // Log activity
+      await supabase.from("admin_activity_logs").insert({
+        admin_id: user?.id,
+        action: `Criou o administrador ${formFullName} (${formEmail})`,
+        action_type: "admin_management",
+        target_type: "admin",
+        target_id: data?.userId || null,
+        target_name: formFullName,
+        details: { email: formEmail, role: formRole },
+      });
+
       toast({
         title: "Sucesso",
         description: "Administrador criado com sucesso.",
@@ -262,6 +273,17 @@ export default function AdministratorsPage() {
         .eq("user_id", selectedAdmin.id);
 
       if (error) throw error;
+
+      // Log activity
+      await supabase.from("admin_activity_logs").insert({
+        admin_id: user?.id,
+        action: `Removeu as permissões administrativas de ${selectedAdmin.full_name || selectedAdmin.email}`,
+        action_type: "admin_management",
+        target_type: "admin",
+        target_id: selectedAdmin.id,
+        target_name: selectedAdmin.full_name || selectedAdmin.email,
+        details: { old_role: selectedAdmin.role, new_role: "user" },
+      });
 
       toast({
         title: "Sucesso",

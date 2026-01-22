@@ -226,6 +226,17 @@ export default function UsersPage() {
           .insert(editModuleIds.map((moduleId) => ({ user_id: editingUser.id, module_id: moduleId })));
       }
 
+      // Log activity
+      await supabase.from("admin_activity_logs").insert({
+        admin_id: user?.id,
+        action: `Editou as permissões do usuário ${editingUser.full_name || editingUser.email}`,
+        action_type: "user_management",
+        target_type: "user",
+        target_id: editingUser.id,
+        target_name: editingUser.full_name || editingUser.email,
+        details: { role: editRole },
+      });
+
       toast.success("Usuário atualizado com sucesso!");
       setEditingUser(null);
       fetchData();
@@ -247,6 +258,17 @@ export default function UsersPage() {
       await supabase.from("user_clients").delete().eq("user_id", deletingUser.id);
       await supabase.from("user_roles").delete().eq("user_id", deletingUser.id);
       await supabase.from("profiles").delete().eq("id", deletingUser.id);
+
+      // Log activity
+      await supabase.from("admin_activity_logs").insert({
+        admin_id: user?.id,
+        action: `Excluiu o usuário ${deletingUser.full_name || deletingUser.email}`,
+        action_type: "user_management",
+        target_type: "user",
+        target_id: deletingUser.id,
+        target_name: deletingUser.full_name || deletingUser.email,
+        details: { email: deletingUser.email },
+      });
 
       toast.success("Usuário excluído com sucesso!");
       setDeletingUser(null);
