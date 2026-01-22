@@ -525,8 +525,8 @@ export default function UsersPage() {
               <DialogDescription>{editingUser?.full_name || editingUser?.email}</DialogDescription>
             </DialogHeader>
 
-            <ScrollArea className="max-h-[60vh]">
-              <div className="space-y-6 py-4 pr-4">
+            <ScrollArea className="max-h-[60vh] -mx-6 px-6">
+              <div className="space-y-6 py-4 pr-6">
               {/* Role */}
               <div className="space-y-2">
                 <Label>Role</Label>
