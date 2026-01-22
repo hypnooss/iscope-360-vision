@@ -11,9 +11,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, Play, Trash2, Eye, EyeOff, Loader2, Building, Edit, MoreVertical } from 'lucide-react';
+import { Server, Play, Trash2, Loader2, Building, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FirewallStatsCards } from '@/components/firewall/FirewallStatsCards';
 import { AddFirewallDialog } from '@/components/firewall/AddFirewallDialog';
@@ -52,7 +52,7 @@ export default function FirewallListPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingFirewall, setEditingFirewall] = useState<Firewall | null>(null);
   const [deletingFirewall, setDeletingFirewall] = useState<Firewall | null>(null);
-  const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
+  
   const [analyzing, setAnalyzing] = useState<string | null>(null);
 
   const [newClient, setNewClient] = useState({
@@ -476,46 +476,28 @@ export default function FirewallListPage() {
                                 <Play className="w-4 h-4" />
                               )}
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setShowApiKey({ ...showApiKey, [fw.id]: !showApiKey[fw.id] })}
-                              title={showApiKey[fw.id] ? 'Ocultar API Key' : 'Mostrar API Key'}
-                            >
-                              {showApiKey[fw.id] ? (
-                                <EyeOff className="w-4 h-4" />
-                              ) : (
-                                <Eye className="w-4 h-4" />
-                              )}
-                            </Button>
                             {canEdit && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <MoreVertical className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openEditDialog(fw)}>
-                                    <Edit className="w-4 h-4 mr-2" />
-                                    Editar
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem 
-                                    onClick={() => setDeletingFirewall(fw)}
-                                    className="text-destructive focus:text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Excluir
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditDialog(fw)}
+                                  title="Editar"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeletingFirewall(fw)}
+                                  title="Excluir"
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </>
                             )}
                           </div>
-                          {showApiKey[fw.id] && (
-                            <p className="text-xs font-mono mt-1 text-muted-foreground">
-                              {fw.api_key.slice(0, 8)}...
-                            </p>
-                          )}
                         </TableCell>
                       </TableRow>
                     );
