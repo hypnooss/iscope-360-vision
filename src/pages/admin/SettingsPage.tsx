@@ -61,7 +61,7 @@ export default function SettingsPage() {
         // Only set as configured if app_id is valid and not a placeholder
         setM365Config({
           appId: data.app_id,
-          clientSecret: data.has_client_secret ? '••••••••••••••••' : '',
+          clientSecret: data.masked_secret || '',
           isConfigured: data.has_client_secret,
         });
         setNewAppId(data.app_id);
@@ -187,6 +187,11 @@ export default function SettingsPage() {
                       value={newAppId}
                       onChange={(e) => setNewAppId(e.target.value)}
                     />
+                    {m365Config.isConfigured && m365Config.appId && (
+                      <p className="text-xs text-green-600 font-mono">
+                        Configurado: {m365Config.appId}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       O ID do aplicativo registrado no Azure AD
                     </p>
@@ -195,10 +200,15 @@ export default function SettingsPage() {
                     <Label htmlFor="clientSecret">Client Secret</Label>
                     <PasswordInput
                       id="clientSecret"
-                      placeholder={m365Config.isConfigured ? '••••••••••••••••' : 'Digite o Client Secret'}
+                      placeholder={m365Config.isConfigured ? 'Deixe em branco para manter' : 'Digite o Client Secret'}
                       value={newClientSecret}
                       onChange={(e) => setNewClientSecret(e.target.value)}
                     />
+                    {m365Config.isConfigured && m365Config.clientSecret && (
+                      <p className="text-xs text-green-600 font-mono">
+                        Configurado: {m365Config.clientSecret}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {m365Config.isConfigured 
                         ? 'Deixe em branco para manter o valor atual' 
@@ -217,6 +227,61 @@ export default function SettingsPage() {
                     <li>Em "Certificates & secrets", crie um novo Client Secret e cole acima</li>
                     <li>Em "API permissions", adicione as permissões do Microsoft Graph necessárias</li>
                   </ol>
+                </div>
+
+                {/* Required Permissions Section */}
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <h4 className="font-medium text-sm">Permissões do Microsoft Graph Necessárias:</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Adicione as seguintes permissões de <strong>Application</strong> no Azure AD:
+                  </p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
+                      <ul className="text-sm space-y-1">
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">User.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Directory.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Organization.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Domain.Read.All</code>
+                        </li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Recomendadas</p>
+                      <ul className="text-sm space-y-1">
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Group.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Application.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">Policy.Read.All</code>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                          <code className="text-xs bg-background px-1.5 py-0.5 rounded">RoleManagement.Read.Directory</code>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ⚠️ Lembre-se de conceder "Admin consent" para todas as permissões após adicioná-las.
+                  </p>
                 </div>
 
                 <div className="flex justify-end">

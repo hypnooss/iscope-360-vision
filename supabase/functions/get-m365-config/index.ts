@@ -57,13 +57,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Return only the app ID (public information needed for consent URL)
-    // Never return the client secret value, only whether it's configured
+    // Mask the client secret - show only first 6 characters
+    let maskedSecret = '';
+    if (hasClientSecret && clientSecret) {
+      const visiblePart = clientSecret.substring(0, 6);
+      const hiddenLength = clientSecret.length - 6;
+      maskedSecret = visiblePart + '•'.repeat(Math.min(hiddenLength, 20));
+    }
+
+    // Return only the app ID and masked secret
     return new Response(
       JSON.stringify({
         configured: true,
         app_id: appId,
         has_client_secret: hasClientSecret,
+        masked_secret: maskedSecret,
         callback_url: `${supabaseUrl}/functions/v1/m365-oauth-callback`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
