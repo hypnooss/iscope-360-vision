@@ -14,6 +14,7 @@ import GeneralDashboardPage from "./pages/GeneralDashboardPage";
 import UsersPage from "./pages/UsersPage";
 import AgentsPage from "./pages/AgentsPage";
 import ClientsPage from "./pages/ClientsPage";
+import AdministratorsPage from "./pages/AdministratorsPage";
 import NotFound from "./pages/NotFound";
 
 // Firewall Module Pages
@@ -68,6 +69,7 @@ const App = () => (
               <Route path="/users" element={<UsersPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/administrators" element={<AdministratorsPage />} />
 
               {/* Catch-all */}
               <Route path="*" element={<NotFound />} />

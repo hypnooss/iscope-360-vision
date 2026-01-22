@@ -34,6 +34,7 @@ import {
   Cloud,
   Bot,
   Building,
+  ShieldCheck,
 } from 'lucide-react';
 import logoPrecisio from '@/assets/logo-precisio-analytics.png';
 
@@ -102,6 +103,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
 
   // Detect active module from URL
   useEffect(() => {
@@ -118,6 +120,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     } else if (path.startsWith('/scope-cloud')) {
       setActiveModule('scope_cloud');
       setExpandedModules(prev => ({ ...prev, scope_cloud: true }));
+    }
+    
+    // Expand admin menu if on admin routes
+    if (path === '/clients' || path === '/administrators') {
+      setAdminMenuOpen(true);
     }
   }, [location.pathname, setActiveModule]);
 
@@ -275,23 +282,65 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Divider before Workspaces */}
       {role === 'super_admin' && sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
 
-      {/* Workspaces - Super Admin only */}
+      {/* Administração - Super Admin only */}
       {role === 'super_admin' && (
-        <Link
-          to="/clients"
-          onClick={() => setMobileMenuOpen(false)}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            location.pathname === '/clients'
-              ? 'bg-warning/20 text-warning border border-warning/30'
-              : 'text-warning hover:bg-warning/10',
-            !sidebarOpen && 'justify-center'
-          )}
-          title={!sidebarOpen ? 'Workspaces' : undefined}
+        <Collapsible
+          open={sidebarOpen && adminMenuOpen}
+          onOpenChange={() => sidebarOpen && setAdminMenuOpen(!adminMenuOpen)}
         >
-          <Building className="w-5 h-5 flex-shrink-0 text-warning" />
-          {sidebarOpen && 'Workspaces'}
-        </Link>
+          <CollapsibleTrigger asChild>
+            <button
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                (location.pathname === '/clients' || location.pathname === '/administrators')
+                  ? 'bg-warning/20 text-warning border border-warning/30'
+                  : 'text-warning hover:bg-warning/10',
+                !sidebarOpen && 'justify-center'
+              )}
+              title={!sidebarOpen ? 'Administração' : undefined}
+            >
+              <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
+              {sidebarOpen && (
+                <>
+                  <span className="flex-1 text-left">Administração</span>
+                  {adminMenuOpen ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </>
+              )}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pl-4 space-y-1 mt-1">
+            <Link
+              to="/administrators"
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                location.pathname === '/administrators'
+                  ? 'bg-warning/20 text-warning font-medium'
+                  : 'text-warning/80 hover:bg-warning/10'
+              )}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Administradores
+            </Link>
+            <Link
+              to="/clients"
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                location.pathname === '/clients'
+                  ? 'bg-warning/20 text-warning font-medium'
+                  : 'text-warning/80 hover:bg-warning/10'
+              )}
+            >
+              <Building className="w-4 h-4" />
+              Workspaces
+            </Link>
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </>
   );
