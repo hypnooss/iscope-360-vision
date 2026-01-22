@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -524,7 +525,8 @@ export default function UsersPage() {
               <DialogDescription>{editingUser?.full_name || editingUser?.email}</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6 py-4 overflow-y-auto flex-1 pr-2">
+            <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-6 py-4">
               {/* Role */}
               <div className="space-y-2">
                 <Label>Role</Label>
@@ -624,6 +626,7 @@ export default function UsersPage() {
                 </div>
               )}
             </div>
+            </ScrollArea>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditingUser(null)}>

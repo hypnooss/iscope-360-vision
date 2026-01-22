@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -199,7 +200,8 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
+        <ScrollArea className="flex-1 pr-4">
+        <div className="space-y-4 py-4">
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Nome Completo</Label>
@@ -344,6 +346,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
             </div>
           )}
         </div>
+        </ScrollArea>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
