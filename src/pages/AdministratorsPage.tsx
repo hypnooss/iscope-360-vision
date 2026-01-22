@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -416,7 +417,8 @@ export default function AdministratorsPage() {
               Crie um novo usuário com permissões administrativas
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
+          <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo</Label>
               <Input
@@ -462,6 +464,7 @@ export default function AdministratorsPage() {
               </Select>
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               Cancelar
@@ -483,7 +486,8 @@ export default function AdministratorsPage() {
               Altere a role de {selectedAdmin?.full_name || selectedAdmin?.email}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
+          <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="editRole">Role</Label>
               <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
@@ -500,6 +504,7 @@ export default function AdministratorsPage() {
               </Select>
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancelar
