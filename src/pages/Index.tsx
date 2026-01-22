@@ -23,7 +23,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col cyber-grid">
       <Header />
       
       <main className="flex-1 flex flex-col justify-center px-6 py-12">
