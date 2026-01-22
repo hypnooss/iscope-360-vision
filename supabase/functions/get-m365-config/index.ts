@@ -43,13 +43,14 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
         break;
       case 'Directory.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id';
+        // Use a simpler endpoint - directoryObjects is more reliable
+        url = 'https://graph.microsoft.com/v1.0/directoryObjects?$top=1&$select=id';
         break;
       case 'Organization.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/organization?$top=1&$select=id';
+        url = 'https://graph.microsoft.com/v1.0/organization?$select=id';
         break;
       case 'Domain.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/domains?$top=1';
+        url = 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id';
         break;
       case 'Group.Read.All':
         url = 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id';
@@ -58,10 +59,11 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id';
         break;
       case 'Policy.Read.All':
-        url = 'https://graph.microsoft.com/v1.0/policies/authorizationPolicy';
+        // Use conditionalAccess policies which is more reliable
+        url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
-        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1';
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
         break;
       default:
         return false;
@@ -70,8 +72,17 @@ async function testPermission(accessToken: string, permission: string): Promise<
     const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${accessToken}` },
     });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`Permission ${permission} test failed (${response.status}): ${errorText.substring(0, 200)}`);
+    } else {
+      console.log(`Permission ${permission} test succeeded`);
+    }
+    
     return response.ok;
-  } catch {
+  } catch (error) {
+    console.error(`Permission ${permission} test error:`, error);
     return false;
   }
 }
