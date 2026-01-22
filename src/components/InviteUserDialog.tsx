@@ -201,7 +201,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh]">
-          <div className="space-y-4 py-2 px-1 mr-3">
+          <div className="space-y-4 py-2 px-6">
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Nome Completo</Label>

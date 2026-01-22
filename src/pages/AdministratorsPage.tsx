@@ -418,7 +418,7 @@ export default function AdministratorsPage() {
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="space-y-4 py-2 px-1 mr-3">
+            <div className="space-y-4 py-2 px-6">
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo</Label>
               <Input
@@ -487,7 +487,7 @@ export default function AdministratorsPage() {
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
-            <div className="space-y-4 py-2 px-1 mr-3">
+            <div className="space-y-4 py-2 px-6">
               <div className="space-y-2">
                 <Label htmlFor="editRole">Role</Label>
                 <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
