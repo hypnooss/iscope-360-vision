@@ -26,16 +26,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Layers, Trash2, History } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 
@@ -495,38 +490,26 @@ export default function UsersPage() {
                         {new Date(u.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-popover border shadow-md">
-                            {canEditUser(u) ? (
-                              <>
-                                <DropdownMenuItem onClick={() => openEditDialog(u)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Editar
-                                </DropdownMenuItem>
-                                {canDeleteUser(u) && (
-                                  <DropdownMenuItem
-                                    onClick={() => setDeletingUser(u)}
-                                    className="text-destructive focus:text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Excluir
-                                  </DropdownMenuItem>
-                                )}
-                              </>
-                            ) : (
-                              <DropdownMenuItem disabled className="text-muted-foreground">
-                                {u.id === user?.id
-                                  ? "Não é possível editar seu próprio usuário"
-                                  : "Sem permissão para editar"}
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditDialog(u)}
+                            disabled={!canEditUser(u)}
+                            title="Editar"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeletingUser(u)}
+                            disabled={!canDeleteUser(u)}
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
