@@ -44,9 +44,9 @@ interface InviteUserDialogProps {
 const MODULES = ['dashboard', 'firewall', 'reports'] as const;
 
 const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
-  scope_firewall: 'Scope Firewall',
-  scope_network: 'Scope Network',
-  scope_cloud: 'Scope Cloud',
+  scope_firewall: 'Firewall',
+  scope_network: 'Network',
+  scope_cloud: 'Cloud',
 };
 
 const inviteSchema = z.object({
@@ -305,7 +305,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
             <Label>Permissões por Área</Label>
             {MODULES.map((mod) => (
               <div key={mod} className="flex items-center justify-between">
-                <span className="text-sm capitalize">{mod === 'firewall' ? 'Scope Firewall' : mod}</span>
+                <span className="text-sm capitalize">{mod === 'firewall' ? 'Firewall' : mod}</span>
                 <Select
                   value={permissions[mod] || 'view'}
                   onValueChange={(v) =>
