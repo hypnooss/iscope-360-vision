@@ -735,7 +735,7 @@ export type Database = {
       is_client_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "super_admin" | "admin" | "user"
+      app_role: "super_admin" | "admin" | "user" | "super_suporte"
       m365_submodule:
         | "entra_id"
         | "sharepoint"
@@ -883,7 +883,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["super_admin", "admin", "user"],
+      app_role: ["super_admin", "admin", "user", "super_suporte"],
       m365_submodule: [
         "entra_id",
         "sharepoint",
