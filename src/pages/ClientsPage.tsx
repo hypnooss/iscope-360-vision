@@ -44,7 +44,7 @@ interface Client {
   name: string;
   description: string | null;
   created_at: string;
-  firewalls_count?: number;
+  scopes_count?: number;
   agents_count?: number;
 }
 
@@ -97,17 +97,18 @@ export default function ClientsPage() {
 
       if (clientsError) throw clientsError;
 
-      // Fetch counts for each client
+      // Fetch counts for each client (scopes = firewalls + m365_tenants, agents)
       const clientsWithCounts = await Promise.all(
         (clientsData || []).map(async (client) => {
-          const [firewallsResult, agentsResult] = await Promise.all([
+          const [firewallsResult, tenantsResult, agentsResult] = await Promise.all([
             supabase.from("firewalls").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+            supabase.from("m365_tenants").select("id", { count: "exact", head: true }).eq("client_id", client.id),
             supabase.from("agents").select("id", { count: "exact", head: true }).eq("client_id", client.id),
           ]);
 
           return {
             ...client,
-            firewalls_count: firewallsResult.count || 0,
+            scopes_count: (firewallsResult.count || 0) + (tenantsResult.count || 0),
             agents_count: agentsResult.count || 0,
           };
         }),
@@ -116,7 +117,7 @@ export default function ClientsPage() {
       setClients(clientsWithCounts);
     } catch (error: unknown) {
       console.error("Erro ao buscar dados:", error);
-      toast.error("Erro ao carregar clientes");
+      toast.error("Erro ao carregar workspaces");
     } finally {
       setLoading(false);
     }
@@ -137,14 +138,14 @@ export default function ClientsPage() {
 
       if (error) throw error;
 
-      toast.success("Cliente criado com sucesso");
+      toast.success("Workspace criado com sucesso");
       setCreateDialogOpen(false);
       setNewClientName("");
       setNewClientDescription("");
       fetchData();
     } catch (error: unknown) {
-      console.error("Erro ao criar cliente:", error);
-      toast.error("Erro ao criar cliente");
+      console.error("Erro ao criar workspace:", error);
+      toast.error("Erro ao criar workspace");
     } finally {
       setCreating(false);
     }
@@ -175,13 +176,13 @@ export default function ClientsPage() {
 
       if (error) throw error;
 
-      toast.success("Cliente atualizado com sucesso");
+      toast.success("Workspace atualizado com sucesso");
       setEditDialogOpen(false);
       setEditingClient(null);
       fetchData();
     } catch (error: unknown) {
-      console.error("Erro ao atualizar cliente:", error);
-      toast.error("Erro ao atualizar cliente");
+      console.error("Erro ao atualizar workspace:", error);
+      toast.error("Erro ao atualizar workspace");
     } finally {
       setEditing(false);
     }
@@ -197,7 +198,7 @@ export default function ClientsPage() {
     if (!clientToDelete) return;
 
     if (deleteConfirmName !== clientToDelete.name) {
-      toast.error("Nome do cliente não confere");
+      toast.error("Nome do workspace não confere");
       return;
     }
 
@@ -207,14 +208,14 @@ export default function ClientsPage() {
 
       if (error) throw error;
 
-      toast.success("Cliente deletado com sucesso");
+      toast.success("Workspace deletado com sucesso");
       setDeleteDialogOpen(false);
       setClientToDelete(null);
       setDeleteConfirmName("");
       fetchData();
     } catch (error: unknown) {
-      console.error("Erro ao deletar cliente:", error);
-      toast.error("Erro ao deletar cliente. Verifique se não há firewalls ou agents associados.");
+      console.error("Erro ao deletar workspace:", error);
+      toast.error("Erro ao deletar workspace. Verifique se não há escopos ou agents associados.");
     } finally {
       setDeleting(false);
     }
@@ -236,20 +237,20 @@ export default function ClientsPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
-            <p className="text-muted-foreground">Gerencie todos os clientes do sistema</p>
+            <h1 className="text-2xl font-bold text-foreground">Workspaces</h1>
+            <p className="text-muted-foreground">Gerencie todos os workspaces do sistema</p>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                Novo Cliente
+                Novo Workspace
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Criar Cliente</DialogTitle>
-                <DialogDescription>Adicione um novo cliente à plataforma</DialogDescription>
+                <DialogTitle>Criar Workspace</DialogTitle>
+                <DialogDescription>Adicione um novo workspace à plataforma</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -267,7 +268,7 @@ export default function ClientsPage() {
                     id="client-description"
                     value={newClientDescription}
                     onChange={(e) => setNewClientDescription(e.target.value)}
-                    placeholder="Descrição opcional do cliente"
+                    placeholder="Descrição opcional do workspace"
                   />
                 </div>
               </div>
@@ -284,29 +285,29 @@ export default function ClientsPage() {
           </Dialog>
         </div>
 
-        {/* Clients Table */}
+        {/* Workspaces Table */}
         <Card className="border-border/50 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building className="w-5 h-5 text-primary" />
-              Lista de Clientes
+              Lista de Workspaces
             </CardTitle>
-            <CardDescription>{clients.length} cliente(s) registrado(s)</CardDescription>
+            <CardDescription>{clients.length} workspace(s) registrado(s)</CardDescription>
           </CardHeader>
           <CardContent>
             {clients.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Building className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum cliente cadastrado</p>
-                <p className="text-sm">Clique em "Novo Cliente" para adicionar</p>
+                <p>Nenhum workspace cadastrado</p>
+                <p className="text-sm">Clique em "Novo Workspace" para adicionar</p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="text-center">Firewalls</TableHead>
+                    <TableHead>ID</TableHead>
+                    <TableHead className="text-center">Escopo</TableHead>
                     <TableHead className="text-center">Agents</TableHead>
                     <TableHead>Criado em</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -316,8 +317,8 @@ export default function ClientsPage() {
                   {clients.map((client) => (
                     <TableRow key={client.id}>
                       <TableCell className="font-medium">{client.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{client.description || "-"}</TableCell>
-                      <TableCell className="text-center">{client.firewalls_count}</TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">{client.id}</TableCell>
+                      <TableCell className="text-center">{client.scopes_count}</TableCell>
                       <TableCell className="text-center">{client.agents_count}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDistanceToNow(new Date(client.created_at), {
@@ -359,8 +360,8 @@ export default function ClientsPage() {
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Editar Cliente</DialogTitle>
-              <DialogDescription>Atualize as informações do cliente</DialogDescription>
+              <DialogTitle>Editar Workspace</DialogTitle>
+              <DialogDescription>Atualize as informações do workspace</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -396,20 +397,20 @@ export default function ClientsPage() {
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Deletar Cliente</DialogTitle>
+              <DialogTitle>Deletar Workspace</DialogTitle>
               <DialogDescription>
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do cliente:{" "}
+                Esta ação não pode ser desfeita. Para confirmar, digite o nome do workspace:{" "}
                 <strong>{clientToDelete?.name}</strong>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="delete-confirm-name">Nome do cliente</Label>
+                <Label htmlFor="delete-confirm-name">Nome do workspace</Label>
                 <Input
                   id="delete-confirm-name"
                   value={deleteConfirmName}
                   onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder="Digite o nome do cliente para confirmar"
+                  placeholder="Digite o nome do workspace para confirmar"
                 />
               </div>
             </div>
