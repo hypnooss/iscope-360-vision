@@ -33,10 +33,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Edit2, Trash2, ShieldCheck, HeadsetIcon } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, ShieldCheck, HeadsetIcon, History } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AdminEditDialog } from "@/components/admin/AdminEditDialog";
+import { AdminActivityDialog } from "@/components/admin/AdminActivityDialog";
 
 type AdminRole = "super_admin" | "super_suporte";
 
@@ -67,6 +68,7 @@ export default function AdministratorsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isActivityDialogOpen, setIsActivityDialogOpen] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState<Administrator | null>(null);
 
   // Form states
@@ -291,6 +293,11 @@ export default function AdministratorsPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  const openActivityDialog = (admin: Administrator) => {
+    setSelectedAdmin(admin);
+    setIsActivityDialogOpen(true);
+  };
+
   const getRoleBadge = (role: AdminRole) => {
     if (role === "super_admin") {
       return (
@@ -384,7 +391,16 @@ export default function AdministratorsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          onClick={() => openActivityDialog(admin)}
+                          title="Atividades recentes"
+                        >
+                          <History className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => openEditDialog(admin)}
+                          title="Editar"
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
@@ -393,6 +409,7 @@ export default function AdministratorsPage() {
                           size="icon"
                           onClick={() => openDeleteDialog(admin)}
                           disabled={admin.id === user?.id}
+                          title="Remover"
                         >
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
@@ -509,6 +526,13 @@ export default function AdministratorsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Activity Dialog */}
+      <AdminActivityDialog
+        open={isActivityDialogOpen}
+        onOpenChange={setIsActivityDialogOpen}
+        admin={selectedAdmin}
+      />
     </AppLayout>
   );
 }
