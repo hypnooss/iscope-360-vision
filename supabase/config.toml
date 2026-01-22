@@ -1,1 +1,28 @@
 project_id = "pgjervwrvmfmwvfvylvj"
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.fortigate-compliance]
+verify_jwt = false
+
+[functions.fortigate-cve]
+verify_jwt = false
+
+[functions.get-m365-config]
+verify_jwt = false
+
+[functions.m365-oauth-callback]
+verify_jwt = false
+
+[functions.register-agent]
+verify_jwt = false
+
+[functions.update-m365-config]
+verify_jwt = false
+
+[functions.validate-m365-connection]
+verify_jwt = false
+
+[functions.validate-m365-permissions]
+verify_jwt = false

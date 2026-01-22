@@ -1,0 +1,338 @@
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+interface PermissionStatus {
+  name: string;
+  granted: boolean;
+  type: 'required' | 'recommended';
+}
+
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All',
+  'DeviceManagementConfiguration.Read.All',
+  'SecurityEvents.Read.All',
+];
+
+const RECOMMENDED_PERMISSIONS = [
+  'AuditLog.Read.All',
+  'Policy.Read.All',
+  'RoleManagement.Read.Directory',
+  'Organization.Read.All',
+];
+
+function decryptSecret(encrypted: string): string {
+  try {
+    return atob(encrypted);
+  } catch {
+    return encrypted;
+  }
+}
+
+async function testPermission(accessToken: string, permission: string): Promise<boolean> {
+  try {
+    let url = '';
+    
+    switch (permission) {
+      case 'User.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
+        break;
+      case 'Directory.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/organization?$select=id';
+        break;
+      case 'DeviceManagementConfiguration.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id';
+        break;
+      case 'SecurityEvents.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id';
+        break;
+      case 'AuditLog.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1&$select=id';
+        break;
+      case 'Policy.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
+        break;
+      case 'RoleManagement.Read.Directory':
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
+        break;
+      case 'Organization.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/organization?$select=id,displayName';
+        break;
+      default:
+        return false;
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    return response.ok;
+  } catch (error) {
+    console.error(`Error testing permission ${permission}:`, error);
+    return false;
+  }
+}
+
+async function validatePermissions(
+  tenantId: string,
+  appId: string,
+  clientSecret: string
+): Promise<PermissionStatus[]> {
+  console.log('Getting access token for tenant:', tenantId);
+  
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const tokenBody = new URLSearchParams({
+    client_id: appId,
+    client_secret: clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials',
+  });
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenBody,
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    console.error('Failed to get access token:', errorText);
+    throw new Error(`Failed to get access token: ${tokenResponse.status}`);
+  }
+
+  const tokenData = await tokenResponse.json();
+  const accessToken = tokenData.access_token;
+  
+  console.log('Access token obtained, testing permissions...');
+
+  const results: PermissionStatus[] = [];
+
+  for (const permission of REQUIRED_PERMISSIONS) {
+    const granted = await testPermission(accessToken, permission);
+    results.push({ name: permission, granted, type: 'required' });
+    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+  }
+
+  for (const permission of RECOMMENDED_PERMISSIONS) {
+    const granted = await testPermission(accessToken, permission);
+    results.push({ name: permission, granted, type: 'recommended' });
+    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+  }
+
+  return results;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createOrUpdateAlert(
+  supabase: SupabaseClient,
+  options: {
+    alertType: string;
+    title: string;
+    message: string;
+    severity: 'info' | 'warning' | 'error';
+    metadata?: Record<string, unknown>;
+  }
+) {
+  // Verificar se já existe um alerta ativo do mesmo tipo
+  const { data: existingAlert } = await supabase
+    .from('system_alerts')
+    .select('id')
+    .eq('alert_type', options.alertType)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (existingAlert) {
+    // Atualizar alerta existente
+    await supabase
+      .from('system_alerts')
+      .update({
+        title: options.title,
+        message: options.message,
+        severity: options.severity,
+        metadata: options.metadata || {},
+        dismissed_by: [], // Reset dismissed users on update
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingAlert.id);
+  } else {
+    // Criar novo alerta
+    await supabase
+      .from('system_alerts')
+      .insert({
+        alert_type: options.alertType,
+        title: options.title,
+        message: options.message,
+        severity: options.severity,
+        target_role: 'super_admin',
+        metadata: options.metadata || {},
+      });
+  }
+}
+
+async function deactivateAlerts(
+  supabase: SupabaseClient,
+  alertTypes: string[]
+) {
+  await supabase
+    .from('system_alerts')
+    .update({ is_active: false })
+    .in('alert_type', alertTypes)
+    .eq('is_active', true);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log('Starting M365 permissions validation...');
+
+    // Buscar configuração M365 do banco
+    const { data: configData, error: configError } = await supabase
+      .from('m365_global_config')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (configError) {
+      console.error('Error fetching M365 config:', configError);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Failed to fetch M365 config' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!configData) {
+      console.log('No M365 configuration found, skipping validation');
+      return new Response(
+        JSON.stringify({ success: true, message: 'No M365 configuration found', skipped: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!configData.validation_tenant_id) {
+      console.log('No validation tenant ID configured, skipping validation');
+      return new Response(
+        JSON.stringify({ success: true, message: 'No validation tenant ID configured', skipped: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const appId = configData.app_id;
+    const clientSecret = decryptSecret(configData.client_secret_encrypted);
+    const tenantId = configData.validation_tenant_id;
+    const previousPermissions = configData.validated_permissions || [];
+
+    console.log('Validating permissions for app:', appId);
+
+    // Validar permissões
+    let newPermissions: PermissionStatus[];
+    try {
+      newPermissions = await validatePermissions(tenantId, appId, clientSecret);
+    } catch (error) {
+      console.error('Failed to validate permissions:', error);
+      
+      // Criar alerta de erro de conexão
+      await createOrUpdateAlert(supabase, {
+        alertType: 'm365_connection_failure',
+        title: 'Falha na Conexão M365',
+        message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
+        severity: 'error',
+        metadata: { error: String(error) },
+      });
+
+      return new Response(
+        JSON.stringify({ success: false, error: 'Failed to validate permissions' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Atualizar configuração com novas permissões
+    const { error: updateError } = await supabase
+      .from('m365_global_config')
+      .update({
+        validated_permissions: newPermissions,
+        last_validated_at: new Date().toISOString(),
+      })
+      .eq('id', configData.id);
+
+    if (updateError) {
+      console.error('Error updating M365 config:', updateError);
+    }
+
+    // Verificar se alguma permissão falhou
+    const failedRequired = newPermissions.filter(p => p.type === 'required' && !p.granted);
+    const failedRecommended = newPermissions.filter(p => p.type === 'recommended' && !p.granted);
+
+    // Verificar mudanças em relação ao estado anterior
+    const previouslyGranted = (previousPermissions as PermissionStatus[]).filter(p => p.granted).map(p => p.name);
+    const nowFailed = newPermissions.filter(p => !p.granted && previouslyGranted.includes(p.name));
+
+    if (failedRequired.length > 0) {
+      // Permissões obrigatórias falhando - alerta de erro
+      await createOrUpdateAlert(supabase, {
+        alertType: 'm365_permission_failure',
+        title: 'Permissões M365 Críticas Faltando',
+        message: `${failedRequired.length} permissão(ões) obrigatória(s) não está(ão) configurada(s): ${failedRequired.map(p => p.name).join(', ')}`,
+        severity: 'error',
+        metadata: {
+          failedRequired: failedRequired.map(p => p.name),
+          failedRecommended: failedRecommended.map(p => p.name),
+          newlyFailed: nowFailed.map(p => p.name),
+        },
+      });
+
+      console.log('Created/updated error alert for missing required permissions');
+    } else if (failedRecommended.length > 0 && nowFailed.length > 0) {
+      // Apenas recomendadas falhando E houve mudança - alerta de warning
+      await createOrUpdateAlert(supabase, {
+        alertType: 'm365_permission_failure',
+        title: 'Permissões M365 Recomendadas Faltando',
+        message: `${failedRecommended.length} permissão(ões) recomendada(s) não está(ão) configurada(s): ${failedRecommended.map(p => p.name).join(', ')}`,
+        severity: 'warning',
+        metadata: {
+          failedRecommended: failedRecommended.map(p => p.name),
+          newlyFailed: nowFailed.map(p => p.name),
+        },
+      });
+
+      console.log('Created/updated warning alert for missing recommended permissions');
+    } else if (failedRequired.length === 0 && nowFailed.length === 0) {
+      // Tudo OK - desativar alertas existentes
+      await deactivateAlerts(supabase, ['m365_permission_failure', 'm365_connection_failure']);
+      console.log('All permissions granted, deactivated any existing alerts');
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        permissions: newPermissions,
+        failedRequired: failedRequired.length,
+        failedRecommended: failedRecommended.length,
+        validatedAt: new Date().toISOString(),
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return new Response(
+      JSON.stringify({ success: false, error: 'Unexpected error occurred' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});

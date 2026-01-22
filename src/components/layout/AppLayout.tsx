@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { SystemAlertBanner } from '@/components/alerts/SystemAlertBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules, ScopeModule } from '@/contexts/ModuleContext';
 import { cn } from '@/lib/utils';
@@ -361,6 +362,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* System Alerts Banner */}
+      <SystemAlertBanner />
+      
       {/* Mobile Header */}
       <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">

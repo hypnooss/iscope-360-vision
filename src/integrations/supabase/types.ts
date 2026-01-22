@@ -665,6 +665,51 @@ export type Database = {
         }
         Relationships: []
       }
+      system_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          dismissed_by: string[] | null
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          message: string
+          metadata: Json | null
+          severity: string
+          target_role: Database["public"]["Enums"]["app_role"] | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          dismissed_by?: string[] | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message: string
+          metadata?: Json | null
+          severity?: string
+          target_role?: Database["public"]["Enums"]["app_role"] | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          dismissed_by?: string[] | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message?: string
+          metadata?: Json | null
+          severity?: string
+          target_role?: Database["public"]["Enums"]["app_role"] | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_clients: {
         Row: {
           client_id: string
