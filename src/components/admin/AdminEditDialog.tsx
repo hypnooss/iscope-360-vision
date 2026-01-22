@@ -266,30 +266,6 @@ export function AdminEditDialog({
             <TabsContent value="profile" className="h-full m-0">
               <ScrollArea className="h-[400px]">
                 <div className="space-y-6 px-1 pr-4">
-                  {/* Current Status Card */}
-                  <div className="p-4 rounded-lg border bg-muted/30">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Status atual</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {getRoleBadge(admin.role)}
-                          {isEditingSelf && (
-                            <Badge variant="outline" className="text-xs">
-                              Você
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Membro desde</p>
-                        <p className="text-sm font-medium">
-                          {format(new Date(admin.created_at), "dd/MM/yyyy", { locale: ptBR })}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
 
                   {/* Personal Information */}
                   <div className="space-y-4">
