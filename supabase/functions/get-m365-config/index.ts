@@ -38,22 +38,32 @@ Deno.serve(async (req) => {
 
     // Get the multi-tenant app ID (not the secret - that stays server-side)
     const appId = Deno.env.get('M365_MULTI_TENANT_APP_ID');
+    const clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
 
-    if (!appId) {
+    // Validate if app_id is a proper GUID format
+    const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidAppId = appId && guidRegex.test(appId);
+    const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
+
+    if (!isValidAppId) {
       return new Response(
         JSON.stringify({ 
-          error: 'M365 multi-tenant app not configured',
-          details: 'The M365_MULTI_TENANT_APP_ID secret is not set.'
+          configured: false,
+          app_id: null,
+          has_client_secret: false,
+          message: 'M365 multi-tenant app not configured or invalid App ID format.'
         }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Return only the app ID (public information needed for consent URL)
-    // Never return the client secret
+    // Never return the client secret value, only whether it's configured
     return new Response(
       JSON.stringify({
+        configured: true,
         app_id: appId,
+        has_client_secret: hasClientSecret,
         callback_url: `${supabaseUrl}/functions/v1/m365-oauth-callback`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
