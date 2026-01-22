@@ -196,6 +196,17 @@ Deno.serve(async (req) => {
     const isValidAppId = appId && guidRegex.test(appId);
     const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
 
+    // Load saved permissions from database if not validating fresh
+    let savedPermissions: PermissionStatus[] | null = null;
+    let savedValidatedAt: string | null = null;
+    let savedTenantId: string | null = null;
+
+    if (configData?.validated_permissions && Array.isArray(configData.validated_permissions)) {
+      savedPermissions = configData.validated_permissions as PermissionStatus[];
+      savedValidatedAt = configData.last_validated_at;
+      savedTenantId = configData.validation_tenant_id;
+    }
+
     if (!isValidAppId) {
       return new Response(
         JSON.stringify({ 
@@ -219,13 +230,33 @@ Deno.serve(async (req) => {
     }
 
     // Validate permissions if requested and we have valid credentials
-    let permissions = defaultPermissions;
-    let permissionsValidated = false;
+    let permissions = savedPermissions || defaultPermissions;
+    let permissionsValidated = !!savedPermissions;
+    let lastValidatedAt = savedValidatedAt;
+    let validationTenantId = savedTenantId;
 
     if (shouldValidatePermissions && isValidAppId && hasClientSecret && tenantIdForValidation && appId && clientSecret) {
       console.log('Validating permissions for tenant:', tenantIdForValidation);
       permissions = await validatePermissions(tenantIdForValidation, appId, clientSecret);
       permissionsValidated = true;
+      lastValidatedAt = new Date().toISOString();
+      validationTenantId = tenantIdForValidation;
+
+      // Save validated permissions to database
+      const { error: updateError } = await supabase
+        .from('m365_global_config')
+        .update({
+          validated_permissions: permissions,
+          last_validated_at: lastValidatedAt,
+          validation_tenant_id: validationTenantId,
+        })
+        .eq('id', configData.id);
+
+      if (updateError) {
+        console.error('Error saving validated permissions:', updateError);
+      } else {
+        console.log('Validated permissions saved to database');
+      }
     }
 
     // Return config with permissions status
@@ -238,6 +269,8 @@ Deno.serve(async (req) => {
         callback_url: `${supabaseUrl}/functions/v1/m365-oauth-callback`,
         permissions,
         permissions_validated: permissionsValidated,
+        last_validated_at: lastValidatedAt,
+        validation_tenant_id: validationTenantId,
         source: configData ? 'database' : 'env_vars',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

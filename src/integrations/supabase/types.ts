@@ -367,8 +367,11 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          last_validated_at: string | null
           updated_at: string
           updated_by: string | null
+          validated_permissions: Json | null
+          validation_tenant_id: string | null
         }
         Insert: {
           app_id: string
@@ -376,8 +379,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          last_validated_at?: string | null
           updated_at?: string
           updated_by?: string | null
+          validated_permissions?: Json | null
+          validation_tenant_id?: string | null
         }
         Update: {
           app_id?: string
@@ -385,8 +391,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          last_validated_at?: string | null
           updated_at?: string
           updated_by?: string | null
+          validated_permissions?: Json | null
+          validation_tenant_id?: string | null
         }
         Relationships: []
       }
