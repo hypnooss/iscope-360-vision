@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus, Edit2, Trash2, ShieldCheck, HeadsetIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { AdminEditDialog } from "@/components/admin/AdminEditDialog";
 
 type AdminRole = "super_admin" | "super_suporte";
 
@@ -282,7 +283,6 @@ export default function AdministratorsPage() {
 
   const openEditDialog = (admin: Administrator) => {
     setSelectedAdmin(admin);
-    setFormRole(admin.role);
     setIsEditDialogOpen(true);
   };
 
@@ -477,45 +477,14 @@ export default function AdministratorsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Editar Administrador</DialogTitle>
-            <DialogDescription>
-              Altere a role de {selectedAdmin?.full_name || selectedAdmin?.email}
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh]">
-            <div className="space-y-4 py-2 px-6">
-              <div className="space-y-2">
-                <Label htmlFor="editRole">Role</Label>
-                <Select value={formRole} onValueChange={(v) => setFormRole(v as AdminRole)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ADMIN_ROLES.map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </ScrollArea>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleEditAdmin} disabled={saving}>
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Salvar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit Dialog - Using new robust component */}
+      <AdminEditDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        admin={selectedAdmin}
+        onSaved={fetchAdministrators}
+        currentUserId={user?.id}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
