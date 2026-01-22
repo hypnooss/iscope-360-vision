@@ -286,7 +286,7 @@ export default function ClientsPage() {
         </div>
 
         {/* Workspaces Table */}
-        <Card className="border-border/50 bg-card/50 backdrop-blur">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building className="w-5 h-5 text-primary" />
