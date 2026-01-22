@@ -189,7 +189,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
           Novo Usuário
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -200,7 +200,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4 py-4 pr-4">
           {/* Name */}
           <div className="space-y-2">
