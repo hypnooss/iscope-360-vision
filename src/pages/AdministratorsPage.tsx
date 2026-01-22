@@ -385,7 +385,6 @@ export default function AdministratorsPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => openEditDialog(admin)}
-                          disabled={admin.id === user?.id}
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
