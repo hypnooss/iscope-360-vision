@@ -62,8 +62,8 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
-        // Minimum page size is 20 for this endpoint
-        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=20&$select=id';
+        // No query params - just check if we can access the endpoint
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       default:
         return false;
