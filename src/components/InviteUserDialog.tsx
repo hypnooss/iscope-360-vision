@@ -188,7 +188,7 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
           Novo Usuário
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
