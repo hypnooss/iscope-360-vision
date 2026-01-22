@@ -307,7 +307,7 @@ export default function ClientsPage() {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>ID</TableHead>
-                    <TableHead className="text-center">Escopo</TableHead>
+                    <TableHead className="text-center">Escopos</TableHead>
                     <TableHead className="text-center">Agents</TableHead>
                     <TableHead>Criado em</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
