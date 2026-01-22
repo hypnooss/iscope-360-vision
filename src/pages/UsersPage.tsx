@@ -328,16 +328,26 @@ export default function UsersPage() {
   };
 
   // Get available roles for dropdown based on current user's role
+  // Note: Super Admin and Super Suporte are managed in Administrators page, not here
   const getAvailableRoles = (): { value: AppRole; label: string }[] => {
-    if (isSuperAdmin()) {
-      return [
-        { value: "user", label: "Usuário" },
-        { value: "workspace_admin", label: "Workspace Admin" },
-        { value: "super_admin", label: "Super Admin" },
-      ];
+    return [
+      { value: "user", label: "Usuário" },
+      { value: "workspace_admin", label: "Workspace Admin" },
+    ];
+  };
+
+  // Check if current user can delete a specific user
+  const canDeleteUser = (targetUser: UserProfile): boolean => {
+    // Can't delete yourself
+    if (targetUser.id === user?.id) return false;
+
+    // Only Super Admin can delete Workspace Admins
+    if (targetUser.role === "workspace_admin") {
+      return isSuperAdmin();
     }
-    // Workspace Admin can only assign user role
-    return [{ value: "user", label: "Usuário" }];
+
+    // For regular users, both Super Admin and Workspace Admin can delete
+    return canEditUser(targetUser);
   };
 
   // Get clients that current user can assign to others
@@ -475,13 +485,15 @@ export default function UsersPage() {
                                   <Edit className="w-4 h-4 mr-2" />
                                   Editar
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => setDeletingUser(u)}
-                                  className="text-destructive focus:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Excluir
-                                </DropdownMenuItem>
+                                {canDeleteUser(u) && (
+                                  <DropdownMenuItem
+                                    onClick={() => setDeletingUser(u)}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                )}
                               </>
                             ) : (
                               <DropdownMenuItem disabled className="text-muted-foreground">
