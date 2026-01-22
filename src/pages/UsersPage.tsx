@@ -38,7 +38,7 @@ import { Users, Edit, Shield, Loader2, Building, Layers, MoreVertical, Trash2 } 
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 
-type AppRole = "super_admin" | "super_suporte" | "admin" | "user";
+type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
 type ModulePermission = "view" | "edit" | "full";
 type ScopeModule = "scope_firewall" | "scope_network" | "scope_cloud";
 
@@ -261,8 +261,10 @@ export default function UsersPage() {
     switch (role) {
       case "super_admin":
         return <Badge className="bg-primary/10 text-primary">Super Admin</Badge>;
-      case "admin":
-        return <Badge className="bg-warning/10 text-warning">Admin</Badge>;
+      case "super_suporte":
+        return <Badge className="bg-primary/10 text-primary">Super Suporte</Badge>;
+      case "workspace_admin":
+        return <Badge className="bg-warning/10 text-warning">Workspace Admin</Badge>;
       default:
         return <Badge variant="outline">Usuário</Badge>;
     }
@@ -330,11 +332,11 @@ export default function UsersPage() {
     if (isSuperAdmin()) {
       return [
         { value: "user", label: "Usuário" },
-        { value: "admin", label: "Admin" },
+        { value: "workspace_admin", label: "Workspace Admin" },
         { value: "super_admin", label: "Super Admin" },
       ];
     }
-    // Admin can only assign user role
+    // Workspace Admin can only assign user role
     return [{ value: "user", label: "Usuário" }];
   };
 

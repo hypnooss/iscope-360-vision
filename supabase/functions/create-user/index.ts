@@ -50,7 +50,7 @@ serve(async (req) => {
       .eq("user_id", requestingUser.id)
       .single();
 
-    if (!requesterRole || !["admin", "super_admin"].includes(requesterRole.role)) {
+    if (!requesterRole || !["workspace_admin", "super_admin"].includes(requesterRole.role)) {
       throw new Error("Unauthorized: Only admins can create users");
     }
 
@@ -69,8 +69,8 @@ serve(async (req) => {
       throw new Error("Only super admins can create super admin users");
     }
 
-    if (role === "admin" && !isSuperAdmin) {
-      throw new Error("Only super admins can create admin users");
+    if (role === "workspace_admin" && !isSuperAdmin) {
+      throw new Error("Only super admins can create workspace admin users");
     }
 
     // Non-super_admin users must have at least one module
