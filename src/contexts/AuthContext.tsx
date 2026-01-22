@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-type AppRole = 'super_admin' | 'admin' | 'user';
+type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
 
 interface UserProfile {
@@ -170,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return levels.indexOf(current) >= levels.indexOf(required);
   };
 
-  const isAdmin = () => role === 'super_admin' || role === 'admin';
+  const isAdmin = () => role === 'super_admin' || role === 'workspace_admin';
   const isSuperAdmin = () => role === 'super_admin';
 
   return (

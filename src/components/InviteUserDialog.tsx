@@ -19,7 +19,7 @@ import { Loader2, UserPlus, Building, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-type AppRole = 'super_admin' | 'admin' | 'user';
+type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
 type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
 
@@ -165,7 +165,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
     if (isSuperAdmin()) {
       return [
         { value: 'user', label: 'Usuário' },
-        { value: 'admin', label: 'Admin' },
+        { value: 'workspace_admin', label: 'Workspace Admin' },
         { value: 'super_admin', label: 'Super Admin' },
       ];
     }
@@ -253,7 +253,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
             </Select>
             {!isSuperAdmin() && (
               <p className="text-xs text-muted-foreground">
-                Como Admin, você só pode criar usuários com role Usuário
+                Como Workspace Admin, você só pode criar usuários com role Usuário
               </p>
             )}
           </div>

@@ -147,8 +147,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     switch (role) {
       case 'super_admin':
         return 'Super Admin';
-      case 'admin':
-        return 'Admin';
+      case 'super_suporte':
+        return 'Super Suporte';
+      case 'workspace_admin':
+        return 'Workspace Admin';
       default:
         return 'Usuário';
     }
@@ -165,7 +167,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
 
   const accessibleModuleConfigs = moduleNavConfigs.filter(m => hasModuleAccess(m.code));
-  const canAccessUsers = role === 'super_admin' || role === 'admin';
+  const canAccessUsers = role === 'super_admin' || role === 'workspace_admin';
 
   const NavContent = () => (
     <>
