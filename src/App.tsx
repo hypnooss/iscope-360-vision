@@ -68,7 +68,8 @@ const App = () => (
               {/* Admin */}
               <Route path="/users" element={<UsersPage />} />
               <Route path="/agents" element={<AgentsPage />} />
-              <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/workspaces" element={<ClientsPage />} />
+              <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
               <Route path="/administrators" element={<AdministratorsPage />} />
 
               {/* Catch-all */}
