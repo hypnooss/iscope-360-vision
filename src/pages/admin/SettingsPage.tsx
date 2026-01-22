@@ -9,9 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface PermissionStatus {
   name: string;
@@ -390,6 +392,36 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground mt-2">
                     ⚠️ Lembre-se de conceder "Admin consent" para todas as permissões após adicioná-las.
                   </p>
+
+                  {/* Automated Validation Status */}
+                  {m365Config.lastValidatedAt && (
+                    <div className="flex items-center justify-between p-3 bg-background rounded-lg border mt-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-full bg-primary/10">
+                          <Bell className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Monitoramento Automático</p>
+                          <p className="text-xs text-muted-foreground">
+                            As permissões são validadas automaticamente a cada hora
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>
+                            Última validação: {formatDistanceToNow(new Date(m365Config.lastValidatedAt), { addSuffix: true, locale: ptBR })}
+                          </span>
+                        </div>
+                        {m365Config.validationTenantId && (
+                          <p className="text-xs text-muted-foreground/70 mt-0.5">
+                            Tenant: {m365Config.validationTenantId.substring(0, 8)}...
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end">
