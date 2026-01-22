@@ -43,8 +43,8 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
         break;
       case 'Directory.Read.All':
-        // Use a simpler endpoint - directoryObjects is more reliable
-        url = 'https://graph.microsoft.com/v1.0/directoryObjects?$top=1&$select=id';
+        // Use directoryRoles which requires Directory.Read.All
+        url = 'https://graph.microsoft.com/v1.0/directoryRoles';
         break;
       case 'Organization.Read.All':
         url = 'https://graph.microsoft.com/v1.0/organization?$select=id';
@@ -59,11 +59,11 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id';
         break;
       case 'Policy.Read.All':
-        // Use conditionalAccess policies which is more reliable
         url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
-        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
+        // Minimum page size is 20 for this endpoint
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=20&$select=id';
         break;
       default:
         return false;
