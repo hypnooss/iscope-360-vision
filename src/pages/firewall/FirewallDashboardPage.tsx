@@ -6,17 +6,9 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, AlertTriangle, CheckCircle, Clock, Plus, TrendingUp, Shield } from 'lucide-react';
+import { Server, AlertTriangle, CheckCircle, Clock, Plus } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-
-interface DashboardStats {
-  totalClients: number;
-  totalFirewalls: number;
-  recentAnalyses: number;
-  averageScore: number;
-  criticalIssues: number;
-}
 
 interface RecentAnalysis {
   id: string;
@@ -30,7 +22,6 @@ export default function FirewallDashboardPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,27 +38,12 @@ export default function FirewallDashboardPage() {
 
   useEffect(() => {
     if (user && hasModuleAccess('scope_firewall')) {
-      fetchDashboardData();
+      fetchRecentAnalyses();
     }
   }, [user]);
 
-  const fetchDashboardData = async () => {
+  const fetchRecentAnalyses = async () => {
     try {
-      const [clientsRes, firewallsRes, historyRes] = await Promise.all([
-        supabase.from('clients').select('id', { count: 'exact', head: true }),
-        supabase.from('firewalls').select('id', { count: 'exact', head: true }),
-        supabase.from('analysis_history').select('id, score', { count: 'exact' }).limit(100),
-      ]);
-
-      const totalClients = clientsRes.count || 0;
-      const totalFirewalls = firewallsRes.count || 0;
-      const analyses = historyRes.data || [];
-      
-      const averageScore = analyses.length > 0
-        ? Math.round(analyses.reduce((sum, a) => sum + a.score, 0) / analyses.length)
-        : 0;
-
-      // Fetch recent analyses with firewall info
       const { data: recentData } = await supabase
         .from('analysis_history')
         .select('id, score, created_at, firewall_id')
@@ -106,27 +82,18 @@ export default function FirewallDashboardPage() {
         }
       }
 
-      setStats({
-        totalClients,
-        totalFirewalls,
-        recentAnalyses: analyses.length,
-        averageScore,
-        criticalIssues: analyses.filter(a => a.score < 50).length,
-      });
-
       setRecentAnalyses(formattedRecent);
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('Error fetching recent analyses:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 90) return 'text-success'; // Excelente
-    if (score >= 75) return 'text-success'; // Bom
-    if (score >= 60) return 'text-warning'; // Atenção
-    return 'text-destructive'; // Risco Alto
+    if (score >= 75) return 'text-success';
+    if (score >= 60) return 'text-warning';
+    return 'text-destructive';
   };
 
   if (authLoading) return null;
@@ -145,80 +112,6 @@ export default function FirewallDashboardPage() {
               <Plus className="w-4 h-4 mr-2" />
               Adicionar Firewall
             </Button>
-          )}
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {loading ? (
-            Array(4).fill(0).map((_, i) => (
-              <Card key={i} className="glass-card">
-                <CardContent className="p-6">
-                  <Skeleton className="h-4 w-20 mb-2" />
-                  <Skeleton className="h-8 w-16" />
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <>
-              <Card className="glass-card">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-lg bg-primary/10">
-                      <Server className="w-6 h-6 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Firewalls</p>
-                      <p className="text-2xl font-bold text-foreground">{stats?.totalFirewalls || 0}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="glass-card">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-lg bg-success/10">
-                      <TrendingUp className="w-6 h-6 text-success" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Score Médio</p>
-                      <p className={`text-2xl font-bold ${getScoreColor(stats?.averageScore || 0)}`}>
-                        {stats?.averageScore || 0}%
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="glass-card">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-lg bg-warning/10">
-                      <AlertTriangle className="w-6 h-6 text-warning" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Críticos</p>
-                      <p className="text-2xl font-bold text-foreground">{stats?.criticalIssues || 0}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="glass-card">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-lg bg-secondary">
-                      <Shield className="w-6 h-6 text-secondary-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Clientes</p>
-                      <p className="text-2xl font-bold text-foreground">{stats?.totalClients || 0}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </>
           )}
         </div>
 

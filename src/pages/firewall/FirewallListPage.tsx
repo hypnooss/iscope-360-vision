@@ -17,6 +17,7 @@ import { Server, Plus, Play, Trash2, Eye, EyeOff, Loader2, Building, Edit, MoreV
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { FirewallStatsCards } from '@/components/firewall/FirewallStatsCards';
 
 interface Client {
   id: string;
@@ -463,6 +464,9 @@ export default function FirewallListPage() {
             </div>
           )}
         </div>
+
+        {/* Stats Cards */}
+        <FirewallStatsCards />
 
         {/* Firewalls Table */}
         <Card className="glass-card">
