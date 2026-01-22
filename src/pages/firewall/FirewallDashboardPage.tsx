@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { Server, AlertTriangle, CheckCircle, Clock, Plus, TrendingUp, Shield } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface DashboardStats {
   totalClients: number;
@@ -257,11 +258,14 @@ export default function FirewallDashboardPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {recentAnalyses.map((analysis) => (
+              <div className="space-y-0">
+                {recentAnalyses.map((analysis, index) => (
                   <div
                     key={analysis.id}
-                    className="flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/50 transition-colors"
+                    className={cn(
+                      "flex items-center gap-4 p-3 hover:bg-secondary/50 transition-colors",
+                      index !== recentAnalyses.length - 1 && "border-b border-border/50"
+                    )}
                   >
                     <div className="p-2 rounded-lg bg-primary/10">
                       <Server className="w-5 h-5 text-primary" />

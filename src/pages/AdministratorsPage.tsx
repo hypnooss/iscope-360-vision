@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -336,8 +337,18 @@ export default function AdministratorsPage() {
           </Button>
         </div>
 
-        <div className="rounded-lg border bg-card">
-          <Table>
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5" />
+              Lista de Administradores
+            </CardTitle>
+            <CardDescription>
+              {administrators.length} administrador(es) registrado(s)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
@@ -391,8 +402,9 @@ export default function AdministratorsPage() {
                 ))
               )}
             </TableBody>
-          </Table>
-        </div>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Create Dialog */}
