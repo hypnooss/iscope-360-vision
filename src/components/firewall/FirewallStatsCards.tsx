@@ -5,10 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { Server, AlertTriangle, TrendingUp, Shield } from 'lucide-react';
 
 interface DashboardStats {
-  totalClients: number;
   totalFirewalls: number;
   averageScore: number;
-  criticalIssues: number;
+  criticalAlerts: number;
+  criticalFailures: number;
 }
 
 interface FirewallStatsCardsProps {
@@ -25,25 +25,31 @@ export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
 
   const fetchStats = async () => {
     try {
-      const [clientsRes, firewallsRes, historyRes] = await Promise.all([
-        supabase.from('clients').select('id', { count: 'exact', head: true }),
+      const [firewallsRes, firewallsWithScoreRes] = await Promise.all([
         supabase.from('firewalls').select('id', { count: 'exact', head: true }),
-        supabase.from('analysis_history').select('id, score', { count: 'exact' }).limit(100),
+        supabase.from('firewalls').select('id, last_score'),
       ]);
 
-      const totalClients = clientsRes.count || 0;
       const totalFirewalls = firewallsRes.count || 0;
-      const analyses = historyRes.data || [];
+      const firewallsData = firewallsWithScoreRes.data || [];
       
-      const averageScore = analyses.length > 0
-        ? Math.round(analyses.reduce((sum, a) => sum + a.score, 0) / analyses.length)
+      // Calculate average score from firewalls with scores
+      const firewallsWithScore = firewallsData.filter(f => f.last_score !== null);
+      const averageScore = firewallsWithScore.length > 0
+        ? Math.round(firewallsWithScore.reduce((sum, f) => sum + (f.last_score || 0), 0) / firewallsWithScore.length)
         : 0;
 
+      // Critical alerts: firewalls with score < 50
+      const criticalAlerts = firewallsData.filter(f => f.last_score !== null && f.last_score < 50).length;
+      
+      // Critical failures: firewalls with score < 30 (severe issues)
+      const criticalFailures = firewallsData.filter(f => f.last_score !== null && f.last_score < 30).length;
+
       const newStats = {
-        totalClients,
         totalFirewalls,
         averageScore,
-        criticalIssues: analyses.filter(a => a.score < 50).length,
+        criticalAlerts,
+        criticalFailures,
       };
 
       setStats(newStats);
@@ -95,8 +101,8 @@ export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
       <Card className="glass-card">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-success/10">
-              <TrendingUp className="w-6 h-6 text-success" />
+            <div className={`p-3 rounded-lg ${stats?.averageScore && stats.averageScore >= 75 ? 'bg-success/10' : stats?.averageScore && stats.averageScore >= 50 ? 'bg-warning/10' : 'bg-destructive/10'}`}>
+              <TrendingUp className={`w-6 h-6 ${stats?.averageScore && stats.averageScore >= 75 ? 'text-success' : stats?.averageScore && stats.averageScore >= 50 ? 'text-warning' : 'text-destructive'}`} />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Score Médio</p>
@@ -115,8 +121,8 @@ export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
               <AlertTriangle className="w-6 h-6 text-warning" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Críticos</p>
-              <p className="text-2xl font-bold text-foreground">{stats?.criticalIssues || 0}</p>
+              <p className="text-sm text-muted-foreground">Alertas Críticos</p>
+              <p className="text-2xl font-bold text-warning">{stats?.criticalAlerts || 0}</p>
             </div>
           </div>
         </CardContent>
@@ -125,12 +131,12 @@ export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
       <Card className="glass-card">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-secondary">
-              <Shield className="w-6 h-6 text-secondary-foreground" />
+            <div className="p-3 rounded-lg bg-destructive/10">
+              <Shield className="w-6 h-6 text-destructive" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Clientes</p>
-              <p className="text-2xl font-bold text-foreground">{stats?.totalClients || 0}</p>
+              <p className="text-sm text-muted-foreground">Falhas Críticas</p>
+              <p className="text-2xl font-bold text-destructive">{stats?.criticalFailures || 0}</p>
             </div>
           </div>
         </CardContent>
