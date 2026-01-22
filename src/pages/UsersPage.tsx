@@ -516,7 +516,7 @@ export default function UsersPage() {
 
         {/* Edit Dialog */}
         <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
-          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />
@@ -525,7 +525,7 @@ export default function UsersPage() {
               <DialogDescription>{editingUser?.full_name || editingUser?.email}</DialogDescription>
             </DialogHeader>
 
-            <ScrollArea className="flex-1 min-h-0">
+            <ScrollArea className="max-h-[60vh]">
               <div className="space-y-6 py-4 pr-4">
               {/* Role */}
               <div className="space-y-2">

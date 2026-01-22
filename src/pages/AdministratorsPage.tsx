@@ -410,14 +410,14 @@ export default function AdministratorsPage() {
 
       {/* Create Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Novo Administrador</DialogTitle>
             <DialogDescription>
               Crie um novo usuário com permissões administrativas
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0">
+          <ScrollArea className="max-h-[60vh]">
             <div className="space-y-4 py-4 pr-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Nome completo</Label>
@@ -479,14 +479,14 @@ export default function AdministratorsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar Administrador</DialogTitle>
             <DialogDescription>
               Altere a role de {selectedAdmin?.full_name || selectedAdmin?.email}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0">
+          <ScrollArea className="max-h-[60vh]">
             <div className="space-y-4 py-4 pr-4">
               <div className="space-y-2">
                 <Label htmlFor="editRole">Role</Label>
