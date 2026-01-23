@@ -62,10 +62,16 @@ export default function OAuthCallbackPage() {
     }
 
     // Auto-close window after delay if opened as popup
-    if (window.opener && (success === 'true' || success === 'partial')) {
-      setTimeout(() => {
-        window.close();
-      }, 3000);
+    if (window.opener) {
+      if (success === 'true') {
+        setTimeout(() => {
+          window.close();
+        }, 3000);
+      } else if (success === 'partial') {
+        setTimeout(() => {
+          window.close();
+        }, 10000);
+      }
     }
   }, [searchParams]);
 
@@ -129,11 +135,15 @@ export default function OAuthCallbackPage() {
             )}
           </div>
 
-          {/* Action Buttons */}
           <div className="pt-4 space-y-3">
             {status === 'success' && (
               <p className="text-xs text-muted-foreground">
                 Esta janela será fechada automaticamente em 3 segundos...
+              </p>
+            )}
+            {status === 'partial' && (
+              <p className="text-xs text-muted-foreground">
+                Esta janela será fechada automaticamente em 10 segundos...
               </p>
             )}
             
