@@ -169,10 +169,7 @@ export default function Auth() {
 
   const renderLoginView = () => (
     <Card className="glass-card border-border/50">
-      <CardHeader>
-        <CardTitle className="text-center">Faça login para acessar a plataforma</CardTitle>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="login-email">Email</Label>
