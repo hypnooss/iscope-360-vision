@@ -319,9 +319,41 @@ Deno.serve(async (req) => {
     console.log('Testing permissions...');
     const permissionResults: { name: string; granted: boolean; required: boolean; optional?: boolean; error?: string }[] = [];
     
+    // Helper function to test Directory.Read.All with fallback (same strategy as validate-m365-connection)
+    async function testDirectoryPermission(): Promise<{ granted: boolean; error?: string }> {
+      // First try /domains (more reliable across tenant types)
+      const domainsTestResponse = await fetch('https://graph.microsoft.com/v1.0/domains?$top=1', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      
+      if (domainsTestResponse.ok) {
+        return { granted: true };
+      }
+      
+      // Fallback to /directoryRoles
+      const rolesResponse = await fetch('https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      
+      if (rolesResponse.ok) {
+        return { granted: true };
+      }
+      
+      // Return error from the last test
+      try {
+        const errorBody = await rolesResponse.json();
+        return { 
+          granted: false, 
+          error: errorBody?.error?.code || `HTTP ${rolesResponse.status}` 
+        };
+      } catch {
+        return { granted: false, error: `HTTP ${rolesResponse.status}` };
+      }
+    }
+    
+    // Standard permission tests (excluding Directory.Read.All which has custom logic)
     const permissionTests = [
       { permission: 'User.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1' },
-      { permission: 'Directory.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/directoryRoles?$top=1' },
       { permission: 'Group.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/groups?$top=1' },
       { permission: 'Application.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/applications?$top=1' },
       { permission: 'AuditLog.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1' },
@@ -329,6 +361,17 @@ Deno.serve(async (req) => {
       { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
     ];
 
+    // Test Directory.Read.All with fallback strategy
+    const directoryResult = await testDirectoryPermission();
+    console.log(`Permission test for Directory.Read.All: ${directoryResult.granted ? 'OK' : 'FAILED'} ${directoryResult.error ? `- ${directoryResult.error}` : ''}`);
+    permissionResults.push({
+      name: 'Directory.Read.All',
+      granted: directoryResult.granted,
+      required: true,
+      error: directoryResult.error,
+    });
+
+    // Test other permissions
     for (const test of permissionTests) {
       try {
         const testResponse = await fetch(test.endpoint, {
