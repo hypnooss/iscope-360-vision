@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Eye, EyeOff, ArrowLeft, Mail, KeyRound, CheckCircle } from 'lucide-react';
-import logoPrecisio from '@/assets/logo-precisio-analytics.png';
+import logoIscope from '@/assets/logo-iscope.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
@@ -413,8 +413,8 @@ export default function Auth() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex flex-col items-center gap-4 mb-4">
-            <img src={logoPrecisio} alt="Precisio Analytics" className="h-12 w-auto" />
-            <span className="text-2xl font-bold text-foreground">InfraScope 360</span>
+            <img src={logoIscope} alt="iScope 360" className="h-12 w-auto" />
+            <span className="text-2xl font-bold text-foreground">iScope 360</span>
           </div>
           <p className="text-muted-foreground">Plataforma de Gestão de Infraestrutura</p>
         </div>
