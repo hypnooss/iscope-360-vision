@@ -282,9 +282,9 @@ export function TenantStatusCard({
               </Button>
             )}
             <Button 
-              variant="ghost" 
+              variant="outline" 
               size="sm" 
-              className="text-amber-600 hover:text-amber-700"
+              className="text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 border-border"
               onClick={() => setShowDisconnectDialog(true)}
               disabled={tenant.connection_status === 'disconnected'}
               title="Desconectar (mantém dados)"
@@ -292,9 +292,9 @@ export function TenantStatusCard({
               <Unplug className="w-3 h-3" />
             </Button>
             <Button 
-              variant="ghost" 
+              variant="outline" 
               size="sm" 
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 border-border"
               onClick={() => setShowDeleteDialog(true)}
               title="Excluir permanentemente"
             >

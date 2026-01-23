@@ -250,11 +250,22 @@ serve(async (req) => {
           });
           granted = response.ok;
         } else if (permission === 'AuditLog.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1', {
+          // Try directoryAudits first (more reliable), then signIns
+          const response = await fetch('https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          // AuditLog might need beta or might return 403 if not licensed
-          granted = response.ok || response.status === 400; // 400 can mean permission exists but no data
+          // AuditLog might return 403 if not licensed (Azure AD Premium required)
+          // 400 can mean permission exists but query issue
+          // We consider it granted if we get 200, 400 (query issue), or if we can at least call the endpoint
+          granted = response.ok || response.status === 400;
+          
+          // If directoryAudits fails with 403, try signIns as fallback
+          if (!granted && response.status === 403) {
+            const signInsResponse = await fetch('https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1', {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            granted = signInsResponse.ok || signInsResponse.status === 400;
+          }
         }
       } catch (e) {
         console.error(`Error testing ${permission}:`, e);
