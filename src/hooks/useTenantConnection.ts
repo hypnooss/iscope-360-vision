@@ -25,6 +25,15 @@ export interface RequiredPermission {
   submodule: string;
 }
 
+export interface TenantPermission {
+  id: string;
+  tenant_record_id: string;
+  permission_name: string;
+  permission_type: string;
+  status: 'pending' | 'granted' | 'denied';
+  granted_at: string | null;
+}
+
 export function useTenantConnection() {
   const { user } = useAuth();
   const [tenants, setTenants] = useState<TenantConnection[]>([]);
@@ -159,21 +168,78 @@ export function useTenantConnection() {
   };
 
   const testConnection = async (tenantId: string) => {
-    // This would call an edge function to test the Graph API connection
-    // For now, just update the last_validated_at timestamp
     try {
-      const { error } = await supabase
-        .from('m365_tenants')
-        .update({ last_validated_at: new Date().toISOString() })
-        .eq('id', tenantId);
+      // Find the tenant
+      const tenant = tenants.find(t => t.id === tenantId);
+      if (!tenant) {
+        return { success: false, error: 'Tenant não encontrado.' };
+      }
 
-      if (error) throw error;
-      
+      // Fetch credentials from m365_app_credentials
+      const { data: credentials, error: credError } = await supabase
+        .from('m365_app_credentials')
+        .select('azure_app_id, client_secret_encrypted')
+        .eq('tenant_record_id', tenantId)
+        .single();
+
+      if (credError || !credentials) {
+        console.error('Credentials error:', credError);
+        return { 
+          success: false, 
+          error: 'Credenciais não encontradas. O tenant pode não ter completado o consentimento do administrador.' 
+        };
+      }
+
+      // Call edge function to validate the connection
+      const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
+        body: {
+          tenant_id: tenant.tenant_id,
+          app_id: credentials.azure_app_id,
+          client_secret: credentials.client_secret_encrypted, // Edge function will decrypt
+          tenant_record_id: tenantId,
+        }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
+      }
+
+      // Refresh tenants to get updated status
       await fetchTenants();
-      return { success: true };
+
+      if (!data.success) {
+        return { 
+          success: false, 
+          error: data.error || 'Falha ao validar conexão.',
+          details: data.details,
+        };
+      }
+
+      return { 
+        success: true, 
+        permissions: data.permissions,
+        connection_status: data.connection_status,
+      };
     } catch (err: any) {
       console.error('Error testing connection:', err);
       return { success: false, error: err.message };
+    }
+  };
+
+  const fetchTenantPermissions = async (tenantRecordId: string): Promise<TenantPermission[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('m365_tenant_permissions')
+        .select('id, tenant_record_id, permission_name, permission_type, status, granted_at')
+        .eq('tenant_record_id', tenantRecordId)
+        .order('permission_name');
+
+      if (error) throw error;
+      return (data || []) as TenantPermission[];
+    } catch (err: any) {
+      console.error('Error fetching tenant permissions:', err);
+      return [];
     }
   };
 
@@ -219,6 +285,7 @@ export function useTenantConnection() {
     deleteTenant,
     testConnection,
     updateTenant,
+    fetchTenantPermissions,
     hasConnectedTenant: tenants.some(t => t.connection_status === 'connected' || t.connection_status === 'partial'),
   };
 }
