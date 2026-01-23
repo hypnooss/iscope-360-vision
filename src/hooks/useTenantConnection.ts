@@ -32,6 +32,7 @@ export interface TenantPermission {
   permission_type: string;
   status: 'pending' | 'granted' | 'denied';
   granted_at: string | null;
+  error_reason: string | null;
 }
 
 export function useTenantConnection() {

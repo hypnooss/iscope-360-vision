@@ -438,6 +438,7 @@ export type Database = {
       m365_tenant_permissions: {
         Row: {
           created_at: string
+          error_reason: string | null
           granted_at: string | null
           granted_by: string | null
           id: string
@@ -449,6 +450,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          error_reason?: string | null
           granted_at?: string | null
           granted_by?: string | null
           id?: string
@@ -460,6 +462,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          error_reason?: string | null
           granted_at?: string | null
           granted_by?: string | null
           id?: string
