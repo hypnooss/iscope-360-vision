@@ -416,9 +416,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {/* Logo */}
           <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
-            <div className={cn('flex items-center gap-2', !sidebarOpen && 'justify-center')}>
-              <img src={logoIscope} alt="iScope 360" className="h-6 w-auto flex-shrink-0" />
-              {sidebarOpen && <span className="font-bold text-sidebar-foreground">iScope 360</span>}
+            <div className={cn('flex flex-col items-center gap-1', !sidebarOpen && 'justify-center')}>
+              <img src={logoIscope} alt="iScope 360" className={cn('w-auto flex-shrink-0', sidebarOpen ? 'h-10' : 'h-8')} />
+              {sidebarOpen && <span className="font-bold text-sidebar-foreground text-sm">iScope 360</span>}
             </div>
             <Button
               variant="ghost"
