@@ -26,11 +26,67 @@ const RECOMMENDED_PERMISSIONS = [
   'RoleManagement.Read.Directory',
 ];
 
-function decryptSecret(encrypted: string): string {
+// ============= AES-256-GCM Decryption =============
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid');
+  }
+  
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+}
+
+// Convert hex string to Uint8Array with proper ArrayBuffer
+function fromHex(hex: string): Uint8Array {
+  const length = hex.length / 2;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+async function decryptSecret(encrypted: string): Promise<string> {
+  // AES-GCM format: iv:ciphertext (hex encoded)
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ctHex] = encrypted.split(':');
+      const key = await getEncryptionKey();
+      const iv = fromHex(ivHex);
+      const ciphertext = fromHex(ctHex);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        key,
+        ciphertext as unknown as Uint8Array<ArrayBuffer>
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      return '';
+    }
+  }
+  
+  // Legacy Base64 fallback
   try {
+    console.warn('Using legacy Base64 decryption - please re-save config to upgrade to AES-GCM');
     return atob(encrypted);
   } catch {
-    return encrypted;
+    return '';
   }
 }
 
@@ -242,7 +298,7 @@ Deno.serve(async (req) => {
     }
 
     const appId = configData.app_id;
-    const clientSecret = decryptSecret(configData.client_secret_encrypted);
+    const clientSecret = await decryptSecret(configData.client_secret_encrypted);
     const tenantId = configData.validation_tenant_id;
     const previousPermissions = configData.validated_permissions || [];
 
