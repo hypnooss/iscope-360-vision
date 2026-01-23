@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell } from 'lucide-react';
+import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ModulesManagement } from '@/components/admin/ModulesManagement';
 
 interface PermissionStatus {
   name: string;
@@ -217,6 +218,10 @@ export default function SettingsPage() {
             <TabsTrigger value="m365" className="gap-2">
               <Cloud className="w-4 h-4" />
               Microsoft 365
+            </TabsTrigger>
+            <TabsTrigger value="modules" className="gap-2">
+              <Layers className="w-4 h-4" />
+              Módulos
             </TabsTrigger>
           </TabsList>
 
@@ -437,6 +442,10 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="modules">
+            <ModulesManagement />
           </TabsContent>
         </Tabs>
       </div>

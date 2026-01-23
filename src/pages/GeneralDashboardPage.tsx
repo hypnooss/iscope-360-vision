@@ -95,7 +95,7 @@ export default function GeneralDashboardPage() {
                   <p className="text-sm text-muted-foreground mb-3">
                     Firewalls monitorados
                   </p>
-                  {userModules.some(m => m.code === 'scope_firewall') && (
+                  {userModules.some(m => m.module.code === 'scope_firewall') && (
                     <Button 
                       variant="ghost" 
                       size="sm" 

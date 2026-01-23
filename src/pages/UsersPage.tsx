@@ -30,13 +30,17 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Layers, Trash2, History } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Layers, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 
 type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
-type ModulePermission = "view" | "edit" | "full";
-type ScopeModule = "scope_firewall" | "scope_network" | "scope_cloud";
+type ModulePermissionLevel = "none" | "view" | "edit";
+
+interface UserModulePermission {
+  module_id: string;
+  permission: ModulePermissionLevel;
+}
 
 interface UserProfile {
   id: string;
@@ -44,9 +48,8 @@ interface UserProfile {
   full_name: string | null;
   created_at: string;
   role?: AppRole;
-  permissions?: Record<string, ModulePermission>;
   client_ids?: string[];
-  module_ids?: string[];
+  module_permissions?: UserModulePermission[];
 }
 
 interface Client {
@@ -56,17 +59,9 @@ interface Client {
 
 interface Module {
   id: string;
-  code: ScopeModule;
+  code: string;
   name: string;
 }
-
-const MODULES = ["dashboard", "firewall", "reports"] as const;
-
-const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
-  scope_firewall: "Firewall",
-  scope_network: "Network",
-  scope_cloud: "Cloud",
-};
 
 export default function UsersPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
@@ -78,9 +73,8 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<AppRole>("user");
-  const [editPermissions, setEditPermissions] = useState<Record<string, ModulePermission>>({});
+  const [editModulePermissions, setEditModulePermissions] = useState<Record<string, ModulePermissionLevel>>({});
   const [editClientIds, setEditClientIds] = useState<string[]>([]);
-  const [editModuleIds, setEditModuleIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -118,41 +112,32 @@ export default function UsersPage() {
       // Fetch roles - RLS will filter
       const { data: roles } = await supabase.from("user_roles").select("user_id, role");
 
-      // Fetch permissions - RLS will filter
-      const { data: permissions } = await supabase
-        .from("user_module_permissions")
-        .select("user_id, module_name, permission");
-
       // Fetch user-client associations - RLS will filter
       const { data: userClients } = await supabase.from("user_clients").select("user_id, client_id");
 
-      // Fetch user-module associations
-      const { data: userModules } = await supabase.from("user_modules").select("user_id, module_id");
+      // Fetch user-module associations with permissions
+      const { data: userModules } = await supabase.from("user_modules").select("user_id, module_id, permission");
 
       // Fetch clients I have access to
       const { data: clientsData } = await supabase.from("clients").select("id, name").order("name");
 
       // Fetch available modules
-      const { data: modulesData } = await supabase.from("modules").select("id, code, name").eq("is_active", true);
+      const { data: modulesData } = await supabase.from("modules").select("id, code, name").eq("is_active", true).order("name");
 
       // Merge data
       const mergedUsers: UserProfile[] = (profiles || []).map((profile) => {
         const userRole = roles?.find((r) => r.user_id === profile.id);
-        const userPerms = permissions?.filter((p) => p.user_id === profile.id) || [];
         const userClientAssocs = userClients?.filter((uc) => uc.user_id === profile.id) || [];
         const userModuleAssocs = userModules?.filter((um) => um.user_id === profile.id) || [];
-
-        const permsObj: Record<string, ModulePermission> = {};
-        userPerms.forEach((p) => {
-          permsObj[p.module_name] = p.permission as ModulePermission;
-        });
 
         return {
           ...profile,
           role: (userRole?.role as AppRole) || "user",
-          permissions: permsObj,
           client_ids: userClientAssocs.map((uc) => uc.client_id),
-          module_ids: userModuleAssocs.map((um) => um.module_id),
+          module_permissions: userModuleAssocs.map((um) => ({
+            module_id: um.module_id,
+            permission: (um.permission as ModulePermissionLevel) || 'view',
+          })),
         };
       });
 
@@ -174,9 +159,15 @@ export default function UsersPage() {
   const openEditDialog = (userProfile: UserProfile) => {
     setEditingUser(userProfile);
     setEditRole(userProfile.role || "user");
-    setEditPermissions(userProfile.permissions || {});
     setEditClientIds(userProfile.client_ids || []);
-    setEditModuleIds(userProfile.module_ids || []);
+    
+    // Initialize module permissions
+    const modulePerms: Record<string, ModulePermissionLevel> = {};
+    modules.forEach(mod => {
+      const userPerm = userProfile.module_permissions?.find(p => p.module_id === mod.id);
+      modulePerms[mod.id] = userPerm?.permission || 'none';
+    });
+    setEditModulePermissions(modulePerms);
   };
 
   const handleSave = async () => {
@@ -194,17 +185,6 @@ export default function UsersPage() {
         await supabase.from("user_roles").delete().eq("user_id", editingUser.id).neq("role", editRole);
       }
 
-      // Update permissions
-      for (const module of MODULES) {
-        const perm = editPermissions[module] || "view";
-        await supabase
-          .from("user_module_permissions")
-          .upsert(
-            { user_id: editingUser.id, module_name: module, permission: perm },
-            { onConflict: "user_id,module_name" },
-          );
-      }
-
       // Update client associations
       await supabase.from("user_clients").delete().eq("user_id", editingUser.id);
       if (editClientIds.length > 0) {
@@ -213,12 +193,19 @@ export default function UsersPage() {
           .insert(editClientIds.map((clientId) => ({ user_id: editingUser.id, client_id: clientId })));
       }
 
-      // Update module associations
+      // Update module associations with permissions
       await supabase.from("user_modules").delete().eq("user_id", editingUser.id);
-      if (editRole !== "super_admin" && editModuleIds.length > 0) {
-        await supabase
-          .from("user_modules")
-          .insert(editModuleIds.map((moduleId) => ({ user_id: editingUser.id, module_id: moduleId })));
+      
+      const modulesToInsert = Object.entries(editModulePermissions)
+        .filter(([_, perm]) => perm !== 'none')
+        .map(([moduleId, permission]) => ({
+          user_id: editingUser.id,
+          module_id: moduleId,
+          permission: permission,
+        }));
+      
+      if (modulesToInsert.length > 0) {
+        await supabase.from("user_modules").insert(modulesToInsert);
       }
 
       // Log activity
@@ -288,17 +275,6 @@ export default function UsersPage() {
     }
   };
 
-  const getPermissionLabel = (perm: ModulePermission) => {
-    switch (perm) {
-      case "full":
-        return "Completo";
-      case "edit":
-        return "Editar";
-      default:
-        return "Visualizar";
-    }
-  };
-
   const toggleClient = (clientId: string) => {
     if (editClientIds.includes(clientId)) {
       setEditClientIds(editClientIds.filter((id) => id !== clientId));
@@ -307,12 +283,11 @@ export default function UsersPage() {
     }
   };
 
-  const toggleModule = (moduleId: string) => {
-    if (editModuleIds.includes(moduleId)) {
-      setEditModuleIds(editModuleIds.filter((id) => id !== moduleId));
-    } else {
-      setEditModuleIds([...editModuleIds, moduleId]);
-    }
+  const setModulePermission = (moduleId: string, permission: ModulePermissionLevel) => {
+    setEditModulePermissions(prev => ({
+      ...prev,
+      [moduleId]: permission,
+    }));
   };
 
   // Get client names for a user
@@ -321,10 +296,16 @@ export default function UsersPage() {
     return clients.filter((c) => clientIds.includes(c.id)).map((c) => c.name);
   };
 
-  // Get module names for a user
-  const getModuleNames = (moduleIds: string[] | undefined) => {
-    if (!moduleIds || moduleIds.length === 0) return [];
-    return modules.filter((m) => moduleIds.includes(m.id)).map((m) => SCOPE_MODULE_LABELS[m.code] || m.name);
+  // Get module names for a user (only those with access)
+  const getModuleNames = (modulePerms: UserModulePermission[] | undefined) => {
+    if (!modulePerms || modulePerms.length === 0) return [];
+    return modulePerms
+      .filter(mp => mp.permission !== 'none')
+      .map(mp => {
+        const mod = modules.find(m => m.id === mp.module_id);
+        return mod?.name || '';
+      })
+      .filter(Boolean);
   };
 
   // Check if current user can edit this user
@@ -346,7 +327,6 @@ export default function UsersPage() {
   };
 
   // Get available roles for dropdown based on current user's role
-  // Note: Super Admin and Super Suporte are managed in Administrators page, not here
   const getAvailableRoles = (): { value: AppRole; label: string }[] => {
     return [
       { value: "user", label: "Usuário" },
@@ -443,7 +423,7 @@ export default function UsersPage() {
                           <span className="text-xs text-muted-foreground">Todos</span>
                         ) : (
                           <div className="flex flex-wrap gap-1">
-                            {getModuleNames(u.module_ids)
+                            {getModuleNames(u.module_permissions)
                               .slice(0, 2)
                               .map((name, idx) => (
                                 <Badge key={idx} variant="secondary" className="text-xs">
@@ -451,12 +431,12 @@ export default function UsersPage() {
                                   {name}
                                 </Badge>
                               ))}
-                            {(u.module_ids?.length || 0) > 2 && (
+                            {(u.module_permissions?.filter(p => p.permission !== 'none').length || 0) > 2 && (
                               <Badge variant="secondary" className="text-xs">
-                                +{(u.module_ids?.length || 0) - 2}
+                                +{(u.module_permissions?.filter(p => p.permission !== 'none').length || 0) - 2}
                               </Badge>
                             )}
-                            {(u.module_ids?.length || 0) === 0 && (
+                            {(u.module_permissions?.filter(p => p.permission !== 'none').length || 0) === 0 && (
                               <span className="text-xs text-muted-foreground">Nenhum</span>
                             )}
                           </div>
@@ -532,104 +512,93 @@ export default function UsersPage() {
 
             <ScrollArea className="max-h-[60vh]">
               <div className="space-y-6 py-2 px-6">
-              {/* Role */}
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={editRole} onValueChange={(v) => setEditRole(v as AppRole)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAvailableRoles().map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!isSuperAdmin() && (
-                  <p className="text-xs text-muted-foreground">Como Admin, você só pode atribuir o role de Usuário</p>
-                )}
-              </div>
-
-              {/* Scope Modules Access */}
-              {editRole !== "super_admin" && (
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2">
-                    <Layers className="w-4 h-4" />
-                    Módulos com Acesso
-                  </Label>
-                  <div className="space-y-2 border rounded-lg p-3">
-                    {modules.map((mod) => (
-                      <div key={mod.id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`edit-mod-${mod.id}`}
-                          checked={editModuleIds.includes(mod.id)}
-                          onCheckedChange={() => toggleModule(mod.id)}
-                        />
-                        <label htmlFor={`edit-mod-${mod.id}`} className="text-sm cursor-pointer">
-                          {SCOPE_MODULE_LABELS[mod.code] || mod.name}
-                        </label>
-                      </div>
-                    ))}
-                    {modules.length === 0 && <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>}
-                  </div>
+                {/* Role */}
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={editRole} onValueChange={(v) => setEditRole(v as AppRole)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getAvailableRoles().map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!isSuperAdmin() && (
+                    <p className="text-xs text-muted-foreground">Como Admin, você só pode atribuir o role de Usuário</p>
+                  )}
                 </div>
-              )}
 
-              {/* Module Permissions */}
-              <div className="space-y-3">
-                <Label>Permissões por Área</Label>
-                {MODULES.map((mod) => (
-                  <div key={mod} className="flex items-center justify-between">
-                    <span className="text-sm capitalize">{mod === "firewall" ? "Firewall" : mod}</span>
-                    <Select
-                      value={editPermissions[mod] || "view"}
-                      onValueChange={(v) => setEditPermissions({ ...editPermissions, [mod]: v as ModulePermission })}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="view">Visualizar</SelectItem>
-                        <SelectItem value="edit">Editar</SelectItem>
-                        <SelectItem value="full">Completo</SelectItem>
-                      </SelectContent>
-                    </Select>
+                {/* Module Permissions */}
+                {editRole !== "super_admin" && (
+                  <div className="space-y-3">
+                    <Label className="flex items-center gap-2">
+                      <Layers className="w-4 h-4" />
+                      Módulos com Acesso
+                    </Label>
+                    <div className="space-y-3 border rounded-lg p-3">
+                      {modules.map((mod) => (
+                        <div key={mod.id} className="flex items-center justify-between">
+                          <span className="text-sm">{mod.name}</span>
+                          <Select
+                            value={editModulePermissions[mod.id] || 'none'}
+                            onValueChange={(v) => setModulePermission(mod.id, v as ModulePermissionLevel)}
+                          >
+                            <SelectTrigger className="w-36">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sem Acesso</SelectItem>
+                              <SelectItem value="view">Visualizar</SelectItem>
+                              <SelectItem value="edit">Editar</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                      {modules.length === 0 && <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Defina o nível de acesso do usuário para cada módulo
+                    </p>
                   </div>
-                ))}
-              </div>
+                )}
 
-              {/* Client Access */}
-              {editRole !== "super_admin" && (
-                <div className="space-y-3">
-                  <Label>Acesso a Clientes</Label>
-                  <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
-                    {getAssignableClients().map((client) => (
-                      <div key={client.id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={client.id}
-                          checked={editClientIds.includes(client.id)}
-                          onCheckedChange={() => toggleClient(client.id)}
-                        />
-                        <label htmlFor={client.id} className="text-sm cursor-pointer">
-                          {client.name}
-                        </label>
-                      </div>
-                    ))}
-                    {getAssignableClients().length === 0 && (
+                {/* Client Access */}
+                {editRole !== "super_admin" && (
+                  <div className="space-y-3">
+                    <Label className="flex items-center gap-2">
+                      <Building className="w-4 h-4" />
+                      Acesso a Clientes
+                    </Label>
+                    <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
+                      {getAssignableClients().map((client) => (
+                        <div key={client.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={client.id}
+                            checked={editClientIds.includes(client.id)}
+                            onCheckedChange={() => toggleClient(client.id)}
+                          />
+                          <label htmlFor={client.id} className="text-sm cursor-pointer">
+                            {client.name}
+                          </label>
+                        </div>
+                      ))}
+                      {getAssignableClients().length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {isSuperAdmin() ? "Nenhum cliente cadastrado" : "Você não possui clientes atribuídos"}
+                        </p>
+                      )}
+                    </div>
+                    {!isSuperAdmin() && (
                       <p className="text-xs text-muted-foreground">
-                        {isSuperAdmin() ? "Nenhum cliente cadastrado" : "Você não possui clientes atribuídos"}
+                        Você só pode atribuir clientes aos quais você tem acesso
                       </p>
                     )}
                   </div>
-                  {!isSuperAdmin() && (
-                    <p className="text-xs text-muted-foreground">
-                      Você só pode atribuir clientes aos quais você tem acesso
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
               </div>
             </ScrollArea>
 
