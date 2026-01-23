@@ -30,5 +30,5 @@ verify_jwt = false
 [functions.agent-heartbeat]
 verify_jwt = false
 
-[functions.refresh-agent-token]
+[functions.agent-refresh]
 verify_jwt = false

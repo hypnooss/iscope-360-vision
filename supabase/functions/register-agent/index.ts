@@ -30,7 +30,8 @@ async function generateAgentToken(agentId: string, jwtSecret: string, expiresIn:
     exp = now + 30 * 60; // Default 30 minutes
   }
 
-  const jwt = await new jose.SignJWT({ agent_id: agentId, type: expiresIn.includes("d") ? "refresh" : "access" })
+  // Payload usa apenas "type" - o agent_id fica no claim padrão "sub"
+  const jwt = await new jose.SignJWT({ type: expiresIn.includes("d") ? "refresh" : "access" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt(now)
     .setExpirationTime(exp)
@@ -92,10 +93,10 @@ serve(async (req) => {
 
     if (agentError || !agent) {
       console.log(`[register-agent] Agent not found: ${agentError?.message || "No agent with this code"}`);
-      return new Response(JSON.stringify({ error: "Invalid activation code" }), {
-        status: 409,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Invalid activation code", code: "INVALID_CODE" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log(`[register-agent] Found agent: ${agent.id} (${agent.name})`);
@@ -104,10 +105,10 @@ serve(async (req) => {
     // Check if revoked
     if (agent.revoked) {
       console.log(`[register-agent] Agent ${agent.id} is revoked`);
-      return new Response(JSON.stringify({ error: "Agent has been revoked" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Agent has been revoked", code: "AGENT_REVOKED" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Check if code expired
@@ -115,20 +116,20 @@ serve(async (req) => {
       const expiresAt = new Date(agent.activation_code_expires_at);
       if (expiresAt < new Date()) {
         console.log(`[register-agent] Activation code expired at ${agent.activation_code_expires_at}`);
-        return new Response(JSON.stringify({ error: "Activation code has expired" }), {
-          status: 410,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Activation code has expired", code: "CODE_EXPIRED" }),
+          { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 
     // Step 3: Check if already registered (jwt_secret exists)
     if (agent.jwt_secret) {
       console.log(`[register-agent] Agent ${agent.id} is already registered`);
-      return new Response(JSON.stringify({ error: "Agent is already registered" }), {
-        status: 409,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Agent is already registered", code: "ALREADY_REGISTERED" }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Step 4: Generate secrets and tokens
