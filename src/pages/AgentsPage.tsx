@@ -25,12 +25,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -39,7 +33,6 @@ import {
   Bot,
   Plus,
   Loader2,
-  MoreVertical,
   Eye,
   Ban,
   Copy,
@@ -536,37 +529,38 @@ export default function AgentsPage() {
                             : "—"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreVertical className="w-4 h-4" />
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleViewDetails(agent)}
+                              title="Ver detalhes"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            {!agent.revoked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openRevokeDialog(agent)}
+                                title="Revogar agent"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Ban className="w-4 h-4" />
                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleViewDetails(agent)}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                Ver detalhes
-                              </DropdownMenuItem>
-                              {!agent.revoked && (
-                                <DropdownMenuItem
-                                  onClick={() => openRevokeDialog(agent)}
-                                  className="text-destructive focus:text-destructive"
-                                >
-                                  <Ban className="w-4 h-4 mr-2" />
-                                  Revogar agent
-                                </DropdownMenuItem>
-                              )}
-                              {agent.revoked && (
-                                <DropdownMenuItem
-                                  onClick={() => openDeleteDialog(agent)}
-                                  className="text-destructive focus:text-destructive"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Deletar agent
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            )}
+                            {agent.revoked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openDeleteDialog(agent)}
+                                title="Deletar agent"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
