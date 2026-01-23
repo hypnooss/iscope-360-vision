@@ -27,10 +27,10 @@ import FirewallAnalysis from "./pages/FirewallAnalysis";
 // Microsoft 365 Module Pages
 import M365DashboardPage from "./pages/m365/M365DashboardPage";
 import TenantConnectionPage from "./pages/m365/TenantConnectionPage";
+import OAuthCallbackPage from "./pages/m365/OAuthCallbackPage";
 import EntraIdPage from "./pages/m365/EntraIdPage";
 import EntraIdAuditLogsPage from "./pages/m365/EntraIdAuditLogsPage";
 import EntraIdAnalysisPage from "./pages/m365/EntraIdAnalysisPage";
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -61,6 +61,7 @@ const App = () => (
               {/* Microsoft 365 Module */}
               <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
               <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
+              <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
               <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
               <Route path="/scope-m365/entra-id/audit-logs" element={<EntraIdAuditLogsPage />} />
               <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
