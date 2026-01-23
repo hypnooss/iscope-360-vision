@@ -48,7 +48,13 @@ interface Client {
   name: string;
 }
 
-type WizardStep = 'client' | 'tenant' | 'authorize';
+interface ConnectionResult {
+  status: 'success' | 'partial' | 'error';
+  missingPermissions: string[];
+  errorMessage?: string;
+}
+
+type WizardStep = 'client' | 'tenant' | 'authorize' | 'result';
 
 const STEPS: { key: WizardStep; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: 'client', label: 'Cliente', icon: Building },
@@ -71,6 +77,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
   const [pendingTenantRecordId, setPendingTenantRecordId] = useState<string | null>(null);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<ConnectionResult | null>(null);
   
   useEffect(() => {
     if (open) {
@@ -89,6 +96,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       setPendingTenantRecordId(null);
       setWaitingForAuth(false);
       setVerifying(false);
+      setConnectionResult(null);
     }
   }, [open]);
 
@@ -102,27 +110,28 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       const { success, partial, tenantId: msgTenantId, missingPermissions, error, errorDescription } = event.data;
       
       if (success && !partial) {
-        toast({
-          title: 'Conexão estabelecida!',
-          description: 'O tenant Microsoft 365 foi conectado com sucesso.',
+        setConnectionResult({
+          status: 'success',
+          missingPermissions: [],
         });
+        setStep('result');
+        setWaitingForAuth(false);
         onSuccess();
-        onOpenChange(false);
       } else if (partial) {
-        const missing = missingPermissions?.join(', ') || 'Algumas permissões';
-        toast({
-          title: 'Conexão parcial',
-          description: `O tenant foi conectado, mas algumas permissões estão faltando: ${missing}`,
-          variant: 'default',
+        setConnectionResult({
+          status: 'partial',
+          missingPermissions: missingPermissions || [],
         });
+        setStep('result');
+        setWaitingForAuth(false);
         onSuccess();
-        onOpenChange(false);
       } else if (error) {
-        toast({
-          title: 'Erro na conexão',
-          description: errorDescription || error || 'Ocorreu um erro durante a autorização.',
-          variant: 'destructive',
+        setConnectionResult({
+          status: 'error',
+          missingPermissions: [],
+          errorMessage: errorDescription || error || 'Ocorreu um erro durante a autorização.',
         });
+        setStep('result');
         setWaitingForAuth(false);
         setPendingTenantRecordId(null);
       }
@@ -130,7 +139,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [waitingForAuth, onSuccess, onOpenChange]);
+  }, [waitingForAuth, onSuccess]);
 
   useEffect(() => {
     if (clients.length === 1 && !selectedClientId) {
@@ -616,6 +625,113 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
           </div>
         );
 
+      case 'result':
+        return (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center text-center space-y-4 py-4">
+              {/* Status Icon */}
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center",
+                connectionResult?.status === 'success' && "bg-green-500/10",
+                connectionResult?.status === 'partial' && "bg-yellow-500/10",
+                connectionResult?.status === 'error' && "bg-red-500/10"
+              )}>
+                {connectionResult?.status === 'success' && (
+                  <CheckCircle className="w-10 h-10 text-green-500" />
+                )}
+                {connectionResult?.status === 'partial' && (
+                  <AlertCircle className="w-10 h-10 text-yellow-500" />
+                )}
+                {connectionResult?.status === 'error' && (
+                  <AlertCircle className="w-10 h-10 text-red-500" />
+                )}
+              </div>
+
+              {/* Status Title */}
+              <div className="space-y-2">
+                <h3 className={cn(
+                  "text-lg font-semibold",
+                  connectionResult?.status === 'success' && "text-green-500",
+                  connectionResult?.status === 'partial' && "text-yellow-500",
+                  connectionResult?.status === 'error' && "text-red-500"
+                )}>
+                  {connectionResult?.status === 'success' && 'Conexão Estabelecida!'}
+                  {connectionResult?.status === 'partial' && 'Conexão Parcial'}
+                  {connectionResult?.status === 'error' && 'Falha na Conexão'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {connectionResult?.status === 'success' && 
+                    'Todas as permissões foram validadas com sucesso. O tenant está pronto para uso.'}
+                  {connectionResult?.status === 'partial' && 
+                    'O tenant foi conectado, mas algumas permissões não puderam ser validadas.'}
+                  {connectionResult?.status === 'error' && 
+                    (connectionResult.errorMessage || 'Ocorreu um erro durante o processo de autorização.')}
+                </p>
+              </div>
+            </div>
+
+            {/* Missing Permissions Details */}
+            {connectionResult?.status === 'partial' && connectionResult.missingPermissions.length > 0 && (
+              <Card className="bg-yellow-500/5 border-yellow-500/30">
+                <CardContent className="py-4">
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
+                      Permissões pendentes:
+                    </p>
+                    <ul className="space-y-2">
+                      {connectionResult.missingPermissions.map((perm) => (
+                        <li key={perm} className="flex items-start gap-2 text-sm">
+                          <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="font-mono text-xs">{perm}</span>
+                            {(perm === 'Reports.Read.All' || perm === 'AuditLog.Read.All') && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Requer Azure AD Premium P1/P2
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {connectionResult?.status === 'partial' && (
+              <Card className="bg-muted/30 border border-border/50">
+                <CardContent className="py-3">
+                  <div className="flex gap-2 items-start">
+                    <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
+                    <div className="text-sm text-muted-foreground">
+                      <p>
+                        As funcionalidades que dependem das permissões pendentes podem não funcionar corretamente.
+                        Você pode atualizar as permissões posteriormente através do botão "Upgrade" no card do tenant.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {connectionResult?.status === 'error' && (
+              <Card className="bg-muted/30 border border-border/50">
+                <CardContent className="py-3">
+                  <div className="flex gap-2 items-start">
+                    <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
+                    <div className="text-sm text-muted-foreground">
+                      <p>
+                        Verifique se você tem permissões de Administrador Global no tenant e tente novamente.
+                        O Admin Consent pode levar alguns minutos para propagar - aguarde e tente novamente.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        );
+
       default:
         return null;
     }
@@ -634,50 +750,52 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
           </DialogDescription>
         </DialogHeader>
 
-        {/* Step Indicator */}
-        <div className="flex items-center justify-center py-2">
-          {STEPS.map((s, index) => {
-            const Icon = s.icon;
-            const isActive = s.key === step;
-            const isCompleted = index < currentStepIndex;
-            
-            return (
-              <div key={s.key} className="flex items-center">
-                <div className="flex flex-col items-center min-w-[70px]">
-                  <div
-                    className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors",
-                      isActive && "border-primary bg-primary text-primary-foreground",
-                      isCompleted && "border-primary bg-primary/10 text-primary",
-                      !isActive && !isCompleted && "border-muted bg-muted/30 text-muted-foreground"
-                    )}
-                  >
-                    {isCompleted ? (
-                      <CheckCircle className="w-4 h-4" />
-                    ) : (
-                      <Icon className="w-4 h-4" />
-                    )}
+        {/* Step Indicator - Hide on result step */}
+        {step !== 'result' && (
+          <div className="flex items-center justify-center py-2">
+            {STEPS.map((s, index) => {
+              const Icon = s.icon;
+              const isActive = s.key === step;
+              const isCompleted = index < currentStepIndex;
+              
+              return (
+                <div key={s.key} className="flex items-center">
+                  <div className="flex flex-col items-center min-w-[70px]">
+                    <div
+                      className={cn(
+                        "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors",
+                        isActive && "border-primary bg-primary text-primary-foreground",
+                        isCompleted && "border-primary bg-primary/10 text-primary",
+                        !isActive && !isCompleted && "border-muted bg-muted/30 text-muted-foreground"
+                      )}
+                    >
+                      {isCompleted ? (
+                        <CheckCircle className="w-4 h-4" />
+                      ) : (
+                        <Icon className="w-4 h-4" />
+                      )}
+                    </div>
+                    <span className={cn(
+                      "text-xs mt-1 whitespace-nowrap",
+                      isActive && "text-primary font-medium",
+                      !isActive && "text-muted-foreground"
+                    )}>
+                      {s.label}
+                    </span>
                   </div>
-                  <span className={cn(
-                    "text-xs mt-1 whitespace-nowrap",
-                    isActive && "text-primary font-medium",
-                    !isActive && "text-muted-foreground"
-                  )}>
-                    {s.label}
-                  </span>
+                  {index < STEPS.length - 1 && (
+                    <div 
+                      className={cn(
+                        "w-10 h-0.5 mx-1 mt-[-16px]",
+                        isCompleted ? "bg-primary" : "bg-muted"
+                      )} 
+                    />
+                  )}
                 </div>
-                {index < STEPS.length - 1 && (
-                  <div 
-                    className={cn(
-                      "w-10 h-0.5 mx-1 mt-[-16px]",
-                      isCompleted ? "bg-primary" : "bg-muted"
-                    )} 
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Step Content */}
         <ScrollArea className="max-h-[60vh]">
@@ -688,25 +806,37 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
         {/* Actions */}
         <DialogFooter className="flex-row justify-between sm:justify-between gap-2">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            disabled={currentStepIndex === 0 || loading || authorizing}
-            className="gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Voltar
-          </Button>
-          
-          {step !== 'authorize' && (
+          {step === 'result' ? (
             <Button 
-              onClick={handleNext} 
-              disabled={!canProceed() || loading}
-              className="gap-2"
+              onClick={() => onOpenChange(false)} 
+              className="w-full gap-2"
             >
-              Próximo
-              <ArrowRight className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4" />
+              Concluir
             </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleBack}
+                disabled={currentStepIndex === 0 || loading || authorizing}
+                className="gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </Button>
+              
+              {step !== 'authorize' && (
+                <Button 
+                  onClick={handleNext} 
+                  disabled={!canProceed() || loading}
+                  className="gap-2"
+                >
+                  Próximo
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogContent>
