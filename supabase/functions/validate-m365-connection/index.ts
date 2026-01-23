@@ -28,6 +28,54 @@ const REQUIRED_PERMISSIONS = [
   'AuditLog.Read.All',
 ];
 
+// ========== Encryption Utilities ==========
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex) {
+    throw new Error('M365_ENCRYPTION_KEY not configured');
+  }
+  const keyBytes = fromHex(keyHex);
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes.buffer as ArrayBuffer,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+}
+
+function fromHex(hex: string): Uint8Array {
+  const matches = hex.match(/.{1,2}/g);
+  if (!matches) return new Uint8Array();
+  return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
+}
+
+async function decryptSecret(encrypted: string): Promise<string> {
+  // Check if this is in the new encrypted format (iv:ciphertext)
+  if (encrypted.includes(':')) {
+    const [ivHex, ciphertextHex] = encrypted.split(':');
+    const iv = fromHex(ivHex);
+    const ciphertext = fromHex(ciphertextHex);
+    
+    const key = await getEncryptionKey();
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      ciphertext.buffer as ArrayBuffer
+    );
+    
+    return new TextDecoder().decode(decrypted);
+  }
+  
+  // Fallback: assume it's a plain text or Base64 encoded secret (legacy)
+  try {
+    return atob(encrypted);
+  } catch {
+    // If not Base64, return as-is (plain text)
+    return encrypted;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -70,13 +118,30 @@ serve(async (req) => {
       );
     }
 
+    // Decrypt the client secret
+    let decryptedSecret: string;
+    try {
+      decryptedSecret = await decryptSecret(client_secret);
+      console.log('Client secret decrypted successfully');
+    } catch (e) {
+      console.error('Failed to decrypt client secret:', e);
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: 'Falha ao decriptar client secret.',
+          details: 'A chave de criptografia pode estar incorreta ou o secret está corrompido.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Step 1: Try to get an access token using Client Credentials flow
     console.log(`Attempting to get token for tenant: ${tenant_id}`);
     
     const tokenUrl = `https://login.microsoftonline.com/${tenant_id}/oauth2/v2.0/token`;
     const tokenBody = new URLSearchParams({
       client_id: app_id,
-      client_secret: client_secret,
+      client_secret: decryptedSecret,
       scope: 'https://graph.microsoft.com/.default',
       grant_type: 'client_credentials',
     });
@@ -104,6 +169,17 @@ serve(async (req) => {
       } else if (tokenData.error_description?.includes('not found')) {
         errorMessage = 'Tenant ou aplicativo não encontrado.';
         errorDetails = 'Verifique se o Tenant ID e o Application ID estão corretos.';
+      }
+
+      // Update tenant status to failed if tenant_record_id provided
+      if (tenant_record_id) {
+        await supabase
+          .from('m365_tenants')
+          .update({
+            connection_status: 'failed',
+            last_validated_at: new Date().toISOString(),
+          })
+          .eq('id', tenant_record_id);
       }
 
       return new Response(
@@ -223,6 +299,19 @@ serve(async (req) => {
             onConflict: 'tenant_record_id,permission_name,permission_type',
           });
       }
+
+      // Log the validation action
+      await supabase.from('m365_audit_logs').insert({
+        tenant_record_id,
+        user_id: user.id,
+        action: 'connection_tested',
+        action_details: {
+          connection_status: connectionStatus,
+          permissions_granted: permissionResults.filter(p => p.granted).length,
+          permissions_total: permissionResults.length,
+          missing_permissions: missingPermissions,
+        },
+      });
     }
 
     return new Response(

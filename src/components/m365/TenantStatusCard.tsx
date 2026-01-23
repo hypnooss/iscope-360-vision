@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,11 +13,13 @@ import {
   Loader2,
   ExternalLink,
   Trash2,
-  Pencil
+  Pencil,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { TenantConnection } from '@/hooks/useTenantConnection';
+import { TenantConnection, TenantPermission } from '@/hooks/useTenantConnection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +30,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TenantStatusCardProps {
   tenant: TenantConnection;
@@ -51,10 +55,42 @@ export function TenantStatusCard({
   const [deleting, setDeleting] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [permissions, setPermissions] = useState<TenantPermission[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [showPermissions, setShowPermissions] = useState(false);
+
+  // Fetch permissions when card loads or after test
+  const fetchPermissions = async () => {
+    setLoadingPermissions(true);
+    try {
+      const { data, error } = await supabase
+        .from('m365_tenant_permissions')
+        .select('id, tenant_record_id, permission_name, permission_type, status, granted_at')
+        .eq('tenant_record_id', tenant.id)
+        .order('permission_name');
+
+      if (!error && data) {
+        setPermissions(data as TenantPermission[]);
+      }
+    } catch (err) {
+      console.error('Error fetching permissions:', err);
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
+  useEffect(() => {
+    // Auto-fetch permissions if tenant is connected or partial
+    if (tenant.connection_status === 'connected' || tenant.connection_status === 'partial') {
+      fetchPermissions();
+    }
+  }, [tenant.id, tenant.connection_status]);
 
   const handleTest = async () => {
     setTesting(true);
     await onTest(tenant.id);
+    // Refresh permissions after testing
+    await fetchPermissions();
     setTesting(false);
   };
 
@@ -112,6 +148,11 @@ export function TenantStatusCard({
     }
   };
 
+  // Separate permissions into required (all current ones are required)
+  const requiredPermissions = permissions.filter(p => p.permission_type === 'Application');
+  const grantedCount = permissions.filter(p => p.status === 'granted').length;
+  const totalCount = permissions.length;
+
   return (
     <>
       <Card className="glass-card hover:shadow-lg transition-shadow">
@@ -158,6 +199,52 @@ export function TenantStatusCard({
               </span>
             </div>
           </div>
+
+          {/* Permissions Section */}
+          {permissions.length > 0 && (
+            <div className="pt-2 border-t border-border/50">
+              <button
+                onClick={() => setShowPermissions(!showPermissions)}
+                className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  Permissões ({grantedCount}/{totalCount})
+                  {loadingPermissions && <Loader2 className="w-3 h-3 animate-spin" />}
+                </span>
+                {showPermissions ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+              
+              {showPermissions && (
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Permissões do Microsoft Graph</p>
+                    <div className="space-y-1">
+                      {requiredPermissions.map((perm) => (
+                        <div key={perm.id} className="flex items-center gap-2 text-xs">
+                          <span 
+                            className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm.status === 'granted' ? 'bg-green-500' : 
+                              perm.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )}
+                          />
+                          <span className="truncate">{perm.permission_name}</span>
+                          <span className="text-muted-foreground ml-auto">
+                            {perm.status === 'granted' ? 'OK' : 
+                             perm.status === 'denied' ? 'Negada' : 'Pendente'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <Button 
