@@ -573,25 +573,27 @@ export default function AgentsPage() {
 
         {/* Details Dialog */}
         <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Bot className="w-5 h-5" />
-                {selectedAgent?.name}
-              </DialogTitle>
-              <DialogDescription>Detalhes e gerenciamento do agent</DialogDescription>
+              <DialogTitle>Detalhes do Agent</DialogTitle>
+              <DialogDescription>Informações e gerenciamento do agent</DialogDescription>
             </DialogHeader>
 
             {selectedAgent && (
               <div className="space-y-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Agent ID</Label>
-                    <p className="text-sm font-mono break-all">{selectedAgent.id}</p>
+                {/* Agent Info Grid */}
+                <div className="space-y-2">
+                  <Label>Nome</Label>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                    <Bot className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-medium">{selectedAgent.name}</span>
                   </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Status</Label>
-                    <div className="mt-1">
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
                       <Badge
                         variant={
                           getAgentStatus(selectedAgent).variant === "success"
@@ -612,29 +614,45 @@ export default function AgentsPage() {
                       </Badge>
                     </div>
                   </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Criado em</Label>
-                    <p className="text-sm">{new Date(selectedAgent.created_at).toLocaleString("pt-BR")}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Last Seen</Label>
-                    <p className="text-sm">
-                      {selectedAgent.last_seen ? new Date(selectedAgent.last_seen).toLocaleString("pt-BR") : "—"}
-                    </p>
-                  </div>
-                  {selectedAgent.client_name && (
-                    <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">Cliente</Label>
-                      <p className="text-sm">{selectedAgent.client_name}</p>
+                  <div className="space-y-2">
+                    <Label>Cliente</Label>
+                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                      <span className="text-sm">
+                        {selectedAgent.client_name || <span className="text-muted-foreground">—</span>}
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                {/* New Activation Code Section */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Criado em</Label>
+                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                      <span className="text-sm">{new Date(selectedAgent.created_at).toLocaleString("pt-BR")}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Last Seen</Label>
+                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                      <span className="text-sm">
+                        {selectedAgent.last_seen ? new Date(selectedAgent.last_seen).toLocaleString("pt-BR") : "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Agent ID</Label>
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                    <code className="text-xs font-mono break-all text-muted-foreground">{selectedAgent.id}</code>
+                  </div>
+                </div>
+
+                {/* Activation Code Section */}
                 {!selectedAgent.revoked && (
-                  <div className="pt-4 border-t">
-                    <div className="flex items-center justify-between mb-2">
-                      <Label className="text-sm font-medium">Código de Ativação</Label>
+                  <div className="pt-4 border-t border-border/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label>Código de Ativação</Label>
                       <Button size="sm" variant="outline" onClick={handleGenerateNewCode} disabled={generatingCode}>
                         {generatingCode ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -644,8 +662,8 @@ export default function AgentsPage() {
                         Gerar novo código
                       </Button>
                     </div>
-                    {newActivationCode && (
-                      <div className="p-3 rounded-lg bg-muted/50 border border-border space-y-2">
+                    {newActivationCode ? (
+                      <div className="p-3 rounded-lg bg-muted/30 border border-border/50 space-y-2">
                         <div className="flex items-center gap-2">
                           <code className="flex-1 text-sm font-mono break-all">{newActivationCode.code}</code>
                           <Button size="icon" variant="ghost" onClick={handleCopyNewCode}>
@@ -661,8 +679,7 @@ export default function AgentsPage() {
                           })}
                         </p>
                       </div>
-                    )}
-                    {!newActivationCode && (
+                    ) : (
                       <p className="text-sm text-muted-foreground">
                         Gere um novo código para reativar este agent se necessário.
                       </p>
@@ -673,6 +690,9 @@ export default function AgentsPage() {
             )}
 
             <DialogFooter>
+              <Button variant="outline" onClick={() => setDetailsDialogOpen(false)}>
+                Fechar
+              </Button>
               {selectedAgent && !selectedAgent.revoked && (
                 <Button variant="destructive" onClick={() => openRevokeDialog(selectedAgent)}>
                   <Ban className="w-4 h-4 mr-2" />
@@ -685,9 +705,6 @@ export default function AgentsPage() {
                   Deletar Agent
                 </Button>
               )}
-              <Button variant="outline" onClick={() => setDetailsDialogOpen(false)}>
-                Fechar
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
