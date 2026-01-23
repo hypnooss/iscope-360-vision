@@ -123,12 +123,30 @@ serve(async (req) => {
       }
     }
 
-    // Step 3: Check if already registered (jwt_secret exists)
+    // Step 3: Check if already registered (jwt_secret exists) - REEMIT tokens
     if (agent.jwt_secret) {
-      console.log(`[register-agent] Agent ${agent.id} is already registered`);
+      console.log(`[register-agent] Agent ${agent.id} already registered, reemitting tokens...`);
+      
+      // Reemit tokens using existing jwt_secret
+      const accessToken = await generateAgentToken(agent.id, agent.jwt_secret, "30m");
+      const refreshToken = await generateAgentToken(agent.id, agent.jwt_secret, "90d");
+      
+      // Update last_seen
+      await supabase
+        .from("agents")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("id", agent.id);
+      
+      console.log(`[register-agent] Tokens reemitted for agent ${agent.id}`);
+      
       return new Response(
-        JSON.stringify({ error: "Agent is already registered", code: "ALREADY_REGISTERED" }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          agent_id: agent.id,
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          reissued: true, // Flag para indicar que são tokens reemitidos
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
