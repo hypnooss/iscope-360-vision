@@ -234,21 +234,35 @@ serve(async (req) => {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'Directory.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id', {
+          // Use /domains endpoint which specifically requires Directory.Read.All
+          const response = await fetch('https://graph.microsoft.com/v1.0/domains?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+          
+          // Fallback to /directoryRoles if domains fails
+          if (!granted) {
+            const fallbackResponse = await fetch('https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id', {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            granted = fallbackResponse.ok;
+            console.log(`Permission ${permission} fallback: ${fallbackResponse.status} - granted: ${granted}`);
+          }
         } else if (permission === 'Group.Read.All') {
           const response = await fetch('https://graph.microsoft.com/v1.0/groups?$top=1&$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'Application.Read.All') {
           const response = await fetch('https://graph.microsoft.com/v1.0/applications?$top=1&$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'AuditLog.Read.All') {
           // Try directoryAudits first (more reliable), then signIns
           const response = await fetch('https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1', {
@@ -258,6 +272,7 @@ serve(async (req) => {
           // 400 can mean permission exists but query issue
           // We consider it granted if we get 200, 400 (query issue), or if we can at least call the endpoint
           granted = response.ok || response.status === 400;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
           
           // If directoryAudits fails with 403, try signIns as fallback
           if (!granted && response.status === 403) {
@@ -265,6 +280,7 @@ serve(async (req) => {
               headers: { 'Authorization': `Bearer ${accessToken}` },
             });
             granted = signInsResponse.ok || signInsResponse.status === 400;
+            console.log(`Permission ${permission} fallback: ${signInsResponse.status} - granted: ${granted}`);
           }
         }
       } catch (e) {
@@ -281,6 +297,8 @@ serve(async (req) => {
 
     const allPermissionsGranted = permissionResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
+    console.log(`Permission check complete: ${permissionResults.filter(p => p.granted).length}/${permissionResults.length} granted`);
+    console.log(`Missing permissions: ${missingPermissions.join(', ') || 'none'}`);
 
     // Step 4: If tenant_record_id provided, update the tenant status
     if (tenant_record_id) {
