@@ -366,7 +366,7 @@ export default function AgentsPage() {
                 Novo Agent
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Criar Novo Agent</DialogTitle>
                 <DialogDescription>
@@ -377,52 +377,41 @@ export default function AgentsPage() {
               </DialogHeader>
 
               {!activationCode ? (
-                <>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="agent-name">Nome do Agent</Label>
-                      <Input
-                        id="agent-name"
-                        placeholder="Ex: Firewall Agent - Matriz"
-                        value={newAgentName}
-                        onChange={(e) => setNewAgentName(e.target.value)}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="agent-client">Cliente (opcional)</Label>
-                      <Select
-                        value={newAgentClientId || "none"}
-                        onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione um cliente" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Nenhum</SelectItem>
-                          {clients.map((client) => (
-                            <SelectItem key={client.id} value={client.id}>
-                              {client.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-name">Nome do Agent *</Label>
+                    <Input
+                      id="agent-name"
+                      placeholder="Ex: Firewall Agent - Matriz"
+                      value={newAgentName}
+                      onChange={(e) => setNewAgentName(e.target.value)}
+                    />
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={handleCloseCreateDialog}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleCreateAgent} disabled={creating}>
-                      {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Criar Agent
-                    </Button>
-                  </DialogFooter>
-                </>
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-client">Cliente (opcional)</Label>
+                    <Select
+                      value={newAgentClientId || "none"}
+                      onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhum</SelectItem>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               ) : (
-                <>
-                  <div className="py-4 space-y-4">
-                    <div className="p-4 rounded-lg bg-muted/50 border border-border">
-                      <Label className="text-xs text-muted-foreground mb-2 block">Código de Ativação</Label>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Código de Ativação</Label>
+                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
                       <div className="flex items-center gap-2">
                         <code className="flex-1 text-sm font-mono break-all">{activationCode}</code>
                         <Button size="icon" variant="ghost" onClick={handleCopyCode}>
@@ -430,23 +419,36 @@ export default function AgentsPage() {
                         </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-warning">
-                      <Clock className="w-4 h-4" />
-                      <span>
-                        Este código expira em{" "}
-                        {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser
-                      utilizado.
-                    </p>
                   </div>
-                  <DialogFooter>
-                    <Button onClick={handleCloseCreateDialog}>Fechar</Button>
-                  </DialogFooter>
-                </>
+                  <div className="flex items-center gap-2 text-sm text-warning">
+                    <Clock className="w-4 h-4" />
+                    <span>
+                      Este código expira em{" "}
+                      {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser
+                    utilizado.
+                  </p>
+                </div>
               )}
+
+              <DialogFooter>
+                {!activationCode ? (
+                  <>
+                    <Button variant="outline" onClick={handleCloseCreateDialog}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleCreateAgent} disabled={creating}>
+                      {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Criar Agent
+                    </Button>
+                  </>
+                ) : (
+                  <Button onClick={handleCloseCreateDialog}>Fechar</Button>
+                )}
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
