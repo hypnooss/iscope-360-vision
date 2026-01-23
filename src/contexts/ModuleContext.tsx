@@ -13,6 +13,7 @@ export interface Module {
   name: string;
   description: string | null;
   icon: string | null;
+  color: string | null;
 }
 
 export interface UserModuleAccess {

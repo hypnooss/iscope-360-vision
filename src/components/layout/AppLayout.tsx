@@ -36,8 +36,45 @@ import {
   Bot,
   Building,
   ShieldCheck,
+  Layers,
+  Globe,
+  Database,
+  Lock,
+  Zap,
+  Activity,
+  Monitor,
+  Cpu,
+  HardDrive,
+  Wifi,
+  LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
+
+// Map icon names to components
+const iconMap: Record<string, LucideIcon> = {
+  Shield,
+  Cloud,
+  Network,
+  Server,
+  Layers,
+  LayoutDashboard,
+  Globe,
+  Database,
+  Lock,
+  Zap,
+  Activity,
+  Monitor,
+  Cpu,
+  HardDrive,
+  Wifi,
+};
+
+const getIconFromName = (iconName: string | null): LucideIcon => {
+  if (iconName && iconMap[iconName]) {
+    return iconMap[iconName];
+  }
+  return LayoutDashboard;
+};
 
 interface NavItem {
   label: string;
@@ -89,11 +126,9 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
 };
 
 // Default config for dynamically created modules
-const getDefaultModuleConfig = (code: string, name: string) => {
-  const routePrefix = code.replace('_', '-');
+const getDefaultModuleConfig = (code: string) => {
+  const routePrefix = code.replace(/_/g, '-');
   return {
-    icon: LayoutDashboard,
-    color: 'text-primary',
     items: [
       { label: 'Dashboard', href: `/${routePrefix}/dashboard`, icon: LayoutDashboard },
     ],
@@ -175,15 +210,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const accessibleModuleConfigs: ModuleNavConfig[] = userModules.map(um => {
     const code = um.module.code;
     const name = um.module.name;
+    const moduleIcon = um.module.icon;
+    const moduleColor = um.module.color; // Color from database
+    
+    // Check if we have a known config for navigation items
     const knownConfig = knownModuleNavConfigs[code];
-    const config = knownConfig || getDefaultModuleConfig(code, name);
+    const navItems = knownConfig?.items || getDefaultModuleConfig(code).items;
+    
+    // Use icon and color from database, fallback to known config or defaults
+    const icon = getIconFromName(moduleIcon) || knownConfig?.icon || LayoutDashboard;
+    const color = moduleColor || knownConfig?.color || 'text-primary';
     
     return {
       code,
       name,
-      icon: config.icon,
-      color: config.color,
-      items: config.items,
+      icon,
+      color,
+      items: navItems,
     };
   });
   const canAccessUsers = role === 'super_admin' || role === 'workspace_admin';

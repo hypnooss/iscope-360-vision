@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Plus, Edit, Trash2, Layers, Shield, Cloud, Network, Server } from 'lucide-react';
+import { Loader2, Plus, Edit, Trash2, Layers, Shield, Cloud, Network, Server, LayoutDashboard, Globe, Database, Lock, Zap, Activity, Monitor, Cpu, HardDrive, Wifi } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Module {
@@ -31,16 +31,41 @@ interface Module {
   name: string;
   description: string | null;
   icon: string | null;
+  color: string | null;
   is_active: boolean;
   created_at: string;
 }
 
 const ICON_OPTIONS = [
-  { value: 'Shield', label: 'Shield', icon: Shield },
-  { value: 'Cloud', label: 'Cloud', icon: Cloud },
-  { value: 'Network', label: 'Network', icon: Network },
-  { value: 'Server', label: 'Server', icon: Server },
-  { value: 'Layers', label: 'Layers', icon: Layers },
+  { value: 'Shield', label: 'Shield (Segurança)', icon: Shield },
+  { value: 'Cloud', label: 'Cloud (Nuvem)', icon: Cloud },
+  { value: 'Network', label: 'Network (Rede)', icon: Network },
+  { value: 'Server', label: 'Server (Servidor)', icon: Server },
+  { value: 'Layers', label: 'Layers (Camadas)', icon: Layers },
+  { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { value: 'Globe', label: 'Globe (Globo)', icon: Globe },
+  { value: 'Database', label: 'Database (Banco de Dados)', icon: Database },
+  { value: 'Lock', label: 'Lock (Cadeado)', icon: Lock },
+  { value: 'Zap', label: 'Zap (Raio)', icon: Zap },
+  { value: 'Activity', label: 'Activity (Atividade)', icon: Activity },
+  { value: 'Monitor', label: 'Monitor', icon: Monitor },
+  { value: 'Cpu', label: 'CPU', icon: Cpu },
+  { value: 'HardDrive', label: 'Hard Drive (Disco)', icon: HardDrive },
+  { value: 'Wifi', label: 'Wifi', icon: Wifi },
+];
+
+const COLOR_OPTIONS = [
+  { value: 'text-primary', label: 'Primário', preview: 'bg-primary' },
+  { value: 'text-orange-500', label: 'Laranja', preview: 'bg-orange-500' },
+  { value: 'text-blue-500', label: 'Azul', preview: 'bg-blue-500' },
+  { value: 'text-cyan-500', label: 'Ciano', preview: 'bg-cyan-500' },
+  { value: 'text-purple-500', label: 'Roxo', preview: 'bg-purple-500' },
+  { value: 'text-green-500', label: 'Verde', preview: 'bg-green-500' },
+  { value: 'text-red-500', label: 'Vermelho', preview: 'bg-red-500' },
+  { value: 'text-yellow-500', label: 'Amarelo', preview: 'bg-yellow-500' },
+  { value: 'text-pink-500', label: 'Rosa', preview: 'bg-pink-500' },
+  { value: 'text-indigo-500', label: 'Índigo', preview: 'bg-indigo-500' },
+  { value: 'text-teal-500', label: 'Teal', preview: 'bg-teal-500' },
 ];
 
 const getIconComponent = (iconName: string | null) => {
@@ -64,6 +89,7 @@ export function ModulesManagement() {
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formIcon, setFormIcon] = useState('Shield');
+  const [formColor, setFormColor] = useState('text-primary');
   const [formIsActive, setFormIsActive] = useState(true);
 
   useEffect(() => {
@@ -91,6 +117,7 @@ export function ModulesManagement() {
     setFormName('');
     setFormDescription('');
     setFormIcon('Shield');
+    setFormColor('text-primary');
     setFormIsActive(true);
     setEditingModule(null);
   };
@@ -106,6 +133,7 @@ export function ModulesManagement() {
     setFormName(module.name);
     setFormDescription(module.description || '');
     setFormIcon(module.icon || 'Shield');
+    setFormColor(module.color || 'text-primary');
     setFormIsActive(module.is_active);
     setDialogOpen(true);
   };
@@ -132,6 +160,7 @@ export function ModulesManagement() {
             name: formName.trim(),
             description: formDescription.trim() || null,
             icon: formIcon,
+            color: formColor,
             is_active: formIsActive,
           })
           .eq('id', editingModule.id);
@@ -147,6 +176,7 @@ export function ModulesManagement() {
             name: formName.trim(),
             description: formDescription.trim() || null,
             icon: formIcon,
+            color: formColor,
             is_active: formIsActive,
           });
 
@@ -244,7 +274,9 @@ export function ModulesManagement() {
                 <TableRow key={module.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {getIconComponent(module.icon)}
+                      <span className={module.color || 'text-primary'}>
+                        {getIconComponent(module.icon)}
+                      </span>
                       <span className="font-medium">{module.name}</span>
                     </div>
                   </TableCell>
@@ -357,6 +389,25 @@ export function ModulesManagement() {
                       <SelectItem key={option.value} value={option.value}>
                         <div className="flex items-center gap-2">
                           <option.icon className="w-4 h-4" />
+                          {option.label}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Cor</Label>
+                <Select value={formColor} onValueChange={setFormColor}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COLOR_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded ${option.preview}`} />
                           {option.label}
                         </div>
                       </SelectItem>

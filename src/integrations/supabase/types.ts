@@ -614,6 +614,7 @@ export type Database = {
       modules: {
         Row: {
           code: string
+          color: string | null
           created_at: string
           description: string | null
           icon: string | null
@@ -624,6 +625,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          color?: string | null
           created_at?: string
           description?: string | null
           icon?: string | null
@@ -634,6 +636,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          color?: string | null
           created_at?: string
           description?: string | null
           icon?: string | null
