@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.agent-refresh]
 verify_jwt = false
+
+[functions.entra-id-audit-logs]
+verify_jwt = false
