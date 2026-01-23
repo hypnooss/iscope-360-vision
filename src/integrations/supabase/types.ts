@@ -61,6 +61,8 @@ export type Database = {
           activation_code: string | null
           activation_code_expires_at: string | null
           client_id: string | null
+          config_fetched_at: string | null
+          config_updated_at: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -73,6 +75,8 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           client_id?: string | null
+          config_fetched_at?: string | null
+          config_updated_at?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -85,6 +89,8 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           client_id?: string | null
+          config_fetched_at?: string | null
+          config_updated_at?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
