@@ -1,55 +1,79 @@
 
-# Plano: Adicionar Reports.Read.All na Lista de Permissões
 
-## Contexto
+# Plano: Corrigir Inconsistência de Validação de Permissões entre Edge Functions
 
-A permissão `Reports.Read.All` é necessária para a análise de segurança do Entra ID (verificar taxas de adoção de MFA, métodos de autenticação registrados, etc). Esta permissão precisa ser exibida na tela de Configurações para que o administrador saiba que deve adicioná-la no Azure Portal.
+## Resumo do Problema
 
-## Alteração
+O wizard de conexão de tenant mostra que `Directory.Read.All` está faltando, mas o card do tenant mostra a permissão como OK. Isso acontece porque as duas edge functions usam **endpoints diferentes** para validar a mesma permissão.
 
-Adicionar `Reports.Read.All` à lista de permissões recomendadas na página de Configurações.
+## Causa Raiz
 
-### Arquivo a Modificar
+A edge function `m365-oauth-callback` usa o endpoint `/directoryRoles?$top=1` para testar `Directory.Read.All`, que retorna erro `Request_UnsupportedQuery` em alguns tenants. Já a `validate-m365-connection` usa `/domains?$top=1` (que funciona) com fallback para `/directoryRoles`.
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/admin/SettingsPage.tsx` | Adicionar `Reports.Read.All` na lista `defaultPermissions` |
+## Solução Proposta
 
-### Código Atual (linha 55-64)
+Alinhar a lógica de teste de permissões nas duas edge functions para garantir consistência.
 
-```typescript
-const defaultPermissions: PermissionStatus[] = [
-  { name: 'User.Read.All', granted: false, type: 'required' },
-  { name: 'Directory.Read.All', granted: false, type: 'required' },
-  { name: 'Organization.Read.All', granted: false, type: 'required' },
-  { name: 'Domain.Read.All', granted: false, type: 'required' },
-  { name: 'Group.Read.All', granted: false, type: 'recommended' },
-  { name: 'Application.Read.All', granted: false, type: 'recommended' },
-  { name: 'Policy.Read.All', granted: false, type: 'recommended' },
-  { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
-];
+### Alterações Necessárias
+
+**1. Atualizar `supabase/functions/m365-oauth-callback/index.ts`**
+
+Modificar o teste de `Directory.Read.All` para usar a mesma estratégia de `validate-m365-connection`:
+- Primeiro tentar `/v1.0/domains?$top=1`
+- Se falhar, usar `/v1.0/directoryRoles?$top=1` como fallback
+
+```text
+Antes:
+{ permission: 'Directory.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/directoryRoles?$top=1' }
+
+Depois:
+Lógica customizada que tenta /domains primeiro, depois /directoryRoles como fallback
 ```
 
-### Código Atualizado
+### Detalhes Técnicos
+
+A seção de testes de permissão (linhas 322-371) precisa ser refatorada para permitir lógica customizada por permissão, ao invés de usar um array simples de endpoint:permissão.
+
+**Código proposto:**
 
 ```typescript
-const defaultPermissions: PermissionStatus[] = [
-  { name: 'User.Read.All', granted: false, type: 'required' },
-  { name: 'Directory.Read.All', granted: false, type: 'required' },
-  { name: 'Organization.Read.All', granted: false, type: 'required' },
-  { name: 'Domain.Read.All', granted: false, type: 'required' },
-  { name: 'Group.Read.All', granted: false, type: 'recommended' },
-  { name: 'Application.Read.All', granted: false, type: 'recommended' },
-  { name: 'Policy.Read.All', granted: false, type: 'recommended' },
-  { name: 'Reports.Read.All', granted: false, type: 'recommended' },
-  { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
-];
+// Função auxiliar para testar Directory.Read.All com fallback
+async function testDirectoryPermission(accessToken: string): Promise<{ granted: boolean; error?: string }> {
+  // Primeiro tenta /domains (mais confiável)
+  const domainsResponse = await fetch('https://graph.microsoft.com/v1.0/domains?$top=1', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  
+  if (domainsResponse.ok) {
+    return { granted: true };
+  }
+  
+  // Fallback para /directoryRoles
+  const rolesResponse = await fetch('https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  
+  if (rolesResponse.ok) {
+    return { granted: true };
+  }
+  
+  // Retorna o erro do último teste
+  try {
+    const errorBody = await rolesResponse.json();
+    return { 
+      granted: false, 
+      error: errorBody?.error?.code || `HTTP ${rolesResponse.status}` 
+    };
+  } catch {
+    return { granted: false, error: `HTTP ${rolesResponse.status}` };
+  }
+}
 ```
 
-## Resultado
+### Resultado Esperado
 
-Após a alteração, a permissão `Reports.Read.All` aparecerá na seção "Recomendadas" da tela de Configurações do Microsoft 365, junto com as outras permissões. Isso garante que:
+Após a correção:
+- O wizard mostrará o mesmo status de permissões que o card do tenant
+- `Directory.Read.All` será validada corretamente usando `/domains` primeiro
+- A experiência do usuário será consistente em toda a aplicação
 
-1. O administrador veja que precisa adicionar essa permissão no Azure Portal
-2. A validação de permissões possa verificar se essa permissão foi concedida
-3. A análise de segurança do Entra ID funcione corretamente com relatórios de MFA
