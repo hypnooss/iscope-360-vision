@@ -221,13 +221,26 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Use getUser for token validation - better logging for debugging
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) {
+      console.error('Token validation failed:', {
+        error: authError?.message,
+        code: authError?.code,
+        status: authError?.status,
+        tokenPrefix: token.substring(0, 20) + '...',
+      });
       return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
+        JSON.stringify({ 
+          error: 'Invalid or expired token',
+          code: 'TOKEN_INVALID',
+          message: 'Please refresh your session and try again'
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    console.log('Token validated successfully for user:', user.id);
 
     const url = new URL(req.url);
     const shouldValidatePermissions = url.searchParams.get('validate_permissions') === 'true';
