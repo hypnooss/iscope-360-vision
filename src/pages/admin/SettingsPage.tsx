@@ -60,6 +60,7 @@ export default function SettingsPage() {
     { name: 'Group.Read.All', granted: false, type: 'recommended' },
     { name: 'Application.Read.All', granted: false, type: 'recommended' },
     { name: 'Policy.Read.All', granted: false, type: 'recommended' },
+    { name: 'Reports.Read.All', granted: false, type: 'recommended' },
     { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
   ];
 
