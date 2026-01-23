@@ -517,28 +517,44 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               <CardContent className="py-3">
                 <div className="space-y-3">
                   <p className="text-sm font-medium">Permissões solicitadas (somente leitura):</p>
-                  <ul className="text-xs text-muted-foreground space-y-1">
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      User.Read.All - Ler todos os usuários
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      Directory.Read.All - Ler diretório
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      Group.Read.All - Ler todos os grupos
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      Application.Read.All - Ler aplicativos
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      AuditLog.Read.All - Ler logs de auditoria
-                    </li>
-                  </ul>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Obrigatórias:</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        User.Read.All - Ler todos os usuários
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        Directory.Read.All - Ler diretório (roles, unidades)
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        Group.Read.All - Ler todos os grupos
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        Application.Read.All - Ler aplicativos
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        AuditLog.Read.All - Ler logs de auditoria
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        Policy.Read.All - Ler políticas de segurança
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Opcionais (requer Azure AD Premium):</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-muted-foreground" />
+                        Reports.Read.All - Relatórios de MFA
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -17,7 +17,12 @@ const REQUIRED_PERMISSIONS = [
   'Directory.Read.All', 
   'Group.Read.All',
   'Application.Read.All',
-  'AuditLog.Read.All'
+  'AuditLog.Read.All',
+  'Policy.Read.All',
+];
+
+const OPTIONAL_PERMISSIONS = [
+  'Reports.Read.All', // Requires Azure AD Premium
 ];
 
 // ============= AES-256-GCM Decryption =============
@@ -310,7 +315,7 @@ Deno.serve(async (req) => {
 
     // Test permissions
     console.log('Testing permissions...');
-    const permissionResults: { name: string; granted: boolean; required: boolean }[] = [];
+    const permissionResults: { name: string; granted: boolean; required: boolean; optional?: boolean }[] = [];
     
     const permissionTests = [
       { permission: 'User.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1' },
@@ -318,6 +323,8 @@ Deno.serve(async (req) => {
       { permission: 'Group.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/groups?$top=1' },
       { permission: 'Application.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/applications?$top=1' },
       { permission: 'AuditLog.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1' },
+      { permission: 'Policy.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy' },
+      { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
     ];
 
     for (const test of permissionTests) {
@@ -325,10 +332,13 @@ Deno.serve(async (req) => {
         const testResponse = await fetch(test.endpoint, {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         });
+        const isRequired = REQUIRED_PERMISSIONS.includes(test.permission);
+        const isOptional = OPTIONAL_PERMISSIONS.includes(test.permission);
         permissionResults.push({
           name: test.permission,
           granted: testResponse.ok,
-          required: REQUIRED_PERMISSIONS.includes(test.permission),
+          required: isRequired,
+          optional: isOptional,
         });
       } catch (err) {
         console.error(`Permission test failed for ${test.permission}:`, err);
@@ -336,6 +346,7 @@ Deno.serve(async (req) => {
           name: test.permission,
           granted: false,
           required: REQUIRED_PERMISSIONS.includes(test.permission),
+          optional: OPTIONAL_PERMISSIONS.includes(test.permission),
         });
       }
     }
