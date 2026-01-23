@@ -65,7 +65,7 @@ export function TenantStatusCard({
     try {
       const { data, error } = await supabase
         .from('m365_tenant_permissions')
-        .select('id, tenant_record_id, permission_name, permission_type, status, granted_at')
+        .select('id, tenant_record_id, permission_name, permission_type, status, granted_at, error_reason')
         .eq('tenant_record_id', tenant.id)
         .order('permission_name');
 
@@ -232,10 +232,21 @@ export function TenantStatusCard({
                               perm.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
                             )}
                           />
-                          <span className="truncate">{perm.permission_name}</span>
-                          <span className="text-muted-foreground ml-auto">
-                            {perm.status === 'granted' ? 'OK' : 
-                             perm.status === 'denied' ? 'Negada' : 'Pendente'}
+                          <span className="truncate flex-1">{perm.permission_name}</span>
+                          <span className="text-muted-foreground ml-auto flex items-center gap-1">
+                            {perm.status === 'granted' ? (
+                              'OK'
+                            ) : perm.status === 'denied' ? (
+                              'Negada'
+                            ) : perm.error_reason ? (
+                              <span className="text-amber-500" title={perm.error_reason}>
+                                {perm.error_reason.length > 25 
+                                  ? perm.error_reason.slice(0, 25) + '...' 
+                                  : perm.error_reason}
+                              </span>
+                            ) : (
+                              'Pendente'
+                            )}
                           </span>
                         </div>
                       ))}

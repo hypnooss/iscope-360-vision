@@ -432,8 +432,22 @@ Deno.serve(async (req) => {
       console.error('Failed to enable submodule:', submoduleError);
     }
 
-    // Store permission status
+    // Store permission status with error reason
     for (const perm of permissionResults) {
+      // Translate common Azure error codes to user-friendly messages
+      let errorReason: string | null = null;
+      if (!perm.granted && perm.error) {
+        if (perm.error.includes('NonPremiumTenant') || perm.error.includes('RequestFromNonPremiumTenantOrB2CTenant')) {
+          errorReason = 'Requer Azure AD Premium P1/P2';
+        } else if (perm.error.includes('Authorization_RequestDenied')) {
+          errorReason = 'Permissão negada pelo administrador';
+        } else if (perm.error.includes('Request_UnsupportedQuery')) {
+          errorReason = 'Recurso não suportado neste tenant';
+        } else {
+          errorReason = perm.error;
+        }
+      }
+
       await supabase
         .from('m365_tenant_permissions')
         .upsert({
@@ -443,6 +457,7 @@ Deno.serve(async (req) => {
           status: perm.granted ? 'granted' : 'pending',
           granted_at: perm.granted ? new Date().toISOString() : null,
           updated_at: new Date().toISOString(),
+          error_reason: errorReason,
         }, {
           onConflict: 'tenant_record_id,permission_name',
         });
