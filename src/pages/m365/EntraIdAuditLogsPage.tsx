@@ -194,7 +194,8 @@ export default function EntraIdAuditLogsPage() {
     );
   };
 
-  const getInitiatedBy = (initiatedBy: DirectoryAuditLog['initiatedBy']) => {
+  const getInitiatedBy = (initiatedBy: DirectoryAuditLog['initiatedBy'] | undefined) => {
+    if (!initiatedBy) return '-';
     if (initiatedBy.user?.displayName) {
       return initiatedBy.user.displayName;
     }
