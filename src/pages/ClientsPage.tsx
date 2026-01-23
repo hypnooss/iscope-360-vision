@@ -14,27 +14,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
-import { Building, Plus, Loader2, MoreVertical, Edit, Trash2 } from "lucide-react";
+import { Building, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -247,31 +233,34 @@ export default function ClientsPage() {
                 Novo Workspace
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-lg border-border">
               <DialogHeader>
-                <DialogTitle>Criar Workspace</DialogTitle>
+                <DialogTitle>Novo Workspace</DialogTitle>
                 <DialogDescription>Adicione um novo workspace à plataforma</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="client-name">Nome *</Label>
-                  <Input
-                    id="client-name"
-                    value={newClientName}
-                    onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="Ex: Empresa ABC"
-                  />
+              <ScrollArea className="max-h-[60vh]">
+                <div className="space-y-4 px-6 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="client-name">Nome *</Label>
+                    <Input
+                      id="client-name"
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      placeholder="Ex: Empresa ABC"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="client-description">Descrição</Label>
+                    <Textarea
+                      id="client-description"
+                      value={newClientDescription}
+                      onChange={(e) => setNewClientDescription(e.target.value)}
+                      placeholder="Descrição opcional do workspace"
+                      rows={3}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="client-description">Descrição</Label>
-                  <Textarea
-                    id="client-description"
-                    value={newClientDescription}
-                    onChange={(e) => setNewClientDescription(e.target.value)}
-                    placeholder="Descrição opcional do workspace"
-                  />
-                </div>
-              </div>
+              </ScrollArea>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
                   Cancelar
@@ -310,12 +299,12 @@ export default function ClientsPage() {
                     <TableHead className="text-center">Escopos</TableHead>
                     <TableHead className="text-center">Agents</TableHead>
                     <TableHead>Criado em</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead className="w-[100px] text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {clients.map((client) => (
-                    <TableRow key={client.id}>
+                    <TableRow key={client.id} className="border-border/50">
                       <TableCell className="font-medium">{client.name}</TableCell>
                       <TableCell className="text-muted-foreground font-mono text-xs">{client.id}</TableCell>
                       <TableCell className="text-center">{client.scopes_count}</TableCell>
@@ -327,26 +316,34 @@ export default function ClientsPage() {
                         })}
                       </TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditDialog(client)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => openDeleteDialog(client)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Deletar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex items-center justify-end gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditDialog(client)}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Editar</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => openDeleteDialog(client)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Deletar</TooltipContent>
+                          </Tooltip>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -358,29 +355,36 @@ export default function ClientsPage() {
 
         {/* Edit Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-lg border-border">
             <DialogHeader>
               <DialogTitle>Editar Workspace</DialogTitle>
               <DialogDescription>Atualize as informações do workspace</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-client-name">Nome *</Label>
-                <Input
-                  id="edit-client-name"
-                  value={editClientName}
-                  onChange={(e) => setEditClientName(e.target.value)}
-                />
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-4 px-6 py-4">
+                <div className="p-3 rounded-md bg-muted/30 border border-border/50">
+                  <p className="text-xs text-muted-foreground">ID do Workspace</p>
+                  <p className="font-mono text-sm">{editingClient?.id}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-client-name">Nome *</Label>
+                  <Input
+                    id="edit-client-name"
+                    value={editClientName}
+                    onChange={(e) => setEditClientName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-client-description">Descrição</Label>
+                  <Textarea
+                    id="edit-client-description"
+                    value={editClientDescription}
+                    onChange={(e) => setEditClientDescription(e.target.value)}
+                    rows={3}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-client-description">Descrição</Label>
-                <Textarea
-                  id="edit-client-description"
-                  value={editClientDescription}
-                  onChange={(e) => setEditClientDescription(e.target.value)}
-                />
-              </div>
-            </div>
+            </ScrollArea>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancelar
@@ -395,25 +399,31 @@ export default function ClientsPage() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-lg border-border">
             <DialogHeader>
               <DialogTitle>Deletar Workspace</DialogTitle>
               <DialogDescription>
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do workspace:{" "}
-                <strong>{clientToDelete?.name}</strong>
+                Esta ação não pode ser desfeita. Para confirmar, digite o nome do workspace.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="delete-confirm-name">Nome do workspace</Label>
-                <Input
-                  id="delete-confirm-name"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder="Digite o nome do workspace para confirmar"
-                />
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-4 px-6 py-4">
+                <div className="p-3 rounded-md bg-destructive/10 border border-destructive/30">
+                  <p className="text-sm text-destructive font-medium">
+                    Você está prestes a deletar: <strong>{clientToDelete?.name}</strong>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="delete-confirm-name">Digite o nome do workspace para confirmar</Label>
+                  <Input
+                    id="delete-confirm-name"
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    placeholder={clientToDelete?.name}
+                  />
+                </div>
               </div>
-            </div>
+            </ScrollArea>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
                 Cancelar
