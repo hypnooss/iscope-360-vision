@@ -280,7 +280,7 @@ export default function SettingsPage() {
           </TabsList>
 
           <TabsContent value="m365" className="space-y-6">
-            <Card>
+            <Card className="border-border/50">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
