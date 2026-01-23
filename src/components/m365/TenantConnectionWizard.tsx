@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -19,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
 import { 
   Building, 
@@ -311,7 +313,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
             </div>
             
             {clients.length === 0 ? (
-              <Card className="border-dashed">
+              <Card className="border-dashed border-border/50">
                 <CardContent className="py-6 text-center">
                   <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">
@@ -320,7 +322,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                 </CardContent>
               </Card>
             ) : clients.length === 1 ? (
-              <Card className="border-primary">
+              <Card className="border-primary/50 bg-primary/5">
                 <CardContent className="py-4 flex items-center gap-3">
                   <Building className="w-5 h-5 text-primary" />
                   <div>
@@ -344,7 +346,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               </Select>
             )}
 
-            <Card className="bg-green-500/5 border-green-500/20">
+            <Card className="bg-muted/30 border border-border/50">
               <CardContent className="py-3">
                 <div className="flex gap-2 items-start">
                   <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
@@ -390,7 +392,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               </p>
             </div>
 
-            <Card className="bg-muted/50">
+            <Card className="bg-muted/30 border border-border/50">
               <CardContent className="py-3">
                 <div className="flex gap-2 items-start">
                   <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
@@ -419,14 +421,14 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               </p>
             </div>
 
-            <Card className="bg-primary/5 border-primary/20">
+            <Card className="bg-muted/30 border border-border/50">
               <CardContent className="py-4">
                 <div className="flex flex-col items-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
                     {waitingForAuth ? (
-                      <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                      <Loader2 className="w-7 h-7 text-primary animate-spin" />
                     ) : (
-                      <Key className="w-8 h-8 text-primary" />
+                      <Key className="w-7 h-7 text-primary" />
                     )}
                   </div>
                   
@@ -451,7 +453,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                     <div className="flex flex-col gap-2 w-full max-w-[250px]">
                       <Button 
                         onClick={handleVerifyConnection}
-                        size="lg"
+                        size="default"
                         disabled={verifying}
                         className="gap-2 w-full"
                       >
@@ -468,7 +470,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                         )}
                       </Button>
                       <Button 
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         onClick={() => {
                           setWaitingForAuth(false);
@@ -482,9 +484,8 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                   ) : (
                     <Button 
                       onClick={handleAuthorize}
-                      size="lg"
                       disabled={authorizing}
-                      className="gap-2 min-w-[200px]"
+                      className="gap-2"
                     >
                       {authorizing ? (
                         <>
@@ -503,7 +504,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               </CardContent>
             </Card>
 
-            <Card className="bg-muted/50">
+            <Card className="bg-muted/30 border border-border/50">
               <CardContent className="py-3">
                 <div className="space-y-3">
                   <p className="text-sm font-medium">Permissões solicitadas (somente leitura):</p>
@@ -533,7 +534,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               </CardContent>
             </Card>
 
-            <Card className="bg-amber-500/5 border-amber-500/20">
+            <Card className="bg-muted/30 border border-border/50">
               <CardContent className="py-3">
                 <div className="flex gap-2 items-start">
                   <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
@@ -557,16 +558,19 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg border-border/50">
         <DialogHeader>
-          <DialogTitle>Conectar Tenant Microsoft 365</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Globe className="w-5 h-5" />
+            Conectar Tenant Microsoft 365
+          </DialogTitle>
           <DialogDescription>
             Conecte o tenant Microsoft 365 do cliente para coletar dados via Microsoft Graph.
           </DialogDescription>
         </DialogHeader>
 
         {/* Step Indicator */}
-        <div className="flex items-center justify-center px-2 py-4">
+        <div className="flex items-center justify-center py-2">
           {STEPS.map((s, index) => {
             const Icon = s.icon;
             const isActive = s.key === step;
@@ -574,23 +578,23 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
             
             return (
               <div key={s.key} className="flex items-center">
-                <div className="flex flex-col items-center min-w-[80px]">
+                <div className="flex flex-col items-center min-w-[70px]">
                   <div
                     className={cn(
-                      "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors",
+                      "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors",
                       isActive && "border-primary bg-primary text-primary-foreground",
                       isCompleted && "border-primary bg-primary/10 text-primary",
                       !isActive && !isCompleted && "border-muted bg-muted/30 text-muted-foreground"
                     )}
                   >
                     {isCompleted ? (
-                      <CheckCircle className="w-5 h-5" />
+                      <CheckCircle className="w-4 h-4" />
                     ) : (
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-4 h-4" />
                     )}
                   </div>
                   <span className={cn(
-                    "text-xs mt-2 whitespace-nowrap",
+                    "text-xs mt-1 whitespace-nowrap",
                     isActive && "text-primary font-medium",
                     !isActive && "text-muted-foreground"
                   )}>
@@ -600,7 +604,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                 {index < STEPS.length - 1 && (
                   <div 
                     className={cn(
-                      "w-16 h-0.5 mx-1 mt-[-20px]",
+                      "w-10 h-0.5 mx-1 mt-[-16px]",
                       isCompleted ? "bg-primary" : "bg-muted"
                     )} 
                   />
@@ -611,12 +615,14 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         </div>
 
         {/* Step Content */}
-        <div className="py-4 min-h-[300px]">
-          {renderStepContent()}
-        </div>
+        <ScrollArea className="max-h-[60vh]">
+          <div className="space-y-4 px-1 py-2">
+            {renderStepContent()}
+          </div>
+        </ScrollArea>
 
         {/* Actions */}
-        <div className="flex justify-between pt-4 border-t">
+        <DialogFooter className="flex-row justify-between sm:justify-between gap-2">
           <Button
             variant="outline"
             onClick={handleBack}
@@ -637,7 +643,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               <ArrowRight className="w-4 h-4" />
             </Button>
           )}
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
