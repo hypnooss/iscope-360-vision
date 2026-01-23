@@ -31,7 +31,42 @@ export default function TenantConnectionPage() {
   const [showWizard, setShowWizard] = useState(false);
   const [editingTenant, setEditingTenant] = useState<TenantConnection | null>(null);
 
-  // Handle OAuth callback parameters
+  // Handle OAuth callback via postMessage from popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Validate message type
+      if (event.data?.type !== 'm365-oauth-callback') return;
+      
+      const { success, partial, tenantId, missingPermissions, error, errorDescription } = event.data;
+      
+      if (success && !partial) {
+        toast({
+          title: 'Tenant conectado com sucesso!',
+          description: 'A conexão foi estabelecida e as permissões foram validadas.',
+        });
+        refetch();
+      } else if (partial) {
+        const missing = missingPermissions?.join(', ') || 'Algumas permissões';
+        toast({
+          title: 'Tenant conectado (parcial)',
+          description: `Conexão OK, mas algumas permissões estão pendentes: ${missing}`,
+          variant: 'default',
+        });
+        refetch();
+      } else if (error) {
+        toast({
+          title: 'Erro na conexão',
+          description: errorDescription || error,
+          variant: 'destructive',
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [refetch]);
+
+  // Handle OAuth callback parameters (fallback for direct navigation)
   useEffect(() => {
     const success = searchParams.get('success');
     const error = searchParams.get('error');
@@ -44,7 +79,6 @@ export default function TenantConnectionPage() {
         description: 'A conexão foi estabelecida e as permissões foram validadas.',
       });
       refetch();
-      // Clear params
       setSearchParams({});
     } else if (success === 'partial') {
       toast({

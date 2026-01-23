@@ -92,6 +92,46 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
     }
   }, [open]);
 
+  // Listen for messages from popup window
+  useEffect(() => {
+    if (!waitingForAuth) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'm365-oauth-callback') return;
+      
+      const { success, partial, tenantId: msgTenantId, missingPermissions, error, errorDescription } = event.data;
+      
+      if (success && !partial) {
+        toast({
+          title: 'Conexão estabelecida!',
+          description: 'O tenant Microsoft 365 foi conectado com sucesso.',
+        });
+        onSuccess();
+        onOpenChange(false);
+      } else if (partial) {
+        const missing = missingPermissions?.join(', ') || 'Algumas permissões';
+        toast({
+          title: 'Conexão parcial',
+          description: `O tenant foi conectado, mas algumas permissões estão faltando: ${missing}`,
+          variant: 'default',
+        });
+        onSuccess();
+        onOpenChange(false);
+      } else if (error) {
+        toast({
+          title: 'Erro na conexão',
+          description: errorDescription || error || 'Ocorreu um erro durante a autorização.',
+          variant: 'destructive',
+        });
+        setWaitingForAuth(false);
+        setPendingTenantRecordId(null);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [waitingForAuth, onSuccess, onOpenChange]);
+
   useEffect(() => {
     if (clients.length === 1 && !selectedClientId) {
       setSelectedClientId(clients[0].id);

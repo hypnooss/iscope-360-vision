@@ -140,9 +140,11 @@ Deno.serve(async (req) => {
     
     if (error) {
       console.error('OAuth error from Microsoft:', error, errorDescription);
-      const redirectUrl = url.searchParams.get('state') 
-        ? JSON.parse(atob(url.searchParams.get('state')!)).redirect_url 
-        : '/scope-m365/tenant-connection';
+      let redirectUrl = '/scope-m365/oauth-callback';
+      try {
+        const stateData = JSON.parse(atob(url.searchParams.get('state')!));
+        redirectUrl = stateData.redirect_url?.replace('/tenant-connection', '/oauth-callback') || redirectUrl;
+      } catch {}
       
       return new Response(null, {
         status: 302,
@@ -315,7 +317,7 @@ Deno.serve(async (req) => {
 
     // Test permissions
     console.log('Testing permissions...');
-    const permissionResults: { name: string; granted: boolean; required: boolean; optional?: boolean }[] = [];
+    const permissionResults: { name: string; granted: boolean; required: boolean; optional?: boolean; error?: string }[] = [];
     
     const permissionTests = [
       { permission: 'User.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1' },
@@ -332,13 +334,29 @@ Deno.serve(async (req) => {
         const testResponse = await fetch(test.endpoint, {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         });
+        
         const isRequired = REQUIRED_PERMISSIONS.includes(test.permission);
         const isOptional = OPTIONAL_PERMISSIONS.includes(test.permission);
+        
+        let errorDetail: string | undefined;
+        if (!testResponse.ok) {
+          try {
+            const errorBody = await testResponse.json();
+            errorDetail = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${testResponse.status}`;
+          } catch {
+            errorDetail = `HTTP ${testResponse.status}`;
+          }
+          console.log(`Permission test for ${test.permission}: FAILED - ${errorDetail}`);
+        } else {
+          console.log(`Permission test for ${test.permission}: OK`);
+        }
+        
         permissionResults.push({
           name: test.permission,
           granted: testResponse.ok,
           required: isRequired,
           optional: isOptional,
+          error: errorDetail,
         });
       } catch (err) {
         console.error(`Permission test failed for ${test.permission}:`, err);
@@ -347,9 +365,12 @@ Deno.serve(async (req) => {
           granted: false,
           required: REQUIRED_PERMISSIONS.includes(test.permission),
           optional: OPTIONAL_PERMISSIONS.includes(test.permission),
+          error: String(err),
         });
       }
     }
+
+    console.log('Permission test results:', JSON.stringify(permissionResults));
 
     const allPermissionsGranted = permissionResults
       .filter(p => p.required)
@@ -444,10 +465,12 @@ Deno.serve(async (req) => {
         },
       });
 
-    // Redirect back to the app with success
+    // Redirect to the dedicated callback page (not the main tenant connection page)
+    // This page will display appropriate feedback and communicate with the parent window
+    const callbackPage = redirect_url.replace('/tenant-connection', '/oauth-callback');
     const successUrl = allPermissionsGranted
-      ? `${redirect_url}?success=true&tenant_id=${tenant_record_id}`
-      : `${redirect_url}?success=partial&tenant_id=${tenant_record_id}&missing=${encodeURIComponent(missingPermissions.join(','))}`;
+      ? `${callbackPage}?success=true&tenant_id=${tenant_record_id}`
+      : `${callbackPage}?success=partial&tenant_id=${tenant_record_id}&missing=${encodeURIComponent(missingPermissions.join(','))}`;
 
     console.log('Redirecting to:', successUrl);
     
@@ -465,7 +488,7 @@ Deno.serve(async (req) => {
     return new Response(null, {
       status: 302,
       headers: {
-        'Location': `/scope-m365/tenant-connection?error=callback_failed&error_description=${encodeURIComponent(errorMessage)}`,
+        'Location': `/scope-m365/oauth-callback?error=callback_failed&error_description=${encodeURIComponent(errorMessage)}`,
       },
     });
   }
