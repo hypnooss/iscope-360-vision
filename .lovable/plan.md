@@ -1,126 +1,138 @@
 
 
-# Plano de Correção: Erro 401 "Invalid Token" Intermitente
+# Plano: Ajustar Wizard de Conexão de Tenant + Correção OAuth
 
-## Diagnóstico
+## Resumo
 
-O erro ocorre quando o token JWT enviado para a edge function `get-m365-config` está associado a uma sessão que já não existe mais no servidor (foi feito logout ou a sessão expirou).
+Este plano aborda duas questões:
+1. **Padronização visual** do wizard de conexão de tenant para seguir os mesmos padrões dos dialogs de administração
+2. **Correção do erro OAuth** - configuração necessária no Azure Portal
+
+---
+
+## Parte 1: Erro OAuth (AADSTS50011 - Redirect URI Mismatch)
+
+### Diagnóstico
+
+O erro indica que a URL de callback enviada na requisição OAuth **não está cadastrada** no Azure App Registration:
 
 ```text
-┌─────────────────┐      Token antigo       ┌──────────────────┐
-│    Frontend     │ ────────────────────►   │   Edge Function  │
-│  (token em cache)│                        │ getUser(token)   │
-└─────────────────┘                         └────────┬─────────┘
-                                                     │
-                                                     ▼
-                                            ┌──────────────────┐
-                                            │  Supabase Auth   │
-                                            │ "Session not     │
-                                            │  found" (403)    │
-                                            └──────────────────┘
+URL enviada: https://pgjervwrvmfmwvfvylvj.supabase.co/functions/v1/m365-oauth-callback
+App ID: 800e141d-2dd6-4fa7-b19b-4a284f584d32
 ```
 
-## Solução
+### Solução (Configuração no Azure Portal)
 
-### 1. Melhorar tratamento de erro na Edge Function
+Este **NÃO é um problema de código**. É necessário configurar a Redirect URI no Azure:
 
-Usar `getClaims()` em vez de `getUser()` para validação mais leve, com melhor logging para diagnóstico.
+1. Acessar [Azure Portal](https://portal.azure.com)
+2. Navegar para **Azure Active Directory → App Registrations**
+3. Localizar o aplicativo com ID: `800e141d-2dd6-4fa7-b19b-4a284f584d32`
+4. Ir para **Authentication** no menu lateral
+5. Na seção **Platform configurations → Web**, adicionar:
+   ```
+   https://pgjervwrvmfmwvfvylvj.supabase.co/functions/v1/m365-oauth-callback
+   ```
+6. Salvar as alterações
 
-**Arquivo:** `supabase/functions/get-m365-config/index.ts`
+**Importante**: A URI deve ser EXATAMENTE igual, incluindo o protocolo `https://` e sem barra final.
 
-```typescript
-// Trocar getUser por getClaims (mais eficiente)
-const { data: claims, error: authError } = await supabase.auth.getClaims(token);
+---
 
-if (authError || !claims?.claims?.sub) {
-  console.error('Token validation failed:', authError?.message);
-  return new Response(
-    JSON.stringify({ 
-      error: 'Invalid or expired token',
-      code: 'TOKEN_INVALID' 
-    }),
-    { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
+## Parte 2: Padronização Visual do Wizard
 
-const userId = claims.claims.sub;
+### Alterações no Arquivo
+
+**Arquivo**: `src/components/m365/TenantConnectionWizard.tsx`
+
+### Mudanças de Estrutura
+
+| Elemento | Atual | Novo (Padrão) |
+|----------|-------|---------------|
+| DialogContent | `max-w-2xl max-h-[90vh]` | `max-w-lg border-border/50` |
+| Conteúdo | Sem ScrollArea | `ScrollArea` com `max-h-[60vh]` |
+| Padding interno | Variado | `px-6 py-4` consistente |
+| DialogTitle | Texto simples | Ícone + Texto (`flex items-center gap-2`) |
+| Cards informativos | `bg-green-500/5` | `bg-muted/30 border border-border/50` |
+
+### Detalhes das Mudanças
+
+#### 1. DialogContent (linha ~560)
+```tsx
+// De:
+<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+
+// Para:
+<DialogContent className="max-w-lg border-border/50">
 ```
 
-### 2. Adicionar tratamento de sessão expirada no Frontend
+#### 2. DialogHeader (linhas ~561-566)
+```tsx
+// De:
+<DialogTitle>Conectar Tenant Microsoft 365</DialogTitle>
 
-**Arquivo:** `src/pages/admin/SettingsPage.tsx`
-
-Melhorar o `checkM365Config` para detectar erros 401 e atualizar a sessão:
-
-```typescript
-const checkM365Config = async () => {
-  try {
-    setLoading(true);
-    
-    // Verificar se a sessão ainda é válida antes de chamar
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate('/auth');
-      return;
-    }
-    
-    const { data, error } = await supabase.functions.invoke('get-m365-config');
-    
-    if (error) {
-      // Se for erro de autenticação, tentar refresh da sessão
-      if (error.message?.includes('401') || error.message?.includes('Invalid token')) {
-        const { error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError) {
-          toast.error('Sessão expirada. Por favor, faça login novamente.');
-          navigate('/auth');
-          return;
-        }
-        // Tentar novamente após refresh
-        const { data: retryData, error: retryError } = 
-          await supabase.functions.invoke('get-m365-config');
-        if (!retryError && retryData) {
-          // Processar dados...
-        }
-      }
-      // ... resto do tratamento
-    }
-  } catch (error) {
-    // ...
-  }
-};
+// Para:
+<DialogTitle className="flex items-center gap-2">
+  <Globe className="w-5 h-5" />
+  Conectar Tenant Microsoft 365
+</DialogTitle>
 ```
 
-### 3. Adicionar listener global de autenticação
+#### 3. Step Content Container (linha ~613-616)
+```tsx
+// De:
+<div className="py-4 min-h-[300px]">
+  {renderStepContent()}
+</div>
 
-**Arquivo:** `src/contexts/AuthContext.tsx`
-
-Garantir que mudanças de sessão invalidem dados em cache:
-
-```typescript
-useEffect(() => {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-        // Limpar qualquer estado em cache que dependa do token
-      }
-      // ... resto da lógica existente
-    }
-  );
-  return () => subscription.unsubscribe();
-}, []);
+// Para:
+<ScrollArea className="max-h-[60vh]">
+  <div className="space-y-4 px-6 py-4">
+    {renderStepContent()}
+  </div>
+</ScrollArea>
 ```
+
+#### 4. Cards Informativos (dentro de renderStepContent)
+Padronizar todos os Cards para usar:
+```tsx
+// De:
+<Card className="bg-green-500/5 border-green-500/20">
+<Card className="bg-muted/50">
+<Card className="bg-primary/5 border-primary/20">
+<Card className="bg-amber-500/5 border-amber-500/20">
+
+// Para (onde apropriado):
+<Card className="bg-muted/30 border border-border/50">
+```
+
+#### 5. Step Indicator - Simplificar
+O step indicator atual é mais elaborado que o padrão dos outros dialogs. Podemos simplificar ou remover para manter consistência visual.
+
+### Resultado Visual Esperado
+
+O dialog ficará visualmente consistente com:
+- `InviteUserDialog` (criar usuário)
+- `AdminEditDialog` (editar administrador)  
+- Dialogs de workspace em `ClientsPage`
+
+---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/get-m365-config/index.ts` | Usar `getClaims()`, melhor logging |
-| `src/pages/admin/SettingsPage.tsx` | Retry com refresh de sessão |
-| `src/contexts/AuthContext.tsx` | Verificar se já tem tratamento adequado |
+| Arquivo | Alterações |
+|---------|------------|
+| `src/components/m365/TenantConnectionWizard.tsx` | Estrutura do Dialog, padding, ScrollArea, estilos de Cards |
 
-## Resultado Esperado
+---
 
-- Erros 401 intermitentes serão tratados automaticamente com refresh de sessão
-- Se a sessão não puder ser recuperada, o usuário será redirecionado para login
-- Melhor logging para diagnóstico futuro
+## Checklist de Implementação
+
+- [ ] Configurar Redirect URI no Azure Portal (manual)
+- [ ] Ajustar DialogContent para `max-w-lg border-border/50`
+- [ ] Adicionar ícone no DialogTitle
+- [ ] Envolver conteúdo em ScrollArea
+- [ ] Padronizar espaçamento com `px-6 py-4`
+- [ ] Ajustar estilos dos Cards informativos
+- [ ] Testar conexão OAuth após configuração do Azure
 
