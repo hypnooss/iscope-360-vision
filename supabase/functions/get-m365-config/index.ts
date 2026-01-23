@@ -26,14 +26,74 @@ interface PermissionStatus {
   type: 'required' | 'recommended';
 }
 
-// Simple decryption for the client secret
-const decryptSecret = (encrypted: string): string => {
+// ============= AES-256-GCM Decryption =============
+
+// Derive CryptoKey from hex string
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid (must be 64 hex characters)');
+  }
+  
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Convert hex string to Uint8Array with proper ArrayBuffer
+function fromHex(hex: string): Uint8Array {
+  const length = hex.length / 2;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+// Decrypt secret using AES-256-GCM
+// Supports legacy Base64 format for backwards compatibility
+async function decryptSecret(encrypted: string): Promise<string> {
+  // Check if it's AES-GCM format (contains colon separator)
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ctHex] = encrypted.split(':');
+      const key = await getEncryptionKey();
+      const iv = fromHex(ivHex);
+      const ciphertext = fromHex(ctHex);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        key,
+        ciphertext as unknown as Uint8Array<ArrayBuffer>
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      return '';
+    }
+  }
+  
+  // Legacy Base64 fallback for backwards compatibility
   try {
+    console.warn('Using legacy Base64 decryption - please re-save config to upgrade to AES-GCM');
     return atob(encrypted);
   } catch {
     return '';
   }
-};
+}
+
+// ============= Permission Testing =============
 
 async function testPermission(accessToken: string, permission: string): Promise<boolean> {
   try {
@@ -43,7 +103,6 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
         break;
       case 'Directory.Read.All':
-        // Use directoryRoles which requires Directory.Read.All
         url = 'https://graph.microsoft.com/v1.0/directoryRoles';
         break;
       case 'Organization.Read.All':
@@ -62,7 +121,6 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
-        // No query params - just check if we can access the endpoint
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       default:
@@ -91,7 +149,6 @@ async function validatePermissions(tenantId: string, appId: string, clientSecret
   const results: PermissionStatus[] = [];
   
   try {
-    // Get access token using client credentials
     const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
     const tokenBody = new URLSearchParams({
       client_id: appId,
@@ -107,7 +164,6 @@ async function validatePermissions(tenantId: string, appId: string, clientSecret
     });
 
     if (!tokenResponse.ok) {
-      // Can't get token, return all as not granted
       for (const perm of REQUIRED_PERMISSIONS) {
         results.push({ name: perm, granted: false, type: 'required' });
       }
@@ -120,7 +176,6 @@ async function validatePermissions(tenantId: string, appId: string, clientSecret
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Test each permission
     for (const perm of REQUIRED_PERMISSIONS) {
       const granted = await testPermission(accessToken, perm);
       results.push({ name: perm, granted, type: 'required' });
@@ -133,7 +188,6 @@ async function validatePermissions(tenantId: string, appId: string, clientSecret
 
   } catch (error) {
     console.error('Error validating permissions:', error);
-    // Return all as not granted on error
     for (const perm of REQUIRED_PERMISSIONS) {
       results.push({ name: perm, granted: false, type: 'required' });
     }
@@ -145,14 +199,14 @@ async function validatePermissions(tenantId: string, appId: string, clientSecret
   return results;
 }
 
+// ============= Main Handler =============
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -167,7 +221,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) {
       return new Response(
@@ -176,18 +229,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if we should validate permissions (passed as query param)
     const url = new URL(req.url);
     const shouldValidatePermissions = url.searchParams.get('validate_permissions') === 'true';
     const tenantIdForValidation = url.searchParams.get('tenant_id');
 
-    // Default permissions status (all pending/yellow)
     const defaultPermissions: PermissionStatus[] = [
       ...REQUIRED_PERMISSIONS.map(name => ({ name, granted: false, type: 'required' as const })),
       ...RECOMMENDED_PERMISSIONS.map(name => ({ name, granted: false, type: 'recommended' as const })),
     ];
 
-    // Get config from database
     const { data: configData, error: configError } = await supabase
       .from('m365_global_config')
       .select('*')
@@ -198,16 +248,20 @@ Deno.serve(async (req) => {
       console.error('Error fetching config from database:', configError);
     }
 
-    // Use database config if available, fallback to env vars for backwards compatibility
+    // Get credentials from database (with decryption) or fallback to env vars
     let appId = configData?.app_id || Deno.env.get('M365_MULTI_TENANT_APP_ID');
-    let clientSecret = configData ? decryptSecret(configData.client_secret_encrypted) : Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
+    let clientSecret: string | undefined;
+    
+    if (configData?.client_secret_encrypted) {
+      clientSecret = await decryptSecret(configData.client_secret_encrypted);
+    } else {
+      clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
+    }
 
-    // Validate if app_id is a proper GUID format
     const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const isValidAppId = appId && guidRegex.test(appId);
     const hasClientSecret = clientSecret && clientSecret.length > 10 && !clientSecret.includes('PLACEHOLDER');
 
-    // Load saved permissions from database if not validating fresh
     let savedPermissions: PermissionStatus[] | null = null;
     let savedValidatedAt: string | null = null;
     let savedTenantId: string | null = null;
@@ -232,7 +286,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Mask the client secret - show only first 6 characters
     let maskedSecret = '';
     if (hasClientSecret && clientSecret) {
       const visiblePart = clientSecret.substring(0, 6);
@@ -240,7 +293,6 @@ Deno.serve(async (req) => {
       maskedSecret = visiblePart + '•'.repeat(Math.min(hiddenLength, 20));
     }
 
-    // Validate permissions if requested and we have valid credentials
     let permissions = savedPermissions || defaultPermissions;
     let permissionsValidated = !!savedPermissions;
     let lastValidatedAt = savedValidatedAt;
@@ -253,7 +305,6 @@ Deno.serve(async (req) => {
       lastValidatedAt = new Date().toISOString();
       validationTenantId = tenantIdForValidation;
 
-      // Save validated permissions to database
       const { error: updateError } = await supabase
         .from('m365_global_config')
         .update({
@@ -270,7 +321,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Return config with permissions status
     return new Response(
       JSON.stringify({
         configured: isValidAppId && hasClientSecret,
