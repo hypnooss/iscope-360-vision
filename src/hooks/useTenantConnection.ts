@@ -177,6 +177,35 @@ export function useTenantConnection() {
     }
   };
 
+  const updateTenant = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
+    try {
+      const { error } = await supabase
+        .from('m365_tenants')
+        .update(updates)
+        .eq('id', tenantId);
+
+      if (error) throw error;
+
+      // Get tenant for client_id
+      const tenant = tenants.find(t => t.id === tenantId);
+
+      // Log audit
+      await supabase.from('m365_audit_logs').insert({
+        tenant_record_id: tenantId,
+        client_id: tenant?.client.id,
+        user_id: user?.id,
+        action: 'tenant_updated',
+        action_details: updates,
+      });
+
+      await fetchTenants();
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error updating tenant:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   useEffect(() => {
     fetchTenants();
   }, [user]);
@@ -189,6 +218,7 @@ export function useTenantConnection() {
     disconnectTenant,
     deleteTenant,
     testConnection,
+    updateTenant,
     hasConnectedTenant: tenants.some(t => t.connection_status === 'connected' || t.connection_status === 'partial'),
   };
 }

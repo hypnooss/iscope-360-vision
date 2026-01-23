@@ -3,9 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useTenantConnection } from '@/hooks/useTenantConnection';
+import { useTenantConnection, TenantConnection } from '@/hooks/useTenantConnection';
 import { TenantStatusCard } from '@/components/m365/TenantStatusCard';
 import { TenantConnectionWizard } from '@/components/m365/TenantConnectionWizard';
+import { TenantEditDialog } from '@/components/m365/TenantEditDialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,8 +26,9 @@ export default function TenantConnectionPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant } = useTenantConnection();
+  const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant, updateTenant } = useTenantConnection();
   const [showWizard, setShowWizard] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<TenantConnection | null>(null);
 
   // Handle OAuth callback parameters
   useEffect(() => {
@@ -132,6 +134,30 @@ export default function TenantConnectionPage() {
     });
   };
 
+  const handleEdit = (tenantId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (tenant) {
+      setEditingTenant(tenant);
+    }
+  };
+
+  const handleSaveEdit = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
+    const result = await updateTenant(tenantId, updates);
+    if (result.success) {
+      toast({
+        title: 'Tenant atualizado',
+        description: 'As informações do tenant foram atualizadas com sucesso.',
+      });
+    } else {
+      toast({
+        title: 'Erro ao atualizar',
+        description: result.error || 'Não foi possível atualizar o tenant.',
+        variant: 'destructive',
+      });
+    }
+    return result;
+  };
+
   if (authLoading) return null;
 
   const connectedTenants = tenants.filter(t => t.connection_status === 'connected' || t.connection_status === 'partial');
@@ -224,6 +250,7 @@ export default function TenantConnectionPage() {
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
                       onUpdatePermissions={handleUpdatePermissions}
+                      onEdit={handleEdit}
                     />
                   ))}
                 </div>
@@ -246,6 +273,7 @@ export default function TenantConnectionPage() {
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
+                      onEdit={handleEdit}
                     />
                   ))}
                 </div>
@@ -268,6 +296,7 @@ export default function TenantConnectionPage() {
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
+                      onEdit={handleEdit}
                     />
                   ))}
                 </div>
@@ -284,6 +313,14 @@ export default function TenantConnectionPage() {
             setShowWizard(false);
             refetch();
           }}
+        />
+
+        {/* Edit Dialog */}
+        <TenantEditDialog
+          tenant={editingTenant}
+          open={!!editingTenant}
+          onOpenChange={(open) => !open && setEditingTenant(null)}
+          onSave={handleSaveEdit}
         />
       </div>
     </AppLayout>

@@ -12,7 +12,8 @@ import {
   Clock,
   Loader2,
   ExternalLink,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -34,6 +35,7 @@ interface TenantStatusCardProps {
   onDisconnect: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
   onDelete: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
   onUpdatePermissions?: (tenantId: string) => void;
+  onEdit?: (tenantId: string) => void;
 }
 
 export function TenantStatusCard({ 
@@ -41,7 +43,8 @@ export function TenantStatusCard({
   onTest, 
   onDisconnect,
   onDelete,
-  onUpdatePermissions 
+  onUpdatePermissions,
+  onEdit
 }: TenantStatusCardProps) {
   const [testing, setTesting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -171,6 +174,16 @@ export function TenantStatusCard({
               )}
               Testar
             </Button>
+            {onEdit && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => onEdit(tenant.id)}
+                title="Editar tenant"
+              >
+                <Pencil className="w-3 h-3" />
+              </Button>
+            )}
             {onUpdatePermissions && (
               <Button 
                 variant="outline" 

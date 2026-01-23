@@ -163,11 +163,20 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       const appId = import.meta.env.VITE_M365_APP_ID || ''; // This will be empty in frontend, callback handles it
       
       // 4. Build the state payload for the callback
+      // Use published URL to avoid cross-domain session issues
+      const getAppBaseUrl = () => {
+        const publishedUrl = 'https://iscope360.lovable.app';
+        if (import.meta.env.DEV) {
+          return window.location.origin;
+        }
+        return publishedUrl;
+      };
+      
       const statePayload = {
         tenant_record_id: tenant.id,
         client_id: selectedClientId,
         tenant_id: tenantId.trim(),
-        redirect_url: `${window.location.origin}/scope-m365/tenant-connection`,
+        redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
       };
       const state = btoa(JSON.stringify(statePayload));
       
