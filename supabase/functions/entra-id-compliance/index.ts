@@ -29,60 +29,67 @@ interface ComplianceCategory {
 }
 
 // ===== Encryption utilities =====
+// Derive CryptoKey from hex string (must be 64 hex characters = 32 bytes)
 async function getEncryptionKey(): Promise<CryptoKey> {
-  const keyMaterial = Deno.env.get('M365_ENCRYPTION_KEY');
-  if (!keyMaterial) {
-    throw new Error('M365_ENCRYPTION_KEY not configured');
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid (must be 64 hex characters)');
   }
   
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(keyMaterial.padEnd(32, '0').slice(0, 32));
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
   
   return await crypto.subtle.importKey(
     'raw',
-    keyData,
+    keyBytes,
     { name: 'AES-GCM' },
     false,
     ['decrypt']
   );
 }
 
+// Convert hex string to Uint8Array with proper ArrayBuffer
 function fromHex(hex: string): Uint8Array {
-  const matches = hex.match(/.{1,2}/g) || [];
-  return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
+  const length = hex.length / 2;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
 }
 
+// Decrypt secret using AES-256-GCM
+// Supports legacy Base64 format for backwards compatibility
 async function decryptSecret(encrypted: string): Promise<string> {
-  try {
-    // Check if it looks encrypted (hex format with :)
-    if (!encrypted.includes(':')) {
-      // Try base64 decode first (legacy format)
-      try {
-        return atob(encrypted);
-      } catch {
-        return encrypted;
-      }
-    }
-
-    const [ivHex, ciphertextHex] = encrypted.split(':');
-    const iv = fromHex(ivHex);
-    const ciphertext = fromHex(ciphertextHex);
-    const key = await getEncryptionKey();
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-      key,
-      ciphertext.buffer as ArrayBuffer
-    );
-
-    return new TextDecoder().decode(decrypted);
-  } catch (error: unknown) {
-    console.error('Decryption failed, trying fallback:', error);
+  if (encrypted.includes(':')) {
     try {
-      return atob(encrypted);
-    } catch {
-      return encrypted;
+      const [ivHex, ctHex] = encrypted.split(':');
+      const key = await getEncryptionKey();
+      const iv = fromHex(ivHex);
+      const ciphertext = fromHex(ctHex);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        key,
+        ciphertext as unknown as Uint8Array<ArrayBuffer>
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      return '';
     }
+  }
+  
+  // Legacy Base64 fallback
+  try {
+    console.warn('Using legacy Base64 decryption - please re-save config to upgrade to AES-GCM');
+    return atob(encrypted);
+  } catch {
+    return '';
   }
 }
 
