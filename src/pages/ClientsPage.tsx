@@ -19,8 +19,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Building, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -32,6 +33,33 @@ interface Client {
   created_at: string;
   scopes_count?: number;
   agents_count?: number;
+}
+
+interface Firewall {
+  id: string;
+  name: string;
+  description: string | null;
+  last_score: number | null;
+}
+
+interface M365Tenant {
+  id: string;
+  display_name: string | null;
+  tenant_domain: string | null;
+  connection_status: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  last_seen: string | null;
+  revoked: boolean;
+}
+
+interface WorkspaceDetails {
+  firewalls: Firewall[];
+  tenants: M365Tenant[];
+  agents: Agent[];
 }
 
 export default function ClientsPage() {
@@ -59,6 +87,12 @@ export default function ClientsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  // View dialog
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
+  const [workspaceDetails, setWorkspaceDetails] = useState<WorkspaceDetails | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
   const canAccessPage = isSuperAdmin() || isAdmin();
 
   useEffect(() => {
@@ -78,12 +112,10 @@ export default function ClientsPage() {
 
   const fetchData = async () => {
     try {
-      // Fetch clients
       const { data: clientsData, error: clientsError } = await supabase.from("clients").select("*").order("name");
 
       if (clientsError) throw clientsError;
 
-      // Fetch counts for each client (scopes = firewalls + m365_tenants, agents)
       const clientsWithCounts = await Promise.all(
         (clientsData || []).map(async (client) => {
           const [firewallsResult, tenantsResult, agentsResult] = await Promise.all([
@@ -207,6 +239,54 @@ export default function ClientsPage() {
     }
   };
 
+  const openViewDialog = async (client: Client) => {
+    setViewingClient(client);
+    setViewDialogOpen(true);
+    setLoadingDetails(true);
+
+    try {
+      const [firewallsRes, tenantsRes, agentsRes] = await Promise.all([
+        supabase
+          .from("firewalls")
+          .select("id, name, description, last_score")
+          .eq("client_id", client.id)
+          .order("name"),
+        supabase
+          .from("m365_tenants")
+          .select("id, display_name, tenant_domain, connection_status")
+          .eq("client_id", client.id)
+          .order("display_name"),
+        supabase
+          .from("agents")
+          .select("id, name, last_seen, revoked")
+          .eq("client_id", client.id)
+          .order("name"),
+      ]);
+
+      setWorkspaceDetails({
+        firewalls: firewallsRes.data || [],
+        tenants: tenantsRes.data || [],
+        agents: agentsRes.data || [],
+      });
+    } catch (error) {
+      console.error("Erro ao buscar detalhes:", error);
+      toast.error("Erro ao carregar detalhes do workspace");
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      connected: "default",
+      pending: "secondary",
+      partial: "outline",
+      failed: "destructive",
+      disconnected: "destructive",
+    };
+    return <Badge variant={variants[status] || "secondary"}>{status}</Badge>;
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout>
@@ -295,18 +375,16 @@ export default function ClientsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>ID</TableHead>
                     <TableHead className="text-center">Escopos</TableHead>
                     <TableHead className="text-center">Agents</TableHead>
                     <TableHead>Criado em</TableHead>
-                    <TableHead className="w-[100px] text-right">Ações</TableHead>
+                    <TableHead className="w-[120px] text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {clients.map((client) => (
                     <TableRow key={client.id} className="border-border/50">
                       <TableCell className="font-medium">{client.name}</TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">{client.id}</TableCell>
                       <TableCell className="text-center">{client.scopes_count}</TableCell>
                       <TableCell className="text-center">{client.agents_count}</TableCell>
                       <TableCell className="text-muted-foreground">
@@ -317,6 +395,19 @@ export default function ClientsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openViewDialog(client)}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Visualizar</TooltipContent>
+                          </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -352,6 +443,139 @@ export default function ClientsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* View Dialog */}
+        <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+          <DialogContent className="sm:max-w-2xl border-border">
+            <DialogHeader>
+              <DialogTitle>Detalhes do Workspace</DialogTitle>
+              <DialogDescription>Informações e objetos vinculados a este workspace</DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-6 px-6 py-4">
+                {/* Workspace Info */}
+                <div className="space-y-3">
+                  <div className="p-3 rounded-md bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground">Nome</p>
+                    <p className="font-medium">{viewingClient?.name}</p>
+                  </div>
+                  {viewingClient?.description && (
+                    <div className="p-3 rounded-md bg-muted/30 border border-border/50">
+                      <p className="text-xs text-muted-foreground">Descrição</p>
+                      <p className="text-sm">{viewingClient.description}</p>
+                    </div>
+                  )}
+                  <div className="p-3 rounded-md bg-muted/30 border border-border/50">
+                    <p className="text-xs text-muted-foreground">ID do Workspace</p>
+                    <p className="font-mono text-sm">{viewingClient?.id}</p>
+                  </div>
+                </div>
+
+                {loadingDetails ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Firewalls */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-primary" />
+                        <h4 className="font-medium">Firewalls ({workspaceDetails?.firewalls.length || 0})</h4>
+                      </div>
+                      {workspaceDetails?.firewalls.length === 0 ? (
+                        <p className="text-sm text-muted-foreground pl-6">Nenhum firewall vinculado</p>
+                      ) : (
+                        <div className="space-y-2 pl-6">
+                          {workspaceDetails?.firewalls.map((fw) => (
+                            <div key={fw.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-sm">{fw.name}</p>
+                                  {fw.description && (
+                                    <p className="text-xs text-muted-foreground">{fw.description}</p>
+                                  )}
+                                </div>
+                                {fw.last_score !== null && (
+                                  <Badge variant={fw.last_score >= 70 ? "default" : fw.last_score >= 40 ? "secondary" : "destructive"}>
+                                    Score: {fw.last_score}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* M365 Tenants */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Cloud className="w-4 h-4 text-primary" />
+                        <h4 className="font-medium">Microsoft 365 Tenants ({workspaceDetails?.tenants.length || 0})</h4>
+                      </div>
+                      {workspaceDetails?.tenants.length === 0 ? (
+                        <p className="text-sm text-muted-foreground pl-6">Nenhum tenant vinculado</p>
+                      ) : (
+                        <div className="space-y-2 pl-6">
+                          {workspaceDetails?.tenants.map((tenant) => (
+                            <div key={tenant.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-sm">{tenant.display_name || tenant.tenant_domain || "Tenant"}</p>
+                                  {tenant.tenant_domain && (
+                                    <p className="text-xs text-muted-foreground">{tenant.tenant_domain}</p>
+                                  )}
+                                </div>
+                                {getStatusBadge(tenant.connection_status)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Agents */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-primary" />
+                        <h4 className="font-medium">Agents ({workspaceDetails?.agents.length || 0})</h4>
+                      </div>
+                      {workspaceDetails?.agents.length === 0 ? (
+                        <p className="text-sm text-muted-foreground pl-6">Nenhum agent vinculado</p>
+                      ) : (
+                        <div className="space-y-2 pl-6">
+                          {workspaceDetails?.agents.map((agent) => (
+                            <div key={agent.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-sm">{agent.name}</p>
+                                  {agent.last_seen && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Última atividade: {formatDistanceToNow(new Date(agent.last_seen), { addSuffix: true, locale: ptBR })}
+                                    </p>
+                                  )}
+                                </div>
+                                <Badge variant={agent.revoked ? "destructive" : "default"}>
+                                  {agent.revoked ? "Revogado" : "Ativo"}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+                Fechar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
