@@ -29,6 +29,7 @@ import M365DashboardPage from "./pages/m365/M365DashboardPage";
 import TenantConnectionPage from "./pages/m365/TenantConnectionPage";
 import EntraIdPage from "./pages/m365/EntraIdPage";
 import EntraIdAuditLogsPage from "./pages/m365/EntraIdAuditLogsPage";
+import EntraIdAnalysisPage from "./pages/m365/EntraIdAnalysisPage";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ const App = () => (
               <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
               <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
               <Route path="/scope-m365/entra-id/audit-logs" element={<EntraIdAuditLogsPage />} />
+              <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
 
               {/* Legacy routes - redirect to new structure */}
               <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />

@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.entra-id-audit-logs]
 verify_jwt = false
+
+[functions.entra-id-compliance]
+verify_jwt = false
