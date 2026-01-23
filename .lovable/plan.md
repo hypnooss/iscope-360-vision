@@ -1,133 +1,218 @@
 
+# Plano: Corrigir Redirecionamento OAuth e Implementar Edição de Tenant
 
-# Plano: Corrigir Decriptação na Validação Automatizada de Permissões M365
+## Diagnóstico dos Problemas
 
-## Diagnóstico
+### Problema 1: Redirecionamento para Página de Login
 
-A mensagem de erro "Falha na Conexão M365 - Não foi possível conectar à API Microsoft Graph para validar permissões" é causada por uma inconsistência no código de decriptação do Client Secret.
-
-| Função | Método de Decriptação | Suporta AES-GCM? |
-|--------|----------------------|------------------|
-| `get-m365-config` | AES-256-GCM | Sim |
-| `m365-oauth-callback` | AES-256-GCM | Sim |
-| `validate-m365-permissions` | Base64 simples | Não |
-
-A edge function `validate-m365-permissions` usa `atob()` (Base64) enquanto as outras funções usam AES-256-GCM. Como seu Client Secret está armazenado com AES-GCM, a função não consegue decriptá-lo corretamente e falha ao tentar obter um token de acesso (401).
-
----
-
-## Solução
-
-Atualizar a função `validate-m365-permissions/index.ts` para usar o mesmo padrão de decriptação AES-256-GCM das demais funções.
-
-### Arquivo a Modificar
-
-**`supabase/functions/validate-m365-permissions/index.ts`**
-
-### Alterações Necessárias
-
-#### 1. Substituir a função `decryptSecret` (linhas 29-35)
-
-Trocar a implementação Base64 simples pela versão AES-GCM completa:
+A edge function `m365-oauth-callback` recebe a URL de redirecionamento do parâmetro `state` que foi definido no momento da criação do tenant. Essa URL é construída usando `window.location.origin`:
 
 ```typescript
-// ============= AES-256-GCM Decryption =============
+// TenantConnectionWizard.tsx linha 170
+redirect_url: `${window.location.origin}/scope-m365/tenant-connection`
+```
 
-async function getEncryptionKey(): Promise<CryptoKey> {
-  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
-  if (!keyHex || keyHex.length !== 64) {
-    throw new Error('M365_ENCRYPTION_KEY not configured or invalid');
-  }
-  
-  const keyBytes = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
-  }
-  
-  return await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'AES-GCM' },
-    false,
-    ['decrypt']
-  );
-}
+O problema ocorre quando o usuário acessa a aplicação por diferentes domínios:
+- Preview: `https://1bc80744-8bb3-4e4a-9b4f-eac733214c67.lovableproject.com`
+- Publicado: `https://iscope360.lovable.app`
 
-function fromHex(hex: string): Uint8Array {
-  const length = hex.length / 2;
-  const buffer = new ArrayBuffer(length);
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < length; i++) {
-    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  }
-  return bytes;
-}
+Se o usuário inicia o fluxo OAuth a partir do preview mas o callback redireciona para o preview, e a sessão de autenticação do usuário está associada ao domínio publicado (ou vice-versa), o usuário aparece como não autenticado.
 
-async function decryptSecret(encrypted: string): Promise<string> {
-  // AES-GCM format: iv:ciphertext (hex encoded)
-  if (encrypted.includes(':')) {
-    try {
-      const [ivHex, ctHex] = encrypted.split(':');
-      const key = await getEncryptionKey();
-      const iv = fromHex(ivHex);
-      const ciphertext = fromHex(ctHex);
-      
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        ciphertext
-      );
-      
-      return new TextDecoder().decode(decrypted);
-    } catch (error) {
-      console.error('AES-GCM decryption failed:', error);
-      return '';
-    }
-  }
-  
-  // Legacy Base64 fallback
-  try {
-    console.warn('Using legacy Base64 decryption');
-    return atob(encrypted);
-  } catch {
-    return '';
-  }
+**Evidência nos logs:**
+```text
+Redirecting to: https://1bc80744-8bb3-4e4a-9b4f-eac733214c67.lovableproject.com/scope-m365/tenant-connection?success=partial
+```
+
+O `TenantConnectionPage.tsx` possui uma verificação que redireciona para `/auth` quando não há usuário logado:
+```typescript
+// linha 64-68
+if (!authLoading && !user) {
+  navigate('/auth');
 }
 ```
 
-#### 2. Atualizar chamada na linha 245
+### Problema 2: Edição de Tenant Não Implementada
 
-A chamada precisa usar `await` pois agora a função é assíncrona:
+A funcionalidade de edição de tenant **não existe**. O `handleUpdatePermissions` está marcado como TODO:
+```typescript
+// TenantConnectionPage.tsx linha 127-133
+const handleUpdatePermissions = (tenantId: string) => {
+  // TODO: Open update permissions wizard for the specific tenant
+  toast({
+    title: 'Em desenvolvimento',
+    description: 'O upgrade de permissões será implementado em breve.',
+  });
+};
+```
+
+O `TenantStatusCard` não possui botão de edição, apenas:
+- Testar conexão
+- Atualizar permissões (não funciona)
+- Desconectar
+- Excluir
+
+---
+
+## Solução Proposta
+
+### Correção 1: Usar URL Publicada para Redirecionamento OAuth
+
+Modificar o `TenantConnectionWizard.tsx` para usar sempre a URL publicada como destino do callback, garantindo consistência:
+
+**Arquivo**: `src/components/m365/TenantConnectionWizard.tsx`
 
 ```typescript
-// De:
-const clientSecret = decryptSecret(configData.client_secret_encrypted);
+// Linha ~170 - Alterar de:
+redirect_url: `${window.location.origin}/scope-m365/tenant-connection`,
 
 // Para:
-const clientSecret = await decryptSecret(configData.client_secret_encrypted);
+redirect_url: `https://iscope360.lovable.app/scope-m365/tenant-connection`,
+```
+
+Alternativamente, usar uma variável de ambiente ou configuração para definir a URL base da aplicação.
+
+### Correção 2: Implementar Dialog de Edição de Tenant
+
+Criar um novo componente `TenantEditDialog` similar ao `AdminEditDialog` para permitir edição dos campos:
+- Display Name
+- Domínio do Tenant
+- Cliente associado (se houver múltiplos)
+
+**Novo arquivo**: `src/components/m365/TenantEditDialog.tsx`
+
+O dialog deve:
+1. Receber o tenant atual como prop
+2. Permitir editar campos editáveis
+3. Salvar alterações no banco via Supabase
+4. Registrar no audit log
+
+**Integração no TenantStatusCard**:
+1. Adicionar botão de edição (ícone de lápis)
+2. Prop `onEdit` para abrir o dialog
+3. Handler no `TenantConnectionPage` para gerenciar estado do dialog
+
+---
+
+## Arquivos a Modificar/Criar
+
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/components/m365/TenantConnectionWizard.tsx` | Modificar | Usar URL fixa ou configurável para redirect_url |
+| `src/components/m365/TenantEditDialog.tsx` | Criar | Dialog para editar tenant |
+| `src/components/m365/TenantStatusCard.tsx` | Modificar | Adicionar botão de edição |
+| `src/pages/m365/TenantConnectionPage.tsx` | Modificar | Adicionar handler e estado para edição |
+| `src/hooks/useTenantConnection.ts` | Modificar | Adicionar função `updateTenant` |
+
+---
+
+## Detalhes de Implementação
+
+### 1. TenantConnectionWizard.tsx - Correção do Redirect
+
+```typescript
+// Usar URL publicada como base para evitar problemas de sessão cross-domain
+const getAppBaseUrl = () => {
+  // Priorizar URL publicada se disponível
+  const publishedUrl = 'https://iscope360.lovable.app';
+  
+  // Em desenvolvimento, pode usar a origin atual
+  if (import.meta.env.DEV) {
+    return window.location.origin;
+  }
+  
+  return publishedUrl;
+};
+
+// No statePayload:
+redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
+```
+
+### 2. TenantEditDialog.tsx - Estrutura Base
+
+```typescript
+interface TenantEditDialogProps {
+  tenant: TenantConnection | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}
+```
+
+Campos editáveis:
+- `display_name` (text input)
+- `tenant_domain` (text input, readonly se conectado)
+- Botão salvar e cancelar
+
+### 3. useTenantConnection.ts - Nova Função
+
+```typescript
+const updateTenant = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
+  try {
+    const { error } = await supabase
+      .from('m365_tenants')
+      .update(updates)
+      .eq('id', tenantId);
+
+    if (error) throw error;
+
+    // Log audit
+    await supabase.from('m365_audit_logs').insert({
+      tenant_record_id: tenantId,
+      user_id: user?.id,
+      action: 'tenant_updated',
+      action_details: updates,
+    });
+
+    await fetchTenants();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+};
+```
+
+### 4. TenantStatusCard.tsx - Botão de Edição
+
+Adicionar entre os botões existentes:
+```tsx
+<Button 
+  variant="outline" 
+  size="sm"
+  onClick={() => onEdit?.(tenant.id)}
+  title="Editar tenant"
+>
+  <Pencil className="w-3 h-3" />
+</Button>
 ```
 
 ---
 
-## Verificação do Secret M365_ENCRYPTION_KEY
+## Ordem de Implementação
 
-A edge function precisa ter acesso ao secret `M365_ENCRYPTION_KEY` (64 caracteres hexadecimais) que é usado para decriptação. Este secret já deve estar configurado pois as outras funções funcionam corretamente.
-
----
-
-## Resultado Esperado
-
-Após a correção:
-
-1. A validação automática de permissões funcionará corretamente
-2. O alerta "Falha na Conexão M365" será automaticamente desativado após uma validação bem-sucedida
-3. Consistência entre todas as edge functions que acessam credenciais M365
+1. Corrigir URL de redirecionamento no `TenantConnectionWizard.tsx`
+2. Adicionar função `updateTenant` no hook `useTenantConnection.ts`
+3. Criar componente `TenantEditDialog.tsx`
+4. Modificar `TenantStatusCard.tsx` para incluir botão de edição
+5. Integrar tudo no `TenantConnectionPage.tsx`
 
 ---
 
-## Resumo das Mudanças
+## Resumo Visual
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/validate-m365-permissions/index.ts` | Adicionar funções AES-GCM e atualizar `decryptSecret` |
-
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ TenantStatusCard                                                │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐│
+│  │  Testar  │ │  Editar  │ │ Permiss. │ │Desconect.│ │ Excluir││
+│  │          │ │  (NOVO)  │ │          │ │          │ │        ││
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘│
+│                    │                                            │
+│                    ▼                                            │
+│            ┌───────────────┐                                    │
+│            │TenantEditDialog│                                    │
+│            │ - Display Name │                                    │
+│            │ - Domain       │                                    │
+│            │ [Salvar]       │                                    │
+│            └───────────────┘                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
