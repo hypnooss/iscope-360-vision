@@ -97,20 +97,32 @@ export default function SettingsPage() {
         
         // Handle authentication errors with session refresh retry
         const errorMessage = error.message || '';
-        if (errorMessage.includes('401') || errorMessage.includes('Invalid') || errorMessage.includes('expired')) {
+        if (errorMessage.includes('401') || errorMessage.includes('Invalid') || errorMessage.includes('expired') || errorMessage.includes('non-2xx')) {
           console.log('Token may be expired, attempting session refresh...');
-          const { error: refreshError } = await supabase.auth.refreshSession();
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
           
-          if (refreshError) {
+          if (refreshError || !refreshData.session) {
+            console.error('Session refresh failed:', refreshError?.message);
+            // Force sign out to clear stale session data
+            await supabase.auth.signOut();
             toast.error('Sessão expirada. Por favor, faça login novamente.');
             navigate('/auth');
             return;
           }
           
-          // Retry after refresh
+          // Retry after successful refresh
           const { data: retryData, error: retryError } = await supabase.functions.invoke('get-m365-config');
           
-          if (!retryError && retryData?.configured && retryData?.app_id) {
+          if (retryError) {
+            console.error('Retry also failed:', retryError);
+            // If retry still fails, force logout
+            await supabase.auth.signOut();
+            toast.error('Erro de autenticação. Por favor, faça login novamente.');
+            navigate('/auth');
+            return;
+          }
+          
+          if (retryData?.configured && retryData?.app_id) {
             setM365Config({
               appId: retryData.app_id,
               clientSecret: retryData.masked_secret || '',
