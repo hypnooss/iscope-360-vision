@@ -22,7 +22,7 @@ interface HeartbeatSuccessResponse {
 
 interface HeartbeatErrorResponse {
   error: string;
-  code: 'UNAUTHORIZED' | 'BLOCKED' | 'REVOKED';
+  code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
 }
 
 serve(async (req: Request) => {
@@ -34,7 +34,7 @@ serve(async (req: Request) => {
   // Only accept POST requests
   if (req.method !== 'POST') {
     return new Response(
-      JSON.stringify({ error: 'Method not allowed', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+      JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -45,7 +45,7 @@ serve(async (req: Request) => {
     if (!authHeader?.startsWith('Bearer ')) {
       console.log('Missing or invalid Authorization header');
       return new Response(
-        JSON.stringify({ error: 'Token de autorização ausente ou inválido', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Token de autorização ausente ou inválido', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     } catch (decodeError) {
       console.error('Failed to decode token:', decodeError);
       return new Response(
-        JSON.stringify({ error: 'Token inválido', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Token inválido', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -69,7 +69,7 @@ serve(async (req: Request) => {
     if (!agentId) {
       console.log('Token does not contain agent ID (sub claim)');
       return new Response(
-        JSON.stringify({ error: 'Token não contém identificação do agent', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Token não contém identificação do agent', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -89,7 +89,7 @@ serve(async (req: Request) => {
     if (fetchError || !agent) {
       console.log('Agent not found:', agentId);
       return new Response(
-        JSON.stringify({ error: 'Agent não encontrado', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Agent não encontrado', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -107,8 +107,18 @@ serve(async (req: Request) => {
     if (!agent.jwt_secret) {
       console.log('Agent is not registered (no jwt_secret):', agentId);
       return new Response(
-        JSON.stringify({ error: 'Agent desregistrado', code: 'REVOKED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Agent desregistrado', code: 'UNREGISTERED' } as HeartbeatErrorResponse),
         { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check token expiration BEFORE signature verification
+    // This allows the agent to know specifically that it should refresh
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      console.log('Token has expired:', agentId);
+      return new Response(
+        JSON.stringify({ error: 'Token expirado', code: 'TOKEN_EXPIRED' } as HeartbeatErrorResponse),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -127,16 +137,7 @@ serve(async (req: Request) => {
     } catch (verifyError) {
       console.error('Token signature verification failed:', verifyError);
       return new Response(
-        JSON.stringify({ error: 'Assinatura do token inválida', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check token expiration
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      console.log('Token has expired:', agentId);
-      return new Response(
-        JSON.stringify({ error: 'Token expirado', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+        JSON.stringify({ error: 'Assinatura do token inválida', code: 'INVALID_SIGNATURE' } as HeartbeatErrorResponse),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -186,7 +187,7 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error('Unexpected error in agent-heartbeat:', error);
     return new Response(
-      JSON.stringify({ error: 'Erro interno do servidor', code: 'UNAUTHORIZED' } as HeartbeatErrorResponse),
+      JSON.stringify({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' } as HeartbeatErrorResponse),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
