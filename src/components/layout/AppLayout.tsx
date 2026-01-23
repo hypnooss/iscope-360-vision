@@ -53,10 +53,9 @@ interface ModuleNavConfig {
   items: NavItem[];
 }
 
-const moduleNavConfigs: ModuleNavConfig[] = [
-  {
-    code: 'scope_firewall',
-    name: 'Firewall',
+// Static navigation config for known modules
+const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  'scope_firewall': {
     icon: Shield,
     color: 'text-orange-500',
     items: [
@@ -64,9 +63,7 @@ const moduleNavConfigs: ModuleNavConfig[] = [
       { label: 'Relatórios', href: '/scope-firewall/reports', icon: FileText },
     ],
   },
-  {
-    code: 'scope_m365',
-    name: 'Microsoft 365',
+  'scope_m365': {
     icon: Cloud,
     color: 'text-blue-500',
     items: [
@@ -75,25 +72,33 @@ const moduleNavConfigs: ModuleNavConfig[] = [
       { label: 'Conexão com Tenant', href: '/scope-m365/tenant-connection', icon: Building },
     ],
   },
-  {
-    code: 'scope_network',
-    name: 'Network',
+  'scope_network': {
     icon: Network,
     color: 'text-cyan-500',
     items: [
       { label: 'Dashboard', href: '/scope-network/dashboard', icon: LayoutDashboard },
     ],
   },
-  {
-    code: 'scope_cloud',
-    name: 'Cloud',
+  'scope_cloud': {
     icon: Cloud,
     color: 'text-purple-500',
     items: [
       { label: 'Dashboard', href: '/scope-cloud/dashboard', icon: LayoutDashboard },
     ],
   },
-];
+};
+
+// Default config for dynamically created modules
+const getDefaultModuleConfig = (code: string, name: string) => {
+  const routePrefix = code.replace('_', '-');
+  return {
+    icon: LayoutDashboard,
+    color: 'text-primary',
+    items: [
+      { label: 'Dashboard', href: `/${routePrefix}/dashboard`, icon: LayoutDashboard },
+    ],
+  };
+};
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, role, signOut } = useAuth();
@@ -166,7 +171,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isActiveRoute = (href: string) => location.pathname === href;
   const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
 
-  const accessibleModuleConfigs = moduleNavConfigs.filter(m => hasModuleAccess(m.code));
+  // Build module configs dynamically from userModules
+  const accessibleModuleConfigs: ModuleNavConfig[] = userModules.map(um => {
+    const code = um.module.code;
+    const name = um.module.name;
+    const knownConfig = knownModuleNavConfigs[code];
+    const config = knownConfig || getDefaultModuleConfig(code, name);
+    
+    return {
+      code,
+      name,
+      icon: config.icon,
+      color: config.color,
+      items: config.items,
+    };
+  });
   const canAccessUsers = role === 'super_admin' || role === 'workspace_admin';
 
   const NavContent = () => (
