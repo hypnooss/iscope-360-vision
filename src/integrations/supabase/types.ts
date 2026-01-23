@@ -613,7 +613,7 @@ export type Database = {
       }
       modules: {
         Row: {
-          code: Database["public"]["Enums"]["scope_module"]
+          code: string
           created_at: string
           description: string | null
           icon: string | null
@@ -623,7 +623,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          code: Database["public"]["Enums"]["scope_module"]
+          code: string
           created_at?: string
           description?: string | null
           icon?: string | null
@@ -633,7 +633,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          code?: Database["public"]["Enums"]["scope_module"]
+          code?: string
           created_at?: string
           description?: string | null
           icon?: string | null
@@ -876,13 +876,15 @@ export type Database = {
         Args: { _client_id: string; _user_id: string }
         Returns: boolean
       }
-      has_module_access: {
-        Args: {
-          _module_code: Database["public"]["Enums"]["scope_module"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
+      has_module_access:
+        | {
+            Args: {
+              _module_code: Database["public"]["Enums"]["scope_module"]
+              _user_id: string
+            }
+            Returns: boolean
+          }
+        | { Args: { _module_code: string; _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
