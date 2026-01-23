@@ -277,8 +277,11 @@ export function TenantStatusCard({
                 size="sm"
                 onClick={() => onUpdatePermissions(tenant.id)}
                 disabled={tenant.connection_status === 'disconnected'}
+                title="Atualizar permissões (Admin Consent)"
+                className="gap-1"
               >
                 <ExternalLink className="w-3 h-3" />
+                <span className="sr-only sm:not-sr-only sm:inline text-xs">Upgrade</span>
               </Button>
             )}
             <Button 

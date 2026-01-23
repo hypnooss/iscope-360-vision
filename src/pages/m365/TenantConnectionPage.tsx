@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Shield, 
   Plus,
@@ -126,12 +127,69 @@ export default function TenantConnectionPage() {
     return result;
   };
 
-  const handleUpdatePermissions = (tenantId: string) => {
-    // TODO: Open update permissions wizard for the specific tenant
-    toast({
-      title: 'Em desenvolvimento',
-      description: 'O upgrade de permissões será implementado em breve.',
-    });
+  const handleUpdatePermissions = async (tenantId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return;
+
+    try {
+      // Get M365 App config to build Admin Consent URL
+      const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
+        body: {},
+      });
+
+      if (configError || !configData?.app_id) {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível obter a configuração do M365.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Build state payload
+      const getAppBaseUrl = () => {
+        const publishedUrl = 'https://iscope360.lovable.app';
+        if (import.meta.env.DEV) {
+          return window.location.origin;
+        }
+        return publishedUrl;
+      };
+
+      const statePayload = {
+        tenant_record_id: tenant.id,
+        client_id: tenant.client.id,
+        tenant_id: tenant.tenant_id,
+        redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
+        upgrade_permissions: true, // Flag to indicate this is an upgrade
+      };
+      const state = btoa(JSON.stringify(statePayload));
+
+      // Build Admin Consent URL
+      const callbackUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/m365-oauth-callback`;
+      const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenant.tenant_id}/adminconsent`);
+      adminConsentUrl.searchParams.set('client_id', configData.app_id);
+      adminConsentUrl.searchParams.set('redirect_uri', callbackUrl);
+      adminConsentUrl.searchParams.set('state', state);
+
+      // Open consent window
+      window.open(
+        adminConsentUrl.toString(),
+        'microsoft_auth',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+
+      toast({
+        title: 'Atualização de Permissões',
+        description: 'Uma nova janela foi aberta. Autorize as permissões adicionais e depois clique em "Testar" para verificar.',
+      });
+    } catch (error: any) {
+      console.error('Error updating permissions:', error);
+      toast({
+        title: 'Erro',
+        description: error.message || 'Não foi possível iniciar a atualização de permissões.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleEdit = (tenantId: string) => {
