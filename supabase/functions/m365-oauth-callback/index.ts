@@ -20,8 +20,109 @@ const REQUIRED_PERMISSIONS = [
   'AuditLog.Read.All'
 ];
 
+// ============= AES-256-GCM Decryption =============
+
+// Derive CryptoKey from hex string
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid (must be 64 hex characters)');
+  }
+  
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Convert hex string to Uint8Array with proper ArrayBuffer
+function fromHex(hex: string): Uint8Array {
+  const length = hex.length / 2;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+// Decrypt secret using AES-256-GCM
+// Supports legacy Base64 format for backwards compatibility
+async function decryptSecret(encrypted: string): Promise<string> {
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ctHex] = encrypted.split(':');
+      const key = await getEncryptionKey();
+      const iv = fromHex(ivHex);
+      const ciphertext = fromHex(ctHex);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        key,
+        ciphertext as unknown as Uint8Array<ArrayBuffer>
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      return '';
+    }
+  }
+  
+  // Legacy Base64 fallback
+  try {
+    console.warn('Using legacy Base64 decryption - please re-save config to upgrade to AES-GCM');
+    return atob(encrypted);
+  } catch {
+    return '';
+  }
+}
+
+// Get M365 credentials from database or environment variables
+async function getM365Credentials(supabaseUrl: string, supabaseServiceKey: string): Promise<{ appId: string; clientSecret: string } | null> {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
+  // First try to get from database
+  const { data: configData, error: configError } = await supabase
+    .from('m365_global_config')
+    .select('app_id, client_secret_encrypted')
+    .limit(1)
+    .maybeSingle();
+
+  if (!configError && configData) {
+    const config = configData as { app_id?: string; client_secret_encrypted?: string };
+    if (config.app_id && config.client_secret_encrypted) {
+      const clientSecret = await decryptSecret(config.client_secret_encrypted);
+      if (clientSecret) {
+        console.log('Using M365 credentials from database (AES-GCM encrypted)');
+        return { appId: config.app_id, clientSecret };
+      }
+    }
+  }
+
+  // Fallback to environment variables
+  const appId = Deno.env.get('M365_MULTI_TENANT_APP_ID');
+  const clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
+
+  if (appId && clientSecret) {
+    console.log('Using M365 credentials from environment variables');
+    return { appId, clientSecret };
+  }
+
+  return null;
+}
+
+// ============= Main Handler =============
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -29,7 +130,6 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     
-    // Check for error from Microsoft
     const error = url.searchParams.get('error');
     const errorDescription = url.searchParams.get('error_description');
     
@@ -47,7 +147,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get state parameter (contains our metadata)
     const stateParam = url.searchParams.get('state');
     if (!stateParam) {
       throw new Error('Missing state parameter');
@@ -62,13 +161,18 @@ Deno.serve(async (req) => {
 
     const { tenant_record_id, client_id, tenant_id, redirect_url } = statePayload;
 
-    // Get multi-tenant app credentials from secrets
-    const appId = Deno.env.get('M365_MULTI_TENANT_APP_ID');
-    const clientSecret = Deno.env.get('M365_MULTI_TENANT_CLIENT_SECRET');
+    // Initialize Supabase client for database access
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    if (!appId || !clientSecret) {
+    // Get M365 credentials from database (preferred) or env vars (fallback)
+    const credentials = await getM365Credentials(supabaseUrl, supabaseServiceKey);
+    if (!credentials) {
       throw new Error('Multi-tenant app credentials not configured');
     }
+
+    const { appId, clientSecret } = credentials;
 
     // Test the connection by getting a token using client credentials
     console.log('Getting token for tenant:', tenant_id);
@@ -244,11 +348,6 @@ Deno.serve(async (req) => {
       .filter(p => p.required && !p.granted)
       .map(p => p.name);
 
-    // Initialize Supabase client with service role
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     // Update tenant record
     const connectionStatus = allPermissionsGranted ? 'connected' : 'pending';
     
@@ -326,6 +425,7 @@ Deno.serve(async (req) => {
         action: 'tenant_connected_oauth',
         action_details: {
           connection_method: 'multi_tenant_app',
+          credentials_source: 'database_encrypted',
           permissions_granted: permissionResults.filter(p => p.granted).map(p => p.name),
           permissions_missing: missingPermissions,
           tenant_display_name: displayName,

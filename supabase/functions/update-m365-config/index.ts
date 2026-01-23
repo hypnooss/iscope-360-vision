@@ -5,6 +5,55 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= AES-256-GCM Encryption =============
+
+// Derive CryptoKey from hex string
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid (must be 64 hex characters)');
+  }
+  
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Convert Uint8Array to hex string
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Encrypt secret using AES-256-GCM
+// Returns "iv:ciphertext" in hex format
+async function encryptSecret(plaintext: string): Promise<string> {
+  const key = await getEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for GCM
+  const encoded = new TextEncoder().encode(plaintext);
+  
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoded
+  );
+  
+  const ivHex = toHex(iv);
+  const ctHex = toHex(new Uint8Array(ciphertext));
+  
+  return `${ivHex}:${ctHex}`;
+}
+
+// ============= Main Handler =============
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -70,6 +119,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate encryption key is configured before proceeding
+    const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+    if (!encryptionKey || encryptionKey.length !== 64) {
+      console.error('M365_ENCRYPTION_KEY not configured or invalid');
+      return new Response(
+        JSON.stringify({ error: 'Encryption key not configured. Contact administrator.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Check if config already exists
     const { data: existingConfig, error: fetchError } = await supabase
       .from('m365_global_config')
@@ -82,12 +141,6 @@ Deno.serve(async (req) => {
       throw fetchError;
     }
 
-    // Simple encryption for the client secret (in production, use proper encryption)
-    // For now, we'll use base64 encoding as a basic obfuscation
-    const encryptSecret = (secret: string): string => {
-      return btoa(secret);
-    };
-
     let result;
     if (existingConfig) {
       // Update existing config
@@ -98,7 +151,8 @@ Deno.serve(async (req) => {
       
       // Only update client_secret if provided
       if (client_secret) {
-        updateData.client_secret_encrypted = encryptSecret(client_secret);
+        console.log('Encrypting client_secret with AES-256-GCM...');
+        updateData.client_secret_encrypted = await encryptSecret(client_secret);
       }
 
       const { data, error } = await supabase
@@ -122,11 +176,14 @@ Deno.serve(async (req) => {
         );
       }
 
+      console.log('Encrypting client_secret with AES-256-GCM for initial config...');
+      const encryptedSecret = await encryptSecret(client_secret);
+
       const { data, error } = await supabase
         .from('m365_global_config')
         .insert({
           app_id,
-          client_secret_encrypted: encryptSecret(client_secret),
+          client_secret_encrypted: encryptedSecret,
           created_by: user.id,
           updated_by: user.id,
         })
@@ -150,16 +207,17 @@ Deno.serve(async (req) => {
       details: {
         app_id_updated: true,
         client_secret_updated: !!client_secret,
+        encryption_method: 'AES-256-GCM',
         config_id: result.id,
       },
     });
 
-    console.log('M365 config saved successfully:', { configId: result.id, userId: user.id });
+    console.log('M365 config saved successfully with AES-256-GCM encryption:', { configId: result.id, userId: user.id });
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Configuration saved successfully.',
+        message: 'Configuration saved successfully with secure encryption.',
         config_id: result.id,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
