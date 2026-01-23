@@ -34,7 +34,7 @@ export default function ModuleSelectionPage() {
   useEffect(() => {
     // If user has only 1 module, go directly to it
     if (!modulesLoading && userModules.length === 1) {
-      handleModuleSelect(userModules[0].code);
+      handleModuleSelect(userModules[0].module.code);
     }
   }, [userModules, modulesLoading]);
 
@@ -97,26 +97,26 @@ export default function ModuleSelectionPage() {
 
         {/* Module Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {userModules.map((module) => {
-            const Icon = moduleIcons[module.code] || Shield;
-            const gradient = moduleColors[module.code] || 'from-primary to-primary/80';
+          {userModules.map((userModule) => {
+            const Icon = moduleIcons[userModule.module.code] || Shield;
+            const gradient = moduleColors[userModule.module.code] || 'from-primary to-primary/80';
 
             return (
               <Card
-                key={module.id}
+                key={userModule.module.id}
                 className="cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-xl border-2 border-transparent hover:border-primary/30 overflow-hidden group"
-                onClick={() => handleModuleSelect(module.code)}
+                onClick={() => handleModuleSelect(userModule.module.code)}
               >
                 <div className={`h-2 bg-gradient-to-r ${gradient}`} />
                 <CardHeader className="pb-2">
                   <div className={`p-3 rounded-xl bg-gradient-to-br ${gradient} w-fit mb-2 group-hover:scale-110 transition-transform`}>
                     <Icon className="w-6 h-6 text-white" />
                   </div>
-                  <CardTitle className="text-lg">{module.name}</CardTitle>
+                  <CardTitle className="text-lg">{userModule.module.name}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-sm">
-                    {module.description || 'Módulo de gestão de infraestrutura'}
+                    {userModule.module.description || 'Módulo de gestão de infraestrutura'}
                   </CardDescription>
                 </CardContent>
               </Card>

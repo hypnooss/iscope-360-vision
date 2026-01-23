@@ -799,6 +799,7 @@ export type Database = {
           created_by: string | null
           id: string
           module_id: string
+          permission: string
           user_id: string
         }
         Insert: {
@@ -806,6 +807,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           module_id: string
+          permission?: string
           user_id: string
         }
         Update: {
@@ -813,6 +815,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           module_id?: string
+          permission?: string
           user_id?: string
         }
         Relationships: [

@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
 export type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud' | 'scope_m365';
+export type ModulePermissionLevel = 'none' | 'view' | 'edit';
 
 export interface Module {
   id: string;
@@ -12,12 +13,19 @@ export interface Module {
   icon: string | null;
 }
 
+export interface UserModuleAccess {
+  module: Module;
+  permission: ModulePermissionLevel;
+}
+
 interface ModuleContextType {
   modules: Module[];
-  userModules: Module[];
+  userModules: UserModuleAccess[];
   activeModule: ScopeModule | null;
   setActiveModule: (module: ScopeModule | null) => void;
   hasModuleAccess: (moduleCode: ScopeModule) => boolean;
+  getModulePermission: (moduleCode: ScopeModule) => ModulePermissionLevel;
+  canEditModule: (moduleCode: ScopeModule) => boolean;
   loading: boolean;
 }
 
@@ -26,7 +34,7 @@ const ModuleContext = createContext<ModuleContextType | undefined>(undefined);
 export function ModuleProvider({ children }: { children: ReactNode }) {
   const { user, role, loading: authLoading } = useAuth();
   const [modules, setModules] = useState<Module[]>([]);
-  const [userModules, setUserModules] = useState<Module[]>([]);
+  const [userModules, setUserModules] = useState<UserModuleAccess[]>([]);
   const [activeModule, setActiveModule] = useState<ScopeModule | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,27 +60,38 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
 
       setModules(allModules || []);
 
-      // Super admin has access to all modules
+      // Super admin has access to all modules with edit permission
       if (role === 'super_admin') {
-        setUserModules(allModules || []);
+        const fullAccess: UserModuleAccess[] = (allModules || []).map(m => ({
+          module: m as Module,
+          permission: 'edit' as ModulePermissionLevel,
+        }));
+        setUserModules(fullAccess);
       } else {
-        // Fetch user's module access
+        // Fetch user's module access with permissions
         const { data: userModuleData } = await supabase
           .from('user_modules')
-          .select('module_id, modules(*)')
+          .select('module_id, permission, modules(*)')
           .eq('user_id', user!.id);
 
-        const accessibleModules = (userModuleData || [])
-          .map(um => um.modules)
-          .filter(Boolean) as unknown as Module[];
+        const accessibleModules: UserModuleAccess[] = (userModuleData || [])
+          .filter(um => um.modules)
+          .map(um => ({
+            module: um.modules as unknown as Module,
+            permission: (um.permission as ModulePermissionLevel) || 'view',
+          }));
 
         setUserModules(accessibleModules);
       }
 
       // Set default active module if not set
       const savedModule = localStorage.getItem('activeModule') as ScopeModule | null;
-      if (savedModule && (role === 'super_admin' || userModules.some(m => m.code === savedModule))) {
-        setActiveModule(savedModule);
+      if (savedModule) {
+        const hasAccess = role === 'super_admin' || 
+          userModules.some(m => m.module.code === savedModule && m.permission !== 'none');
+        if (hasAccess) {
+          setActiveModule(savedModule);
+        }
       }
     } catch (error) {
       console.error('Error fetching modules:', error);
@@ -83,7 +102,18 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
 
   const hasModuleAccess = (moduleCode: ScopeModule): boolean => {
     if (role === 'super_admin') return true;
-    return userModules.some(m => m.code === moduleCode);
+    return userModules.some(m => m.module.code === moduleCode && m.permission !== 'none');
+  };
+
+  const getModulePermission = (moduleCode: ScopeModule): ModulePermissionLevel => {
+    if (role === 'super_admin') return 'edit';
+    const userModule = userModules.find(m => m.module.code === moduleCode);
+    return userModule?.permission || 'none';
+  };
+
+  const canEditModule = (moduleCode: ScopeModule): boolean => {
+    if (role === 'super_admin') return true;
+    return getModulePermission(moduleCode) === 'edit';
   };
 
   const handleSetActiveModule = (module: ScopeModule | null) => {
@@ -103,6 +133,8 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
         activeModule,
         setActiveModule: handleSetActiveModule,
         hasModuleAccess,
+        getModulePermission,
+        canEditModule,
         loading,
       }}
     >

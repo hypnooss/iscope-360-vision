@@ -6,6 +6,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface ModulePermission {
+  moduleId: string;
+  permission: 'view' | 'edit';
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -57,7 +62,7 @@ serve(async (req) => {
     const isSuperAdmin = requesterRole.role === "super_admin";
 
     // Parse request body
-    const { email, password, fullName, role, permissions, clientIds, moduleIds } = await req.json();
+    const { email, password, fullName, role, clientIds, modulePermissions } = await req.json();
 
     // Validate input
     if (!email || !password || !fullName) {
@@ -73,13 +78,15 @@ serve(async (req) => {
       throw new Error("Only super admins can create workspace admin users");
     }
 
-    // Non-super_admin users must have at least one module
-    if (role !== "super_admin" && (!moduleIds || moduleIds.length === 0)) {
+    // Non-super_admin users must have at least one module with access
+    const modulesWithAccess = (modulePermissions || []) as ModulePermission[];
+    if (role !== "super_admin" && modulesWithAccess.length === 0) {
       throw new Error("Users must have access to at least one module");
     }
 
     // Validate module IDs exist
-    if (moduleIds && moduleIds.length > 0) {
+    if (modulesWithAccess.length > 0) {
+      const moduleIds = modulesWithAccess.map((m: ModulePermission) => m.moduleId);
       const { data: validModules, error: moduleError } = await supabaseAdmin
         .from("modules")
         .select("id")
@@ -155,22 +162,7 @@ serve(async (req) => {
       console.error("Error creating role:", roleError);
     }
 
-    // 4. Create module permissions
-    if (permissions) {
-      const permissionInserts = Object.entries(permissions).map(([moduleName, permission]) => ({
-        user_id: userId,
-        module_name: moduleName,
-        permission: permission,
-      }));
-
-      const { error: permError } = await supabaseAdmin.from("user_module_permissions").insert(permissionInserts);
-
-      if (permError) {
-        console.error("Error creating permissions:", permError);
-      }
-    }
-
-    // 5. Create client associations (only if not super_admin)
+    // 4. Create client associations (only if not super_admin)
     if (role !== "super_admin" && clientIds && clientIds.length > 0) {
       const clientInserts = clientIds.map((clientId: string) => ({
         user_id: userId,
@@ -184,11 +176,12 @@ serve(async (req) => {
       }
     }
 
-    // 6. Create module associations (only if not super_admin)
-    if (role !== "super_admin" && moduleIds && moduleIds.length > 0) {
-      const moduleInserts = moduleIds.map((moduleId: string) => ({
+    // 5. Create module associations with permissions (only if not super_admin)
+    if (role !== "super_admin" && modulesWithAccess.length > 0) {
+      const moduleInserts = modulesWithAccess.map((mp: ModulePermission) => ({
         user_id: userId,
-        module_id: moduleId,
+        module_id: mp.moduleId,
+        permission: mp.permission,
         created_by: requestingUser.id,
       }));
 

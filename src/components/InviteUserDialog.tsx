@@ -21,8 +21,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
-type ModulePermission = 'view' | 'edit' | 'full';
-type ScopeModule = 'scope_firewall' | 'scope_network' | 'scope_cloud';
+type ModulePermissionLevel = 'none' | 'view' | 'edit';
 
 interface Client {
   id: string;
@@ -31,8 +30,13 @@ interface Client {
 
 interface Module {
   id: string;
-  code: ScopeModule;
+  code: string;
   name: string;
+}
+
+interface ModuleWithPermission {
+  moduleId: string;
+  permission: ModulePermissionLevel;
 }
 
 interface InviteUserDialogProps {
@@ -40,14 +44,6 @@ interface InviteUserDialogProps {
   myClientIds?: string[];
   onUserCreated: () => void;
 }
-
-const MODULES = ['dashboard', 'firewall', 'reports'] as const;
-
-const SCOPE_MODULE_LABELS: Record<ScopeModule, string> = {
-  scope_firewall: 'Firewall',
-  scope_network: 'Network',
-  scope_cloud: 'Cloud',
-};
 
 const inviteSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -66,13 +62,8 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<AppRole>('user');
-  const [permissions, setPermissions] = useState<Record<string, ModulePermission>>({
-    dashboard: 'view',
-    firewall: 'view',
-    reports: 'view',
-  });
+  const [modulePermissions, setModulePermissions] = useState<Record<string, ModulePermissionLevel>>({});
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
-  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
 
   // Fetch available modules
   useEffect(() => {
@@ -80,8 +71,18 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
       const { data } = await supabase
         .from('modules')
         .select('id, code, name')
-        .eq('is_active', true);
-      setAvailableModules((data || []) as Module[]);
+        .eq('is_active', true)
+        .order('name');
+      
+      const modules = (data || []) as Module[];
+      setAvailableModules(modules);
+      
+      // Initialize all modules with 'none' permission
+      const initialPermissions: Record<string, ModulePermissionLevel> = {};
+      modules.forEach(mod => {
+        initialPermissions[mod.id] = 'none';
+      });
+      setModulePermissions(initialPermissions);
     };
     fetchModules();
   }, []);
@@ -91,21 +92,13 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
     setFullName('');
     setPassword('');
     setRole('user');
-    setPermissions({
-      dashboard: 'view',
-      firewall: 'view',
-      reports: 'view',
+    // Reset all permissions to 'none'
+    const resetPermissions: Record<string, ModulePermissionLevel> = {};
+    availableModules.forEach(mod => {
+      resetPermissions[mod.id] = 'none';
     });
+    setModulePermissions(resetPermissions);
     setSelectedClientIds([]);
-    setSelectedModuleIds([]);
-  };
-
-  const toggleModule = (moduleId: string) => {
-    if (selectedModuleIds.includes(moduleId)) {
-      setSelectedModuleIds(selectedModuleIds.filter((id) => id !== moduleId));
-    } else {
-      setSelectedModuleIds([...selectedModuleIds, moduleId]);
-    }
   };
 
   const handleSubmit = async () => {
@@ -120,8 +113,13 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
       return;
     }
 
-    if (role !== 'super_admin' && selectedModuleIds.length === 0) {
-      toast.error('Selecione pelo menos um módulo para o usuário');
+    // Get modules with access (view or edit)
+    const modulesWithAccess = Object.entries(modulePermissions)
+      .filter(([_, perm]) => perm !== 'none')
+      .map(([moduleId, permission]) => ({ moduleId, permission }));
+
+    if (role !== 'super_admin' && modulesWithAccess.length === 0) {
+      toast.error('Selecione pelo menos um módulo com acesso para o usuário');
       return;
     }
 
@@ -133,9 +131,8 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
           password,
           fullName,
           role,
-          permissions,
           clientIds: role === 'super_admin' ? [] : selectedClientIds,
-          moduleIds: role === 'super_admin' ? [] : selectedModuleIds,
+          modulePermissions: role === 'super_admin' ? [] : modulesWithAccess,
         },
       });
 
@@ -173,7 +170,14 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
     }
   };
 
-const getAvailableRoles = (): { value: AppRole; label: string }[] => {
+  const setModulePermission = (moduleId: string, permission: ModulePermissionLevel) => {
+    setModulePermissions(prev => ({
+      ...prev,
+      [moduleId]: permission,
+    }));
+  };
+
+  const getAvailableRoles = (): { value: AppRole; label: string }[] => {
     if (isSuperAdmin()) {
       return [
         { value: 'user', label: 'Usuário' },
@@ -213,149 +217,133 @@ const getAvailableRoles = (): { value: AppRole; label: string }[] => {
 
         <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4 py-2 px-6">
-          {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="fullName">Nome Completo</Label>
-            <Input
-              id="fullName"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Nome do usuário"
-            />
-          </div>
-
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@exemplo.com"
-            />
-          </div>
-
-          {/* Password */}
-          <div className="space-y-2">
-            <Label htmlFor="password">Senha Inicial</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
-            />
-          </div>
-
-          {/* Role */}
-          <div className="space-y-2">
-            <Label>Role</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {getAvailableRoles().map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!isSuperAdmin() && (
-              <p className="text-xs text-muted-foreground">
-                Como Workspace Admin, você só pode criar usuários com role Usuário
-              </p>
-            )}
-          </div>
-
-          {/* Scope Modules Access */}
-          {role !== 'super_admin' && (
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2">
-                <Layers className="w-4 h-4" />
-                Módulos com Acesso
-              </Label>
-              <div className="space-y-2 border rounded-lg p-3">
-                {availableModules.map((mod) => (
-                  <div key={mod.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`mod-${mod.id}`}
-                      checked={selectedModuleIds.includes(mod.id)}
-                      onCheckedChange={() => toggleModule(mod.id)}
-                    />
-                    <label htmlFor={`mod-${mod.id}`} className="text-sm cursor-pointer">
-                      {SCOPE_MODULE_LABELS[mod.code] || mod.name}
-                    </label>
-                  </div>
-                ))}
-                {availableModules.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Selecione os módulos que o usuário terá acesso
-              </p>
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Nome Completo</Label>
+              <Input
+                id="fullName"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Nome do usuário"
+              />
             </div>
-          )}
 
-          {/* Module Permissions */}
-          <div className="space-y-3">
-            <Label>Permissões por Área</Label>
-            {MODULES.map((mod) => (
-              <div key={mod} className="flex items-center justify-between">
-                <span className="text-sm capitalize">{mod === 'firewall' ? 'Firewall' : mod}</span>
-                <Select
-                  value={permissions[mod] || 'view'}
-                  onValueChange={(v) =>
-                    setPermissions({ ...permissions, [mod]: v as ModulePermission })
-                  }
-                >
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="view">Visualizar</SelectItem>
-                    <SelectItem value="edit">Editar</SelectItem>
-                    <SelectItem value="full">Completo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
-          </div>
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@exemplo.com"
+              />
+            </div>
 
-          {/* Client Access */}
-          {role !== 'super_admin' && (
-            <div className="space-y-3">
-              <Label>Acesso a Clientes</Label>
-              <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
-                {getAssignableClients().map((client) => (
-                  <div key={client.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`new-${client.id}`}
-                      checked={selectedClientIds.includes(client.id)}
-                      onCheckedChange={() => toggleClient(client.id)}
-                    />
-                    <label htmlFor={`new-${client.id}`} className="text-sm cursor-pointer flex items-center gap-1">
-                      <Building className="w-3 h-3 text-muted-foreground" />
-                      {client.name}
-                    </label>
-                  </div>
-                ))}
-                {getAssignableClients().length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {isSuperAdmin() ? 'Nenhum cliente cadastrado' : 'Você não possui clientes atribuídos'}
-                  </p>
-                )}
-              </div>
+            {/* Password */}
+            <div className="space-y-2">
+              <Label htmlFor="password">Senha Inicial</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+
+            {/* Role */}
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableRoles().map((r) => (
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {!isSuperAdmin() && (
                 <p className="text-xs text-muted-foreground">
-                  Você só pode atribuir clientes aos quais você tem acesso
+                  Como Workspace Admin, você só pode criar usuários com role Usuário
                 </p>
               )}
             </div>
-          )}
+
+            {/* Module Permissions */}
+            {role !== 'super_admin' && (
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  Módulos com Acesso
+                </Label>
+                <div className="space-y-3 border rounded-lg p-3">
+                  {availableModules.map((mod) => (
+                    <div key={mod.id} className="flex items-center justify-between">
+                      <span className="text-sm">{mod.name}</span>
+                      <Select
+                        value={modulePermissions[mod.id] || 'none'}
+                        onValueChange={(v) => setModulePermission(mod.id, v as ModulePermissionLevel)}
+                      >
+                        <SelectTrigger className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem Acesso</SelectItem>
+                          <SelectItem value="view">Visualizar</SelectItem>
+                          <SelectItem value="edit">Editar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  {availableModules.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Nenhum módulo disponível</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Defina o nível de acesso do usuário para cada módulo
+                </p>
+              </div>
+            )}
+
+            {/* Client Access */}
+            {role !== 'super_admin' && (
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2">
+                  <Building className="w-4 h-4" />
+                  Acesso a Clientes
+                </Label>
+                <div className="max-h-40 overflow-y-auto space-y-2 border rounded-lg p-3">
+                  {getAssignableClients().map((client) => (
+                    <div key={client.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`new-${client.id}`}
+                        checked={selectedClientIds.includes(client.id)}
+                        onCheckedChange={() => toggleClient(client.id)}
+                      />
+                      <label htmlFor={`new-${client.id}`} className="text-sm cursor-pointer flex items-center gap-1">
+                        <Building className="w-3 h-3 text-muted-foreground" />
+                        {client.name}
+                      </label>
+                    </div>
+                  ))}
+                  {getAssignableClients().length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {isSuperAdmin() ? 'Nenhum cliente cadastrado' : 'Você não possui clientes atribuídos'}
+                    </p>
+                  )}
+                </div>
+                {!isSuperAdmin() && (
+                  <p className="text-xs text-muted-foreground">
+                    Você só pode atribuir clientes aos quais você tem acesso
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </ScrollArea>
 
