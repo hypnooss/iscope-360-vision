@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.agent-heartbeat]
 verify_jwt = false
+
+[functions.refresh-agent-token]
+verify_jwt = false
