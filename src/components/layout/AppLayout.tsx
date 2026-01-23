@@ -415,19 +415,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         >
           {/* Logo */}
-          <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
-            <div className={cn('flex flex-col items-center gap-1', !sidebarOpen && 'justify-center')}>
-              <img src={logoIscope} alt="iScope 360" className={cn('w-auto flex-shrink-0', sidebarOpen ? 'h-10' : 'h-8')} />
-              {sidebarOpen && <span className="font-bold text-sidebar-foreground text-sm">iScope 360</span>}
+          <div className="p-4 border-b border-sidebar-border flex items-center justify-center relative">
+            <div className={cn('flex flex-col items-center', sidebarOpen ? 'gap-3' : 'gap-0')}>
+              <img src={logoIscope} alt="iScope 360" className={cn('w-auto flex-shrink-0', sidebarOpen ? 'h-12' : 'h-8')} />
+              {sidebarOpen && <span className="font-bold text-sidebar-foreground text-lg tracking-wide">iScope 360</span>}
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn('h-8 w-8', !sidebarOpen && 'hidden')}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+            {sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 absolute right-2 top-2"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            )}
           </div>
 
           {/* Navigation */}
