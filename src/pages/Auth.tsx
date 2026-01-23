@@ -170,10 +170,7 @@ export default function Auth() {
   const renderLoginView = () => (
     <Card className="glass-card border-border/50">
       <CardHeader>
-        <CardTitle className="text-center">Bem-vindo</CardTitle>
-        <CardDescription className="text-center">
-          Faça login para acessar a plataforma
-        </CardDescription>
+        <CardTitle className="text-center">Faça login para acessar a plataforma</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleLogin} className="space-y-4">
@@ -411,7 +408,7 @@ export default function Auth() {
     <div className="min-h-screen bg-background cyber-grid flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-12">
           <div className="flex flex-col items-center gap-4">
             <img src={logoIscope} alt="iScope 360" className="h-12 w-auto" />
             <span className="text-2xl font-bold text-foreground">iScope 360</span>
