@@ -178,7 +178,7 @@ export function useTenantConnection() {
       // Fetch credentials from m365_app_credentials
       const { data: credentials, error: credError } = await supabase
         .from('m365_app_credentials')
-        .select('azure_app_id, client_secret_encrypted')
+        .select('azure_app_id, client_secret_encrypted, auth_type')
         .eq('tenant_record_id', tenantId)
         .single();
 
@@ -190,12 +190,33 @@ export function useTenantConnection() {
         };
       }
 
+      let clientSecret = credentials.client_secret_encrypted;
+
+      // If using multi-tenant app or no local secret, get the global secret
+      if (credentials.auth_type === 'multi_tenant_app' || !clientSecret) {
+        const { data: globalConfig, error: globalError } = await supabase
+          .from('m365_global_config')
+          .select('client_secret_encrypted')
+          .limit(1)
+          .maybeSingle();
+
+        if (globalError || !globalConfig?.client_secret_encrypted) {
+          console.error('Global config error:', globalError);
+          return { 
+            success: false, 
+            error: 'Configuração global M365 não encontrada. Configure o App Multi-Tenant em Administração > Configurações.' 
+          };
+        }
+
+        clientSecret = globalConfig.client_secret_encrypted;
+      }
+
       // Call edge function to validate the connection
       const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
         body: {
           tenant_id: tenant.tenant_id,
           app_id: credentials.azure_app_id,
-          client_secret: credentials.client_secret_encrypted, // Edge function will decrypt
+          client_secret: clientSecret,
           tenant_record_id: tenantId,
         }
       });
