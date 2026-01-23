@@ -134,66 +134,27 @@ export default function EntraIdPage() {
 
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Users */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group">
+          {/* Security Analysis - Main Feature */}
+          <Card 
+            className="glass-card hover:shadow-lg transition-shadow cursor-pointer group border-primary/30"
+            onClick={() => navigate('/scope-m365/entra-id/analysis')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <Users className="w-6 h-6 text-blue-500" />
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Shield className="w-6 h-6 text-primary" />
                 </div>
                 <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <CardTitle className="text-lg mt-3">Usuários</CardTitle>
+              <CardTitle className="text-lg mt-3">Análise de Segurança</CardTitle>
               <CardDescription>
-                Lista de usuários, status de conta e últimos acessos
+                Identifica configurações inseguras, políticas ausentes e lacunas de segurança
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
-
-          {/* Groups */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-green-500/10">
-                  <Users className="w-6 h-6 text-green-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Grupos</CardTitle>
-              <CardDescription>
-                Grupos de segurança, Microsoft 365 e distribuição
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
-
-          {/* Applications */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-purple-500/10">
-                  <Key className="w-6 h-6 text-purple-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Aplicativos</CardTitle>
-              <CardDescription>
-                App Registrations, Enterprise Apps e permissões
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
+              <Badge className="bg-primary/10 text-primary border-primary/20">
+                Disponível
+              </Badge>
             </CardContent>
           </Card>
 
@@ -221,8 +182,71 @@ export default function EntraIdPage() {
             </CardContent>
           </Card>
 
+          {/* Users */}
+          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <Users className="w-6 h-6 text-blue-500" />
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+              <CardTitle className="text-lg mt-3">Usuários</CardTitle>
+              <CardDescription>
+                Lista de usuários, status de conta e últimos acessos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                Em breve
+              </span>
+            </CardContent>
+          </Card>
+
+          {/* Groups */}
+          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-green-500/10">
+                  <Users className="w-6 h-6 text-green-500" />
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+              <CardTitle className="text-lg mt-3">Grupos</CardTitle>
+              <CardDescription>
+                Grupos de segurança, Microsoft 365 e distribuição
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                Em breve
+              </span>
+            </CardContent>
+          </Card>
+
+          {/* Applications */}
+          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Key className="w-6 h-6 text-purple-500" />
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+              <CardTitle className="text-lg mt-3">Aplicativos</CardTitle>
+              <CardDescription>
+                App Registrations, Enterprise Apps e permissões
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                Em breve
+              </span>
+            </CardContent>
+          </Card>
+
           {/* Conditional Access */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group">
+          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="p-2 rounded-lg bg-red-500/10">
