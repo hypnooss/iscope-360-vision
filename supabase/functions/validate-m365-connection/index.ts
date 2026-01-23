@@ -316,7 +316,7 @@ serve(async (req) => {
 
       // Update permission status in m365_tenant_permissions
       for (const perm of permissionResults) {
-        await supabase
+        const upsertResult = await supabase
           .from('m365_tenant_permissions')
           .upsert({
             tenant_record_id,
@@ -324,9 +324,16 @@ serve(async (req) => {
             permission_type: 'Application',
             status: perm.granted ? 'granted' : 'pending',
             granted_at: perm.granted ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
           }, {
-            onConflict: 'tenant_record_id,permission_name,permission_type',
+            onConflict: 'tenant_record_id,permission_name',
           });
+        
+        if (upsertResult.error) {
+          console.error(`Error upserting permission ${perm.name}:`, upsertResult.error);
+        } else {
+          console.log(`Permission ${perm.name} upserted: status=${perm.granted ? 'granted' : 'pending'}`);
+        }
       }
 
       // Log the validation action
