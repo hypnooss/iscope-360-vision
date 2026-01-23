@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModules, ScopeModule } from '@/contexts/ModuleContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, Network, Cloud, AlertCircle, Loader2 } from 'lucide-react';
-import logoPrecisio from '@/assets/logo-precisio-analytics.png';
+import logoIscope from '@/assets/logo-iscope.png';
 
 const moduleIcons: Record<ScopeModule, React.ComponentType<{ className?: string }>> = {
   scope_firewall: Shield,
@@ -73,7 +73,7 @@ export default function ModuleSelectionPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-muted flex flex-col items-center justify-center p-4">
         <div className="text-center">
-          <img src={logoPrecisio} alt="Precisio Analytics" className="h-12 w-auto mx-auto mb-6" />
+          <img src={logoIscope} alt="iScope 360" className="h-12 w-auto mx-auto mb-6" />
           <AlertCircle className="w-16 h-16 text-warning mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-foreground mb-2">Acesso Restrito</h1>
           <p className="text-muted-foreground max-w-md">
@@ -90,8 +90,8 @@ export default function ModuleSelectionPage() {
       <div className="w-full max-w-4xl">
         {/* Header */}
         <div className="text-center mb-10">
-          <img src={logoPrecisio} alt="Precisio Analytics" className="h-12 w-auto mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-foreground mb-2">InfraScope 360</h1>
+          <img src={logoIscope} alt="iScope 360" className="h-12 w-auto mx-auto mb-4" />
+          <h1 className="text-3xl font-bold text-foreground mb-2">iScope 360</h1>
           <p className="text-muted-foreground">Selecione o módulo que deseja acessar</p>
         </div>
 

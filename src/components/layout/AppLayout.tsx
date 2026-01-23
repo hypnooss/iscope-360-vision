@@ -37,7 +37,7 @@ import {
   Building,
   ShieldCheck,
 } from 'lucide-react';
-import logoPrecisio from '@/assets/logo-precisio-analytics.png';
+import logoIscope from '@/assets/logo-iscope.png';
 
 interface NavItem {
   label: string;
@@ -368,8 +368,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile Header */}
       <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">
-          <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto" />
-          <span className="font-bold text-foreground">InfraScope 360</span>
+          <img src={logoIscope} alt="iScope 360" className="h-6 w-auto" />
+          <span className="font-bold text-foreground">iScope 360</span>
         </div>
         <Button
           variant="ghost"
@@ -397,8 +397,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto" />
-            <span className="font-bold text-sidebar-foreground">InfraScope 360</span>
+            <img src={logoIscope} alt="iScope 360" className="h-6 w-auto" />
+            <span className="font-bold text-sidebar-foreground">iScope 360</span>
           </div>
         </div>
         <nav className="p-3 space-y-1">
@@ -417,8 +417,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
             <div className={cn('flex items-center gap-2', !sidebarOpen && 'justify-center')}>
-              <img src={logoPrecisio} alt="Precisio Analytics" className="h-6 w-auto flex-shrink-0" />
-              {sidebarOpen && <span className="font-bold text-sidebar-foreground">InfraScope 360</span>}
+              <img src={logoIscope} alt="iScope 360" className="h-6 w-auto flex-shrink-0" />
+              {sidebarOpen && <span className="font-bold text-sidebar-foreground">iScope 360</span>}
             </div>
             <Button
               variant="ghost"

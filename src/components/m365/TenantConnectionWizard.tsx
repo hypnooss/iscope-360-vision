@@ -188,7 +188,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         
         toast({
           title: 'Configuração pendente',
-          description: 'O App ID do InfraScope 360 precisa ser configurado. Contate o administrador.',
+          description: 'O App ID do iScope 360 precisa ser configurado. Contate o administrador.',
           variant: 'destructive',
         });
         setAuthorizing(false);
@@ -351,7 +351,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                   <div className="text-sm text-muted-foreground">
                     <p className="font-medium text-foreground">Conexão Simplificada</p>
                     <p className="mt-1">
-                      O InfraScope 360 usa um modelo de App Multi-Tenant. O administrador do tenant 
+                      O iScope 360 usa um modelo de App Multi-Tenant. O administrador do tenant 
                       apenas precisa autorizar o acesso - sem criar App Registration manualmente.
                     </p>
                   </div>
@@ -414,7 +414,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
               <p className="text-sm text-muted-foreground">
                 {waitingForAuth 
                   ? 'Complete a autorização na janela da Microsoft e clique em verificar.'
-                  : 'Clique no botão abaixo para autorizar o InfraScope 360 a acessar o tenant Microsoft 365.'
+                  : 'Clique no botão abaixo para autorizar o iScope 360 a acessar o tenant Microsoft 365.'
                 }
               </p>
             </div>
