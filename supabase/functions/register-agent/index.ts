@@ -7,6 +7,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Rate limiting configuration
+const RATE_LIMIT_MAX_ATTEMPTS = 10;
+const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour in milliseconds
+
 // Generate a cryptographically secure random string
 function generateSecureSecret(length: number = 64): string {
   const array = new Uint8Array(length);
@@ -30,7 +34,6 @@ async function generateAgentToken(agentId: string, jwtSecret: string, expiresIn:
     exp = now + 30 * 60; // Default 30 minutes
   }
 
-  // Payload usa apenas "type" - o agent_id fica no claim padrão "sub"
   const jwt = await new jose.SignJWT({ type: expiresIn.includes("d") ? "refresh" : "access" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt(now)
@@ -39,6 +42,56 @@ async function generateAgentToken(agentId: string, jwtSecret: string, expiresIn:
     .sign(secretKey);
 
   return jwt;
+}
+
+// Extract client IP from request headers
+function getClientIP(req: Request): string {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("cf-connecting-ip")
+    || req.headers.get("x-real-ip")
+    || "unknown";
+}
+
+// Check rate limit and record attempt
+async function checkRateLimit(
+  supabase: any,
+  clientIP: string
+): Promise<{ allowed: boolean; count: number }> {
+  const rateLimitKey = `register_agent:${clientIP}`;
+  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+
+  // Count recent attempts
+  const { count, error: countError } = await supabase
+    .from("rate_limits")
+    .select("*", { count: "exact", head: true })
+    .eq("key", rateLimitKey)
+    .gte("created_at", windowStart);
+
+  if (countError) {
+    console.error(`[rate-limit] Error checking rate limit: ${countError.message}`);
+    // On error, allow the request but log it
+    return { allowed: true, count: 0 };
+  }
+
+  const currentCount = count || 0;
+  
+  // Record this attempt
+  const { error: insertError } = await supabase
+    .from("rate_limits")
+    .insert({
+      key: rateLimitKey,
+      endpoint: "register-agent",
+      ip_address: clientIP,
+    });
+
+  if (insertError) {
+    console.error(`[rate-limit] Error recording attempt: ${insertError.message}`);
+  }
+
+  return {
+    allowed: currentCount < RATE_LIMIT_MAX_ATTEMPTS,
+    count: currentCount + 1,
+  };
 }
 
 serve(async (req) => {
@@ -56,12 +109,48 @@ serve(async (req) => {
     });
   }
 
+  // Create Supabase client with SERVICE ROLE for rate limiting
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  // Get client IP and check rate limit
+  const clientIP = getClientIP(req);
+  console.log(`[register-agent] Request from IP: ${clientIP}`);
+
+  const { allowed, count } = await checkRateLimit(supabase, clientIP);
+
+  if (!allowed) {
+    console.warn(`[register-agent] Rate limit exceeded for IP ${clientIP} (${count} attempts)`);
+    return new Response(
+      JSON.stringify({
+        error: "Too many registration attempts. Please try again later.",
+        code: "RATE_LIMITED",
+        retry_after: 3600,
+      }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": "3600",
+        },
+      }
+    );
+  }
+
   try {
     // Parse request body
     const body = await req.json();
     const { activation_code } = body;
 
-    console.log(`[register-agent] Registration attempt with code: ${activation_code?.substring(0, 4)}...`);
+    console.log(`[register-agent] Registration attempt with code: ${activation_code?.substring(0, 4)}... (attempt ${count}/${RATE_LIMIT_MAX_ATTEMPTS})`);
 
     if (!activation_code || typeof activation_code !== "string") {
       console.log("[register-agent] Missing or invalid activation_code");
@@ -70,17 +159,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // Create Supabase client with SERVICE ROLE to bypass RLS
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
 
     // Step 1: Find agent by activation_code
     console.log("[register-agent] Looking up agent by activation code...");
@@ -144,7 +222,7 @@ serve(async (req) => {
           agent_id: agent.id,
           access_token: accessToken,
           refresh_token: refreshToken,
-          reissued: true, // Flag para indicar que são tokens reemitidos
+          reissued: true,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
