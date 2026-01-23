@@ -412,11 +412,10 @@ export default function Auth() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex flex-col items-center gap-4 mb-4">
+          <div className="flex flex-col items-center gap-4">
             <img src={logoIscope} alt="iScope 360" className="h-12 w-auto" />
             <span className="text-2xl font-bold text-foreground">iScope 360</span>
           </div>
-          <p className="text-muted-foreground">Plataforma de Gestão de Infraestrutura</p>
         </div>
 
         {renderCurrentView()}
