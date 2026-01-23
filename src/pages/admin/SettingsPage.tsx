@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface PermissionStatus {
@@ -412,7 +412,7 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Clock className="w-3.5 h-3.5" />
                           <span>
-                            Última validação: {formatDistanceToNow(new Date(m365Config.lastValidatedAt), { addSuffix: true, locale: ptBR })}
+                            Última validação: {format(new Date(m365Config.lastValidatedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </span>
                         </div>
                         {m365Config.validationTenantId && (
