@@ -82,10 +82,52 @@ export default function SettingsPage() {
   const checkM365Config = async () => {
     try {
       setLoading(true);
+      
+      // Verify session is still valid before calling
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/auth');
+        return;
+      }
+      
       const { data, error } = await supabase.functions.invoke('get-m365-config');
       
       if (error) {
         console.error('Error checking M365 config:', error);
+        
+        // Handle authentication errors with session refresh retry
+        const errorMessage = error.message || '';
+        if (errorMessage.includes('401') || errorMessage.includes('Invalid') || errorMessage.includes('expired')) {
+          console.log('Token may be expired, attempting session refresh...');
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          
+          if (refreshError) {
+            toast.error('Sessão expirada. Por favor, faça login novamente.');
+            navigate('/auth');
+            return;
+          }
+          
+          // Retry after refresh
+          const { data: retryData, error: retryError } = await supabase.functions.invoke('get-m365-config');
+          
+          if (!retryError && retryData?.configured && retryData?.app_id) {
+            setM365Config({
+              appId: retryData.app_id,
+              clientSecret: retryData.masked_secret || '',
+              isConfigured: retryData.has_client_secret,
+              permissions: retryData.permissions || defaultPermissions,
+              permissionsValidated: retryData.permissions_validated || false,
+              lastValidatedAt: retryData.last_validated_at || null,
+              validationTenantId: retryData.validation_tenant_id || null,
+            });
+            setNewAppId(retryData.app_id);
+            if (retryData.validation_tenant_id) {
+              setTenantIdForValidation(retryData.validation_tenant_id);
+            }
+            return;
+          }
+        }
+        
         setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
       } else if (data?.configured && data?.app_id) {
         setM365Config({
