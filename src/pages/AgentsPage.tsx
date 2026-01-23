@@ -184,6 +184,10 @@ export default function AgentsPage() {
       toast.error("Nome do agent é obrigatório");
       return;
     }
+    if (!newAgentClientId) {
+      toast.error("Cliente é obrigatório");
+      return;
+    }
 
     setCreating(true);
     try {
@@ -388,16 +392,15 @@ export default function AgentsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="agent-client">Cliente (opcional)</Label>
+                    <Label htmlFor="agent-client">Cliente *</Label>
                     <Select
-                      value={newAgentClientId || "none"}
-                      onValueChange={(val) => setNewAgentClientId(val === "none" ? "" : val)}
+                      value={newAgentClientId}
+                      onValueChange={(val) => setNewAgentClientId(val)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione um cliente" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
                         {clients.map((client) => (
                           <SelectItem key={client.id} value={client.id}>
                             {client.name}
