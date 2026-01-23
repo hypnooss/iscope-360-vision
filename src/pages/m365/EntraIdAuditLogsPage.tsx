@@ -412,7 +412,7 @@ export default function EntraIdAuditLogsPage() {
                           <TableCell>{log.appDisplayName || '-'}</TableCell>
                           <TableCell className="font-mono text-xs">{log.ipAddress || '-'}</TableCell>
                           <TableCell>{formatLocation(log.location)}</TableCell>
-                          <TableCell>{getStatusBadge(log.status.errorCode)}</TableCell>
+                          <TableCell>{getStatusBadge(log.status?.errorCode)}</TableCell>
                           <TableCell>
                             <div className="text-sm">
                               {log.deviceDetail?.browser || '-'}
