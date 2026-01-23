@@ -1,218 +1,226 @@
 
-# Plano: Corrigir Redirecionamento OAuth e Implementar Edição de Tenant
+# Plano: Corrigir Teste de Conexão e Adicionar Visualização de Permissões no Tenant
 
-## Diagnóstico dos Problemas
+## Resumo dos Problemas Identificados
 
-### Problema 1: Redirecionamento para Página de Login
+### Problema 1: Botão "Testar" não valida realmente a conexão
 
-A edge function `m365-oauth-callback` recebe a URL de redirecionamento do parâmetro `state` que foi definido no momento da criação do tenant. Essa URL é construída usando `window.location.origin`:
-
+O código atual da função `testConnection` em `useTenantConnection.ts`:
 ```typescript
-// TenantConnectionWizard.tsx linha 170
-redirect_url: `${window.location.origin}/scope-m365/tenant-connection`
-```
-
-O problema ocorre quando o usuário acessa a aplicação por diferentes domínios:
-- Preview: `https://1bc80744-8bb3-4e4a-9b4f-eac733214c67.lovableproject.com`
-- Publicado: `https://iscope360.lovable.app`
-
-Se o usuário inicia o fluxo OAuth a partir do preview mas o callback redireciona para o preview, e a sessão de autenticação do usuário está associada ao domínio publicado (ou vice-versa), o usuário aparece como não autenticado.
-
-**Evidência nos logs:**
-```text
-Redirecting to: https://1bc80744-8bb3-4e4a-9b4f-eac733214c67.lovableproject.com/scope-m365/tenant-connection?success=partial
-```
-
-O `TenantConnectionPage.tsx` possui uma verificação que redireciona para `/auth` quando não há usuário logado:
-```typescript
-// linha 64-68
-if (!authLoading && !user) {
-  navigate('/auth');
-}
-```
-
-### Problema 2: Edição de Tenant Não Implementada
-
-A funcionalidade de edição de tenant **não existe**. O `handleUpdatePermissions` está marcado como TODO:
-```typescript
-// TenantConnectionPage.tsx linha 127-133
-const handleUpdatePermissions = (tenantId: string) => {
-  // TODO: Open update permissions wizard for the specific tenant
-  toast({
-    title: 'Em desenvolvimento',
-    description: 'O upgrade de permissões será implementado em breve.',
-  });
+const testConnection = async (tenantId: string) => {
+  // This would call an edge function to test the Graph API connection
+  // For now, just update the last_validated_at timestamp  <-- PLACEHOLDER!
+  try {
+    const { error } = await supabase
+      .from('m365_tenants')
+      .update({ last_validated_at: new Date().toISOString() })
+      .eq('id', tenantId);
+    // ...
+  }
 };
 ```
 
-O `TenantStatusCard` não possui botão de edição, apenas:
-- Testar conexão
-- Atualizar permissões (não funciona)
-- Desconectar
-- Excluir
+A função apenas atualiza o timestamp, **sem chamar a edge function `validate-m365-connection`** que realmente:
+- Obtém token de acesso
+- Testa a API do Graph
+- Valida cada permissão
+- Atualiza o `connection_status` (pending/connected/partial/failed)
+
+### Problema 2: Permissões não são exibidas no card do tenant
+
+O `TenantStatusCard` não busca nem exibe as permissões do tenant (`m365_tenant_permissions`), mesmo que os dados existam no banco de dados.
+
+Dados encontrados no banco para o tenant NEXTA:
+| Permissão | Status |
+|-----------|--------|
+| User.Read.All | granted |
+| Directory.Read.All | pending |
+| Group.Read.All | granted |
+| Application.Read.All | granted |
+| AuditLog.Read.All | pending |
 
 ---
 
 ## Solução Proposta
 
-### Correção 1: Usar URL Publicada para Redirecionamento OAuth
+### Parte 1: Corrigir o Teste de Conexão
 
-Modificar o `TenantConnectionWizard.tsx` para usar sempre a URL publicada como destino do callback, garantindo consistência:
+**Arquivo**: `src/hooks/useTenantConnection.ts`
 
-**Arquivo**: `src/components/m365/TenantConnectionWizard.tsx`
-
-```typescript
-// Linha ~170 - Alterar de:
-redirect_url: `${window.location.origin}/scope-m365/tenant-connection`,
-
-// Para:
-redirect_url: `https://iscope360.lovable.app/scope-m365/tenant-connection`,
-```
-
-Alternativamente, usar uma variável de ambiente ou configuração para definir a URL base da aplicação.
-
-### Correção 2: Implementar Dialog de Edição de Tenant
-
-Criar um novo componente `TenantEditDialog` similar ao `AdminEditDialog` para permitir edição dos campos:
-- Display Name
-- Domínio do Tenant
-- Cliente associado (se houver múltiplos)
-
-**Novo arquivo**: `src/components/m365/TenantEditDialog.tsx`
-
-O dialog deve:
-1. Receber o tenant atual como prop
-2. Permitir editar campos editáveis
-3. Salvar alterações no banco via Supabase
-4. Registrar no audit log
-
-**Integração no TenantStatusCard**:
-1. Adicionar botão de edição (ícone de lápis)
-2. Prop `onEdit` para abrir o dialog
-3. Handler no `TenantConnectionPage` para gerenciar estado do dialog
-
----
-
-## Arquivos a Modificar/Criar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/components/m365/TenantConnectionWizard.tsx` | Modificar | Usar URL fixa ou configurável para redirect_url |
-| `src/components/m365/TenantEditDialog.tsx` | Criar | Dialog para editar tenant |
-| `src/components/m365/TenantStatusCard.tsx` | Modificar | Adicionar botão de edição |
-| `src/pages/m365/TenantConnectionPage.tsx` | Modificar | Adicionar handler e estado para edição |
-| `src/hooks/useTenantConnection.ts` | Modificar | Adicionar função `updateTenant` |
-
----
-
-## Detalhes de Implementação
-
-### 1. TenantConnectionWizard.tsx - Correção do Redirect
+A função `testConnection` precisa:
+1. Buscar as credenciais do tenant (app_id, client_secret)
+2. Chamar a edge function `validate-m365-connection`
+3. Retornar o resultado real da validacao
 
 ```typescript
-// Usar URL publicada como base para evitar problemas de sessão cross-domain
-const getAppBaseUrl = () => {
-  // Priorizar URL publicada se disponível
-  const publishedUrl = 'https://iscope360.lovable.app';
-  
-  // Em desenvolvimento, pode usar a origin atual
-  if (import.meta.env.DEV) {
-    return window.location.origin;
-  }
-  
-  return publishedUrl;
-};
-
-// No statePayload:
-redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
-```
-
-### 2. TenantEditDialog.tsx - Estrutura Base
-
-```typescript
-interface TenantEditDialogProps {
-  tenant: TenantConnection | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-}
-```
-
-Campos editáveis:
-- `display_name` (text input)
-- `tenant_domain` (text input, readonly se conectado)
-- Botão salvar e cancelar
-
-### 3. useTenantConnection.ts - Nova Função
-
-```typescript
-const updateTenant = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
+const testConnection = async (tenantId: string) => {
   try {
-    const { error } = await supabase
-      .from('m365_tenants')
-      .update(updates)
-      .eq('id', tenantId);
+    // 1. Buscar credenciais do tenant
+    const { data: credentials, error: credError } = await supabase
+      .from('m365_app_credentials')
+      .select('app_id, client_secret_encrypted')
+      .eq('tenant_record_id', tenantId)
+      .single();
+    
+    if (credError || !credentials) {
+      return { 
+        success: false, 
+        error: 'Credenciais nao encontradas. O tenant pode nao ter completado o consentimento.' 
+      };
+    }
+
+    // 2. Buscar tenant_id (Azure) da tabela m365_tenants
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) {
+      return { success: false, error: 'Tenant nao encontrado.' };
+    }
+
+    // 3. Chamar edge function para validar
+    const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
+      body: {
+        tenant_id: tenant.tenant_id,
+        app_id: credentials.app_id,
+        client_secret: credentials.client_secret_encrypted, // A edge function decripta
+        tenant_record_id: tenantId,
+      }
+    });
 
     if (error) throw error;
 
-    // Log audit
-    await supabase.from('m365_audit_logs').insert({
-      tenant_record_id: tenantId,
-      user_id: user?.id,
-      action: 'tenant_updated',
-      action_details: updates,
-    });
-
     await fetchTenants();
-    return { success: true };
+    return { 
+      success: data.success, 
+      error: data.error,
+      permissions: data.permissions,
+    };
   } catch (err: any) {
+    console.error('Error testing connection:', err);
     return { success: false, error: err.message };
   }
 };
 ```
 
-### 4. TenantStatusCard.tsx - Botão de Edição
+### Parte 2: Adicionar Visualizacao de Permissoes no Card
 
-Adicionar entre os botões existentes:
-```tsx
-<Button 
-  variant="outline" 
-  size="sm"
-  onClick={() => onEdit?.(tenant.id)}
-  title="Editar tenant"
->
-  <Pencil className="w-3 h-3" />
-</Button>
+**Arquivo**: `src/components/m365/TenantStatusCard.tsx`
+
+Adicionar seção de permissões similar à imagem de referência (Administração > Configurações):
+
+1. Buscar permissões do tenant via prop ou query
+2. Exibir em duas colunas: Obrigatórias e Opcionais/Recomendadas
+3. Indicador visual (verde = granted, amarelo = pending)
+
+**Nova prop** para receber permissões ou buscar internamente:
+```typescript
+interface TenantStatusCardProps {
+  tenant: TenantConnection;
+  permissions?: TenantPermission[]; // NOVO
+  // ...
+}
 ```
 
+**Nova seção no card**:
+```tsx
+{permissions && permissions.length > 0 && (
+  <div className="pt-2 border-t border-border/50">
+    <div className="grid grid-cols-2 gap-4 text-xs">
+      <div>
+        <p className="text-muted-foreground mb-2">Obrigatórias</p>
+        {requiredPerms.map(p => (
+          <div key={p.name} className="flex items-center gap-1">
+            <span className={cn("w-2 h-2 rounded-full", 
+              p.status === 'granted' ? 'bg-green-500' : 'bg-amber-500'
+            )} />
+            <span>{p.permission_name}</span>
+          </div>
+        ))}
+      </div>
+      <div>
+        <p className="text-muted-foreground mb-2">Recomendadas</p>
+        {/* Similar para opcionais */}
+      </div>
+    </div>
+  </div>
+)}
+```
+
+### Parte 3: Buscar Permissoes do Tenant
+
+**Arquivo**: `src/hooks/useTenantConnection.ts`
+
+Adicionar função para buscar permissões:
+```typescript
+const fetchTenantPermissions = async (tenantRecordId: string) => {
+  const { data, error } = await supabase
+    .from('m365_tenant_permissions')
+    .select('*')
+    .eq('tenant_record_id', tenantRecordId);
+  
+  return data || [];
+};
+```
+
+Ou incluir na query principal de tenants via join.
+
+### Parte 4: Atualizar Edge Function validate-m365-connection
+
+A edge function precisa ser capaz de decriptar o `client_secret_encrypted` usando AES-GCM (similar à correção feita em `validate-m365-permissions`).
+
+Atualmente, ela recebe o secret em texto plano, mas quando chamada do frontend com dados do banco, virá encriptado.
+
 ---
 
-## Ordem de Implementação
+## Arquivos a Modificar
 
-1. Corrigir URL de redirecionamento no `TenantConnectionWizard.tsx`
-2. Adicionar função `updateTenant` no hook `useTenantConnection.ts`
-3. Criar componente `TenantEditDialog.tsx`
-4. Modificar `TenantStatusCard.tsx` para incluir botão de edição
-5. Integrar tudo no `TenantConnectionPage.tsx`
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/hooks/useTenantConnection.ts` | Implementar `testConnection` real com edge function + adicionar busca de permissões |
+| `src/components/m365/TenantStatusCard.tsx` | Adicionar seção de permissões com indicadores visuais |
+| `src/pages/m365/TenantConnectionPage.tsx` | Passar permissões como prop ou integrar busca |
+| `supabase/functions/validate-m365-connection/index.ts` | Adicionar decriptação AES-GCM do client_secret |
 
 ---
 
-## Resumo Visual
+## Resultado Esperado
+
+Após as alterações:
+
+1. **Testar Conexão**:
+   - Realmente valida a conexão com a Microsoft Graph API
+   - Atualiza o status do tenant (connected/partial/failed)
+   - Atualiza as permissões na tabela `m365_tenant_permissions`
+
+2. **Card do Tenant**:
+   - Exibe lista de permissões em duas colunas
+   - Indicador verde para permissões concedidas
+   - Indicador amarelo para permissões pendentes
+   - Visual consistente com a página de Configurações
+
+---
+
+## Diagrama do Fluxo Corrigido
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│ TenantStatusCard                                                │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐│
-│  │  Testar  │ │  Editar  │ │ Permiss. │ │Desconect.│ │ Excluir││
-│  │          │ │  (NOVO)  │ │          │ │          │ │        ││
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘│
-│                    │                                            │
-│                    ▼                                            │
-│            ┌───────────────┐                                    │
-│            │TenantEditDialog│                                    │
-│            │ - Display Name │                                    │
-│            │ - Domain       │                                    │
-│            │ [Salvar]       │                                    │
-│            └───────────────┘                                    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────┐     ┌─────────────────────────────┐
+│  Clique "Testar" │────>│ testConnection()            │
+└──────────────────┘     │ 1. Busca credentials        │
+                         │ 2. Chama edge function      │
+                         └────────────┬────────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────────┐
+                         │ validate-m365-connection    │
+                         │ 1. Decripta client_secret   │
+                         │ 2. Obtém token OAuth        │
+                         │ 3. Testa cada permissão     │
+                         │ 4. Atualiza m365_tenants    │
+                         │ 5. Atualiza permissions     │
+                         └────────────┬────────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────────┐
+                         │ Atualiza UI                 │
+                         │ - Status: connected/partial │
+                         │ - Exibe permissões          │
+                         └─────────────────────────────┘
 ```
