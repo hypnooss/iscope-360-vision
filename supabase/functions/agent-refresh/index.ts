@@ -39,14 +39,33 @@ serve(async (req) => {
   }
 
   try {
-    // Parse request body
-    const body = await req.json();
-    const { refresh_token } = body;
+    // Get refresh token from body or Authorization header
+    let refresh_token: string | null = null;
+    
+    // Try to get from body first
+    const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        const body = await req.json();
+        refresh_token = body.refresh_token;
+      } catch {
+        // Body parsing failed, try header
+      }
+    }
+    
+    // Fallback to Authorization header (Bearer token)
+    if (!refresh_token) {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        refresh_token = authHeader.substring(7);
+        console.log("[agent-refresh] Using refresh token from Authorization header");
+      }
+    }
 
     if (!refresh_token || typeof refresh_token !== "string") {
-      console.log("[agent-refresh] Missing refresh_token in body");
+      console.log("[agent-refresh] Missing refresh_token in body or Authorization header");
       return new Response(
-        JSON.stringify({ error: "refresh_token is required", code: "MISSING_TOKEN" }),
+        JSON.stringify({ error: "refresh_token is required in body or Authorization header", code: "MISSING_TOKEN" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
