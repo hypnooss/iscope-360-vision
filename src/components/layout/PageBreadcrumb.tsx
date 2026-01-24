@@ -29,10 +29,14 @@ export function PageBreadcrumb({ items }: PageBreadcrumbProps) {
             <Fragment key={item.label}>
               <BreadcrumbItem>
                 {isLast ? (
-                  <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                  <BreadcrumbPage className="px-2 py-1 rounded-md border border-primary/50 bg-primary/10 text-primary font-medium">
+                    {item.label}
+                  </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>
-                    <Link to={item.href!}>{item.label}</Link>
+                    <Link to={item.href!} className="hover:text-primary transition-colors">
+                      {item.label}
+                    </Link>
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
