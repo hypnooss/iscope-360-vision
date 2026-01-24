@@ -1,139 +1,68 @@
 
 
-# Plano: Enriquecer Coleta e Compliance do SonicWall
+# Plano: Corrigir Endpoints da API SonicOS no Blueprint
 
-## Situação Atual
+## Problema Identificado
 
-| Aspecto | FortiGate | SonicWall |
-|---------|-----------|-----------|
-| Regras de Compliance | 24 | 6 |
-| Endpoints coletados | 18+ | 3 |
-| Categorias | 11 | 4 |
+A coleta do SonicWall falhou em 12 dos 19 steps porque os paths da API estavam incorretos:
 
-O SonicWall está coletando apenas:
-- `/api/sonicos/version` - Informações do sistema
-- `/api/sonicos/interfaces/ipv4` - Interfaces de rede
-- `/api/sonicos/access-rules/ipv4` - Regras de acesso
+| Step | Erro | Causa |
+|------|------|-------|
+| gateway_av | 404 | Path incorreto |
+| ips | 400 | Falta sub-recurso |
+| anti_spyware | 400 | Falta sub-recurso |
+| app_control | 400 | Falta sub-recurso |
+| content_filter | 400 | Falta sub-recurso |
+| geo_ip | 404 | Path incorreto |
+| botnet | 404 | Path incorreto |
+| vpn_ssl | 400 | Falta especificar server/client |
+| vpn_ipsec | 400 | Path incorreto |
+| log_settings | 400 | Falta sub-recurso |
+| administration | 400 | Falta sub-recurso |
+| licenses | 404 | Path incorreto |
 
-## Endpoints SonicOS Disponíveis para Expansão
+## Endpoints Corrigidos
 
-Baseado na API do SonicOS 7.x, podemos coletar:
+Baseado na documentação oficial da API SonicOS 7.x:
 
-| Categoria | Endpoint | Dados |
-|-----------|----------|-------|
-| **Gateway AV** | `/api/sonicos/gateway-anti-virus` | Status global do antivírus |
-| **IPS** | `/api/sonicos/intrusion-prevention` | Prevenção de intrusão |
-| **Anti-Spyware** | `/api/sonicos/anti-spyware` | Proteção contra spyware |
-| **App Control** | `/api/sonicos/app-control` | Controle de aplicações |
-| **Content Filter** | `/api/sonicos/content-filter-v3` | Filtragem de conteúdo |
-| **Geo-IP** | `/api/sonicos/geo-ip-filter` | Filtro geográfico |
-| **Botnet** | `/api/sonicos/botnet-filter` | Proteção contra botnets |
-| **NAT Policies** | `/api/sonicos/nat-policies/ipv4` | Regras NAT |
-| **VPN SSL** | `/api/sonicos/vpn/ssl` | Configuração SSL VPN |
-| **VPN IPsec** | `/api/sonicos/vpn/ipsec` | Túneis IPsec |
-| **Zones** | `/api/sonicos/zones` | Configuração de zonas |
-| **Logging** | `/api/sonicos/log/settings` | Configurações de log |
-| **Admin** | `/api/sonicos/administration` | Configurações administrativas |
-| **Users** | `/api/sonicos/users/local` | Usuários locais |
-
-## Regras de Compliance Propostas (18 novas)
-
-### Segurança de Perímetro (UTM)
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_GAV_ENABLED | Gateway Antivírus Ativo | high |
-| SW_IPS_ENABLED | Prevenção de Intrusão Ativa | high |
-| SW_ANTISPYWARE | Anti-Spyware Ativo | high |
-| SW_APPCONTROL | Controle de Aplicações | medium |
-| SW_CONTENTFILTER | Filtro de Conteúdo Ativo | medium |
-
-### Políticas de Segurança
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_ANY_ANY_RULES | Regras "Any-Any" | critical |
-| SW_RDP_EXPOSED | RDP Exposto para Internet | critical |
-| SW_SMB_EXPOSED | SMB Exposto para Internet | critical |
-
-### VPN
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_IPSEC_CRYPTO | Criptografia IPsec Forte | high |
-| SW_SSLVPN_ENABLED | SSL VPN Configurado | medium |
-
-### Sistema e Administração
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_HTTPS_ADMIN | Gerência via HTTPS | critical |
-| SW_SSH_TIMEOUT | Timeout de Sessão Admin | medium |
-| SW_SYSLOG_ENABLED | Envio de Logs Syslog | medium |
-
-### Licenciamento
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_LICENSE_ACTIVE | Licenças de Segurança Ativas | high |
-| SW_SUPPORT_ACTIVE | Suporte Ativo | critical |
-
-### Zonas e Interfaces
-| Código | Nome | Severidade |
-|--------|------|------------|
-| SW_ZONE_SECURITY | Serviços de Segurança por Zona | high |
-| SW_STEALTH_MODE | Modo Stealth nas Interfaces WAN | medium |
+| Step ID | Path Atual (Incorreto) | Path Correto |
+|---------|------------------------|--------------|
+| gateway_av | `/api/sonicos/gateway-anti-virus` | `/api/sonicos/security-services/gateway-anti-virus` |
+| ips | `/api/sonicos/intrusion-prevention` | `/api/sonicos/security-services/intrusion-prevention` |
+| anti_spyware | `/api/sonicos/anti-spyware` | `/api/sonicos/security-services/anti-spyware` |
+| app_control | `/api/sonicos/app-control` | `/api/sonicos/security-services/app-control/advanced` |
+| content_filter | `/api/sonicos/content-filter` | `/api/sonicos/security-services/content-filter` |
+| geo_ip | `/api/sonicos/geo-ip-filter` | `/api/sonicos/security-services/geo-ip/filter` |
+| botnet | `/api/sonicos/botnet-filter` | `/api/sonicos/security-services/botnet/filter` |
+| vpn_ssl | `/api/sonicos/vpn/ssl` | `/api/sonicos/vpn/ssl/server` |
+| vpn_ipsec | `/api/sonicos/vpn/policies` | `/api/sonicos/vpn/policies/ipv4` |
+| log_settings | `/api/sonicos/log/settings` | `/api/sonicos/log/settings/base` |
+| administration | `/api/sonicos/administration` | `/api/sonicos/administration/settings` |
+| licenses | `/api/sonicos/licenses` | `/api/sonicos/reporting/licenses` |
 
 ---
 
-## Alterações Técnicas
+## Alteração Técnica
 
-### 1. Atualizar Blueprint do SonicWall (SQL)
+### Migração SQL
 
-Adicionar novos steps de coleta no `collection_steps` do blueprint existente:
+Atualizar o campo `collection_steps` do blueprint SonicWall (ID: `f1c656c0-75ed-43c6-b0a3-696498833094`) com os paths corretos da API.
 
-```json
-{
-  "steps": [
-    // ... steps existentes (auth_login, version, interfaces, access_rules) ...
-    { "id": "gateway_av", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/gateway-anti-virus" }},
-    { "id": "ips", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/intrusion-prevention" }},
-    { "id": "anti_spyware", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/anti-spyware" }},
-    { "id": "app_control", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/app-control" }},
-    { "id": "content_filter", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/content-filter-v3" }},
-    { "id": "geo_ip", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/geo-ip-filter" }},
-    { "id": "botnet", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/botnet-filter" }},
-    { "id": "nat_policies", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/nat-policies/ipv4" }},
-    { "id": "vpn_ssl", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/vpn/ssl" }},
-    { "id": "vpn_ipsec", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/vpn/ipsec" }},
-    { "id": "zones", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/zones" }},
-    { "id": "log_settings", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/log/settings" }},
-    { "id": "administration", "executor": "http_session", "config": { "action": "request", "method": "GET", "path": "/api/sonicos/administration" }},
-    // auth_logout permanece como último step
-  ]
-}
-```
-
-### 2. Inserir Novas Regras de Compliance (SQL)
-
-Criar 18 novas regras com `evaluation_logic` específica para cada verificação, seguindo o padrão já estabelecido.
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| Migração SQL | Criar | UPDATE do blueprint + INSERT de 18 novas regras |
+O JSON atualizado manterá a mesma estrutura, apenas corrigindo o campo `path` em cada step afetado.
 
 ---
 
 ## Resultado Esperado
 
 Após a migração:
-1. O blueprint do SonicWall coletará 14+ endpoints (vs 3 atuais)
-2. 24 regras de compliance (vs 6 atuais) - paridade com FortiGate
-3. Relatórios mais completos com categorias equivalentes
-4. Score de segurança mais preciso e detalhado
+1. Todos os 19 steps devem retornar HTTP 200
+2. As regras de compliance terão dados reais para avaliar
+3. O relatório mostrará status `pass`/`fail` ao invés de `unknown`
+4. Score de segurança será calculado com precisão
 
 ---
 
-## Observação Importante
+## Observação
 
-As regras de `evaluation_logic` serão baseadas na estrutura esperada da API SonicOS. Após a primeira coleta com o blueprint atualizado, pode ser necessário ajustar os `field_path` das regras conforme a estrutura real do JSON retornado pelo dispositivo.
+Após aplicar a correção, será necessário disparar uma nova análise do SonicWall para validar que todos os endpoints estão funcionando corretamente.
 
