@@ -56,6 +56,71 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_tasks: {
+        Row: {
+          agent_id: string
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          expires_at: string | null
+          id: string
+          max_retries: number
+          payload: Json
+          priority: number
+          result: Json | null
+          retry_count: number
+          started_at: string | null
+          status: Database["public"]["Enums"]["agent_task_status"]
+          target_id: string
+          target_type: string
+          task_type: Database["public"]["Enums"]["agent_task_type"]
+        }
+        Insert: {
+          agent_id: string
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          max_retries?: number
+          payload?: Json
+          priority?: number
+          result?: Json | null
+          retry_count?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["agent_task_status"]
+          target_id: string
+          target_type?: string
+          task_type: Database["public"]["Enums"]["agent_task_type"]
+        }
+        Update: {
+          agent_id?: string
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          max_retries?: number
+          payload?: Json
+          priority?: number
+          result?: Json | null
+          retry_count?: number
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["agent_task_status"]
+          target_id?: string
+          target_type?: string
+          task_type?: Database["public"]["Enums"]["agent_task_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tasks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agents: {
         Row: {
           activation_code: string | null
@@ -902,6 +967,19 @@ export type Database = {
       is_client_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
+      agent_task_status:
+        | "pending"
+        | "running"
+        | "completed"
+        | "failed"
+        | "timeout"
+        | "cancelled"
+      agent_task_type:
+        | "fortigate_compliance"
+        | "fortigate_cve"
+        | "ssh_command"
+        | "snmp_query"
+        | "ping_check"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       m365_submodule:
         | "entra_id"
@@ -1050,6 +1128,21 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      agent_task_status: [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "timeout",
+        "cancelled",
+      ],
+      agent_task_type: [
+        "fortigate_compliance",
+        "fortigate_cve",
+        "ssh_command",
+        "snmp_query",
+        "ping_check",
+      ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       m365_submodule: [
         "entra_id",
