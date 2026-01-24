@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,12 +45,17 @@ interface AddFirewallDialogProps {
     description: string;
     fortigate_url: string;
     api_key: string;
+    auth_username?: string;
+    auth_password?: string;
     client_id: string;
     schedule: ScheduleFrequency;
     device_type_id: string;
     agent_id: string;
   }) => Promise<void>;
 }
+
+// Device types that use session-based auth (username/password) instead of API key
+const SESSION_AUTH_DEVICE_CODES = ['sonicwall_tz', 'sonicwall_nsa', 'sonicwall'];
 
 export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialogProps) {
   const [open, setOpen] = useState(false);
@@ -63,11 +68,24 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     description: '',
     fortigate_url: '',
     api_key: '',
+    auth_username: '',
+    auth_password: '',
     client_id: '',
     schedule: 'manual' as ScheduleFrequency,
     device_type_id: '',
     agent_id: '',
   });
+
+  // Determine if selected device uses session auth
+  const selectedDeviceType = useMemo(() => {
+    return deviceTypes.find(dt => dt.id === formData.device_type_id);
+  }, [deviceTypes, formData.device_type_id]);
+
+  const usesSessionAuth = useMemo(() => {
+    return selectedDeviceType && SESSION_AUTH_DEVICE_CODES.some(code => 
+      selectedDeviceType.code.toLowerCase().includes(code.toLowerCase())
+    );
+  }, [selectedDeviceType]);
 
   // Fetch device types on mount
   useEffect(() => {
@@ -101,12 +119,24 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     fetchAgents();
   }, [formData.client_id]);
 
+  // Reset auth fields when device type changes
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      api_key: '',
+      auth_username: '',
+      auth_password: '',
+    }));
+  }, [formData.device_type_id]);
+
   const resetForm = () => {
     setFormData({
       name: '',
       description: '',
       fortigate_url: '',
       api_key: '',
+      auth_username: '',
+      auth_password: '',
       client_id: '',
       schedule: 'manual',
       device_type_id: '',
@@ -117,12 +147,32 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await onFirewallAdded(formData);
+      await onFirewallAdded({
+        ...formData,
+        // Only include auth fields relevant to the device type
+        api_key: usesSessionAuth ? '' : formData.api_key,
+        auth_username: usesSessionAuth ? formData.auth_username : undefined,
+        auth_password: usesSessionAuth ? formData.auth_password : undefined,
+      });
       setOpen(false);
       resetForm();
     } finally {
       setSaving(false);
     }
+  };
+
+  const getUrlLabel = () => {
+    if (selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall')) {
+      return 'URL do SonicWall';
+    }
+    return 'URL do FortiGate';
+  };
+
+  const getUrlPlaceholder = () => {
+    if (selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall')) {
+      return 'https://192.168.1.1:4444';
+    }
+    return 'https://192.168.1.1:8443';
   };
 
   return (
@@ -140,7 +190,7 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
             Adicionar Firewall
           </DialogTitle>
           <DialogDescription>
-            Cadastre um novo FortiGate para monitoramento
+            Cadastre um novo dispositivo para monitoramento
           </DialogDescription>
         </DialogHeader>
 
@@ -223,25 +273,52 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
 
             {/* URL */}
             <div className="space-y-2">
-              <Label htmlFor="fw-url">URL do FortiGate *</Label>
+              <Label htmlFor="fw-url">{getUrlLabel()} *</Label>
               <Input
                 id="fw-url"
                 value={formData.fortigate_url}
                 onChange={(e) => setFormData({ ...formData, fortigate_url: e.target.value })}
-                placeholder="https://192.168.1.1:8443"
+                placeholder={getUrlPlaceholder()}
               />
             </div>
 
-            {/* API Key */}
-            <div className="space-y-2">
-              <Label htmlFor="fw-api">API Key *</Label>
-              <PasswordInput
-                id="fw-api"
-                value={formData.api_key}
-                onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                placeholder="Token da REST API"
-              />
-            </div>
+            {/* Conditional Auth Fields */}
+            {usesSessionAuth ? (
+              <>
+                {/* Username */}
+                <div className="space-y-2">
+                  <Label htmlFor="fw-username">Usuário *</Label>
+                  <Input
+                    id="fw-username"
+                    value={formData.auth_username}
+                    onChange={(e) => setFormData({ ...formData, auth_username: e.target.value })}
+                    placeholder="admin"
+                  />
+                </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="fw-password">Senha *</Label>
+                  <PasswordInput
+                    id="fw-password"
+                    value={formData.auth_password}
+                    onChange={(e) => setFormData({ ...formData, auth_password: e.target.value })}
+                    placeholder="Senha do dispositivo"
+                  />
+                </div>
+              </>
+            ) : (
+              /* API Key */
+              <div className="space-y-2">
+                <Label htmlFor="fw-api">API Key *</Label>
+                <PasswordInput
+                  id="fw-api"
+                  value={formData.api_key}
+                  onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                  placeholder="Token da REST API"
+                />
+              </div>
+            )}
 
             {/* Descrição */}
             <div className="space-y-2">

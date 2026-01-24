@@ -44,6 +44,8 @@ interface Firewall {
   description: string | null;
   fortigate_url: string;
   api_key: string;
+  auth_username: string | null;
+  auth_password: string | null;
   serial_number: string | null;
   last_analysis_at: string | null;
   last_score: number | null;
@@ -183,14 +185,25 @@ export default function FirewallListPage() {
     description: string;
     fortigate_url: string;
     api_key: string;
+    auth_username?: string;
+    auth_password?: string;
     client_id: string;
     schedule: ScheduleFrequency;
     device_type_id: string;
     agent_id: string;
   }) => {
-    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.api_key.trim() || !formData.client_id) {
+    // Validate required fields - either api_key or (auth_username + auth_password)
+    const hasApiKey = formData.api_key?.trim();
+    const hasSessionAuth = formData.auth_username?.trim() && formData.auth_password?.trim();
+    
+    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.client_id) {
       toast.error('Preencha todos os campos obrigatórios');
       throw new Error('Campos obrigatórios não preenchidos');
+    }
+
+    if (!hasApiKey && !hasSessionAuth) {
+      toast.error('Preencha as credenciais de autenticação');
+      throw new Error('Credenciais não preenchidas');
     }
 
     const { data: firewall, error: fwError } = await supabase
@@ -199,7 +212,9 @@ export default function FirewallListPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         fortigate_url: formData.fortigate_url.trim(),
-        api_key: formData.api_key.trim(),
+        api_key: formData.api_key?.trim() || '',
+        auth_username: formData.auth_username?.trim() || null,
+        auth_password: formData.auth_password?.trim() || null,
         client_id: formData.client_id,
         device_type_id: formData.device_type_id || null,
         agent_id: formData.agent_id || null,
@@ -314,6 +329,8 @@ export default function FirewallListPage() {
     description: string;
     fortigate_url: string;
     api_key: string;
+    auth_username?: string;
+    auth_password?: string;
     client_id: string;
     schedule: ScheduleFrequency;
     device_type_id: string;
@@ -321,9 +338,18 @@ export default function FirewallListPage() {
   }) => {
     if (!editingFirewall) return;
 
-    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.api_key.trim() || !formData.client_id) {
+    // Validate required fields - either api_key or (auth_username + auth_password)
+    const hasApiKey = formData.api_key?.trim();
+    const hasSessionAuth = formData.auth_username?.trim() && formData.auth_password?.trim();
+
+    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.client_id) {
       toast.error('Preencha todos os campos obrigatórios');
       throw new Error('Campos obrigatórios não preenchidos');
+    }
+
+    if (!hasApiKey && !hasSessionAuth) {
+      toast.error('Preencha as credenciais de autenticação');
+      throw new Error('Credenciais não preenchidas');
     }
 
     const { error } = await supabase
@@ -332,7 +358,9 @@ export default function FirewallListPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         fortigate_url: formData.fortigate_url.trim(),
-        api_key: formData.api_key.trim(),
+        api_key: formData.api_key?.trim() || '',
+        auth_username: formData.auth_username?.trim() || null,
+        auth_password: formData.auth_password?.trim() || null,
         client_id: formData.client_id,
         device_type_id: formData.device_type_id || null,
         agent_id: formData.agent_id || null,

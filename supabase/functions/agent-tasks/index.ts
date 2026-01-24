@@ -94,7 +94,7 @@ async function getTargetCredentials(
   if (targetType === 'firewall') {
     const { data: firewall, error } = await supabase
       .from('firewalls')
-      .select('id, name, fortigate_url, api_key, device_type_id')
+      .select('id, name, fortigate_url, api_key, auth_username, auth_password, device_type_id')
       .eq('id', targetId)
       .single();
 
@@ -103,7 +103,15 @@ async function getTargetCredentials(
       return null;
     }
 
-    const fw = firewall as { id: string; name: string; fortigate_url: string; api_key: string; device_type_id: string | null };
+    const fw = firewall as { 
+      id: string; 
+      name: string; 
+      fortigate_url: string; 
+      api_key: string; 
+      auth_username: string | null;
+      auth_password: string | null;
+      device_type_id: string | null 
+    };
 
     return {
       id: fw.id,
@@ -111,6 +119,8 @@ async function getTargetCredentials(
       base_url: fw.fortigate_url,
       credentials: {
         api_key: fw.api_key,
+        username: fw.auth_username || undefined,
+        password: fw.auth_password || undefined,
       },
     };
   }

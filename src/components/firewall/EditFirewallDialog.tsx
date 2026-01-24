@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +43,8 @@ interface Firewall {
   description: string | null;
   fortigate_url: string;
   api_key: string;
+  auth_username?: string | null;
+  auth_password?: string | null;
   client_id: string;
   device_type_id?: string | null;
   agent_id?: string | null;
@@ -59,12 +61,17 @@ interface EditFirewallDialogProps {
     description: string;
     fortigate_url: string;
     api_key: string;
+    auth_username?: string;
+    auth_password?: string;
     client_id: string;
     schedule: ScheduleFrequency;
     device_type_id: string;
     agent_id: string;
   }) => Promise<void>;
 }
+
+// Device types that use session-based auth (username/password) instead of API key
+const SESSION_AUTH_DEVICE_CODES = ['sonicwall_tz', 'sonicwall_nsa', 'sonicwall'];
 
 export function EditFirewallDialog({ 
   open, 
@@ -82,11 +89,24 @@ export function EditFirewallDialog({
     description: '',
     fortigate_url: '',
     api_key: '',
+    auth_username: '',
+    auth_password: '',
     client_id: '',
     schedule: 'manual' as ScheduleFrequency,
     device_type_id: '',
     agent_id: '',
   });
+
+  // Determine if selected device uses session auth
+  const selectedDeviceType = useMemo(() => {
+    return deviceTypes.find(dt => dt.id === formData.device_type_id);
+  }, [deviceTypes, formData.device_type_id]);
+
+  const usesSessionAuth = useMemo(() => {
+    return selectedDeviceType && SESSION_AUTH_DEVICE_CODES.some(code => 
+      selectedDeviceType.code.toLowerCase().includes(code.toLowerCase())
+    );
+  }, [selectedDeviceType]);
 
   // Fetch device types on mount
   useEffect(() => {
@@ -139,6 +159,8 @@ export function EditFirewallDialog({
         description: firewall.description || '',
         fortigate_url: firewall.fortigate_url,
         api_key: firewall.api_key,
+        auth_username: firewall.auth_username || '',
+        auth_password: firewall.auth_password || '',
         client_id: firewall.client_id,
         schedule: currentSchedule,
         device_type_id: firewall.device_type_id || '',
@@ -150,11 +172,31 @@ export function EditFirewallDialog({
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await onSave(formData);
+      await onSave({
+        ...formData,
+        // Only include auth fields relevant to the device type
+        api_key: usesSessionAuth ? '' : formData.api_key,
+        auth_username: usesSessionAuth ? formData.auth_username : undefined,
+        auth_password: usesSessionAuth ? formData.auth_password : undefined,
+      });
       onOpenChange(false);
     } finally {
       setSaving(false);
     }
+  };
+
+  const getUrlLabel = () => {
+    if (selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall')) {
+      return 'URL do SonicWall';
+    }
+    return 'URL do FortiGate';
+  };
+
+  const getUrlPlaceholder = () => {
+    if (selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall')) {
+      return 'https://192.168.1.1:4444';
+    }
+    return 'https://192.168.1.1:8443';
   };
 
   return (
@@ -166,7 +208,7 @@ export function EditFirewallDialog({
             Editar Firewall
           </DialogTitle>
           <DialogDescription>
-            Atualize as informações do FortiGate
+            Atualize as informações do dispositivo
           </DialogDescription>
         </DialogHeader>
 
@@ -249,25 +291,52 @@ export function EditFirewallDialog({
 
             {/* URL */}
             <div className="space-y-2">
-              <Label htmlFor="edit-fw-url">URL do FortiGate *</Label>
+              <Label htmlFor="edit-fw-url">{getUrlLabel()} *</Label>
               <Input
                 id="edit-fw-url"
                 value={formData.fortigate_url}
                 onChange={(e) => setFormData({ ...formData, fortigate_url: e.target.value })}
-                placeholder="https://192.168.1.1:8443"
+                placeholder={getUrlPlaceholder()}
               />
             </div>
 
-            {/* API Key */}
-            <div className="space-y-2">
-              <Label htmlFor="edit-fw-api">API Key *</Label>
-              <PasswordInput
-                id="edit-fw-api"
-                value={formData.api_key}
-                onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                placeholder="Token da REST API"
-              />
-            </div>
+            {/* Conditional Auth Fields */}
+            {usesSessionAuth ? (
+              <>
+                {/* Username */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-fw-username">Usuário *</Label>
+                  <Input
+                    id="edit-fw-username"
+                    value={formData.auth_username}
+                    onChange={(e) => setFormData({ ...formData, auth_username: e.target.value })}
+                    placeholder="admin"
+                  />
+                </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-fw-password">Senha *</Label>
+                  <PasswordInput
+                    id="edit-fw-password"
+                    value={formData.auth_password}
+                    onChange={(e) => setFormData({ ...formData, auth_password: e.target.value })}
+                    placeholder="Senha do dispositivo"
+                  />
+                </div>
+              </>
+            ) : (
+              /* API Key */
+              <div className="space-y-2">
+                <Label htmlFor="edit-fw-api">API Key *</Label>
+                <PasswordInput
+                  id="edit-fw-api"
+                  value={formData.api_key}
+                  onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                  placeholder="Token da REST API"
+                />
+              </div>
+            )}
 
             {/* Descrição */}
             <div className="space-y-2">

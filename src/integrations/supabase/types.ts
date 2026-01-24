@@ -423,6 +423,8 @@ export type Database = {
         Row: {
           agent_id: string | null
           api_key: string
+          auth_password: string | null
+          auth_username: string | null
           client_id: string
           created_at: string
           created_by: string | null
@@ -439,6 +441,8 @@ export type Database = {
         Insert: {
           agent_id?: string | null
           api_key: string
+          auth_password?: string | null
+          auth_username?: string | null
           client_id: string
           created_at?: string
           created_by?: string | null
@@ -455,6 +459,8 @@ export type Database = {
         Update: {
           agent_id?: string | null
           api_key?: string
+          auth_password?: string | null
+          auth_username?: string | null
           client_id?: string
           created_at?: string
           created_by?: string | null
