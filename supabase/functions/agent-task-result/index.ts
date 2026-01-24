@@ -250,20 +250,26 @@ function processComplianceRules(
   const systemFirmware = rawData['system_firmware'] as Record<string, unknown> | undefined;
   
   // Try to get system info from multiple sources
-  if (systemStatus?.results) {
-    const results = systemStatus.results as Record<string, unknown>;
-    systemInfo.hostname = results.hostname;
-    systemInfo.version = results.version;
-    systemInfo.serial = results.serial;
-    systemInfo.model = results.model;
+  // FortiGate API returns: { serial, version at root level, results: { hostname, model, uptime } }
+  if (systemStatus) {
+    // Fields at root level of system_status
+    systemInfo.serial = systemStatus.serial;
+    systemInfo.version = systemStatus.version;
     
-    // Calculate formatted uptime
-    if (typeof results.uptime === 'number') {
-      const uptimeSec = results.uptime;
-      const days = Math.floor(uptimeSec / 86400);
-      const hours = Math.floor((uptimeSec % 86400) / 3600);
-      const minutes = Math.floor((uptimeSec % 3600) / 60);
-      systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+    // Fields inside results
+    if (systemStatus.results) {
+      const results = systemStatus.results as Record<string, unknown>;
+      systemInfo.hostname = results.hostname;
+      systemInfo.model = results.model || results.model_name;
+      
+      // Calculate formatted uptime (uptime is in seconds)
+      if (typeof results.uptime === 'number') {
+        const uptimeSec = results.uptime;
+        const days = Math.floor(uptimeSec / 86400);
+        const hours = Math.floor((uptimeSec % 86400) / 3600);
+        const minutes = Math.floor((uptimeSec % 3600) / 60);
+        systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+      }
     }
   }
   
