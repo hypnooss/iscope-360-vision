@@ -67,65 +67,66 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           </div>
         </div>
 
-        {/* Firewall Info Card */}
-        <div className="glass-card rounded-lg p-4 mb-6 border border-primary/20">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
-              <span className="text-muted-foreground">Firewall:</span>
-              <span className="font-medium text-foreground">{firewallName || 'N/A'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-primary" />
-              <span className="text-muted-foreground">URL:</span>
-              <span className="font-medium text-foreground">{firewallUrl || 'N/A'}</span>
-            </div>
-            {report.firmwareVersion && (
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-primary" />
-                <span className="text-muted-foreground">FortiOS:</span>
-                <span className="font-medium text-foreground">v{report.firmwareVersion}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Score and Stats */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Score and Firewall Info */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-1 glass-card rounded-xl p-6 flex items-center justify-center">
             <ScoreGauge score={report.overallScore} />
           </div>
           
-          <div className="lg:col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              title="Total de Verificações"
-              value={report.totalChecks}
-              icon={ListChecks}
-              variant="default"
-              delay={0.1}
-            />
-            <StatCard
-              title="Aprovadas"
-              value={report.passed}
-              icon={CheckCircle}
-              variant="success"
-              delay={0.2}
-            />
-            <StatCard
-              title="Falhas"
-              value={report.failed}
-              icon={XCircle}
-              variant="destructive"
-              delay={0.3}
-            />
-            <StatCard
-              title="Alertas"
-              value={report.warnings}
-              icon={AlertTriangle}
-              variant="warning"
-              delay={0.4}
-            />
+          {/* Firewall Info - lado direito do score */}
+          <div className="lg:col-span-2 glass-card rounded-xl p-6 border border-primary/20 flex flex-col justify-center">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Shield className="w-5 h-5 text-primary" />
+                <span className="text-muted-foreground">Firewall:</span>
+                <span className="font-semibold text-foreground text-lg">{firewallName || 'N/A'}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-primary" />
+                <span className="text-muted-foreground">URL:</span>
+                <span className="font-medium text-foreground">{firewallUrl || 'N/A'}</span>
+              </div>
+              {report.firmwareVersion && (
+                <div className="flex items-center gap-3">
+                  <Cpu className="w-5 h-5 text-primary" />
+                  <span className="text-muted-foreground">FortiOS:</span>
+                  <span className="font-medium text-foreground">v{report.firmwareVersion}</span>
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <StatCard
+            title="Total de Verificações"
+            value={report.totalChecks}
+            icon={ListChecks}
+            variant="default"
+            delay={0.1}
+          />
+          <StatCard
+            title="Aprovadas"
+            value={report.passed}
+            icon={CheckCircle}
+            variant="success"
+            delay={0.2}
+          />
+          <StatCard
+            title="Falhas"
+            value={report.failed}
+            icon={XCircle}
+            variant="destructive"
+            delay={0.3}
+          />
+          <StatCard
+            title="Alertas"
+            value={report.warnings}
+            icon={AlertTriangle}
+            variant="warning"
+            delay={0.4}
+          />
         </div>
 
         {/* Critical Issues Banner */}
