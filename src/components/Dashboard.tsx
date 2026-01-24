@@ -4,7 +4,7 @@ import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
 import { CVESection } from './CVESection';
-import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, LogOut } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText } from 'lucide-react';
 import { Button } from './ui/button';
 import { exportReportToPDF } from '@/utils/pdfExport';
 import { toast } from 'sonner';
@@ -13,7 +13,7 @@ interface DashboardProps {
   report: ComplianceReport;
   onRefresh: () => void;
   isRefreshing: boolean;
-  onDisconnect: () => void;
+  onDisconnect?: () => void; // deprecated, kept for backwards compatibility
 }
 
 export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: DashboardProps) {
@@ -49,11 +49,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
                 : new Date(report.generatedAt).toLocaleString('pt-BR')}
             </p>
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" size="lg" onClick={onDisconnect}>
-              <LogOut className="w-4 h-4" />
-              Desconectar
-            </Button>
+          <div className="flex gap-3 ml-auto">
             <Button variant="outline" size="lg" onClick={handleExportPDF}>
               <FileText className="w-4 h-4" />
               Exportar PDF
