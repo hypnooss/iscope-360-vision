@@ -5,6 +5,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { useTenantConnection } from '@/hooks/useTenantConnection';
 import { useEntraIdAuditLogs, LogType, AuditLogFilters, SignInLog, DirectoryAuditLog } from '@/hooks/useEntraIdAuditLogs';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +28,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { 
-  ArrowRight, 
   RefreshCw, 
   Search, 
   Calendar,
@@ -213,16 +213,15 @@ export default function EntraIdAuditLogsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[
+          { label: 'Microsoft 365', href: '/scope-m365' },
+          { label: 'Entra ID', href: '/scope-m365/entra-id' },
+          { label: 'Logs de Auditoria' },
+        ]} />
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-              <Badge variant="secondary" className="text-xs">Entra ID</Badge>
-              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-              <Badge className="text-xs bg-primary/10 text-primary">Logs de Auditoria</Badge>
-            </div>
             <h1 className="text-2xl font-bold text-foreground">Logs de Auditoria</h1>
             <p className="text-muted-foreground">
               Visualize eventos de sign-in e alterações no diretório

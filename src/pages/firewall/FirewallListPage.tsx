@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -368,6 +369,11 @@ export default function FirewallListPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[
+          { label: 'Firewall', href: '/scope-firewall/dashboard' },
+          { label: 'Firewalls' },
+        ]} />
+        
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>

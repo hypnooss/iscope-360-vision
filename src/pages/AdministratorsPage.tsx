@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import {
   Table,
   TableBody,
@@ -354,6 +355,8 @@ export default function AdministratorsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Administradores' }]} />
+        
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Administradores</h1>

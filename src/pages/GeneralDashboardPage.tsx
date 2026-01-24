@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Server, Shield, Network, Cloud, Loader2, ArrowRight } from 'lucide-react';
@@ -61,6 +62,8 @@ export default function GeneralDashboardPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[{ label: 'Dashboard Geral' }]} />
+        
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground">Dashboard Geral</h1>

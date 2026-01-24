@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useTenantConnection } from '@/hooks/useTenantConnection';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { StatCard } from '@/components/StatCard';
 import { CategorySection } from '@/components/CategorySection';
@@ -16,16 +17,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { EntraIdComplianceReport } from '@/types/entraIdCompliance';
 import { 
   Shield, 
-  ArrowRight, 
   RefreshCw, 
   AlertTriangle,
   CheckCircle2,
   XCircle,
   AlertCircle,
   Clock,
-  FileDown,
-  Link as LinkIcon,
-  ArrowLeft
+  Link as LinkIcon
 } from 'lucide-react';
 
 export default function EntraIdAnalysisPage() {
@@ -113,15 +111,14 @@ export default function EntraIdAnalysisPage() {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
+          <PageBreadcrumb items={[
+            { label: 'Microsoft 365', href: '/scope-m365' },
+            { label: 'Entra ID', href: '/scope-m365/entra-id' },
+            { label: 'Análise de Segurança' },
+          ]} />
+          
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-                <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                <Badge variant="secondary" className="text-xs">Entra ID</Badge>
-                <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                <Badge variant="secondary" className="text-xs">Análise de Segurança</Badge>
-              </div>
               <h1 className="text-2xl font-bold text-foreground">Análise de Segurança</h1>
             </div>
           </div>
@@ -149,29 +146,22 @@ export default function EntraIdAnalysisPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[
+          { label: 'Microsoft 365', href: '/scope-m365' },
+          { label: 'Entra ID', href: '/scope-m365/entra-id' },
+          { label: 'Análise de Segurança' },
+        ]} />
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-              <Badge variant="secondary" className="text-xs">Entra ID</Badge>
-              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-              <Badge variant="secondary" className="text-xs">Análise de Segurança</Badge>
-            </div>
             <h1 className="text-2xl font-bold text-foreground">Análise de Segurança do Entra ID</h1>
             <p className="text-muted-foreground">
               Identifica configurações inseguras, políticas ausentes e lacunas de segurança
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link to="/scope-m365/entra-id" className="gap-2">
-                <ArrowLeft className="w-4 h-4" />
-                Voltar
-              </Link>
-            </Button>
-            <Button 
+            <Button
               onClick={runAnalysis} 
               disabled={analyzing}
               className="gap-2"

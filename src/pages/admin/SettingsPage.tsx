@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -259,6 +260,8 @@ export default function SettingsPage() {
   return (
     <AppLayout>
       <div className="p-6 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Configurações' }]} />
+        
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
