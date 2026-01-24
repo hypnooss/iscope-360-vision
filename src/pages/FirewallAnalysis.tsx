@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Dashboard } from '@/components/Dashboard';
-import { ComplianceReport } from '@/types/compliance';
+import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -56,13 +56,52 @@ export default function FirewallAnalysis() {
       .maybeSingle();
 
     if (data?.report_data) {
-      const reportData = data.report_data as unknown as ComplianceReport;
-      setReport({
-        ...reportData,
+      const rawData = data.report_data as Record<string, unknown>;
+      
+      // Transform categories from object to array if needed
+      let categories = rawData.categories;
+      if (categories && !Array.isArray(categories)) {
+        // Convert object { "CategoryName": [...checks] } to array format
+        categories = Object.entries(categories as Record<string, unknown[]>).map(([name, checks]) => ({
+          name,
+          icon: getIconForCategory(name),
+          checks: checks || [],
+          passRate: calculatePassRate(checks as { status: string }[]),
+        }));
+      }
+      
+      const reportData: ComplianceReport = {
+        overallScore: (rawData.score as number) ?? 0,
+        totalChecks: (rawData.checks as unknown[])?.length ?? 0,
+        passed: ((rawData.checks as { status: string }[]) ?? []).filter(c => c.status === 'pass').length,
+        failed: ((rawData.checks as { status: string }[]) ?? []).filter(c => c.status === 'fail').length,
+        warnings: ((rawData.checks as { status: string }[]) ?? []).filter(c => c.status === 'warn' || c.status === 'warning').length,
+        categories: categories as ComplianceCategory[],
         generatedAt: new Date(data.created_at),
-      });
+        firmwareVersion: rawData.firmwareVersion as string | undefined,
+      };
+      
+      setReport(reportData);
     }
     setLoading(false);
+  };
+
+  const getIconForCategory = (name: string): string => {
+    const icons: Record<string, string> = {
+      'Administração': 'Settings',
+      'Autenticação': 'Key',
+      'Logging': 'FileText',
+      'Rede': 'Network',
+      'Segurança': 'Shield',
+      'Sistema': 'Server',
+    };
+    return icons[name] || 'CheckCircle';
+  };
+
+  const calculatePassRate = (checks: { status: string }[]): number => {
+    if (!checks || checks.length === 0) return 0;
+    const passed = checks.filter(c => c.status === 'pass').length;
+    return Math.round((passed / checks.length) * 100);
   };
 
   const handleRefresh = async () => {
