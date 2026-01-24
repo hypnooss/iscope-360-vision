@@ -412,6 +412,7 @@ export type Database = {
       }
       firewalls: {
         Row: {
+          agent_id: string | null
           api_key: string
           client_id: string
           created_at: string
@@ -427,6 +428,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_id?: string | null
           api_key: string
           client_id: string
           created_at?: string
@@ -442,6 +444,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_id?: string | null
           api_key?: string
           client_id?: string
           created_at?: string
@@ -457,6 +460,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "firewalls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "firewalls_client_id_fkey"
             columns: ["client_id"]

@@ -36,8 +36,11 @@ interface Firewall {
   last_analysis_at: string | null;
   last_score: number | null;
   client_id: string;
+  agent_id: string | null;
+  device_type_id: string | null;
   clients?: { name: string } | null;
   analysis_schedules?: { frequency: string; is_active: boolean }[] | { frequency: string; is_active: boolean } | null;
+  pending_task?: boolean;
 }
 
 type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
@@ -162,6 +165,8 @@ export default function FirewallListPage() {
     api_key: string;
     client_id: string;
     schedule: ScheduleFrequency;
+    device_type_id: string;
+    agent_id: string;
   }) => {
     if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.api_key.trim() || !formData.client_id) {
       toast.error('Preencha todos os campos obrigatórios');
@@ -176,6 +181,8 @@ export default function FirewallListPage() {
         fortigate_url: formData.fortigate_url.trim(),
         api_key: formData.api_key.trim(),
         client_id: formData.client_id,
+        device_type_id: formData.device_type_id || null,
+        agent_id: formData.agent_id || null,
         created_by: user?.id,
       })
       .select()
@@ -202,74 +209,63 @@ export default function FirewallListPage() {
   };
 
   const handleAnalyze = async (firewall: Firewall) => {
+    // Check if firewall has agent configured
+    if (!firewall.agent_id) {
+      toast.error('Agent não configurado', {
+        description: 'Configure um agent para este firewall antes de executar a análise.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    if (!firewall.device_type_id) {
+      toast.error('Tipo de dispositivo não configurado', {
+        description: 'Configure o tipo de dispositivo para este firewall.',
+        duration: 8000,
+      });
+      return;
+    }
+
     setAnalyzing(firewall.id);
     
     try {
-      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
-        body: { url: firewall.fortigate_url, apiKey: firewall.api_key },
+      const { data, error } = await supabase.functions.invoke('trigger-firewall-analysis', {
+        body: { firewall_id: firewall.id },
       });
 
       if (error) {
-        toast.error('Erro ao conectar com o servidor', {
-          description: 'Não foi possível executar a análise. Verifique sua conexão e tente novamente.',
+        toast.error('Erro ao agendar análise', {
+          description: 'Não foi possível criar a tarefa de análise. Tente novamente.',
           duration: 8000,
         });
+        console.error('Trigger analysis error:', error);
         return;
       }
       
-      if (data.error) {
-        toast.error(data.message || 'Erro na análise', {
-          description: data.suggestion || data.details || 'Verifique a configuração do firewall.',
+      if (!data.success) {
+        toast.error(data.error || 'Erro ao agendar análise', {
+          description: data.message || 'Verifique a configuração do firewall.',
           duration: 10000,
         });
-        console.error('Firewall analysis error:', {
-          code: data.code,
-          message: data.message,
-          details: data.details,
-          suggestion: data.suggestion,
-        });
         return;
       }
 
-      const score = data.overallScore ?? data.score ?? 0;
-      
-      await supabase.from('analysis_history').insert({
-        firewall_id: firewall.id,
-        score: score,
-        report_data: data,
-        analyzed_by: user?.id,
+      // Update local state to show pending
+      setFirewalls(prev => prev.map(fw => 
+        fw.id === firewall.id ? { ...fw, pending_task: true } : fw
+      ));
+
+      toast.success('Análise agendada!', {
+        description: 'O agent irá processar a análise em breve. Acompanhe o status na página.',
+        duration: 5000,
       });
 
-      await supabase.from('firewalls').update({
-        last_analysis_at: new Date().toISOString(),
-        last_score: score,
-        serial_number: data.serialNumber || firewall.serial_number,
-      }).eq('id', firewall.id);
-
-      await fetchData();
-      toast.success(`Análise concluída! Score: ${score}%`);
-
-      navigate(`/scope-firewall/firewalls/${firewall.id}/analysis`, { state: { report: data } });
     } catch (error: any) {
-      const errorMessage = error?.message?.toLowerCase() || '';
-      
-      if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('failed')) {
-        toast.error('Erro de conexão', {
-          description: 'Não foi possível conectar ao servidor. Verifique sua conexão de internet.',
-          duration: 8000,
-        });
-      } else if (errorMessage.includes('timeout')) {
-        toast.error('Tempo limite excedido', {
-          description: 'O servidor demorou muito para responder. Tente novamente.',
-          duration: 8000,
-        });
-      } else {
-        toast.error('Erro inesperado', {
-          description: error.message || 'Ocorreu um erro durante a análise. Tente novamente.',
-          duration: 8000,
-        });
-      }
-      console.error('Firewall analysis exception:', error);
+      toast.error('Erro inesperado', {
+        description: error.message || 'Ocorreu um erro ao agendar a análise.',
+        duration: 8000,
+      });
+      console.error('Trigger analysis exception:', error);
     } finally {
       setAnalyzing(null);
     }
@@ -300,6 +296,8 @@ export default function FirewallListPage() {
     api_key: string;
     client_id: string;
     schedule: ScheduleFrequency;
+    device_type_id: string;
+    agent_id: string;
   }) => {
     if (!editingFirewall) return;
 
@@ -316,6 +314,8 @@ export default function FirewallListPage() {
         fortigate_url: formData.fortigate_url.trim(),
         api_key: formData.api_key.trim(),
         client_id: formData.client_id,
+        device_type_id: formData.device_type_id || null,
+        agent_id: formData.agent_id || null,
       })
       .eq('id', editingFirewall.id);
 
