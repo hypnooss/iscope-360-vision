@@ -13,6 +13,7 @@ interface SystemAlert {
   severity: string;
   metadata: Record<string, unknown>;
   created_at: string;
+  dismissed_by?: string[];
 }
 
 export function SystemAlertBanner() {
@@ -30,7 +31,7 @@ export function SystemAlertBanner() {
     try {
       const { data, error } = await supabase
         .from('system_alerts')
-        .select('id, alert_type, title, message, severity, metadata, created_at')
+        .select('id, alert_type, title, message, severity, metadata, created_at, dismissed_by')
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -39,10 +40,16 @@ export function SystemAlertBanner() {
         return;
       }
 
-      // Ordenar por severidade (error > warning > info)
-      const sortedData = (data || []).sort((a, b) => {
-        const severityOrder: Record<string, number> = { error: 0, warning: 1, info: 2 };
-        return (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3);
+      // Filtrar alertas já dispensados pelo usuário atual
+      const filteredData = (data || []).filter(alert => {
+        const dismissedBy = alert.dismissed_by || [];
+        return !dismissedBy.includes(user?.id || '');
+      });
+
+      // Ordenar por severidade (error > warning > success > info)
+      const sortedData = filteredData.sort((a, b) => {
+        const severityOrder: Record<string, number> = { error: 0, warning: 1, success: 2, info: 3 };
+        return (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4);
       });
 
       setAlerts(sortedData as SystemAlert[]);
@@ -102,7 +109,12 @@ export function SystemAlertBanner() {
           container: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600 dark:text-yellow-400',
           icon: AlertTriangle,
         };
-      default:
+      case 'success':
+        return {
+          container: 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400',
+          icon: Shield,
+        };
+      default: // info
         return {
           container: 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400',
           icon: Info,

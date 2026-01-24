@@ -269,13 +269,17 @@ function processComplianceRules(
   if (webuiState?.results) {
     const results = webuiState.results as Record<string, unknown>;
     
-    // Extract uptime from webui_state (uptime is in seconds)
-    if (typeof results.uptime === 'number') {
-      const uptimeSec = results.uptime;
+    // Calculate uptime from utc_last_reboot and snapshot_utc_time (both in milliseconds)
+    const lastReboot = results.utc_last_reboot as number | undefined;
+    const snapshotTime = results.snapshot_utc_time as number | undefined;
+    
+    if (typeof lastReboot === 'number' && typeof snapshotTime === 'number') {
+      const uptimeSec = Math.floor((snapshotTime - lastReboot) / 1000);
       const days = Math.floor(uptimeSec / 86400);
       const hours = Math.floor((uptimeSec % 86400) / 3600);
       const minutes = Math.floor((uptimeSec % 3600) / 60);
       systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+      console.log(`Calculated uptime: ${systemInfo.uptime} from reboot=${lastReboot}, snapshot=${snapshotTime}`);
     }
     
     // Also get serial/hostname from here if not already set
@@ -628,7 +632,8 @@ serve(async (req: Request) => {
       const firewallName = firewallData?.name || 'Firewall';
 
       // Create system alert for analysis completion
-      const alertSeverity = score >= 70 ? 'info' : score >= 50 ? 'warning' : 'error';
+      // Always use 'success' severity for completed analyses (green/teal color)
+      const alertSeverity = 'success';
       await supabase
         .from('system_alerts')
         .insert({
