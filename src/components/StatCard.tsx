@@ -34,7 +34,7 @@ export function StatCard({ title, value, icon: Icon, variant, delay = 0 }: StatC
   return (
     <div 
       className={cn(
-        "glass-card rounded-xl p-5 border animate-fade-in",
+        "glass-card rounded-xl p-4 border animate-fade-in",
         variantStyles[variant]
       )}
       style={{ animationDelay: `${delay}s` }}
@@ -42,12 +42,12 @@ export function StatCard({ title, value, icon: Icon, variant, delay = 0 }: StatC
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground mb-1">{title}</p>
-          <p className={cn("text-3xl font-bold tabular-nums", valueStyles[variant])}>
+          <p className={cn("text-2xl font-bold tabular-nums", valueStyles[variant])}>
             {value}
           </p>
         </div>
-        <div className={cn("p-3 rounded-lg", iconStyles[variant])}>
-          <Icon className="w-6 h-6" />
+        <div className={cn("p-2 rounded-lg", iconStyles[variant])}>
+          <Icon className="w-5 h-5" />
         </div>
       </div>
     </div>

@@ -249,7 +249,8 @@ export default function FirewallAnalysis() {
           report={report}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
-          onDisconnect={handleDisconnect}
+          firewallName={firewall?.name}
+          firewallUrl={firewall?.fortigate_url}
         />
       </div>
     </AppLayout>
