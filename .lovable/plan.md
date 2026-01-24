@@ -1,4 +1,5 @@
 
+
 # Plano: Corrigir Endpoints Finais da API SonicOS 7.x
 
 ## Problema Identificado
