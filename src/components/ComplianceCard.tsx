@@ -18,8 +18,8 @@ const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; classNa
 // Cores para checks que FALHARAM ou tem WARNING (cores alarmantes)
 const severityColorsFail: Record<string, string> = {
   critical: 'bg-destructive/20 text-destructive',
-  high: 'bg-warning/20 text-warning',
-  medium: 'bg-primary/20 text-primary',
+  high: 'bg-orange-500/20 text-orange-600',
+  medium: 'bg-amber-500/20 text-amber-600',
   low: 'bg-muted text-muted-foreground',
   info: 'bg-muted text-muted-foreground',
 };
