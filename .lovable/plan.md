@@ -1,199 +1,139 @@
 
-# Plano: Administração de Coletas e Regras de Compliance
 
-## Visão Geral
+# Plano de Implementacao - Melhorias na Pagina de Analise de Compliance
 
-Criar uma nova seção de administração chamada **"Coletas"** que centraliza a gestão de:
-1. **Regras de Compliance** - As verificações de segurança avaliadas
-2. **Blueprints de Coleta** - Os passos de coleta executados pelos agents
-3. **Tipos de Dispositivos** - Os vendors/modelos suportados
+## Resumo do Problema
 
-Esta estrutura suporta a expansão para novos módulos (Microsoft 365, Domínios Externos, outros firewalls como Palo Alto, Sophos, etc.)
+Identificamos dois problemas na pagina de analise de compliance do FortiGate:
 
-## Análise de Organização
+1. **Card de Vulnerabilidades (CVEs) ausente**: O componente `CVESection` nao esta sendo renderizado porque o campo `firmwareVersion` esta vazio/nulo nos dados de analise. O blueprint de coleta atualizado inclui o endpoint de status do sistema, mas a versao do firmware nao esta sendo extraida corretamente.
 
-### Opções Consideradas
+2. **Badge de severidade confusa**: Quando um check esta em conformidade (status: pass), o badge de severidade "CRITICAL" ainda aparece em vermelho vibrante, dando a impressao visual de que algo esta errado.
 
-| Formato | Prós | Contras |
-|---------|------|---------|
-| **Abas por Tipo de Dado** (Regras / Blueprints / Dispositivos) | Lógico para admins técnicos | Difícil navegar entre vendors |
-| **Abas por Módulo** (Firewall / M365 / Domínios) | Intuitivo, agrupa por contexto | Duplicação de estrutura |
-| **Híbrido: Árvore Lateral + Conteúdo** | Navegação flexível | Mais complexo de implementar |
+---
 
-### Recomendação: Abas por Módulo/Categoria
+## Solucao Proposta
 
-Considerando que cada módulo (Firewall, M365, Domínios) terá estruturas de coleta muito diferentes, a organização por **módulo/categoria** é a mais intuitiva:
+### 1. Corrigir Extracao de Firmware Version
 
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  Administração > Coletas                                            │
-├─────────────────────────────────────────────────────────────────────┤
-│  [🛡 Firewalls] [☁ Microsoft 365] [🌐 Domínios Externos]            │
-├─────────────────────────────────────────────────────────────────────┤
-│  Dentro de cada aba:                                                 │
-│                                                                      │
-│  📋 Sub-abas ou Accordion:                                          │
-│     ├── Tipos de Dispositivos (FortiGate, Palo Alto, etc.)         │
-│     ├── Blueprints de Coleta (passos do agent)                      │
-│     └── Regras de Compliance (verificações)                         │
-└─────────────────────────────────────────────────────────────────────┘
+**Problema**: O `agent-task-result` nao esta extraindo a versao do firmware dos dados coletados pelo agente.
+
+**Solucao**: Atualizar a funcao de processamento no edge function `agent-task-result` para extrair a versao do firmware dos endpoints de status do sistema:
+
+- Buscar em `raw_data.system_status.version`
+- Buscar em `raw_data.system_firmware.current.version`
+- Aplicar regex para normalizar o formato (ex: "v7.2.5" -> "7.2.5")
+
+**Arquivos afetados**:
+- `supabase/functions/agent-task-result/index.ts`
+
+---
+
+### 2. Cores Contextuais para Badge de Severidade
+
+**Problema Atual**: O badge de severidade usa cores fixas:
+- CRITICAL = vermelho
+- HIGH = laranja/amarelo
+- MEDIUM = azul
+- LOW = cinza
+
+**Solucao**: Modificar as cores do badge para considerar o status do check:
+- Se `status === 'pass'`: usar cores neutras (cinza/verde suave) independente da severidade
+- Se `status === 'fail'` ou `status === 'warning'`: manter as cores atuais
+
+Esta abordagem:
+- Mantem a informacao da severidade visivel
+- Remove o alarme visual desnecessario em checks aprovados
+- Melhora a experiencia do usuario ao interpretar rapidamente os resultados
+
+**Arquivos afetados**:
+- `src/components/ComplianceCard.tsx`
+
+---
+
+## Detalhes Tecnicos
+
+### Modificacao 1: agent-task-result/index.ts
+
+```typescript
+// Adicionar funcao para extrair versao limpa
+function extractVersion(versionString: string): string {
+  if (!versionString) return "";
+  const match = versionString.match(/(\d+\.\d+\.?\d*)/);
+  return match ? match[1] : "";
+}
+
+// Na funcao de processamento, buscar versao em multiplas fontes:
+const systemStatus = rawDataMap.get('system_status') || {};
+const systemFirmware = rawDataMap.get('system_firmware') || {};
+
+let firmwareVersion = extractVersion(
+  systemStatus?.version || 
+  systemFirmware?.current?.version ||
+  systemInfo?.version || 
+  ""
+);
 ```
 
-## Estrutura do Banco de Dados Atual
+### Modificacao 2: ComplianceCard.tsx
 
-Já temos as tabelas necessárias:
+```typescript
+// Cores para checks que PASSARAM (neutras)
+const severityColorsPass: Record<string, string> = {
+  critical: 'bg-muted text-muted-foreground',
+  high: 'bg-muted text-muted-foreground',
+  medium: 'bg-muted text-muted-foreground',
+  low: 'bg-muted text-muted-foreground',
+};
 
-- **device_types**: Tipos de dispositivo (FortiGate, etc.) com categoria (firewall, cloud, etc.)
-- **device_blueprints**: Passos de coleta (collection_steps JSON) vinculados a device_type
-- **compliance_rules**: Regras de avaliação com evaluation_logic JSON, vinculadas a device_type
+// Cores para checks que FALHARAM ou tem WARNING (alarmantes)
+const severityColorsFail: Record<string, string> = {
+  critical: 'bg-destructive/20 text-destructive',
+  high: 'bg-warning/20 text-warning',
+  medium: 'bg-primary/20 text-primary',
+  low: 'bg-muted text-muted-foreground',
+};
 
-### Dados Atuais (Firewall)
-- 1 device_type: FortiGate
-- 1 blueprint: FortiGate Standard Compliance (9 steps)
-- 8 compliance_rules: Regras básicas de firewall
-
-## Arquitetura da Nova Página
-
-### Nova Rota e Componentes
-
-```text
-src/pages/admin/
-├── SettingsPage.tsx (existente)
-└── CollectionsPage.tsx (NOVO)
-
-src/components/admin/
-├── ModulesManagement.tsx (existente)
-├── DeviceTypesManagement.tsx (NOVO)
-├── BlueprintsManagement.tsx (NOVO)
-└── ComplianceRulesManagement.tsx (NOVO)
+// Uso no componente:
+const severityClass = normalizedStatus === 'pass' 
+  ? severityColorsPass[check.severity] 
+  : severityColorsFail[check.severity];
 ```
 
-### Detalhes da Implementação
+---
 
-#### 1. Nova Página: CollectionsPage.tsx
+## Impacto Visual Esperado
 
-- Rota: `/collections`
-- Acesso: super_admin apenas
-- Estrutura: Tabs por categoria de dispositivo (Firewalls, Microsoft 365, Domínios)
-
-#### 2. Componente: DeviceTypesManagement.tsx
-
-Gerencia device_types filtrado por categoria:
-
-| Campo | Descrição |
-|-------|-----------|
-| vendor | Fabricante (Fortinet, Palo Alto, Microsoft) |
-| name | Nome do dispositivo (FortiGate, Azure AD) |
-| code | Código único (fortigate, entra_id) |
-| icon | Ícone Lucide |
-| is_active | Ativo/Inativo |
-
-#### 3. Componente: BlueprintsManagement.tsx
-
-Gerencia device_blueprints:
-
-| Campo | Descrição |
-|-------|-----------|
-| name | Nome do blueprint |
-| device_type_id | Tipo de dispositivo |
-| version | Versão compatível (any, 7.x, etc.) |
-| collection_steps | JSON com passos de coleta |
-
-Editor visual para passos:
-- Cada step tem: id, executor (http_request, ssh, snmp), config
-- Possibilidade de reordenar, duplicar, excluir steps
-
-#### 4. Componente: ComplianceRulesManagement.tsx
-
-Gerencia compliance_rules:
-
-| Campo | Descrição |
-|-------|-----------|
-| code | Código único (admin_timeout) |
-| name | Nome legível |
-| category | Categoria no relatório (Segurança, Rede) |
-| severity | Severidade (critical, high, medium, low) |
-| description | Descrição detalhada |
-| recommendation | Recomendação de correção |
-| pass_description | Mensagem quando passa |
-| fail_description | Mensagem quando falha |
-| weight | Peso no score |
-| evaluation_logic | JSON com lógica de avaliação |
-
-Editor visual para evaluation_logic:
-- source_key: De qual step do blueprint vem o dado
-- field_path: Caminho no JSON para o valor
-- conditions: Array de condições (operator, value, result)
-- default_result: Resultado padrão
-
-## Wireframe da Interface
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🛡 Coletas                                                    [+ Novo Tipo] │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ [Firewalls ▾] [Microsoft 365] [Domínios Externos]                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│ 📦 TIPOS DE DISPOSITIVOS                                                    │
-│ ┌───────────────────────────────────────────────────────────────────────┐   │
-│ │ FortiGate              Fortinet           🟢 Ativo    [✏️] [🗑️]       │   │
-│ │ Palo Alto              Palo Alto Networks 🔴 Inativo  [✏️] [🗑️]       │   │
-│ └───────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│ 📋 BLUEPRINTS DE COLETA                                    [+ Novo Blueprint]│
-│ ┌───────────────────────────────────────────────────────────────────────┐   │
-│ │ FortiGate Standard Compliance    FortiGate   any   9 steps   [✏️]     │   │
-│ └───────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│ ✓ REGRAS DE COMPLIANCE (8)                                    [+ Nova Regra]│
-│ ┌───────────────────────────────────────────────────────────────────────┐   │
-│ │ Filtro: [Todos ▾] [Pesquisar...]                                       │   │
-│ ├───────────────────────────────────────────────────────────────────────┤   │
-│ │ admin_timeout     Timeout de Sessão Admin     🟠 medium   [✏️] [🗑️]   │   │
-│ │ https_admin       Acesso HTTPS Administrativo 🔴 high     [✏️] [🗑️]   │   │
-│ │ password_policy   Política de Senha Admin     🔴 high     [✏️] [🗑️]   │   │
-│ └───────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+### Antes (Problema)
+```
++------------------------------------------+
+| [OK] RDP Exposto para Internet  CRITICAL |
+|      (badge vermelho alarme)             |
++------------------------------------------+
 ```
 
-## Arquivos a Criar/Modificar
+### Depois (Solucao)
+```
++------------------------------------------+
+| [OK] RDP Exposto para Internet  CRITICAL |
+|      (badge cinza neutro)                |
++------------------------------------------+
+```
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/pages/admin/CollectionsPage.tsx` | Criar | Página principal de coletas |
-| `src/components/admin/DeviceTypesManagement.tsx` | Criar | CRUD de tipos de dispositivo |
-| `src/components/admin/BlueprintsManagement.tsx` | Criar | CRUD de blueprints |
-| `src/components/admin/ComplianceRulesManagement.tsx` | Criar | CRUD de regras |
-| `src/components/layout/AppLayout.tsx` | Modificar | Adicionar link no menu Administração |
-| `src/App.tsx` | Modificar | Adicionar rota /collections |
+---
 
-## Fases de Implementação
+## Passos de Implementacao
 
-### Fase 1: Estrutura Base
-1. Criar `CollectionsPage.tsx` com layout de tabs
-2. Criar `DeviceTypesManagement.tsx` (CRUD simples)
-3. Adicionar rota e menu
+1. **Atualizar edge function `agent-task-result`**:
+   - Adicionar funcao `extractVersion()`
+   - Modificar logica de extracao do firmware para buscar em multiplos campos
+   - Garantir que `firmwareVersion` seja incluido no resultado
 
-### Fase 2: Blueprints
-1. Criar `BlueprintsManagement.tsx`
-2. Editor JSON para collection_steps
-3. Visualização dos passos de coleta
+2. **Atualizar `ComplianceCard.tsx`**:
+   - Criar mapeamento de cores contextual baseado no status
+   - Aplicar classe CSS apropriada ao badge de severidade
 
-### Fase 3: Regras de Compliance
-1. Criar `ComplianceRulesManagement.tsx`
-2. Editor de evaluation_logic
-3. Pré-visualização de teste da regra
+3. **Testar**:
+   - Executar nova analise para verificar se CVESection aparece
+   - Verificar se checks aprovados exibem badges em cores neutras
 
-### Fase 4: Expansão
-1. Adicionar suporte para Microsoft 365 (device_category: 'cloud')
-2. Adicionar suporte para Domínios Externos (nova categoria)
-
-## Resultado Esperado
-
-1. Super Admins podem gerenciar todas as coletas e regras via interface
-2. Adição de novos vendors/dispositivos sem alteração de código
-3. Regras de compliance configuráveis com descrições completas
-4. Estrutura preparada para Microsoft 365 e Domínios Externos
-5. Blueprints editáveis para ajustar passos de coleta
