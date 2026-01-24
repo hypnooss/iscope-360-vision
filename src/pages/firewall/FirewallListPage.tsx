@@ -26,6 +26,18 @@ interface Client {
   description: string | null;
 }
 
+interface DeviceType {
+  id: string;
+  name: string;
+  vendor: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  client_id: string | null;
+}
+
 interface Firewall {
   id: string;
   name: string;
@@ -41,6 +53,8 @@ interface Firewall {
   clients?: { name: string } | null;
   analysis_schedules?: { frequency: string; is_active: boolean }[] | { frequency: string; is_active: boolean } | null;
   pending_task?: boolean;
+  device_type?: DeviceType | null;
+  agent?: Agent | null;
 }
 
 type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
@@ -51,6 +65,8 @@ export default function FirewallListPage() {
   const navigate = useNavigate();
   const [firewalls, setFirewalls] = useState<Firewall[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceType[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClientDialog, setShowClientDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -83,31 +99,33 @@ export default function FirewallListPage() {
 
   const fetchData = async () => {
     try {
-      const { data: clientsData } = await supabase
-        .from('clients')
-        .select('*')
-        .order('name');
+      // Fetch all data in parallel
+      const [clientsRes, firewallsRes, deviceTypesRes, agentsRes] = await Promise.all([
+        supabase.from('clients').select('*').order('name'),
+        supabase.from('firewalls').select('*').order('created_at', { ascending: false }),
+        supabase.from('device_types').select('id, name, vendor').eq('is_active', true),
+        supabase.from('agents').select('id, name, client_id').eq('revoked', false),
+      ]);
       
-      if (clientsData) setClients(clientsData);
+      if (clientsRes.data) setClients(clientsRes.data);
+      if (deviceTypesRes.data) setDeviceTypes(deviceTypesRes.data);
+      if (agentsRes.data) setAgents(agentsRes.data);
 
-      const { data: firewallsData } = await supabase
-        .from('firewalls')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!firewallsData || firewallsData.length === 0) {
+      if (!firewallsRes.data || firewallsRes.data.length === 0) {
         setFirewalls([]);
         setLoading(false);
         return;
       }
 
-      const firewallIds = firewallsData.map(f => f.id);
+      const firewallIds = firewallsRes.data.map(f => f.id);
       const { data: schedulesData } = await supabase
         .from('analysis_schedules')
         .select('firewall_id, frequency, is_active')
         .in('firewall_id', firewallIds);
 
-      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+      const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c]));
+      const deviceTypeMap = new Map((deviceTypesRes.data || []).map(d => [d.id, d]));
+      const agentMap = new Map((agentsRes.data || []).map(a => [a.id, a]));
       const scheduleMap = new Map<string, { frequency: string; is_active: boolean }[]>();
       
       for (const schedule of (schedulesData || [])) {
@@ -116,10 +134,12 @@ export default function FirewallListPage() {
         scheduleMap.set(schedule.firewall_id, existing);
       }
 
-      const combined = firewallsData.map(fw => ({
+      const combined = firewallsRes.data.map(fw => ({
         ...fw,
         clients: clientMap.get(fw.client_id) ? { name: clientMap.get(fw.client_id)!.name } : null,
         analysis_schedules: scheduleMap.get(fw.id) || null,
+        device_type: fw.device_type_id ? deviceTypeMap.get(fw.device_type_id) || null : null,
+        agent: fw.agent_id ? agentMap.get(fw.agent_id) || null : null,
       }));
 
       setFirewalls(combined as unknown as Firewall[]);
@@ -421,10 +441,9 @@ export default function FirewallListPage() {
                   <TableRow>
                     <TableHead>Firewall</TableHead>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>URL</TableHead>
-                    <TableHead>Serial</TableHead>
+                    <TableHead>Fabricante</TableHead>
+                    <TableHead>Agent</TableHead>
                     <TableHead>Schedule</TableHead>
-                    <TableHead>Último Score</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -447,25 +466,28 @@ export default function FirewallListPage() {
                           </div>
                         </TableCell>
                         <TableCell>{fw.clients?.name || 'N/A'}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">
-                          {fw.fortigate_url}
+                        <TableCell>
+                          {fw.device_type ? (
+                            <Badge variant="secondary">
+                              {fw.device_type.vendor}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </TableCell>
-                        <TableCell className="text-xs font-mono">
-                          {fw.serial_number || '—'}
+                        <TableCell>
+                          {fw.agent ? (
+                            <Badge variant="outline">
+                              {fw.agent.name}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
                             {schedule ? getScheduleLabel(schedule.frequency) : 'Manual'}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {fw.last_score !== null ? (
-                            <Badge className={getScoreColor(fw.last_score)}>
-                              {fw.last_score}%
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
