@@ -78,13 +78,14 @@ const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport
     ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
     ?? undefined;
   
-  // Extract system info
+  // Extract system info - include vendor if present
   const rawSystemInfo = rawData.system_info as Record<string, unknown> | undefined;
   const systemInfo = rawSystemInfo ? {
     hostname: rawSystemInfo.hostname as string | undefined,
     model: rawSystemInfo.model as string | undefined,
     serial: rawSystemInfo.serial as string | undefined,
     uptime: rawSystemInfo.uptime as string | undefined,
+    vendor: rawSystemInfo.vendor as string | undefined,
   } : undefined;
   
   return {
@@ -112,7 +113,8 @@ export default function FirewallAnalysis() {
     : null;
   
   const [report, setReport] = useState<ComplianceReport | null>(initialReport);
-  const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string } | null>(null);
+  const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string; device_type_id: string | null } | null>(null);
+  const [deviceVendor, setDeviceVendor] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialReport);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -134,11 +136,25 @@ export default function FirewallAnalysis() {
   const fetchFirewall = async () => {
     const { data } = await supabase
       .from('firewalls')
-      .select('name, fortigate_url, api_key')
+      .select('name, fortigate_url, api_key, device_type_id')
       .eq('id', id)
       .single();
 
-    if (data) setFirewall(data);
+    if (data) {
+      setFirewall(data);
+      // Fetch device type vendor if device_type_id exists
+      if (data.device_type_id) {
+        const { data: deviceType } = await supabase
+          .from('device_types')
+          .select('vendor')
+          .eq('id', data.device_type_id)
+          .single();
+        
+        if (deviceType) {
+          setDeviceVendor(deviceType.vendor);
+        }
+      }
+    }
   };
 
   const fetchLastAnalysis = async () => {
@@ -261,6 +277,7 @@ export default function FirewallAnalysis() {
           isRefreshing={isRefreshing}
           firewallName={firewall?.name}
           firewallUrl={firewall?.fortigate_url}
+          deviceVendor={deviceVendor}
         />
       </div>
     </AppLayout>

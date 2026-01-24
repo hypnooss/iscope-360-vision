@@ -15,9 +15,10 @@ interface DashboardProps {
   isRefreshing: boolean;
   firewallName?: string;
   firewallUrl?: string;
+  deviceVendor?: string | null;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
 
   const handleCVEsLoaded = (cves: CVEInfo[]) => {
@@ -77,47 +78,59 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col">
             {/* Parte superior: Info do Firewall */}
             <div className="flex items-start gap-4">
-              {/* Fortinet Badge */}
-              <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
-                <ShieldCheck className="w-10 h-10 text-primary mb-1" />
-                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">FortiGate</span>
-              </div>
-              
-              {/* Info Grid */}
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">Nome:</span>
-                  <span className="font-semibold text-foreground truncate">{firewallName || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">FortiOS:</span>
-                  <span className="font-medium text-foreground">v{report.firmwareVersion || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">URL:</span>
-                  <span className="font-medium text-foreground text-sm truncate">{firewallUrl || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Server className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">Modelo:</span>
-                  <span className="font-medium text-foreground">{report.systemInfo?.model || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Hash className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">Serial:</span>
-                  <span className="font-medium text-foreground font-mono text-sm">{report.systemInfo?.serial || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">Uptime:</span>
-                  <span className="font-medium text-foreground text-sm">
-                    {report.systemInfo?.uptime || 'N/A'}
-                  </span>
-                </div>
-              </div>
+              {/* Vendor Badge - Dynamic based on device type */}
+              {(() => {
+                // Priority: deviceVendor prop > report.systemInfo.vendor
+                const vendorSource = deviceVendor?.toLowerCase() || report.systemInfo?.vendor?.toLowerCase() || '';
+                const isSonicWall = vendorSource.includes('sonicwall') || vendorSource.includes('sonic');
+                const vendorLabel = isSonicWall ? 'SonicWall' : 'FortiGate';
+                const osLabel = isSonicWall ? 'SonicOS' : 'FortiOS';
+                
+                return (
+                  <>
+                    <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
+                      <ShieldCheck className="w-10 h-10 text-primary mb-1" />
+                      <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{vendorLabel}</span>
+                    </div>
+                    
+                    {/* Info Grid */}
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">Nome:</span>
+                        <span className="font-semibold text-foreground truncate">{firewallName || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">{osLabel}:</span>
+                        <span className="font-medium text-foreground">{report.firmwareVersion ? `v${report.firmwareVersion}` : 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">URL:</span>
+                        <span className="font-medium text-foreground text-sm truncate">{firewallUrl || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Server className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">Modelo:</span>
+                        <span className="font-medium text-foreground">{report.systemInfo?.model || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Hash className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">Serial:</span>
+                        <span className="font-medium text-foreground font-mono text-sm">{report.systemInfo?.serial || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-primary flex-shrink-0" />
+                        <span className="text-muted-foreground text-sm">Uptime:</span>
+                        <span className="font-medium text-foreground text-sm">
+                          {report.systemInfo?.uptime || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             
             {/* Separador visual */}

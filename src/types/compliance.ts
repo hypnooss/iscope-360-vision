@@ -49,6 +49,7 @@ export interface ComplianceReport {
     model?: string;
     serial?: string;
     uptime?: string;
+    vendor?: string;
   };
 }
 
