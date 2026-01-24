@@ -57,58 +57,10 @@ export default function FirewallAnalysis() {
 
     if (data?.report_data) {
       const rawData = data.report_data as Record<string, unknown>;
-      
-      // Normalize checks: add description from details if missing, normalize status
-      const normalizeCheck = (check: Record<string, unknown>) => ({
-        ...check,
-        description: check.description || check.details || check.name || '',
-        status: check.status === 'warn' ? 'warning' : check.status,
+      const reportData = normalizeReportData({
+        ...rawData,
+        generatedAt: data.created_at,
       });
-      
-      // Transform categories from object to array if needed
-      let categories = rawData.categories;
-      if (categories && !Array.isArray(categories)) {
-        // Convert object { "CategoryName": [...checks] } to array format
-        categories = Object.entries(categories as Record<string, Record<string, unknown>[]>).map(([name, checks]) => {
-          const normalizedChecks = (checks || []).map(normalizeCheck);
-          return {
-            name,
-            icon: getIconForCategory(name),
-            checks: normalizedChecks,
-            passRate: calculatePassRate(normalizedChecks as { status: string }[]),
-          };
-        });
-      } else if (Array.isArray(categories)) {
-        // Normalize checks within existing array categories
-        categories = (categories as { name: string; icon?: string; checks: Record<string, unknown>[]; passRate?: number }[]).map(cat => ({
-          ...cat,
-          icon: cat.icon || getIconForCategory(cat.name),
-          checks: (cat.checks || []).map(normalizeCheck),
-          passRate: cat.passRate ?? calculatePassRate((cat.checks || []).map(normalizeCheck) as { status: string }[]),
-        }));
-      }
-      
-      // Get all checks for counting
-      const allChecks = rawData.checks as { status: string }[] 
-        ?? (categories as ComplianceCategory[])?.flatMap(c => c.checks) 
-        ?? [];
-      
-      // Extract firmware version from multiple possible locations
-      const firmwareVersion = (rawData.firmwareVersion as string) 
-        ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
-        ?? undefined;
-      
-      const reportData: ComplianceReport = {
-        overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
-        totalChecks: allChecks.length,
-        passed: allChecks.filter(c => c.status === 'pass').length,
-        failed: allChecks.filter(c => c.status === 'fail').length,
-        warnings: allChecks.filter(c => c.status === 'warn' || c.status === 'warning').length,
-        categories: categories as ComplianceCategory[],
-        generatedAt: new Date(data.created_at),
-        firmwareVersion,
-      };
-      
       setReport(reportData);
     }
     setLoading(false);
@@ -130,6 +82,62 @@ export default function FirewallAnalysis() {
     if (!checks || checks.length === 0) return 0;
     const passed = checks.filter(c => c.status === 'pass').length;
     return Math.round((passed / checks.length) * 100);
+  };
+
+  const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport => {
+    // Normalize checks: add description from details if missing, normalize status
+    const normalizeCheck = (check: Record<string, unknown>) => ({
+      ...check,
+      description: check.description || check.details || check.name || '',
+      status: check.status === 'warn' ? 'warning' : check.status,
+    });
+    
+    // Transform categories from object to array if needed
+    let categories = rawData.categories;
+    if (categories && !Array.isArray(categories)) {
+      // Convert object { "CategoryName": [...checks] } to array format
+      categories = Object.entries(categories as Record<string, Record<string, unknown>[]>).map(([name, checks]) => {
+        const normalizedChecks = (checks || []).map(normalizeCheck);
+        return {
+          name,
+          icon: getIconForCategory(name),
+          checks: normalizedChecks,
+          passRate: calculatePassRate(normalizedChecks as { status: string }[]),
+        };
+      });
+    } else if (Array.isArray(categories)) {
+      // Normalize checks within existing array categories
+      categories = (categories as { name: string; icon?: string; checks: Record<string, unknown>[]; passRate?: number }[]).map(cat => ({
+        ...cat,
+        icon: cat.icon || getIconForCategory(cat.name),
+        checks: (cat.checks || []).map(normalizeCheck),
+        passRate: cat.passRate ?? calculatePassRate((cat.checks || []).map(normalizeCheck) as { status: string }[]),
+      }));
+    } else {
+      // No categories - initialize empty array
+      categories = [];
+    }
+    
+    // Get all checks for counting
+    const allChecks = rawData.checks as { status: string }[] 
+      ?? (categories as ComplianceCategory[])?.flatMap(c => c.checks) 
+      ?? [];
+    
+    // Extract firmware version from multiple possible locations
+    const firmwareVersion = (rawData.firmwareVersion as string) 
+      ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
+      ?? undefined;
+    
+    return {
+      overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
+      totalChecks: allChecks.length,
+      passed: allChecks.filter(c => c.status === 'pass').length,
+      failed: allChecks.filter(c => c.status === 'fail').length,
+      warnings: allChecks.filter(c => c.status === 'warn' || c.status === 'warning').length,
+      categories: categories as ComplianceCategory[],
+      generatedAt: new Date(rawData.generatedAt as string || Date.now()),
+      firmwareVersion,
+    };
   };
 
   const handleRefresh = async () => {
@@ -165,10 +173,8 @@ export default function FirewallAnalysis() {
         serial_number: data.serialNumber,
       }).eq('id', id);
 
-      setReport({
-        ...data,
-        generatedAt: new Date(data.generatedAt),
-      });
+      // Normalize the data before setting to state
+      setReport(normalizeReportData(data));
 
       toast.success('Análise atualizada com sucesso!');
     } catch (error: any) {
