@@ -59,7 +59,7 @@ class APIClient:
             f"{self.base_url}{path}",
             json=json,
             headers=headers,
-            timeout=10
+            timeout=60
         )
 
         if not response.ok:
