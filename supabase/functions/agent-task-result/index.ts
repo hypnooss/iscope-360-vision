@@ -39,6 +39,9 @@ interface ComplianceRule {
   category: string;
   severity: string;
   description: string | null;
+  recommendation: string | null;
+  pass_description: string | null;
+  fail_description: string | null;
   weight: number;
   evaluation_logic: {
     source_key: string;
@@ -57,10 +60,12 @@ interface ComplianceRule {
 interface ComplianceCheck {
   id: string;
   name: string;
+  description: string;
   category: string;
   severity: string;
   status: 'pass' | 'fail' | 'warn' | 'unknown';
   details: string;
+  recommendation?: string;
   weight: number;
 }
 
@@ -70,6 +75,7 @@ interface ComplianceResult {
   categories: Record<string, ComplianceCheck[]>;
   system_info?: Record<string, unknown>;
   raw_data?: Record<string, unknown>;
+  firmwareVersion?: string;
 }
 
 // ============================================
@@ -154,10 +160,12 @@ function processComplianceRules(
       checks.push({
         id: rule.code,
         name: rule.name,
+        description: rule.description || rule.name,
         category: rule.category,
         severity: rule.severity,
         status: 'unknown',
         details: `Dados não disponíveis: ${logic.source_key}`,
+        recommendation: rule.recommendation || undefined,
         weight: rule.weight,
       });
       continue;
@@ -177,23 +185,28 @@ function processComplianceRules(
       }
     }
     
-    // Generate details message
+    // Generate details message - use database fields first, then logic, then default
     let details = '';
-    if (status === 'pass' && logic.pass_message) {
-      details = logic.pass_message;
-    } else if ((status === 'fail' || status === 'warn') && logic.fail_message) {
-      details = logic.fail_message;
+    if (status === 'pass') {
+      details = rule.pass_description || logic.pass_message || `Verificação aprovada`;
+    } else if (status === 'fail' || status === 'warn') {
+      details = rule.fail_description || logic.fail_message || `Valor atual: ${JSON.stringify(value)}`;
     } else {
       details = `Valor: ${JSON.stringify(value)}`;
     }
     
+    // Use rule description or generate one
+    const description = rule.description || rule.name;
+    
     checks.push({
       id: rule.code,
       name: rule.name,
+      description,
       category: rule.category,
       severity: rule.severity,
       status,
       details,
+      recommendation: status !== 'pass' ? (rule.recommendation || undefined) : undefined,
       weight: rule.weight,
     });
   }
@@ -231,11 +244,15 @@ function processComplianceRules(
     systemInfo.model = results.model;
   }
   
+  // Extract firmware version
+  const firmwareVersion = (systemInfo.version as string) || undefined;
+  
   return {
     score,
     checks,
     categories,
     system_info: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
+    firmwareVersion,
   };
 }
 
@@ -437,7 +454,7 @@ serve(async (req: Request) => {
         // Fetch compliance rules for this device type
         const { data: rules } = await supabase
           .from('compliance_rules')
-          .select('id, code, name, category, severity, description, weight, evaluation_logic')
+          .select('id, code, name, category, severity, description, recommendation, pass_description, fail_description, weight, evaluation_logic')
           .eq('device_type_id', deviceTypeId)
           .eq('is_active', true)
           .order('category')
