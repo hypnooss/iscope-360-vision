@@ -38,3 +38,9 @@ verify_jwt = false
 
 [functions.entra-id-compliance]
 verify_jwt = false
+
+[functions.agent-tasks]
+verify_jwt = false
+
+[functions.agent-task-result]
+verify_jwt = false

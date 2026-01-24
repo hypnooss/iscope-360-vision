@@ -4,6 +4,7 @@ from agent.api_client import APIClient
 from agent.auth import AuthManager
 from agent.scheduler import AgentScheduler
 from agent.heartbeat import AgentHeartbeat, AgentStopped
+from agent.tasks import TaskExecutor
 from agent.logger import setup_logger
 
 import argparse
@@ -53,6 +54,7 @@ class AgentApp:
         self.api = APIClient(API_BASE_URL, self.state, logger)
         self.auth = AuthManager(self.state, self.api, logger)
         self.heartbeat = AgentHeartbeat(self.api, self.state, logger)
+        self.task_executor = TaskExecutor(self.api, self.state, logger)
 
     def agent_loop(self):
         self.logger.info("Início do loop do agent")
@@ -68,8 +70,18 @@ class AgentApp:
 
         self.logger.info(
             f"Heartbeat OK | config_flag={result.get('config_flag')} | "
+            f"has_pending_tasks={result.get('has_pending_tasks')} | "
             f"next={next_interval}s"
         )
+
+        # Processar tarefas pendentes se houver
+        if result.get('has_pending_tasks'):
+            self.logger.info("Tarefas pendentes detectadas. Processando...")
+            try:
+                processed = self.task_executor.process_all()
+                self.logger.info(f"{processed} tarefas processadas")
+            except Exception as e:
+                self.logger.error(f"Erro ao processar tarefas: {e}")
 
         return next_interval
 
@@ -90,3 +102,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

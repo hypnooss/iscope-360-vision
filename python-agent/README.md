@@ -78,6 +78,19 @@ python main.py --reset-default
 | `/register-agent` | POST | Registro inicial com activation code |
 | `/agent-heartbeat` | POST | Heartbeat periódico |
 | `/agent-refresh` | POST | Renovação de access token |
+| `/agent-tasks` | GET | Buscar tarefas pendentes |
+| `/agent-task-result` | POST | Reportar resultado de tarefa |
+
+## Sistema de Tarefas
+
+O agent executa tarefas atribuídas pela plataforma:
+
+| Tipo | Descrição |
+|------|-----------|
+| `fortigate_compliance` | Verificações de compliance em FortiGate |
+| `fortigate_cve` | Verificação de CVEs no firmware |
+| `ssh_command` | Execução de comandos via SSH |
+| `snmp_query` | Queries SNMP em dispositivos |
 
 ## Tratamento de Erros
 
@@ -95,7 +108,6 @@ python-agent/
 ├── README.md              # Esta documentação
 ├── requirements.txt       # Dependências Python
 ├── .env.example          # Template de configuração
-├── .env                  # Configuração real (não versionado)
 ├── main.py               # Entry point
 ├── storage/
 │   └── state.json        # Estado persistente do agent
@@ -108,8 +120,14 @@ python-agent/
     ├── api_client.py     # Cliente HTTP
     ├── auth.py           # Autenticação
     ├── heartbeat.py      # Lógica de heartbeat
+    ├── tasks.py          # Orquestrador de tarefas
     ├── scheduler.py      # Loop principal
-    └── logger.py         # Sistema de logging
+    ├── logger.py         # Sistema de logging
+    └── executors/        # Executores de tarefas
+        ├── base.py       # Classe base
+        ├── fortigate.py  # FortiGate API
+        ├── ssh.py        # SSH (paramiko)
+        └── snmp.py       # SNMP (pysnmp)
 ```
 
 ## Troubleshooting
@@ -123,13 +141,6 @@ python-agent/
 - Execute `python main.py --reset-default`
 - Configure um novo `AGENT_ACTIVATION_CODE`
 
-### Logs não aparecem
-- Verifique se o diretório `logs/` existe
-- Confirme permissões de escrita
-
-## Desenvolvimento
-
-Este agent foi desenvolvido para trabalhar em conjunto com as Edge Functions do InfraScope360:
-- `register-agent`: Registro e emissão de tokens
-- `agent-heartbeat`: Validação e monitoramento
-- `agent-refresh`: Renovação de access tokens
+### Erros de SSH/SNMP
+- Confirme que `paramiko` e `pysnmp` estão instalados
+- Verifique credenciais e conectividade de rede
