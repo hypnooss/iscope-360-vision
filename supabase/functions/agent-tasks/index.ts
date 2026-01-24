@@ -7,21 +7,33 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============================================
+// Types
+// ============================================
+
+interface StepConfig {
+  id: string;
+  executor: string;
+  config: Record<string, unknown>;
+}
+
 interface TaskResponse {
   id: string;
   type: string;
   target: {
     id: string;
     type: string;
-    url?: string;
-    api_key?: string;
+    base_url?: string;
+    credentials?: {
+      api_key?: string;
+      username?: string;
+      password?: string;
+      community?: string;
+    };
     host?: string;
     port?: number;
-    username?: string;
-    password?: string;
-    community?: string;
   };
-  payload: Record<string, unknown>;
+  steps: StepConfig[];
   priority: number;
   expires_at: string;
 }
@@ -35,6 +47,84 @@ interface TasksErrorResponse {
   error: string;
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
 }
+
+// ============================================
+// Helper Functions
+// ============================================
+
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = ReturnType<typeof createClient<any>>;
+
+async function getDeviceBlueprint(
+  supabase: SupabaseClient,
+  deviceTypeId: string | null,
+  _taskType: string
+): Promise<StepConfig[]> {
+  // If no device_type_id, return empty steps (legacy behavior)
+  if (!deviceTypeId) {
+    console.log('No device_type_id, returning empty steps for legacy task');
+    return [];
+  }
+
+  // Fetch the active blueprint for this device type
+  const { data: blueprint, error } = await supabase
+    .from('device_blueprints')
+    .select('collection_steps')
+    .eq('device_type_id', deviceTypeId)
+    .eq('is_active', true)
+    .order('version', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !blueprint) {
+    console.log('No blueprint found for device type:', deviceTypeId);
+    return [];
+  }
+
+  // Extract steps from the blueprint
+  const blueprintData = blueprint as { collection_steps: { steps?: StepConfig[] } };
+  return blueprintData.collection_steps?.steps || [];
+}
+
+async function getTargetCredentials(
+  supabase: SupabaseClient,
+  targetId: string,
+  targetType: string
+): Promise<TaskResponse['target'] | null> {
+  if (targetType === 'firewall') {
+    const { data: firewall, error } = await supabase
+      .from('firewalls')
+      .select('id, name, fortigate_url, api_key, device_type_id')
+      .eq('id', targetId)
+      .single();
+
+    if (error || !firewall) {
+      console.log('Firewall not found:', targetId);
+      return null;
+    }
+
+    const fw = firewall as { id: string; name: string; fortigate_url: string; api_key: string; device_type_id: string | null };
+
+    return {
+      id: fw.id,
+      type: 'firewall',
+      base_url: fw.fortigate_url,
+      credentials: {
+        api_key: fw.api_key,
+      },
+    };
+  }
+
+  // Add more target types here (switches, routers, etc.)
+  return {
+    id: targetId,
+    type: targetType,
+  };
+}
+
+// ============================================
+// Main Handler
+// ============================================
 
 serve(async (req: Request) => {
   // Handle CORS preflight requests
@@ -166,7 +256,7 @@ serve(async (req: Request) => {
       `)
       .eq('agent_id', agentId)
       .eq('status', 'pending')
-      .lt('expires_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()) // Not expired
+      .lt('expires_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
       .gt('expires_at', new Date().toISOString())
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true })
@@ -180,33 +270,44 @@ serve(async (req: Request) => {
       );
     }
 
-    // Enrich tasks with target data (credentials, etc.)
+    // Enrich tasks with target data and blueprint steps
     const enrichedTasks: TaskResponse[] = [];
     
     for (const task of tasks || []) {
-      let targetData: TaskResponse['target'] = {
-        id: task.target_id,
-        type: task.target_type,
-      };
+      // Get target credentials
+      const targetData = await getTargetCredentials(supabase, task.target_id, task.target_type);
+      
+      if (!targetData) {
+        console.log('Skipping task - target not found:', task.target_id);
+        continue;
+      }
 
-      // Fetch target details based on type
+      // Get device_type_id from the target (firewall)
+      let deviceTypeId: string | null = null;
       if (task.target_type === 'firewall') {
         const { data: firewall } = await supabase
           .from('firewalls')
-          .select('id, name, fortigate_url, api_key')
+          .select('device_type_id')
           .eq('id', task.target_id)
           .single();
-
-        if (firewall) {
-          targetData = {
-            id: firewall.id,
-            type: 'firewall',
-            url: firewall.fortigate_url,
-            api_key: firewall.api_key,
-          };
+        
+        deviceTypeId = firewall?.device_type_id || null;
+        
+        // If no device_type_id set, try to use default FortiGate
+        if (!deviceTypeId) {
+          const { data: defaultType } = await supabase
+            .from('device_types')
+            .select('id')
+            .eq('code', 'fortigate')
+            .eq('is_active', true)
+            .single();
+          
+          deviceTypeId = defaultType?.id || null;
         }
       }
-      // Add more target types as needed (switches, routers, etc.)
+
+      // Get blueprint steps for this device type
+      const steps = await getDeviceBlueprint(supabase, deviceTypeId, task.task_type);
 
       // Mark task as running
       await supabase
@@ -219,9 +320,9 @@ serve(async (req: Request) => {
 
       enrichedTasks.push({
         id: task.id,
-        type: task.task_type,
+        type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
         target: targetData,
-        payload: task.payload || {},
+        steps: steps,
         priority: task.priority,
         expires_at: task.expires_at,
       });

@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============================================
+// Types
+// ============================================
+
 interface TaskResultRequest {
   task_id: string;
   status: 'completed' | 'failed' | 'timeout';
@@ -19,6 +23,7 @@ interface TaskResultSuccessResponse {
   success: true;
   task_id: string;
   status: string;
+  score?: number;
   has_more_tasks: boolean;
 }
 
@@ -26,6 +31,217 @@ interface TaskResultErrorResponse {
   error: string;
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'NOT_FOUND' | 'FORBIDDEN' | 'INTERNAL_ERROR';
 }
+
+interface ComplianceRule {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  severity: string;
+  description: string | null;
+  weight: number;
+  evaluation_logic: {
+    source_key: string;
+    field_path: string;
+    conditions: Array<{
+      operator: string;
+      value?: unknown;
+      result: 'pass' | 'fail' | 'warn' | 'unknown';
+    }>;
+    default_result: 'pass' | 'fail' | 'warn' | 'unknown';
+    pass_message?: string;
+    fail_message?: string;
+  };
+}
+
+interface ComplianceCheck {
+  id: string;
+  name: string;
+  category: string;
+  severity: string;
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  details: string;
+  weight: number;
+}
+
+interface ComplianceResult {
+  score: number;
+  checks: ComplianceCheck[];
+  categories: Record<string, ComplianceCheck[]>;
+  system_info?: Record<string, unknown>;
+  raw_data?: Record<string, unknown>;
+}
+
+// ============================================
+// Helper Functions
+// ============================================
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split('.');
+  let current: unknown = obj;
+  
+  for (const key of keys) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    if (typeof current === 'object') {
+      current = (current as Record<string, unknown>)[key];
+    } else {
+      return undefined;
+    }
+  }
+  
+  return current;
+}
+
+function evaluateCondition(
+  value: unknown,
+  condition: { operator: string; value?: unknown; result: string }
+): string | null {
+  const { operator, value: condValue, result } = condition;
+  
+  switch (operator) {
+    case 'equals':
+      if (value === condValue) return result;
+      break;
+    case 'not_equals':
+      if (value !== condValue) return result;
+      break;
+    case 'contains':
+      if (typeof value === 'string' && typeof condValue === 'string' && value.includes(condValue)) return result;
+      break;
+    case 'not_empty':
+      if (value !== null && value !== undefined && value !== '') return result;
+      break;
+    case 'empty':
+      if (value === null || value === undefined || value === '') return result;
+      break;
+    case 'greater_than':
+      if (typeof value === 'number' && typeof condValue === 'number' && value > condValue) return result;
+      break;
+    case 'less_than':
+      if (typeof value === 'number' && typeof condValue === 'number' && value < condValue) return result;
+      break;
+    case 'greater_than_or_equal':
+      if (typeof value === 'number' && typeof condValue === 'number' && value >= condValue) return result;
+      break;
+    case 'less_than_or_equal':
+      if (typeof value === 'number' && typeof condValue === 'number' && value <= condValue) return result;
+      break;
+    case 'regex':
+      if (typeof value === 'string' && typeof condValue === 'string') {
+        const regex = new RegExp(condValue);
+        if (regex.test(value)) return result;
+      }
+      break;
+  }
+  
+  return null;
+}
+
+function processComplianceRules(
+  rawData: Record<string, unknown>,
+  rules: ComplianceRule[]
+): ComplianceResult {
+  const checks: ComplianceCheck[] = [];
+  
+  for (const rule of rules) {
+    const logic = rule.evaluation_logic;
+    
+    // Get the source data
+    const sourceData = rawData[logic.source_key];
+    if (!sourceData) {
+      checks.push({
+        id: rule.code,
+        name: rule.name,
+        category: rule.category,
+        severity: rule.severity,
+        status: 'unknown',
+        details: `Dados não disponíveis: ${logic.source_key}`,
+        weight: rule.weight,
+      });
+      continue;
+    }
+    
+    // Get the value at the field path
+    const value = getNestedValue(sourceData as Record<string, unknown>, logic.field_path);
+    
+    // Evaluate conditions
+    let status: 'pass' | 'fail' | 'warn' | 'unknown' = logic.default_result as 'pass' | 'fail' | 'warn' | 'unknown';
+    
+    for (const condition of logic.conditions) {
+      const condResult = evaluateCondition(value, condition);
+      if (condResult) {
+        status = condResult as 'pass' | 'fail' | 'warn' | 'unknown';
+        break;
+      }
+    }
+    
+    // Generate details message
+    let details = '';
+    if (status === 'pass' && logic.pass_message) {
+      details = logic.pass_message;
+    } else if ((status === 'fail' || status === 'warn') && logic.fail_message) {
+      details = logic.fail_message;
+    } else {
+      details = `Valor: ${JSON.stringify(value)}`;
+    }
+    
+    checks.push({
+      id: rule.code,
+      name: rule.name,
+      category: rule.category,
+      severity: rule.severity,
+      status,
+      details,
+      weight: rule.weight,
+    });
+  }
+  
+  // Calculate score
+  const totalWeight = checks.reduce((sum, check) => sum + check.weight, 0);
+  const passedWeight = checks
+    .filter(check => check.status === 'pass')
+    .reduce((sum, check) => sum + check.weight, 0);
+  const warnWeight = checks
+    .filter(check => check.status === 'warn')
+    .reduce((sum, check) => sum + (check.weight * 0.5), 0);
+  
+  const score = totalWeight > 0 
+    ? Math.round(((passedWeight + warnWeight) / totalWeight) * 100)
+    : 0;
+  
+  // Group by category
+  const categories: Record<string, ComplianceCheck[]> = {};
+  for (const check of checks) {
+    if (!categories[check.category]) {
+      categories[check.category] = [];
+    }
+    categories[check.category].push(check);
+  }
+  
+  // Extract system info if available
+  const systemInfo: Record<string, unknown> = {};
+  const systemStatus = rawData['system_status'] as Record<string, unknown> | undefined;
+  if (systemStatus?.results) {
+    const results = systemStatus.results as Record<string, unknown>;
+    systemInfo.hostname = results.hostname;
+    systemInfo.version = results.version;
+    systemInfo.serial = results.serial;
+    systemInfo.model = results.model;
+  }
+  
+  return {
+    score,
+    checks,
+    categories,
+    system_info: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
+  };
+}
+
+// ============================================
+// Main Handler
+// ============================================
 
 serve(async (req: Request) => {
   // Handle CORS preflight requests
@@ -192,12 +408,64 @@ serve(async (req: Request) => {
                    : body.status === 'timeout' ? 'timeout' 
                    : 'failed';
 
+    let complianceResult: ComplianceResult | null = null;
+
+    // If task completed successfully and has raw data, process with compliance rules
+    if (body.status === 'completed' && body.result && task.target_type === 'firewall') {
+      // Get device_type_id from firewall
+      const { data: firewall } = await supabase
+        .from('firewalls')
+        .select('device_type_id')
+        .eq('id', task.target_id)
+        .single();
+
+      let deviceTypeId = firewall?.device_type_id;
+
+      // If no device_type_id, use default FortiGate
+      if (!deviceTypeId) {
+        const { data: defaultType } = await supabase
+          .from('device_types')
+          .select('id')
+          .eq('code', 'fortigate')
+          .eq('is_active', true)
+          .single();
+        
+        deviceTypeId = defaultType?.id;
+      }
+
+      if (deviceTypeId) {
+        // Fetch compliance rules for this device type
+        const { data: rules } = await supabase
+          .from('compliance_rules')
+          .select('id, code, name, category, severity, description, weight, evaluation_logic')
+          .eq('device_type_id', deviceTypeId)
+          .eq('is_active', true)
+          .order('category')
+          .order('name');
+
+        if (rules && rules.length > 0) {
+          console.log(`Processing ${rules.length} compliance rules for device type ${deviceTypeId}`);
+          complianceResult = processComplianceRules(
+            body.result as Record<string, unknown>,
+            rules as ComplianceRule[]
+          );
+          
+          // Store raw data for debugging/auditing
+          complianceResult.raw_data = body.result as Record<string, unknown>;
+        }
+      }
+    }
+
+    // Prepare result to save
+    const resultToSave = complianceResult || body.result;
+    const score = complianceResult?.score ?? null;
+
     // Update task with result
     const { error: updateError } = await supabase
       .from('agent_tasks')
       .update({
         status: dbStatus,
-        result: body.result || null,
+        result: resultToSave || null,
         error_message: body.error_message || null,
         completed_at: new Date().toISOString(),
       })
@@ -211,31 +479,27 @@ serve(async (req: Request) => {
       );
     }
 
-    // If task completed successfully and is a compliance check, save to analysis_history
-    if (body.status === 'completed' && body.result && 
-        (task.task_type === 'fortigate_compliance' || task.task_type === 'fortigate_cve')) {
-      
-      const score = typeof body.result.score === 'number' ? body.result.score : null;
-      
-      if (score !== null) {
-        // Save to analysis_history
-        await supabase
-          .from('analysis_history')
-          .insert({
-            firewall_id: task.target_id,
-            score: score,
-            report_data: body.result,
-          });
+    // If we have a compliance result, save to analysis_history
+    if (complianceResult && score !== null) {
+      // Save to analysis_history
+      await supabase
+        .from('analysis_history')
+        .insert({
+          firewall_id: task.target_id,
+          score: score,
+          report_data: complianceResult,
+        });
 
-        // Update firewall last_analysis_at and last_score
-        await supabase
-          .from('firewalls')
-          .update({
-            last_analysis_at: new Date().toISOString(),
-            last_score: score,
-          })
-          .eq('id', task.target_id);
-      }
+      // Update firewall last_analysis_at and last_score
+      await supabase
+        .from('firewalls')
+        .update({
+          last_analysis_at: new Date().toISOString(),
+          last_score: score,
+        })
+        .eq('id', task.target_id);
+
+      console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}`);
     }
 
     console.log(`Task ${body.task_id} updated to ${dbStatus} by agent ${agentId}`);
@@ -252,6 +516,7 @@ serve(async (req: Request) => {
       success: true,
       task_id: body.task_id,
       status: dbStatus,
+      score: score ?? undefined,
       has_more_tasks: (count || 0) > 0,
     };
 
