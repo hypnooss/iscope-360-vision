@@ -112,11 +112,9 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-sm">Análise:</span>
+                  <span className="text-muted-foreground text-sm">Uptime:</span>
                   <span className="font-medium text-foreground text-sm">
-                    {report.generatedAt instanceof Date 
-                      ? report.generatedAt.toLocaleDateString('pt-BR')
-                      : new Date(report.generatedAt).toLocaleDateString('pt-BR')}
+                    {report.systemInfo?.uptime || 'N/A'}
                   </span>
                 </div>
               </div>

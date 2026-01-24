@@ -84,6 +84,7 @@ const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport
     hostname: rawSystemInfo.hostname as string | undefined,
     model: rawSystemInfo.model as string | undefined,
     serial: rawSystemInfo.serial as string | undefined,
+    uptime: rawSystemInfo.uptime as string | undefined,
   } : undefined;
   
   return {

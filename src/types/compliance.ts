@@ -48,6 +48,7 @@ export interface ComplianceReport {
     hostname?: string;
     model?: string;
     serial?: string;
+    uptime?: string;
   };
 }
 
