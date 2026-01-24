@@ -48,7 +48,7 @@ export function CategorySection({ category, index }: CategorySectionProps) {
 
   return (
     <div 
-      className="animate-slide-in"
+      className="animate-slide-in mb-6"
       style={{ animationDelay: `${index * 0.1}s` }}
     >
       <button
