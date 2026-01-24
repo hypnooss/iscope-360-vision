@@ -15,11 +15,22 @@ const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; classNa
   pending: { icon: AlertTriangle, className: 'text-muted-foreground bg-muted/50 border-muted', label: 'Pendente' },
 };
 
-const severityColors: Record<string, string> = {
+// Cores para checks que FALHARAM ou tem WARNING (cores alarmantes)
+const severityColorsFail: Record<string, string> = {
   critical: 'bg-destructive/20 text-destructive',
   high: 'bg-warning/20 text-warning',
   medium: 'bg-primary/20 text-primary',
   low: 'bg-muted text-muted-foreground',
+  info: 'bg-muted text-muted-foreground',
+};
+
+// Cores para checks que PASSARAM (cores neutras)
+const severityColorsPass: Record<string, string> = {
+  critical: 'bg-muted text-muted-foreground',
+  high: 'bg-muted text-muted-foreground',
+  medium: 'bg-muted text-muted-foreground',
+  low: 'bg-muted text-muted-foreground',
+  info: 'bg-muted text-muted-foreground',
 };
 
 export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
@@ -51,7 +62,12 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h4 className="font-medium text-foreground truncate">{check.name}</h4>
-            <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium uppercase", severityColors[check.severity])}>
+            <span className={cn(
+              "text-xs px-2 py-0.5 rounded-full font-medium uppercase", 
+              normalizedStatus === 'pass' 
+                ? (severityColorsPass[check.severity] || 'bg-muted text-muted-foreground')
+                : (severityColorsFail[check.severity] || 'bg-muted text-muted-foreground')
+            )}>
               {check.severity}
             </span>
           </div>
