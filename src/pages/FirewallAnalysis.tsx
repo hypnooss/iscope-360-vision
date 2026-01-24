@@ -241,13 +241,13 @@ export default function FirewallAnalysis() {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
-          <PageBreadcrumb
-            items={[
-              { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
-              { label: 'Firewalls', href: '/scope-firewall/firewalls' },
-              { label: firewall?.name || 'Análise' },
-            ]}
-          />
+        <PageBreadcrumb
+          items={[
+            { label: 'Firewall', href: '/scope-firewall/firewalls' },
+            { label: 'Relatórios', href: '/scope-firewall/reports' },
+            { label: firewall?.name || 'Análise' },
+          ]}
+        />
           <Button variant="ghost" onClick={() => navigate('/scope-firewall/firewalls')} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
@@ -266,8 +266,8 @@ export default function FirewallAnalysis() {
       <div className="p-6 lg:p-8">
         <PageBreadcrumb
           items={[
-            { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
-            { label: 'Firewalls', href: '/scope-firewall/firewalls' },
+            { label: 'Firewall', href: '/scope-firewall/firewalls' },
+            { label: 'Relatórios', href: '/scope-firewall/reports' },
             { label: firewall?.name || 'Análise de Compliance' },
           ]}
         />
