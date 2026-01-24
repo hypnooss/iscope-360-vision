@@ -292,7 +292,8 @@ export function BlueprintsManagement({ category }: Props) {
     }));
   };
 
-  const getStepsCount = (blueprint: Blueprint) => {
+  const getStepsCount = (blueprint: Blueprint | null) => {
+    if (!blueprint) return 0;
     return blueprint.collection_steps?.steps?.length || 0;
   };
 
