@@ -1,139 +1,113 @@
 
+# Plano: Correção do Card de Vulnerabilidades (CVEs) Ausente
 
-# Plano de Implementacao - Melhorias na Pagina de Analise de Compliance
+## Diagnóstico
 
-## Resumo do Problema
+Após investigação detalhada no banco de dados, identifiquei a causa raiz do problema:
 
-Identificamos dois problemas na pagina de analise de compliance do FortiGate:
+### Dados Encontrados
+| Campo | Valor |
+|-------|-------|
+| `raw_data.system_firmware.version` | `"v7.2.10"` |
+| `raw_data.system_firmware.results.current.version` | `"v7.2.10"` |
+| `report_data.firmwareVersion` | `null` (não foi extraído!) |
 
-1. **Card de Vulnerabilidades (CVEs) ausente**: O componente `CVESection` nao esta sendo renderizado porque o campo `firmwareVersion` esta vazio/nulo nos dados de analise. O blueprint de coleta atualizado inclui o endpoint de status do sistema, mas a versao do firmware nao esta sendo extraida corretamente.
-
-2. **Badge de severidade confusa**: Quando um check esta em conformidade (status: pass), o badge de severidade "CRITICAL" ainda aparece em vermelho vibrante, dando a impressao visual de que algo esta errado.
-
----
-
-## Solucao Proposta
-
-### 1. Corrigir Extracao de Firmware Version
-
-**Problema**: O `agent-task-result` nao esta extraindo a versao do firmware dos dados coletados pelo agente.
-
-**Solucao**: Atualizar a funcao de processamento no edge function `agent-task-result` para extrair a versao do firmware dos endpoints de status do sistema:
-
-- Buscar em `raw_data.system_status.version`
-- Buscar em `raw_data.system_firmware.current.version`
-- Aplicar regex para normalizar o formato (ex: "v7.2.5" -> "7.2.5")
-
-**Arquivos afetados**:
-- `supabase/functions/agent-task-result/index.ts`
+### Causa Raiz
+A edge function `agent-task-result` não está extraindo corretamente a versão do firmware dos dados brutos porque:
+1. O Source 1 (`system_status.results.version`) não existe nos dados
+2. O Source 2 verifica `fwObj.current` (que não existe) antes de `fwObj.version` (que existe!)
+3. O Source 3 (fallback genérico) deveria pegar, mas a ordem de verificação pode estar causando problemas
 
 ---
 
-### 2. Cores Contextuais para Badge de Severidade
+## Solução
 
-**Problema Atual**: O badge de severidade usa cores fixas:
-- CRITICAL = vermelho
-- HIGH = laranja/amarelo
-- MEDIUM = azul
-- LOW = cinza
+### Modificação na Edge Function `agent-task-result`
 
-**Solucao**: Modificar as cores do badge para considerar o status do check:
-- Se `status === 'pass'`: usar cores neutras (cinza/verde suave) independente da severidade
-- Se `status === 'fail'` ou `status === 'warning'`: manter as cores atuais
+Atualizar o bloco Source 2 (linhas 270-278) para verificar `system_firmware.version` diretamente ANTES de tentar caminhos aninhados:
 
-Esta abordagem:
-- Mantem a informacao da severidade visivel
-- Remove o alarme visual desnecessario em checks aprovados
-- Melhora a experiencia do usuario ao interpretar rapidamente os resultados
-
-**Arquivos afetados**:
-- `src/components/ComplianceCard.tsx`
-
----
-
-## Detalhes Tecnicos
-
-### Modificacao 1: agent-task-result/index.ts
-
-```typescript
-// Adicionar funcao para extrair versao limpa
-function extractVersion(versionString: string): string {
-  if (!versionString) return "";
-  const match = versionString.match(/(\d+\.\d+\.?\d*)/);
-  return match ? match[1] : "";
+```text
+// Source 2: system_firmware - multiple paths
+if (!firmwareVersion && systemFirmware) {
+  const fwObj = systemFirmware as Record<string, unknown>;
+  
+  // Direct version field (most common in FortiOS API responses)
+  if (fwObj.version) {
+    firmwareVersion = extractFirmwareVersion(fwObj.version);
+  }
+  
+  // Nested: results.current.version
+  if (!firmwareVersion) {
+    const resultsObj = fwObj.results as Record<string, unknown> | undefined;
+    const current = (fwObj.current || resultsObj?.current) as Record<string, unknown> | undefined;
+    if (current?.version) {
+      firmwareVersion = extractFirmwareVersion(current.version);
+    }
+  }
 }
-
-// Na funcao de processamento, buscar versao em multiplas fontes:
-const systemStatus = rawDataMap.get('system_status') || {};
-const systemFirmware = rawDataMap.get('system_firmware') || {};
-
-let firmwareVersion = extractVersion(
-  systemStatus?.version || 
-  systemFirmware?.current?.version ||
-  systemInfo?.version || 
-  ""
-);
 ```
 
-### Modificacao 2: ComplianceCard.tsx
+### Arquivo Afetado
+- `supabase/functions/agent-task-result/index.ts` (linhas 270-278)
 
-```typescript
-// Cores para checks que PASSARAM (neutras)
-const severityColorsPass: Record<string, string> = {
-  critical: 'bg-muted text-muted-foreground',
-  high: 'bg-muted text-muted-foreground',
-  medium: 'bg-muted text-muted-foreground',
-  low: 'bg-muted text-muted-foreground',
-};
+---
 
-// Cores para checks que FALHARAM ou tem WARNING (alarmantes)
-const severityColorsFail: Record<string, string> = {
-  critical: 'bg-destructive/20 text-destructive',
-  high: 'bg-warning/20 text-warning',
-  medium: 'bg-primary/20 text-primary',
-  low: 'bg-muted text-muted-foreground',
-};
+## Fluxo de Dados Esperado
 
-// Uso no componente:
-const severityClass = normalizedStatus === 'pass' 
-  ? severityColorsPass[check.severity] 
-  : severityColorsFail[check.severity];
+```text
++------------------+     +-----------------------+     +-------------------+
+|  Agente coleta   | --> | agent-task-result     | --> | analysis_history  |
+|  system_firmware |     | extrai firmwareVersion|     | firmwareVersion   |
++------------------+     +-----------------------+     +-------------------+
+                                                              |
+                                                              v
+                                                     +-------------------+
+                                                     | Dashboard.tsx     |
+                                                     | renderiza         |
+                                                     | CVESection        |
+                                                     +-------------------+
 ```
 
 ---
 
-## Impacto Visual Esperado
+## Passos de Implementação
 
-### Antes (Problema)
-```
-+------------------------------------------+
-| [OK] RDP Exposto para Internet  CRITICAL |
-|      (badge vermelho alarme)             |
-+------------------------------------------+
-```
+1. **Atualizar `agent-task-result/index.ts`**
+   - Modificar o bloco Source 2 (linhas 270-278)
+   - Adicionar verificação direta de `fwObj.version` como primeira opção
+   - Manter fallbacks existentes para compatibilidade
 
-### Depois (Solucao)
-```
-+------------------------------------------+
-| [OK] RDP Exposto para Internet  CRITICAL |
-|      (badge cinza neutro)                |
-+------------------------------------------+
+2. **Deploy da Edge Function**
+   - A função será deployada automaticamente
+
+3. **Testar**
+   - Executar uma nova análise de firewall
+   - Verificar se `firmwareVersion` é preenchido no `analysis_history`
+   - Confirmar que o card de CVEs aparece no Dashboard
+
+---
+
+## Impacto Visual
+
+Após a correção, a página de análise de compliance exibirá:
+
+```text
++--------------------------------------------------+
+| CVEs Conhecidos - FortiOS 7.2.10                 |
+| Vulnerabilidades públicas registradas no NIST NVD|
+|                                                  |
+|  [CRITICAL] CVE-2024-XXXXX (9.8)                |
+|  [HIGH] CVE-2024-YYYYY (7.5)                    |
+|  ...                                             |
++--------------------------------------------------+
 ```
 
 ---
 
-## Passos de Implementacao
+## Observação Importante
 
-1. **Atualizar edge function `agent-task-result`**:
-   - Adicionar funcao `extractVersion()`
-   - Modificar logica de extracao do firmware para buscar em multiplos campos
-   - Garantir que `firmwareVersion` seja incluido no resultado
+As análises existentes no banco **não serão automaticamente corrigidas**. O campo `firmwareVersion` só será preenchido em **novas análises** realizadas após o deploy desta correção.
 
-2. **Atualizar `ComplianceCard.tsx`**:
-   - Criar mapeamento de cores contextual baseado no status
-   - Aplicar classe CSS apropriada ao badge de severidade
-
-3. **Testar**:
-   - Executar nova analise para verificar se CVESection aparece
-   - Verificar se checks aprovados exibem badges em cores neutras
-
+Para ver o card de vulnerabilidades, será necessário:
+1. Aguardar o deploy da correção
+2. Executar uma nova análise clicando em "Reanalisar"
