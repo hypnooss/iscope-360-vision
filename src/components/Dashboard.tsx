@@ -73,8 +73,9 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
             <ScoreGauge score={report.overallScore} />
           </div>
           
-          {/* Firewall Info - lado direito do score */}
-          <div className="lg:col-span-2 glass-card rounded-xl p-6 border border-primary/20">
+          {/* Firewall Info + Stats combinados */}
+          <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col">
+            {/* Parte superior: Info do Firewall */}
             <div className="flex items-start gap-4">
               {/* Fortinet Badge */}
               <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
@@ -83,7 +84,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
               </div>
               
               {/* Info Grid */}
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
                 <div className="flex items-center gap-2">
                   <Shield className="w-4 h-4 text-primary flex-shrink-0" />
                   <span className="text-muted-foreground text-sm">Nome:</span>
@@ -120,39 +121,42 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                 </div>
               </div>
             </div>
+            
+            {/* Separador visual */}
+            <div className="border-t border-border/50 my-4" />
+            
+            {/* Parte inferior: Stats Cards compactos */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <StatCard
+                title="Total"
+                value={report.totalChecks}
+                icon={ListChecks}
+                variant="default"
+                compact
+              />
+              <StatCard
+                title="Aprovadas"
+                value={report.passed}
+                icon={CheckCircle}
+                variant="success"
+                compact
+              />
+              <StatCard
+                title="Falhas"
+                value={report.failed}
+                icon={XCircle}
+                variant="destructive"
+                compact
+              />
+              <StatCard
+                title="Alertas"
+                value={report.warnings}
+                icon={AlertTriangle}
+                variant="warning"
+                compact
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard
-            title="Total de Verificações"
-            value={report.totalChecks}
-            icon={ListChecks}
-            variant="default"
-            delay={0.1}
-          />
-          <StatCard
-            title="Aprovadas"
-            value={report.passed}
-            icon={CheckCircle}
-            variant="success"
-            delay={0.2}
-          />
-          <StatCard
-            title="Falhas"
-            value={report.failed}
-            icon={XCircle}
-            variant="destructive"
-            delay={0.3}
-          />
-          <StatCard
-            title="Alertas"
-            value={report.warnings}
-            icon={AlertTriangle}
-            variant="warning"
-            delay={0.4}
-          />
         </div>
 
         {/* Critical Issues Banner */}
