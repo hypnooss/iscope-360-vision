@@ -82,6 +82,17 @@ interface ComplianceResult {
 // Helper Functions
 // ============================================
 
+/**
+ * Extracts clean version number from a version string
+ * Examples: "v7.2.5 build1234" -> "7.2.5", "FortiOS-7.2.5" -> "7.2.5"
+ */
+function extractFirmwareVersion(versionString: unknown): string {
+  if (!versionString || typeof versionString !== 'string') return '';
+  // Match version pattern like 7.2.5 or 7.2
+  const match = versionString.match(/(\d+\.\d+\.?\d*)/);
+  return match ? match[1] : '';
+}
+
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const keys = path.split('.');
   let current: unknown = obj;
@@ -236,6 +247,9 @@ function processComplianceRules(
   // Extract system info if available
   const systemInfo: Record<string, unknown> = {};
   const systemStatus = rawData['system_status'] as Record<string, unknown> | undefined;
+  const systemFirmware = rawData['system_firmware'] as Record<string, unknown> | undefined;
+  
+  // Try to get system info from multiple sources
   if (systemStatus?.results) {
     const results = systemStatus.results as Record<string, unknown>;
     systemInfo.hostname = results.hostname;
@@ -244,15 +258,55 @@ function processComplianceRules(
     systemInfo.model = results.model;
   }
   
-  // Extract firmware version
-  const firmwareVersion = (systemInfo.version as string) || undefined;
+  // Extract firmware version from multiple possible sources
+  let firmwareVersion = '';
+  
+  // Source 1: system_status.results.version
+  if (systemStatus?.results) {
+    const results = systemStatus.results as Record<string, unknown>;
+    firmwareVersion = extractFirmwareVersion(results.version);
+  }
+  
+  // Source 2: system_firmware.current.version
+  if (!firmwareVersion && systemFirmware) {
+    const fwObj = systemFirmware as Record<string, unknown>;
+    const resultsObj = fwObj.results as Record<string, unknown> | undefined;
+    const current = (fwObj.current || resultsObj?.current) as Record<string, unknown> | undefined;
+    if (current?.version) {
+      firmwareVersion = extractFirmwareVersion(current.version);
+    }
+  }
+  
+  // Source 3: Check raw_data for any version-like field
+  if (!firmwareVersion) {
+    for (const [key, value] of Object.entries(rawData)) {
+      if (typeof value === 'object' && value !== null) {
+        const obj = value as Record<string, unknown>;
+        // Check results.version pattern
+        if (obj.results && typeof obj.results === 'object') {
+          const results = obj.results as Record<string, unknown>;
+          if (results.version) {
+            firmwareVersion = extractFirmwareVersion(results.version);
+            if (firmwareVersion) break;
+          }
+        }
+        // Check direct version field
+        if (obj.version) {
+          firmwareVersion = extractFirmwareVersion(obj.version);
+          if (firmwareVersion) break;
+        }
+      }
+    }
+  }
+  
+  console.log(`Extracted firmware version: "${firmwareVersion}" from raw data`);
   
   return {
     score,
     checks,
     categories,
     system_info: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
-    firmwareVersion,
+    firmwareVersion: firmwareVersion || undefined,
   };
 }
 
