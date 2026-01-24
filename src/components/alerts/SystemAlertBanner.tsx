@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, X, Settings, Info, AlertCircle } from 'lucide-react';
+import { AlertTriangle, X, Settings, Info, AlertCircle, Shield } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,7 +21,7 @@ export function SystemAlertBanner() {
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
 
   useEffect(() => {
-    if (role === 'super_admin') {
+    if (role === 'super_admin' || role === 'workspace_admin') {
       fetchActiveAlerts();
     }
   }, [role]);
@@ -86,7 +86,7 @@ export function SystemAlertBanner() {
   // Filtrar alertas dispensados localmente
   const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
 
-  if (role !== 'super_admin' || visibleAlerts.length === 0) {
+  if (!['super_admin', 'workspace_admin'].includes(role || '') || visibleAlerts.length === 0) {
     return null;
   }
 
@@ -137,6 +137,20 @@ export function SystemAlertBanner() {
               <Link to="/settings">
                 <Settings className="h-3.5 w-3.5 mr-1.5" />
                 Ver Configurações
+              </Link>
+            </Button>
+          )}
+          
+          {primaryAlert.alert_type === 'firewall_analysis_completed' && (primaryAlert.metadata as Record<string, unknown>)?.firewall_id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              asChild
+            >
+              <Link to={`/scope-firewall/firewalls/${(primaryAlert.metadata as Record<string, unknown>).firewall_id}/analysis`}>
+                <Shield className="h-3.5 w-3.5 mr-1.5" />
+                Ver Análise
               </Link>
             </Button>
           )}
