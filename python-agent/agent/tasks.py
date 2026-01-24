@@ -58,10 +58,12 @@ class TaskExecutor:
         
         for i, step in enumerate(steps):
             step_id = step.get('id', 'unknown')
-            executor_type = step.get('executor', 'unknown')
+            # Support both 'type' (from blueprint) and 'executor' (legacy) field names
+            executor_type = step.get('type') or step.get('executor', 'unknown')
             
             executor = self._executors.get(executor_type)
             if not executor:
+                self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
                 results[step_id] = {'error': f"Executor desconhecido: {executor_type}"}
                 errors.append(f"{step_id}: Executor desconhecido")
                 continue
