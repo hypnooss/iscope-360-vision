@@ -24,7 +24,11 @@ const severityColors: Record<string, string> = {
 
 export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const config = statusConfig[check.status];
+  
+  // Normalize status: 'warn' -> 'warning', ensure valid status
+  const rawStatus = check.status as string;
+  const normalizedStatus = (rawStatus === 'warn' ? 'warning' : rawStatus) as ComplianceStatus;
+  const config = statusConfig[normalizedStatus] || statusConfig.pending;
   const StatusIcon = config.icon;
   const hasEvidence = check.evidence && check.evidence.length > 0;
 
