@@ -285,9 +285,12 @@ export type Database = {
           description: string | null
           device_type_id: string
           evaluation_logic: Json
+          fail_description: string | null
           id: string
           is_active: boolean
           name: string
+          pass_description: string | null
+          recommendation: string | null
           severity: Database["public"]["Enums"]["rule_severity"]
           updated_at: string
           weight: number
@@ -299,9 +302,12 @@ export type Database = {
           description?: string | null
           device_type_id: string
           evaluation_logic: Json
+          fail_description?: string | null
           id?: string
           is_active?: boolean
           name: string
+          pass_description?: string | null
+          recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
           updated_at?: string
           weight?: number
@@ -313,9 +319,12 @@ export type Database = {
           description?: string | null
           device_type_id?: string
           evaluation_logic?: Json
+          fail_description?: string | null
           id?: string
           is_active?: boolean
           name?: string
+          pass_description?: string | null
+          recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
           updated_at?: string
           weight?: number
