@@ -151,7 +151,7 @@ export default function FirewallAnalysis() {
 
   return (
     <AppLayout>
-      <div className="p-2">
+      <div className="p-6 lg:p-8">
         <PageBreadcrumb
           items={[
             { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
