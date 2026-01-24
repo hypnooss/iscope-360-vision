@@ -1,102 +1,109 @@
 
-# Plano: Corrigir Leitura do Campo `action` no HTTPSessionExecutor
+# Plano: Corrigir Endpoints da API SonicOS 7.x no Blueprint
 
 ## Problema Identificado
 
-O executor `http_session` não consegue identificar corretamente a ação (`login`, `request`, `logout`) porque:
+O login/logout agora funcionam corretamente, mas os endpoints de coleta estão retornando erros HTTP porque os paths no blueprint não seguem a estrutura correta da API SonicOS 7.x:
 
-1. O blueprint define o campo `action` **no nível do step**
-2. O executor Python procura o campo `action` **dentro de `config`**
+- **HTTP 404**: Recurso não existe no path especificado
+- **HTTP 405**: Método não permitido (path existe mas não aceita GET)
+- **HTTP 400**: Requisição malformada (path parcialmente correto)
 
-### Estrutura Atual no Blueprint
-```json
-{
-  "id": "auth_login",
-  "type": "http_session",
-  "action": "login",     // <-- Nível do step
-  "method": "POST",
-  "path": "/api/sonicos/auth"
-}
-```
-
-### Código Atual no Executor
-```python
-config = step.get('config', {})  # config = {}
-action = config.get('action', 'request')  # Sempre retorna 'request'!
-```
-
-Como `config` é um dicionário vazio (o blueprint não usa essa estrutura), o `action` sempre fica como `'request'` (default), causando o erro "No active session found" no login.
+### Causa Raiz
+A API SonicOS 7.x usa namespaces específicos:
+- `/security-services/` para módulos de segurança (AV, IPS, Anti-Spyware, etc.)
+- `/reporting/` para status e licenças
+- Sufixos específicos como `/base`, `/filter`, `/status`
 
 ---
 
-## Solução
+## Correções Necessárias
 
-Modificar o executor `http_session.py` para ler o `action` diretamente do step, com fallback para o config:
+### Tabela de Endpoints Corrigidos
 
-```python
-# Antes (incorreto)
-config = step.get('config', {})
-action = config.get('action', 'request')
-
-# Depois (correto - suporta ambas estruturas)
-config = step.get('config', {})
-action = step.get('action') or config.get('action', 'request')
-```
-
----
-
-## Alteração Técnica
-
-### Arquivo: `python-agent/agent/executors/http_session.py`
-
-Modificar o método `run()` (linhas 64-66):
-
-```python
-def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    config = step.get('config', {})
-    step_id = step.get('id', 'unknown')
-    # Suporta 'action' no nível do step OU dentro de config
-    action = step.get('action') or config.get('action', 'request')
-```
-
-Também precisa atualizar os métodos internos para ler outros campos (`method`, `path`, `headers`) diretamente do step quando não existir `config`:
-
-```python
-def _do_login(self, step_id: str, config: Dict[str, Any], context: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
-    method = step.get('method') or config.get('method', 'POST')
-    path = step.get('path') or config.get('path', '/api/sonicos/auth')
-    headers = step.get('headers') or config.get('headers', {})
-    # ... resto do método
-```
+| Step ID | Path Atual (Errado) | Path Correto |
+|---------|---------------------|--------------|
+| `system_status` | `/api/sonicos/reporting/system/status` | `/api/sonicos/reporting/status` |
+| `gateway_av` | `/api/sonicos/gateway-anti-virus/base` | `/api/sonicos/security-services/gateway-anti-virus/base` |
+| `ips` | `/api/sonicos/intrusion-prevention/base` | `/api/sonicos/security-services/intrusion-prevention/base` |
+| `anti_spyware` | `/api/sonicos/anti-spyware/base` | `/api/sonicos/security-services/anti-spyware/base` |
+| `app_control` | `/api/sonicos/app-control/policies` | `/api/sonicos/security-services/app-control/policies` |
+| `geo_ip` | `/api/sonicos/geo-ip/base` | `/api/sonicos/security-services/geo-ip/filter` |
+| `botnet` | `/api/sonicos/botnet/base` | `/api/sonicos/security-services/botnet/filter` |
+| `content_filter` | `/api/sonicos/content-filter/profiles` | `/api/sonicos/security-services/content-filter/profiles` |
+| `vpn_ssl` | `/api/sonicos/ssl-vpn/server/settings` | `/api/sonicos/vpn/ssl-vpn/server` |
+| `vpn_ipsec` | `/api/sonicos/vpn/policies/site-to-site/ipv4` | `/api/sonicos/vpn/policies/ipv4` |
+| `log_settings` | `/api/sonicos/log/automation` | `/api/sonicos/log/settings` |
+| `administration` | `/api/sonicos/administration/base-settings` | `/api/sonicos/administration/settings` |
+| `licenses` | `/api/sonicos/licenses/status` | `/api/sonicos/reporting/licenses` |
 
 ---
 
-## Problema Secundário: Steps Intermediários
+## Implementação
 
-Os steps intermediários (`system_status`, `gateway_av`, etc.) usam `type: http_request` com `use_session: true`. Isso não funciona porque o `HTTPRequestExecutor` não compartilha sessões com `HTTPSessionExecutor`.
+### Alteração: Migração SQL
 
-### Opções de Solução
+Atualizar o blueprint `f1c656c0-75ed-43c6-b0a3-696498833094` com os paths corrigidos:
 
-1. **Alterar o blueprint** para usar `type: http_session` em todos os steps
-2. **Ou** modificar o `TaskExecutor` para converter automaticamente steps com `use_session: true` para `http_session`
-
-A opção 2 é mais robusta e não requer nova migração SQL.
-
----
-
-## Resumo das Alterações
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `python-agent/agent/executors/http_session.py` | Ler `action`, `method`, `path`, `headers` do nível do step (com fallback para config) |
-| `python-agent/agent/tasks.py` | Converter automaticamente steps com `use_session: true` para executor `http_session` |
+```sql
+UPDATE device_blueprints 
+SET collection_steps = '{
+  "steps": [
+    {
+      "id": "auth_login",
+      "type": "http_session",
+      "action": "login",
+      "method": "POST",
+      "path": "/api/sonicos/auth",
+      "headers": {"Content-Type": "application/json"},
+      "body_template": "{\"user\": \"{{auth_username}}\", \"password\": \"{{auth_password}}\"}",
+      "save_session": true
+    },
+    {"id": "system_status", "type": "http_request", "method": "GET", "path": "/api/sonicos/reporting/status", "use_session": true},
+    {"id": "version", "type": "http_request", "method": "GET", "path": "/api/sonicos/version", "use_session": true},
+    {"id": "interfaces", "type": "http_request", "method": "GET", "path": "/api/sonicos/interfaces/ipv4", "use_session": true},
+    {"id": "access_rules", "type": "http_request", "method": "GET", "path": "/api/sonicos/access-rules/ipv4", "use_session": true},
+    {"id": "nat_policies", "type": "http_request", "method": "GET", "path": "/api/sonicos/nat-policies/ipv4", "use_session": true},
+    {"id": "gateway_av", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/gateway-anti-virus/base", "use_session": true},
+    {"id": "ips", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/intrusion-prevention/base", "use_session": true},
+    {"id": "anti_spyware", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/anti-spyware/base", "use_session": true},
+    {"id": "app_control", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/app-control/policies", "use_session": true},
+    {"id": "content_filter", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/content-filter/profiles", "use_session": true},
+    {"id": "geo_ip", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/geo-ip/filter", "use_session": true},
+    {"id": "botnet", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/botnet/filter", "use_session": true},
+    {"id": "vpn_ssl", "type": "http_request", "method": "GET", "path": "/api/sonicos/vpn/ssl-vpn/server", "use_session": true},
+    {"id": "vpn_ipsec", "type": "http_request", "method": "GET", "path": "/api/sonicos/vpn/policies/ipv4", "use_session": true},
+    {"id": "log_settings", "type": "http_request", "method": "GET", "path": "/api/sonicos/log/settings", "use_session": true},
+    {"id": "administration", "type": "http_request", "method": "GET", "path": "/api/sonicos/administration/settings", "use_session": true},
+    {"id": "licenses", "type": "http_request", "method": "GET", "path": "/api/sonicos/reporting/licenses", "use_session": true},
+    {
+      "id": "auth_logout",
+      "type": "http_session",
+      "action": "logout",
+      "method": "DELETE",
+      "path": "/api/sonicos/auth",
+      "use_session": true
+    }
+  ]
+}'::jsonb,
+updated_at = now()
+WHERE id = 'f1c656c0-75ed-43c6-b0a3-696498833094';
+```
 
 ---
 
 ## Resultado Esperado
 
-Após as correções:
-1. Step `auth_login` será corretamente identificado como ação `login` e criará a sessão
-2. Steps intermediários usarão a sessão estabelecida
-3. Step `auth_logout` encerrará a sessão corretamente
-4. Análise do SonicWall funcionará completamente
+Após a correção:
+1. Todos os endpoints retornarão HTTP 200 com dados JSON
+2. O relatório de compliance terá dados reais do SonicWall
+3. O score será calculado corretamente baseado nas configurações do dispositivo
+
+---
+
+## Observação Importante
+
+Os paths exatos podem variar dependendo da versão específica do SonicOS. Se alguns endpoints ainda falharem após esta correção, podemos:
+1. Analisar o response body dos erros para entender o problema
+2. Consultar a documentação específica da versão do firmware
+3. Testar manualmente os endpoints via cURL no ambiente do cliente
