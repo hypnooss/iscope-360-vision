@@ -1,78 +1,156 @@
 
-# Plano: Criar Regras de Compliance para SonicWall
 
-## Diagnóstico Confirmado
+# Plano: Reorganizar Interface de Coletas por Tipo de Dispositivo
 
-A coleta do SonicWall está funcionando perfeitamente. Os dados foram coletados com sucesso incluindo:
-- **version**: modelo, serial, firmware, uptime
-- **interfaces**: configurações de rede IPv4
-- **access_rules**: regras de firewall com DPI, Botnet Filter, GeoIP, etc.
+## Problema Atual
 
-O problema é que **não existem regras de compliance cadastradas para SonicWall**. O backend verifica se há regras antes de gerar o relatório:
+A página de Coletas (`/collections`) exibe todos os device types, blueprints e regras de compliance em seções separadas, mesmo que cada um esteja vinculado a um tipo específico de dispositivo. Isso causa:
 
-```typescript
-if (rules && rules.length > 0) {
-  // Processa e gera relatório
-}
+1. **Confusão visual** - Regras do FortiGate e SonicWall aparecem misturadas
+2. **Falta de contexto** - Não fica claro qual blueprint/regra pertence a qual dispositivo
+3. **Navegação ineficiente** - Para gerenciar um dispositivo completo, precisa rolar por 3 seções diferentes
+
+## Solução Proposta
+
+Reorganizar a interface para que cada **Device Type** seja o elemento central, com seus blueprints e regras de compliance aninhados.
+
+### Nova Estrutura Visual
+
+```text
+Coletas
+├── Tab: Firewalls
+│   ├── FortiGate (card expansível)
+│   │   ├── Blueprints (2)
+│   │   └── Regras de Compliance (23)
+│   ├── SonicWall TZ (card expansível)
+│   │   ├── Blueprints (1)
+│   │   └── Regras de Compliance (6)
+│   └── [+ Novo Tipo de Dispositivo]
+│
+├── Tab: Microsoft 365
+└── Tab: Domínios Externos
 ```
 
-Como `rules.length === 0`, nenhum relatório é criado.
+### Layout do Card por Device Type
+
+Cada device type terá um card com:
+
+1. **Header do Card**
+   - Ícone do dispositivo
+   - Nome (Fabricante - Modelo)
+   - Código
+   - Badge de status (Ativo/Inativo)
+   - Botões: Editar | Excluir
+
+2. **Accordion interno com 2 seções**
+   - **Blueprints** - Tabela compacta com os blueprints deste device
+   - **Regras de Compliance** - Tabela compacta com as regras deste device
+
+3. **Ações contextuais**
+   - "+ Novo Blueprint" dentro da seção Blueprints
+   - "+ Nova Regra" dentro da seção Regras
 
 ---
 
-## Solução
+## Alterações Técnicas
 
-Criar uma migração SQL que insira regras de compliance específicas para SonicWall baseadas nos dados coletados.
+### 1. Novo Componente: `DeviceTypeCard.tsx`
 
-### Regras a Criar (baseadas nos dados coletados)
+Componente que renderiza um card para cada device type, contendo:
+- Header com informações do device
+- Accordion com seções de Blueprints e Compliance Rules
+- CRUD inline para cada seção
 
-| Código | Nome | Categoria | Severidade | O que verifica |
-|--------|------|-----------|------------|----------------|
-| SW_DPI_ENABLED | Deep Packet Inspection | Segurança de Rede | high | Se DPI está ativo nas regras |
-| SW_BOTNET_FILTER | Filtro Botnet | Proteção Avançada | high | Se proteção botnet está ativa |
-| SW_GEOIP_FILTER | Filtro GeoIP | Proteção Avançada | medium | Se filtragem geográfica está habilitada |
-| SW_DPI_SSL_CLIENT | DPI SSL Client | Inspeção SSL | medium | Se inspeção SSL client está ativa |
-| SW_DPI_SSL_SERVER | DPI SSL Server | Inspeção SSL | medium | Se inspeção SSL server está ativa |
-| SW_LOGGING_ENABLED | Logging de Regras | Auditoria | medium | Se logging está habilitado nas regras |
+### 2. Modificar: `CollectionsPage.tsx`
+
+- Remover as 3 seções separadas (DeviceTypes, Blueprints, ComplianceRules)
+- Renderizar uma lista de `DeviceTypeCard` para cada device da categoria
+- Adicionar botão "+ Novo Tipo de Dispositivo" no header
+
+### 3. Refatorar Componentes Existentes
+
+**Opção A (Reuso):** Manter os componentes existentes e usá-los dentro do `DeviceTypeCard` passando o `deviceTypeId` como filtro
+
+**Opção B (Novo):** Criar versões compactas dos componentes para uso dentro do accordion
 
 ---
 
-## Estrutura das Regras
+## Fluxo de Usuário Melhorado
 
-Cada regra terá a seguinte estrutura no `evaluation_logic`:
+**Antes:**
+1. Abrir aba Firewalls
+2. Procurar FortiGate na tabela de Device Types
+3. Rolar para Blueprints e filtrar por FortiGate
+4. Rolar para Regras e filtrar por FortiGate
 
-```json
-{
-  "source_key": "access_rules",
-  "field_path": "access_rules.0.ipv4.dpi",
-  "conditions": [
-    { "operator": "equals", "value": true, "result": "pass" },
-    { "operator": "equals", "value": false, "result": "fail" }
-  ],
-  "default_result": "unknown"
-}
+**Depois:**
+1. Abrir aba Firewalls
+2. Clicar no card FortiGate para expandir
+3. Ver todos os blueprints e regras deste device em um só lugar
+
+---
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/components/admin/DeviceTypeCard.tsx` | Criar | Card expansível com blueprints e regras aninhados |
+| `src/pages/admin/CollectionsPage.tsx` | Modificar | Usar DeviceTypeCard ao invés de 3 componentes separados |
+| `src/components/admin/DeviceTypesManagement.tsx` | Manter | Reutilizar diálogos de CRUD |
+| `src/components/admin/BlueprintsManagement.tsx` | Modificar | Adicionar prop `deviceTypeId` para filtrar |
+| `src/components/admin/ComplianceRulesManagement.tsx` | Modificar | Adicionar prop `deviceTypeId` para filtrar |
+
+---
+
+## Wireframe Conceitual
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Coletas                                                 │
+│ Gerencie tipos de dispositivos, blueprints e regras    │
+├─────────────────────────────────────────────────────────┤
+│ [Firewalls] [Microsoft 365] [Domínios Externos]        │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ 🛡️ Fortinet - FortiGate          fortigate  [Ativo]│ │
+│ │                                   [Editar][Excluir] │ │
+│ ├─────────────────────────────────────────────────────┤ │
+│ │ ▼ Blueprints (2)                    [+ Blueprint]   │ │
+│ │   ┌─────────────────────────────────────────────┐   │ │
+│ │   │ Nome              │ Versão │ Steps │ Status│   │ │
+│ │   ├───────────────────┼────────┼───────┼───────┤   │ │
+│ │   │ FortiGate Full    │ any    │ 12    │ Ativo │   │ │
+│ │   │ FortiGate Quick   │ 7.x    │ 5     │ Ativo │   │ │
+│ │   └─────────────────────────────────────────────┘   │ │
+│ │                                                     │ │
+│ │ ▼ Regras de Compliance (23)            [+ Regra]   │ │
+│ │   ┌─────────────────────────────────────────────┐   │ │
+│ │   │ Código      │ Nome          │ Sev. │ Status│   │ │
+│ │   ├─────────────┼───────────────┼──────┼───────┤   │ │
+│ │   │ FW_ADMIN_... │ Admin HTTPS  │ Alta │ Ativo │   │ │
+│ │   │ FW_SSH_...   │ SSH Timeout  │ Média│ Ativo │   │ │
+│ │   │ ...          │ ...          │ ...  │ ...   │   │ │
+│ │   └─────────────────────────────────────────────┘   │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ 🛡️ SonicWall - TZ                sonicwall_tz [Ativo]│
+│ │                                   [Editar][Excluir] │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ [+ Novo Tipo de Dispositivo]                           │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Alterações
+## Benefícios
 
-### Arquivo Novo
+1. **Hierarquia clara** - Device Type como elemento central
+2. **Contexto imediato** - Ver tudo relacionado a um device em um lugar
+3. **Menos scroll** - Cards colapsáveis mantêm a página organizada
+4. **Ações contextuais** - Criar blueprint/regra já com device selecionado
+5. **Escalabilidade** - Funciona bem com 2 ou 20 device types
 
-**Migração SQL: `[timestamp]_add_sonicwall_compliance_rules.sql`**
-
-Insere 6 regras de compliance para o device type SonicWall TZ, permitindo que o sistema:
-1. Avalie os dados coletados contra critérios de segurança
-2. Calcule um score de compliance
-3. Gere um relatório visual com categorias e status
-
----
-
-## Resultado Esperado
-
-Após a migração:
-1. A próxima coleta do SonicWall gerará um relatório de compliance
-2. O score será calculado baseado nas regras
-3. O histórico de análise será salvo no `analysis_history`
-4. Um alerta será criado notificando a conclusão
-5. A lista de firewalls mostrará o score do SonicWall
