@@ -499,7 +499,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 absolute right-2 top-2"
+                className="h-8 w-8 absolute right-2 top-1/2 -translate-y-1/2"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
               >
                 <ChevronRight className="w-4 h-4" />
