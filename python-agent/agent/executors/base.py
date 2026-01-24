@@ -4,43 +4,23 @@ from typing import Dict, Any
 
 class BaseExecutor(ABC):
     """
-    Classe base para todos os executores de tarefas.
+    Base class for all task executors.
+    Now receives step configuration and context instead of full task.
     """
 
     def __init__(self, logger):
         self.logger = logger
 
     @abstractmethod
-    def run(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Executa a tarefa e retorna o resultado.
+        Execute a step with the given context.
         
         Args:
-            task: Dicionário contendo:
-                - id: ID da tarefa
-                - type: Tipo da tarefa
-                - target: Informações do alvo (url, credenciais, etc)
-                - payload: Dados adicionais para execução
-                - priority: Prioridade
-                - expires_at: Data de expiração
+            step: Step configuration from blueprint
+            context: Execution context with credentials and target info
         
         Returns:
-            Dicionário com o resultado da execução.
-            Estrutura depende do tipo de tarefa.
-        
-        Raises:
-            TimeoutError: Se a execução exceder o tempo limite
-            Exception: Para outros erros de execução
+            Dict with data and/or error
         """
         pass
-
-    def validate_target(self, target: Dict[str, Any], required_fields: list) -> None:
-        """
-        Valida se o target contém os campos obrigatórios.
-        
-        Raises:
-            ValueError: Se algum campo obrigatório estiver faltando
-        """
-        missing = [f for f in required_fields if not target.get(f)]
-        if missing:
-            raise ValueError(f"Campos obrigatórios faltando no target: {', '.join(missing)}")

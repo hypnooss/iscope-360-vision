@@ -1,131 +1,111 @@
-import time
+"""
+Task Executor - Fetches, executes, and reports task results.
+Uses generic steps from blueprints instead of hardcoded logic.
+"""
+
 from typing import Dict, Any, Optional
+
+from agent.executors.http_request import HTTPRequestExecutor
+from agent.executors.ssh import SSHExecutor
+from agent.executors.snmp import SNMPExecutor
 
 
 class TaskExecutor:
-    """
-    Orquestra a busca e execução de tarefas recebidas do backend.
-    """
+    """Orchestrates task execution using generic executors."""
 
     def __init__(self, api, state, logger):
         self.api = api
         self.state = state
         self.logger = logger
-        self._executors = {}
-        self._load_executors()
-
-    def _load_executors(self):
-        """Carrega os executores disponíveis."""
-        from agent.executors.fortigate import FortiGateComplianceExecutor, FortiGateCVEExecutor
-        from agent.executors.ssh import SSHExecutor
-        from agent.executors.snmp import SNMPExecutor
-
         self._executors = {
-            'fortigate_compliance': FortiGateComplianceExecutor(self.logger),
-            'fortigate_cve': FortiGateCVEExecutor(self.logger),
-            'ssh_command': SSHExecutor(self.logger),
-            'snmp_query': SNMPExecutor(self.logger),
+            'http_request': HTTPRequestExecutor(logger),
+            'ssh_command': SSHExecutor(logger),
+            'snmp_query': SNMPExecutor(logger),
         }
 
     def fetch_pending_tasks(self) -> Dict[str, Any]:
-        """Busca tarefas pendentes do backend."""
-        try:
-            return self.api.get('/agent-tasks')
-        except Exception as e:
-            self.logger.error(f"Erro ao buscar tarefas: {e}")
-            return {'tasks': []}
+        return self.api.get('/agent-tasks')
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Executa uma tarefa e retorna o resultado.
+        """Execute all steps in a task."""
+        task_id = task.get('id', 'unknown')
+        steps = task.get('steps', [])
+        target = task.get('target', {})
         
-        Returns:
-            Dict com status, result e/ou error_message
-        """
-        task_type = task.get('type')
-        executor = self._executors.get(task_type)
+        self.logger.info(f"Executando tarefa {task_id} com {len(steps)} steps")
+        
+        context = self._build_context(target)
+        results = {}
+        errors = []
+        
+        for step in steps:
+            step_id = step.get('id', 'unknown')
+            executor_type = step.get('executor', 'unknown')
+            
+            executor = self._executors.get(executor_type)
+            if not executor:
+                results[step_id] = {'error': f"Executor desconhecido: {executor_type}"}
+                errors.append(f"{step_id}: Executor desconhecido")
+                continue
+            
+            try:
+                result = executor.run(step, context)
+                if result.get('error'):
+                    errors.append(f"{step_id}: {result['error']}")
+                results[step_id] = result.get('data') if result.get('data') is not None else result
+            except Exception as e:
+                results[step_id] = {'error': str(e)}
+                errors.append(f"{step_id}: {str(e)}")
+        
+        status = 'failed' if len(errors) == len(steps) and steps else 'completed'
+        
+        return {
+            'status': status,
+            'result': results,
+            'error_message': '; '.join(errors) if errors else None
+        }
 
-        if not executor:
-            self.logger.error(f"Tipo de tarefa desconhecido: {task_type}")
-            return {
-                'status': 'failed',
-                'error_message': f'Tipo de tarefa desconhecido: {task_type}'
-            }
-
-        start_time = time.time()
-
-        try:
-            result = executor.run(task)
-            execution_time_ms = int((time.time() - start_time) * 1000)
-
-            return {
-                'status': 'completed',
-                'result': result,
-                'execution_time_ms': execution_time_ms
-            }
-
-        except TimeoutError as e:
-            execution_time_ms = int((time.time() - start_time) * 1000)
-            self.logger.error(f"Timeout ao executar tarefa {task.get('id')}: {e}")
-            return {
-                'status': 'timeout',
-                'error_message': str(e),
-                'execution_time_ms': execution_time_ms
-            }
-
-        except Exception as e:
-            execution_time_ms = int((time.time() - start_time) * 1000)
-            self.logger.error(f"Erro ao executar tarefa {task.get('id')}: {e}")
-            return {
-                'status': 'failed',
-                'error_message': str(e),
-                'execution_time_ms': execution_time_ms
-            }
+    def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
+        credentials = target.get('credentials', {})
+        return {
+            'base_url': target.get('base_url') or target.get('url'),
+            'api_key': credentials.get('api_key'),
+            'host': target.get('host'),
+            'port': target.get('port'),
+            'credentials': credentials,
+            'username': credentials.get('username'),
+            'password': credentials.get('password'),
+            'community': credentials.get('community'),
+        }
 
     def report_result(self, task_id: str, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Envia resultado da execução para o backend."""
-        try:
-            payload = {
-                'task_id': task_id,
-                **result
-            }
-            return self.api.post('/agent-task-result', json=payload)
-        except Exception as e:
-            self.logger.error(f"Erro ao reportar resultado da tarefa {task_id}: {e}")
-            return None
+        payload = {
+            'task_id': task_id,
+            'status': result.get('status', 'failed'),
+            'result': result.get('result'),
+            'error_message': result.get('error_message'),
+        }
+        return self.api.post('/agent-task-result', json=payload)
 
     def process_all(self) -> int:
-        """
-        Busca e executa todas as tarefas pendentes.
-        
-        Returns:
-            Número de tarefas processadas
-        """
         response = self.fetch_pending_tasks()
-        tasks = response.get('tasks', [])
-
-        if not tasks:
-            self.logger.debug("Nenhuma tarefa pendente")
+        if not response or not response.get('success'):
             return 0
-
+        
+        tasks = response.get('tasks', [])
+        if not tasks:
+            return 0
+        
         self.logger.info(f"Processando {len(tasks)} tarefas")
         processed = 0
-
+        
         for task in tasks:
             task_id = task.get('id')
-            task_type = task.get('type')
-
-            self.logger.info(f"Executando tarefa {task_id}: {task_type}")
-
-            result = self.execute(task)
-            self.report_result(task_id, result)
-
-            status = result.get('status')
-            if status == 'completed':
-                self.logger.info(f"Tarefa {task_id} concluída com sucesso")
-            else:
-                self.logger.warning(f"Tarefa {task_id} finalizada com status: {status}")
-
-            processed += 1
-
+            try:
+                result = self.execute(task)
+                self.report_result(task_id, result)
+                processed += 1
+            except Exception as e:
+                self.logger.error(f"Tarefa {task_id}: erro - {str(e)}")
+        
         return processed
