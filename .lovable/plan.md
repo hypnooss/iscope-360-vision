@@ -1,68 +1,102 @@
 
-
-# Plano: Corrigir Endpoints da API SonicOS no Blueprint
+# Plano: Corrigir Leitura do Campo `action` no HTTPSessionExecutor
 
 ## Problema Identificado
 
-A coleta do SonicWall falhou em 12 dos 19 steps porque os paths da API estavam incorretos:
+O executor `http_session` não consegue identificar corretamente a ação (`login`, `request`, `logout`) porque:
 
-| Step | Erro | Causa |
-|------|------|-------|
-| gateway_av | 404 | Path incorreto |
-| ips | 400 | Falta sub-recurso |
-| anti_spyware | 400 | Falta sub-recurso |
-| app_control | 400 | Falta sub-recurso |
-| content_filter | 400 | Falta sub-recurso |
-| geo_ip | 404 | Path incorreto |
-| botnet | 404 | Path incorreto |
-| vpn_ssl | 400 | Falta especificar server/client |
-| vpn_ipsec | 400 | Path incorreto |
-| log_settings | 400 | Falta sub-recurso |
-| administration | 400 | Falta sub-recurso |
-| licenses | 404 | Path incorreto |
+1. O blueprint define o campo `action` **no nível do step**
+2. O executor Python procura o campo `action` **dentro de `config`**
 
-## Endpoints Corrigidos
+### Estrutura Atual no Blueprint
+```json
+{
+  "id": "auth_login",
+  "type": "http_session",
+  "action": "login",     // <-- Nível do step
+  "method": "POST",
+  "path": "/api/sonicos/auth"
+}
+```
 
-Baseado na documentação oficial da API SonicOS 7.x:
+### Código Atual no Executor
+```python
+config = step.get('config', {})  # config = {}
+action = config.get('action', 'request')  # Sempre retorna 'request'!
+```
 
-| Step ID | Path Atual (Incorreto) | Path Correto |
-|---------|------------------------|--------------|
-| gateway_av | `/api/sonicos/gateway-anti-virus` | `/api/sonicos/security-services/gateway-anti-virus` |
-| ips | `/api/sonicos/intrusion-prevention` | `/api/sonicos/security-services/intrusion-prevention` |
-| anti_spyware | `/api/sonicos/anti-spyware` | `/api/sonicos/security-services/anti-spyware` |
-| app_control | `/api/sonicos/app-control` | `/api/sonicos/security-services/app-control/advanced` |
-| content_filter | `/api/sonicos/content-filter` | `/api/sonicos/security-services/content-filter` |
-| geo_ip | `/api/sonicos/geo-ip-filter` | `/api/sonicos/security-services/geo-ip/filter` |
-| botnet | `/api/sonicos/botnet-filter` | `/api/sonicos/security-services/botnet/filter` |
-| vpn_ssl | `/api/sonicos/vpn/ssl` | `/api/sonicos/vpn/ssl/server` |
-| vpn_ipsec | `/api/sonicos/vpn/policies` | `/api/sonicos/vpn/policies/ipv4` |
-| log_settings | `/api/sonicos/log/settings` | `/api/sonicos/log/settings/base` |
-| administration | `/api/sonicos/administration` | `/api/sonicos/administration/settings` |
-| licenses | `/api/sonicos/licenses` | `/api/sonicos/reporting/licenses` |
+Como `config` é um dicionário vazio (o blueprint não usa essa estrutura), o `action` sempre fica como `'request'` (default), causando o erro "No active session found" no login.
+
+---
+
+## Solução
+
+Modificar o executor `http_session.py` para ler o `action` diretamente do step, com fallback para o config:
+
+```python
+# Antes (incorreto)
+config = step.get('config', {})
+action = config.get('action', 'request')
+
+# Depois (correto - suporta ambas estruturas)
+config = step.get('config', {})
+action = step.get('action') or config.get('action', 'request')
+```
 
 ---
 
 ## Alteração Técnica
 
-### Migração SQL
+### Arquivo: `python-agent/agent/executors/http_session.py`
 
-Atualizar o campo `collection_steps` do blueprint SonicWall (ID: `f1c656c0-75ed-43c6-b0a3-696498833094`) com os paths corretos da API.
+Modificar o método `run()` (linhas 64-66):
 
-O JSON atualizado manterá a mesma estrutura, apenas corrigindo o campo `path` em cada step afetado.
+```python
+def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    config = step.get('config', {})
+    step_id = step.get('id', 'unknown')
+    # Suporta 'action' no nível do step OU dentro de config
+    action = step.get('action') or config.get('action', 'request')
+```
+
+Também precisa atualizar os métodos internos para ler outros campos (`method`, `path`, `headers`) diretamente do step quando não existir `config`:
+
+```python
+def _do_login(self, step_id: str, config: Dict[str, Any], context: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
+    method = step.get('method') or config.get('method', 'POST')
+    path = step.get('path') or config.get('path', '/api/sonicos/auth')
+    headers = step.get('headers') or config.get('headers', {})
+    # ... resto do método
+```
+
+---
+
+## Problema Secundário: Steps Intermediários
+
+Os steps intermediários (`system_status`, `gateway_av`, etc.) usam `type: http_request` com `use_session: true`. Isso não funciona porque o `HTTPRequestExecutor` não compartilha sessões com `HTTPSessionExecutor`.
+
+### Opções de Solução
+
+1. **Alterar o blueprint** para usar `type: http_session` em todos os steps
+2. **Ou** modificar o `TaskExecutor` para converter automaticamente steps com `use_session: true` para `http_session`
+
+A opção 2 é mais robusta e não requer nova migração SQL.
+
+---
+
+## Resumo das Alterações
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `python-agent/agent/executors/http_session.py` | Ler `action`, `method`, `path`, `headers` do nível do step (com fallback para config) |
+| `python-agent/agent/tasks.py` | Converter automaticamente steps com `use_session: true` para executor `http_session` |
 
 ---
 
 ## Resultado Esperado
 
-Após a migração:
-1. Todos os 19 steps devem retornar HTTP 200
-2. As regras de compliance terão dados reais para avaliar
-3. O relatório mostrará status `pass`/`fail` ao invés de `unknown`
-4. Score de segurança será calculado com precisão
-
----
-
-## Observação
-
-Após aplicar a correção, será necessário disparar uma nova análise do SonicWall para validar que todos os endpoints estão funcionando corretamente.
-
+Após as correções:
+1. Step `auth_login` será corretamente identificado como ação `login` e criará a sessão
+2. Steps intermediários usarão a sessão estabelecida
+3. Step `auth_logout` encerrará a sessão corretamente
+4. Análise do SonicWall funcionará completamente
