@@ -2,6 +2,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport } from '@/types/compliance';
 import { supabase } from '@/integrations/supabase/client';
@@ -128,7 +129,14 @@ export default function FirewallAnalysis() {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
-          <Button variant="ghost" onClick={() => navigate('/firewalls')} className="mb-4">
+          <PageBreadcrumb
+            items={[
+              { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
+              { label: 'Firewalls', href: '/scope-firewall/firewalls' },
+              { label: firewall?.name || 'Análise' },
+            ]}
+          />
+          <Button variant="ghost" onClick={() => navigate('/scope-firewall/firewalls')} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
           </Button>
@@ -144,10 +152,13 @@ export default function FirewallAnalysis() {
   return (
     <AppLayout>
       <div className="p-2">
-        <Button variant="ghost" onClick={() => navigate('/firewalls')} className="mb-2">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar para Firewalls
-        </Button>
+        <PageBreadcrumb
+          items={[
+            { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
+            { label: 'Firewalls', href: '/scope-firewall/firewalls' },
+            { label: firewall?.name || 'Análise de Compliance' },
+          ]}
+        />
         <Dashboard
           report={report}
           onRefresh={handleRefresh}
