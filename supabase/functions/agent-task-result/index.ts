@@ -599,13 +599,15 @@ serve(async (req: Request) => {
     // If we have a compliance result, save to analysis_history
     if (complianceResult && score !== null) {
       // Save to analysis_history
-      await supabase
+      const { data: analysisData } = await supabase
         .from('analysis_history')
         .insert({
           firewall_id: task.target_id,
           score: score,
           report_data: complianceResult,
-        });
+        })
+        .select('id')
+        .single();
 
       // Update firewall last_analysis_at and last_score
       await supabase
@@ -616,7 +618,35 @@ serve(async (req: Request) => {
         })
         .eq('id', task.target_id);
 
-      console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}`);
+      // Get firewall name for the alert
+      const { data: firewallData } = await supabase
+        .from('firewalls')
+        .select('name')
+        .eq('id', task.target_id)
+        .single();
+
+      const firewallName = firewallData?.name || 'Firewall';
+
+      // Create system alert for analysis completion
+      const alertSeverity = score >= 70 ? 'info' : score >= 50 ? 'warning' : 'error';
+      await supabase
+        .from('system_alerts')
+        .insert({
+          alert_type: 'firewall_analysis_completed',
+          title: 'Análise Concluída',
+          message: `A análise do firewall "${firewallName}" foi concluída com score ${score}%.`,
+          severity: alertSeverity,
+          target_role: null,
+          is_active: true,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          metadata: {
+            firewall_id: task.target_id,
+            score: score,
+            analysis_id: analysisData?.id || null
+          }
+        });
+
+      console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}, alert created`);
     }
 
     console.log(`Task ${body.task_id} updated to ${dbStatus} by agent ${agentId}`);
