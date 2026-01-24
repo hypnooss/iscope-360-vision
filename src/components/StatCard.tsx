@@ -7,6 +7,7 @@ interface StatCardProps {
   icon: LucideIcon;
   variant: 'success' | 'destructive' | 'warning' | 'default';
   delay?: number;
+  compact?: boolean;
 }
 
 const variantStyles = {
@@ -30,24 +31,25 @@ const valueStyles = {
   default: 'text-primary',
 };
 
-export function StatCard({ title, value, icon: Icon, variant, delay = 0 }: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, variant, delay = 0, compact = false }: StatCardProps) {
   return (
     <div 
       className={cn(
-        "glass-card rounded-xl p-4 border animate-fade-in",
+        "glass-card rounded-xl border animate-fade-in",
+        compact ? "p-3" : "p-4",
         variantStyles[variant]
       )}
       style={{ animationDelay: `${delay}s` }}
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-muted-foreground mb-1">{title}</p>
-          <p className={cn("text-2xl font-bold tabular-nums", valueStyles[variant])}>
+          <p className={cn("text-muted-foreground mb-1", compact ? "text-xs" : "text-sm")}>{title}</p>
+          <p className={cn("font-bold tabular-nums", compact ? "text-xl" : "text-2xl", valueStyles[variant])}>
             {value}
           </p>
         </div>
-        <div className={cn("p-2 rounded-lg", iconStyles[variant])}>
-          <Icon className="w-5 h-5" />
+        <div className={cn("rounded-lg", compact ? "p-1.5" : "p-2", iconStyles[variant])}>
+          <Icon className={compact ? "w-4 h-4" : "w-5 h-5"} />
         </div>
       </div>
     </div>
