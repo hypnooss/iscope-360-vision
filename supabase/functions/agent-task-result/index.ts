@@ -84,13 +84,30 @@ interface ComplianceResult {
 
 /**
  * Extracts clean version number from a version string
- * Examples: "v7.2.5 build1234" -> "7.2.5", "FortiOS-7.2.5" -> "7.2.5"
+ * Examples: "v7.2.5 build1234" -> "7.2.5", "FortiOS-7.2.5" -> "7.2.5", "SonicOS 7.3.0-7012" -> "7.3.0"
  */
 function extractFirmwareVersion(versionString: unknown): string {
   if (!versionString || typeof versionString !== 'string') return '';
-  // Match version pattern like 7.2.5 or 7.2
+  // Match version pattern like 7.2.5 or 7.2 or 7.3.0-7012
   const match = versionString.match(/(\d+\.\d+\.?\d*)/);
   return match ? match[1] : '';
+}
+
+/**
+ * Parse SonicWall uptime string to human readable format
+ * Example: "10 Days, 5 Hours, 58 Minutes, 33 Seconds" -> "10d 5h 58m"
+ */
+function parseUptimeString(uptimeStr: string): string {
+  const days = uptimeStr.match(/(\d+)\s*Days?/i);
+  const hours = uptimeStr.match(/(\d+)\s*Hours?/i);
+  const minutes = uptimeStr.match(/(\d+)\s*Minutes?/i);
+  
+  const parts: string[] = [];
+  if (days && parseInt(days[1]) > 0) parts.push(`${days[1]}d`);
+  if (hours && parseInt(hours[1]) > 0) parts.push(`${hours[1]}h`);
+  if (minutes && parseInt(minutes[1]) > 0) parts.push(`${minutes[1]}m`);
+  
+  return parts.length > 0 ? parts.join(' ') : '0m';
 }
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
@@ -249,22 +266,36 @@ function processComplianceRules(
   const systemStatus = rawData['system_status'] as Record<string, unknown> | undefined;
   const systemFirmware = rawData['system_firmware'] as Record<string, unknown> | undefined;
   
+  // ===== SonicWall specific parsing =====
+  const versionData = rawData['version'] as Record<string, unknown> | undefined;
+  if (versionData) {
+    // SonicWall returns version info directly at root level
+    if (versionData.serial_number) systemInfo.serial = versionData.serial_number;
+    if (versionData.model) systemInfo.model = versionData.model;
+    if (versionData.firmware_version) systemInfo.firmware = versionData.firmware_version;
+    if (versionData.system_uptime && typeof versionData.system_uptime === 'string') {
+      systemInfo.uptime = parseUptimeString(versionData.system_uptime);
+    }
+    console.log('SonicWall version data found:', JSON.stringify(versionData));
+  }
+  
+  // ===== FortiGate specific parsing =====
   // Try to get system info from multiple sources
   // FortiGate API returns: { serial, version at root level, results: { hostname, model, uptime } }
   if (systemStatus) {
     // Fields at root level of system_status
-    systemInfo.serial = systemStatus.serial;
-    systemInfo.version = systemStatus.version;
+    if (!systemInfo.serial) systemInfo.serial = systemStatus.serial;
+    if (!systemInfo.firmware) systemInfo.version = systemStatus.version;
     
     // Fields inside results
     if (systemStatus.results) {
       const results = systemStatus.results as Record<string, unknown>;
-      systemInfo.hostname = results.hostname;
-      systemInfo.model = results.model || results.model_name;
+      if (!systemInfo.hostname) systemInfo.hostname = results.hostname;
+      if (!systemInfo.model) systemInfo.model = results.model || results.model_name;
     }
   }
   
-  // Try to get uptime from webui_state endpoint (more reliable source)
+  // Try to get uptime from webui_state endpoint (more reliable source for FortiGate)
   const webuiState = rawData['webui_state'] as Record<string, unknown> | undefined;
   if (webuiState?.results) {
     const results = webuiState.results as Record<string, unknown>;
@@ -273,7 +304,7 @@ function processComplianceRules(
     const lastReboot = results.utc_last_reboot as number | undefined;
     const snapshotTime = results.snapshot_utc_time as number | undefined;
     
-    if (typeof lastReboot === 'number' && typeof snapshotTime === 'number') {
+    if (typeof lastReboot === 'number' && typeof snapshotTime === 'number' && !systemInfo.uptime) {
       const uptimeSec = Math.floor((snapshotTime - lastReboot) / 1000);
       const days = Math.floor(uptimeSec / 86400);
       const hours = Math.floor((uptimeSec % 86400) / 3600);

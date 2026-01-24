@@ -6,6 +6,7 @@ Uses generic steps from blueprints instead of hardcoded logic.
 from typing import Dict, Any, Optional
 
 from agent.executors.http_request import HTTPRequestExecutor
+from agent.executors.http_session import HTTPSessionExecutor
 from agent.executors.ssh import SSHExecutor
 from agent.executors.snmp import SNMPExecutor
 
@@ -35,6 +36,7 @@ class TaskExecutor:
         self.logger = logger
         self._executors = {
             'http_request': HTTPRequestExecutor(logger),
+            'http_session': HTTPSessionExecutor(logger),
             'ssh_command': SSHExecutor(logger),
             'snmp_query': SNMPExecutor(logger),
         }
@@ -66,6 +68,11 @@ class TaskExecutor:
             
             try:
                 result = executor.run(step, context)
+                
+                # Update context with session data if executor returns it
+                # This allows session-based executors to pass cookies/tokens between steps
+                if result.get('session_data'):
+                    context.update(result['session_data'])
                 
                 # Check for connectivity errors on first step (fail-fast)
                 if i == 0 and result.get('error'):
