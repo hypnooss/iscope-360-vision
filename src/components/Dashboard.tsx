@@ -142,9 +142,15 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
           <h2 className="text-xl font-semibold text-foreground mb-4">
             Verificações por Categoria
           </h2>
-          {report.categories.map((category, index) => (
-            <CategorySection key={category.name} category={category} index={index} />
-          ))}
+          {Array.isArray(report.categories) && report.categories.length > 0 ? (
+            report.categories.map((category, index) => (
+              <CategorySection key={category.name} category={category} index={index} />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Nenhuma categoria de verificação disponível.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

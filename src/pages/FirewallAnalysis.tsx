@@ -10,14 +10,100 @@ import { toast } from 'sonner';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+const getIconForCategory = (name: string): string => {
+  const icons: Record<string, string> = {
+    'Administração': 'Settings',
+    'Autenticação': 'Key',
+    'Logging': 'FileText',
+    'Rede': 'Network',
+    'Segurança': 'Shield',
+    'Sistema': 'Server',
+    'Alta Disponibilidade': 'Server',
+    'Atualizações e Firmware': 'RefreshCw',
+    'Backup e Recovery': 'HardDrive',
+    'Configuração VPN': 'Lock',
+    'Configuração de Rede': 'Network',
+    'Licenciamento': 'Key',
+  };
+  return icons[name] || 'CheckCircle';
+};
+
+const calculatePassRate = (checks: { status: string }[]): number => {
+  if (!checks || checks.length === 0) return 0;
+  const passed = checks.filter(c => c.status === 'pass').length;
+  return Math.round((passed / checks.length) * 100);
+};
+
+const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport => {
+  // Normalize checks: add description from details if missing, normalize status
+  const normalizeCheck = (check: Record<string, unknown>) => ({
+    ...check,
+    description: check.description || check.details || check.name || '',
+    status: check.status === 'warn' ? 'warning' : check.status,
+  });
+  
+  // Transform categories from object to array if needed
+  let categories = rawData.categories;
+  if (categories && !Array.isArray(categories)) {
+    // Convert object { "CategoryName": [...checks] } to array format
+    categories = Object.entries(categories as Record<string, Record<string, unknown>[]>).map(([name, checks]) => {
+      const normalizedChecks = (checks || []).map(normalizeCheck);
+      return {
+        name,
+        icon: getIconForCategory(name),
+        checks: normalizedChecks,
+        passRate: calculatePassRate(normalizedChecks as { status: string }[]),
+      };
+    });
+  } else if (Array.isArray(categories)) {
+    // Normalize checks within existing array categories
+    categories = (categories as { name: string; icon?: string; checks: Record<string, unknown>[]; passRate?: number }[]).map(cat => ({
+      ...cat,
+      icon: cat.icon || getIconForCategory(cat.name),
+      checks: (cat.checks || []).map(normalizeCheck),
+      passRate: cat.passRate ?? calculatePassRate((cat.checks || []).map(normalizeCheck) as { status: string }[]),
+    }));
+  } else {
+    // No categories - initialize empty array
+    categories = [];
+  }
+  
+  // Get all checks for counting
+  const allChecks = rawData.checks as { status: string }[] 
+    ?? (categories as ComplianceCategory[])?.flatMap(c => c.checks) 
+    ?? [];
+  
+  // Extract firmware version from multiple possible locations
+  const firmwareVersion = (rawData.firmwareVersion as string) 
+    ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
+    ?? undefined;
+  
+  return {
+    overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
+    totalChecks: allChecks.length,
+    passed: allChecks.filter(c => c.status === 'pass').length,
+    failed: allChecks.filter(c => c.status === 'fail').length,
+    warnings: allChecks.filter(c => c.status === 'warn' || c.status === 'warning').length,
+    categories: categories as ComplianceCategory[],
+    generatedAt: new Date(rawData.generatedAt as string || Date.now()),
+    firmwareVersion,
+  };
+};
+
 export default function FirewallAnalysis() {
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const [report, setReport] = useState<ComplianceReport | null>(location.state?.report || null);
+  
+  // Normalize the report from location state if it exists
+  const initialReport = location.state?.report 
+    ? normalizeReportData(location.state.report as Record<string, unknown>)
+    : null;
+  
+  const [report, setReport] = useState<ComplianceReport | null>(initialReport);
   const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string } | null>(null);
-  const [loading, setLoading] = useState(!location.state?.report);
+  const [loading, setLoading] = useState(!initialReport);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
@@ -29,7 +115,7 @@ export default function FirewallAnalysis() {
   useEffect(() => {
     if (id && user) {
       fetchFirewall();
-      if (!location.state?.report) {
+      if (!initialReport) {
         fetchLastAnalysis();
       }
     }
@@ -66,79 +152,6 @@ export default function FirewallAnalysis() {
     setLoading(false);
   };
 
-  const getIconForCategory = (name: string): string => {
-    const icons: Record<string, string> = {
-      'Administração': 'Settings',
-      'Autenticação': 'Key',
-      'Logging': 'FileText',
-      'Rede': 'Network',
-      'Segurança': 'Shield',
-      'Sistema': 'Server',
-    };
-    return icons[name] || 'CheckCircle';
-  };
-
-  const calculatePassRate = (checks: { status: string }[]): number => {
-    if (!checks || checks.length === 0) return 0;
-    const passed = checks.filter(c => c.status === 'pass').length;
-    return Math.round((passed / checks.length) * 100);
-  };
-
-  const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport => {
-    // Normalize checks: add description from details if missing, normalize status
-    const normalizeCheck = (check: Record<string, unknown>) => ({
-      ...check,
-      description: check.description || check.details || check.name || '',
-      status: check.status === 'warn' ? 'warning' : check.status,
-    });
-    
-    // Transform categories from object to array if needed
-    let categories = rawData.categories;
-    if (categories && !Array.isArray(categories)) {
-      // Convert object { "CategoryName": [...checks] } to array format
-      categories = Object.entries(categories as Record<string, Record<string, unknown>[]>).map(([name, checks]) => {
-        const normalizedChecks = (checks || []).map(normalizeCheck);
-        return {
-          name,
-          icon: getIconForCategory(name),
-          checks: normalizedChecks,
-          passRate: calculatePassRate(normalizedChecks as { status: string }[]),
-        };
-      });
-    } else if (Array.isArray(categories)) {
-      // Normalize checks within existing array categories
-      categories = (categories as { name: string; icon?: string; checks: Record<string, unknown>[]; passRate?: number }[]).map(cat => ({
-        ...cat,
-        icon: cat.icon || getIconForCategory(cat.name),
-        checks: (cat.checks || []).map(normalizeCheck),
-        passRate: cat.passRate ?? calculatePassRate((cat.checks || []).map(normalizeCheck) as { status: string }[]),
-      }));
-    } else {
-      // No categories - initialize empty array
-      categories = [];
-    }
-    
-    // Get all checks for counting
-    const allChecks = rawData.checks as { status: string }[] 
-      ?? (categories as ComplianceCategory[])?.flatMap(c => c.checks) 
-      ?? [];
-    
-    // Extract firmware version from multiple possible locations
-    const firmwareVersion = (rawData.firmwareVersion as string) 
-      ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
-      ?? undefined;
-    
-    return {
-      overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
-      totalChecks: allChecks.length,
-      passed: allChecks.filter(c => c.status === 'pass').length,
-      failed: allChecks.filter(c => c.status === 'fail').length,
-      warnings: allChecks.filter(c => c.status === 'warn' || c.status === 'warning').length,
-      categories: categories as ComplianceCategory[],
-      generatedAt: new Date(rawData.generatedAt as string || Date.now()),
-      firmwareVersion,
-    };
-  };
 
   const handleRefresh = async () => {
     if (!firewall) return;
