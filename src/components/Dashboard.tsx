@@ -4,7 +4,7 @@ import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
 import { CVESection } from './CVESection';
-import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, Shield, Globe, Cpu } from 'lucide-react';
 import { Button } from './ui/button';
 import { exportReportToPDF } from '@/utils/pdfExport';
 import { toast } from 'sonner';
@@ -13,10 +13,11 @@ interface DashboardProps {
   report: ComplianceReport;
   onRefresh: () => void;
   isRefreshing: boolean;
-  onDisconnect?: () => void; // deprecated, kept for backwards compatibility
+  firewallName?: string;
+  firewallUrl?: string;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
 
   const handleCVEsLoaded = (cves: CVEInfo[]) => {
@@ -63,6 +64,29 @@ export function Dashboard({ report, onRefresh, isRefreshing, onDisconnect }: Das
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               Reanalisar
             </Button>
+          </div>
+        </div>
+
+        {/* Firewall Info Card */}
+        <div className="glass-card rounded-lg p-4 mb-6 border border-primary/20">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary" />
+              <span className="text-muted-foreground">Firewall:</span>
+              <span className="font-medium text-foreground">{firewallName || 'N/A'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-primary" />
+              <span className="text-muted-foreground">URL:</span>
+              <span className="font-medium text-foreground">{firewallUrl || 'N/A'}</span>
+            </div>
+            {report.firmwareVersion && (
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-primary" />
+                <span className="text-muted-foreground">FortiOS:</span>
+                <span className="font-medium text-foreground">v{report.firmwareVersion}</span>
+              </div>
+            )}
           </div>
         </div>
 
