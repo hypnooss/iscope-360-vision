@@ -277,6 +277,139 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_rules: {
+        Row: {
+          category: string
+          code: string
+          created_at: string
+          description: string | null
+          device_type_id: string
+          evaluation_logic: Json
+          id: string
+          is_active: boolean
+          name: string
+          severity: Database["public"]["Enums"]["rule_severity"]
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          category: string
+          code: string
+          created_at?: string
+          description?: string | null
+          device_type_id: string
+          evaluation_logic: Json
+          id?: string
+          is_active?: boolean
+          name: string
+          severity?: Database["public"]["Enums"]["rule_severity"]
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          category?: string
+          code?: string
+          created_at?: string
+          description?: string | null
+          device_type_id?: string
+          evaluation_logic?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          severity?: Database["public"]["Enums"]["rule_severity"]
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_rules_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      device_blueprints: {
+        Row: {
+          collection_steps: Json
+          created_at: string
+          description: string | null
+          device_type_id: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          collection_steps?: Json
+          created_at?: string
+          description?: string | null
+          device_type_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          collection_steps?: Json
+          created_at?: string
+          description?: string | null
+          device_type_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_blueprints_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      device_types: {
+        Row: {
+          category: Database["public"]["Enums"]["device_category"]
+          code: string
+          created_at: string
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          vendor: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["device_category"]
+          code: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          vendor: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["device_category"]
+          code?: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          vendor?: string
+        }
+        Relationships: []
+      }
       firewalls: {
         Row: {
           api_key: string
@@ -284,6 +417,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          device_type_id: string | null
           fortigate_url: string
           id: string
           last_analysis_at: string | null
@@ -298,6 +432,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          device_type_id?: string | null
           fortigate_url: string
           id?: string
           last_analysis_at?: string | null
@@ -312,6 +447,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          device_type_id?: string | null
           fortigate_url?: string
           id?: string
           last_analysis_at?: string | null
@@ -326,6 +462,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "firewalls_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
             referencedColumns: ["id"]
           },
         ]
@@ -981,6 +1124,13 @@ export type Database = {
         | "snmp_query"
         | "ping_check"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
+      device_category:
+        | "firewall"
+        | "switch"
+        | "router"
+        | "wlc"
+        | "server"
+        | "other"
       m365_submodule:
         | "entra_id"
         | "sharepoint"
@@ -989,6 +1139,7 @@ export type Database = {
         | "intune"
       module_permission: "view" | "edit" | "full"
       permission_status: "granted" | "pending" | "denied" | "missing"
+      rule_severity: "critical" | "high" | "medium" | "low" | "info"
       schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
       scope_module:
         | "scope_firewall"
@@ -1144,6 +1295,14 @@ export const Constants = {
         "ping_check",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
+      device_category: [
+        "firewall",
+        "switch",
+        "router",
+        "wlc",
+        "server",
+        "other",
+      ],
       m365_submodule: [
         "entra_id",
         "sharepoint",
@@ -1153,6 +1312,7 @@ export const Constants = {
       ],
       module_permission: ["view", "edit", "full"],
       permission_status: ["granted", "pending", "denied", "missing"],
+      rule_severity: ["critical", "high", "medium", "low", "info"],
       schedule_frequency: ["daily", "weekly", "monthly", "manual"],
       scope_module: [
         "scope_firewall",
