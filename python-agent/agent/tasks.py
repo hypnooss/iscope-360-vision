@@ -13,6 +13,22 @@ from agent.executors.snmp import SNMPExecutor
 class TaskExecutor:
     """Orchestrates task execution using generic executors."""
 
+    # Patterns that indicate connectivity problems
+    CONNECTIVITY_PATTERNS = [
+        'timeout',
+        'connection error',
+        'connection refused',
+        'no route to host',
+        'network unreachable',
+        'name or service not known',
+        'failed to resolve',
+        'connection reset',
+        'connection timed out',
+        'errno 110',  # Connection timed out
+        'errno 111',  # Connection refused
+        'errno 113',  # No route to host
+    ]
+
     def __init__(self, api, state, logger):
         self.api = api
         self.state = state
@@ -27,7 +43,7 @@ class TaskExecutor:
         return self.api.get('/agent-tasks')
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute all steps in a task."""
+        """Execute all steps in a task with fail-fast on connectivity errors."""
         task_id = task.get('id', 'unknown')
         steps = task.get('steps', [])
         target = task.get('target', {})
@@ -38,7 +54,7 @@ class TaskExecutor:
         results = {}
         errors = []
         
-        for step in steps:
+        for i, step in enumerate(steps):
             step_id = step.get('id', 'unknown')
             executor_type = step.get('executor', 'unknown')
             
@@ -50,12 +66,54 @@ class TaskExecutor:
             
             try:
                 result = executor.run(step, context)
+                
+                # Check for connectivity errors on first step (fail-fast)
+                if i == 0 and result.get('error'):
+                    error_msg = result.get('error', '')
+                    if self._is_connectivity_error(error_msg):
+                        self.logger.error(
+                            f"Falha de conectividade no primeiro step. "
+                            f"Abortando {len(steps) - 1} steps restantes."
+                        )
+                        results[step_id] = result
+                        # Mark all remaining steps as skipped
+                        for remaining_step in steps[1:]:
+                            remaining_id = remaining_step.get('id', 'unknown')
+                            results[remaining_id] = {
+                                'error': 'Ignorado: falha de conectividade no step inicial',
+                                'skipped': True
+                            }
+                        return {
+                            'status': 'failed',
+                            'result': results,
+                            'error_message': f'Falha de conectividade: {error_msg}'
+                        }
+                
                 if result.get('error'):
                     errors.append(f"{step_id}: {result['error']}")
                 results[step_id] = result.get('data') if result.get('data') is not None else result
+                
             except Exception as e:
                 results[step_id] = {'error': str(e)}
                 errors.append(f"{step_id}: {str(e)}")
+                
+                # Also check for connectivity errors in exceptions
+                if i == 0 and self._is_connectivity_error(str(e)):
+                    self.logger.error(
+                        f"Falha de conectividade no primeiro step (exceção). "
+                        f"Abortando {len(steps) - 1} steps restantes."
+                    )
+                    for remaining_step in steps[1:]:
+                        remaining_id = remaining_step.get('id', 'unknown')
+                        results[remaining_id] = {
+                            'error': 'Ignorado: falha de conectividade no step inicial',
+                            'skipped': True
+                        }
+                    return {
+                        'status': 'failed',
+                        'result': results,
+                        'error_message': f'Falha de conectividade: {str(e)}'
+                    }
         
         status = 'failed' if len(errors) == len(steps) and steps else 'completed'
         
@@ -64,6 +122,11 @@ class TaskExecutor:
             'result': results,
             'error_message': '; '.join(errors) if errors else None
         }
+
+    def _is_connectivity_error(self, error_msg: str) -> bool:
+        """Check if an error message indicates a connectivity problem."""
+        error_lower = error_msg.lower()
+        return any(pattern in error_lower for pattern in self.CONNECTIVITY_PATTERNS)
 
     def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
         credentials = target.get('credentials', {})
