@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -362,6 +363,8 @@ export default function UsersPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[{ label: 'Usuários' }]} />
+        
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>

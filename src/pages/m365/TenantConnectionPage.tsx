@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useTenantConnection, TenantConnection } from '@/hooks/useTenantConnection';
 import { TenantStatusCard } from '@/components/m365/TenantStatusCard';
 import { TenantConnectionWizard } from '@/components/m365/TenantConnectionWizard';
@@ -259,12 +260,14 @@ export default function TenantConnectionPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[
+          { label: 'Microsoft 365', href: '/scope-m365' },
+          { label: 'Conexão com Tenant' },
+        ]} />
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-            </div>
             <h1 className="text-2xl font-bold text-foreground">Conexão com Tenant</h1>
             <p className="text-muted-foreground">
               Gerencie as conexões dos tenants Microsoft 365 para todos os submódulos

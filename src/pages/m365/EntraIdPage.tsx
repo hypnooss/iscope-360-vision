@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useTenantConnection } from '@/hooks/useTenantConnection';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,11 +48,13 @@ export default function EntraIdPage() {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
+          <PageBreadcrumb items={[
+            { label: 'Microsoft 365', href: '/scope-m365' },
+            { label: 'Entra ID' },
+          ]} />
+          
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-              </div>
               <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
               <p className="text-muted-foreground">
                 Gestão de identidades e auditoria de acessos via Microsoft Graph
@@ -83,14 +86,14 @@ export default function EntraIdPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
+        <PageBreadcrumb items={[
+          { label: 'Microsoft 365', href: '/scope-m365' },
+          { label: 'Entra ID' },
+        ]} />
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="text-xs">Microsoft 365</Badge>
-              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-              <Badge variant="secondary" className="text-xs">Entra ID</Badge>
-            </div>
             <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
             <p className="text-muted-foreground">
               Gestão de identidades e auditoria de acessos via Microsoft Graph
