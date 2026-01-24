@@ -1,134 +1,103 @@
 
-# Plano: Completar Integração Agent-Firewall
+# Plano: Tratamento Automático de Tasks Expiradas/Travadas
 
-## Objetivo
-Permitir que a análise de firewalls seja executada pelo agent genérico, criando tarefas na tabela `agent_tasks` em vez de chamar a edge function diretamente.
+## Problema Identificado
 
-## Mudanças Necessárias
+Quando uma task fica travada em status `running` (por exemplo, devido a um timeout de rede), ela nunca é marcada como `failed`. Isso causa:
+1. O usuário não consegue iniciar nova análise (erro 409 Conflict)
+2. Necessidade de intervenção manual no banco de dados
 
-### 1. Banco de Dados
+## Solução Proposta
 
-#### 1.1 Adicionar coluna `agent_id` na tabela `firewalls`
-```sql
-ALTER TABLE public.firewalls 
-ADD COLUMN agent_id UUID REFERENCES public.agents(id);
+Implementar limpeza automática de tasks expiradas em dois pontos estratégicos:
+
+### Abordagem
+
+Modificar a Edge Function `trigger-firewall-analysis` para:
+1. Antes de verificar duplicatas, limpar automaticamente tasks que já expiraram
+2. Marcar tasks expiradas como `timeout` ou `failed` com mensagem explicativa
+
+## Mudanças Técnicas
+
+### 1. Atualizar `trigger-firewall-analysis/index.ts`
+
+Adicionar lógica de cleanup antes da verificação de duplicatas:
+
+```typescript
+// ANTES de verificar existingTask, limpar tasks expiradas
+const { data: expiredTasks } = await supabase
+  .from('agent_tasks')
+  .update({
+    status: 'timeout',
+    error_message: 'Task expirada automaticamente pelo sistema',
+    completed_at: new Date().toISOString()
+  })
+  .eq('target_id', firewall_id)
+  .eq('target_type', 'firewall')
+  .in('status', ['pending', 'running'])
+  .lt('expires_at', new Date().toISOString())
+  .select('id');
+
+if (expiredTasks?.length) {
+  console.log(`[trigger-firewall-analysis] Auto-cleaned ${expiredTasks.length} expired tasks`);
+}
+
+// Depois continua com a verificação normal de duplicatas
+// (que agora só encontrará tasks válidas não expiradas)
 ```
 
-#### 1.2 Atualizar firewalls existentes
-- Associar `device_type_id` do FortiGate aos firewalls ITP-FW e SAO-FW
-- Associar o agent ESTRELA-SAO aos firewalls do cliente Estrela
+### 2. Melhorar verificação de duplicatas
 
-### 2. Interface - Formulário de Firewall
+Adicionar filtro `expires_at` na query de duplicatas para ignorar tasks já expiradas:
 
-#### 2.1 Modificar `AddFirewallDialog.tsx`
-- Adicionar campo para selecionar **Device Type** (FortiGate, Palo Alto, etc.)
-- Adicionar campo para selecionar **Agent** (filtrado por cliente)
+```typescript
+const { data: existingTask } = await supabase
+  .from('agent_tasks')
+  .select('id, status, expires_at')
+  .eq('target_id', firewall_id)
+  .eq('target_type', 'firewall')
+  .in('status', ['pending', 'running'])
+  .gt('expires_at', new Date().toISOString())  // Apenas tasks não expiradas
+  .maybeSingle();
+```
 
-#### 2.2 Modificar `EditFirewallDialog.tsx`
-- Incluir os mesmos campos de Device Type e Agent
+## Arquivos a Modificar
 
-### 3. Edge Function - Disparar Análise via Agent
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/trigger-firewall-analysis/index.ts` | Adicionar cleanup automático + filtro de expiração |
 
-#### 3.1 Criar nova edge function `trigger-firewall-analysis`
-Esta função será chamada pelo botão "Analisar" e criará uma tarefa no `agent_tasks`:
+## Fluxo Atualizado
 
 ```text
-Input:
-  - firewall_id: UUID
-
-Processo:
-  1. Buscar dados do firewall (incluindo agent_id, device_type_id)
-  2. Validar se firewall tem agent e device_type associados
-  3. Criar registro em agent_tasks:
-     - agent_id: do firewall
-     - task_type: 'fortigate_compliance'
-     - target_id: firewall_id
-     - target_type: 'firewall'
-     - status: 'pending'
-     - expires_at: now() + 1 hora
-
-Output:
-  - task_id: UUID da tarefa criada
-  - message: "Análise agendada"
+Usuário clica "Analisar"
+         │
+         ▼
+┌─────────────────────────────────┐
+│ trigger-firewall-analysis       │
+├─────────────────────────────────┤
+│ 1. Limpa tasks expiradas        │◄── NOVO
+│    (status → timeout)           │
+│                                 │
+│ 2. Verifica duplicatas válidas  │◄── Filtro expires_at
+│    (apenas não expiradas)       │
+│                                 │
+│ 3. Cria nova task se permitido  │
+└─────────────────────────────────┘
 ```
 
-### 4. Interface - Botão Analisar
+## Benefícios
 
-#### 4.1 Modificar `FirewallListPage.tsx`
-Alterar a função `handleAnalyze` para:
-1. Chamar `trigger-firewall-analysis` em vez de `fortigate-compliance`
-2. Mostrar toast informando que a análise foi agendada
-3. Adicionar indicador de "Aguardando análise" para tasks pendentes
+1. **Sem intervenção manual**: Tasks travadas são limpas automaticamente
+2. **Transparente**: O cleanup acontece na mesma chamada, sem delay
+3. **Histórico preservado**: Tasks são marcadas como `timeout`, não deletadas
+4. **Retrocompatível**: Nenhuma mudança no Python agent ou outras Edge Functions
 
-### 5. Atualizar Dados Existentes
+## Alternativa Considerada (para futuro)
 
-#### 5.1 Query de UPDATE
-```sql
--- Associar device_type_id (FortiGate) aos firewalls
-UPDATE firewalls 
-SET device_type_id = (SELECT id FROM device_types WHERE code = 'fortigate')
-WHERE device_type_id IS NULL;
+Criar um **cron job** (Supabase pg_cron ou Edge Function agendada) que periodicamente limpa tasks expiradas de todo o sistema. Útil para:
+- Manter a tabela `agent_tasks` limpa
+- Enviar notificações de falha
+- Gerar alertas para administradores
 
--- Associar agent aos firewalls do mesmo cliente
-UPDATE firewalls f
-SET agent_id = (
-  SELECT a.id FROM agents a 
-  WHERE a.client_id = f.client_id 
-  AND a.revoked = false 
-  LIMIT 1
-)
-WHERE agent_id IS NULL;
-```
-
-## Fluxo Completo Após Implementação
-
-```text
-1. Usuário clica "Analisar" no firewall
-         │
-         ▼
-2. Frontend chama: trigger-firewall-analysis
-         │
-         ▼
-3. Edge Function cria task em agent_tasks
-   (status: pending, agent_id: do firewall)
-         │
-         ▼
-4. Agent faz heartbeat → has_pending_tasks: true
-         │
-         ▼
-5. Agent chama GET agent-tasks
-   → Recebe steps do blueprint
-         │
-         ▼
-6. Agent executa http_request para cada step
-         │
-         ▼
-7. Agent POST agent-task-result
-   → Envia dados brutos
-         │
-         ▼
-8. Backend processa com compliance_rules
-   → Calcula score
-   → Salva em analysis_history
-   → Atualiza last_score no firewall
-```
-
-## Ordem de Implementação
-
-1. **Migração SQL**: Adicionar coluna `agent_id` na tabela `firewalls`
-2. **UPDATE dados**: Associar device_type_id e agent_id aos firewalls existentes
-3. **Edge Function**: Criar `trigger-firewall-analysis`
-4. **Frontend**: Modificar formulários (Add/Edit) para incluir device type e agent
-5. **Frontend**: Modificar botão Analisar para usar nova edge function
-6. **Testes**: Validar fluxo completo
-
-## Arquivos a Modificar/Criar
-
-| Arquivo | Ação |
-|---------|------|
-| `supabase/migrations/xxx_add_agent_to_firewalls.sql` | Criar |
-| `supabase/functions/trigger-firewall-analysis/index.ts` | Criar |
-| `src/components/firewall/AddFirewallDialog.tsx` | Modificar |
-| `src/components/firewall/EditFirewallDialog.tsx` | Modificar |
-| `src/pages/firewall/FirewallListPage.tsx` | Modificar |
-
+Esta alternativa pode ser implementada posteriormente como melhoria adicional.
