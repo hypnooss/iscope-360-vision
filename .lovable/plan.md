@@ -1,60 +1,36 @@
 
-
-# Plano: Corrigir Endpoints Finais da API SonicOS 7.x
+# Plano: Corrigir Endpoints SonicOS 7.x (Revisão Final)
 
 ## Problema Identificado
 
-A API SonicOS 7.x está retornando erro `E_INVALID_API_CALL: "API endpoint is incomplete."` (HTTP 400) para a maioria dos endpoints de Security Services. Os dados brutos confirmam:
+A API SonicOS 7.x continua retornando HTTP 400 porque:
 
-**Endpoints que funcionaram:**
-- `/api/sonicos/version` - Retornou modelo, firmware, serial
-- `/api/sonicos/interfaces/ipv4` - Retornou todas as interfaces
-- `/api/sonicos/access-rules/ipv4` - Retornou regras de acesso
-- `/api/sonicos/nat-policies/ipv4` - Retornou NAT policies
+1. **Nome incorreto do endpoint**: Usamos `gateway-anti-virus` mas o correto é `gateway-antivirus` (sem hífen)
+2. **Falta do sufixo `/global`**: Security Services precisam de `/global` para acessar configurações
+3. **Falta do sufixo `/settings`**: Geo-IP, Botnet, Log e Administration precisam de `/settings`
 
-**Endpoints que falharam (HTTP 400):**
-- `/api/sonicos/reporting/status` - Erro: "API endpoint is incomplete"
-- `/api/sonicos/security-services/gateway-anti-virus/base` - Erro: "API endpoint is incomplete"
-- `/api/sonicos/security-services/intrusion-prevention/base` - Erro: "API endpoint is incomplete"
-- E todos os outros com sufixo `/base`, `/filter`, `/settings`
+## Endpoints Corretos (Baseado na Documentação Oficial)
 
-### Causa Raiz
-
-O SonicOS 7.x não usa sufixos como `/base` ou `/filter` para acessar configurações de módulos de segurança. Os endpoints corretos são mais simples, sem esses sufixos. A documentação indica:
-
-1. Recursos de configuração base não precisam de sufixo
-2. Endpoints de `/reporting/` para status do sistema
-3. Certos endpoints retornam coleções que precisam apenas do nome do módulo
-
----
-
-## Correções Necessárias
-
-### Tabela de Endpoints Corrigidos (Baseado nos Testes)
-
-| Step ID | Path Atual (Incorreto) | Path Correto |
-|---------|------------------------|--------------|
-| `system_status` | `/api/sonicos/reporting/status` | `/api/sonicos/config/current` |
-| `gateway_av` | `/api/sonicos/security-services/gateway-anti-virus/base` | `/api/sonicos/security-services/gateway-anti-virus` |
-| `ips` | `/api/sonicos/security-services/intrusion-prevention/base` | `/api/sonicos/security-services/intrusion-prevention` |
-| `anti_spyware` | `/api/sonicos/security-services/anti-spyware/base` | `/api/sonicos/security-services/anti-spyware` |
-| `app_control` | `/api/sonicos/security-services/app-control/policies` | `/api/sonicos/security-services/app-control/advanced` |
-| `content_filter` | `/api/sonicos/security-services/content-filter/profiles` | `/api/sonicos/security-services/content-filter` |
-| `geo_ip` | `/api/sonicos/security-services/geo-ip/filter` | `/api/sonicos/security-services/geo-ip` |
-| `botnet` | `/api/sonicos/security-services/botnet/filter` | `/api/sonicos/security-services/botnet` |
-| `vpn_ssl` | `/api/sonicos/vpn/ssl-vpn/server` | `/api/sonicos/vpn/ssl-vpn/server/settings` |
+| Step ID | Path Atual (Incorreto) | Path Correto (Documentação) |
+|---------|------------------------|----------------------------|
+| `gateway_av` | `/api/sonicos/security-services/gateway-anti-virus` | `/api/sonicos/security-services/gateway-antivirus/global` |
+| `ips` | `/api/sonicos/security-services/intrusion-prevention` | `/api/sonicos/security-services/intrusion-prevention/global` |
+| `anti_spyware` | `/api/sonicos/security-services/anti-spyware` | `/api/sonicos/security-services/anti-spyware/global` |
+| `app_control` | `/api/sonicos/security-services/app-control/advanced` | `/api/sonicos/security-services/app-control/advanced` (manter) |
+| `content_filter` | `/api/sonicos/security-services/content-filter` | `/api/sonicos/security-services/content-filter/profiles` |
+| `geo_ip` | `/api/sonicos/security-services/geo-ip` | `/api/sonicos/security-services/geo-ip/settings` |
+| `botnet` | `/api/sonicos/security-services/botnet` | `/api/sonicos/security-services/botnet/settings` |
+| `vpn_ssl` | `/api/sonicos/vpn/ssl-vpn/server/settings` | `/api/sonicos/vpn/ssl-vpn/server/settings` (manter) |
 | `vpn_ipsec` | `/api/sonicos/vpn/policies/ipv4` | `/api/sonicos/vpn/policies/ipv4` (manter) |
-| `log_settings` | `/api/sonicos/log/settings` | `/api/sonicos/log` |
-| `administration` | `/api/sonicos/administration/settings` | `/api/sonicos/administration` |
-| `licenses` | `/api/sonicos/reporting/licenses` | `/api/sonicos/licenses` |
+| `log_settings` | `/api/sonicos/log` | `/api/sonicos/log/settings` |
+| `administration` | `/api/sonicos/administration` | `/api/sonicos/administration/settings` |
+| `licenses` | `/api/sonicos/licenses` | `/api/sonicos/reporting/licenses` |
 
 ---
 
 ## Implementação
 
-### Alteração: Migração SQL
-
-Atualizar o blueprint com os novos paths corrigidos (sem os sufixos `/base`, `/filter`):
+### Alteração: UPDATE SQL no Blueprint
 
 ```sql
 UPDATE device_blueprints 
@@ -74,18 +50,18 @@ SET collection_steps = '{
     {"id": "interfaces", "type": "http_request", "method": "GET", "path": "/api/sonicos/interfaces/ipv4", "use_session": true},
     {"id": "access_rules", "type": "http_request", "method": "GET", "path": "/api/sonicos/access-rules/ipv4", "use_session": true},
     {"id": "nat_policies", "type": "http_request", "method": "GET", "path": "/api/sonicos/nat-policies/ipv4", "use_session": true},
-    {"id": "gateway_av", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/gateway-anti-virus", "use_session": true},
-    {"id": "ips", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/intrusion-prevention", "use_session": true},
-    {"id": "anti_spyware", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/anti-spyware", "use_session": true},
+    {"id": "gateway_av", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/gateway-antivirus/global", "use_session": true},
+    {"id": "ips", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/intrusion-prevention/global", "use_session": true},
+    {"id": "anti_spyware", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/anti-spyware/global", "use_session": true},
     {"id": "app_control", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/app-control/advanced", "use_session": true},
-    {"id": "content_filter", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/content-filter", "use_session": true},
-    {"id": "geo_ip", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/geo-ip", "use_session": true},
-    {"id": "botnet", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/botnet", "use_session": true},
+    {"id": "content_filter", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/content-filter/profiles", "use_session": true},
+    {"id": "geo_ip", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/geo-ip/settings", "use_session": true},
+    {"id": "botnet", "type": "http_request", "method": "GET", "path": "/api/sonicos/security-services/botnet/settings", "use_session": true},
     {"id": "vpn_ssl", "type": "http_request", "method": "GET", "path": "/api/sonicos/vpn/ssl-vpn/server/settings", "use_session": true},
     {"id": "vpn_ipsec", "type": "http_request", "method": "GET", "path": "/api/sonicos/vpn/policies/ipv4", "use_session": true},
-    {"id": "log_settings", "type": "http_request", "method": "GET", "path": "/api/sonicos/log", "use_session": true},
-    {"id": "administration", "type": "http_request", "method": "GET", "path": "/api/sonicos/administration", "use_session": true},
-    {"id": "licenses", "type": "http_request", "method": "GET", "path": "/api/sonicos/licenses", "use_session": true},
+    {"id": "log_settings", "type": "http_request", "method": "GET", "path": "/api/sonicos/log/settings", "use_session": true},
+    {"id": "administration", "type": "http_request", "method": "GET", "path": "/api/sonicos/administration/settings", "use_session": true},
+    {"id": "licenses", "type": "http_request", "method": "GET", "path": "/api/sonicos/reporting/licenses", "use_session": true},
     {
       "id": "auth_logout",
       "type": "http_session",
@@ -102,20 +78,24 @@ WHERE id = 'f1c656c0-75ed-43c6-b0a3-696498833094';
 
 ---
 
-## Resultado Esperado
+## Principais Correções
 
-Após a correção:
-1. Endpoints de Security Services retornarão HTTP 200 com dados de configuração
-2. O relatório de compliance mostrará o status real de cada módulo (habilitado/desabilitado)
-3. O score de compliance será calculado com dados reais do dispositivo
+1. **gateway-antivirus**: Removido hífen extra e adicionado `/global`
+2. **intrusion-prevention**: Adicionado `/global`
+3. **anti-spyware**: Adicionado `/global`
+4. **content-filter**: Mudado para `/profiles`
+5. **geo-ip**: Adicionado `/settings`
+6. **botnet**: Adicionado `/settings`
+7. **log**: Adicionado `/settings`
+8. **administration**: Adicionado `/settings`
+9. **licenses**: Mudado para `/reporting/licenses`
 
 ---
 
-## Nota sobre Documentação
+## Resultado Esperado
 
-Os endpoints da API SonicOS 7.x podem variar entre versões específicas de firmware. Se alguns endpoints ainda falharem, a estratégia recomendada é:
-
-1. Usar o Swagger interno do SonicWall (acessível via `https://<firewall-ip>/api/sonicos/openapi`) para validar endpoints disponíveis
-2. Adicionar mais logging no agente para capturar o response body completo dos erros
-3. Testar endpoints individualmente via curl antes de adicionar ao blueprint
-
+Após esta correção baseada na documentação oficial:
+- Security Services (GAV, IPS, Anti-Spyware) retornarão configurações globais
+- Geo-IP e Botnet retornarão settings de filtragem
+- Logs e Administration retornarão configurações do sistema
+- O score de compliance será calculado com dados reais
