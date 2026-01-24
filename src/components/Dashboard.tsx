@@ -128,7 +128,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
             {/* Parte inferior: Stats Cards compactos */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard
-                title="Total"
+                title="Verificações"
                 value={report.totalChecks}
                 icon={ListChecks}
                 variant="default"
