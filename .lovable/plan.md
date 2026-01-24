@@ -1,199 +1,155 @@
 
-# Plano: Implementar Breadcrumbs Clicáveis em Todo o Sistema
 
-## Resumo
+# Plano: Armazenar e Versionar o Agent Python no Projeto
 
-Criar um componente de breadcrumb reutilizável e clicável que será exibido no topo de todas as páginas do sistema (exceto modais/dialogs). Os breadcrumbs permitirão navegação rápida entre níveis hierárquicos e terão um espaçamento maior em relação ao título da página.
+## Objetivo
+Criar uma pasta `python-agent/` no projeto para armazenar todo o código do agent Python, mantendo o contexto unificado com o backend (Edge Functions) e facilitando futuras alterações.
 
-## Análise da Situação Atual
+## Estrutura de Arquivos a Criar
 
-Atualmente, algumas páginas (como EntraIdPage e EntraIdAnalysisPage) usam badges com setas para indicar a hierarquia de navegação, mas:
-- Os elementos não são clicáveis
-- O espaçamento entre o "mapa" e o título é pequeno
-- Não há um padrão consistente - a maioria das páginas não tem breadcrumb
-
-## Solução Proposta
-
-### 1. Criar Componente PageBreadcrumb Reutilizável
-
-Criar um novo componente que:
-- Aceita um array de itens de breadcrumb (label + href)
-- Usa os componentes Breadcrumb existentes do shadcn/ui
-- Torna todos os níveis (exceto o atual) clicáveis com navegação via react-router-dom
-- Aplica o espaçamento correto abaixo do breadcrumb
-
-**Arquivo:** `src/components/layout/PageBreadcrumb.tsx`
-
-```typescript
-interface BreadcrumbItem {
-  label: string;
-  href?: string; // Se não tiver href, é a página atual
-}
-
-interface PageBreadcrumbProps {
-  items: BreadcrumbItem[];
-}
+```
+python-agent/
+├── README.md              # Documentação completa do agent
+├── requirements.txt       # Dependências Python
+├── .env.example          # Template de configuração (sem secrets)
+├── main.py               # Entry point do agent
+└── agent/
+    ├── __init__.py       # Package marker
+    ├── config.py         # Carregamento de configurações
+    ├── state.py          # Gerenciamento de estado persistente
+    ├── api_client.py     # Cliente HTTP para as Edge Functions
+    ├── auth.py           # Autenticação (register, refresh)
+    ├── heartbeat.py      # Lógica de heartbeat
+    ├── scheduler.py      # Loop principal com intervalos dinâmicos
+    └── logger.py         # Sistema de logging com rotação
 ```
 
-### 2. Atualizar Páginas para Usar o Componente
+## Arquivos a Serem Criados
 
-Páginas que precisam de breadcrumb (excluindo modais/dialogs):
+### 1. `python-agent/README.md`
+Documentação completa incluindo:
+- Visão geral do agent
+- Requisitos (Python 3.8+)
+- Instalação e configuração
+- Variáveis de ambiente
+- Como executar
+- Fluxo de autenticação (registro → tokens → refresh)
+- Troubleshooting
 
-**Módulo M365:**
-- `M365DashboardPage.tsx` - Microsoft 365
-- `EntraIdPage.tsx` - Microsoft 365 > Entra ID
-- `EntraIdAnalysisPage.tsx` - Microsoft 365 > Entra ID > Análise de Segurança
-- `EntraIdAuditLogsPage.tsx` - Microsoft 365 > Entra ID > Logs de Auditoria
-- `TenantConnectionPage.tsx` - Microsoft 365 > Conexão com Tenant
+### 2. `python-agent/.env.example`
+Template de configuração sem valores sensíveis:
+```
+AGENT_API_BASE_URL=https://pgjervwrvmfmwvfvylvj.supabase.co/functions/v1
+AGENT_POLL_INTERVAL=60
+AGENT_STATE_FILE=storage/state.json
+AGENT_ACTIVATION_CODE=XXXX-XXXX-XXXX-XXXX
+```
 
-**Módulo Firewall:**
-- `FirewallListPage.tsx` - Firewall > Firewalls
-- `FirewallReportsPage.tsx` - Firewall > Relatórios
-- `FirewallDashboardPage.tsx` - Firewall > Dashboard (se existir navegação)
+### 3. `python-agent/requirements.txt`
+```
+requests>=2.31.0
+pyjwt>=2.8.0
+python-dotenv>=1.0.1
+schedule>=1.2.1
+```
 
-**Páginas Gerais:**
-- `GeneralDashboardPage.tsx` - Dashboard Geral
-- `ClientsPage.tsx` - Workspaces
-- `UsersPage.tsx` - Usuários
-- `AgentsPage.tsx` - Agents
-- `AdministratorsPage.tsx` - Administradores
+### 4. `python-agent/main.py`
+Entry point com:
+- Classe `AgentApp` que orquestra os componentes
+- Função `agent_loop()` que executa a cada ciclo
+- Comando `--reset-default` para reiniciar estado
+- Tratamento de erros e shutdown graceful
 
-**Administração:**
-- `SettingsPage.tsx` - Configurações
+### 5. `python-agent/agent/__init__.py`
+Arquivo vazio para marcar como package Python
 
-### 3. Estrutura Hierárquica dos Breadcrumbs
+### 6. `python-agent/agent/config.py`
+Carregamento de variáveis de ambiente via `python-dotenv`
+
+### 7. `python-agent/agent/state.py`
+Classe `AgentState` para:
+- Carregar/salvar estado em JSON
+- Verificar se está registrado
+- Persistir tokens
+
+### 8. `python-agent/agent/api_client.py`
+Classe `APIClient` com:
+- Métodos `get()` e `post()`
+- Headers de autenticação automáticos
+- Extração de códigos de erro do backend
+- Suporte a `use_refresh_token` para renovação
+
+### 9. `python-agent/agent/auth.py`
+Classe `AuthManager` com:
+- `register_if_needed()` - Registro via activation code
+- `refresh_tokens()` - Renovação do access token
+- `is_access_token_valid()` - Validação de expiração
+- `ensure_authenticated()` - Fluxo completo
+
+### 10. `python-agent/agent/heartbeat.py`
+Classe `AgentHeartbeat` com:
+- `send()` - Envio de heartbeat
+- Tratamento de erros específicos (TOKEN_EXPIRED, BLOCKED, INVALID_TOKEN)
+- Exception `AgentStopped` para parada controlada
+
+### 11. `python-agent/agent/scheduler.py`
+Classe `AgentScheduler` com:
+- Loop infinito com intervalo dinâmico
+- Suporte a `next_heartbeat_in` do backend
+- Tratamento de exceções no loop
+
+### 12. `python-agent/agent/logger.py`
+Sistema de logging com:
+- Rotação de arquivos (1MB, 1 backup)
+- Output simultâneo para arquivo e stdout
+- Formato padronizado com timestamp
+
+---
+
+## Detalhes Técnicos
+
+### Integração com Edge Functions
+O agent se comunica com 3 endpoints:
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/register-agent` | POST | Registro inicial com activation code |
+| `/agent-heartbeat` | POST | Heartbeat periódico |
+| `/agent-refresh` | POST | Renovação de access token |
+
+### Fluxo de Autenticação
 
 ```text
-Dashboard Geral
-├── Workspaces
-├── Usuários
-├── Agents
-├── Administradores
-└── Configurações
-
-Microsoft 365
-├── Entra ID
-│   ├── Análise de Segurança
-│   └── Logs de Auditoria
-├── Conexão com Tenant
-├── SharePoint (futuro)
-├── Exchange (futuro)
-└── ...
-
-Firewall
-├── Firewalls
-├── Relatórios
-└── Dashboard
+┌─────────────────────────────────────────────────────────────┐
+│                    INICIALIZAÇÃO                            │
+├─────────────────────────────────────────────────────────────┤
+│  1. Carrega state.json                                      │
+│  2. Verifica se agent_id existe                             │
+│     ├─ NÃO → Chama /register-agent com activation_code      │
+│     └─ SIM → Continua                                       │
+│  3. Verifica se access_token é válido (exp > now)           │
+│     ├─ NÃO → Chama /agent-refresh com refresh_token         │
+│     └─ SIM → Continua                                       │
+│  4. Entra no loop de heartbeat                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Detalhes Técnicos
+### Tratamento de Erros
 
-**Componente PageBreadcrumb:**
+| Código | Ação do Agent |
+|--------|---------------|
+| `TOKEN_EXPIRED` | Chama `/agent-refresh` |
+| `INVALID_SIGNATURE` | Limpa estado, para execução |
+| `INVALID_TOKEN` | Limpa estado, para execução |
+| `BLOCKED` / `REVOKED` | Para execução com erro crítico |
 
-```typescript
-// src/components/layout/PageBreadcrumb.tsx
-import { Link } from 'react-router-dom';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+---
 
-interface BreadcrumbItemType {
-  label: string;
-  href?: string;
-}
+## Benefícios desta Organização
 
-interface PageBreadcrumbProps {
-  items: BreadcrumbItemType[];
-}
+1. **Contexto Unificado**: Todo o código (backend + agent) no mesmo projeto
+2. **Versionamento**: Git rastreia alterações do agent junto com as Edge Functions
+3. **Documentação**: README.md explica como usar e debugar
+4. **Manutenibilidade**: Estrutura modular facilita alterações futuras
+5. **Segurança**: `.env.example` sem secrets, `.env` real fica fora do Git
 
-export function PageBreadcrumb({ items }: PageBreadcrumbProps) {
-  return (
-    <Breadcrumb className="mb-4">
-      <BreadcrumbList>
-        {items.map((item, index) => {
-          const isLast = index === items.length - 1;
-          
-          return (
-            <Fragment key={item.label}>
-              <BreadcrumbItem>
-                {isLast ? (
-                  <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink asChild>
-                    <Link to={item.href!}>{item.label}</Link>
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-              {!isLast && <BreadcrumbSeparator />}
-            </Fragment>
-          );
-        })}
-      </BreadcrumbList>
-    </Breadcrumb>
-  );
-}
-```
-
-**Exemplo de Uso em EntraIdAnalysisPage:**
-
-```typescript
-<PageBreadcrumb
-  items={[
-    { label: 'Microsoft 365', href: '/scope-m365' },
-    { label: 'Entra ID', href: '/scope-m365/entra-id' },
-    { label: 'Análise de Segurança' }, // Último item, sem href
-  ]}
-/>
-
-// Espaçamento maior antes do título
-<h1 className="text-2xl font-bold text-foreground">Análise de Segurança do Entra ID</h1>
-```
-
-**Alteração de Espaçamento:**
-
-Atualmente o header usa `mb-1` após os badges. Com o novo componente:
-- O `PageBreadcrumb` terá `mb-4` (16px de espaçamento abaixo)
-- O título `<h1>` permanece sem margin-top adicional
-
-### Arquivos a Serem Modificados
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/layout/PageBreadcrumb.tsx` | **Criar novo** |
-| `src/pages/m365/M365DashboardPage.tsx` | Adicionar breadcrumb |
-| `src/pages/m365/EntraIdPage.tsx` | Substituir badges por PageBreadcrumb |
-| `src/pages/m365/EntraIdAnalysisPage.tsx` | Substituir badges por PageBreadcrumb |
-| `src/pages/m365/EntraIdAuditLogsPage.tsx` | Adicionar breadcrumb |
-| `src/pages/m365/TenantConnectionPage.tsx` | Substituir badge por PageBreadcrumb |
-| `src/pages/firewall/FirewallListPage.tsx` | Adicionar breadcrumb |
-| `src/pages/firewall/FirewallReportsPage.tsx` | Adicionar breadcrumb |
-| `src/pages/firewall/FirewallDashboardPage.tsx` | Adicionar breadcrumb |
-| `src/pages/GeneralDashboardPage.tsx` | Adicionar breadcrumb (nível raiz) |
-| `src/pages/ClientsPage.tsx` | Adicionar breadcrumb |
-| `src/pages/UsersPage.tsx` | Adicionar breadcrumb |
-| `src/pages/AgentsPage.tsx` | Adicionar breadcrumb |
-| `src/pages/AdministratorsPage.tsx` | Adicionar breadcrumb |
-| `src/pages/admin/SettingsPage.tsx` | Adicionar breadcrumb |
-
-### Páginas Excluídas (Modais/Dialogs)
-
-As seguintes páginas/componentes NÃO receberão breadcrumbs:
-- `InviteUserDialog`
-- `AddFirewallDialog`
-- `EditFirewallDialog`
-- `TenantConnectionWizard`
-- `TenantEditDialog`
-- `AdminEditDialog`
-- Qualquer outro componente Dialog/Modal
-
-### Resultado Esperado
-
-1. Todas as páginas principais terão um mapa de navegação consistente no topo
-2. Cada nível do breadcrumb será clicável e navegará para a página correspondente
-3. O espaçamento entre o breadcrumb e o título será maior (16px vs 4px atual)
-4. A experiência de navegação será mais intuitiva e consistente em todo o sistema
