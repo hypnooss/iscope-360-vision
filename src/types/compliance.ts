@@ -43,6 +43,12 @@ export interface ComplianceReport {
   generatedAt: Date;
   firmwareVersion?: string;
   cves?: CVEInfo[];
+  // System info from report
+  systemInfo?: {
+    hostname?: string;
+    model?: string;
+    serial?: string;
+  };
 }
 
 export interface CVEInfo {
