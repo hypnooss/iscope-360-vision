@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,10 +16,24 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Plus, Server } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Client {
   id: string;
   name: string;
+}
+
+interface DeviceType {
+  id: string;
+  name: string;
+  vendor: string;
+  code: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  client_id: string;
 }
 
 type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
@@ -33,12 +47,16 @@ interface AddFirewallDialogProps {
     api_key: string;
     client_id: string;
     schedule: ScheduleFrequency;
+    device_type_id: string;
+    agent_id: string;
   }) => Promise<void>;
 }
 
 export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceType[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -47,7 +65,41 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     api_key: '',
     client_id: '',
     schedule: 'manual' as ScheduleFrequency,
+    device_type_id: '',
+    agent_id: '',
   });
+
+  // Fetch device types on mount
+  useEffect(() => {
+    const fetchDeviceTypes = async () => {
+      const { data } = await supabase
+        .from('device_types')
+        .select('id, name, vendor, code')
+        .eq('is_active', true)
+        .eq('category', 'firewall')
+        .order('vendor');
+      if (data) setDeviceTypes(data);
+    };
+    fetchDeviceTypes();
+  }, []);
+
+  // Fetch agents when client changes
+  useEffect(() => {
+    const fetchAgents = async () => {
+      if (!formData.client_id) {
+        setAgents([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('agents')
+        .select('id, name, client_id')
+        .eq('client_id', formData.client_id)
+        .eq('revoked', false)
+        .order('name');
+      if (data) setAgents(data);
+    };
+    fetchAgents();
+  }, [formData.client_id]);
 
   const resetForm = () => {
     setFormData({
@@ -57,6 +109,8 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
       api_key: '',
       client_id: '',
       schedule: 'manual',
+      device_type_id: '',
+      agent_id: '',
     });
   };
 
@@ -97,7 +151,7 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
               <Label htmlFor="fw-client">Cliente *</Label>
               <Select
                 value={formData.client_id}
-                onValueChange={(v) => setFormData({ ...formData, client_id: v })}
+                onValueChange={(v) => setFormData({ ...formData, client_id: v, agent_id: '' })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um cliente" />
@@ -110,6 +164,50 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Device Type */}
+            <div className="space-y-2">
+              <Label htmlFor="fw-device-type">Tipo de Dispositivo *</Label>
+              <Select
+                value={formData.device_type_id}
+                onValueChange={(v) => setFormData({ ...formData, device_type_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {deviceTypes.map((dt) => (
+                    <SelectItem key={dt.id} value={dt.id}>
+                      {dt.vendor} - {dt.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Agent */}
+            <div className="space-y-2">
+              <Label htmlFor="fw-agent">Agent *</Label>
+              <Select
+                value={formData.agent_id}
+                onValueChange={(v) => setFormData({ ...formData, agent_id: v })}
+                disabled={!formData.client_id}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={formData.client_id ? "Selecione o agent" : "Selecione um cliente primeiro"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formData.client_id && agents.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum agent disponível para este cliente</p>
+              )}
             </div>
 
             {/* Nome */}
