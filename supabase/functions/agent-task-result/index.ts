@@ -256,6 +256,15 @@ function processComplianceRules(
     systemInfo.version = results.version;
     systemInfo.serial = results.serial;
     systemInfo.model = results.model;
+    
+    // Calculate formatted uptime
+    if (typeof results.uptime === 'number') {
+      const uptimeSec = results.uptime;
+      const days = Math.floor(uptimeSec / 86400);
+      const hours = Math.floor((uptimeSec % 86400) / 3600);
+      const minutes = Math.floor((uptimeSec % 3600) / 60);
+      systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+    }
   }
   
   // Extract firmware version from multiple possible sources
