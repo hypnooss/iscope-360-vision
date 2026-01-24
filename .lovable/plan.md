@@ -1,74 +1,105 @@
 
 
-# Plano: Criar Arquivo de Indexação para Pasta python-agent
+# Plano: Alinhar Formato de Relatório do Agent com Formato Original
 
-## Problema
+## Contexto do Problema
 
-A pasta `python-agent/` não está visível na interface do Lovable porque o sistema indexa principalmente arquivos web (TypeScript, JavaScript, etc.) e ignora arquivos Python puros.
+O relatório gerado pelo novo fluxo (Python Agent + compliance_rules) está estruturalmente diferente do formato original (fortigate-compliance edge function direta):
 
-## Solução
+1. **O formato original** gera ~35 checks detalhados com `description`, `recommendation`, `evidence`, organizados em categorias como array com `icon` e `passRate`
 
-Criar um arquivo TypeScript simples na pasta `python-agent/` que servirá apenas para forçar a indexação da pasta, permitindo visualização de todos os arquivos.
+2. **O formato novo** gera apenas 8 checks básicos (das 8 regras cadastradas em `compliance_rules`), sem campos importantes e com estrutura de categorias como objeto
 
-## Arquivo a Criar
+## Diferenças Técnicas
 
-| Arquivo | Propósito |
+| Aspecto | Formato Original | Formato Agent | Impacto |
+|---------|-----------------|---------------|---------|
+| Nº de Checks | ~35 | 8 | Dashboard muito vazio |
+| `categories` | Array | Object | UI quebra (já corrigido parcialmente) |
+| Status | `warning` | `warn` | Cores erradas (já corrigido) |
+| `description` | Presente | Ausente | Falta contexto |
+| `recommendation` | Presente | Ausente | Falta orientação |
+| `firmwareVersion` | Campo direto | Dentro de `system_info` | CVE Section não funciona |
+
+## Opções de Solução
+
+### Opção A: Enriquecer compliance_rules (Recomendado)
+Adicionar mais campos às regras no banco e processar no agent-task-result:
+- Adicionar `description`, `recommendation` ao output
+- Cadastrar TODAS as ~35 regras de compliance (não apenas 8)
+- Manter processamento centralizado no backend
+
+**Prós**: Mantém arquitetura nova, regras configuráveis
+**Contras**: Requer cadastrar muitas regras manualmente
+
+### Opção B: Híbrido - Agent coleta + Backend processa com lógica completa
+Após o agent retornar os dados brutos, o backend executa a mesma lógica complexa do fortigate-compliance original.
+
+**Prós**: Resultado idêntico ao original
+**Contras**: Duplica lógica complexa no backend
+
+### Opção C: Transformação no Frontend (Paliativo)
+Fazer o `FirewallAnalysis.tsx` transformar o formato novo no antigo, adicionando campos faltantes com valores default.
+
+**Prós**: Rápido de implementar
+**Contras**: Não resolve a falta de dados (description, recommendation)
+
+## Solução Proposta: Opção A + C Combinadas
+
+### Fase 1: Correção Imediata (Frontend)
+Ajustar `FirewallAnalysis.tsx` para:
+- Normalizar `score` → `overallScore`
+- Extrair `firmwareVersion` de `system_info.version`
+- Garantir que categorias sejam convertidas corretamente
+- Adicionar `description` default = `details` quando ausente
+
+### Fase 2: Enriquecimento das Regras (Backend)
+1. Adicionar campos `recommendation` e `description` na tabela `compliance_rules`
+2. Atualizar `agent-task-result` para incluir esses campos no output
+3. Cadastrar regras adicionais para cobrir mais verificações
+
+### Fase 3: Expandir Cobertura
+Cadastrar as ~27 regras restantes para ter cobertura equivalente ao fluxo original.
+
+## Arquivos a Modificar
+
+### Fase 1 (Imediata)
+
+| Arquivo | Alteração |
 |---------|-----------|
-| `python-agent/_index.ts` | Arquivo vazio para forçar indexação da pasta |
+| `src/pages/FirewallAnalysis.tsx` | Melhorar transformação de dados do novo formato |
 
-## Conteúdo do Arquivo
+### Fase 2 (Backend)
+
+| Item | Alteração |
+|------|-----------|
+| Tabela `compliance_rules` | Adicionar colunas `recommendation`, `pass_description`, `fail_description` |
+| `agent-task-result/index.ts` | Incluir `description` e `recommendation` no output |
+
+## Implementação Fase 1 (Prioridade)
+
+A transformação em `fetchLastAnalysis` precisa:
 
 ```typescript
-/**
- * Este arquivo existe apenas para forçar a indexação da pasta python-agent/
- * no sistema de arquivos do Lovable.
- * 
- * NÃO USAR EM PRODUÇÃO - arquivo auxiliar para desenvolvimento.
- * 
- * Para atualizar o agent no servidor, copie os arquivos .py desta pasta.
- */
-
-export const PYTHON_AGENT_FILES = [
-  'main.py',
-  'requirements.txt',
-  'agent/__init__.py',
-  'agent/api_client.py',
-  'agent/auth.py',
-  'agent/config.py',
-  'agent/heartbeat.py',
-  'agent/logger.py',
-  'agent/scheduler.py',
-  'agent/state.py',
-  'agent/tasks.py',
-  'agent/executors/__init__.py',
-  'agent/executors/base.py',
-  'agent/executors/http_request.py',
-  'agent/executors/snmp.py',
-  'agent/executors/ssh.py',
-] as const;
+// Normalizar dados vindos do agent
+const reportData: ComplianceReport = {
+  overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
+  
+  // Extrair firmware de system_info se não tiver direto
+  firmwareVersion: (rawData.firmwareVersion as string) 
+    ?? ((rawData.system_info as any)?.version as string)
+    ?? undefined,
+  
+  // Para cada check, adicionar description = details se ausente
+  // Normalizar status 'warn' -> 'warning'
+};
 ```
-
-## Benefícios
-
-1. **Visibilidade**: Pasta `python-agent/` aparecerá na árvore de arquivos
-2. **Documentação**: Lista todos os arquivos Python do agent
-3. **Sem impacto**: Não afeta o funcionamento do agent Python
-4. **Fácil remoção**: Pode ser deletado quando não for mais necessário
 
 ## Resultado Esperado
 
-Após criar o arquivo, a estrutura ficará visível:
-
-```
-python-agent/
-├── _index.ts          ← Novo (força indexação)
-├── main.py
-├── requirements.txt
-├── README.md
-└── agent/
-    ├── tasks.py       ← Arquivo com Fail-Fast
-    ├── api_client.py
-    ├── executors/
-    └── ...
-```
+Após implementação:
+1. Dashboard exibe relatório sem erros
+2. CVE Section funciona (tem firmwareVersion)
+3. Checks mostram informações básicas
+4. Estrutura preparada para expansão futura das regras
 
