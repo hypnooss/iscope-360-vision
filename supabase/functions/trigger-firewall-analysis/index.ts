@@ -86,13 +86,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if there's already a pending/running task for this firewall
-    const { data: existingTask } = await supabase
+    // Auto-cleanup: Mark expired tasks as timeout before checking for duplicates
+    const now = new Date().toISOString();
+    const { data: expiredTasks } = await supabase
       .from('agent_tasks')
-      .select('id, status')
+      .update({
+        status: 'timeout',
+        error_message: 'Task expirada automaticamente pelo sistema',
+        completed_at: now
+      })
       .eq('target_id', firewall_id)
       .eq('target_type', 'firewall')
       .in('status', ['pending', 'running'])
+      .lt('expires_at', now)
+      .select('id');
+
+    if (expiredTasks?.length) {
+      console.log(`[trigger-firewall-analysis] Auto-cleaned ${expiredTasks.length} expired tasks`);
+    }
+
+    // Check if there's already a pending/running task for this firewall (only non-expired)
+    const { data: existingTask } = await supabase
+      .from('agent_tasks')
+      .select('id, status, expires_at')
+      .eq('target_id', firewall_id)
+      .eq('target_type', 'firewall')
+      .in('status', ['pending', 'running'])
+      .gt('expires_at', now)
       .maybeSingle();
 
     if (existingTask) {
