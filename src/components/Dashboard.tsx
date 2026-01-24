@@ -4,7 +4,7 @@ import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
 import { CategorySection } from './CategorySection';
 import { CVESection } from './CVESection';
-import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, Shield, Globe, Cpu } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, Shield, Globe, Cpu, Server, Hash, Clock, ShieldCheck } from 'lucide-react';
 import { Button } from './ui/button';
 import { exportReportToPDF } from '@/utils/pdfExport';
 import { toast } from 'sonner';
@@ -74,25 +74,51 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           </div>
           
           {/* Firewall Info - lado direito do score */}
-          <div className="lg:col-span-2 glass-card rounded-xl p-6 border border-primary/20 flex flex-col justify-center">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-primary" />
-                <span className="text-muted-foreground">Firewall:</span>
-                <span className="font-semibold text-foreground text-lg">{firewallName || 'N/A'}</span>
+          <div className="lg:col-span-2 glass-card rounded-xl p-6 border border-primary/20">
+            <div className="flex items-start gap-4">
+              {/* Fortinet Badge */}
+              <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
+                <ShieldCheck className="w-10 h-10 text-primary mb-1" />
+                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">FortiGate</span>
               </div>
-              <div className="flex items-center gap-3">
-                <Globe className="w-5 h-5 text-primary" />
-                <span className="text-muted-foreground">URL:</span>
-                <span className="font-medium text-foreground">{firewallUrl || 'N/A'}</span>
-              </div>
-              {report.firmwareVersion && (
-                <div className="flex items-center gap-3">
-                  <Cpu className="w-5 h-5 text-primary" />
-                  <span className="text-muted-foreground">FortiOS:</span>
-                  <span className="font-medium text-foreground">v{report.firmwareVersion}</span>
+              
+              {/* Info Grid */}
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">Nome:</span>
+                  <span className="font-semibold text-foreground truncate">{firewallName || 'N/A'}</span>
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">FortiOS:</span>
+                  <span className="font-medium text-foreground">v{report.firmwareVersion || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">URL:</span>
+                  <span className="font-medium text-foreground text-sm truncate">{firewallUrl || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Server className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">Modelo:</span>
+                  <span className="font-medium text-foreground">{report.systemInfo?.model || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Hash className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">Serial:</span>
+                  <span className="font-medium text-foreground font-mono text-sm">{report.systemInfo?.serial || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-sm">Análise:</span>
+                  <span className="font-medium text-foreground text-sm">
+                    {report.generatedAt instanceof Date 
+                      ? report.generatedAt.toLocaleDateString('pt-BR')
+                      : new Date(report.generatedAt).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

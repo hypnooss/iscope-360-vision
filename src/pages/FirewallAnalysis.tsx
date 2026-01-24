@@ -78,6 +78,14 @@ const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport
     ?? ((rawData.system_info as Record<string, unknown>)?.version as string)
     ?? undefined;
   
+  // Extract system info
+  const rawSystemInfo = rawData.system_info as Record<string, unknown> | undefined;
+  const systemInfo = rawSystemInfo ? {
+    hostname: rawSystemInfo.hostname as string | undefined,
+    model: rawSystemInfo.model as string | undefined,
+    serial: rawSystemInfo.serial as string | undefined,
+  } : undefined;
+  
   return {
     overallScore: (rawData.overallScore as number) ?? (rawData.score as number) ?? 0,
     totalChecks: allChecks.length,
@@ -87,6 +95,7 @@ const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport
     categories: categories as ComplianceCategory[],
     generatedAt: new Date(rawData.generatedAt as string || Date.now()),
     firmwareVersion,
+    systemInfo,
   };
 };
 
