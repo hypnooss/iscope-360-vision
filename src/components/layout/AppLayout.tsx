@@ -46,6 +46,7 @@ import {
   Cpu,
   HardDrive,
   Wifi,
+  ClipboardList,
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
@@ -163,7 +164,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
     
     // Expand admin menu if on admin routes
-    if (path === '/workspaces' || path === '/administrators' || path === '/settings') {
+    if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections') {
       setAdminMenuOpen(true);
     }
   }, [location.pathname, setActiveModule]);
@@ -356,7 +357,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <button
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            (location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings')
+            (location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections')
               ? 'bg-warning/20 text-warning border border-warning/30'
               : 'text-warning hover:bg-warning/10',
                 !sidebarOpen && 'justify-center'
@@ -415,6 +416,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <Settings className="w-4 h-4" />
               Configurações
+            </Link>
+            <Link
+              to="/collections"
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                location.pathname === '/collections'
+                  ? 'bg-warning/20 text-warning font-medium'
+                  : 'text-warning/80 hover:bg-warning/10'
+              )}
+            >
+              <ClipboardList className="w-4 h-4" />
+              Coletas
             </Link>
           </CollapsibleContent>
         </Collapsible>
