@@ -267,13 +267,30 @@ function processComplianceRules(
     firmwareVersion = extractFirmwareVersion(results.version);
   }
   
-  // Source 2: system_firmware.current.version
+  // Source 2: system_firmware - multiple paths
   if (!firmwareVersion && systemFirmware) {
     const fwObj = systemFirmware as Record<string, unknown>;
-    const resultsObj = fwObj.results as Record<string, unknown> | undefined;
-    const current = (fwObj.current || resultsObj?.current) as Record<string, unknown> | undefined;
-    if (current?.version) {
-      firmwareVersion = extractFirmwareVersion(current.version);
+    
+    // Direct version field (most common in FortiOS API responses)
+    if (fwObj.version) {
+      firmwareVersion = extractFirmwareVersion(fwObj.version);
+    }
+    
+    // Nested: results.current.version or current.version
+    if (!firmwareVersion) {
+      const resultsObj = fwObj.results as Record<string, unknown> | undefined;
+      const current = (fwObj.current || resultsObj?.current) as Record<string, unknown> | undefined;
+      if (current?.version) {
+        firmwareVersion = extractFirmwareVersion(current.version);
+      }
+    }
+    
+    // Nested: results.version
+    if (!firmwareVersion && fwObj.results) {
+      const resultsObj = fwObj.results as Record<string, unknown>;
+      if (resultsObj.version) {
+        firmwareVersion = extractFirmwareVersion(resultsObj.version);
+      }
     }
   }
   
