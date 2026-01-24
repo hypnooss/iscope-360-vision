@@ -261,15 +261,29 @@ function processComplianceRules(
       const results = systemStatus.results as Record<string, unknown>;
       systemInfo.hostname = results.hostname;
       systemInfo.model = results.model || results.model_name;
-      
-      // Calculate formatted uptime (uptime is in seconds)
-      if (typeof results.uptime === 'number') {
-        const uptimeSec = results.uptime;
-        const days = Math.floor(uptimeSec / 86400);
-        const hours = Math.floor((uptimeSec % 86400) / 3600);
-        const minutes = Math.floor((uptimeSec % 3600) / 60);
-        systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
-      }
+    }
+  }
+  
+  // Try to get uptime from webui_state endpoint (more reliable source)
+  const webuiState = rawData['webui_state'] as Record<string, unknown> | undefined;
+  if (webuiState?.results) {
+    const results = webuiState.results as Record<string, unknown>;
+    
+    // Extract uptime from webui_state (uptime is in seconds)
+    if (typeof results.uptime === 'number') {
+      const uptimeSec = results.uptime;
+      const days = Math.floor(uptimeSec / 86400);
+      const hours = Math.floor((uptimeSec % 86400) / 3600);
+      const minutes = Math.floor((uptimeSec % 3600) / 60);
+      systemInfo.uptime = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+    }
+    
+    // Also get serial/hostname from here if not already set
+    if (!systemInfo.serial && results.serial) {
+      systemInfo.serial = results.serial;
+    }
+    if (!systemInfo.hostname && results.hostname) {
+      systemInfo.hostname = results.hostname;
     }
   }
   
