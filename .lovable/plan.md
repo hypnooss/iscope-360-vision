@@ -1,159 +1,105 @@
 
-# Plano: Ajustes Finais na Tela de Análise de Compliance
+# Plano: Integrar Stats Cards no Card de Informações do Firewall
 
-## Resumo das Alterações Solicitadas
-
-1. **Aumentar espaçamento entre categorias** - Atualmente `mb-6`, aumentar para `mb-10`
-2. **Diminuir altura dos cards de estatísticas** - Reduzir padding dos StatCards
-3. **Adicionar informações de identificação do firewall** - Nome, URL e versão do firmware
+## Objetivo
+Mover os 4 cards de estatísticas (Total de Verificações, Aprovadas, Falhas, Alertas) para dentro do card de informações do firewall, utilizando o espaço vazio abaixo dos dados do dispositivo.
 
 ---
 
-## Modificações Detalhadas
+## Layout Proposto
 
-### 1. Aumentar Espaçamento entre Categorias
-
-**Arquivo:** `src/components/CategorySection.tsx`
-
-**Alteração:**
-- Linha 51: Alterar `mb-6` para `mb-10`
-
-```tsx
-// Antes
-className="animate-slide-in mb-6"
-
-// Depois  
-className="animate-slide-in mb-10"
+```text
++------------------+--------------------------------------------------+
+|                  |  [FORTIGATE]  Nome: SAO-FW    | FortiOS: v7.2.10|
+|       58         |              URL: https://... | Modelo: FGT40F  |
+|     de 100       |              Serial: N/A      | Análise: 24/01  |
+|   Risco Alto     |  +----------+----------+----------+----------+  |
+|                  |  | Total 24 | Aprov 11 | Falhas 2 | Alert 11 |  |
+|                  |  +----------+----------+----------+----------+  |
++------------------+--------------------------------------------------+
 ```
 
 ---
 
-### 2. Diminuir Altura dos Cards de Estatísticas
+## Modificações
 
-**Arquivo:** `src/components/StatCard.tsx`
+### Arquivo: `src/components/Dashboard.tsx`
 
-**Alteração:**
-- Linha 37: Alterar padding de `p-5` para `p-4`
-- Linha 45: Reduzir tamanho do valor de `text-3xl` para `text-2xl`
-- Linha 49: Reduzir padding do ícone de `p-3` para `p-2`
-- Linha 50: Reduzir tamanho do ícone de `w-6 h-6` para `w-5 h-5`
+1. **Remover a seção separada de Stats Cards** (linhas 126-156)
 
-```tsx
-// Antes
-<div className={cn("glass-card rounded-xl p-5 border...")}>
-  ...
-  <p className={cn("text-3xl font-bold tabular-nums", ...)}>
-  ...
-  <div className={cn("p-3 rounded-lg", ...)}>
-    <Icon className="w-6 h-6" />
+2. **Integrar os StatCards dentro do card de informações do firewall**:
+   - Reorganizar o layout interno do card direito
+   - Criar uma estrutura com:
+     - Parte superior: Badge FortiGate + Grid de informações
+     - Parte inferior: Grid com os 4 StatCards (compactos)
 
-// Depois
-<div className={cn("glass-card rounded-xl p-4 border...")}>
-  ...
-  <p className={cn("text-2xl font-bold tabular-nums", ...)}>
-  ...
-  <div className={cn("p-2 rounded-lg", ...)}>
-    <Icon className="w-5 h-5" />
-```
+3. **Reduzir padding dos StatCards** quando dentro do card de informações:
+   - Criar variante inline/compact ou simplesmente reduzir tamanho via classes
 
 ---
 
-### 3. Adicionar Informações do Firewall
-
-**Arquivo:** `src/components/Dashboard.tsx`
-
-**Alterações necessárias:**
-
-#### 3.1 Atualizar Props do Dashboard
-
-Adicionar novas props para receber informações do firewall:
+## Estrutura do Novo Card
 
 ```tsx
-interface DashboardProps {
-  report: ComplianceReport;
-  onRefresh: () => void;
-  isRefreshing: boolean;
-  onDisconnect?: () => void;
-  // Novas props
-  firewallName?: string;
-  firewallUrl?: string;
-}
-```
-
-#### 3.2 Adicionar Card de Identificação do Firewall
-
-Inserir um card informativo acima ou abaixo dos stats, contendo:
-- Nome do Firewall
-- URL do FortiGate
-- Versão do Firmware (já disponível em `report.firmwareVersion`)
-
-```tsx
-{/* Firewall Info Card - acima dos stats */}
-<div className="glass-card rounded-lg p-4 mb-4 border-primary/20">
-  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-    <div className="flex items-center gap-2">
-      <Shield className="w-4 h-4 text-primary" />
-      <span className="text-muted-foreground">Firewall:</span>
-      <span className="font-medium text-foreground">{firewallName || 'N/A'}</span>
+{/* Firewall Info + Stats combinados */}
+<div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col">
+  {/* Parte superior: Info do Firewall */}
+  <div className="flex items-start gap-4 mb-4">
+    {/* Badge FortiGate */}
+    <div className="hidden sm:flex ...">
+      <ShieldCheck ... />
+      <span>FORTIGATE</span>
     </div>
-    <div className="flex items-center gap-2">
-      <Globe className="w-4 h-4 text-primary" />
-      <span className="text-muted-foreground">URL:</span>
-      <span className="font-medium text-foreground">{firewallUrl || 'N/A'}</span>
+    
+    {/* Grid de informações */}
+    <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1.5">
+      {/* Nome, URL, Serial, FortiOS, Modelo, Análise */}
     </div>
-    {report.firmwareVersion && (
-      <div className="flex items-center gap-2">
-        <Cpu className="w-4 h-4 text-primary" />
-        <span className="text-muted-foreground">FortiOS:</span>
-        <span className="font-medium text-foreground">v{report.firmwareVersion}</span>
-      </div>
-    )}
+  </div>
+  
+  {/* Separador visual */}
+  <div className="border-t border-border/50 my-3" />
+  
+  {/* Parte inferior: Stats Cards compactos */}
+  <div className="grid grid-cols-4 gap-3">
+    <StatCard title="Total" value={24} icon={ListChecks} variant="default" compact />
+    <StatCard title="Aprovadas" value={11} icon={CheckCircle} variant="success" compact />
+    <StatCard title="Falhas" value={2} icon={XCircle} variant="destructive" compact />
+    <StatCard title="Alertas" value={11} icon={AlertTriangle} variant="warning" compact />
   </div>
 </div>
 ```
 
-#### 3.3 Atualizar FirewallAnalysis.tsx
+---
 
-Passar as novas props para o Dashboard:
+## Modificação do StatCard
+
+### Arquivo: `src/components/StatCard.tsx`
+
+Adicionar prop `compact` para renderização inline:
 
 ```tsx
-<Dashboard
-  report={report}
-  onRefresh={handleRefresh}
-  isRefreshing={isRefreshing}
-  firewallName={firewall?.name}
-  firewallUrl={firewall?.fortigate_url}
-/>
+interface StatCardProps {
+  // ... props existentes
+  compact?: boolean;
+}
+
+// Quando compact=true:
+// - Padding menor: p-3 ao invés de p-4
+// - Título menor: text-xs
+// - Valor menor: text-xl ao invés de text-2xl
+// - Ícone menor: w-4 h-4 ao invés de w-5 h-5
+// - Layout mais horizontal
 ```
 
 ---
 
 ## Resultado Visual Esperado
 
-```text
-+----------------------------------------------------------+
-| Análise de Compliance                    [PDF] [Reanalisar]|
-| Relatório gerado em 24/01/2026                            |
-+----------------------------------------------------------+
-| 🛡️ Firewall: FW-Matriz  |  🌐 URL: https://fw.empresa.com |
-| 💻 FortiOS: v7.2.10                                        |
-+----------------------------------------------------------+
-|  [SCORE]  |  [Total] [Aprovadas] [Falhas] [Alertas]       |
-|    85%    |   35       28          5         2            |
-+----------------------------------------------------------+
-
-       ↕️ mb-10 (espaçamento maior)
-
-+----------------------------------------------------------+
-| Categoria 1...                                           |
-+----------------------------------------------------------+
-
-       ↕️ mb-10 (espaçamento maior)
-
-+----------------------------------------------------------+
-| Categoria 2...                                           |
-+----------------------------------------------------------+
-```
+- O card de informações do firewall ocupará toda a altura disponível ao lado do Score
+- Os 4 stat cards ficarão alinhados na parte inferior desse card
+- Layout mais compacto e eficiente, eliminando uma linha inteira da página
+- Melhor aproveitamento do espaço visual
 
 ---
 
@@ -161,7 +107,5 @@ Passar as novas props para o Dashboard:
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/CategorySection.tsx` | Aumentar margin-bottom de `mb-6` para `mb-10` |
-| `src/components/StatCard.tsx` | Reduzir padding e tamanhos de fonte/ícone |
-| `src/components/Dashboard.tsx` | Adicionar props e card de identificação do firewall |
-| `src/pages/FirewallAnalysis.tsx` | Passar novas props para o Dashboard |
+| `src/components/Dashboard.tsx` | Integrar StatCards dentro do card de info do firewall |
+| `src/components/StatCard.tsx` | Adicionar prop `compact` para versão reduzida |
