@@ -38,19 +38,16 @@ class HTTPSessionExecutor(BaseExecutor):
         Execute an HTTP session step.
         
         Args:
-            step: Step configuration containing:
+            step: Step configuration containing fields at step level OR inside config:
                 - id: Step identifier
-                - executor: 'http_session'
-                - config: {
-                    action: 'login' | 'request' | 'logout'
-                    method: HTTP method (GET, POST, DELETE, etc.)
-                    path: URL path
-                    headers: Optional headers dict
-                    body: Optional request body
-                    basic_auth: Whether to use Basic Auth for this step
-                    verify_ssl: Whether to verify SSL (default: False)
-                    timeout: Request timeout in seconds (default: 30)
-                  }
+                - type/executor: 'http_session'
+                - action: 'login' | 'request' | 'logout'
+                - method: HTTP method (GET, POST, DELETE, etc.)
+                - path: URL path
+                - headers: Optional headers dict
+                - body: Optional request body
+                - verify_ssl: Whether to verify SSL (default: False)
+                - timeout: Request timeout in seconds (default: 30)
             context: Execution context containing:
                 - base_url: Base URL for the target
                 - username: Username for Basic Auth
@@ -63,29 +60,31 @@ class HTTPSessionExecutor(BaseExecutor):
         """
         config = step.get('config', {})
         step_id = step.get('id', 'unknown')
-        action = config.get('action', 'request')
+        # Support 'action' at step level (blueprint) OR inside config (legacy)
+        action = step.get('action') or config.get('action', 'request')
         
         if action == 'login':
-            return self._do_login(step_id, config, context)
+            return self._do_login(step_id, step, config, context)
         elif action == 'logout':
-            return self._do_logout(step_id, config, context)
+            return self._do_logout(step_id, step, config, context)
         else:
-            return self._do_request(step_id, config, context)
+            return self._do_request(step_id, step, config, context)
 
     def _get_session_key(self, context: Dict[str, Any]) -> str:
         """Generate a unique session key based on the target."""
         base_url = context.get('base_url', '')
         return f"session_{hash(base_url)}"
 
-    def _do_login(self, step_id: str, config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _do_login(self, step_id: str, step: Dict[str, Any], config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Authenticate with the target and store session cookies.
         """
-        method = config.get('method', 'POST').upper()
-        path = config.get('path', '/api/sonicos/auth')
-        headers = config.get('headers', {})
-        verify_ssl = config.get('verify_ssl', False)
-        timeout = config.get('timeout', 30)
+        # Read from step level first, fallback to config
+        method = (step.get('method') or config.get('method', 'POST')).upper()
+        path = step.get('path') or config.get('path', '/api/sonicos/auth')
+        headers = step.get('headers') or config.get('headers', {})
+        verify_ssl = step.get('verify_ssl') if step.get('verify_ssl') is not None else config.get('verify_ssl', False)
+        timeout = step.get('timeout') or config.get('timeout', 30)
         
         base_url = context.get('base_url', '').rstrip('/')
         if not base_url:
@@ -186,16 +185,17 @@ class HTTPSessionExecutor(BaseExecutor):
                 'error': f'Unexpected error: {str(e)}'
             }
 
-    def _do_request(self, step_id: str, config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _do_request(self, step_id: str, step: Dict[str, Any], config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a request using the established session.
         """
-        method = config.get('method', 'GET').upper()
-        path = config.get('path', '/')
-        headers = config.get('headers', {})
-        body = config.get('body')
-        verify_ssl = config.get('verify_ssl', False)
-        timeout = config.get('timeout', 30)
+        # Read from step level first, fallback to config
+        method = (step.get('method') or config.get('method', 'GET')).upper()
+        path = step.get('path') or config.get('path', '/')
+        headers = step.get('headers') or config.get('headers', {})
+        body = step.get('body') or config.get('body')
+        verify_ssl = step.get('verify_ssl') if step.get('verify_ssl') is not None else config.get('verify_ssl', False)
+        timeout = step.get('timeout') or config.get('timeout', 30)
         
         base_url = context.get('base_url', '').rstrip('/')
         if not base_url:
@@ -277,15 +277,16 @@ class HTTPSessionExecutor(BaseExecutor):
                 'error': f'Unexpected error: {str(e)}'
             }
 
-    def _do_logout(self, step_id: str, config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _do_logout(self, step_id: str, step: Dict[str, Any], config: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
         End the session and clean up.
         """
-        method = config.get('method', 'DELETE').upper()
-        path = config.get('path', '/api/sonicos/auth')
-        headers = config.get('headers', {})
-        verify_ssl = config.get('verify_ssl', False)
-        timeout = config.get('timeout', 30)
+        # Read from step level first, fallback to config
+        method = (step.get('method') or config.get('method', 'DELETE')).upper()
+        path = step.get('path') or config.get('path', '/api/sonicos/auth')
+        headers = step.get('headers') or config.get('headers', {})
+        verify_ssl = step.get('verify_ssl') if step.get('verify_ssl') is not None else config.get('verify_ssl', False)
+        timeout = step.get('timeout') or config.get('timeout', 30)
         
         base_url = context.get('base_url', '').rstrip('/')
         session_key = context.get('_session_key') or self._get_session_key(context)

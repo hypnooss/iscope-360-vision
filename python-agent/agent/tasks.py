@@ -61,6 +61,11 @@ class TaskExecutor:
             # Support both 'type' (from blueprint) and 'executor' (legacy) field names
             executor_type = step.get('type') or step.get('executor', 'unknown')
             
+            # Auto-route steps with use_session: true to http_session executor
+            # This allows session sharing between login/request/logout steps
+            if step.get('use_session') and executor_type in ('http_request', 'unknown'):
+                executor_type = 'http_session'
+            
             executor = self._executors.get(executor_type)
             if not executor:
                 self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
