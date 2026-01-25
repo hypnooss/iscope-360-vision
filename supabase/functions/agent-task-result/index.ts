@@ -651,6 +651,210 @@ function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] 
 }
 
 /**
+ * Helper to check if an interface has WAN or SD-WAN role
+ */
+function isWanInterface(interfaceName: string, interfaces: Array<Record<string, unknown>>): boolean {
+  if (!interfaceName || !interfaces) return false;
+  
+  const iface = interfaces.find(i => i.name === interfaceName);
+  if (!iface) return false;
+  
+  const role = String(iface.role || '').toLowerCase();
+  return role === 'wan' || role === 'sd-wan' || role.includes('wan');
+}
+
+/**
+ * Helper to check if source includes "all" object
+ */
+function hasAllSource(srcaddr: Array<Record<string, unknown>> | undefined): boolean {
+  if (!Array.isArray(srcaddr)) return false;
+  return srcaddr.some(addr => 
+    String(addr.name || addr.q_origin_key || '').toLowerCase() === 'all'
+  );
+}
+
+/**
+ * Helper to check if service matches specific protocols
+ */
+function serviceMatchesProtocol(
+  service: Array<Record<string, unknown>> | undefined,
+  protocols: string[]
+): boolean {
+  if (!Array.isArray(service)) return false;
+  
+  const protocolsLower = protocols.map(p => p.toLowerCase());
+  
+  return service.some(svc => {
+    const name = String(svc.name || svc.q_origin_key || '').toLowerCase();
+    return protocolsLower.some(proto => 
+      name.includes(proto) || name === proto
+    );
+  });
+}
+
+/**
+ * Format Inbound Rules evidence - filters policies by WAN interfaces and specific conditions
+ */
+function formatInboundRuleEvidence(
+  rawData: Record<string, unknown>,
+  ruleCode: string
+): { evidence: EvidenceItem[], relevantPolicies: Array<Record<string, unknown>> } {
+  const evidence: EvidenceItem[] = [];
+  const relevantPolicies: Array<Record<string, unknown>> = [];
+  
+  try {
+    // Get firewall policies and interfaces
+    const policyData = rawData['firewall_policy'] as Record<string, unknown> | undefined;
+    const interfaceData = rawData['system_interface'] as Record<string, unknown> | undefined;
+    
+    const policies = (policyData?.results || []) as Array<Record<string, unknown>>;
+    const interfaces = (interfaceData?.results || []) as Array<Record<string, unknown>>;
+    
+    if (!policies.length) {
+      evidence.push({ label: 'Status', value: 'Nenhuma política encontrada', type: 'text' });
+      return { evidence, relevantPolicies };
+    }
+    
+    if (!interfaces.length) {
+      evidence.push({ label: 'Aviso', value: 'Dados de interfaces não disponíveis', type: 'text' });
+    }
+    
+    // Get WAN/SD-WAN interface names for reference
+    const wanInterfaces = interfaces
+      .filter(i => {
+        const role = String(i.role || '').toLowerCase();
+        return role === 'wan' || role === 'sd-wan' || role.includes('wan');
+      })
+      .map(i => String(i.name));
+    
+    // Filter policies based on rule type
+    for (const policy of policies) {
+      // Check if source interface is WAN
+      const srcintf = policy.srcintf as Array<Record<string, unknown>> | undefined;
+      const srcintfNames = (srcintf || []).map(i => String(i.name || i.q_origin_key || ''));
+      
+      const isFromWan = srcintfNames.some(name => 
+        wanInterfaces.includes(name) || 
+        name.toLowerCase().includes('wan') ||
+        name.toLowerCase().includes('sd-wan') ||
+        isWanInterface(name, interfaces)
+      );
+      
+      if (!isFromWan) continue; // Skip non-WAN policies
+      
+      const srcaddr = policy.srcaddr as Array<Record<string, unknown>> | undefined;
+      const service = policy.service as Array<Record<string, unknown>> | undefined;
+      
+      let matchesRule = false;
+      
+      if (ruleCode === 'inb-001') {
+        // Regras de Entrada sem Restrição de Origem
+        // Policies with "all" as source
+        matchesRule = hasAllSource(srcaddr);
+      } else if (ruleCode === 'inb-002') {
+        // RDP Exposto para Internet
+        // Policies with RDP service (3389)
+        matchesRule = serviceMatchesProtocol(service, ['rdp', '3389', 'RDP']);
+      } else if (ruleCode === 'inb-003') {
+        // SMB/CIFS Exposto para Internet
+        // Policies with SMB/CIFS service (445, 139)
+        matchesRule = serviceMatchesProtocol(service, ['smb', 'cifs', '445', '139', 'SMB', 'CIFS', 'SAMBA', 'netbios']);
+      }
+      
+      if (matchesRule) {
+        relevantPolicies.push(policy);
+      }
+    }
+    
+    // Generate evidence
+    if (relevantPolicies.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: '✅ Nenhuma regra vulnerável encontrada',
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `❌ ${relevantPolicies.length} regra(s) vulnerável(is) encontrada(s)`,
+        type: 'text'
+      });
+      
+      // Show details of problematic policies (max 5)
+      for (const policy of relevantPolicies.slice(0, 5)) {
+        const policyId = policy.policyid || policy.id || 'N/A';
+        const policyName = policy.name || `Policy ${policyId}`;
+        const srcintf = (policy.srcintf as Array<Record<string, unknown>> || [])
+          .map(i => i.name || i.q_origin_key).join(', ');
+        const dstintf = (policy.dstintf as Array<Record<string, unknown>> || [])
+          .map(i => i.name || i.q_origin_key).join(', ');
+        const srcaddr = (policy.srcaddr as Array<Record<string, unknown>> || [])
+          .map(a => a.name || a.q_origin_key).join(', ');
+        const dstaddr = (policy.dstaddr as Array<Record<string, unknown>> || [])
+          .map(a => a.name || a.q_origin_key).join(', ');
+        const service = (policy.service as Array<Record<string, unknown>> || [])
+          .map(s => s.name || s.q_origin_key).join(', ');
+        const action = policy.action || 'N/A';
+        const status = policy.status === 'enable' ? '🟢' : '🔴';
+        
+        evidence.push({
+          label: `Regra ${policyId}`,
+          value: `${status} ${policyName}`,
+          type: 'text'
+        });
+        
+        evidence.push({
+          label: `  Origem`,
+          value: `${srcintf} → ${srcaddr}`,
+          type: 'code'
+        });
+        
+        evidence.push({
+          label: `  Destino`,
+          value: `${dstintf} → ${dstaddr}`,
+          type: 'code'
+        });
+        
+        evidence.push({
+          label: `  Serviço`,
+          value: service || 'ALL',
+          type: 'code'
+        });
+        
+        evidence.push({
+          label: `  Ação`,
+          value: String(action).toUpperCase(),
+          type: 'text'
+        });
+      }
+      
+      if (relevantPolicies.length > 5) {
+        evidence.push({
+          label: 'Aviso',
+          value: `... e mais ${relevantPolicies.length - 5} regra(s)`,
+          type: 'text'
+        });
+      }
+    }
+    
+    // Show WAN interfaces for context
+    if (wanInterfaces.length > 0) {
+      evidence.push({
+        label: 'Interfaces WAN',
+        value: wanInterfaces.join(', '),
+        type: 'code'
+      });
+    }
+    
+  } catch (e) {
+    console.error('Error formatting Inbound rule evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return { evidence, relevantPolicies };
+}
+
+/**
  * Format generic evidence with truncation for large objects
  */
 function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[] {
@@ -739,6 +943,7 @@ function processComplianceRules(
     
     // Gerar evidências usando formatadores especializados baseados no código da regra
     let evidence: EvidenceItem[] = [];
+    let inboundResult: { evidence: EvidenceItem[], relevantPolicies: Array<Record<string, unknown>> } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
     if (rule.code === 'lic-001') {
@@ -747,6 +952,18 @@ function processComplianceRules(
     } else if (rule.code === 'lic-002') {
       // FortiGuard Licenses
       evidence = formatFortiGuardEvidence(rawData);
+    } else if (rule.code.startsWith('inb-')) {
+      // Inbound Rules (inb-001, inb-002, inb-003)
+      inboundResult = formatInboundRuleEvidence(rawData, rule.code);
+      evidence = inboundResult.evidence;
+      // Override status based on actual policy analysis
+      if (inboundResult.relevantPolicies.length > 0) {
+        status = 'fail';
+        details = rule.fail_description || `${inboundResult.relevantPolicies.length} regra(s) vulnerável(is) encontrada(s)`;
+      } else {
+        status = 'pass';
+        details = rule.pass_description || 'Nenhuma regra vulnerável encontrada';
+      }
     } else if (rule.code.startsWith('vpn-')) {
       // VPN rules
       evidence = formatVPNEvidence(rawData, rule.code);
@@ -780,6 +997,23 @@ function processComplianceRules(
         system_automation_trigger: rawData['system_automation_trigger'],
         system_automation_action: rawData['system_automation_action']
       };
+    } else if (rule.code.startsWith('inb-') && inboundResult) {
+      // Para regras de inbound, incluir apenas as policies relevantes
+      if (inboundResult.relevantPolicies.length > 0) {
+        checkRawData = {
+          policies_vulneraveis: inboundResult.relevantPolicies.map(p => ({
+            policyid: p.policyid,
+            name: p.name,
+            srcintf: p.srcintf,
+            dstintf: p.dstintf,
+            srcaddr: p.srcaddr,
+            dstaddr: p.dstaddr,
+            service: p.service,
+            action: p.action,
+            status: p.status
+          }))
+        };
+      }
     } else if (logic.field_path && value !== undefined) {
       checkRawData[logic.field_path] = value;
     }
