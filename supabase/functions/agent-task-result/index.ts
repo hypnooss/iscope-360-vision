@@ -57,6 +57,12 @@ interface ComplianceRule {
   };
 }
 
+interface EvidenceItem {
+  label: string;
+  value: string;
+  type: 'text' | 'code';
+}
+
 interface ComplianceCheck {
   id: string;
   name: string;
@@ -67,6 +73,10 @@ interface ComplianceCheck {
   details: string;
   recommendation?: string;
   weight: number;
+  // Campos de evidência
+  evidence?: EvidenceItem[];
+  rawData?: Record<string, unknown>;
+  apiEndpoint?: string;
 }
 
 interface ComplianceResult {
@@ -173,6 +183,48 @@ function evaluateCondition(
   return null;
 }
 
+// Mapeamento de source_key para endpoint de API (FortiGate, SonicWall, genérico)
+const sourceKeyToEndpoint: Record<string, string> = {
+  // FortiGate endpoints
+  'system_global': '/api/v2/cmdb/system/global',
+  'system_interface': '/api/v2/cmdb/system/interface',
+  'system_status': '/api/v2/monitor/system/status',
+  'system_firmware': '/api/v2/monitor/system/firmware',
+  'webui_state': '/api/v2/monitor/system/webui-state',
+  'firewall_policy': '/api/v2/cmdb/firewall/policy',
+  'firewall_address': '/api/v2/cmdb/firewall/address',
+  'vpn_ipsec': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
+  'vpn_ssl_settings': '/api/v2/cmdb/vpn.ssl/settings',
+  'log_settings': '/api/v2/cmdb/log/setting',
+  'log_syslogd': '/api/v2/cmdb/log.syslogd/setting',
+  'antivirus_profile': '/api/v2/cmdb/antivirus/profile',
+  'webfilter_profile': '/api/v2/cmdb/webfilter/profile',
+  'ips_sensor': '/api/v2/cmdb/ips/sensor',
+  'dnsfilter_profile': '/api/v2/cmdb/dnsfilter/profile',
+  'system_ha': '/api/v2/cmdb/system/ha',
+  'system_admin': '/api/v2/cmdb/system/admin',
+  'license_status': '/api/v2/monitor/license/status',
+  'forticare_status': '/api/v2/monitor/system/forticare',
+  // SonicWall endpoints
+  'version': '/api/sonicos/version',
+  'interfaces': '/api/sonicos/interfaces/ipv4',
+  'zones': '/api/sonicos/zones',
+  'access_rules': '/api/sonicos/access-rules/ipv4',
+  'nat_policies': '/api/sonicos/nat-policies/ipv4',
+  'address_objects': '/api/sonicos/address-objects/ipv4',
+  'service_objects': '/api/sonicos/service-objects',
+  'content_filter': '/api/sonicos/content-filter',
+  'gateway_antivirus': '/api/sonicos/gateway-anti-virus',
+  'intrusion_prevention': '/api/sonicos/intrusion-prevention',
+  'vpn_policies': '/api/sonicos/vpn/policies',
+  'ssl_vpn': '/api/sonicos/ssl-vpn',
+  'high_availability': '/api/sonicos/high-availability',
+  'administration': '/api/sonicos/administration',
+  'log_settings_sonic': '/api/sonicos/log/settings',
+  // Fallback
+  'default': 'API do dispositivo'
+};
+
 function processComplianceRules(
   rawData: Record<string, unknown>,
   rules: ComplianceRule[]
@@ -181,6 +233,9 @@ function processComplianceRules(
   
   for (const rule of rules) {
     const logic = rule.evaluation_logic;
+    
+    // Mapear endpoint da API
+    const apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
     
     // Get the source data
     const sourceData = rawData[logic.source_key];
@@ -195,6 +250,7 @@ function processComplianceRules(
         details: `Dados não disponíveis: ${logic.source_key}`,
         recommendation: rule.recommendation || undefined,
         weight: rule.weight,
+        apiEndpoint,
       });
       continue;
     }
@@ -226,6 +282,23 @@ function processComplianceRules(
     // Use rule description or generate one
     const description = rule.description || rule.name;
     
+    // Gerar evidências automaticamente a partir do valor avaliado
+    const evidence: EvidenceItem[] = [];
+    if (value !== undefined && value !== null) {
+      const isComplex = typeof value === 'object';
+      evidence.push({
+        label: logic.field_path || rule.name,
+        value: isComplex ? JSON.stringify(value, null, 2) : String(value),
+        type: isComplex ? 'code' : 'text'
+      });
+    }
+    
+    // Incluir dados brutos relevantes (apenas o campo avaliado)
+    const checkRawData: Record<string, unknown> = {};
+    if (logic.field_path && value !== undefined) {
+      checkRawData[logic.field_path] = value;
+    }
+    
     checks.push({
       id: rule.code,
       name: rule.name,
@@ -236,6 +309,9 @@ function processComplianceRules(
       details,
       recommendation: status !== 'pass' ? (rule.recommendation || undefined) : undefined,
       weight: rule.weight,
+      evidence: evidence.length > 0 ? evidence : undefined,
+      rawData: Object.keys(checkRawData).length > 0 ? checkRawData : undefined,
+      apiEndpoint,
     });
   }
   
