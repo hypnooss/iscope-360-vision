@@ -2,6 +2,7 @@ import { ComplianceCheck, ComplianceStatus } from '@/types/compliance';
 import { CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown, Code, FileText, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ComplianceCardProps {
   check: ComplianceCheck;
@@ -34,14 +35,18 @@ const severityColorsPass: Record<string, string> = {
 };
 
 export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
+  const { role } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Apenas super_admin e super_suporte podem ver evidências
+  const canViewEvidence = role === 'super_admin' || role === 'super_suporte';
   
   // Normalize status: 'warn' -> 'warning', ensure valid status
   const rawStatus = check.status as string;
   const normalizedStatus = (rawStatus === 'warn' ? 'warning' : rawStatus) as ComplianceStatus;
   const config = statusConfig[normalizedStatus] || statusConfig.pending;
   const StatusIcon = config.icon;
-  const hasEvidence = check.evidence && check.evidence.length > 0;
+  const hasEvidence = canViewEvidence && check.evidence && check.evidence.length > 0;
 
   return (
     <div 
