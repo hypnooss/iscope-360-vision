@@ -617,7 +617,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     Configurações
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                  <DropdownMenuItem 
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleSignOut();
+                    }} 
+                    className="text-destructive cursor-pointer"
+                  >
                     <LogOut className="w-4 h-4 mr-2" />
                     Sair
                   </DropdownMenuItem>
