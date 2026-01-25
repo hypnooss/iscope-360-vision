@@ -451,123 +451,125 @@ export default function TaskExecutionsPage() {
 
         {/* Task Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="max-w-2xl max-h-[80vh]">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col border-border">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>Detalhes da Tarefa</DialogTitle>
             </DialogHeader>
             {selectedTask && (
-              <ScrollArea className="max-h-[60vh]">
-                <div className="space-y-6 pr-4">
-                  {/* Basic Info */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Firewall</p>
-                      <p className="font-medium">{getFirewallName(selectedTask.target_id)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Agent</p>
-                      <p className="font-medium">{getAgentName(selectedTask.agent_id)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Tipo</p>
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {selectedTask.task_type}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Status</p>
-                      <Badge className={`${statusConfig[selectedTask.status]?.color} border`}>
-                        {statusConfig[selectedTask.status]?.icon}
-                        <span className="ml-1">{statusConfig[selectedTask.status]?.label}</span>
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Prioridade</p>
-                      <p className="font-medium">{selectedTask.priority}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Duração</p>
-                      <p className="font-medium">{formatDuration(selectedTask.execution_time_ms)}</p>
-                    </div>
+              <div className="flex-1 overflow-y-auto space-y-6 pr-4">
+                {/* Basic Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Firewall</p>
+                    <p className="font-medium">{getFirewallName(selectedTask.target_id)}</p>
                   </div>
-
-                  {/* Timestamps */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Criado em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
-                    </div>
-                    {selectedTask.started_at && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Iniciado em</p>
-                        <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
-                      </div>
-                    )}
-                    {selectedTask.completed_at && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Concluído em</p>
-                        <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
-                      </div>
-                    )}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Agent</p>
+                    <p className="font-medium">{getAgentName(selectedTask.agent_id)}</p>
                   </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tipo</p>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {selectedTask.task_type}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <Badge className={`${statusConfig[selectedTask.status]?.color} border`}>
+                      {statusConfig[selectedTask.status]?.icon}
+                      <span className="ml-1">{statusConfig[selectedTask.status]?.label}</span>
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Prioridade</p>
+                    <p className="font-medium">{selectedTask.priority}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Duração</p>
+                    <p className="font-medium">{formatDuration(selectedTask.execution_time_ms)}</p>
+                  </div>
+                </div>
 
-                  {/* Error Message */}
-                  {selectedTask.error_message && (
+                {/* Timestamps */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Criado em</p>
+                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                  </div>
+                  {selectedTask.started_at && (
                     <div>
-                      <p className="text-sm text-muted-foreground mb-2">Erro</p>
-                      <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
-                        <p className="text-sm text-destructive">{selectedTask.error_message}</p>
-                      </div>
+                      <p className="text-sm text-muted-foreground">Iniciado em</p>
+                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
                     </div>
                   )}
-
-                  {/* Step Results */}
-                  {selectedTask.step_results && Array.isArray(selectedTask.step_results) && (selectedTask.step_results as unknown as StepResult[]).length > 0 && (
+                  {selectedTask.completed_at && (
                     <div>
-                      <p className="text-sm text-muted-foreground mb-2">Steps Executados</p>
-                      <div className="space-y-2">
-                        {(selectedTask.step_results as unknown as StepResult[]).map((step, index) => (
-                          <div 
-                            key={index} 
-                            className={`flex items-center justify-between p-2 rounded-lg border ${
-                              step.status === 'success' ? 'bg-green-500/10 border-green-500/30' :
-                              step.status === 'error' ? 'bg-red-500/10 border-red-500/30' :
-                              'bg-muted/50 border-border'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              {step.status === 'success' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                              {step.status === 'error' && <XCircle className="w-4 h-4 text-red-500" />}
-                              {step.status === 'skipped' && <AlertTriangle className="w-4 h-4 text-muted-foreground" />}
-                              <span className="font-mono text-sm">{step.step_id}</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              {step.error && (
-                                <span className="text-xs text-red-400 max-w-[200px] truncate" title={step.error}>
-                                  {step.error}
-                                </span>
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                {formatDuration(step.duration_ms)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Raw Result */}
-                  {selectedTask.result && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Resultado (JSON)</p>
-                      <pre className="bg-muted/50 border rounded-lg p-3 text-xs overflow-x-auto max-h-[200px]">
-                        {JSON.stringify(selectedTask.result, null, 2)}
-                      </pre>
+                      <p className="text-sm text-muted-foreground">Concluído em</p>
+                      <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
                     </div>
                   )}
                 </div>
-              </ScrollArea>
+
+                {/* Error Message */}
+                {selectedTask.error_message && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Erro</p>
+                    <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+                      <p className="text-sm text-destructive">{selectedTask.error_message}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step Results */}
+                {selectedTask.step_results && Array.isArray(selectedTask.step_results) && (selectedTask.step_results as unknown as StepResult[]).length > 0 && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Steps Executados</p>
+                    <div className="space-y-2">
+                      {(selectedTask.step_results as unknown as StepResult[]).map((step, index) => (
+                        <div 
+                          key={index} 
+                          className={`flex items-center justify-between p-2 rounded-lg border ${
+                            step.status === 'success' ? 'bg-green-500/10 border-green-500/30' :
+                            step.status === 'error' ? 'bg-red-500/10 border-red-500/30' :
+                            'bg-muted/50 border-border'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {step.status === 'success' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                            {step.status === 'error' && <XCircle className="w-4 h-4 text-red-500" />}
+                            {step.status === 'skipped' && <AlertTriangle className="w-4 h-4 text-muted-foreground" />}
+                            <span className="font-mono text-sm">{step.step_id}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {step.error && (
+                              <span className="text-xs text-red-400 max-w-[200px] truncate" title={step.error}>
+                                {step.error}
+                              </span>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {formatDuration(step.duration_ms)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Raw Result */}
+                {selectedTask.result && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Resultado (JSON)</p>
+                    <div className="bg-muted/50 border rounded-lg p-3">
+                      <ScrollArea className="h-[200px]">
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                          {JSON.stringify(selectedTask.result, null, 2)}
+                        </pre>
+                      </ScrollArea>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </DialogContent>
         </Dialog>
