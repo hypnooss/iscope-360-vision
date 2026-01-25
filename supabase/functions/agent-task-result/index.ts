@@ -13,10 +13,13 @@ const corsHeaders = {
 
 interface TaskResultRequest {
   task_id: string;
-  status: 'completed' | 'failed' | 'timeout';
+  status: 'completed' | 'failed' | 'timeout' | 'partial';
   result?: Record<string, unknown>;
   error_message?: string;
   execution_time_ms?: number;
+  // Progressive mode fields (when agent sends step results separately)
+  steps_completed?: number;
+  steps_failed?: number;
 }
 
 interface TaskResultSuccessResponse {
@@ -633,14 +636,46 @@ serve(async (req: Request) => {
     // Map status to database enum
     const dbStatus = body.status === 'completed' ? 'completed' 
                    : body.status === 'failed' ? 'failed' 
-                   : body.status === 'timeout' ? 'timeout' 
+                   : body.status === 'timeout' ? 'timeout'
+                   : body.status === 'partial' ? 'failed'
                    : 'failed';
 
     let complianceResult: ComplianceResult | null = null;
     let firewallName: string | null = null;
 
+    // Determine raw data source:
+    // 1. If body.result is provided (legacy batch mode), use it directly
+    // 2. If no body.result (progressive mode), reconstruct from task_step_results
+    let rawData: Record<string, unknown> | null = null;
+
+    if (body.result) {
+      // Legacy batch mode - agent sent all data in one payload
+      rawData = body.result as Record<string, unknown>;
+      console.log(`Using legacy batch mode data for task ${body.task_id}`);
+    } else if (body.status === 'completed' || body.status === 'partial') {
+      // Progressive mode - reconstruct raw_data from task_step_results
+      console.log(`Reconstructing data from step results for task ${body.task_id}`);
+      
+      const { data: stepResults, error: stepError } = await supabase
+        .from('task_step_results')
+        .select('step_id, data, status')
+        .eq('task_id', body.task_id);
+
+      if (stepError) {
+        console.error('Failed to fetch step results:', stepError);
+      } else if (stepResults && stepResults.length > 0) {
+        rawData = {};
+        for (const step of stepResults) {
+          if (step.status === 'success' && step.data) {
+            rawData[step.step_id] = step.data;
+          }
+        }
+        console.log(`Reconstructed raw_data from ${stepResults.length} steps, ${Object.keys(rawData).length} successful`);
+      }
+    }
+
     // If task completed successfully and has raw data, process with compliance rules
-    if (body.status === 'completed' && body.result && task.target_type === 'firewall') {
+    if ((body.status === 'completed' || body.status === 'partial') && rawData && task.target_type === 'firewall') {
       // Get device_type_id and name from firewall
       const { data: firewall } = await supabase
         .from('firewalls')
@@ -677,12 +712,15 @@ serve(async (req: Request) => {
         if (rules && rules.length > 0) {
           console.log(`Processing ${rules.length} compliance rules for device type ${deviceTypeId}`);
           complianceResult = processComplianceRules(
-            body.result as Record<string, unknown>,
+            rawData,
             rules as ComplianceRule[]
           );
           
-          // Store raw data for debugging/auditing
-          complianceResult.raw_data = body.result as Record<string, unknown>;
+          // Store raw data for debugging/auditing (only for legacy mode)
+          // In progressive mode, raw data is already in task_step_results
+          if (body.result) {
+            complianceResult.raw_data = rawData;
+          }
         }
       }
     }

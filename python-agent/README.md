@@ -79,6 +79,9 @@ python main.py --reset-default
 | `/agent-heartbeat` | POST | Heartbeat periódico |
 | `/agent-refresh` | POST | Renovação de access token |
 | `/agent-tasks` | GET | Buscar tarefas pendentes |
+| `/agent-step-result` | POST | Enviar resultado de um step (streaming progressivo) |
+| `/agent-task-result` | POST | Reportar conclusão final de tarefa |
+| `/agent-tasks` | GET | Buscar tarefas pendentes |
 | `/agent-task-result` | POST | Reportar resultado de tarefa |
 
 ## Sistema de Tarefas
