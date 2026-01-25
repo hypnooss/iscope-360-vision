@@ -157,6 +157,16 @@ serve(async (req: Request) => {
       );
       await verify(token, cryptoKey);
     } catch (verifyError) {
+      // Check if the error is specifically about token expiration
+      const errorMessage = String(verifyError);
+      if (errorMessage.includes('expired') || errorMessage.includes('exp')) {
+        console.log('Token expired during verification:', agentId);
+        return new Response(
+          JSON.stringify({ error: 'Token expirado', code: 'TOKEN_EXPIRED' } as HeartbeatErrorResponse),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
       console.error('Token signature verification failed:', verifyError);
       return new Response(
         JSON.stringify({ error: 'Assinatura do token inválida', code: 'INVALID_SIGNATURE' } as HeartbeatErrorResponse),
