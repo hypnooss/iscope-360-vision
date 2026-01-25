@@ -197,6 +197,7 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'firewall_policy': '/api/v2/cmdb/firewall/policy',
   'firewall_address': '/api/v2/cmdb/firewall/address',
   'vpn_ipsec': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
+  'vpn_ipsec_phase1': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
   'vpn_ssl_settings': '/api/v2/cmdb/vpn.ssl/settings',
   'log_settings': '/api/v2/cmdb/log/setting',
   'log_syslogd': '/api/v2/cmdb/log.syslogd/setting',
@@ -405,7 +406,8 @@ function formatVPNEvidence(rawData: Record<string, unknown>, ruleCode: string): 
   try {
     // IPsec VPN encryption check
     if (ruleCode === 'vpn-001') {
-      const vpnData = rawData['vpn_ipsec'] as Record<string, unknown> | undefined;
+      // Buscar tanto vpn_ipsec_phase1 quanto vpn_ipsec (compatibilidade)
+      const vpnData = (rawData['vpn_ipsec_phase1'] || rawData['vpn_ipsec']) as Record<string, unknown> | undefined;
       if (!vpnData) {
         return [{ label: 'VPN IPsec', value: 'Dados não disponíveis', type: 'text' }];
       }
@@ -441,7 +443,6 @@ function formatVPNEvidence(rawData: Record<string, unknown>, ruleCode: string): 
       const loginPort = results['login-port'] as number || 443;
       
       evidence.push({ label: 'Certificado', value: servercert, type: 'code' });
-      evidence.push({ label: 'Porta', value: String(loginPort), type: 'text' });
     }
     // Generic VPN rule
     else {
@@ -1065,8 +1066,38 @@ function processComplianceRules(
           status: p.status
         }))
       };
-    } else if (!rule.code.startsWith('inb-') && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound), incluir dados brutos genéricos
+    } else if (rule.code.startsWith('vpn-')) {
+      // Para regras VPN, incluir dados específicos e resumidos
+      if (rule.code === 'vpn-001') {
+        const vpnData = rawData['vpn_ipsec_phase1'] || rawData['vpn_ipsec'];
+        if (vpnData) {
+          const results = ((vpnData as Record<string, unknown>).results || []) as Array<Record<string, unknown>>;
+          checkRawData = {
+            vpns_configuradas: results.map(vpn => ({
+              name: vpn.name,
+              proposal: vpn.proposal,
+              ike_version: vpn['ike-version'],
+              authmethod: vpn.authmethod,
+              interface: vpn.interface,
+              remote_gw: vpn['remote-gw']
+            }))
+          };
+        }
+      } else if (rule.code === 'vpn-003') {
+        const sslData = rawData['vpn_ssl_settings'];
+        if (sslData) {
+          const results = (sslData as Record<string, unknown>).results as Record<string, unknown> || sslData;
+          checkRawData = {
+            ssl_vpn_config: {
+              servercert: results.servercert,
+              status: results.status,
+              algorithm: results.algorithm
+            }
+          };
+        }
+      }
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound e VPN), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
     // Nota: regras inb-* só têm rawData quando há políticas vulneráveis (tratado acima)
