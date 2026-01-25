@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers } from 'lucide-react';
+import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers, Bot } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -52,6 +52,11 @@ export default function SettingsPage() {
   const [newAppId, setNewAppId] = useState('');
   const [newClientSecret, setNewClientSecret] = useState('');
   const [tenantIdForValidation, setTenantIdForValidation] = useState('');
+  
+  // Agent settings
+  const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
+  const [loadingAgentSettings, setLoadingAgentSettings] = useState(false);
+  const [savingAgentSettings, setSavingAgentSettings] = useState(false);
 
   const defaultPermissions: PermissionStatus[] = [
     { name: 'User.Read.All', granted: false, type: 'required' },
@@ -78,8 +83,56 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user && role === 'super_admin') {
       checkM365Config();
+      loadAgentSettings();
     }
   }, [user, role]);
+
+  const loadAgentSettings = async () => {
+    setLoadingAgentSettings(true);
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'agent_heartbeat_interval')
+        .maybeSingle();
+      
+      if (data?.value) {
+        setAgentHeartbeatInterval(Number(data.value) || 120);
+      }
+    } catch (error) {
+      console.error('Error loading agent settings:', error);
+    } finally {
+      setLoadingAgentSettings(false);
+    }
+  };
+
+  const handleSaveAgentSettings = async () => {
+    // Validate range
+    if (agentHeartbeatInterval < 60 || agentHeartbeatInterval > 300) {
+      toast.error('O intervalo deve estar entre 60 e 300 segundos');
+      return;
+    }
+
+    setSavingAgentSettings(true);
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({
+          value: agentHeartbeatInterval,
+          updated_by: user?.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('key', 'agent_heartbeat_interval');
+
+      if (error) throw error;
+      toast.success('Configurações de agents salvas com sucesso');
+    } catch (error) {
+      console.error('Error saving agent settings:', error);
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSavingAgentSettings(false);
+    }
+  };
 
   const checkM365Config = async () => {
     try {
@@ -280,6 +333,10 @@ export default function SettingsPage() {
             <TabsTrigger value="modules" className="gap-2">
               <Layers className="w-4 h-4" />
               Módulos
+            </TabsTrigger>
+            <TabsTrigger value="agents" className="gap-2">
+              <Bot className="w-4 h-4" />
+              Agents
             </TabsTrigger>
           </TabsList>
 
@@ -504,6 +561,66 @@ export default function SettingsPage() {
 
           <TabsContent value="modules">
             <ModulesManagement />
+          </TabsContent>
+
+          <TabsContent value="agents" className="space-y-6">
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Configurações dos Agents</CardTitle>
+                <CardDescription>
+                  Configure o comportamento global dos agents de coleta
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {loadingAgentSettings ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="heartbeatInterval">Intervalo de Heartbeat (segundos)</Label>
+                        <Input
+                          id="heartbeatInterval"
+                          type="number"
+                          min={60}
+                          max={300}
+                          value={agentHeartbeatInterval}
+                          onChange={(e) => setAgentHeartbeatInterval(Number(e.target.value))}
+                          className="w-[200px]"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Define o intervalo entre check-ins dos agents. Valores menores detectam problemas 
+                          mais rapidamente, mas aumentam o uso de recursos. Recomendado: 60-120 segundos.
+                        </p>
+                      </div>
+
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                        <h4 className="font-medium text-sm">Sobre o Heartbeat</h4>
+                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                          <li>Agents reportam status e verificam tarefas pendentes a cada intervalo</li>
+                          <li>Intervalos menores = detecção mais rápida de agents offline</li>
+                          <li>Intervalos maiores = menor carga no servidor</li>
+                          <li>A alteração afeta todos os agents na próxima sincronização</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button onClick={handleSaveAgentSettings} disabled={savingAgentSettings}>
+                        {savingAgentSettings ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4 mr-2" />
+                        )}
+                        Salvar Configurações
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
