@@ -1,42 +1,64 @@
 
-# Adicionar 'success' à Constraint de Severity
+# Correção do Nome do Firewall no Alerta
 
-## Objetivo
+## Problema Identificado
 
-Expandir a constraint `valid_severity` da tabela `system_alerts` para incluir o valor `'success'`, permitindo que o edge function `agent-task-result` crie alertas de análise concluída com sucesso.
+O alerta de "Análise Concluída" mostra o nome genérico "Firewall" ao invés do nome real do dispositivo (ex: "SAO-FW"). 
 
-## Situação Atual
+**Causa raiz:** A query nas linhas 733-737 está falhando silenciosamente, fazendo o fallback para o valor default `'Firewall'`.
 
-**Constraint existente:**
-```sql
-CHECK ((severity = ANY (ARRAY['info'::text, 'warning'::text, 'error'::text])))
+## Solução
+
+Modificar a query existente na linha 644-648 para incluir o campo `name` junto com `device_type_id`, eliminando a necessidade da segunda query e garantindo que o nome esteja disponível.
+
+## Alterações no Edge Function
+
+**Arquivo:** `supabase/functions/agent-task-result/index.ts`
+
+### 1. Modificar a query inicial para incluir o nome (linha 645)
+
+```typescript
+// ANTES (linha 645)
+.select('device_type_id')
+
+// DEPOIS
+.select('device_type_id, name')
 ```
 
-**Problema:** O edge function `agent-task-result` tenta inserir alertas com `severity: 'success'`, mas a constraint atual só permite `info`, `warning` e `error`.
+### 2. Usar o nome do firewall já disponível (linhas 732-739)
 
-## Alteração Necessária
+```typescript
+// ANTES (linhas 732-739)
+// Get firewall name for the alert
+const { data: firewallData } = await supabase
+  .from('firewalls')
+  .select('name')
+  .eq('id', task.target_id)
+  .single();
 
-### Migração SQL
+const firewallName = firewallData?.name || 'Firewall';
 
-```sql
--- Remove a constraint existente
-ALTER TABLE public.system_alerts DROP CONSTRAINT valid_severity;
-
--- Recria com o novo valor 'success'
-ALTER TABLE public.system_alerts 
-ADD CONSTRAINT valid_severity 
-CHECK (severity = ANY (ARRAY['info'::text, 'warning'::text, 'error'::text, 'success'::text]));
+// DEPOIS
+// Use firewall name from earlier query (already fetched at line 644)
+const firewallName = firewall?.name || 'Dispositivo';
 ```
 
-## Impacto
+### 3. Adicionar log para debug
 
-- **Edge function**: Permitirá que alertas de `firewall_analysis_completed` sejam salvos corretamente
-- **Frontend**: O `SystemAlertBanner` já trata `success` com estilo verde/teal
-- **Backwards compatible**: Não afeta alertas existentes
+Adicionar um log antes de criar o alerta para facilitar diagnóstico futuro:
 
-## Verificação Pós-Migração
+```typescript
+console.log(`Creating analysis alert for firewall: ${firewallName} (id: ${task.target_id})`);
+```
 
-Após a migração, uma nova análise do firewall SAO-FW deverá:
-1. Salvar o resultado em `analysis_history`
-2. Criar alerta em `system_alerts` com severity `success`
-3. Atualizar `last_score` e `last_analysis_at` na tabela `firewalls`
+## Benefícios
+
+1. **Corrige o bug**: O nome correto do firewall será exibido no alerta
+2. **Melhora performance**: Remove uma query desnecessária ao banco de dados  
+3. **Facilita debug**: Adiciona log para rastrear problemas futuros
+
+## Teste de Verificação
+
+Após deploy, executar nova análise do SAO-FW e verificar:
+- O alerta deve mostrar: `A análise do firewall "SAO-FW" foi concluída com score XX%.`
+- O log deve mostrar: `Creating analysis alert for firewall: SAO-FW (id: 6033d9d9-...)`
