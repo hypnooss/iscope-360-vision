@@ -87,17 +87,38 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 export default function TaskExecutionsPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [timeFilter, setTimeFilter] = useState<string>('1h');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  // Calculate time filter
+  const getTimeFilterDate = () => {
+    const now = new Date();
+    switch (timeFilter) {
+      case '1h':
+        return new Date(now.getTime() - 60 * 60 * 1000);
+      case '6h':
+        return new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      case '12h':
+        return new Date(now.getTime() - 12 * 60 * 60 * 1000);
+      case '24h':
+        return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      default:
+        return new Date(now.getTime() - 60 * 60 * 1000);
+    }
+  };
+
   // Fetch tasks
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['agent-tasks', statusFilter],
+    queryKey: ['agent-tasks', statusFilter, timeFilter],
     queryFn: async () => {
+      const startTime = getTimeFilterDate();
+      
       let query = supabase
         .from('agent_tasks')
         .select('*')
+        .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -312,6 +333,17 @@ export default function TaskExecutionsPage() {
                   />
                 </div>
               </div>
+              <Select value={timeFilter} onValueChange={setTimeFilter}>
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Última hora</SelectItem>
+                  <SelectItem value="6h">Últimas 6 horas</SelectItem>
+                  <SelectItem value="12h">Últimas 12 horas</SelectItem>
+                  <SelectItem value="24h">Últimas 24 horas</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder="Status" />
