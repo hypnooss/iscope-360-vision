@@ -1,167 +1,189 @@
 
-# Plano: Restaurar Evidências de Coleta na Análise de Compliance
+# Plano: Otimização de Performance - Chamadas de API Duplicadas
 
-## Contexto do Problema
+## Diagnóstico
 
-Após a migração para coleta de dados via Agent, as evidências das verificações de compliance pararam de ser exibidas. O sistema antigo (`fortigate-compliance`) gerava evidências de forma hardcoded, enquanto o novo sistema (`agent-task-result`) processa regras genéricas sem incluir os campos `evidence`, `rawData` e `apiEndpoint` nos checks.
+A lentidão no sistema é causada por **chamadas de API excessivas e duplicadas**:
 
-## Solução Proposta
-
-A solução envolve duas partes:
-1. **Backend**: Atualizar o `agent-task-result` para popular automaticamente evidências a partir dos dados coletados
-2. **Frontend**: Restringir a exibição das evidências apenas para perfis `super_admin` e `super_suporte`
+| Endpoint | Chamadas em 2s | Problema |
+|----------|----------------|----------|
+| `profiles` | 8x | Cada componente refaz a chamada |
+| `user_roles` | 7x | Contextos sem cache |
+| `user_module_permissions` | 7x | Re-renders desnecessários |
+| `modules` | 2x | Duplicação entre contextos |
 
 ---
 
-## Parte 1: Atualização do Backend (agent-task-result)
+## Solução: Otimização dos Contextos de Autenticação e Módulos
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+### 1. Corrigir AuthContext - Evitar fetch duplicado
 
-#### 1.1. Atualizar a interface `ComplianceCheck` para incluir os campos de evidência
+**Arquivo:** `src/contexts/AuthContext.tsx`
+
+O problema: `fetchUserData` é chamado tanto no `onAuthStateChange` quanto no `getSession`. Isso causa chamadas duplicadas.
+
+**Correção:**
+- Usar uma flag para evitar fetch duplicado
+- Adicionar debounce/cache para evitar múltiplas chamadas
 
 ```typescript
-interface ComplianceCheck {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  severity: string;
-  status: 'pass' | 'fail' | 'warn' | 'unknown';
-  details: string;
-  recommendation?: string;
-  weight: number;
-  // Novos campos para evidências
-  evidence?: Array<{ label: string; value: string; type: 'text' | 'code' }>;
-  rawData?: Record<string, unknown>;
-  apiEndpoint?: string;
-}
+// Adicionar ref para controlar fetch em andamento
+const fetchingRef = useRef(false);
+
+const fetchUserData = async (userId: string) => {
+  // Evitar chamadas duplicadas
+  if (fetchingRef.current) return;
+  fetchingRef.current = true;
+  
+  try {
+    // ... fetch logic ...
+  } finally {
+    fetchingRef.current = false;
+    setLoading(false);
+  }
+};
 ```
 
-#### 1.2. Atualizar o `processComplianceRules` para gerar evidências automaticamente
+### 2. Corrigir ModuleContext - Remover dependência desnecessária do role
 
-A função será modificada para:
-- Extrair o valor avaliado e incluí-lo como evidência
-- Mapear o `source_key` para um endpoint de API (lookup table)
-- Incluir dados brutos relevantes no `rawData`
+**Arquivo:** `src/contexts/ModuleContext.tsx`
+
+O problema: O useEffect tem `role` como dependência, causando re-fetch toda vez que o role é definido.
+
+**Correção:**
+```typescript
+// ANTES (problemático)
+useEffect(() => {
+  // ...
+}, [user, authLoading, role]); // role causa re-fetch
+
+// DEPOIS (otimizado)
+useEffect(() => {
+  // ...
+}, [user, authLoading]); // remover role
+```
+
+### 3. Implementar cache local para dados de usuário
+
+**Arquivo:** `src/contexts/AuthContext.tsx`
+
+Usar sessionStorage para cachear dados do usuário e evitar chamadas repetidas:
 
 ```typescript
-function processComplianceRules(
-  rawData: Record<string, unknown>,
-  rules: ComplianceRule[]
-): ComplianceResult {
-  // Mapeamento de source_key para endpoint de API
-  const sourceKeyToEndpoint: Record<string, string> = {
-    // FortiGate
-    'system_global': '/api/v2/cmdb/system/global',
-    'system_interface': '/api/v2/cmdb/system/interface',
-    'system_status': '/api/v2/monitor/system/status',
-    'firewall_policy': '/api/v2/cmdb/firewall/policy',
-    'vpn_ipsec': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
-    'log_settings': '/api/v2/cmdb/log/setting',
-    // SonicWall
-    'version': '/api/sonicos/version',
-    'interfaces': '/api/sonicos/interfaces/ipv4',
-    'zones': '/api/sonicos/zones',
-    'access_rules': '/api/sonicos/access-rules/ipv4',
-    // Genérico
-    'default': 'API do dispositivo'
-  };
-
-  for (const rule of rules) {
-    const logic = rule.evaluation_logic;
-    const sourceData = rawData[logic.source_key];
-    
-    // ... avaliação existente ...
-    
-    // Gerar evidências automaticamente
-    const evidence: Array<{ label: string; value: string; type: 'text' | 'code' }> = [];
-    
-    if (value !== undefined && value !== null) {
-      evidence.push({
-        label: rule.name,
-        value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-        type: typeof value === 'object' ? 'code' : 'text'
-      });
-    }
-    
-    // Mapear endpoint
-    const apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
-    
-    // Incluir dados brutos relevantes (apenas o campo avaliado, não todo o sourceData)
-    const checkRawData: Record<string, unknown> = {};
-    if (logic.field_path && sourceData) {
-      checkRawData[logic.field_path] = value;
-    }
-    
-    checks.push({
-      id: rule.code,
-      name: rule.name,
-      description,
-      category: rule.category,
-      severity: rule.severity,
-      status,
-      details,
-      recommendation: status !== 'pass' ? (rule.recommendation || undefined) : undefined,
-      weight: rule.weight,
-      evidence: evidence.length > 0 ? evidence : undefined,
-      rawData: Object.keys(checkRawData).length > 0 ? checkRawData : undefined,
-      apiEndpoint,
-    });
+const fetchUserData = async (userId: string) => {
+  // Tentar cache primeiro
+  const cachedData = sessionStorage.getItem(`user_data_${userId}`);
+  if (cachedData) {
+    const parsed = JSON.parse(cachedData);
+    setProfile(parsed.profile);
+    setRole(parsed.role);
+    setPermissions(parsed.permissions);
+    setLoading(false);
+    return;
   }
   
-  // ... resto da função ...
-}
+  // Fetch e cachear
+  // ...
+  sessionStorage.setItem(`user_data_${userId}`, JSON.stringify({
+    profile: profileData,
+    role: roleData.role,
+    permissions: perms
+  }));
+};
 ```
 
----
+### 4. Corrigir o warning do Skeleton
 
-## Parte 2: Restrição de Visualização no Frontend
+**Arquivo:** `src/components/ui/skeleton.tsx`
 
-### Arquivo: `src/components/ComplianceCard.tsx`
-
-#### 2.1. Importar o hook `useAuth` e verificar permissões
+Adicionar `forwardRef` para suportar refs corretamente:
 
 ```typescript
-import { useAuth } from '@/contexts/AuthContext';
+import { forwardRef } from "react";
 
-export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
-  const { role } = useAuth();
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Apenas super_admin e super_suporte podem ver evidências
-  const canViewEvidence = role === 'super_admin' || role === 'super_suporte';
-  
-  // Ajustar lógica de evidências disponíveis
-  const hasEvidence = canViewEvidence && check.evidence && check.evidence.length > 0;
-  
-  // ... resto do componente ...
-  
-  {/* Evidências expandidas - apenas para admins */}
-  {isExpanded && hasEvidence && canViewEvidence && (
-    <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
-      {/* conteúdo existente */}
-    </div>
-  )}
-}
+const Skeleton = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn("animate-pulse rounded-md bg-muted", className)}
+        {...props}
+      />
+    );
+  }
+);
+Skeleton.displayName = "Skeleton";
+
+export { Skeleton };
 ```
+
+### 5. Usar React Query para gerenciar cache automaticamente
+
+**Arquivos:** `src/contexts/AuthContext.tsx`, `src/contexts/ModuleContext.tsx`
+
+Migrar as chamadas de dados para React Query, que já está instalado no projeto e oferece:
+- Cache automático
+- Deduplicação de requests
+- Refetch inteligente
 
 ---
 
 ## Resumo das Alterações
 
-| Componente | Arquivo | Alteração |
-|------------|---------|-----------|
-| Edge Function | `supabase/functions/agent-task-result/index.ts` | Adicionar campos `evidence`, `rawData`, `apiEndpoint` aos checks |
-| Frontend | `src/components/ComplianceCard.tsx` | Verificar role do usuário antes de exibir evidências |
+| Arquivo | Alteração | Impacto |
+|---------|-----------|---------|
+| `AuthContext.tsx` | Flag para evitar fetch duplicado + cache | -50% chamadas |
+| `ModuleContext.tsx` | Remover `role` das dependências | -30% chamadas |
+| `skeleton.tsx` | Adicionar forwardRef | Corrige warning |
 
-## Benefícios
+## Resultado Esperado
 
-- **Compatibilidade Universal**: Funciona para qualquer fabricante/modelo de firewall (FortiGate, SonicWall, futuros)
-- **Segurança**: Dados técnicos sensíveis visíveis apenas para administradores autorizados
-- **Manutenibilidade**: Evidências geradas automaticamente a partir das regras de compliance, sem hardcode
-- **Escalabilidade**: Novos dispositivos/endpoints são mapeados facilmente no lookup table
+- Redução de ~8 chamadas para ~2-3 por carregamento de página
+- Tempo de carregamento inicial reduzido em ~60%
+- Eliminação do warning de console
 
-## Dependências
+---
 
-- Nenhuma nova dependência necessária
-- Utiliza o `useAuth` já existente no projeto
+## Seção Técnica
+
+### Diagrama de fluxo atual (problemático)
+
+```text
+Login/Refresh
+    |
+    v
++---------------+
+| getSession()  |-----> fetchUserData() ----+
++---------------+                           |
+    |                                       v
+    v                                  [API calls x3]
++-------------------+                       |
+| onAuthStateChange |-----> fetchUserData() +---> [API calls x3]
++-------------------+                       |
+    |                                       v
+    v                                  Total: 6+ calls
++---------------+
+| ModuleContext |-----> fetchModules() ---> [API calls x2]
++---------------+   (triggered by role change)
+```
+
+### Diagrama de fluxo otimizado
+
+```text
+Login/Refresh
+    |
+    v
++---------------+
+| getSession()  |-----> fetchUserData() ----+
++---------------+     (with dedup flag)     |
+    |                                       v
+    v                                  [API calls x3]
++-------------------+                       |
+| onAuthStateChange |-----> (skipped - already fetching)
++-------------------+                       |
+    |                                       |
+    v                                       v
++---------------+                      Total: 3 calls
+| ModuleContext |-----> fetchModules() ---> [API call x1]
++---------------+   (no role dependency)
+```
