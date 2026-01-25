@@ -712,16 +712,31 @@ serve(async (req: Request) => {
 
     // If we have a compliance result, save to analysis_history
     if (complianceResult && score !== null) {
+      // Create a lightweight version of the compliance result for history
+      // Exclude raw_data to avoid timeout on large datasets (raw_data is already in agent_tasks.result)
+      const historyReportData = {
+        score: complianceResult.score,
+        checks: complianceResult.checks,
+        categories: complianceResult.categories,
+        system_info: complianceResult.system_info,
+        firmwareVersion: complianceResult.firmwareVersion,
+        // raw_data is intentionally excluded - it's stored in agent_tasks.result
+      };
+      
       // Save to analysis_history
-      const { data: analysisData } = await supabase
+      const { data: analysisData, error: historyError } = await supabase
         .from('analysis_history')
         .insert({
           firewall_id: task.target_id,
           score: score,
-          report_data: complianceResult,
+          report_data: historyReportData,
         })
         .select('id')
         .single();
+      
+      if (historyError) {
+        console.error('Failed to save analysis history:', historyError);
+      }
 
       // Update firewall last_analysis_at and last_score
       await supabase
