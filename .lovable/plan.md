@@ -1,91 +1,276 @@
 
-# Cancelamento de Tarefas em Execução
 
-## Situação Atual
+# Configuração do Intervalo de Heartbeat via UI
 
-### Tarefa Encontrada
-Uma tarefa `fortigate_compliance` está em execução:
-- **ID**: `baa5e084-6170-49ec-be36-731bf7394a33`
-- **Status**: `running`
-- **Iniciada**: 25/01/2026 16:53:33 UTC
-- **Expira em**: 25/01/2026 17:53:25 UTC
+## Objetivo
+Permitir que o super administrador configure o intervalo de heartbeat dos agents diretamente na interface, em **Administração > Configurações**, na nova aba **Agents**.
 
-### Código Existente
-A página já tem um `cancelMutation` implementado, mas:
-- Só permite cancelar tarefas com status `pending`
-- Tarefas `running` não mostram o botão de cancelar
+## Arquitetura da Solução
+
+```text
++------------------+      +---------------------+      +------------------------+
+|   SettingsPage   | ---> | system_settings     | <--- | rpc_agent_heartbeat()  |
+|   (aba Agents)   |      | (nova tabela)       |      | (função atualizada)    |
++------------------+      +---------------------+      +------------------------+
+         |                        |                             |
+         v                        v                             v
+   Input numérico          key: "agent_heartbeat_interval"    Lê da tabela
+   (60-300 segundos)       value: 120 (padrão)                em vez de 120 fixo
+```
 
 ## Alterações Necessárias
 
-### 1. Cancelar a Tarefa Atual (Database)
-Atualizar a tarefa `baa5e084-6170-49ec-be36-731bf7394a33` para status `cancelled`:
+### 1. Criar Tabela de Configurações do Sistema (Database Migration)
 
 ```sql
-UPDATE agent_tasks
-SET 
-  status = 'cancelled',
-  completed_at = NOW(),
-  error_message = 'Cancelada manualmente pelo administrador'
-WHERE id = 'baa5e084-6170-49ec-be36-731bf7394a33';
+-- Tabela para configurações globais do sistema
+CREATE TABLE IF NOT EXISTS public.system_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key TEXT NOT NULL UNIQUE,
+    value JSONB NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by UUID REFERENCES auth.users(id)
+);
+
+-- Habilitar RLS
+ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
+
+-- Apenas super_admin pode gerenciar
+CREATE POLICY "Super admins can manage system settings"
+    ON public.system_settings FOR ALL
+    USING (has_role(auth.uid(), 'super_admin'));
+
+-- Qualquer autenticado pode ler (necessário para RPC)
+CREATE POLICY "Authenticated users can view system settings"
+    ON public.system_settings FOR SELECT
+    USING (auth.role() = 'authenticated');
+
+-- Inserir valor padrão do heartbeat
+INSERT INTO public.system_settings (key, value, description)
+VALUES (
+    'agent_heartbeat_interval',
+    '120'::jsonb,
+    'Intervalo em segundos entre heartbeats dos agents (60-300)'
+);
+
+-- Trigger para updated_at
+CREATE TRIGGER update_system_settings_updated_at
+    BEFORE UPDATE ON public.system_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 ```
 
-### 2. Expandir o Botão de Cancelar (src/pages/firewall/TaskExecutionsPage.tsx)
+### 2. Atualizar Função RPC `rpc_agent_heartbeat` (Database Migration)
 
-**Linha 139-149** - Atualizar o `cancelMutation` para aceitar tarefas `pending` OU `running`:
+```sql
+CREATE OR REPLACE FUNCTION public.rpc_agent_heartbeat(p_agent_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_agent RECORD;
+  v_pending_count INTEGER;
+  v_config_flag INTEGER;
+  v_heartbeat_interval INTEGER;
+BEGIN
+  -- Buscar intervalo de heartbeat configurado
+  SELECT COALESCE((value::text)::integer, 120)
+  INTO v_heartbeat_interval
+  FROM system_settings
+  WHERE key = 'agent_heartbeat_interval';
+  
+  -- Fallback se não encontrar
+  IF v_heartbeat_interval IS NULL THEN
+    v_heartbeat_interval := 120;
+  END IF;
 
+  -- Buscar e validar agent
+  SELECT id, jwt_secret, revoked, config_updated_at, config_fetched_at
+  INTO v_agent
+  FROM agents
+  WHERE id = p_agent_id;
+  
+  IF NOT FOUND THEN
+    RETURN json_build_object('error', 'AGENT_NOT_FOUND', 'success', false);
+  END IF;
+  
+  IF v_agent.revoked THEN
+    RETURN json_build_object('error', 'BLOCKED', 'success', false);
+  END IF;
+  
+  IF v_agent.jwt_secret IS NULL THEN
+    RETURN json_build_object('error', 'UNREGISTERED', 'success', false);
+  END IF;
+  
+  -- Atualizar last_seen atomicamente
+  UPDATE agents SET last_seen = NOW() WHERE id = p_agent_id;
+  
+  -- Contar tarefas pendentes não expiradas
+  SELECT COUNT(*) INTO v_pending_count
+  FROM agent_tasks
+  WHERE agent_id = p_agent_id
+    AND status = 'pending'
+    AND expires_at > NOW();
+  
+  -- Calcular config_flag
+  v_config_flag := CASE 
+    WHEN v_agent.config_updated_at > COALESCE(v_agent.config_fetched_at, '1970-01-01'::timestamptz)
+    THEN 1 ELSE 0 
+  END;
+  
+  RETURN json_build_object(
+    'success', true,
+    'agent_id', p_agent_id,
+    'jwt_secret', v_agent.jwt_secret,
+    'config_flag', v_config_flag,
+    'has_pending_tasks', v_pending_count > 0,
+    'next_heartbeat_in', v_heartbeat_interval  -- Agora usa valor da tabela
+  );
+END;
+$function$;
+```
+
+### 3. Atualizar SettingsPage.tsx - Adicionar Aba "Agents"
+
+**Arquivo**: `src/pages/admin/SettingsPage.tsx`
+
+Adicionar imports:
 ```typescript
-const cancelMutation = useMutation({
-  mutationFn: async (taskId: string) => {
+import { Bot } from 'lucide-react';
+```
+
+Adicionar estado para configurações de agents:
+```typescript
+const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
+const [savingAgentSettings, setSavingAgentSettings] = useState(false);
+```
+
+Adicionar função para carregar/salvar configurações:
+```typescript
+useEffect(() => {
+  if (user && role === 'super_admin') {
+    loadAgentSettings();
+  }
+}, [user, role]);
+
+const loadAgentSettings = async () => {
+  const { data, error } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'agent_heartbeat_interval')
+    .single();
+  
+  if (data) {
+    setAgentHeartbeatInterval(Number(data.value) || 120);
+  }
+};
+
+const handleSaveAgentSettings = async () => {
+  setSavingAgentSettings(true);
+  try {
     const { error } = await supabase
-      .from('agent_tasks')
-      .update({ 
-        status: 'cancelled', 
-        completed_at: new Date().toISOString(),
-        error_message: 'Cancelada pelo usuário'
-      })
-      .eq('id', taskId)
-      .in('status', ['pending', 'running']); // Permite cancelar pending e running
-    
+      .from('system_settings')
+      .upsert({
+        key: 'agent_heartbeat_interval',
+        value: agentHeartbeatInterval,
+        updated_by: user?.id
+      }, { onConflict: 'key' });
+
     if (error) throw error;
-  },
-  ...
-});
+    toast.success('Configurações de agents salvas com sucesso');
+  } catch (error) {
+    toast.error('Erro ao salvar configurações');
+  } finally {
+    setSavingAgentSettings(false);
+  }
+};
 ```
 
-**Linhas 398-407** - Mostrar o botão para tarefas `pending` OU `running`:
-
-```typescript
-{(task.status === 'pending' || task.status === 'running') && (
-  <Button
-    variant="ghost"
-    size="icon"
-    onClick={() => cancelMutation.mutate(task.id)}
-    disabled={cancelMutation.isPending}
-    title="Cancelar tarefa"
-  >
-    <Ban className="w-4 h-4 text-destructive" />
-  </Button>
-)}
+Adicionar nova aba no TabsList:
+```tsx
+<TabsTrigger value="agents" className="gap-2">
+  <Bot className="w-4 h-4" />
+  Agents
+</TabsTrigger>
 ```
 
-## Comportamento Final
+Adicionar conteúdo da aba:
+```tsx
+<TabsContent value="agents" className="space-y-6">
+  <Card className="border-border/50">
+    <CardHeader>
+      <CardTitle>Configurações dos Agents</CardTitle>
+      <CardDescription>
+        Configure o comportamento global dos agents de coleta
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="space-y-6">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="heartbeatInterval">Intervalo de Heartbeat (segundos)</Label>
+          <Input
+            id="heartbeatInterval"
+            type="number"
+            min={60}
+            max={300}
+            value={agentHeartbeatInterval}
+            onChange={(e) => setAgentHeartbeatInterval(Number(e.target.value))}
+            className="w-[200px]"
+          />
+          <p className="text-xs text-muted-foreground">
+            Define o intervalo entre check-ins dos agents. Valores menores detectam problemas 
+            mais rapidamente, mas aumentam o uso de recursos. Recomendado: 60-120 segundos.
+          </p>
+        </div>
 
-| Status | Botão Cancelar |
-|--------|----------------|
-| `pending` | ✅ Visível |
-| `running` | ✅ Visível |
-| `completed` | ❌ Oculto |
-| `failed` | ❌ Oculto |
-| `timeout` | ❌ Oculto |
-| `cancelled` | ❌ Oculto |
+        <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+          <h4 className="font-medium text-sm">Sobre o Heartbeat</h4>
+          <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+            <li>Agents reportam status e verificam tarefas pendentes a cada intervalo</li>
+            <li>Intervalos menores = detecção mais rápida de agents offline</li>
+            <li>Intervalos maiores = menor carga no servidor</li>
+            <li>A alteração afeta todos os agents na próxima sincronização</li>
+          </ul>
+        </div>
+      </div>
 
-## Considerações Técnicas
+      <div className="flex justify-end">
+        <Button onClick={handleSaveAgentSettings} disabled={savingAgentSettings}>
+          {savingAgentSettings ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4 mr-2" />
+          )}
+          Salvar Configurações
+        </Button>
+      </div>
+    </CardContent>
+  </Card>
+</TabsContent>
+```
 
-### Limitação do Cancelamento de Tarefas "Running"
-Cancelar uma tarefa com status `running` no banco de dados **não interrompe a execução** no agent Python. O agent continuará executando a tarefa até concluir, mas quando tentar reportar o resultado, a tarefa já estará marcada como `cancelled` e o resultado será ignorado.
+## Resumo Visual
 
-Para uma interrupção real do agent seria necessário:
-1. Implementar um mecanismo de "cancellation token" no agent
-2. O agent verificar o status da tarefa periodicamente durante a execução
+| Componente | Alteração |
+|------------|-----------|
+| `system_settings` (DB) | Nova tabela para configurações globais |
+| `rpc_agent_heartbeat` (DB) | Lê intervalo da tabela em vez de valor fixo |
+| `SettingsPage.tsx` | Nova aba "Agents" com input numérico |
 
-A implementação proposta é suficiente para a maioria dos casos de uso - evita que resultados de tarefas canceladas sejam processados e dá feedback visual ao usuário.
+## Fluxo de Dados
+
+1. Admin altera o valor na aba Agents (60-300s)
+2. Valor é salvo na tabela `system_settings`
+3. Função `rpc_agent_heartbeat` lê o valor dinamicamente
+4. Agents recebem o novo intervalo no próximo heartbeat
+5. Agents ajustam seu ciclo de polling automaticamente
+
+## Validações
+
+- Mínimo: 60 segundos (evita sobrecarga)
+- Máximo: 300 segundos (5 minutos - evita detecção lenta de falhas)
+- Fallback: 120 segundos se não encontrar configuração
+
