@@ -20,6 +20,12 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   LayoutDashboard,
   Server,
   FileText,
@@ -232,75 +238,234 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const canAccessUsers = role === 'super_admin' || role === 'workspace_admin';
 
-  const NavContent = () => (
-    <>
-      {/* Dashboard Geral */}
+  // Helper component for sidebar items with tooltip when collapsed
+  const SidebarLink = ({ to, icon: Icon, label, isActive, color }: { to: string; icon: React.ComponentType<{ className?: string }>; label: string; isActive: boolean; color?: string }) => {
+    const linkContent = (
       <Link
-        to="/dashboard"
+        to={to}
         onClick={() => setMobileMenuOpen(false)}
         className={cn(
           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-          location.pathname === '/dashboard'
+          isActive
             ? 'bg-sidebar-accent text-sidebar-primary'
             : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
           !sidebarOpen && 'justify-center'
         )}
-        title={!sidebarOpen ? 'Dashboard' : undefined}
       >
-        <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
-        {sidebarOpen && 'Dashboard'}
+        <Icon className={cn('w-5 h-5 flex-shrink-0', color)} />
+        {sidebarOpen && label}
       </Link>
+    );
+
+    if (!sidebarOpen) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return linkContent;
+  };
+
+  // Helper for module buttons in collapsed mode
+  const ModuleButton = ({ moduleConfig }: { moduleConfig: ModuleNavConfig }) => {
+    const firstRoute = moduleConfig.items[0]?.href || `/${moduleConfig.code.replace(/_/g, '-')}/dashboard`;
+    
+    if (!sidebarOpen) {
+      // In collapsed mode, show tooltip and navigate on click
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to={firstRoute}
+              className={cn(
+                'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isModuleActive(moduleConfig.code)
+                  ? 'bg-sidebar-accent text-sidebar-primary'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
+              )}
+            >
+              <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            {moduleConfig.name}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    // In expanded mode, use collapsible
+    return (
+      <Collapsible
+        open={expandedModules[moduleConfig.code]}
+        onOpenChange={() => toggleModule(moduleConfig.code)}
+      >
+        <CollapsibleTrigger asChild>
+          <button
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              isModuleActive(moduleConfig.code)
+                ? 'bg-sidebar-accent text-sidebar-primary'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
+            )}
+          >
+            <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
+            <span className="flex-1 text-left">{moduleConfig.name}</span>
+            {expandedModules[moduleConfig.code] ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pl-4 space-y-1 mt-1">
+          {moduleConfig.items.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                isActiveRoute(item.href)
+                  ? 'bg-sidebar-accent/70 text-sidebar-primary font-medium'
+                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/30'
+              )}
+            >
+              <item.icon className="w-4 h-4" />
+              {item.label}
+            </Link>
+          ))}
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
+
+  // Helper for admin section
+  const AdminButton = () => {
+    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections';
+    
+    if (!sidebarOpen) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/settings"
+              className={cn(
+                'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isAdminRoute
+                  ? 'bg-warning/20 text-warning border border-warning/30'
+                  : 'text-warning hover:bg-warning/10'
+              )}
+            >
+              <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            Administração
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <Collapsible
+        open={adminMenuOpen}
+        onOpenChange={() => setAdminMenuOpen(!adminMenuOpen)}
+      >
+        <CollapsibleTrigger asChild>
+          <button
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              isAdminRoute
+                ? 'bg-warning/20 text-warning border border-warning/30'
+                : 'text-warning hover:bg-warning/10'
+            )}
+          >
+            <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
+            <span className="flex-1 text-left">Administração</span>
+            {adminMenuOpen ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pl-4 space-y-1 mt-1">
+          <Link
+            to="/administrators"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/administrators'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Administradores
+          </Link>
+          <Link
+            to="/workspaces"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/workspaces'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <Building className="w-4 h-4" />
+            Workspaces
+          </Link>
+          <Link
+            to="/settings"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/settings'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <Settings className="w-4 h-4" />
+            Configurações
+          </Link>
+          <Link
+            to="/collections"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/collections'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <ClipboardList className="w-4 h-4" />
+            Coletas
+          </Link>
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
+
+  const NavContent = () => (
+    <TooltipProvider delayDuration={0}>
+      {/* Dashboard Geral */}
+      <SidebarLink 
+        to="/dashboard" 
+        icon={LayoutDashboard} 
+        label="Dashboard" 
+        isActive={location.pathname === '/dashboard'} 
+      />
 
       {/* Modules */}
       {accessibleModuleConfigs.map((moduleConfig) => (
-        <Collapsible
-          key={moduleConfig.code}
-          open={sidebarOpen && expandedModules[moduleConfig.code]}
-          onOpenChange={() => sidebarOpen && toggleModule(moduleConfig.code)}
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isModuleActive(moduleConfig.code)
-                  ? 'bg-sidebar-accent text-sidebar-primary'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-                !sidebarOpen && 'justify-center'
-              )}
-              title={!sidebarOpen ? moduleConfig.name : undefined}
-            >
-              <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
-              {sidebarOpen && (
-                <>
-                  <span className="flex-1 text-left">{moduleConfig.name}</span>
-                  {expandedModules[moduleConfig.code] ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </>
-              )}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pl-4 space-y-1 mt-1">
-            {moduleConfig.items.map((item) => (
-              <Link
-                key={item.href}
-                to={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                  isActiveRoute(item.href)
-                    ? 'bg-sidebar-accent/70 text-sidebar-primary font-medium'
-                    : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/30'
-                )}
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </Link>
-            ))}
-          </CollapsibleContent>
-        </Collapsible>
+        <ModuleButton key={moduleConfig.code} moduleConfig={moduleConfig} />
       ))}
 
       {/* Divider */}
@@ -308,132 +473,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Users */}
       {canAccessUsers && (
-        <Link
-          to="/users"
-          onClick={() => setMobileMenuOpen(false)}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            location.pathname === '/users'
-              ? 'bg-sidebar-accent text-sidebar-primary'
-              : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-            !sidebarOpen && 'justify-center'
-          )}
-          title={!sidebarOpen ? 'Usuários' : undefined}
-        >
-          <Users className="w-5 h-5 flex-shrink-0" />
-          {sidebarOpen && 'Usuários'}
-        </Link>
+        <SidebarLink 
+          to="/users" 
+          icon={Users} 
+          label="Usuários" 
+          isActive={location.pathname === '/users'} 
+        />
       )}
 
       {/* Agents */}
       {canAccessUsers && (
-        <Link
-          to="/agents"
-          onClick={() => setMobileMenuOpen(false)}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            location.pathname === '/agents'
-              ? 'bg-sidebar-accent text-sidebar-primary'
-              : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-            !sidebarOpen && 'justify-center'
-          )}
-          title={!sidebarOpen ? 'Agents' : undefined}
-        >
-          <Bot className="w-5 h-5 flex-shrink-0" />
-          {sidebarOpen && 'Agents'}
-        </Link>
+        <SidebarLink 
+          to="/agents" 
+          icon={Bot} 
+          label="Agents" 
+          isActive={location.pathname === '/agents'} 
+        />
       )}
 
       {/* Divider before Workspaces */}
       {role === 'super_admin' && sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
 
       {/* Administração - Super Admin only */}
-      {role === 'super_admin' && (
-        <Collapsible
-          open={sidebarOpen && adminMenuOpen}
-          onOpenChange={() => sidebarOpen && setAdminMenuOpen(!adminMenuOpen)}
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            (location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections')
-              ? 'bg-warning/20 text-warning border border-warning/30'
-              : 'text-warning hover:bg-warning/10',
-                !sidebarOpen && 'justify-center'
-              )}
-              title={!sidebarOpen ? 'Administração' : undefined}
-            >
-              <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
-              {sidebarOpen && (
-                <>
-                  <span className="flex-1 text-left">Administração</span>
-                  {adminMenuOpen ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </>
-              )}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pl-4 space-y-1 mt-1">
-            <Link
-              to="/administrators"
-              onClick={() => setMobileMenuOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                location.pathname === '/administrators'
-                  ? 'bg-warning/20 text-warning font-medium'
-                  : 'text-warning/80 hover:bg-warning/10'
-              )}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Administradores
-            </Link>
-            <Link
-              to="/workspaces"
-              onClick={() => setMobileMenuOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                location.pathname === '/workspaces'
-                  ? 'bg-warning/20 text-warning font-medium'
-                  : 'text-warning/80 hover:bg-warning/10'
-              )}
-            >
-              <Building className="w-4 h-4" />
-              Workspaces
-            </Link>
-            <Link
-              to="/settings"
-              onClick={() => setMobileMenuOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                location.pathname === '/settings'
-                  ? 'bg-warning/20 text-warning font-medium'
-                  : 'text-warning/80 hover:bg-warning/10'
-              )}
-            >
-              <Settings className="w-4 h-4" />
-              Configurações
-            </Link>
-            <Link
-              to="/collections"
-              onClick={() => setMobileMenuOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                location.pathname === '/collections'
-                  ? 'bg-warning/20 text-warning font-medium'
-                  : 'text-warning/80 hover:bg-warning/10'
-              )}
-            >
-              <ClipboardList className="w-4 h-4" />
-              Coletas
-            </Link>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-    </>
+      {role === 'super_admin' && <AdminButton />}
+    </TooltipProvider>
   );
 
   return (
