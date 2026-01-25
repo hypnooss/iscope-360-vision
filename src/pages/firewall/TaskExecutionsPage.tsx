@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -130,7 +131,18 @@ export default function TaskExecutionsPage() {
       if (error) throw error;
       return data as AgentTask[];
     },
+    // Auto-refresh quando há tarefas ativas
+    refetchInterval: (query) => {
+      const data = query.state.data as AgentTask[] | undefined;
+      const hasActiveTasks = data?.some(
+        t => t.status === 'running' || t.status === 'pending'
+      );
+      return hasActiveTasks ? 10000 : false;
+    },
   });
+
+  // Detectar se há tarefas ativas para indicador visual
+  const hasActiveTasks = tasks.some(t => t.status === 'running' || t.status === 'pending');
 
   // Fetch agents for name lookup
   const { data: agents = [] } = useQuery({
@@ -243,8 +255,8 @@ export default function TaskExecutionsPage() {
             </p>
           </div>
           <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Atualizar
+            <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
+            {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}
           </Button>
         </div>
 
