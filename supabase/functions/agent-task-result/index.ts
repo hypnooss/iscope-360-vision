@@ -208,6 +208,10 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'system_admin': '/api/v2/cmdb/system/admin',
   'license_status': '/api/v2/monitor/license/status',
   'forticare_status': '/api/v2/monitor/system/forticare',
+  // Automation endpoints for backup
+  'system_automation_stitch': '/api/v2/cmdb/system/automation-stitch',
+  'system_automation_trigger': '/api/v2/cmdb/system/automation-trigger',
+  'system_automation_action': '/api/v2/cmdb/system/automation-action',
   // SonicWall endpoints
   'version': '/api/sonicos/version',
   'interfaces': '/api/sonicos/interfaces/ipv4',
@@ -563,25 +567,81 @@ function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
 }
 
 /**
- * Format Backup evidence (backup-001)
+ * Format Backup evidence (bkp-001)
+ * Uses automation stitch/trigger/action data to detect backup configuration
  */
 function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
   const evidence: EvidenceItem[] = [];
   
   try {
-    const globalData = rawData['system_global'] as Record<string, unknown> | undefined;
-    if (!globalData) {
-      return [{ label: 'Backup', value: 'Dados não disponíveis', type: 'text' }];
+    // Verificar automações de backup
+    const stitchData = rawData['system_automation_stitch'] as Record<string, unknown> | undefined;
+    const triggerData = rawData['system_automation_trigger'] as Record<string, unknown> | undefined;
+    const actionData = rawData['system_automation_action'] as Record<string, unknown> | undefined;
+    
+    // Verificar se há ações de backup configuradas
+    const actions = (actionData?.results || []) as Array<Record<string, unknown>>;
+    const backupActions = actions.filter(a => 
+      a['action-type'] === 'backup' || 
+      a['action-type'] === 'config-backup' ||
+      String(a.name || '').toLowerCase().includes('backup')
+    );
+    
+    // Verificar triggers agendados
+    const triggers = (triggerData?.results || []) as Array<Record<string, unknown>>;
+    const scheduledTriggers = triggers.filter(t => 
+      t['trigger-type'] === 'scheduled' || 
+      t['trigger-type'] === 'event-based'
+    );
+    
+    // Verificar stitches que combinam trigger + action de backup
+    const stitches = (stitchData?.results || []) as Array<Record<string, unknown>>;
+    
+    if (backupActions.length > 0 && scheduledTriggers.length > 0) {
+      evidence.push({
+        label: 'Status',
+        value: '✅ Backup automático configurado',
+        type: 'text'
+      });
+      
+      // Listar ações de backup encontradas
+      for (const action of backupActions.slice(0, 3)) {
+        evidence.push({
+          label: 'Ação',
+          value: String(action.name || 'backup'),
+          type: 'code'
+        });
+      }
+      
+      // Listar triggers agendados
+      for (const trigger of scheduledTriggers.slice(0, 3)) {
+        evidence.push({
+          label: 'Agendamento',
+          value: String(trigger.name || trigger['trigger-type']),
+          type: 'text'
+        });
+      }
+    } else if (backupActions.length > 0) {
+      evidence.push({
+        label: 'Status',
+        value: '⚠️ Ação de backup existe, mas sem agendamento',
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: '❌ Nenhum backup automático configurado',
+        type: 'text'
+      });
     }
     
-    const results = globalData.results as Record<string, unknown> || globalData;
-    const autoBackup = results['auto-backup'] || results['revision-backup-on-logout'] || 'disable';
-    
+    // Mostrar totais encontrados
     evidence.push({
-      label: 'Backup Automático',
-      value: autoBackup === 'enable' ? '✅ Habilitado' : '❌ Desabilitado',
+      label: 'Automações',
+      value: `${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} ações`,
       type: 'text'
     });
+    
   } catch (e) {
     console.error('Error formatting Backup evidence:', e);
     evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
@@ -696,7 +756,7 @@ function processComplianceRules(
     } else if (rule.code === 'ha-001') {
       // High Availability
       evidence = formatHAEvidence(rawData);
-    } else if (rule.code === 'backup-001') {
+    } else if (rule.code === 'bkp-001') {
       // Backup
       evidence = formatBackupEvidence(rawData);
     } else if (value !== undefined && value !== null) {
@@ -704,9 +764,23 @@ function processComplianceRules(
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
     }
     
-    // Incluir dados brutos relevantes (apenas o campo avaliado)
-    const checkRawData: Record<string, unknown> = {};
-    if (logic.field_path && value !== undefined) {
+    // Incluir dados brutos relevantes
+    let checkRawData: Record<string, unknown> = {};
+    
+    // Para regras de licenciamento, incluir dados completos do license_status
+    if (rule.code === 'lic-001' || rule.code === 'lic-002') {
+      const licenseData = rawData['license_status'];
+      if (licenseData) {
+        checkRawData = { license_status: licenseData };
+      }
+    } else if (rule.code === 'bkp-001') {
+      // Incluir dados de automação para backup
+      checkRawData = {
+        system_automation_stitch: rawData['system_automation_stitch'],
+        system_automation_trigger: rawData['system_automation_trigger'],
+        system_automation_action: rawData['system_automation_action']
+      };
+    } else if (logic.field_path && value !== undefined) {
       checkRawData[logic.field_path] = value;
     }
     
