@@ -3,6 +3,7 @@ Task Executor - Fetches, executes, and reports task results.
 Uses generic steps from blueprints instead of hardcoded logic.
 """
 
+import time
 from typing import Dict, Any, Optional
 
 from agent.executors.http_request import HTTPRequestExecutor
@@ -52,12 +53,18 @@ class TaskExecutor:
         
         self.logger.info(f"Executando tarefa {task_id} com {len(steps)} steps")
         
+        # Track execution time
+        start_time = time.time()
+        
         context = self._build_context(target)
         results = {}
+        step_results = []  # Detailed step-by-step results
         errors = []
         
         for i, step in enumerate(steps):
             step_id = step.get('id', 'unknown')
+            step_start = time.time()
+            
             # Support both 'type' (from blueprint) and 'executor' (legacy) field names
             executor_type = step.get('type') or step.get('executor', 'unknown')
             
@@ -69,12 +76,20 @@ class TaskExecutor:
             executor = self._executors.get(executor_type)
             if not executor:
                 self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
+                step_result = {
+                    'step_id': step_id,
+                    'status': 'error',
+                    'error': f"Executor desconhecido: {executor_type}",
+                    'duration_ms': int((time.time() - step_start) * 1000)
+                }
+                step_results.append(step_result)
                 results[step_id] = {'error': f"Executor desconhecido: {executor_type}"}
                 errors.append(f"{step_id}: Executor desconhecido")
                 continue
             
             try:
                 result = executor.run(step, context)
+                step_duration = int((time.time() - step_start) * 1000)
                 
                 # Update context with session data if executor returns it
                 # This allows session-based executors to pass cookies/tokens between steps
@@ -89,25 +104,57 @@ class TaskExecutor:
                             f"Falha de conectividade no primeiro step. "
                             f"Abortando {len(steps) - 1} steps restantes."
                         )
+                        step_results.append({
+                            'step_id': step_id,
+                            'status': 'failed',
+                            'error': error_msg,
+                            'duration_ms': step_duration
+                        })
                         results[step_id] = result
                         # Mark all remaining steps as skipped
                         for remaining_step in steps[1:]:
                             remaining_id = remaining_step.get('id', 'unknown')
+                            step_results.append({
+                                'step_id': remaining_id,
+                                'status': 'skipped',
+                                'error': 'Ignorado: falha de conectividade no step inicial',
+                                'duration_ms': 0
+                            })
                             results[remaining_id] = {
                                 'error': 'Ignorado: falha de conectividade no step inicial',
                                 'skipped': True
                             }
+                        
+                        execution_time_ms = int((time.time() - start_time) * 1000)
                         return {
                             'status': 'failed',
                             'result': results,
-                            'error_message': f'Falha de conectividade: {error_msg}'
+                            'error_message': f'Falha de conectividade: {error_msg}',
+                            'execution_time_ms': execution_time_ms,
+                            'step_results': step_results
                         }
+                
+                # Record step result
+                step_status = 'error' if result.get('error') else 'success'
+                step_results.append({
+                    'step_id': step_id,
+                    'status': step_status,
+                    'error': result.get('error') if result.get('error') else None,
+                    'duration_ms': step_duration
+                })
                 
                 if result.get('error'):
                     errors.append(f"{step_id}: {result['error']}")
                 results[step_id] = result.get('data') if result.get('data') is not None else result
                 
             except Exception as e:
+                step_duration = int((time.time() - step_start) * 1000)
+                step_results.append({
+                    'step_id': step_id,
+                    'status': 'error',
+                    'error': str(e),
+                    'duration_ms': step_duration
+                })
                 results[step_id] = {'error': str(e)}
                 errors.append(f"{step_id}: {str(e)}")
                 
@@ -119,22 +166,37 @@ class TaskExecutor:
                     )
                     for remaining_step in steps[1:]:
                         remaining_id = remaining_step.get('id', 'unknown')
+                        step_results.append({
+                            'step_id': remaining_id,
+                            'status': 'skipped',
+                            'error': 'Ignorado: falha de conectividade no step inicial',
+                            'duration_ms': 0
+                        })
                         results[remaining_id] = {
                             'error': 'Ignorado: falha de conectividade no step inicial',
                             'skipped': True
                         }
+                    
+                    execution_time_ms = int((time.time() - start_time) * 1000)
                     return {
                         'status': 'failed',
                         'result': results,
-                        'error_message': f'Falha de conectividade: {str(e)}'
+                        'error_message': f'Falha de conectividade: {str(e)}',
+                        'execution_time_ms': execution_time_ms,
+                        'step_results': step_results
                     }
         
         status = 'failed' if len(errors) == len(steps) and steps else 'completed'
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        
+        self.logger.info(f"Tarefa {task_id} finalizada: status={status}, tempo={execution_time_ms}ms")
         
         return {
             'status': status,
             'result': results,
-            'error_message': '; '.join(errors) if errors else None
+            'error_message': '; '.join(errors) if errors else None,
+            'execution_time_ms': execution_time_ms,
+            'step_results': step_results
         }
 
     def _is_connectivity_error(self, error_msg: str) -> bool:
@@ -161,6 +223,7 @@ class TaskExecutor:
             'status': result.get('status', 'failed'),
             'result': result.get('result'),
             'error_message': result.get('error_message'),
+            'execution_time_ms': result.get('execution_time_ms'),
         }
         return self.api.post('/agent-task-result', json=payload)
 

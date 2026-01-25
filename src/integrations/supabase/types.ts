@@ -62,6 +62,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           error_message: string | null
+          execution_time_ms: number | null
           expires_at: string | null
           id: string
           max_retries: number
@@ -71,15 +72,18 @@ export type Database = {
           retry_count: number
           started_at: string | null
           status: Database["public"]["Enums"]["agent_task_status"]
+          step_results: Json | null
           target_id: string
           target_type: string
           task_type: Database["public"]["Enums"]["agent_task_type"]
+          timeout_at: string | null
         }
         Insert: {
           agent_id: string
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
+          execution_time_ms?: number | null
           expires_at?: string | null
           id?: string
           max_retries?: number
@@ -89,15 +93,18 @@ export type Database = {
           retry_count?: number
           started_at?: string | null
           status?: Database["public"]["Enums"]["agent_task_status"]
+          step_results?: Json | null
           target_id: string
           target_type?: string
           task_type: Database["public"]["Enums"]["agent_task_type"]
+          timeout_at?: string | null
         }
         Update: {
           agent_id?: string
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
+          execution_time_ms?: number | null
           expires_at?: string | null
           id?: string
           max_retries?: number
@@ -107,9 +114,11 @@ export type Database = {
           retry_count?: number
           started_at?: string | null
           status?: Database["public"]["Enums"]["agent_task_status"]
+          step_results?: Json | null
           target_id?: string
           target_type?: string
           task_type?: Database["public"]["Enums"]["agent_task_type"]
+          timeout_at?: string | null
         }
         Relationships: [
           {
@@ -1097,6 +1106,7 @@ export type Database = {
         Args: { _admin_id: string; _target_user_id: string }
         Returns: boolean
       }
+      cleanup_stuck_tasks: { Args: never; Returns: undefined }
       get_module_permission: {
         Args: { _module_name: string; _user_id: string }
         Returns: Database["public"]["Enums"]["module_permission"]
@@ -1133,6 +1143,11 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_client_admin: { Args: { _user_id: string }; Returns: boolean }
+      rpc_agent_heartbeat: { Args: { p_agent_id: string }; Returns: Json }
+      rpc_get_agent_tasks: {
+        Args: { p_agent_id: string; p_limit?: number }
+        Returns: Json
+      }
     }
     Enums: {
       agent_task_status:

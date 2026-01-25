@@ -26,6 +26,16 @@ interface HeartbeatErrorResponse {
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
 }
 
+interface RpcHeartbeatResult {
+  success: boolean;
+  error?: string;
+  agent_id?: string;
+  jwt_secret?: string;
+  config_flag?: number;
+  has_pending_tasks?: boolean;
+  next_heartbeat_in?: number;
+}
+
 serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -75,46 +85,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Create Supabase client with service role
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Fetch agent data
-    const { data: agent, error: fetchError } = await supabase
-      .from('agents')
-      .select('id, jwt_secret, revoked, config_updated_at, config_fetched_at')
-      .eq('id', agentId)
-      .single();
-
-    if (fetchError || !agent) {
-      console.log('Agent not found:', agentId);
-      return new Response(
-        JSON.stringify({ error: 'Agent não encontrado', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check if agent is revoked
-    if (agent.revoked) {
-      console.log('Agent is blocked:', agentId);
-      return new Response(
-        JSON.stringify({ error: 'Agent bloqueado', code: 'BLOCKED' } as HeartbeatErrorResponse),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check if agent has jwt_secret (is registered)
-    if (!agent.jwt_secret) {
-      console.log('Agent is not registered (no jwt_secret):', agentId);
-      return new Response(
-        JSON.stringify({ error: 'Agent desregistrado', code: 'UNREGISTERED' } as HeartbeatErrorResponse),
-        { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check token expiration BEFORE signature verification
-    // This allows the agent to know specifically that it should refresh
+    // Check token expiration BEFORE RPC call
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       console.log('Token has expired:', agentId);
       return new Response(
@@ -123,10 +94,60 @@ serve(async (req: Request) => {
       );
     }
 
-    // Verify the token signature using agent's jwt_secret
+    // Create Supabase client with service role
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Call optimized RPC (1 round-trip instead of 3 queries)
+    const { data: rpcResult, error: rpcError } = await supabase
+      .rpc('rpc_agent_heartbeat', { p_agent_id: agentId });
+
+    if (rpcError) {
+      console.error('RPC error:', rpcError);
+      return new Response(
+        JSON.stringify({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' } as HeartbeatErrorResponse),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const result = rpcResult as RpcHeartbeatResult;
+
+    // Handle RPC-level errors
+    if (!result.success) {
+      const errorCode = result.error || 'INTERNAL_ERROR';
+      
+      if (errorCode === 'AGENT_NOT_FOUND') {
+        return new Response(
+          JSON.stringify({ error: 'Agent não encontrado', code: 'INVALID_TOKEN' } as HeartbeatErrorResponse),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (errorCode === 'BLOCKED') {
+        return new Response(
+          JSON.stringify({ error: 'Agent bloqueado', code: 'BLOCKED' } as HeartbeatErrorResponse),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (errorCode === 'UNREGISTERED') {
+        return new Response(
+          JSON.stringify({ error: 'Agent desregistrado', code: 'UNREGISTERED' } as HeartbeatErrorResponse),
+          { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ error: 'Erro interno', code: 'INTERNAL_ERROR' } as HeartbeatErrorResponse),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Verify the token signature using jwt_secret from RPC result
     try {
       const encoder = new TextEncoder();
-      const keyData = encoder.encode(agent.jwt_secret);
+      const keyData = encoder.encode(result.jwt_secret);
       const cryptoKey = await crypto.subtle.importKey(
         "raw",
         keyData,
@@ -143,7 +164,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Parse request body
+    // Parse request body for logging
     let body: HeartbeatRequest;
     try {
       body = await req.json();
@@ -151,45 +172,17 @@ serve(async (req: Request) => {
       body = { status: 'unknown', agent_version: 'unknown' };
     }
 
-    console.log(`Heartbeat received from agent ${agentId}: status=${body.status}, version=${body.agent_version}`);
-
-    // Update last_seen timestamp
-    const { error: updateError } = await supabase
-      .from('agents')
-      .update({ last_seen: new Date().toISOString() })
-      .eq('id', agentId);
-
-    if (updateError) {
-      console.error('Failed to update last_seen:', updateError);
-      // Continue anyway - heartbeat should still succeed
-    }
-
-    // Calculate config_flag
-    const configUpdatedAt = agent.config_updated_at ? new Date(agent.config_updated_at).getTime() : 0;
-    const configFetchedAt = agent.config_fetched_at ? new Date(agent.config_fetched_at).getTime() : 0;
-    const configFlag: 0 | 1 = configUpdatedAt > configFetchedAt ? 1 : 0;
-
-    // Check for pending tasks
-    const { count: pendingTasksCount } = await supabase
-      .from('agent_tasks')
-      .select('id', { count: 'exact', head: true })
-      .eq('agent_id', agentId)
-      .eq('status', 'pending')
-      .gt('expires_at', new Date().toISOString());
-
-    const hasPendingTasks = (pendingTasksCount || 0) > 0;
+    console.log(`Heartbeat OK: agent=${agentId}, version=${body.agent_version}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}`);
 
     // Build success response
     const response: HeartbeatSuccessResponse = {
       success: true,
       agent_id: agentId,
       timestamp: new Date().toISOString(),
-      next_heartbeat_in: 60,
-      config_flag: configFlag,
-      has_pending_tasks: hasPendingTasks,
+      next_heartbeat_in: result.next_heartbeat_in || 120,
+      config_flag: (result.config_flag || 0) as 0 | 1,
+      has_pending_tasks: result.has_pending_tasks || false,
     };
-
-    console.log(`Heartbeat success for agent ${agentId}: config_flag=${configFlag}, has_pending_tasks=${hasPendingTasks}`);
 
     return new Response(
       JSON.stringify(response),

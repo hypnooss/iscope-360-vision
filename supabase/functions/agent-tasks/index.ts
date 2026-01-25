@@ -48,87 +48,26 @@ interface TasksErrorResponse {
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
 }
 
-// ============================================
-// Helper Functions
-// ============================================
-
-// deno-lint-ignore no-explicit-any
-type SupabaseClient = ReturnType<typeof createClient<any>>;
-
-async function getDeviceBlueprint(
-  supabase: SupabaseClient,
-  deviceTypeId: string | null,
-  _taskType: string
-): Promise<StepConfig[]> {
-  // If no device_type_id, return empty steps (legacy behavior)
-  if (!deviceTypeId) {
-    console.log('No device_type_id, returning empty steps for legacy task');
-    return [];
-  }
-
-  // Fetch the active blueprint for this device type
-  const { data: blueprint, error } = await supabase
-    .from('device_blueprints')
-    .select('collection_steps')
-    .eq('device_type_id', deviceTypeId)
-    .eq('is_active', true)
-    .order('version', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (error || !blueprint) {
-    console.log('No blueprint found for device type:', deviceTypeId);
-    return [];
-  }
-
-  // Extract steps from the blueprint
-  const blueprintData = blueprint as { collection_steps: { steps?: StepConfig[] } };
-  return blueprintData.collection_steps?.steps || [];
-}
-
-async function getTargetCredentials(
-  supabase: SupabaseClient,
-  targetId: string,
-  targetType: string
-): Promise<TaskResponse['target'] | null> {
-  if (targetType === 'firewall') {
-    const { data: firewall, error } = await supabase
-      .from('firewalls')
-      .select('id, name, fortigate_url, api_key, auth_username, auth_password, device_type_id')
-      .eq('id', targetId)
-      .single();
-
-    if (error || !firewall) {
-      console.log('Firewall not found:', targetId);
-      return null;
-    }
-
-    const fw = firewall as { 
-      id: string; 
-      name: string; 
-      fortigate_url: string; 
-      api_key: string; 
-      auth_username: string | null;
-      auth_password: string | null;
-      device_type_id: string | null 
+interface RpcTaskData {
+  id: string;
+  task_type: string;
+  target_id: string;
+  target_type: string;
+  payload: Record<string, unknown>;
+  priority: number;
+  expires_at: string;
+  target: {
+    id: string;
+    type: string;
+    base_url: string;
+    credentials: {
+      api_key: string;
+      username: string | null;
+      password: string | null;
     };
-
-    return {
-      id: fw.id,
-      type: 'firewall',
-      base_url: fw.fortigate_url,
-      credentials: {
-        api_key: fw.api_key,
-        username: fw.auth_username || undefined,
-        password: fw.auth_password || undefined,
-      },
-    };
-  }
-
-  // Add more target types here (switches, routers, etc.)
-  return {
-    id: targetId,
-    type: targetType,
+  };
+  blueprint: {
+    steps: StepConfig[];
   };
 }
 
@@ -185,12 +124,21 @@ serve(async (req: Request) => {
       );
     }
 
+    // Check token expiration
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      console.log('Token has expired:', agentId);
+      return new Response(
+        JSON.stringify({ error: 'Token expirado', code: 'TOKEN_EXPIRED' } as TasksErrorResponse),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Create Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch agent data
+    // Fetch agent data for JWT validation
     const { data: agent, error: fetchError } = await supabase
       .from('agents')
       .select('id, jwt_secret, revoked')
@@ -223,15 +171,6 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check token expiration
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      console.log('Token has expired:', agentId);
-      return new Response(
-        JSON.stringify({ error: 'Token expirado', code: 'TOKEN_EXPIRED' } as TasksErrorResponse),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Verify the token signature
     try {
       const encoder = new TextEncoder();
@@ -252,91 +191,37 @@ serve(async (req: Request) => {
       );
     }
 
-    // Fetch pending tasks for this agent
-    const { data: tasks, error: tasksError } = await supabase
-      .from('agent_tasks')
-      .select(`
-        id,
-        task_type,
-        target_id,
-        target_type,
-        payload,
-        priority,
-        expires_at
-      `)
-      .eq('agent_id', agentId)
-      .eq('status', 'pending')
-      .lt('expires_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
-      .gt('expires_at', new Date().toISOString())
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: true })
-      .limit(10);
+    // Call optimized RPC that fetches tasks with JOINs and marks them as running in a single transaction
+    const { data: tasksData, error: rpcError } = await supabase
+      .rpc('rpc_get_agent_tasks', { p_agent_id: agentId, p_limit: 10 });
 
-    if (tasksError) {
-      console.error('Failed to fetch tasks:', tasksError);
+    if (rpcError) {
+      console.error('RPC error:', rpcError);
       return new Response(
         JSON.stringify({ error: 'Erro ao buscar tarefas', code: 'INTERNAL_ERROR' } as TasksErrorResponse),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Enrich tasks with target data and blueprint steps
-    const enrichedTasks: TaskResponse[] = [];
-    
-    for (const task of tasks || []) {
-      // Get target credentials
-      const targetData = await getTargetCredentials(supabase, task.target_id, task.target_type);
-      
-      if (!targetData) {
-        console.log('Skipping task - target not found:', task.target_id);
-        continue;
-      }
-
-      // Get device_type_id from the target (firewall)
-      let deviceTypeId: string | null = null;
-      if (task.target_type === 'firewall') {
-        const { data: firewall } = await supabase
-          .from('firewalls')
-          .select('device_type_id')
-          .eq('id', task.target_id)
-          .single();
-        
-        deviceTypeId = firewall?.device_type_id || null;
-        
-        // If no device_type_id set, try to use default FortiGate
-        if (!deviceTypeId) {
-          const { data: defaultType } = await supabase
-            .from('device_types')
-            .select('id')
-            .eq('code', 'fortigate')
-            .eq('is_active', true)
-            .single();
-          
-          deviceTypeId = defaultType?.id || null;
-        }
-      }
-
-      // Get blueprint steps for this device type
-      const steps = await getDeviceBlueprint(supabase, deviceTypeId, task.task_type);
-
-      // Mark task as running
-      await supabase
-        .from('agent_tasks')
-        .update({ 
-          status: 'running',
-          started_at: new Date().toISOString()
-        })
-        .eq('id', task.id);
-
-      enrichedTasks.push({
-        id: task.id,
-        type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
-        target: targetData,
-        steps: steps,
-        priority: task.priority,
-        expires_at: task.expires_at,
-      });
-    }
+    // Transform RPC result to TaskResponse format
+    const tasks = (tasksData as RpcTaskData[] || []);
+    const enrichedTasks: TaskResponse[] = tasks.map(task => ({
+      id: task.id,
+      type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
+      target: {
+        id: task.target?.id || task.target_id,
+        type: task.target?.type || task.target_type,
+        base_url: task.target?.base_url,
+        credentials: task.target?.credentials ? {
+          api_key: task.target.credentials.api_key || undefined,
+          username: task.target.credentials.username || undefined,
+          password: task.target.credentials.password || undefined,
+        } : undefined,
+      },
+      steps: task.blueprint?.steps || [],
+      priority: task.priority,
+      expires_at: task.expires_at,
+    }));
 
     console.log(`Returning ${enrichedTasks.length} tasks for agent ${agentId}`);
 
