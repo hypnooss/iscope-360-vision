@@ -265,7 +265,7 @@ export default function CollectionsPage() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <div className="space-y-6">
         <PageBreadcrumb
           items={[
             { label: 'Administração' },
