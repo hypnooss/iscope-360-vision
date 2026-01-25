@@ -171,7 +171,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
     
     // Expand admin menu if on admin routes
-    if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections') {
+    if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/tasks') {
       setAdminMenuOpen(true);
     }
   }, [location.pathname, setActiveModule]);
@@ -348,7 +348,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Helper for admin section
   const AdminButton = () => {
-    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections';
+    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/tasks';
     
     if (!sidebarOpen) {
       return (
@@ -448,6 +448,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <ClipboardList className="w-4 h-4" />
             Coletas
+          </Link>
+          <Link
+            to="/tasks"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/tasks'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <Activity className="w-4 h-4" />
+            Tarefas
           </Link>
         </CollapsibleContent>
       </Collapsible>

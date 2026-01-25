@@ -21,6 +21,7 @@ const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const AdministratorsPage = lazy(() => import("./pages/AdministratorsPage"));
 const SettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
 const CollectionsPage = lazy(() => import("./pages/admin/CollectionsPage"));
+const TasksPage = lazy(() => import("./pages/admin/TasksPage"));
 
 // Firewall Module Pages - lazy loaded
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
@@ -95,6 +96,7 @@ const App = () => (
                 <Route path="/administrators" element={<AdministratorsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/collections" element={<CollectionsPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
