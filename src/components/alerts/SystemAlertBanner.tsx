@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, X, Settings, Info, AlertCircle, Shield } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +19,7 @@ interface SystemAlert {
 
 export function SystemAlertBanner() {
   const { role, user } = useAuth();
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
 
@@ -27,6 +28,31 @@ export function SystemAlertBanner() {
       fetchActiveAlerts();
     }
   }, [role]);
+
+  // Subscription para alertas em tempo real
+  useEffect(() => {
+    if (role !== 'super_admin' && role !== 'workspace_admin') return;
+
+    const channel = supabase
+      .channel('system_alerts_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_alerts'
+        },
+        (payload) => {
+          console.log('Alert change detected:', payload);
+          fetchActiveAlerts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [role, user?.id]);
 
   const fetchActiveAlerts = async () => {
     try {
@@ -89,6 +115,11 @@ export function SystemAlertBanner() {
       // Fallback: remover localmente
       setDismissedLocally(prev => [...prev, alertId]);
     }
+  };
+
+  const handleViewAnalysis = async (alertId: string, firewallId: string) => {
+    await dismissAlert(alertId);
+    navigate(`/scope-firewall/firewalls/${firewallId}/analysis`);
   };
 
   // Filtrar alertas dispensados localmente
@@ -189,11 +220,12 @@ export function SystemAlertBanner() {
                 variant="outline"
                 size="sm"
                 className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                asChild
+                onClick={() => handleViewAnalysis(
+                  primaryAlert.id,
+                  (primaryAlert.metadata as Record<string, unknown>).firewall_id as string
+                )}
               >
-                <Link to={`/scope-firewall/firewalls/${(primaryAlert.metadata as Record<string, unknown>).firewall_id}/analysis`}>
-                  Ver Análise
-                </Link>
+                Ver Análise
               </Button>
             )}
             
