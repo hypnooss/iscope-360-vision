@@ -1,6 +1,7 @@
 """
 Task Executor - Fetches, executes, and reports task results.
 Uses generic steps from blueprints instead of hardcoded logic.
+Implements progressive streaming: sends each step result immediately after execution.
 """
 
 import time
@@ -13,7 +14,7 @@ from agent.executors.snmp import SNMPExecutor
 
 
 class TaskExecutor:
-    """Orchestrates task execution using generic executors."""
+    """Orchestrates task execution using generic executors with progressive uploads."""
 
     # Patterns that indicate connectivity problems
     CONNECTIVITY_PATTERNS = [
@@ -41,24 +42,27 @@ class TaskExecutor:
             'ssh_command': SSHExecutor(logger),
             'snmp_query': SNMPExecutor(logger),
         }
+        # Feature flag: use progressive streaming if available
+        self._use_progressive = True
 
     def fetch_pending_tasks(self) -> Dict[str, Any]:
         return self.api.get('/agent-tasks')
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute all steps in a task with fail-fast on connectivity errors."""
+        """Execute all steps in a task with progressive upload."""
         task_id = task.get('id', 'unknown')
         steps = task.get('steps', [])
         target = task.get('target', {})
         
-        self.logger.info(f"Executando tarefa {task_id} com {len(steps)} steps")
+        self.logger.info(f"Executando tarefa {task_id} com {len(steps)} steps (progressive={self._use_progressive})")
         
         # Track execution time
         start_time = time.time()
         
         context = self._build_context(target)
-        results = {}
         step_results = []  # Detailed step-by-step results
+        steps_completed = 0
+        steps_failed = 0
         errors = []
         
         for i, step in enumerate(steps):
@@ -69,22 +73,26 @@ class TaskExecutor:
             executor_type = step.get('type') or step.get('executor', 'unknown')
             
             # Auto-route steps with use_session: true to http_session executor
-            # This allows session sharing between login/request/logout steps
             if step.get('use_session') and executor_type in ('http_request', 'unknown'):
                 executor_type = 'http_session'
             
             executor = self._executors.get(executor_type)
             if not executor:
                 self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
+                step_duration = int((time.time() - step_start) * 1000)
                 step_result = {
                     'step_id': step_id,
-                    'status': 'error',
+                    'status': 'failed',
                     'error': f"Executor desconhecido: {executor_type}",
-                    'duration_ms': int((time.time() - step_start) * 1000)
+                    'duration_ms': step_duration
                 }
                 step_results.append(step_result)
-                results[step_id] = {'error': f"Executor desconhecido: {executor_type}"}
+                steps_failed += 1
                 errors.append(f"{step_id}: Executor desconhecido")
+                
+                # Report step result progressively
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, step_result['error'], step_duration)
                 continue
             
             try:
@@ -92,7 +100,6 @@ class TaskExecutor:
                 step_duration = int((time.time() - step_start) * 1000)
                 
                 # Update context with session data if executor returns it
-                # This allows session-based executors to pass cookies/tokens between steps
                 if result.get('session_data'):
                     context.update(result['session_data'])
                 
@@ -110,7 +117,12 @@ class TaskExecutor:
                             'error': error_msg,
                             'duration_ms': step_duration
                         })
-                        results[step_id] = result
+                        steps_failed += 1
+                        
+                        # Report failed step
+                        if self._use_progressive:
+                            self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
+                        
                         # Mark all remaining steps as skipped
                         for remaining_step in steps[1:]:
                             remaining_id = remaining_step.get('id', 'unknown')
@@ -120,46 +132,63 @@ class TaskExecutor:
                                 'error': 'Ignorado: falha de conectividade no step inicial',
                                 'duration_ms': 0
                             })
-                            results[remaining_id] = {
-                                'error': 'Ignorado: falha de conectividade no step inicial',
-                                'skipped': True
-                            }
+                            if self._use_progressive:
+                                self._report_step_result(task_id, remaining_id, 'skipped', None, 
+                                    'Ignorado: falha de conectividade no step inicial', 0)
                         
                         execution_time_ms = int((time.time() - start_time) * 1000)
                         return {
                             'status': 'failed',
-                            'result': results,
                             'error_message': f'Falha de conectividade: {error_msg}',
                             'execution_time_ms': execution_time_ms,
+                            'steps_completed': steps_completed,
+                            'steps_failed': steps_failed + len(steps) - 1,  # Current + remaining
                             'step_results': step_results
                         }
                 
-                # Record step result
-                step_status = 'error' if result.get('error') else 'success'
+                # Determine step status
+                step_status = 'failed' if result.get('error') else 'success'
+                step_data = result.get('data') if result.get('data') is not None else None
+                step_error = result.get('error') if result.get('error') else None
+                
                 step_results.append({
                     'step_id': step_id,
                     'status': step_status,
-                    'error': result.get('error') if result.get('error') else None,
+                    'error': step_error,
                     'duration_ms': step_duration
                 })
                 
-                if result.get('error'):
-                    errors.append(f"{step_id}: {result['error']}")
-                results[step_id] = result.get('data') if result.get('data') is not None else result
+                if step_status == 'success':
+                    steps_completed += 1
+                else:
+                    steps_failed += 1
+                    errors.append(f"{step_id}: {step_error}")
+                
+                # Report step result progressively (send data immediately, free memory)
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, step_status, step_data, step_error, step_duration)
+                    # Clear data from memory after upload
+                    del result
                 
             except Exception as e:
                 step_duration = int((time.time() - step_start) * 1000)
+                error_msg = str(e)
+                
                 step_results.append({
                     'step_id': step_id,
-                    'status': 'error',
-                    'error': str(e),
+                    'status': 'failed',
+                    'error': error_msg,
                     'duration_ms': step_duration
                 })
-                results[step_id] = {'error': str(e)}
-                errors.append(f"{step_id}: {str(e)}")
+                steps_failed += 1
+                errors.append(f"{step_id}: {error_msg}")
+                
+                # Report failed step
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
                 
                 # Also check for connectivity errors in exceptions
-                if i == 0 and self._is_connectivity_error(str(e)):
+                if i == 0 and self._is_connectivity_error(error_msg):
                     self.logger.error(
                         f"Falha de conectividade no primeiro step (exceção). "
                         f"Abortando {len(steps) - 1} steps restantes."
@@ -172,32 +201,60 @@ class TaskExecutor:
                             'error': 'Ignorado: falha de conectividade no step inicial',
                             'duration_ms': 0
                         })
-                        results[remaining_id] = {
-                            'error': 'Ignorado: falha de conectividade no step inicial',
-                            'skipped': True
-                        }
+                        if self._use_progressive:
+                            self._report_step_result(task_id, remaining_id, 'skipped', None,
+                                'Ignorado: falha de conectividade no step inicial', 0)
                     
                     execution_time_ms = int((time.time() - start_time) * 1000)
                     return {
                         'status': 'failed',
-                        'result': results,
-                        'error_message': f'Falha de conectividade: {str(e)}',
+                        'error_message': f'Falha de conectividade: {error_msg}',
                         'execution_time_ms': execution_time_ms,
+                        'steps_completed': steps_completed,
+                        'steps_failed': steps_failed + len(steps) - 1,
                         'step_results': step_results
                     }
         
-        status = 'failed' if len(errors) == len(steps) and steps else 'completed'
+        # Determine final status
+        if steps_failed == len(steps) and steps:
+            status = 'failed'
+        elif steps_failed > 0:
+            status = 'partial'  # Some steps failed
+        else:
+            status = 'completed'
+        
         execution_time_ms = int((time.time() - start_time) * 1000)
         
-        self.logger.info(f"Tarefa {task_id} finalizada: status={status}, tempo={execution_time_ms}ms")
+        self.logger.info(f"Tarefa {task_id} finalizada: status={status}, tempo={execution_time_ms}ms, "
+                         f"completed={steps_completed}, failed={steps_failed}")
         
         return {
             'status': status,
-            'result': results,
             'error_message': '; '.join(errors) if errors else None,
             'execution_time_ms': execution_time_ms,
+            'steps_completed': steps_completed,
+            'steps_failed': steps_failed,
             'step_results': step_results
         }
+
+    def _report_step_result(self, task_id: str, step_id: str, status: str, 
+                            data: Optional[Dict[str, Any]], error: Optional[str], 
+                            duration_ms: int) -> None:
+        """Send result of a single step to the backend immediately."""
+        payload = {
+            'task_id': task_id,
+            'step_id': step_id,
+            'status': status,
+            'data': data,
+            'error': error,
+            'duration_ms': duration_ms
+        }
+        try:
+            response = self.api.post('/agent-step-result', json=payload)
+            self.logger.debug(f"Step {step_id} uploaded: {response.get('steps_completed', '?')}/{response.get('steps_total', '?')}")
+        except Exception as e:
+            # Log but don't fail the task - step result upload is best-effort
+            self.logger.warning(f"Falha ao enviar step {step_id}: {str(e)}")
 
     def _is_connectivity_error(self, error_msg: str) -> bool:
         """Check if an error message indicates a connectivity problem."""
@@ -218,13 +275,18 @@ class TaskExecutor:
         }
 
     def report_result(self, task_id: str, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Report final task completion to the backend."""
         payload = {
             'task_id': task_id,
             'status': result.get('status', 'failed'),
-            'result': result.get('result'),
             'error_message': result.get('error_message'),
             'execution_time_ms': result.get('execution_time_ms'),
+            # Progressive mode metadata
+            'steps_completed': result.get('steps_completed'),
+            'steps_failed': result.get('steps_failed'),
         }
+        # In progressive mode, we don't send raw data here (it was already sent per step)
+        # In legacy mode, we would include result here
         return self.api.post('/agent-task-result', json=payload)
 
     def process_all(self) -> int:

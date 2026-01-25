@@ -45,5 +45,8 @@ verify_jwt = false
 [functions.agent-task-result]
 verify_jwt = false
 
+[functions.agent-step-result]
+verify_jwt = false
+
 [functions.trigger-firewall-analysis]
 verify_jwt = false
