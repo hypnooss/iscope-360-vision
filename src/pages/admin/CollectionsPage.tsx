@@ -265,7 +265,7 @@ export default function CollectionsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 p-6">
         <PageBreadcrumb
           items={[
             { label: 'Administração' },
