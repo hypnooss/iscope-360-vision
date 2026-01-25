@@ -570,8 +570,17 @@ function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
  * Format Backup evidence (bkp-001)
  * Uses automation stitch/trigger/action data to detect backup configuration
  */
-function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+/**
+ * Format Backup evidence (bkp-001)
+ * Uses automation stitch/trigger/action data to detect backup configuration
+ * Returns evidence AND calculated status for proper icon display
+ */
+function formatBackupEvidence(rawData: Record<string, unknown>): { 
+  evidence: EvidenceItem[], 
+  isConfigured: boolean 
+} {
   const evidence: EvidenceItem[] = [];
+  let isConfigured = false;
   
   try {
     // Verificar automações de backup
@@ -598,6 +607,7 @@ function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] 
     const stitches = (stitchData?.results || []) as Array<Record<string, unknown>>;
     
     if (backupActions.length > 0 && scheduledTriggers.length > 0) {
+      isConfigured = true;
       evidence.push({
         label: 'Status',
         value: '✅ Backup automático configurado',
@@ -622,12 +632,15 @@ function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] 
         });
       }
     } else if (backupActions.length > 0) {
+      // Partial: action exists but no schedule
+      isConfigured = false;
       evidence.push({
         label: 'Status',
         value: '⚠️ Ação de backup existe, mas sem agendamento',
         type: 'text'
       });
     } else {
+      isConfigured = false;
       evidence.push({
         label: 'Status',
         value: '❌ Nenhum backup automático configurado',
@@ -647,20 +660,36 @@ function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] 
     evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
   }
   
-  return evidence;
+  return { evidence, isConfigured };
 }
 
 /**
  * Helper to check if an interface has WAN or SD-WAN role
+ * Includes special handling for virtual-wan-link and sd-wan zone interfaces
  */
 function isWanInterface(interfaceName: string, interfaces: Array<Record<string, unknown>>): boolean {
-  if (!interfaceName || !interfaces) return false;
+  if (!interfaceName) return false;
   
-  const iface = interfaces.find(i => i.name === interfaceName);
-  if (!iface) return false;
+  const nameLower = interfaceName.toLowerCase();
   
-  const role = String(iface.role || '').toLowerCase();
-  return role === 'wan' || role === 'sd-wan' || role.includes('wan');
+  // Special SD-WAN interfaces that should always be considered as WAN
+  const sdwanInterfaces = ['virtual-wan-link', 'sd-wan', 'sdwan'];
+  if (sdwanInterfaces.some(sw => nameLower === sw || nameLower.includes(sw))) {
+    return true;
+  }
+  
+  // Check by role in interface list
+  if (interfaces && interfaces.length > 0) {
+    const iface = interfaces.find(i => i.name === interfaceName);
+    if (iface) {
+      const role = String(iface.role || '').toLowerCase();
+      if (role === 'wan' || role === 'sd-wan' || role.includes('wan')) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
 }
 
 /**
@@ -720,12 +749,29 @@ function formatInboundRuleEvidence(
     }
     
     // Get WAN/SD-WAN interface names for reference
+    // Include both role-based detection and special SD-WAN interfaces
     const wanInterfaces = interfaces
       .filter(i => {
         const role = String(i.role || '').toLowerCase();
-        return role === 'wan' || role === 'sd-wan' || role.includes('wan');
+        const name = String(i.name || '').toLowerCase();
+        return role === 'wan' || role === 'sd-wan' || role.includes('wan') ||
+               name === 'virtual-wan-link' || name.includes('sdwan') || name.includes('sd-wan');
       })
       .map(i => String(i.name));
+    
+    // Also add virtual-wan-link if not already present (it may not be in interface list)
+    if (!wanInterfaces.includes('virtual-wan-link')) {
+      // Check if any policy references virtual-wan-link
+      const hasVirtualWanLink = policies.some(p => {
+        const srcintf = p.srcintf as Array<Record<string, unknown>> | undefined;
+        return (srcintf || []).some(i => 
+          String(i.name || i.q_origin_key || '').toLowerCase() === 'virtual-wan-link'
+        );
+      });
+      if (hasVirtualWanLink) {
+        wanInterfaces.push('virtual-wan-link');
+      }
+    }
     
     // Filter policies based on rule type
     for (const policy of policies) {
@@ -735,8 +781,6 @@ function formatInboundRuleEvidence(
       
       const isFromWan = srcintfNames.some(name => 
         wanInterfaces.includes(name) || 
-        name.toLowerCase().includes('wan') ||
-        name.toLowerCase().includes('sd-wan') ||
         isWanInterface(name, interfaces)
       );
       
@@ -974,8 +1018,17 @@ function processComplianceRules(
       // High Availability
       evidence = formatHAEvidence(rawData);
     } else if (rule.code === 'bkp-001') {
-      // Backup
-      evidence = formatBackupEvidence(rawData);
+      // Backup - uses specialized formatter that returns status
+      const backupResult = formatBackupEvidence(rawData);
+      evidence = backupResult.evidence;
+      // Override status based on actual backup configuration analysis
+      if (backupResult.isConfigured) {
+        status = 'pass';
+        details = rule.pass_description || 'Backup automático configurado via automation stitch';
+      } else {
+        status = 'fail';
+        details = rule.fail_description || 'Nenhum backup automático configurado';
+      }
     } else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
@@ -998,22 +1051,23 @@ function processComplianceRules(
         system_automation_action: rawData['system_automation_action']
       };
     } else if (rule.code.startsWith('inb-') && inboundResult) {
-      // Para regras de inbound, incluir apenas as policies relevantes
-      if (inboundResult.relevantPolicies.length > 0) {
-        checkRawData = {
-          policies_vulneraveis: inboundResult.relevantPolicies.map(p => ({
-            policyid: p.policyid,
-            name: p.name,
-            srcintf: p.srcintf,
-            dstintf: p.dstintf,
-            srcaddr: p.srcaddr,
-            dstaddr: p.dstaddr,
-            service: p.service,
-            action: p.action,
-            status: p.status
-          }))
-        };
-      }
+      // Para regras de inbound, sempre incluir informações (mesmo se vazio)
+      checkRawData = {
+        policies_vulneraveis: inboundResult.relevantPolicies.map(p => ({
+          policyid: p.policyid,
+          name: p.name,
+          srcintf: p.srcintf,
+          dstintf: p.dstintf,
+          srcaddr: p.srcaddr,
+          dstaddr: p.dstaddr,
+          service: p.service,
+          action: p.action,
+          status: p.status
+        })),
+        total_policies_analisadas: ((rawData['firewall_policy'] as Record<string, unknown>)?.results as Array<unknown>)?.length || 0,
+        interfaces_wan_detectadas: inboundResult.evidence
+          .find(e => e.label === 'Interfaces WAN')?.value || 'N/A'
+      };
     } else if (logic.field_path && value !== undefined) {
       checkRawData[logic.field_path] = value;
     }
