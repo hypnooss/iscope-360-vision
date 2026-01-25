@@ -228,6 +228,398 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'default': 'API do dispositivo'
 };
 
+// ============================================
+// Evidence Formatters (ported from fortigate-compliance)
+// ============================================
+
+/**
+ * Format FortiCare support evidence (lic-001)
+ */
+function formatFortiCareEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    const licenseData = rawData['license_status'] as Record<string, unknown> | undefined;
+    if (!licenseData) {
+      return [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }];
+    }
+    
+    // Extract forticare info from multiple possible paths
+    const results = licenseData.results as Record<string, unknown> | undefined;
+    const forticareInfo = (results?.forticare as Record<string, unknown>) || 
+                          (licenseData.forticare as Record<string, unknown>) || {};
+    
+    // Check support status
+    const support = forticareInfo.support as Record<string, unknown> | undefined;
+    const supportStatus = support?.status || forticareInfo.status || 'unknown';
+    const isActive = ['licensed', 'registered', 'valid', 'active'].includes(String(supportStatus).toLowerCase());
+    
+    evidence.push({
+      label: 'Status',
+      value: isActive ? '✅ Ativo' : '❌ Expirado/Inativo',
+      type: 'text'
+    });
+    
+    // Get expiry date
+    const expiresRaw = support?.expires || forticareInfo.expires || 
+                       support?.expiry_date || forticareInfo.expiry_date || 0;
+    
+    if (expiresRaw) {
+      let expiryDate: Date;
+      if (typeof expiresRaw === 'string') {
+        expiryDate = new Date(expiresRaw);
+      } else {
+        expiryDate = new Date(Number(expiresRaw) * 1000);
+      }
+      
+      if (!isNaN(expiryDate.getTime())) {
+        const expiryDateStr = expiryDate.toLocaleDateString('pt-BR');
+        const daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        
+        evidence.push({
+          label: 'Data de Expiração',
+          value: expiryDateStr,
+          type: 'text'
+        });
+        
+        evidence.push({
+          label: 'Dias Restantes',
+          value: daysRemaining > 0 ? String(daysRemaining) : 'Expirado',
+          type: 'text'
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Error formatting FortiCare evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence;
+}
+
+/**
+ * Format FortiGuard licenses evidence (lic-002)
+ */
+function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    const licenseData = rawData['license_status'] as Record<string, unknown> | undefined;
+    if (!licenseData) {
+      return [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }];
+    }
+    
+    const results = licenseData.results as Record<string, unknown> | undefined;
+    const licenses = results || licenseData;
+    
+    // Service mappings with alternative keys
+    const securityServicesMap = [
+      { key: 'antivirus', altKeys: ['av', 'fortigate_av', 'fgt_av'], name: 'Antivírus' },
+      { key: 'ips', altKeys: ['nids', 'fortigate_ips', 'fgt_ips'], name: 'IPS' },
+      { key: 'web_filtering', altKeys: ['webfilter', 'fgd_wf', 'webfiltering', 'fortiguard_webfilter', 'fgt_wf'], name: 'Web Filter' },
+      { key: 'appctrl', altKeys: ['app_ctrl', 'application_control', 'fortigate_appctrl'], name: 'App Control' },
+      { key: 'antispam', altKeys: ['anti_spam', 'fortigate_antispam', 'fgt_antispam'], name: 'AntiSpam' },
+    ];
+    
+    for (const serviceMapping of securityServicesMap) {
+      let serviceInfo = licenses[serviceMapping.key] as Record<string, unknown> | undefined;
+      
+      // Try alternative keys
+      if (!serviceInfo || (typeof serviceInfo === 'object' && Object.keys(serviceInfo).length === 0)) {
+        for (const altKey of serviceMapping.altKeys) {
+          const altInfo = licenses[altKey] as Record<string, unknown> | undefined;
+          if (altInfo && (typeof altInfo !== 'object' || Object.keys(altInfo).length > 0)) {
+            serviceInfo = altInfo;
+            break;
+          }
+        }
+      }
+      
+      serviceInfo = serviceInfo || {};
+      
+      // Get status and expiry
+      const status = serviceInfo.status || serviceInfo.entitlement || serviceInfo.license_status || 'unknown';
+      const expiry = serviceInfo.expires || serviceInfo.expiry_date || serviceInfo.expire_time || serviceInfo.expiration || 0;
+      
+      let isActive = false;
+      let expiryDateStr = '';
+      let daysRemaining = 0;
+      
+      if (expiry) {
+        let expiryDate: Date;
+        if (typeof expiry === 'string') {
+          expiryDate = new Date(expiry);
+        } else {
+          expiryDate = new Date(Number(expiry) * 1000);
+        }
+        
+        if (!isNaN(expiryDate.getTime())) {
+          expiryDateStr = expiryDate.toLocaleDateString('pt-BR');
+          daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          isActive = daysRemaining > 0;
+        }
+      }
+      
+      // Check status if date check failed
+      if (!isActive && !expiry) {
+        const activeStatuses = ['licensed', 'valid', 'active', 'enabled', 'enable', 'registered', '1'];
+        isActive = activeStatuses.includes(String(status).toLowerCase());
+      }
+      
+      // Format output
+      let valueStr: string;
+      if (isActive) {
+        if (daysRemaining > 0 && daysRemaining <= 30) {
+          valueStr = `⚠️ Expira em ${daysRemaining} dias`;
+        } else {
+          valueStr = expiryDateStr ? `✅ Ativo até ${expiryDateStr}` : '✅ Ativo';
+        }
+      } else {
+        valueStr = '❌ Expirado/Inativo';
+      }
+      
+      evidence.push({
+        label: serviceMapping.name,
+        value: valueStr,
+        type: 'text'
+      });
+    }
+  } catch (e) {
+    console.error('Error formatting FortiGuard evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence;
+}
+
+/**
+ * Format VPN evidence (vpn-* rules)
+ */
+function formatVPNEvidence(rawData: Record<string, unknown>, ruleCode: string): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    // IPsec VPN encryption check
+    if (ruleCode === 'vpn-001') {
+      const vpnData = rawData['vpn_ipsec'] as Record<string, unknown> | undefined;
+      if (!vpnData) {
+        return [{ label: 'VPN IPsec', value: 'Dados não disponíveis', type: 'text' }];
+      }
+      
+      const results = (vpnData.results || []) as Array<Record<string, unknown>>;
+      const weakAlgorithms = ['des', '3des', 'md5', 'sha1'];
+      
+      for (const vpn of results.slice(0, 10)) { // Limit to 10 VPNs
+        const name = vpn.name as string || 'N/A';
+        const proposal = vpn.proposal as string || 'N/A';
+        const isWeak = weakAlgorithms.some(alg => proposal.toLowerCase().includes(alg));
+        
+        evidence.push({
+          label: `VPN: ${name}`,
+          value: isWeak ? `⚠️ ${proposal}` : `✅ ${proposal}`,
+          type: 'code'
+        });
+      }
+      
+      if (results.length === 0) {
+        evidence.push({ label: 'VPN IPsec', value: 'Nenhuma VPN configurada', type: 'text' });
+      }
+    }
+    // SSL VPN certificate check
+    else if (ruleCode === 'vpn-003') {
+      const sslData = rawData['vpn_ssl_settings'] as Record<string, unknown> | undefined;
+      if (!sslData) {
+        return [{ label: 'SSL VPN', value: 'Não configurado', type: 'text' }];
+      }
+      
+      const results = sslData.results as Record<string, unknown> || sslData;
+      const servercert = results.servercert as string || 'Fortinet_Factory';
+      const loginPort = results['login-port'] as number || 443;
+      
+      evidence.push({ label: 'Certificado', value: servercert, type: 'code' });
+      evidence.push({ label: 'Porta', value: String(loginPort), type: 'text' });
+    }
+    // Generic VPN rule
+    else {
+      const vpnData = rawData['vpn_ipsec'] as Record<string, unknown> | undefined;
+      const sslData = rawData['vpn_ssl_settings'] as Record<string, unknown> | undefined;
+      
+      if (vpnData?.results) {
+        const results = vpnData.results as Array<Record<string, unknown>>;
+        evidence.push({ label: 'VPNs IPsec', value: String(results.length), type: 'text' });
+      }
+      if (sslData?.results) {
+        const status = (sslData.results as Record<string, unknown>).status || 'disable';
+        evidence.push({ label: 'SSL VPN', value: status === 'enable' ? '✅ Ativo' : '❌ Inativo', type: 'text' });
+      }
+    }
+  } catch (e) {
+    console.error('Error formatting VPN evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence.length > 0 ? evidence : [{ label: 'VPN', value: 'Sem dados', type: 'text' }];
+}
+
+/**
+ * Format Logging evidence (log-* rules)
+ */
+function formatLoggingEvidence(rawData: Record<string, unknown>, ruleCode: string): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    if (ruleCode === 'log-001') {
+      // General log settings
+      const logData = rawData['log_settings'] as Record<string, unknown> | undefined;
+      if (!logData) {
+        return [{ label: 'Logging', value: 'Dados não disponíveis', type: 'text' }];
+      }
+      
+      const results = logData.results as Record<string, unknown> || logData;
+      const logInvalidPacket = results['log-invalid-packet'] as string || 'disable';
+      const resolveIp = results['resolve-ip'] as string || 'disable';
+      
+      evidence.push({ label: 'log-invalid-packet', value: logInvalidPacket, type: 'code' });
+      evidence.push({ label: 'resolve-ip', value: resolveIp, type: 'code' });
+    }
+    else if (ruleCode === 'log-002') {
+      // Log forwarding (FortiAnalyzer/FortiCloud)
+      let fortiAnalyzerEnabled = false;
+      let fortiAnalyzerServer = 'N/A';
+      let fortiCloudEnabled = false;
+      
+      // Check FortiAnalyzer
+      const fazData = rawData['log_fortianalyzer'] as Record<string, unknown> | undefined;
+      if (fazData) {
+        const results = fazData.results as Record<string, unknown> || fazData;
+        fortiAnalyzerEnabled = results.status === 'enable';
+        fortiAnalyzerServer = results.server as string || 'N/A';
+      }
+      
+      // Check FortiCloud
+      const cloudData = rawData['log_fortiguard'] as Record<string, unknown> | undefined;
+      if (cloudData) {
+        const results = cloudData.results as Record<string, unknown> || cloudData;
+        fortiCloudEnabled = results.status === 'enable';
+      }
+      
+      evidence.push({
+        label: 'FortiAnalyzer',
+        value: fortiAnalyzerEnabled ? `✅ ${fortiAnalyzerServer}` : '❌ Não configurado',
+        type: 'text'
+      });
+      evidence.push({
+        label: 'FortiCloud',
+        value: fortiCloudEnabled ? '✅ Habilitado' : '❌ Não configurado',
+        type: 'text'
+      });
+    }
+    else {
+      // Generic log rule
+      const logData = rawData['log_settings'] as Record<string, unknown> | undefined;
+      if (logData?.results) {
+        const results = logData.results as Record<string, unknown>;
+        for (const [key, val] of Object.entries(results).slice(0, 5)) {
+          evidence.push({ label: key, value: String(val), type: 'text' });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error formatting Logging evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence.length > 0 ? evidence : [{ label: 'Logging', value: 'Sem dados', type: 'text' }];
+}
+
+/**
+ * Format HA (High Availability) evidence (ha-001)
+ */
+function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
+    if (!haData) {
+      return [{ label: 'HA', value: 'Dados não disponíveis', type: 'text' }];
+    }
+    
+    const results = haData.results as Record<string, unknown> || haData;
+    const mode = results.mode as string || 'standalone';
+    const groupName = results['group-name'] as string || 'N/A';
+    const priority = results.priority || 'N/A';
+    
+    evidence.push({ label: 'Modo', value: mode, type: 'text' });
+    if (mode !== 'standalone') {
+      evidence.push({ label: 'Grupo', value: String(groupName), type: 'text' });
+      evidence.push({ label: 'Prioridade', value: String(priority), type: 'text' });
+    }
+  } catch (e) {
+    console.error('Error formatting HA evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence;
+}
+
+/**
+ * Format Backup evidence (backup-001)
+ */
+function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    const globalData = rawData['system_global'] as Record<string, unknown> | undefined;
+    if (!globalData) {
+      return [{ label: 'Backup', value: 'Dados não disponíveis', type: 'text' }];
+    }
+    
+    const results = globalData.results as Record<string, unknown> || globalData;
+    const autoBackup = results['auto-backup'] || results['revision-backup-on-logout'] || 'disable';
+    
+    evidence.push({
+      label: 'Backup Automático',
+      value: autoBackup === 'enable' ? '✅ Habilitado' : '❌ Desabilitado',
+      type: 'text'
+    });
+  } catch (e) {
+    console.error('Error formatting Backup evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence;
+}
+
+/**
+ * Format generic evidence with truncation for large objects
+ */
+function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  
+  const isComplex = typeof value === 'object';
+  let displayValue: string;
+  
+  if (isComplex) {
+    const jsonStr = JSON.stringify(value, null, 2);
+    // Truncate if too large
+    if (jsonStr.length > 500) {
+      displayValue = jsonStr.substring(0, 500) + '\n... (truncado)';
+    } else {
+      displayValue = jsonStr;
+    }
+  } else {
+    displayValue = String(value);
+  }
+  
+  return [{
+    label: fieldPath,
+    value: displayValue,
+    type: isComplex ? 'code' : 'text'
+  }];
+};
+
 function processComplianceRules(
   rawData: Record<string, unknown>,
   rules: ComplianceRule[]
@@ -285,15 +677,31 @@ function processComplianceRules(
     // Use rule description or generate one
     const description = rule.description || rule.name;
     
-    // Gerar evidências automaticamente a partir do valor avaliado
-    const evidence: EvidenceItem[] = [];
-    if (value !== undefined && value !== null) {
-      const isComplex = typeof value === 'object';
-      evidence.push({
-        label: logic.field_path || rule.name,
-        value: isComplex ? JSON.stringify(value, null, 2) : String(value),
-        type: isComplex ? 'code' : 'text'
-      });
+    // Gerar evidências usando formatadores especializados baseados no código da regra
+    let evidence: EvidenceItem[] = [];
+    
+    // Detectar regra e aplicar formatador apropriado
+    if (rule.code === 'lic-001') {
+      // FortiCare Support
+      evidence = formatFortiCareEvidence(rawData);
+    } else if (rule.code === 'lic-002') {
+      // FortiGuard Licenses
+      evidence = formatFortiGuardEvidence(rawData);
+    } else if (rule.code.startsWith('vpn-')) {
+      // VPN rules
+      evidence = formatVPNEvidence(rawData, rule.code);
+    } else if (rule.code.startsWith('log-')) {
+      // Logging rules
+      evidence = formatLoggingEvidence(rawData, rule.code);
+    } else if (rule.code === 'ha-001') {
+      // High Availability
+      evidence = formatHAEvidence(rawData);
+    } else if (rule.code === 'backup-001') {
+      // Backup
+      evidence = formatBackupEvidence(rawData);
+    } else if (value !== undefined && value !== null) {
+      // Fallback genérico com truncamento
+      evidence = formatGenericEvidence(value, logic.field_path || rule.name);
     }
     
     // Incluir dados brutos relevantes (apenas o campo avaliado)
