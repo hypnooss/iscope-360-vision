@@ -146,7 +146,7 @@ export default function TaskExecutionsPage() {
           error_message: 'Cancelada pelo usuário'
         })
         .eq('id', taskId)
-        .eq('status', 'pending');
+        .in('status', ['pending', 'running']);
       
       if (error) throw error;
     },
@@ -395,12 +395,13 @@ export default function TaskExecutionsPage() {
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            {task.status === 'pending' && (
+                            {(task.status === 'pending' || task.status === 'running') && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => cancelMutation.mutate(task.id)}
                                 disabled={cancelMutation.isPending}
+                                title="Cancelar tarefa"
                               >
                                 <Ban className="w-4 h-4 text-destructive" />
                               </Button>
