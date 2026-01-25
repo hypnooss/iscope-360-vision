@@ -141,13 +141,13 @@ export function SystemAlertBanner() {
   const IconComponent = styles.Icon;
 
   return (
-    <div className="px-4 pt-4">
+    <div className="w-full animate-in slide-in-from-top duration-300">
       <div className={cn(
-        "rounded-lg border backdrop-blur-md",
-        "bg-card/80 shadow-lg",
+        "border-b shadow-lg",
+        "bg-[hsl(222,47%,8%)]",
         styles.border
       )}>
-        <div className="flex items-center justify-between gap-4 p-4">
+        <div className="flex items-center justify-between gap-4 px-6 py-3">
           {/* Ícone com círculo gradiente */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className={cn(
@@ -212,7 +212,7 @@ export function SystemAlertBanner() {
         
         {/* Contador de alertas adicionais */}
         {visibleAlerts.length > 1 && (
-          <div className="border-t border-border/50 px-4 py-2 text-center">
+          <div className="border-t border-border/50 px-6 py-1.5 text-center">
             <span className="text-xs text-muted-foreground">
               +{visibleAlerts.length - 1} outro(s) alerta(s)
             </span>

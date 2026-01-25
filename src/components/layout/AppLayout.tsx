@@ -501,8 +501,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* System Alerts Banner */}
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* System Alerts Banner - appears at very top */}
       <SystemAlertBanner />
       
       {/* Mobile Header */}
@@ -546,7 +546,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
 
-      <div className="flex">
+      <div className="flex flex-1">
         {/* Desktop Sidebar */}
         <aside
           className={cn(

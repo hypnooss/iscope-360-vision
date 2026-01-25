@@ -1065,9 +1065,11 @@ function processComplianceRules(
           status: p.status
         }))
       };
-    } else if (logic.field_path && value !== undefined) {
+    } else if (!rule.code.startsWith('inb-') && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
+    // Nota: regras inb-* só têm rawData quando há políticas vulneráveis (tratado acima)
     
     checks.push({
       id: rule.code,
