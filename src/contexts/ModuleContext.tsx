@@ -50,7 +50,9 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
       setActiveModule(null);
       setLoading(false);
     }
-  }, [user, authLoading, role]);
+    // Note: removed 'role' from dependencies to prevent re-fetch loops
+    // The role is already available via useAuth() when fetchModules runs
+  }, [user, authLoading]);
 
   const fetchModules = async () => {
     try {

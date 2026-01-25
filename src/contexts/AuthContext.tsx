@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -12,15 +12,18 @@ interface UserProfile {
   avatar_url: string | null;
 }
 
-interface UserRole {
-  role: AppRole;
-}
-
 interface ModulePermissions {
   dashboard: ModulePermission;
   firewall: ModulePermission;
   reports: ModulePermission;
   users: ModulePermission;
+}
+
+interface CachedUserData {
+  profile: UserProfile;
+  role: AppRole;
+  permissions: ModulePermissions;
+  timestamp: number;
 }
 
 interface AuthContextType {
@@ -45,6 +48,9 @@ const defaultPermissions: ModulePermissions = {
   users: 'view',
 };
 
+const CACHE_KEY_PREFIX = 'user_data_';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -54,6 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [permissions, setPermissions] = useState<ModulePermissions>(defaultPermissions);
   const [loading, setLoading] = useState(true);
+  
+  // Ref to prevent duplicate fetch calls
+  const fetchingRef = useRef(false);
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -68,10 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fetchUserData(session.user.id);
           }, 0);
         } else {
-          setProfile(null);
-          setRole(null);
-          setPermissions(defaultPermissions);
-          setLoading(false);
+          clearUserData();
         }
       }
     );
@@ -90,48 +97,105 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserData = async (userId: string) => {
+  const clearUserData = () => {
+    setProfile(null);
+    setRole(null);
+    setPermissions(defaultPermissions);
+    setLoading(false);
+    lastFetchedUserIdRef.current = null;
+  };
+
+  const getCachedData = (userId: string): CachedUserData | null => {
     try {
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const cached = sessionStorage.getItem(`${CACHE_KEY_PREFIX}${userId}`);
+      if (cached) {
+        const parsed: CachedUserData = JSON.parse(cached);
+        // Check if cache is still valid
+        if (Date.now() - parsed.timestamp < CACHE_TTL) {
+          return parsed;
+        }
+        // Remove stale cache
+        sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${userId}`);
+      }
+    } catch {
+      // Ignore cache errors
+    }
+    return null;
+  };
+
+  const setCachedData = (userId: string, data: Omit<CachedUserData, 'timestamp'>) => {
+    try {
+      const cacheData: CachedUserData = {
+        ...data,
+        timestamp: Date.now(),
+      };
+      sessionStorage.setItem(`${CACHE_KEY_PREFIX}${userId}`, JSON.stringify(cacheData));
+    } catch {
+      // Ignore cache errors (e.g., quota exceeded)
+    }
+  };
+
+  const fetchUserData = async (userId: string) => {
+    // Prevent duplicate fetches for the same user
+    if (fetchingRef.current && lastFetchedUserIdRef.current === userId) {
+      return;
+    }
+    
+    // Check cache first
+    const cached = getCachedData(userId);
+    if (cached) {
+      setProfile(cached.profile);
+      setRole(cached.role);
+      setPermissions(cached.permissions);
+      setLoading(false);
+      lastFetchedUserIdRef.current = userId;
+      return;
+    }
+
+    fetchingRef.current = true;
+    lastFetchedUserIdRef.current = userId;
+
+    try {
+      // Fetch all data in parallel
+      const [profileResult, roleResult, permissionsResult] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', userId).single(),
+        supabase.from('user_roles').select('role').eq('user_id', userId).single(),
+        supabase.from('user_module_permissions').select('module_name, permission').eq('user_id', userId),
+      ]);
+
+      const profileData = profileResult.data as UserProfile | null;
+      const roleData = roleResult.data;
+      const permissionsData = permissionsResult.data;
 
       if (profileData) {
-        setProfile(profileData as UserProfile);
+        setProfile(profileData);
       }
 
-      // Fetch role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
+      const userRole = (roleData?.role as AppRole) || 'user';
+      setRole(userRole);
 
-      if (roleData) {
-        setRole(roleData.role as AppRole);
-      }
-
-      // Fetch module permissions
-      const { data: permissionsData } = await supabase
-        .from('user_module_permissions')
-        .select('module_name, permission')
-        .eq('user_id', userId);
-
+      const perms = { ...defaultPermissions };
       if (permissionsData) {
-        const perms = { ...defaultPermissions };
         permissionsData.forEach((p: { module_name: string; permission: ModulePermission }) => {
           if (p.module_name in perms) {
             perms[p.module_name as keyof ModulePermissions] = p.permission;
           }
         });
-        setPermissions(perms);
+      }
+      setPermissions(perms);
+
+      // Cache the data
+      if (profileData) {
+        setCachedData(userId, {
+          profile: profileData,
+          role: userRole,
+          permissions: perms,
+        });
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
     }
   };
@@ -155,12 +219,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clear cache on sign out
+    if (user?.id) {
+      sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
+    }
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
-    setProfile(null);
-    setRole(null);
-    setPermissions(defaultPermissions);
+    clearUserData();
   };
 
   const hasPermission = (module: keyof ModulePermissions, required: ModulePermission): boolean => {
