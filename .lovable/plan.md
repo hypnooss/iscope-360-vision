@@ -1,128 +1,205 @@
 
+# Plano: Corrigir Exibição de Evidências para FortiCare e Backup
 
-# Plano: Atualização em Tempo Real + Design Melhorado do Alerta
+## Problemas Identificados
 
-## Problema 1: Tela de Execuções não atualiza em tempo real
+### 1. FortiCare (lic-001) - Faltando dados brutos JSON
+O formatador `formatFortiCareEvidence` gera as evidências formatadas corretamente, mas o `rawData` está sendo preenchido apenas com o campo `field_path` específico (linha 709-711), não com os dados completos do `license_status`.
 
-A tarefa foi finalizada pelo agent às 17:43:33, mas a tela continua mostrando "Executando" porque:
-- A query usa `useQuery` sem atualização automática
-- O botão "Atualizar" faz refresh manual, mas não há polling nem Realtime
-
-## Problema 2: Alerta de sucesso com design simples
-
-O banner atual usa estilos simples (`bg-teal-500/10 border-b`), enquanto a referência mostra:
-- Card arredondado com borda colorida
-- Efeito de transparência/glassmorphism
-- Botão de ação com borda (outline)
-- Design mais caprichado e moderno
+### 2. Backup (bkp-001) - Não mostra endpoint nem evidências  
+O código do formatador verifica `backup-001`, mas a regra no banco usa `bkp-001`. Além disso:
+- O `source_key` da regra é `system_automation_stitch` (não `system_global`)
+- O formatador atual lê `system_global` que não é o fonte correto
 
 ---
 
 ## Solução
 
-### Arquivo 1: `src/pages/firewall/TaskExecutionsPage.tsx`
+### Arquivo: `supabase/functions/agent-task-result/index.ts`
 
-**Adicionar auto-refresh a cada 10 segundos** para tarefas em execução:
+#### Mudança 1: Incluir rawData completo para regras de licenciamento
+
+Na geração de rawData (linhas 707-711), adicionar lógica para incluir todos os dados relevantes para regras específicas:
 
 ```typescript
-const { data: tasks = [], isLoading, refetch } = useQuery({
-  queryKey: ['agent-tasks', statusFilter, timeFilter],
-  queryFn: async () => { ... },
-  // Adicionar refetch automático quando há tarefas running
-  refetchInterval: (query) => {
-    const data = query.state.data as AgentTask[] | undefined;
-    const hasRunning = data?.some(t => t.status === 'running' || t.status === 'pending');
-    return hasRunning ? 10000 : false; // 10s se há tarefas pendentes/executando
-  },
-});
+// Incluir dados brutos relevantes
+let checkRawData: Record<string, unknown> = {};
+
+// Para regras de licenciamento, incluir dados completos do license_status
+if (rule.code === 'lic-001' || rule.code === 'lic-002') {
+  const licenseData = rawData['license_status'];
+  if (licenseData) {
+    checkRawData = { license_status: licenseData };
+  }
+} else if (rule.code === 'bkp-001') {
+  // Incluir dados de automação para backup
+  checkRawData = {
+    system_automation_stitch: rawData['system_automation_stitch'],
+    system_automation_trigger: rawData['system_automation_trigger'],
+    system_automation_action: rawData['system_automation_action']
+  };
+} else if (logic.field_path && value !== undefined) {
+  checkRawData[logic.field_path] = value;
+}
 ```
 
-Isso faz a tela atualizar automaticamente enquanto houver tarefas em andamento.
+#### Mudança 2: Corrigir código da regra de backup no formatador
+
+Linha 699: Trocar `backup-001` por `bkp-001`:
+
+```typescript
+} else if (rule.code === 'bkp-001') {
+  // Backup
+  evidence = formatBackupEvidence(rawData);
+}
+```
+
+#### Mudança 3: Atualizar formatador de Backup para usar dados corretos
+
+O formatador `formatBackupEvidence` (linhas 568-591) deve usar `system_automation_stitch` em vez de `system_global`:
+
+```typescript
+function formatBackupEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    // Verificar automações de backup
+    const stitchData = rawData['system_automation_stitch'] as Record<string, unknown> | undefined;
+    const triggerData = rawData['system_automation_trigger'] as Record<string, unknown> | undefined;
+    const actionData = rawData['system_automation_action'] as Record<string, unknown> | undefined;
+    
+    // Verificar se há ações de backup configuradas
+    const actions = (actionData?.results || []) as Array<Record<string, unknown>>;
+    const backupActions = actions.filter(a => 
+      a['action-type'] === 'backup' || 
+      a['action-type'] === 'config-backup' ||
+      String(a.name || '').toLowerCase().includes('backup')
+    );
+    
+    // Verificar triggers agendados
+    const triggers = (triggerData?.results || []) as Array<Record<string, unknown>>;
+    const scheduledTriggers = triggers.filter(t => 
+      t['trigger-type'] === 'scheduled' || 
+      t['trigger-type'] === 'event-based'
+    );
+    
+    // Verificar stitches que combinam trigger + action de backup
+    const stitches = (stitchData?.results || []) as Array<Record<string, unknown>>;
+    
+    if (backupActions.length > 0 && scheduledTriggers.length > 0) {
+      evidence.push({
+        label: 'Status',
+        value: '✅ Backup automático configurado',
+        type: 'text'
+      });
+      
+      // Listar ações de backup encontradas
+      for (const action of backupActions.slice(0, 3)) {
+        evidence.push({
+          label: 'Ação',
+          value: String(action.name || 'backup'),
+          type: 'code'
+        });
+      }
+      
+      // Listar triggers agendados
+      for (const trigger of scheduledTriggers.slice(0, 3)) {
+        const schedule = trigger['trigger-datetime'] || trigger.schedule || 'N/A';
+        evidence.push({
+          label: 'Agendamento',
+          value: String(trigger.name || trigger['trigger-type']),
+          type: 'text'
+        });
+      }
+    } else if (backupActions.length > 0) {
+      evidence.push({
+        label: 'Status',
+        value: '⚠️ Ação de backup existe, mas sem agendamento',
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: '❌ Nenhum backup automático configurado',
+        type: 'text'
+      });
+    }
+    
+    // Mostrar totais encontrados
+    evidence.push({
+      label: 'Automações',
+      value: `${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} ações`,
+      type: 'text'
+    });
+    
+  } catch (e) {
+    console.error('Error formatting Backup evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return evidence;
+}
+```
+
+#### Mudança 4: Atualizar mapeamento de endpoint para backup
+
+Adicionar ao `sourceKeyToEndpoint` (linha 190+):
+
+```typescript
+'system_automation_stitch': '/api/v2/cmdb/system/automation-stitch',
+'system_automation_trigger': '/api/v2/cmdb/system/automation-trigger',
+'system_automation_action': '/api/v2/cmdb/system/automation-action',
+```
+
+#### Mudança 5: Corrigir nome do check de Backup
+
+Como solicitado, trocar o nome exibido de "Backup Automático Configurado" para "Configuração de Backup Automático":
+
+```sql
+UPDATE compliance_rules 
+SET name = 'Configuração de Backup Automático'
+WHERE code = 'bkp-001';
+```
 
 ---
 
-### Arquivo 2: `src/components/alerts/SystemAlertBanner.tsx`
+## Resumo das Alterações
 
-**Redesign completo do banner** para ficar igual à referência:
-
-**Mudanças visuais:**
-
-| Antes | Depois |
-|-------|--------|
-| `border-b` simples | Card com `rounded-lg` e `border` completa |
-| Background flat | Glassmorphism com `backdrop-blur-md` |
-| Botão `ghost` | Botão `outline` com borda colorida |
-| Posicionamento sticky top | Card flutuante com margem e sombra |
-
-**Novo container:**
-```tsx
-<div className={cn(
-  "mx-4 mt-4 rounded-lg border backdrop-blur-md",
-  "bg-card/80 shadow-lg",
-  severityBorderClass // ex: border-teal-500/50
-)}>
-```
-
-**Novo estilo do ícone (círculo com gradiente):**
-```tsx
-<div className={cn(
-  "flex items-center justify-center w-8 h-8 rounded-full",
-  "bg-gradient-to-br from-teal-500/20 to-teal-500/5 border border-teal-500/30"
-)}>
-  <Shield className="h-4 w-4 text-teal-500" />
-</div>
-```
-
-**Novo estilo do botão de ação:**
-```tsx
-<Button
-  variant="outline"
-  size="sm"
-  className={cn(
-    "h-8 px-4 text-xs font-medium",
-    "border-teal-500/50 text-teal-500 hover:bg-teal-500/10"
-  )}
->
-  Conectado
-</Button>
-```
-
-**Estilos por severidade:**
-
-| Severidade | Borda | Texto | Background Ícone |
-|------------|-------|-------|------------------|
-| success | `border-teal-500/50` | `text-teal-400` | `from-teal-500/20` |
-| error | `border-destructive/50` | `text-destructive` | `from-destructive/20` |
-| warning | `border-yellow-500/50` | `text-yellow-400` | `from-yellow-500/20` |
-| info | `border-blue-500/50` | `text-blue-400` | `from-blue-500/20` |
-
----
-
-## Impacto
-
-| Arquivo | Ação |
-|---------|------|
-| `TaskExecutionsPage.tsx` | Adicionar `refetchInterval` dinâmico |
-| `SystemAlertBanner.tsx` | Redesign completo do layout e estilos |
-
-| Item | Status |
-|------|--------|
-| Database | Sem alterações |
-| Edge Functions | Sem alterações |
-| Deploy | Automático após edição |
+| Arquivo/Local | Alteração |
+|---------------|-----------|
+| `agent-task-result/index.ts` linha 699 | Trocar `backup-001` por `bkp-001` |
+| `agent-task-result/index.ts` linhas 707-711 | Incluir rawData completo para lic-001, lic-002, bkp-001 |
+| `agent-task-result/index.ts` linhas 568-591 | Reescrever `formatBackupEvidence` para usar dados de automação |
+| `agent-task-result/index.ts` linha 190+ | Adicionar mappings de automation endpoints |
+| Banco de dados | Atualizar nome da regra bkp-001 |
 
 ---
 
 ## Resultado Esperado
 
-**Execuções:**
-- Quando uma tarefa está "Executando", a tela atualiza automaticamente a cada 10s
-- Assim que o agent finaliza, o status muda para "Concluída" sem precisar clicar em Atualizar
+### FortiCare (lic-001)
+- ✅ Endpoint consultado: `/api/v2/monitor/license/status`
+- ✅ Evidências: Status, Data de Expiração, Dias Restantes
+- ✅ **Dados brutos JSON** (antes faltava)
 
-**Alerta:**
-- Card arredondado com borda colorida (teal para success)
-- Efeito glassmorphism (transparência + blur)
-- Ícone dentro de círculo com gradiente
-- Botão de ação com borda (outline) colorida
-- Visual moderno e caprichado igual à referência
+### Backup (bkp-001)
+- ✅ **Endpoint consultado**: `/api/v2/cmdb/system/automation-stitch` (antes faltava)
+- ✅ **Evidências organizadas**: Status, Ações, Agendamentos (antes faltava)
+- ✅ Dados brutos JSON
 
+### FortiGuard (lic-002)
+- ✅ Sem alterações (já está perfeito)
+
+---
+
+## Validação
+
+1. Executar nova análise do firewall
+2. Verificar seção Licenciamento:
+   - FortiCare: exibe endpoint, evidências E dados brutos JSON
+   - FortiGuard: continua perfeito
+3. Verificar seção Backup e Recovery:
+   - Nome: "Configuração de Backup Automático"
+   - Exibe endpoint consultado
+   - Exibe evidências organizadas (Status, Ações, Agendamentos)
+   - Exibe dados brutos JSON
