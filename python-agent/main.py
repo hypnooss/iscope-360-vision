@@ -61,10 +61,23 @@ class AgentApp:
 
         self.auth.ensure_authenticated()
 
-        result = self.heartbeat.send(
-            status="running",
-            version="1.0.0"
-        )
+        try:
+            result = self.heartbeat.send(
+                status="running",
+                version="1.0.0"
+            )
+        except RuntimeError as e:
+            msg = str(e)
+            if "TOKEN_EXPIRED" in msg:
+                self.logger.info("Token expirado durante heartbeat, renovando...")
+                self.auth.refresh_tokens()
+                # Retry heartbeat after refresh
+                result = self.heartbeat.send(
+                    status="running",
+                    version="1.0.0"
+                )
+            else:
+                raise
 
         next_interval = result.get("next_heartbeat_in", POLL_INTERVAL)
 

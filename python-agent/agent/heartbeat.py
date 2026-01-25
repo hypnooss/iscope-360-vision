@@ -28,14 +28,22 @@ class AgentHeartbeat:
             # APIClient já extraiu o error string
             if "TOKEN_EXPIRED" in msg:
                 self.logger.info("Access token expirado, tentando refresh")
+                # Re-raise to trigger refresh in the main loop
                 raise
 
             if "BLOCKED" in msg or "REVOKED" in msg:
                 self.logger.critical("Agent bloqueado ou revogado pelo backend")
                 raise AgentStopped(msg)
 
-            if "INVALID_TOKEN" in msg or "INVALID_SIGNATURE" in msg:
+            if "INVALID_TOKEN" in msg:
                 self.logger.critical("Token inválido. Limpando estado local.")
+                self.state.data.clear()
+                self.state.save()
+                raise AgentStopped(msg)
+
+            if "INVALID_SIGNATURE" in msg:
+                # This is a genuine signature mismatch - jwt_secret changed
+                self.logger.critical("Assinatura JWT inválida. Re-registro necessário.")
                 self.state.data.clear()
                 self.state.save()
                 raise AgentStopped(msg)

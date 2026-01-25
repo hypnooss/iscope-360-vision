@@ -17,7 +17,10 @@ class AuthManager:
 
         try:
             payload = jwt.decode(token, options={"verify_signature": False})
-            return payload.get("exp", 0) > time.time()
+            exp = payload.get("exp", 0)
+            # Add 60 second buffer to prevent race conditions
+            # Refresh if token expires in less than 60 seconds
+            return exp > (time.time() + 60)
         except Exception:
             self.logger.warning("Falha ao decodificar access token")
             return False
