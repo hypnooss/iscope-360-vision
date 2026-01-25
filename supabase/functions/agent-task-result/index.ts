@@ -881,10 +881,10 @@ function formatInboundRuleEvidence(
       }
     }
     
-    // Show WAN interfaces for context
+    // Show analyzed interfaces for context
     if (wanInterfaces.length > 0) {
       evidence.push({
-        label: 'Interfaces WAN',
+        label: 'Interfaces analisadas',
         value: wanInterfaces.join(', '),
         type: 'code'
       });
@@ -1050,8 +1050,8 @@ function processComplianceRules(
         system_automation_trigger: rawData['system_automation_trigger'],
         system_automation_action: rawData['system_automation_action']
       };
-    } else if (rule.code.startsWith('inb-') && inboundResult) {
-      // Para regras de inbound, sempre incluir informações (mesmo se vazio)
+    } else if (rule.code.startsWith('inb-') && inboundResult && inboundResult.relevantPolicies.length > 0) {
+      // Para regras de inbound, só incluir dados quando há regras vulneráveis
       checkRawData = {
         policies_vulneraveis: inboundResult.relevantPolicies.map(p => ({
           policyid: p.policyid,
@@ -1063,10 +1063,7 @@ function processComplianceRules(
           service: p.service,
           action: p.action,
           status: p.status
-        })),
-        total_policies_analisadas: ((rawData['firewall_policy'] as Record<string, unknown>)?.results as Array<unknown>)?.length || 0,
-        interfaces_wan_detectadas: inboundResult.evidence
-          .find(e => e.label === 'Interfaces WAN')?.value || 'N/A'
+        }))
       };
     } else if (logic.field_path && value !== undefined) {
       checkRawData[logic.field_path] = value;
