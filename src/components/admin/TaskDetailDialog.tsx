@@ -110,8 +110,8 @@ export function TaskDetailDialog({ task, open, onOpenChange }: TaskDetailDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-border">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col border-border">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <StatusIcon className={cn(
               "h-5 w-5",
@@ -125,8 +125,8 @@ export function TaskDetailDialog({ task, open, onOpenChange }: TaskDetailDialogP
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[60vh]">
-          <div className="space-y-6 px-1">
+        <ScrollArea className="flex-1 min-h-0 pr-4">
+          <div className="space-y-6 px-2">
             {/* Info Cards */}
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-muted/30 rounded-lg p-3 border border-border/50">
@@ -215,17 +215,21 @@ export function TaskDetailDialog({ task, open, onOpenChange }: TaskDetailDialogP
               
               <TabsContent value="result" className="mt-4">
                 <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
-                  <pre className="text-xs font-mono overflow-auto max-h-[300px]">
-                    {task.result ? JSON.stringify(task.result, null, 2) : "Sem resultado"}
-                  </pre>
+                  <ScrollArea className="h-[200px]">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                      {task.result ? JSON.stringify(task.result, null, 2) : "Sem resultado"}
+                    </pre>
+                  </ScrollArea>
                 </div>
               </TabsContent>
               
               <TabsContent value="payload" className="mt-4">
                 <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
-                  <pre className="text-xs font-mono overflow-auto max-h-[300px]">
-                    {JSON.stringify(task.payload, null, 2)}
-                  </pre>
+                  <ScrollArea className="h-[200px]">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                      {JSON.stringify(task.payload, null, 2)}
+                    </pre>
+                  </ScrollArea>
                 </div>
               </TabsContent>
             </Tabs>
