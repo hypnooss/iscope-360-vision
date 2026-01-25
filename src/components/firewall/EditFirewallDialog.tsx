@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { getDeviceUrlError } from '@/lib/urlValidation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -83,6 +84,7 @@ export function EditFirewallDialog({
   const [saving, setSaving] = useState(false);
   const [deviceTypes, setDeviceTypes] = useState<DeviceType[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [urlError, setUrlError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -166,6 +168,8 @@ export function EditFirewallDialog({
         device_type_id: firewall.device_type_id || '',
         agent_id: firewall.agent_id || '',
       });
+      // Validate existing URL on load
+      setUrlError(getDeviceUrlError(firewall.fortigate_url));
     }
   }, [firewall, open]);
 
@@ -295,9 +299,17 @@ export function EditFirewallDialog({
               <Input
                 id="edit-fw-url"
                 value={formData.fortigate_url}
-                onChange={(e) => setFormData({ ...formData, fortigate_url: e.target.value })}
+                onChange={(e) => {
+                  const newUrl = e.target.value;
+                  setFormData({ ...formData, fortigate_url: newUrl });
+                  setUrlError(getDeviceUrlError(newUrl));
+                }}
                 placeholder={getUrlPlaceholder()}
+                className={urlError ? 'border-destructive' : ''}
               />
+              {urlError && (
+                <p className="text-sm text-destructive">{urlError}</p>
+              )}
             </div>
 
             {/* Conditional Auth Fields */}
@@ -374,7 +386,7 @@ export function EditFirewallDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={saving}>
+          <Button onClick={handleSubmit} disabled={saving || !!urlError || !formData.fortigate_url}>
             {saving ? 'Salvando...' : 'Salvar'}
           </Button>
         </DialogFooter>
