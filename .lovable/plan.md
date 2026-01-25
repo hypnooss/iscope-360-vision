@@ -1,141 +1,128 @@
 
-# Plano: Restaurar Formatação de Evidencias do Compliance
 
-## Problema
-A funcao `processComplianceRules()` no `agent-task-result/index.ts` usa logica generica que converte valores complexos em JSON bruto:
+# Plano: Atualização em Tempo Real + Design Melhorado do Alerta
+
+## Problema 1: Tela de Execuções não atualiza em tempo real
+
+A tarefa foi finalizada pelo agent às 17:43:33, mas a tela continua mostrando "Executando" porque:
+- A query usa `useQuery` sem atualização automática
+- O botão "Atualizar" faz refresh manual, mas não há polling nem Realtime
+
+## Problema 2: Alerta de sucesso com design simples
+
+O banner atual usa estilos simples (`bg-teal-500/10 border-b`), enquanto a referência mostra:
+- Card arredondado com borda colorida
+- Efeito de transparência/glassmorphism
+- Botão de ação com borda (outline)
+- Design mais caprichado e moderno
+
+---
+
+## Solução
+
+### Arquivo 1: `src/pages/firewall/TaskExecutionsPage.tsx`
+
+**Adicionar auto-refresh a cada 10 segundos** para tarefas em execução:
 
 ```typescript
-// Linha 288-297 - Logica atual (problematica)
-evidence.push({
-  label: logic.field_path || rule.name,
-  value: isComplex ? JSON.stringify(value, null, 2) : String(value),
-  type: isComplex ? 'code' : 'text'
+const { data: tasks = [], isLoading, refetch } = useQuery({
+  queryKey: ['agent-tasks', statusFilter, timeFilter],
+  queryFn: async () => { ... },
+  // Adicionar refetch automático quando há tarefas running
+  refetchInterval: (query) => {
+    const data = query.state.data as AgentTask[] | undefined;
+    const hasRunning = data?.some(t => t.status === 'running' || t.status === 'pending');
+    return hasRunning ? 10000 : false; // 10s se há tarefas pendentes/executando
+  },
 });
 ```
 
-Enquanto o `fortigate-compliance/index.ts` tinha formatadores especializados que geravam evidencias legiveis como:
-- Status: Ativo
-- Data de Expiracao: 05/04/2026  
-- Dias Restantes: 75
+Isso faz a tela atualizar automaticamente enquanto houver tarefas em andamento.
 
 ---
 
-## Solucao
+### Arquivo 2: `src/components/alerts/SystemAlertBanner.tsx`
 
-Portar os formatadores especializados do `fortigate-compliance/index.ts` para o `agent-task-result/index.ts`.
+**Redesign completo do banner** para ficar igual à referência:
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+**Mudanças visuais:**
 
-#### 1. Adicionar formatadores especializados (apos linha 228)
+| Antes | Depois |
+|-------|--------|
+| `border-b` simples | Card com `rounded-lg` e `border` completa |
+| Background flat | Glassmorphism com `backdrop-blur-md` |
+| Botão `ghost` | Botão `outline` com borda colorida |
+| Posicionamento sticky top | Card flutuante com margem e sombra |
 
-**`formatFortiCareEvidence(rawData)`** - Regra lic-001
-- Extrai status de suporte (licensed/registered)
-- Calcula data de expiracao em formato DD/MM/YYYY
-- Calcula dias restantes
-- Gera evidencias: Status, Data de Expiracao, Dias Restantes
-
-**`formatFortiGuardEvidence(rawData)`** - Regra lic-002
-- Itera pelos servicos: antivirus, ips, web_filtering, appctrl, antispam
-- Para cada servico: verifica status, expiry, dias restantes
-- Gera evidencias: NomeServico -> "Ativo ate DD/MM/YYYY" ou "Expirado/Inativo"
-
-**`formatVPNEncryptionEvidence(rawData)`** - Regras vpn-*
-- Lista VPNs com proposals de criptografia
-- Formata: "VPN: nome -> proposal: aes256-sha256"
-
-**`formatLoggingEvidence(rawData)`** - Regras log-*
-- Mostra status de FortiAnalyzer e FortiCloud
-- Formata: "FortiAnalyzer -> Habilitado (servidor)" ou "Nao configurado"
-
-**`formatHAEvidence(rawData)`** - Regra ha-001
-- Mostra modo HA, grupo, prioridade
-- Formata: "Modo: active-passive", "Grupo: HA-Cluster"
-
-**`formatBackupEvidence(rawData)`** - Regra backup-001
-- Mostra status e frequencia do backup automatico
-- Formata: "Status: Ativo", "Frequencia: daily at 02:00"
-
-**`formatGenericEvidence(value, fieldPath)`** - Fallback
-- Trunca JSON > 500 caracteres com "... (truncado)"
-- Evita poluicao visual
-
-#### 2. Modificar geracao de evidencias (linhas 288-297)
-
-```typescript
-// Nova logica com deteccao de regras especificas
-const evidence: EvidenceItem[] = [];
-if (value !== undefined && value !== null) {
-  // Detectar regra e aplicar formatador apropriado
-  if (rule.code === 'lic-001') {
-    evidence.push(...formatFortiCareEvidence(rawData));
-  } else if (rule.code === 'lic-002') {
-    evidence.push(...formatFortiGuardEvidence(rawData));
-  } else if (rule.code.startsWith('vpn-')) {
-    evidence.push(...formatVPNEvidence(rawData, rule.code));
-  } else if (rule.code.startsWith('log-')) {
-    evidence.push(...formatLoggingEvidence(rawData, rule.code));
-  } else if (rule.code === 'ha-001') {
-    evidence.push(...formatHAEvidence(rawData));
-  } else if (rule.code === 'backup-001') {
-    evidence.push(...formatBackupEvidence(rawData));
-  } else {
-    // Fallback generico com truncamento
-    evidence.push(...formatGenericEvidence(value, logic.field_path || rule.name));
-  }
-}
+**Novo container:**
+```tsx
+<div className={cn(
+  "mx-4 mt-4 rounded-lg border backdrop-blur-md",
+  "bg-card/80 shadow-lg",
+  severityBorderClass // ex: border-teal-500/50
+)}>
 ```
 
----
+**Novo estilo do ícone (círculo com gradiente):**
+```tsx
+<div className={cn(
+  "flex items-center justify-center w-8 h-8 rounded-full",
+  "bg-gradient-to-br from-teal-500/20 to-teal-500/5 border border-teal-500/30"
+)}>
+  <Shield className="h-4 w-4 text-teal-500" />
+</div>
+```
 
-## Resultado Esperado
+**Novo estilo do botão de ação:**
+```tsx
+<Button
+  variant="outline"
+  size="sm"
+  className={cn(
+    "h-8 px-4 text-xs font-medium",
+    "border-teal-500/50 text-teal-500 hover:bg-teal-500/10"
+  )}
+>
+  Conectado
+</Button>
+```
 
-### Licenciamento - FortiCare (lic-001)
-| Campo | Valor |
-|-------|-------|
-| Status | Ativo |
-| Data de Expiracao | 05/04/2026 |
-| Dias Restantes | 75 |
+**Estilos por severidade:**
 
-### Licenciamento - FortiGuard (lic-002)
-| Servico | Status |
-|---------|--------|
-| Antivirus | Ativo ate 19/04/2026 |
-| IPS | Ativo ate 19/04/2026 |
-| Web Filter | Ativo ate 19/04/2026 |
-| App Control | Ativo ate 19/04/2026 |
-| AntiSpam | Ativo ate 19/04/2026 |
-
-### VPN
-| VPN | Proposal |
-|-----|----------|
-| VPN-SEDE | aes256-sha256 |
-| VPN-FILIAL | aes256-sha512 |
-
-### Logging
-| Sistema | Status |
-|---------|--------|
-| FortiAnalyzer | 192.168.1.100 |
-| FortiCloud | Nao configurado |
+| Severidade | Borda | Texto | Background Ícone |
+|------------|-------|-------|------------------|
+| success | `border-teal-500/50` | `text-teal-400` | `from-teal-500/20` |
+| error | `border-destructive/50` | `text-destructive` | `from-destructive/20` |
+| warning | `border-yellow-500/50` | `text-yellow-400` | `from-yellow-500/20` |
+| info | `border-blue-500/50` | `text-blue-400` | `from-blue-500/20` |
 
 ---
 
 ## Impacto
 
+| Arquivo | Ação |
+|---------|------|
+| `TaskExecutionsPage.tsx` | Adicionar `refetchInterval` dinâmico |
+| `SystemAlertBanner.tsx` | Redesign completo do layout e estilos |
+
 | Item | Status |
 |------|--------|
-| Edge Function | `agent-task-result` modificada |
-| Database | Sem alteracoes |
-| Frontend | Sem alteracoes (ja renderiza corretamente) |
-| Deploy | Automatico |
-| Relatorios existentes | Nao afetados |
+| Database | Sem alterações |
+| Edge Functions | Sem alterações |
+| Deploy | Automático após edição |
 
 ---
 
-## Validacao
+## Resultado Esperado
 
-1. Executar nova analise do SAO-FW via trigger
-2. Abrir pagina de Analise de Compliance
-3. Verificar secao Licenciamento: FortiCare e FortiGuard com dados formatados
-4. Verificar secao VPN: proposals de criptografia formatados
-5. Verificar secao Logging: status de FortiAnalyzer/FortiCloud formatados
-6. Verificar outras secoes: dados truncados se muito grandes
+**Execuções:**
+- Quando uma tarefa está "Executando", a tela atualiza automaticamente a cada 10s
+- Assim que o agent finaliza, o status muda para "Concluída" sem precisar clicar em Atualizar
+
+**Alerta:**
+- Card arredondado com borda colorida (teal para success)
+- Efeito glassmorphism (transparência + blur)
+- Ícone dentro de círculo com gradiente
+- Botão de ação com borda (outline) colorida
+- Visual moderno e caprichado igual à referência
+
