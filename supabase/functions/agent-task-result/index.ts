@@ -637,16 +637,19 @@ serve(async (req: Request) => {
                    : 'failed';
 
     let complianceResult: ComplianceResult | null = null;
+    let firewallName: string | null = null;
 
     // If task completed successfully and has raw data, process with compliance rules
     if (body.status === 'completed' && body.result && task.target_type === 'firewall') {
-      // Get device_type_id from firewall
+      // Get device_type_id and name from firewall
       const { data: firewall } = await supabase
         .from('firewalls')
-        .select('device_type_id')
+        .select('device_type_id, name')
         .eq('id', task.target_id)
         .single();
 
+      // Store firewall name for later use in alerts
+      firewallName = firewall?.name || null;
       let deviceTypeId = firewall?.device_type_id;
 
       // If no device_type_id, use default FortiGate
@@ -729,14 +732,10 @@ serve(async (req: Request) => {
         })
         .eq('id', task.target_id);
 
-      // Get firewall name for the alert
-      const { data: firewallData } = await supabase
-        .from('firewalls')
-        .select('name')
-        .eq('id', task.target_id)
-        .single();
-
-      const firewallName = firewallData?.name || 'Firewall';
+      // Use firewall name from earlier query (already fetched at line 644)
+      const alertFirewallName = firewallName || 'Dispositivo';
+      
+      console.log(`Creating analysis alert for firewall: ${alertFirewallName} (id: ${task.target_id})`);
 
       // Create system alert for analysis completion
       // Always use 'success' severity for completed analyses (green/teal color)
@@ -746,7 +745,7 @@ serve(async (req: Request) => {
         .insert({
           alert_type: 'firewall_analysis_completed',
           title: 'Análise Concluída',
-          message: `A análise do firewall "${firewallName}" foi concluída com score ${score}%.`,
+          message: `A análise do firewall "${alertFirewallName}" foi concluída com score ${score}%.`,
           severity: alertSeverity,
           target_role: null,
           is_active: true,
