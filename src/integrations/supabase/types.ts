@@ -1015,6 +1015,47 @@ export type Database = {
         }
         Relationships: []
       }
+      task_step_results: {
+        Row: {
+          created_at: string | null
+          data: Json | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          status: string
+          step_id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          data?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          status: string
+          step_id: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          status?: string
+          step_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_step_results_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_clients: {
         Row: {
           client_id: string
@@ -1133,6 +1174,7 @@ export type Database = {
         Args: { _admin_id: string; _target_user_id: string }
         Returns: boolean
       }
+      cleanup_old_step_results: { Args: never; Returns: number }
       cleanup_stuck_tasks: { Args: never; Returns: undefined }
       get_module_permission: {
         Args: { _module_name: string; _user_id: string }
