@@ -1,133 +1,167 @@
 
-# Plano: Correção das Evidências de VPN
+# Plano: Alertas em Tempo Real e Fechamento do Banner
 
 ## Problemas Identificados
 
-### 1. Certificado SSL VPN (`vpn-003`)
-- **Problema**: Exibe "Porta 443" nas evidências, irrelevante para check de certificado
-- **Causa**: Linha 444 adiciona a porta desnecessariamente
+1. **Alertas não aparecem automaticamente**: O banner só busca alertas no `useEffect` inicial quando o componente monta. Não há subscription para eventos realtime.
 
-### 2. Criptografia IPsec VPN (`vpn-001`)  
-- **Problema**: Não exibe "Endpoint consultado" e evidências mostram "Dados não disponíveis"
-- **Causa**: O `source_key` no banco é `vpn_ipsec_phase1` mas:
-  - `sourceKeyToEndpoint` só tem entrada para `vpn_ipsec` 
-  - `formatVPNEvidence` busca `rawData['vpn_ipsec']` ao invés de `rawData['vpn_ipsec_phase1']`
-- **JSON bruto**: Está sendo exibido pelo bloco genérico (linha 1068)
+2. **Botão "Ver Análise" não fecha o banner**: O link apenas redireciona, mas não dispensa o alerta.
 
 ---
 
 ## Alterações Necessárias
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+### 1. Habilitar Realtime na Tabela `system_alerts`
 
-#### Mudança 1: Adicionar mapeamento para `vpn_ipsec_phase1` (linha ~199)
+Criar migration SQL para adicionar a tabela ao realtime:
 
-```typescript
-// Adicionar nova entrada
-'vpn_ipsec_phase1': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
+```sql
+-- Habilitar realtime para system_alerts
+ALTER PUBLICATION supabase_realtime ADD TABLE public.system_alerts;
 ```
 
-#### Mudança 2: Corrigir busca de dados IPsec (linhas 407-410)
+---
+
+### 2. Atualizar `SystemAlertBanner.tsx`
+
+#### Mudança A: Adicionar Realtime Subscription (após linha 28)
+
+```typescript
+// Subscription para alertas em tempo real
+useEffect(() => {
+  if (role !== 'super_admin' && role !== 'workspace_admin') return;
+
+  const channel = supabase
+    .channel('system_alerts_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*', // INSERT, UPDATE, DELETE
+        schema: 'public',
+        table: 'system_alerts'
+      },
+      (payload) => {
+        console.log('Alert change detected:', payload);
+        // Re-fetch alertas quando houver mudança
+        fetchActiveAlerts();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [role, user?.id]);
+```
+
+#### Mudança B: Transformar botão "Ver Análise" em handler (linhas 186-198)
 
 ```typescript
 // ANTES
-if (ruleCode === 'vpn-001') {
-  const vpnData = rawData['vpn_ipsec'] as Record<string, unknown> | undefined;
-  if (!vpnData) {
-    return [{ label: 'VPN IPsec', value: 'Dados não disponíveis', type: 'text' }];
-  }
+{primaryAlert.alert_type === 'firewall_analysis_completed' && 
+ (primaryAlert.metadata as Record<string, unknown>)?.firewall_id && (
+  <Button
+    variant="outline"
+    size="sm"
+    className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+    asChild
+  >
+    <Link to={`/scope-firewall/firewalls/${...}/analysis`}>
+      Ver Análise
+    </Link>
+  </Button>
+)}
 
 // DEPOIS
-if (ruleCode === 'vpn-001') {
-  // Buscar tanto vpn_ipsec quanto vpn_ipsec_phase1 (compatibilidade)
-  const vpnData = (rawData['vpn_ipsec_phase1'] || rawData['vpn_ipsec']) as Record<string, unknown> | undefined;
-  if (!vpnData) {
-    return [{ label: 'VPN IPsec', value: 'Dados não disponíveis', type: 'text' }];
-  }
+{primaryAlert.alert_type === 'firewall_analysis_completed' && 
+ (primaryAlert.metadata as Record<string, unknown>)?.firewall_id && (
+  <Button
+    variant="outline"
+    size="sm"
+    className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+    onClick={() => handleViewAnalysis(
+      primaryAlert.id, 
+      (primaryAlert.metadata as Record<string, unknown>).firewall_id as string
+    )}
+  >
+    Ver Análise
+  </Button>
+)}
 ```
 
-#### Mudança 3: Remover porta do SSL VPN (linha 444)
+#### Mudança C: Adicionar função `handleViewAnalysis` (após linha 91)
 
 ```typescript
-// ANTES (linhas 443-444)
-evidence.push({ label: 'Certificado', value: servercert, type: 'code' });
-evidence.push({ label: 'Porta', value: String(loginPort), type: 'text' });
-
-// DEPOIS (remover linha 444)
-evidence.push({ label: 'Certificado', value: servercert, type: 'code' });
-// Linha da porta removida - irrelevante para check de certificado
+const handleViewAnalysis = async (alertId: string, firewallId: string) => {
+  // Dispensar o alerta primeiro
+  await dismissAlert(alertId);
+  // Navegar para a análise
+  navigate(`/scope-firewall/firewalls/${firewallId}/analysis`);
+};
 ```
 
-#### Mudança 4: Tratamento específico de rawData para VPN (após linha 1052)
-
-Adicionar tratamento específico para regras VPN antes do bloco genérico:
+#### Mudança D: Importar `useNavigate` (linha 3)
 
 ```typescript
-} else if (rule.code.startsWith('vpn-')) {
-  // Para regras VPN, incluir dados específicos
-  if (rule.code === 'vpn-001') {
-    const vpnData = rawData['vpn_ipsec_phase1'] || rawData['vpn_ipsec'];
-    if (vpnData) {
-      const results = ((vpnData as Record<string, unknown>).results || []) as Array<Record<string, unknown>>;
-      // Incluir apenas campos relevantes das VPNs
-      checkRawData = {
-        vpns_configuradas: results.map(vpn => ({
-          name: vpn.name,
-          proposal: vpn.proposal,
-          ike_version: vpn['ike-version'],
-          authmethod: vpn.authmethod,
-          interface: vpn.interface,
-          remote_gw: vpn['remote-gw']
-        }))
-      };
-    }
-  } else if (rule.code === 'vpn-003') {
-    const sslData = rawData['vpn_ssl_settings'];
-    if (sslData) {
-      const results = (sslData as Record<string, unknown>).results as Record<string, unknown> || sslData;
-      checkRawData = {
-        ssl_vpn_config: {
-          servercert: results.servercert,
-          status: results.status,
-          algorithm: results.algorithm
-        }
-      };
-    }
-  }
-}
+import { Link, useNavigate } from 'react-router-dom';
 ```
 
 ---
 
 ## Resumo das Alterações
 
-| Local | Alteração |
-|-------|-----------|
-| Linha 199 | Adicionar mapeamento `vpn_ipsec_phase1` |
-| Linha 408 | Buscar dados em `vpn_ipsec_phase1` OU `vpn_ipsec` |
-| Linha 444 | Remover exibição de "Porta" no SSL VPN |
-| Linhas 1053+ | Tratamento específico de rawData para regras `vpn-*` |
+| Arquivo | Alteração |
+|---------|-----------|
+| Migration SQL | Habilitar realtime em `system_alerts` |
+| `SystemAlertBanner.tsx` | Importar `useNavigate` |
+| `SystemAlertBanner.tsx` | Adicionar hook de realtime subscription |
+| `SystemAlertBanner.tsx` | Criar função `handleViewAnalysis` |
+| `SystemAlertBanner.tsx` | Mudar botão "Ver Análise" para usar onClick |
 
 ---
 
-## Resultado Esperado
+## Fluxo Após Implementação
 
-### Certificado SSL VPN (`vpn-003`)
-- **Endpoint consultado**: `/api/v2/cmdb/vpn.ssl/settings`
-- **Evidências**: Apenas `Certificado: nome-do-cert` (sem porta)
-- **JSON bruto**: Dados resumidos do certificado SSL VPN
-
-### Criptografia IPsec VPN (`vpn-001`)
-- **Endpoint consultado**: `/api/v2/cmdb/vpn.ipsec/phase1-interface`
-- **Evidências**: Lista de VPNs com propostas de criptografia (ícone verde/amarelo)
-- **JSON bruto**: Lista de VPNs com campos relevantes (name, proposal, ike-version, etc)
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                      agent-task-result                       │
+│                                                              │
+│  1. Análise concluída                                        │
+│  2. INSERT em system_alerts (severity: 'success')            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Supabase Realtime                          │
+│                                                              │
+│  Broadcast: INSERT event para 'system_alerts'                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  SystemAlertBanner                           │
+│                                                              │
+│  1. Realtime callback dispara                                │
+│  2. fetchActiveAlerts() executado                            │
+│  3. Novo alerta aparece com animação slide-in-from-top       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Usuário clica "Ver Análise"                  │
+│                                                              │
+│  1. dismissAlert(alertId) → adiciona user ao dismissed_by    │
+│  2. navigate() → redireciona para análise                    │
+│  3. Banner desaparece instantaneamente                       │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Validação
 
-1. Execute nova análise do firewall
-2. Verifique cards de VPN:
-   - SSL VPN deve mostrar apenas certificado (sem porta)
-   - IPsec VPN deve mostrar endpoint + evidências das VPNs configuradas
-   - JSON bruto deve ser resumido e relevante
+1. Iniciar análise de firewall
+2. Aguardar conclusão **SEM mudar de tela**
+3. Banner verde deve aparecer automaticamente
+4. Clicar em "Ver Análise"
+5. Banner deve fechar E redirecionar para a análise
