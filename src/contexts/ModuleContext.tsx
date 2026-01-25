@@ -1,7 +1,6 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-
 // ScopeModule is now a string type since modules can be created dynamically
 // The code must start with "scope_" (enforced by database constraint)
 export type ScopeModule = string;
@@ -40,19 +39,29 @@ export function ModuleProvider({ children }: { children: ReactNode }) {
   const [userModules, setUserModules] = useState<UserModuleAccess[]>([]);
   const [activeModule, setActiveModule] = useState<ScopeModule | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Refs to prevent duplicate fetches
+  const hasFetchedRef = useRef(false);
+  const lastRoleRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!authLoading && user) {
-      fetchModules();
+    if (!authLoading && user && role !== null) {
+      // Only fetch if role changed or first time
+      if (!hasFetchedRef.current || lastRoleRef.current !== role) {
+        hasFetchedRef.current = true;
+        lastRoleRef.current = role;
+        fetchModules();
+      }
     } else if (!authLoading && !user) {
+      // Reset on logout
+      hasFetchedRef.current = false;
+      lastRoleRef.current = null;
       setModules([]);
       setUserModules([]);
       setActiveModule(null);
       setLoading(false);
     }
-    // Note: removed 'role' from dependencies to prevent re-fetch loops
-    // The role is already available via useAuth() when fetchModules runs
-  }, [user, authLoading]);
+  }, [user, authLoading, role]);
 
   const fetchModules = async () => {
     try {
