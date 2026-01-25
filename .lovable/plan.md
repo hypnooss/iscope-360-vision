@@ -1,375 +1,225 @@
 
-# Plano: Resolver Sobrecarga do Banco + Controle de Execução + Tela de Visualização
+# Plano: Página de Administração de Tarefas
 
-## Visao Geral do Problema
+## Objetivo
 
-Os agents estao derrubando o banco de dados devido a:
+Criar uma página completa em **Administração > Tarefas** (`/tasks`) com visualizações gráficas, estatísticas detalhadas e gerenciamento de execuções de tarefas dos agents.
 
-1. Multiplas queries por heartbeat (3 operacoes por agent a cada 60s)
-2. Queries N+1 no `agent-tasks` (ate 45 operacoes para 10 tarefas)
-3. Processamento pesado no `agent-task-result` (ate 8 operacoes por resultado)
-4. Instancia pequena do Supabase com limite baixo de conexoes (~10-20)
-
-## Arquitetura da Solucao
+## Arquitetura da Solução
 
 ```text
-ANTES (Problematico)
---------------------
-Agent -> Heartbeat (3 queries) -> Tasks (N+1 queries) -> Result (8 queries)
-           |                            |                       |
-           v                            v                       v
-     [SELECT agents]           [SELECT tasks]           [SELECT agents]
-     [UPDATE agents]           [SELECT firewall x N]    [SELECT tasks]
-     [COUNT tasks]             [SELECT device_type x N] [SELECT firewall]
-                               [SELECT blueprint x N]   [SELECT device_type]
-                               [UPDATE tasks x N]       [SELECT rules]
-                                                        [UPDATE task]
-                                                        [INSERT history]
-                                                        [UPDATE firewall]
-                                                        [INSERT alert]
-                                                        [COUNT tasks]
-
-DEPOIS (Otimizado)
-------------------
-Agent -> Heartbeat (1 RPC) -> Tasks (2 queries max) -> Result (3-4 queries)
-              |                       |                        |
-              v                       v                        v
-       [rpc_agent_heartbeat]   [SELECT com JOINs]        [Batch operations]
-       (atomico, 1 round-trip)  [UPDATE batch]           [Transaction block]
+Nova Estrutura de Navegação
+---------------------------
+Administração
+├── Administradores
+├── Workspaces
+├── Configurações
+├── Coletas
+└── Tarefas (NOVA)  <-- Ícone: Activity
 ```
 
----
+## Componentes da Página
 
-## Fase 1: Otimizacao das Edge Functions
-
-### 1.1 Criar RPC `rpc_agent_heartbeat`
-
-**Arquivo: Migration SQL**
-
-Uma funcao SQL que faz tudo atomicamente em 1 round-trip:
-
-```sql
-CREATE OR REPLACE FUNCTION rpc_agent_heartbeat(
-  p_agent_id UUID,
-  p_jwt_secret TEXT
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  v_agent RECORD;
-  v_pending_count INTEGER;
-  v_config_flag INTEGER;
-BEGIN
-  -- Buscar e validar agent em uma query
-  SELECT id, jwt_secret, revoked, config_updated_at, config_fetched_at
-  INTO v_agent
-  FROM agents
-  WHERE id = p_agent_id;
-  
-  IF NOT FOUND THEN
-    RETURN json_build_object('error', 'AGENT_NOT_FOUND');
-  END IF;
-  
-  IF v_agent.revoked THEN
-    RETURN json_build_object('error', 'BLOCKED');
-  END IF;
-  
-  IF v_agent.jwt_secret IS NULL THEN
-    RETURN json_build_object('error', 'UNREGISTERED');
-  END IF;
-  
-  -- Atualizar last_seen
-  UPDATE agents SET last_seen = NOW() WHERE id = p_agent_id;
-  
-  -- Contar tarefas pendentes
-  SELECT COUNT(*) INTO v_pending_count
-  FROM agent_tasks
-  WHERE agent_id = p_agent_id
-    AND status = 'pending'
-    AND expires_at > NOW();
-  
-  -- Calcular config_flag
-  v_config_flag := CASE 
-    WHEN v_agent.config_updated_at > COALESCE(v_agent.config_fetched_at, '1970-01-01')
-    THEN 1 ELSE 0 
-  END;
-  
-  RETURN json_build_object(
-    'success', true,
-    'agent_id', p_agent_id,
-    'config_flag', v_config_flag,
-    'has_pending_tasks', v_pending_count > 0,
-    'next_heartbeat_in', 120 -- Aumentado para 120s
-  );
-END;
-$$;
-```
-
-### 1.2 Reescrever `agent-heartbeat/index.ts`
-
-**Arquivo: `supabase/functions/agent-heartbeat/index.ts`**
-
-Mudancas:
-- Usar RPC ao inves de 3 queries separadas
-- Manter validacao JWT no Edge Function (seguranca)
-- Retornar `next_heartbeat_in: 120` (dobrar intervalo)
-
-### 1.3 Reescrever `agent-tasks/index.ts` com JOINs
-
-**Arquivo: `supabase/functions/agent-tasks/index.ts`**
-
-Mudancas principais:
-- Substituir loop de SELECTs por single query com JOINs
-- Batch UPDATE para marcar tasks como `running`
-- Reduzir de ~45 queries para ~2 queries
-
-```typescript
-// ANTES: Loop N+1
-for (const task of tasks) {
-  await getTargetCredentials(supabase, task.target_id, task.target_type);
-  await getDeviceBlueprint(supabase, deviceTypeId, task.task_type);
-  await supabase.from('agent_tasks').update(...);
-}
-
-// DEPOIS: Query unica com JOINs
-const { data: tasksWithData } = await supabase
-  .from('agent_tasks')
-  .select(`
-    id, task_type, target_id, target_type, payload, priority, expires_at,
-    firewalls!inner(id, fortigate_url, api_key, auth_username, auth_password, device_type_id),
-    device_blueprints(collection_steps)
-  `)
-  .eq('agent_id', agentId)
-  .eq('status', 'pending');
-
-// Batch update
-const taskIds = tasksWithData.map(t => t.id);
-await supabase
-  .from('agent_tasks')
-  .update({ status: 'running', started_at: new Date().toISOString() })
-  .in('id', taskIds);
-```
-
-### 1.4 Otimizar `agent-task-result/index.ts`
-
-**Arquivo: `supabase/functions/agent-task-result/index.ts`**
-
-Mudancas:
-- Combinar queries relacionadas
-- Usar `select` com JOINs ao inves de queries separadas
-- Remover COUNT final (desnecessario, agent ja sabe se tem mais tasks)
-
----
-
-## Fase 2: Controle de Execucao e Timeouts
-
-### 2.1 Adicionar campos na tabela `agent_tasks`
-
-**Migration SQL:**
-
-```sql
--- Adicionar campos de controle de execucao
-ALTER TABLE agent_tasks 
-ADD COLUMN IF NOT EXISTS execution_time_ms INTEGER,
-ADD COLUMN IF NOT EXISTS step_results JSONB,
-ADD COLUMN IF NOT EXISTS timeout_at TIMESTAMP WITH TIME ZONE;
-
--- Trigger para auto-timeout de tarefas travadas
-CREATE OR REPLACE FUNCTION auto_timeout_stuck_tasks()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Marcar tarefas running por mais de 15 minutos como timeout
-  UPDATE agent_tasks
-  SET status = 'timeout',
-      error_message = 'Task excedeu tempo maximo de execucao',
-      completed_at = NOW()
-  WHERE status = 'running'
-    AND started_at < NOW() - INTERVAL '15 minutes';
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Executar a cada heartbeat (via cron ou trigger)
-```
-
-### 2.2 Atualizar Python Agent para reportar tempo de execucao
-
-**Arquivo: `python-agent/agent/tasks.py`**
-
-Adicionar medicao de tempo:
-
-```python
-import time
-
-def execute(self, task):
-    start_time = time.time()
-    # ... execucao ...
-    execution_time_ms = int((time.time() - start_time) * 1000)
-    
-    return {
-        'status': status,
-        'result': results,
-        'error_message': error_msg,
-        'execution_time_ms': execution_time_ms
-    }
-```
-
-### 2.3 Backoff Exponencial no Scheduler
-
-**Arquivo: `python-agent/agent/scheduler.py`**
-
-```python
-class AgentScheduler:
-    def __init__(self, initial_interval, task, logger):
-        self.base_interval = initial_interval
-        self.current_interval = initial_interval
-        self.max_interval = 300  # 5 minutos maximo
-        self.consecutive_errors = 0
-        
-    def start(self):
-        while True:
-            try:
-                result = self.task()
-                # Reset backoff on success
-                self.consecutive_errors = 0
-                self.current_interval = result or self.base_interval
-            except Exception:
-                self.consecutive_errors += 1
-                # Backoff exponencial: 60 -> 120 -> 240 -> 300 (max)
-                self.current_interval = min(
-                    self.base_interval * (2 ** self.consecutive_errors),
-                    self.max_interval
-                )
-            
-            time.sleep(self.current_interval)
-```
-
----
-
-## Fase 3: Tela de Visualizacao de Execucoes
-
-### 3.1 Nova Pagina: `TaskExecutionsPage.tsx`
-
-**Arquivo: `src/pages/firewall/TaskExecutionsPage.tsx`**
-
-Funcionalidades:
-- Listagem de todas as tarefas (agent_tasks)
-- Filtros por status, agent, firewall
-- Visualizacao de detalhes (steps executados, tempo, erros)
-- Acoes: cancelar tarefa pendente, re-executar tarefa falha
-
-### 3.2 Componentes da Tela
+### 1. Visão Geral com Cards de Estatísticas
 
 ```text
-TaskExecutionsPage
-├── TaskFilters (status, agent, firewall, date range)
-├── TaskStatsCards (total, pending, running, completed, failed, timeout)
-├── TasksTable
-│   ├── Colunas: Firewall, Agent, Status, Criado, Tempo, Acoes
-│   └── Expandable: Step results, Error details
-├── TaskDetailDialog
-│   ├── Info basica
-│   ├── Timeline de steps
-│   └── Raw data (JSON viewer)
-└── Acoes
-    ├── Cancelar (pending only)
-    ├── Re-executar (failed/timeout)
-    └── Ver Analise (completed)
+┌────────────────────────────────────────────────────────────────────────┐
+│  Administração > Tarefas                                               │
+├─────────────┬─────────────┬─────────────┬─────────────┬────────────────┤
+│   Total     │  Pendentes  │  Executando │  Concluídas │  Falhas/Timeout│
+│    32       │      1      │      0      │     20      │     11         │
+│  tarefas    │  aguardando │   em curso  │   sucesso   │   erros        │
+└─────────────┴─────────────┴─────────────┴─────────────┴────────────────┘
 ```
 
-### 3.3 Adicionar Rota e Menu
+### 2. Gráficos de Visualização
 
-**Arquivo: `src/App.tsx`**
-```typescript
-<Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
+#### 2.1 Gráfico de Área: Execuções por Período
+- Eixo X: Data/hora (últimas 24h ou 7 dias)
+- Eixo Y: Quantidade de tarefas
+- Áreas coloridas por status (completed, failed, timeout)
+
+#### 2.2 Gráfico de Pizza: Distribuição por Status
+- Segmentos: pending, running, completed, failed, timeout, cancelled
+- Cores semânticas (verde=sucesso, vermelho=erro, amarelo=pendente)
+
+#### 2.3 Gráfico de Barras: Tempo Médio de Execução por Agent
+- Barras horizontais mostrando performance de cada agent
+- Destaque para agents com maior tempo médio
+
+### 3. Tabela de Tarefas com Filtros Avançados
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│  [Buscar...]  [Status ▾]  [Agent ▾]  [Workspace ▾]  [Período ▾]      │
+├──────────────────────────────────────────────────────────────────────┤
+│  Firewall    │ Agent     │ Status   │ Criado    │ Duração  │ Ações  │
+├──────────────┼───────────┼──────────┼───────────┼──────────┼────────┤
+│  FW-Core-01  │ Agent-HQ  │ ✓ Concl. │ há 5 min  │ 12.3s    │ 👁 ⛔  │
+│  FW-DR-02    │ Agent-DR  │ ✕ Falhou │ há 10 min │ 8.1s     │ 👁 🔄  │
+└──────────────┴───────────┴──────────┴───────────┴──────────┴────────┘
 ```
 
-**Arquivo: `src/components/layout/AppLayout.tsx`**
-```typescript
-'scope_firewall': {
-  items: [
-    { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
-    { label: 'Execucoes', href: '/scope-firewall/executions', icon: Activity },
-    { label: 'Relatorios', href: '/scope-firewall/reports', icon: FileText },
-  ],
-}
-```
+### 4. Diálogo de Detalhes da Tarefa
 
----
+- Informações básicas (firewall, agent, workspace)
+- Timeline de execução dos steps
+- Raw JSON da resposta
+- Mensagens de erro detalhadas
 
-## Fase 4: Aumentar Intervalo de Heartbeat
+## Arquivos a Criar/Modificar
 
-### 4.1 Atualizar Config Padrao
-
-**Arquivo: `python-agent/agent/config.py`**
-
-```python
-POLL_INTERVAL = int(os.getenv("AGENT_POLL_INTERVAL", "120"))  # 60 -> 120
-```
-
-### 4.2 Resposta do Heartbeat
-
-O `agent-heartbeat` ja retorna `next_heartbeat_in` que sera respeitado pelo agent.
-
----
-
-## Resumo de Arquivos a Criar/Modificar
-
-| Arquivo | Acao | Descricao |
+| Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| Migration SQL | Criar | RPC `rpc_agent_heartbeat` + campos de controle |
-| `supabase/functions/agent-heartbeat/index.ts` | Modificar | Usar RPC, reduzir queries |
-| `supabase/functions/agent-tasks/index.ts` | Modificar | Eliminar N+1 com JOINs |
-| `supabase/functions/agent-task-result/index.ts` | Modificar | Combinar queries |
-| `python-agent/agent/scheduler.py` | Modificar | Backoff exponencial |
-| `python-agent/agent/tasks.py` | Modificar | Reportar tempo de execucao |
-| `python-agent/agent/config.py` | Modificar | Aumentar intervalo padrao |
-| `src/pages/firewall/TaskExecutionsPage.tsx` | Criar | Nova tela de execucoes |
-| `src/components/layout/AppLayout.tsx` | Modificar | Adicionar item no menu |
-| `src/App.tsx` | Modificar | Adicionar rota |
+| `src/pages/admin/TasksPage.tsx` | Criar | Página principal com gráficos e tabela |
+| `src/components/admin/TaskStatsCards.tsx` | Criar | Cards de estatísticas reutilizáveis |
+| `src/components/admin/TaskStatusChart.tsx` | Criar | Gráfico de pizza de distribuição |
+| `src/components/admin/TaskTimelineChart.tsx` | Criar | Gráfico de área temporal |
+| `src/components/admin/TaskAgentPerformance.tsx` | Criar | Gráfico de barras por agent |
+| `src/components/admin/TaskDetailDialog.tsx` | Criar | Dialog de detalhes expandido |
+| `src/components/layout/AppLayout.tsx` | Modificar | Adicionar item "Tarefas" no menu Admin |
+| `src/App.tsx` | Modificar | Adicionar rota `/tasks` |
 
----
+## Detalhes Técnicos
 
-## Impacto Esperado
+### Estrutura do TasksPage.tsx
 
-| Metrica | Antes | Depois | Reducao |
-|---------|-------|--------|---------|
-| Queries por heartbeat | 3 | 1 (RPC) | 67% |
-| Queries por task fetch | 10-45 | 2 | 95% |
-| Queries por task result | 8 | 3-4 | 50% |
-| Intervalo heartbeat | 60s | 120s | 50% carga |
-| **Carga total estimada** | 100% | ~15% | **85%** |
+```typescript
+// Imports de Recharts
+import { 
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend 
+} from 'recharts';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
----
-
-## Ordem de Implementacao
-
-1. **Migration SQL** - Criar RPC e campos de controle
-2. **Edge Functions** - Otimizar heartbeat, tasks, task-result
-3. **Python Agent** - Backoff, tempo de execucao, intervalo
-4. **Frontend** - Tela de execucoes
-
----
-
-## Detalhes Tecnicos: RPC vs Queries Separadas
-
-A principal otimizacao e usar uma funcao SQL (RPC) que executa toda a logica do heartbeat em uma unica transacao:
-
-```text
-ANTES (3 round-trips):
-Browser -> Edge Function -> SELECT agents -> Edge Function
-                         -> UPDATE agents -> Edge Function  
-                         -> COUNT tasks   -> Edge Function -> Response
-
-DEPOIS (1 round-trip):
-Browser -> Edge Function -> RPC rpc_agent_heartbeat -> Response
-                              (tudo atomico no banco)
+// Queries principais
+const { data: tasks } = useQuery(['admin-tasks'], fetchAllTasks);
+const { data: stats } = useQuery(['task-stats'], fetchTaskStats);
+const { data: timelineData } = useQuery(['task-timeline'], fetchTimelineData);
+const { data: agentPerformance } = useQuery(['agent-performance'], fetchAgentPerformance);
 ```
 
-Isso reduz:
-- Latencia de rede (3 -> 1 round-trip)
-- Conexoes simultaneas (3 -> 1)
-- Tempo de bloqueio de recursos
+### Queries de Dados para Gráficos
 
+#### Timeline (Últimos 7 dias)
+```sql
+SELECT 
+  DATE_TRUNC('day', created_at) as date,
+  status,
+  COUNT(*) as count
+FROM agent_tasks
+WHERE created_at >= NOW() - INTERVAL '7 days'
+GROUP BY DATE_TRUNC('day', created_at), status
+ORDER BY date
+```
+
+#### Performance por Agent
+```sql
+SELECT 
+  a.name as agent_name,
+  COUNT(t.id) as total_tasks,
+  AVG(t.execution_time_ms) as avg_time_ms,
+  SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed,
+  SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) as failed
+FROM agent_tasks t
+JOIN agents a ON t.agent_id = a.id
+GROUP BY a.id, a.name
+ORDER BY total_tasks DESC
+```
+
+### Cores Semânticas dos Gráficos
+
+```typescript
+const chartConfig = {
+  completed: { label: 'Concluídas', color: 'hsl(142, 76%, 36%)' },  // Verde
+  failed: { label: 'Falhas', color: 'hsl(0, 84%, 60%)' },          // Vermelho
+  timeout: { label: 'Timeout', color: 'hsl(25, 95%, 53%)' },       // Laranja
+  pending: { label: 'Pendentes', color: 'hsl(48, 96%, 53%)' },     // Amarelo
+  running: { label: 'Executando', color: 'hsl(217, 91%, 60%)' },   // Azul
+  cancelled: { label: 'Canceladas', color: 'hsl(0, 0%, 45%)' },    // Cinza
+};
+```
+
+### Filtros Implementados
+
+1. **Busca por texto**: Firewall, Agent, Tipo de tarefa
+2. **Status**: Dropdown com todas as opções
+3. **Agent**: Dropdown populado dinamicamente
+4. **Workspace**: Dropdown com workspaces do usuário
+5. **Período**: Seletor de range de datas (últimas 24h, 7 dias, 30 dias, personalizado)
+
+### Ações Disponíveis
+
+| Ação | Condição | Descrição |
+|------|----------|-----------|
+| Ver Detalhes | Sempre | Abre dialog com informações completas |
+| Cancelar | status = pending | Marca tarefa como cancelada |
+| Re-executar | status = failed/timeout | Cria nova tarefa com mesmo payload |
+| Ver Análise | status = completed | Navega para página de análise do firewall |
+
+## Layout da Página
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Breadcrumb: Administração > Tarefas                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Cards de Estatísticas (5 cards em grid)                        │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────┐  ┌───────────────────────────────────┐   │
+│  │  Gráfico de Pizza         │  │  Gráfico de Área (Timeline)       │   │
+│  │  Distribuição por Status  │  │  Execuções nos últimos 7 dias     │   │
+│  │  (1/3 largura)            │  │  (2/3 largura)                    │   │
+│  └───────────────────────────┘  └───────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Gráfico de Barras: Performance por Agent                       │   │
+│  │  (largura total, altura menor)                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Filtros: [Busca] [Status] [Agent] [Workspace] [Período]        │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Tabela de Tarefas com paginação                                │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## Integração com Menu de Administração
+
+O item "Tarefas" será adicionado ao menu Administração com o ícone `Activity`, seguindo o padrão visual (cor warning/amarelo) dos outros itens administrativos.
+
+## Diferenças da Página Existente (TaskExecutionsPage)
+
+| Aspecto | TaskExecutionsPage (Firewall) | TasksPage (Admin) |
+|---------|------------------------------|-------------------|
+| Localização | Firewall > Execuções | Administração > Tarefas |
+| Escopo | Tarefas do módulo Firewall | Todas as tarefas do sistema |
+| Gráficos | Não possui | Pizza, Área, Barras |
+| Filtro por Workspace | Não | Sim |
+| Filtro por Período | Não | Sim (com datepicker) |
+| Visão de Performance | Não | Sim (gráfico por agent) |
+| Acesso | workspace_admin + | super_admin only |
+
+## Padrões Seguidos
+
+1. **Breadcrumb**: Utilizando `PageBreadcrumb` existente
+2. **Cards**: Estilo `glass-card` do projeto
+3. **Gráficos**: Usando `ChartContainer` e `ChartTooltipContent` do shadcn/recharts
+4. **Tabela**: Componentes `Table*` existentes
+5. **Dialog**: Padrão `lg` com `ScrollArea` interno
+6. **Cores**: Paleta semântica já definida no projeto
+
+## Ordem de Implementação
+
+1. Criar componente `TaskStatsCards.tsx`
+2. Criar componente `TaskStatusChart.tsx` (pizza)
+3. Criar componente `TaskTimelineChart.tsx` (área)
+4. Criar componente `TaskAgentPerformance.tsx` (barras)
+5. Criar componente `TaskDetailDialog.tsx`
+6. Criar página principal `TasksPage.tsx`
+7. Atualizar `AppLayout.tsx` com novo item no menu
+8. Atualizar `App.tsx` com nova rota
