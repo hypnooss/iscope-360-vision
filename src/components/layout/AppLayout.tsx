@@ -554,7 +554,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="font-bold text-sidebar-foreground">iScope 360</span>
           </div>
         </div>
-        <nav className="p-3 space-y-1">
+        <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
           <NavContent />
         </nav>
       </aside>
@@ -585,7 +585,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
             <NavContent />
           </nav>
 
