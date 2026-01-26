@@ -779,6 +779,113 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
+ * Format UTM Security Profile evidence - checks for policies with WAN/SD-WAN destination
+ * without the corresponding security profile (av-profile, webfilter-profile, etc.)
+ */
+function formatUTMSecurityProfileEvidence(
+  rawData: Record<string, unknown>,
+  ruleCode: string
+): { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } {
+  const evidence: EvidenceItem[] = [];
+  const vulnerablePolicies: Array<Record<string, unknown>> = [];
+  
+  try {
+    // Map rule code to corresponding profile field
+    const profileFieldMap: Record<string, { field: string, profileName: string }> = {
+      'utm-009': { field: 'av-profile', profileName: 'Antivirus' },
+      'utm-007': { field: 'application-list', profileName: 'Application Control' },
+      'utm-004': { field: 'webfilter-profile', profileName: 'Web Filter' },
+      'utm-001': { field: 'ips-sensor', profileName: 'IPS/IDS' }
+    };
+    
+    const profileConfig = profileFieldMap[ruleCode];
+    if (!profileConfig) {
+      evidence.push({ label: 'Erro', value: `Regra ${ruleCode} não mapeada`, type: 'text' });
+      return { evidence, vulnerablePolicies };
+    }
+    
+    const { field: profileField, profileName } = profileConfig;
+    
+    // Get firewall policies and interfaces
+    const policyData = rawData['firewall_policy'] as Record<string, unknown> | undefined;
+    const interfaceData = rawData['system_interface'] as Record<string, unknown> | undefined;
+    
+    const policies = (policyData?.results || []) as Array<Record<string, unknown>>;
+    const interfaces = (interfaceData?.results || []) as Array<Record<string, unknown>>;
+    
+    if (!policies.length) {
+      evidence.push({ label: 'Status', value: 'Nenhuma política encontrada', type: 'text' });
+      return { evidence, vulnerablePolicies };
+    }
+    
+    // Analyze policies with WAN/SD-WAN as DESTINATION without the security profile
+    for (const policy of policies) {
+      // Skip disabled policies
+      if (policy.status === 'disable') continue;
+      
+      // Check if DESTINATION interface is WAN/SD-WAN
+      const dstintf = policy.dstintf as Array<Record<string, unknown>> | undefined;
+      const dstintfNames = (dstintf || []).map(i => String(i.name || i.q_origin_key || ''));
+      
+      const isDestinationWan = dstintfNames.some(name => 
+        isWanInterface(name, interfaces)
+      );
+      
+      if (!isDestinationWan) continue; // Skip non-WAN destination policies
+      
+      // Check if the security profile is applied
+      const profileValue = policy[profileField];
+      const hasProfile = profileValue && String(profileValue).trim() !== '';
+      
+      if (!hasProfile) {
+        vulnerablePolicies.push(policy);
+      }
+    }
+    
+    // Generate evidence
+    if (vulnerablePolicies.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: `✅ Todas as políticas com destino WAN possuem ${profileName}`,
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `❌ ${vulnerablePolicies.length} política(s) sem ${profileName}`,
+        type: 'text'
+      });
+      
+      // Show details of problematic policies (max 5)
+      for (const policy of vulnerablePolicies.slice(0, 5)) {
+        const policyId = policy.policyid || policy.id || 'N/A';
+        const policyName = policy.name || `Policy ${policyId}`;
+        
+        evidence.push({
+          label: `Regra ${policyId}`,
+          value: String(policyName),
+          type: 'text'
+        });
+      }
+      
+      if (vulnerablePolicies.length > 5) {
+        evidence.push({
+          label: 'Aviso',
+          value: `... e mais ${vulnerablePolicies.length - 5} regra(s)`,
+          type: 'text'
+        });
+      }
+    }
+    
+  } catch (e) {
+    console.error('Error formatting UTM Security Profile evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return { evidence, vulnerablePolicies };
+}
+
+/**
  * Helper to check if an interface has WAN or SD-WAN role
  * Includes special handling for virtual-wan-link and sd-wan zone interfaces
  */
@@ -1195,6 +1302,7 @@ function processComplianceRules(
     let inboundResult: { evidence: EvidenceItem[], relevantPolicies: Array<Record<string, unknown>> } | null = null;
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
+    let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
     if (rule.code === 'lic-001') {
@@ -1260,6 +1368,18 @@ function processComplianceRules(
       } else {
         status = 'fail';
         details = rule.fail_description || 'Nenhum backup automático configurado';
+      }
+    } else if (rule.code.startsWith('utm-')) {
+      // UTM Security Profiles (utm-001, utm-004, utm-007, utm-009)
+      utmResult = formatUTMSecurityProfileEvidence(rawData, rule.code);
+      evidence = utmResult.evidence;
+      // Override status based on actual policy analysis
+      if (utmResult.vulnerablePolicies.length > 0) {
+        status = 'fail';
+        details = rule.fail_description || `${utmResult.vulnerablePolicies.length} política(s) sem perfil de segurança`;
+      } else {
+        status = 'pass';
+        details = rule.pass_description || 'Todas as políticas com destino WAN possuem perfil';
       }
     } else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
@@ -1383,11 +1503,20 @@ function processComplianceRules(
           };
         }
       }
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound, VPN, net-003, ha-003), incluir dados brutos genéricos
+    } else if (rule.code.startsWith('utm-') && utmResult && utmResult.vulnerablePolicies.length > 0) {
+      // Para regras UTM, só incluir rawData quando há políticas sem perfil
+      checkRawData = {
+        policies_sem_perfil: utmResult.vulnerablePolicies.map(p => ({
+          policyid: p.policyid,
+          name: p.name,
+          dstintf: (p.dstintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key)
+        }))
+      };
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, UTM, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou HA configurado (tratado acima)
+    // Nota: regras inb-*, utm-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou HA configurado (tratado acima)
     
     checks.push({
       id: rule.code,
