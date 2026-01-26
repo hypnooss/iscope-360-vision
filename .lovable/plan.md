@@ -1,194 +1,165 @@
 
-# Plano: Otimização das Evidências de Firmware (fw-001)
 
-## Problema Identificado
+# Plano: Usar Dados Dinâmicos do FortiGuard (Sem Mapa Hardcoded)
 
-O formatador de evidências de firmware (`fw-001`) está exibindo informações redundantes que já aparecem no topo da página:
-- **Modelo** - já exibido no card superior
-- **Hostname** - já exibido no card superior  
-- **Serial** - já exibido no card superior
-- **Avaliação** - texto genérico "Versão atual e suportada"
+## Problema com a Abordagem Atual
 
-Além disso, a lógica de avaliação atual é imprecisa:
-- Considera "pass" se versão >= 7.2
-- Não compara com a última versão mature disponível
-- Não alerta adequadamente quando há atualização disponível
+O mapa `matureVersions` hardcoded é:
+1. **Propenso a erros** - já errei colocando 7.2.10 quando era 7.2.12
+2. **Impossível de manter** - quem vai atualizar isso a cada 2-3 meses?
+3. **Desnecessário** - o próprio FortiGate já retorna essa informação!
 
-## Solução Proposta
+## Dados Já Disponíveis
 
-### Parte 1: Simplificar Evidências
+O endpoint `/api/v2/monitor/system/firmware` retorna:
 
-Remover as evidências redundantes, mantendo apenas:
-- **Versão do Firmware** - ex: `v7.2.10`
-- **Build** - ex: `1706`
+```json
+{
+  "current": {
+    "version": "v7.2.10",
+    "major": 7, "minor": 2, "patch": 10,
+    "maturity": "M"
+  },
+  "available": [
+    { "version": "v7.2.12", "major": 7, "minor": 2, "patch": 12, "maturity": "M" },
+    { "version": "v7.2.11", "major": 7, "minor": 2, "patch": 11, "maturity": "M" },
+    { "version": "v7.4.10", "major": 7, "minor": 4, "patch": 10, "maturity": "M" },
+    // ... todas as versões disponíveis do FortiGuard
+  ]
+}
+```
 
-### Parte 2: Melhorar Lógica de Avaliação
+## Nova Lógica Proposta
 
-Implementar verificação contra versões conhecidas mature da Fortinet:
-- Manter um mapa de versões mature por major.minor
-- Comparar a versão instalada com a última mature disponível
-- Se não for a última mature, retornar `fail` com severidade HIGH
+1. **Extrair versão atual** do campo `current`
+2. **Filtrar versões disponíveis** do mesmo branch (mesmo major.minor)
+3. **Encontrar a última mature** do branch (maior patch com `maturity: "M"`)
+4. **Comparar** versão instalada vs última mature disponível
 
-**Versões Mature Conhecidas (Jan 2025):**
-- 7.4.x -> 7.4.6 (latest mature)
-- 7.2.x -> 7.2.10 (latest mature)
-- 7.0.x -> 7.0.16 (latest mature)
-- 6.4.x -> 6.4.15 (latest mature - EoL soon)
+## Regras de Avaliação
+
+| Situação | Status | Severidade |
+|----------|--------|------------|
+| Versão instalada = última mature do branch | `pass` | - |
+| Versão instalada < última mature do branch | `fail` | HIGH |
+| Nenhuma versão disponível encontrada | `warn` | MEDIUM |
 
 ## Alterações Necessárias
 
 **Arquivo:** `supabase/functions/agent-task-result/index.ts`
 
-**Função:** `formatFirmwareEvidence` (linhas 785-855)
-
-### Código Atual (linhas 816-843):
-```typescript
-if (version) {
-  const cleanVersion = version.replace(/^v/i, '');
-  
-  evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
-  if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
-  if (model) evidence.push({ label: 'Modelo', value: String(model), type: 'text' });
-  if (hostname) evidence.push({ label: 'Hostname', value: String(hostname), type: 'text' });
-  if (serial) evidence.push({ label: 'Serial', value: serial, type: 'code' });
-  
-  // Evaluate version
-  const majorMinor = cleanVersion.match(/^(\d+)\.(\d+)/);
-  let status: 'pass' | 'fail' | 'warn' = 'warn';
-  
-  if (majorMinor) {
-    const major = parseInt(majorMinor[1]);
-    const minor = parseInt(majorMinor[2]);
-    
-    if (major >= 7 && minor >= 2) {
-      status = 'pass';
-      evidence.push({ label: 'Avaliação', value: 'Versão atual e suportada', type: 'text' });
-    } else if (major >= 7) {
-      status = 'warn';
-      evidence.push({ label: 'Avaliação', value: 'Considerar atualização', type: 'text' });
-    } else {
-      status = 'fail';
-      evidence.push({ label: 'Avaliação', value: 'Versão desatualizada', type: 'text' });
-    }
-  }
-  
-  return { evidence, firmwareInfo, status };
-}
-```
+**Função:** `formatFirmwareEvidence`
 
 ### Código Proposto:
-```typescript
-// Mapa de versões mature da Fortinet (atualizado Jan 2025)
-const matureVersions: Record<string, { latest: string; eol?: boolean }> = {
-  '7.6': { latest: '7.6.1' },
-  '7.4': { latest: '7.4.6' },
-  '7.2': { latest: '7.2.10' },
-  '7.0': { latest: '7.0.16', eol: true },
-  '6.4': { latest: '6.4.15', eol: true },
-};
 
-if (version) {
-  const cleanVersion = version.replace(/^v/i, '');
+```typescript
+function formatFirmwareEvidence(rawData: unknown): { 
+  evidence: Evidence[], 
+  firmwareInfo: FirmwareInfo, 
+  status: 'pass' | 'fail' | 'warn' 
+} {
+  const evidence: Evidence[] = [];
+  const firmwareInfo: FirmwareInfo = {};
   
-  // Evidências simplificadas - apenas versão e build
-  evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
-  if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
+  // ... código existente para extrair version, build, model, etc ...
   
-  // Avaliar versão contra mature conhecida
-  const versionParts = cleanVersion.match(/^(\d+)\.(\d+)\.?(\d+)?/);
-  let status: 'pass' | 'fail' | 'warn' = 'warn';
+  // Extrair dados do system_firmware
+  const systemFirmware = findDataByKey(rawData, ['system_firmware']);
+  let availableVersions: Array<{
+    version: string;
+    major: number;
+    minor: number;
+    patch: number;
+    maturity: string;
+  }> = [];
   
-  if (versionParts) {
-    const major = parseInt(versionParts[1]);
-    const minor = parseInt(versionParts[2]);
-    const patch = parseInt(versionParts[3] || '0');
-    const branchKey = `${major}.${minor}`;
-    const fullVersion = `${major}.${minor}.${patch}`;
+  if (systemFirmware) {
+    const fwData = systemFirmware as Record<string, unknown>;
+    const results = fwData.results as Record<string, unknown> || fwData;
+    const available = results.available as Array<Record<string, unknown>> || [];
     
-    const branchInfo = matureVersions[branchKey];
+    availableVersions = available.map(v => ({
+      version: String(v.version || ''),
+      major: Number(v.major || 0),
+      minor: Number(v.minor || 0),
+      patch: Number(v.patch || 0),
+      maturity: String(v.maturity || '')
+    }));
+  }
+  
+  if (version) {
+    const cleanVersion = version.replace(/^v/i, '');
     
-    if (branchInfo) {
-      const latestParts = branchInfo.latest.match(/(\d+)\.(\d+)\.(\d+)/);
-      if (latestParts) {
-        const latestPatch = parseInt(latestParts[3]);
+    // Evidências simplificadas
+    evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
+    if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
+    
+    // Extrair major.minor.patch da versão atual
+    const versionParts = cleanVersion.match(/^(\d+)\.(\d+)\.?(\d+)?/);
+    let status: 'pass' | 'fail' | 'warn' = 'warn';
+    
+    if (versionParts) {
+      const currentMajor = parseInt(versionParts[1]);
+      const currentMinor = parseInt(versionParts[2]);
+      const currentPatch = parseInt(versionParts[3] || '0');
+      
+      // Filtrar versões mature do mesmo branch
+      const sameBranchMature = availableVersions
+        .filter(v => 
+          v.major === currentMajor && 
+          v.minor === currentMinor && 
+          v.maturity === 'M'
+        )
+        .sort((a, b) => b.patch - a.patch);
+      
+      if (sameBranchMature.length > 0) {
+        const latestMature = sameBranchMature[0];
         
-        if (patch >= latestPatch) {
-          // Na última versão mature do branch
-          if (branchInfo.eol) {
-            status = 'warn';
-            evidence.push({ 
-              label: 'Status', 
-              value: `⚠️ Branch ${branchKey} em fim de vida - Considerar migração`, 
-              type: 'text' 
-            });
-          } else {
-            status = 'pass';
-            evidence.push({ 
-              label: 'Status', 
-              value: `✅ Última versão mature do branch ${branchKey}`, 
-              type: 'text' 
-            });
-          }
+        if (currentPatch >= latestMature.patch) {
+          status = 'pass';
+          evidence.push({ 
+            label: 'Status', 
+            value: `✅ Última versão mature do branch ${currentMajor}.${currentMinor}`, 
+            type: 'text' 
+          });
         } else {
-          // Não está na última mature
           status = 'fail';
           evidence.push({ 
             label: 'Status', 
-            value: `❌ Atualização disponível: ${branchInfo.latest}`, 
-            type: 'text' 
-          });
-          evidence.push({ 
-            label: 'Versão Instalada', 
-            value: fullVersion, 
-            type: 'text' 
-          });
-          evidence.push({ 
-            label: 'Última Mature', 
-            value: branchInfo.latest, 
+            value: `❌ Atualização disponível: ${latestMature.version}`, 
             type: 'text' 
           });
         }
+      } else {
+        // Sem versões disponíveis para comparar
+        status = 'warn';
+        evidence.push({ 
+          label: 'Status', 
+          value: `⚠️ Não foi possível verificar atualizações disponíveis`, 
+          type: 'text' 
+        });
       }
-    } else if (major < 6 || (major === 6 && minor < 4)) {
-      // Versão muito antiga
-      status = 'fail';
-      evidence.push({ 
-        label: 'Status', 
-        value: '❌ Versão obsoleta - Migração urgente necessária', 
-        type: 'text' 
-      });
-    } else {
-      // Branch desconhecido (possivelmente mais novo)
-      status = 'warn';
-      evidence.push({ 
-        label: 'Status', 
-        value: `⚠️ Branch ${branchKey} não catalogado`, 
-        type: 'text' 
-      });
     }
+    
+    return { evidence, firmwareInfo, status };
   }
   
-  return { evidence, firmwareInfo, status };
+  // fallback...
 }
 ```
 
-## Exemplos de Resultado
-
-| Versão Instalada | Última Mature | Status | Evidência |
-|------------------|---------------|--------|-----------|
-| v7.2.10 | 7.2.10 | ✅ pass | "Última versão mature do branch 7.2" |
-| v7.2.8 | 7.2.10 | ❌ fail | "Atualização disponível: 7.2.10" |
-| v7.4.4 | 7.4.6 | ❌ fail | "Atualização disponível: 7.4.6" |
-| v7.0.16 | 7.0.16 | ⚠️ warn | "Branch 7.0 em fim de vida - Considerar migração" |
-| v6.4.10 | 6.4.15 | ❌ fail | "Atualização disponível: 6.4.15" |
-
 ## Benefícios
 
-1. **Evidências Limpas**: Apenas informações relevantes (versão e build)
-2. **Avaliação Precisa**: Compara com a última mature disponível do branch
-3. **Alertas HIGH**: Dispositivos desatualizados terão status `fail` (severidade HIGH já configurada na regra)
-4. **Orientação Clara**: Mostra exatamente qual versão deve ser instalada
+1. **Zero manutenção** - os dados vêm direto do FortiGuard
+2. **Sempre atualizado** - se a Fortinet lançar 7.2.13, o sistema detecta automaticamente
+3. **Preciso** - sem possibilidade de erro humano no mapa de versões
+4. **Inteligente** - compara apenas dentro do mesmo branch
 
-## Manutenção Futura
+## Exemplo de Resultado
 
-O mapa `matureVersions` deverá ser atualizado quando novas versões mature forem lançadas pela Fortinet (tipicamente a cada 2-3 meses).
+**Firewall com v7.2.10 instalado:**
+- Versão do Firmware: `v7.2.10`
+- Build: `1706`
+- Status: `❌ Atualização disponível: v7.2.12`
+- Severidade: **HIGH** (já configurada na regra fw-001)
+
