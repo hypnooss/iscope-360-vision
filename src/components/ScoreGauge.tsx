@@ -46,7 +46,7 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
   };
 
   return (
-    <div className="relative inline-flex items-center justify-center">
+    <div className="relative inline-flex items-center justify-center p-3">
       <svg width={size} height={size} className="transform -rotate-90">
         {/* Background circle */}
         <circle
