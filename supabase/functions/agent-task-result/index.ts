@@ -779,6 +779,82 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
+ * Format Firmware Version evidence (fw-001)
+ * Extracts version info and evaluates if firmware is current
+ */
+function formatFirmwareEvidence(
+  rawData: Record<string, unknown>
+): { evidence: EvidenceItem[], firmwareInfo: Record<string, unknown>, status: 'pass' | 'fail' | 'warn' } {
+  const evidence: EvidenceItem[] = [];
+  const firmwareInfo: Record<string, unknown> = {};
+  
+  try {
+    const systemStatus = rawData['system_status'] as Record<string, unknown> | undefined;
+    
+    if (!systemStatus) {
+      evidence.push({ label: 'Status', value: 'Dados não disponíveis', type: 'text' });
+      return { evidence, firmwareInfo, status: 'warn' };
+    }
+    
+    // Extract version at root level (FortiGate API returns version at root, not in results)
+    const version = systemStatus.version as string || '';
+    const serial = systemStatus.serial as string || '';
+    const build = systemStatus.build as number | string || '';
+    
+    // Extract data from results
+    const results = systemStatus.results as Record<string, unknown> || {};
+    const hostname = results.hostname as string || '';
+    const model = results.model || results.model_name || '';
+    
+    // Populate firmwareInfo for rawData
+    firmwareInfo.version = version;
+    firmwareInfo.build = build;
+    firmwareInfo.serial = serial;
+    firmwareInfo.hostname = hostname;
+    firmwareInfo.model = model;
+    
+    if (version) {
+      const cleanVersion = version.replace(/^v/i, '');
+      
+      evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
+      if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
+      if (model) evidence.push({ label: 'Modelo', value: String(model), type: 'text' });
+      if (hostname) evidence.push({ label: 'Hostname', value: String(hostname), type: 'text' });
+      if (serial) evidence.push({ label: 'Serial', value: serial, type: 'code' });
+      
+      // Evaluate version
+      const majorMinor = cleanVersion.match(/^(\d+)\.(\d+)/);
+      let status: 'pass' | 'fail' | 'warn' = 'warn';
+      
+      if (majorMinor) {
+        const major = parseInt(majorMinor[1]);
+        const minor = parseInt(majorMinor[2]);
+        
+        if (major >= 7 && minor >= 2) {
+          status = 'pass';
+          evidence.push({ label: 'Avaliação', value: 'Versão atual e suportada', type: 'text' });
+        } else if (major >= 7) {
+          status = 'warn';
+          evidence.push({ label: 'Avaliação', value: 'Considerar atualização', type: 'text' });
+        } else {
+          status = 'fail';
+          evidence.push({ label: 'Avaliação', value: 'Versão desatualizada', type: 'text' });
+        }
+      }
+      
+      return { evidence, firmwareInfo, status };
+    } else {
+      evidence.push({ label: 'Status', value: 'Versão não identificada', type: 'text' });
+      return { evidence, firmwareInfo, status: 'warn' };
+    }
+  } catch (e) {
+    console.error('Error formatting firmware evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar', type: 'text' });
+    return { evidence, firmwareInfo, status: 'warn' };
+  }
+}
+
+/**
  * Format Interface Security evidence for int-001 (HTTP), int-002 (HTTPS), int-003 (SSH), int-004 (SNMP), int-005 (Ping)
  * These rules check for insecure protocols on WAN interfaces
  */
@@ -1530,11 +1606,24 @@ function processComplianceRules(
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
-let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
+    let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
     let intResult: { evidence: EvidenceItem[], vulnerableInterfaces: Array<Record<string, unknown>>, status: 'pass' | 'fail' | 'warn' } | null = null;
+    let fwResult: { evidence: EvidenceItem[], firmwareInfo: Record<string, unknown>, status: 'pass' | 'fail' | 'warn' } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
-    if (rule.code === 'lic-001') {
+    if (rule.code === 'fw-001') {
+      // Firmware Version
+      fwResult = formatFirmwareEvidence(rawData);
+      evidence = fwResult.evidence;
+      status = fwResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Firmware atualizado';
+      } else if (status === 'warn') {
+        details = rule.fail_description || 'Considerar atualização do firmware';
+      } else {
+        details = rule.fail_description || 'Firmware desatualizado';
+      }
+    } else if (rule.code === 'lic-001') {
       // FortiCare Support
       evidence = formatFortiCareEvidence(rawData);
     } else if (rule.code === 'lic-002') {
@@ -1788,11 +1877,16 @@ let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | '
           allowaccess: i.allowaccess
         }))
       };
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, net-003, ha-003), incluir dados brutos genéricos
+    } else if (rule.code === 'fw-001' && fwResult) {
+      // Para regra de firmware, incluir dados do sistema
+      checkRawData = {
+        firmware: fwResult.firmwareInfo
+      };
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && !rule.code.startsWith('fw-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, fw-*, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-*, utm-*, sec-*, int-*, net-003 e ha-003 só têm rawData quando há políticas/interfaces vulneráveis ou dados relevantes (tratado acima)
+    // Nota: regras inb-*, utm-*, sec-*, int-*, fw-*, net-003 e ha-003 só têm rawData quando há políticas/interfaces vulneráveis ou dados relevantes (tratado acima)
     
     checks.push({
       id: rule.code,

@@ -134,7 +134,14 @@ function countBySeverity(report: ComplianceReport): { critical: number; high: nu
   };
 }
 
-export function exportReportToPDF(report: ComplianceReport) {
+export function exportReportToPDF(
+  report: ComplianceReport,
+  deviceInfo?: {
+    name?: string;
+    url?: string;
+    vendor?: string;
+  }
+) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
   let yPos = 20;
@@ -144,17 +151,47 @@ export function exportReportToPDF(report: ComplianceReport) {
     ? report.generatedAt 
     : new Date(report.generatedAt);
 
+  // Determine device name and type for header
+  const deviceName = deviceInfo?.name || report.systemInfo?.hostname || 'Dispositivo';
+  const vendorSource = deviceInfo?.vendor?.toLowerCase() || report.systemInfo?.vendor?.toLowerCase() || '';
+  const isSonicWall = vendorSource.includes('sonicwall') || vendorSource.includes('sonic');
+  const vendorLabel = isSonicWall ? 'SonicWall' : 'FortiGate';
+
   // Header
-  doc.setFontSize(22);
+  doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 180, 180);
-  doc.text('FortiGate Compliance Report', pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Relatório de Compliance - ${deviceName}`, pageWidth / 2, yPos, { align: 'center' });
   
-  yPos += 12;
+  yPos += 10;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   doc.text(`Gerado em: ${generatedAtDate.toLocaleString('pt-BR')}`, pageWidth / 2, yPos, { align: 'center' });
+
+  // Device Info Block
+  yPos += 10;
+  doc.setFillColor(245, 248, 255);
+  doc.roundedRect(14, yPos - 3, pageWidth - 28, 28, 3, 3, 'F');
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(60, 60, 60);
+  
+  // Device name with vendor badge
+  doc.text(`${vendorLabel}: ${deviceName}`, 20, yPos + 5);
+  
+  // Model and Serial on same line
+  const modelSerial = `Modelo: ${report.systemInfo?.model || 'N/A'} | Serial: ${report.systemInfo?.serial || 'N/A'}`;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(modelSerial, 20, yPos + 12);
+  
+  // Firmware and Uptime
+  const fwUptime = `Firmware: ${report.firmwareVersion || 'N/A'} | Uptime: ${report.systemInfo?.uptime || 'N/A'}`;
+  doc.text(fwUptime, 20, yPos + 19);
+  
+  yPos += 32;
 
   // ═══════════════════════════════════════════════════════════════
   // BLOCO 1: Score de Compliance Geral (ponderado - mesmo do dashboard)
@@ -682,6 +719,18 @@ export function exportReportToPDF(report: ComplianceReport) {
       // Para a categoria Atualizacoes, formatar melhor os detalhes do firmware
       let detailsText = check.details || '-';
       
+      // Incluir resumo das evidências quando disponíveis
+      if (check.evidence && check.evidence.length > 0) {
+        const evidenceSummary = check.evidence
+          .slice(0, 3) // Máximo 3 itens
+          .map(e => `${e.label}: ${e.value}`)
+          .join(' | ');
+        
+        if (evidenceSummary.length > 0 && evidenceSummary.length < 200) {
+          detailsText = evidenceSummary;
+        }
+      }
+      
       // Função robusta para corrigir mojibake e normalizar texto para PDF
       // Mojibake ocorre quando UTF-8 é interpretado como Latin-1
       const sanitizeForPDF = (str: string): string => {
@@ -849,14 +898,15 @@ export function exportReportToPDF(report: ComplianceReport) {
     doc.setFontSize(8);
     doc.setTextColor(128, 128, 128);
     doc.text(
-      `Página ${i} de ${pageCount} | FortiGate Compliance Checker`,
+      `Página ${i} de ${pageCount} | ${vendorLabel} Compliance Report`,
       pageWidth / 2,
       doc.internal.pageSize.height - 10,
       { align: 'center' }
     );
   }
 
-  // Save
-  const fileName = `fortigate-compliance-${generatedAtDate.toISOString().split('T')[0]}.pdf`;
+  // Save - use device name in filename
+  const safeDeviceName = deviceName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+  const fileName = `compliance-${safeDeviceName}-${generatedAtDate.toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
