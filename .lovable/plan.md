@@ -1,53 +1,122 @@
-# Plano: Correção de Evidências HA Heartbeat e Regras Any-to-Any
 
-## Status: ✅ IMPLEMENTADO
 
-## Resumo Executivo
+# Plano: Correção da Página de Relatórios de Firewall
 
-Correção da exibição de evidências para duas verificações de compliance no FortiGate:
-1. **Heartbeat HA (ha-003)**: Não exibe dados de heartbeat quando HA está desabilitado
-2. **Regras Any-to-Any (net-003)**: Formatador específico seguindo padrão das regras inb-*
+## Problema Identificado
+
+A página **Firewall > Relatórios** (`/scope-firewall/reports`) não exibe nenhum conteúdo devido a um **race condition** na lógica de carregamento.
+
+## Análise Técnica
+
+### Causa Raiz
+
+No arquivo `src/pages/firewall/FirewallReportsPage.tsx`, o `useEffect` que dispara o `fetchReports()` tem dependências incompletas:
+
+```typescript
+// Linhas 73-77 - Código atual com problema
+useEffect(() => {
+  if (user && hasModuleAccess('scope_firewall')) {
+    fetchReports();
+  }
+}, [user]); // <- Falta a dependência!
+```
+
+### Sequência do Bug
+
+1. O usuário navega para `/scope-firewall/reports`
+2. O componente monta e o `useEffect` executa
+3. Neste momento, o `AuthContext` ainda está carregando e `role = null`
+4. `hasModuleAccess('scope_firewall')` retorna `false` porque `role !== 'super_admin'`
+5. `fetchReports()` não é chamado
+6. O `AuthContext` termina de carregar e define `role = 'super_admin'`
+7. O `useEffect` **NÃO re-executa** porque `user` não mudou
+8. A página fica em branco com o spinner infinito (loading: true)
+
+### Evidências
+
+- Consulta SQL confirmou: usuário `bd66346a-44fc-47b1-a09b-2014a53539b6` tem role `super_admin`
+- Logs de rede **não mostram** requisição para `analysis_history`
+- Base de dados tem 9 análises disponíveis
 
 ---
 
-## Alterações Realizadas
+## Solucao Proposta
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+### Arquivo: `src/pages/firewall/FirewallReportsPage.tsx`
 
-1. **Novo Formatador: `formatHAHeartbeatEvidence`** (~linha 570)
-   - Verifica se HA mode = standalone → retorna "N/A - HA não configurado" e suprime rawData
-   - Se HA ativo + 0 links → FAIL
-   - Se HA ativo + 1 link → WARN (ponto único de falha)
-   - Se HA ativo + 2+ links → PASS
+#### 1. Importar o loading do ModuleContext
 
-2. **Novo Formatador: `formatAnyToAnyEvidence`** (~linha 970)
-   - Analisa todas as policies do firewall_policy
-   - Detecta policies onde srcaddr=all E dstaddr=all
-   - Se não encontrar → "Nenhuma regra vulnerável encontrada" SEM rawData
-   - Se encontrar → Lista ID e Nome de cada policy + rawData
+Adicionar `loading` aos imports do hook:
 
-3. **Integração no `processComplianceRules`** (~linha 1180)
-   - Adicionado tratamento para `ha-003` usando `formatHAHeartbeatEvidence`
-   - Adicionado tratamento para `net-003` usando `formatAnyToAnyEvidence`
+```typescript
+const { hasModuleAccess, loading: moduleLoading } = useModules();
+```
 
-4. **Atualização da lógica de rawData** (~linha 1262)
-   - `net-003`: Só inclui rawData quando há policies any-any
-   - `ha-003`: Só inclui rawData quando HA está configurado (não standalone)
+#### 2. Corrigir o useEffect de carregamento de relatórios
+
+Atualizar as dependências e condições:
+
+```typescript
+useEffect(() => {
+  // Só buscar quando auth e módulos estiverem prontos
+  if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_firewall')) {
+    fetchReports();
+  }
+}, [user, authLoading, moduleLoading]);
+```
+
+#### 3. Atualizar o useEffect de navegação
+
+Garantir que a navegação só aconteça quando tudo estiver carregado:
+
+```typescript
+useEffect(() => {
+  if (authLoading || moduleLoading) return;
+  
+  if (!user) {
+    navigate('/auth');
+    return;
+  }
+  
+  if (!hasModuleAccess('scope_firewall')) {
+    navigate('/modules');
+  }
+}, [user, authLoading, moduleLoading, navigate, hasModuleAccess]);
+```
+
+#### 4. Mostrar loading durante carregamento inicial
+
+Atualizar o return inicial:
+
+```typescript
+if (authLoading || moduleLoading) {
+  return (
+    <AppLayout>
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    </AppLayout>
+  );
+}
+```
 
 ---
 
-## Comportamento Esperado
+## Resultado Esperado
 
-### Heartbeat HA (ha-003)
-| Cenário | Evidência | Raw Data |
-|---------|-----------|----------|
-| HA = standalone | "N/A - HA não configurado" | Não exibido |
-| HA ativo + 0 links | "❌ Nenhum link de heartbeat" | Exibido |
-| HA ativo + 1 link | "⚠️ Apenas 1 link (ponto de falha)" | Exibido |
-| HA ativo + 2+ links | "✅ N links configurados" | Exibido |
+| Antes | Depois |
+|-------|--------|
+| Página em branco com spinner infinito | Carrega corretamente após auth/módulos prontos |
+| `fetchReports()` nunca executado | `fetchReports()` executa quando `role` está disponível |
+| 0 requisições para `analysis_history` | Requisição disparada e dados exibidos |
 
-### Regras Any-to-Any (net-003)
-| Cenário | Evidência | Raw Data |
-|---------|-----------|----------|
-| Nenhuma policy any-any | "✅ Nenhuma regra vulnerável encontrada" | Não exibido |
-| 1+ policies any-any | "❌ N regra(s) encontrada(s)" + lista | Exibido com detalhes |
+---
+
+## Arquivos Modificados
+
+- `src/pages/firewall/FirewallReportsPage.tsx`
+
+## Complexidade
+
+- Baixa - Correção pontual de dependências de useEffect
+
