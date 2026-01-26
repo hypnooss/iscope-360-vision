@@ -16,7 +16,7 @@ interface AnalysisHistoryItem {
   score: number;
   created_at: string;
   firewall_id: string;
-  report_data: any;
+  report_data?: any; // Carregado sob demanda
   firewalls?: {
     name: string;
     serial_number: string | null;
@@ -34,6 +34,7 @@ export default function ReportsPage() {
   const navigate = useNavigate();
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
   
   // Filter states
   const [selectedClient, setSelectedClient] = useState<string>('all');
@@ -55,10 +56,10 @@ export default function ReportsPage() {
 
   const fetchHistory = async () => {
     try {
-      // Fetch analysis history
+      // Fetch analysis history - SEM report_data para performance (carregado sob demanda)
       const { data: historyData, error: historyError } = await supabase
         .from('analysis_history')
-        .select('id, score, created_at, firewall_id, report_data')
+        .select('id, score, created_at, firewall_id')
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -146,22 +147,55 @@ export default function ReportsPage() {
     }
   }, [selectedClient, availableFirewalls, selectedFirewall]);
 
-  const handleView = (item: AnalysisHistoryItem) => {
-    navigate(`/firewalls/${item.firewall_id}/analysis`, {
-      state: { report: item.report_data },
-    });
+  // Carregar report_data sob demanda
+  const fetchReportData = async (analysisId: string): Promise<any | null> => {
+    const { data, error } = await supabase
+      .from('analysis_history')
+      .select('report_data')
+      .eq('id', analysisId)
+      .maybeSingle();
+    
+    if (error || !data) {
+      toast.error('Erro ao carregar dados do relatório');
+      return null;
+    }
+    return data.report_data;
+  };
+
+  const handleView = async (item: AnalysisHistoryItem) => {
+    setLoadingReportId(item.id);
+    try {
+      let reportData = item.report_data;
+      if (!reportData) {
+        reportData = await fetchReportData(item.id);
+        if (!reportData) return;
+      }
+      navigate(`/firewalls/${item.firewall_id}/analysis`, {
+        state: { report: reportData },
+      });
+    } finally {
+      setLoadingReportId(null);
+    }
   };
 
   const handleExportPDF = async (item: AnalysisHistoryItem) => {
+    setLoadingReportId(item.id);
     try {
+      let reportData = item.report_data;
+      if (!reportData) {
+        reportData = await fetchReportData(item.id);
+        if (!reportData) return;
+      }
       const { exportReportToPDF } = await import('@/utils/pdfExport');
       exportReportToPDF({
-        ...item.report_data,
+        ...reportData,
         generatedAt: new Date(item.created_at),
       });
       toast.success('PDF exportado com sucesso!');
     } catch (error: any) {
       toast.error('Erro ao exportar PDF: ' + error.message);
+    } finally {
+      setLoadingReportId(null);
     }
   };
 
@@ -282,7 +316,7 @@ export default function ReportsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {item.report_data?.passed || 0}/{item.report_data?.totalChecks || 0} aprovados
+                        -
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
@@ -291,16 +325,26 @@ export default function ReportsPage() {
                             size="icon"
                             onClick={() => handleView(item)}
                             title="Ver relatório"
+                            disabled={loadingReportId === item.id}
                           >
-                            <Eye className="w-4 h-4" />
+                            {loadingReportId === item.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => handleExportPDF(item)}
                             title="Exportar PDF"
+                            disabled={loadingReportId === item.id}
                           >
-                            <Download className="w-4 h-4" />
+                            {loadingReportId === item.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>
