@@ -779,6 +779,118 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
+ * Format Interface Security evidence for int-001 (HTTP), int-002 (HTTPS), int-003 (SSH), int-004 (SNMP), int-005 (Ping)
+ * These rules check for insecure protocols on WAN interfaces
+ */
+function formatInterfaceSecurityEvidence(
+  rawData: Record<string, unknown>,
+  ruleCode: string
+): { evidence: EvidenceItem[], vulnerableInterfaces: Array<Record<string, unknown>>, status: 'pass' | 'fail' | 'warn' } {
+  const evidence: EvidenceItem[] = [];
+  const vulnerableInterfaces: Array<Record<string, unknown>> = [];
+  
+  try {
+    // Map rule code to protocol being checked
+    const protocolMap: Record<string, { protocol: string, protocolLabel: string }> = {
+      'int-001': { protocol: 'http', protocolLabel: 'HTTP' },
+      'int-002': { protocol: 'https', protocolLabel: 'HTTPS' },
+      'int-003': { protocol: 'ssh', protocolLabel: 'SSH' },
+      'int-004': { protocol: 'snmp', protocolLabel: 'SNMP' },
+      'int-005': { protocol: 'ping', protocolLabel: 'ICMP Ping' }
+    };
+    
+    const config = protocolMap[ruleCode];
+    if (!config) {
+      evidence.push({ label: 'Erro', value: `Regra ${ruleCode} não mapeada`, type: 'text' });
+      return { evidence, vulnerableInterfaces, status: 'pass' };
+    }
+    
+    // Get interfaces list
+    const interfaceData = rawData['system_interface'] as Record<string, unknown> | undefined;
+    const interfaces = ((interfaceData?.results || []) as Array<Record<string, unknown>>);
+    
+    if (!interfaces.length) {
+      evidence.push({ label: 'Status', value: 'Nenhuma interface encontrada', type: 'text' });
+      return { evidence, vulnerableInterfaces, status: 'pass' };
+    }
+    
+    // Analyze interfaces
+    for (const iface of interfaces) {
+      const role = String(iface.role || '').toLowerCase();
+      const name = String(iface.name || '');
+      const allowaccess = String(iface.allowaccess || '').toLowerCase();
+      
+      // Check if it's a WAN or SD-WAN interface
+      const isWan = role === 'wan' || role === 'sd-wan' || 
+                    role.includes('wan') || 
+                    name.toLowerCase().includes('wan') ||
+                    name.toLowerCase().includes('sdwan') ||
+                    name.toLowerCase() === 'virtual-wan-link';
+      
+      if (!isWan) continue;
+      
+      // For int-001 (HTTP), check if 'http' is present but NOT as part of 'https'
+      // For other rules, check if the protocol is present
+      let hasProtocol = false;
+      
+      if (ruleCode === 'int-001') {
+        // HTTP: verify 'http' without being 'https'
+        const protocols = allowaccess.split(/\s+/);
+        hasProtocol = protocols.some(p => p === 'http');
+      } else {
+        hasProtocol = allowaccess.includes(config.protocol);
+      }
+      
+      if (hasProtocol) {
+        vulnerableInterfaces.push(iface);
+      }
+    }
+    
+    // Generate evidence
+    if (vulnerableInterfaces.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: `✅ Nenhuma interface WAN com ${config.protocolLabel} habilitado`,
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `❌ ${vulnerableInterfaces.length} interface(s) WAN com ${config.protocolLabel} habilitado`,
+        type: 'text'
+      });
+      
+      // Show interface names (max 5)
+      for (const iface of vulnerableInterfaces.slice(0, 5)) {
+        const ifaceName = iface.name || 'N/A';
+        const ifaceAllowaccess = iface.allowaccess || '';
+        evidence.push({
+          label: String(ifaceName),
+          value: `allowaccess: ${ifaceAllowaccess}`,
+          type: 'code'
+        });
+      }
+      
+      if (vulnerableInterfaces.length > 5) {
+        evidence.push({
+          label: 'Aviso',
+          value: `... e mais ${vulnerableInterfaces.length - 5} interface(s)`,
+          type: 'text'
+        });
+      }
+    }
+    
+    const status = vulnerableInterfaces.length > 0 ? 'fail' : 'pass';
+    return { evidence, vulnerableInterfaces, status };
+    
+  } catch (e) {
+    console.error('Error formatting Interface Security evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+    return { evidence, vulnerableInterfaces, status: 'pass' };
+  }
+}
+
+/**
  * Format Security Policy evidence for sec-001 (Strong Crypto), sec-002 (2FA), sec-003 (Session Timeout)
  * These rules evaluate global FortiGate security settings
  */
@@ -1418,7 +1530,8 @@ function processComplianceRules(
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
-    let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
+let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
+    let intResult: { evidence: EvidenceItem[], vulnerableInterfaces: Array<Record<string, unknown>>, status: 'pass' | 'fail' | 'warn' } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
     if (rule.code === 'lic-001') {
@@ -1511,7 +1624,17 @@ function processComplianceRules(
           } else if (status === 'unknown') {
             details = 'Não foi possível verificar - dados indisponíveis';
           }
-        }
+      }
+    }
+    } else if (rule.code.startsWith('int-')) {
+      // Interface Security rules (int-001, int-002, int-003, int-004, int-005)
+      intResult = formatInterfaceSecurityEvidence(rawData, rule.code);
+      evidence = intResult.evidence;
+      status = intResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Nenhuma interface WAN com protocolo inseguro';
+      } else {
+        details = rule.fail_description || `${intResult.vulnerableInterfaces.length} interface(s) vulnerável(is)`;
       }
     } else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
@@ -1656,11 +1779,20 @@ function processComplianceRules(
       if (data) {
         checkRawData[sourceKey] = data;
       }
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound, VPN, UTM, sec-*, net-003, ha-003), incluir dados brutos genéricos
+    } else if (rule.code.startsWith('int-') && intResult && intResult.vulnerableInterfaces.length > 0) {
+      // Para regras de interface, só incluir rawData quando há interfaces vulneráveis
+      checkRawData = {
+        interfaces_vulneraveis: intResult.vulnerableInterfaces.map(i => ({
+          name: i.name,
+          role: i.role,
+          allowaccess: i.allowaccess
+        }))
+      };
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-*, utm-*, sec-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou dados relevantes (tratado acima)
+    // Nota: regras inb-*, utm-*, sec-*, int-*, net-003 e ha-003 só têm rawData quando há políticas/interfaces vulneráveis ou dados relevantes (tratado acima)
     
     checks.push({
       id: rule.code,
