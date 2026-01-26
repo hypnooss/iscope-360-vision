@@ -480,8 +480,8 @@ function formatLoggingEvidence(rawData: Record<string, unknown>, ruleCode: strin
   
   try {
     if (ruleCode === 'log-001') {
-      // General log settings
-      const logData = rawData['log_settings'] as Record<string, unknown> | undefined;
+      // General log settings - source_key is 'log_setting' (singular)
+      const logData = rawData['log_setting'] as Record<string, unknown> | undefined;
       if (!logData) {
         return [{ label: 'Logging', value: 'Dados não disponíveis', type: 'text' }];
       }
@@ -489,9 +489,32 @@ function formatLoggingEvidence(rawData: Record<string, unknown>, ruleCode: strin
       const results = logData.results as Record<string, unknown> || logData;
       const logInvalidPacket = results['log-invalid-packet'] as string || 'disable';
       const resolveIp = results['resolve-ip'] as string || 'disable';
+      const localInAllow = results['local-in-allow'] as string || 'disable';
+      const fwpolicyImplicitLog = results['fwpolicy-implicit-log'] as string || 'disable';
       
-      evidence.push({ label: 'log-invalid-packet', value: logInvalidPacket, type: 'code' });
-      evidence.push({ label: 'resolve-ip', value: resolveIp, type: 'code' });
+      // Mostrar status de logging com ícones
+      const anyEnabled = logInvalidPacket === 'enable' || resolveIp === 'enable';
+      
+      evidence.push({
+        label: 'Status',
+        value: anyEnabled ? '✅ Logging habilitado' : '⚠️ Logging limitado',
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Log de Pacotes Inválidos',
+        value: logInvalidPacket === 'enable' ? '✅ Habilitado' : '❌ Desabilitado',
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Resolver IP',
+        value: resolveIp === 'enable' ? '✅ Habilitado' : '❌ Desabilitado',
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Log Implícito de Políticas',
+        value: fwpolicyImplicitLog === 'enable' ? '✅ Habilitado' : '❌ Desabilitado',
+        type: 'text'
+      });
     }
     else if (ruleCode === 'log-002') {
       // Log forwarding (FortiAnalyzer/FortiCloud)
@@ -1292,6 +1315,22 @@ function processComplianceRules(
       const haData = rawData['system_ha'];
       if (haData) {
         checkRawData = { system_ha: haData };
+      }
+    } else if (rule.code === 'log-001') {
+      // Para log-001, incluir configurações de log relevantes
+      const logData = rawData['log_setting'] as Record<string, unknown> | undefined;
+      if (logData) {
+        const results = logData.results as Record<string, unknown> || logData;
+        checkRawData = {
+          log_setting: {
+            'log-invalid-packet': results['log-invalid-packet'],
+            'resolve-ip': results['resolve-ip'],
+            'fwpolicy-implicit-log': results['fwpolicy-implicit-log'],
+            'local-in-allow': results['local-in-allow'],
+            'local-out': results['local-out'],
+            'daemon-log': results['daemon-log']
+          }
+        };
       }
     } else if (rule.code === 'log-002') {
       // Para log-002, incluir dados de FortiAnalyzer e FortiCloud
