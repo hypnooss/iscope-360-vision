@@ -57,11 +57,11 @@ interface AgentTask {
   target_type: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
   priority: number;
-  payload: Json;
-  result: Json;
+  payload?: Json;       // Carregado sob demanda
+  result?: Json;        // Carregado sob demanda
   error_message: string | null;
   execution_time_ms: number | null;
-  step_results: Json;
+  step_results?: Json;  // Carregado sob demanda
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -92,6 +92,7 @@ export default function TaskExecutionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   // Calculate time filter
   const getTimeFilterDate = () => {
@@ -116,9 +117,25 @@ export default function TaskExecutionsPage() {
     queryFn: async () => {
       const startTime = getTimeFilterDate();
       
+      // Query otimizada: exclui campos pesados (result, step_results, payload)
       let query = supabase
         .from('agent_tasks')
-        .select('*')
+        .select(`
+          id,
+          agent_id,
+          task_type,
+          target_id,
+          target_type,
+          status,
+          priority,
+          error_message,
+          execution_time_ms,
+          created_at,
+          started_at,
+          completed_at,
+          expires_at,
+          timeout_at
+        `)
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
@@ -232,9 +249,27 @@ export default function TaskExecutionsPage() {
     return `${(ms / 60000).toFixed(1)}m`;
   };
 
-  const openDetails = (task: AgentTask) => {
+  const openDetails = async (task: AgentTask) => {
     setSelectedTask(task);
     setDetailsOpen(true);
+    
+    // Carregar dados pesados sob demanda se ainda não carregados
+    if (!task.result && !task.payload) {
+      setLoadingDetails(true);
+      try {
+        const { data, error } = await supabase
+          .from('agent_tasks')
+          .select('result, step_results, payload')
+          .eq('id', task.id)
+          .maybeSingle();
+        
+        if (data && !error) {
+          setSelectedTask({ ...task, ...data });
+        }
+      } finally {
+        setLoadingDetails(false);
+      }
+    }
   };
 
   return (
@@ -469,6 +504,12 @@ export default function TaskExecutionsPage() {
             </DialogHeader>
             {selectedTask && (
               <div className="flex-1 overflow-y-auto space-y-6 pr-4">
+                {loadingDetails && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Carregando detalhes...</span>
+                  </div>
+                )}
                 {/* Basic Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
