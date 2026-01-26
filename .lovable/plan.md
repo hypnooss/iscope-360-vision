@@ -1,42 +1,44 @@
 
+# Plano: Centralizar Verticalmente os Stats Cards
 
-# Plano: Aumentar Padding do ScoreGauge
+## Problema Identificado
 
-## Diagnóstico
+O ScoreGauge agora tem um SVG maior (200px + 32px de margem para sombra = 232px), o que fez o card da esquerda ficar mais alto. O card da direita (Firewall Info + Stats) precisa ter seu conteúdo centralizado verticalmente para alinhar visualmente com o gauge.
 
-O código já foi atualizado com `p-3` (12px), mas a sombra ainda pode estar sendo cortada porque:
+## Solução
 
-1. O `drop-shadow` com blur de 10px pode se estender mais do que esperado devido à intensidade da cor
-2. Pode haver overflow no container pai (card) que está cortando a sombra
+Adicionar `justify-center` ao container flex do card da direita para centralizar verticalmente todo o conteúdo interno (Info do Firewall + Separador + Stats Cards).
 
-## Solução Proposta
+## Alteração Necessária
 
-Aumentar o padding de `p-3` (12px) para `p-4` (16px) e verificar se o container pai não tem `overflow: hidden`.
+**Arquivo:** `src/components/Dashboard.tsx`
 
-### Alteração 1: Aumentar padding
-
-**Arquivo:** `src/components/ScoreGauge.tsx`
-
-**Linha 49 - Atual:**
+**Linha 82 - Atual:**
 ```tsx
-<div className="relative inline-flex items-center justify-center p-3">
+<div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col">
 ```
 
-**Linha 49 - Proposto:**
+**Linha 82 - Proposto:**
 ```tsx
-<div className="relative inline-flex items-center justify-center p-4">
+<div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
 ```
 
-### Alteração 2: Verificar se o container pai tem overflow
+## Resultado Visual
 
-Precisamos verificar onde o `ScoreGauge` é usado e garantir que o container pai não tenha `overflow: hidden` aplicado. Provavelmente está em um `Card` no Dashboard.
+```text
+┌──────────────┬────────────────────────────────────────────────┐
+│              │                                                │
+│              │  ┌ FortiGate ┐  Nome: SAO-FW   FortiOS: v7.2  │
+│     55%      │  └───────────┘  URL: ...       Modelo: FGT40F │
+│   Risco Alto │                 Serial: ...    Uptime: 115d   │
+│              │  ────────────────────────────────────────────  │
+│              │  Verificações | Aprovadas | Falhas | Alertas  │
+│              │                                                │
+└──────────────┴────────────────────────────────────────────────┘
+```
 
-## Passos
+O conteúdo do card direito ficará centralizado verticalmente, alinhando-se com o centro do ScoreGauge.
 
-1. Aumentar padding de `p-3` para `p-4` no `ScoreGauge.tsx`
-2. Verificar e ajustar o componente pai (possivelmente no `Dashboard.tsx`) se necessário
+## Complexidade
 
-## Resultado Esperado
-
-Sombra/glow visível em 360° sem cortes em nenhum dos lados
-
+Mínima - Apenas adição de uma classe CSS (`justify-center`)
