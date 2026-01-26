@@ -27,6 +27,9 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
     return () => clearInterval(timer);
   }, [score]);
 
+  const shadowBlur = 16; // Extra space for the glow effect
+  const svgSize = size + shadowBlur * 2;
+  const center = svgSize / 2;
   const radius = (size - 20) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
@@ -46,12 +49,12 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
   };
 
   return (
-    <div className="relative inline-flex items-center justify-center p-3">
-      <svg width={size} height={size} className="transform -rotate-90">
+    <div className="relative inline-flex items-center justify-center">
+      <svg width={svgSize} height={svgSize} className="transform -rotate-90">
         {/* Background circle */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
           stroke="hsl(var(--muted))"
@@ -59,8 +62,8 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
         />
         {/* Progress circle */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
           stroke={getColor()}
