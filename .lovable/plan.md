@@ -1,64 +1,19 @@
 
 
-# Plano: Correção da Verificação de Versão de Firmware (fw-001)
+# Plano: Melhorias nas Evidências de Firmware + Correção do Exportar PDF
 
-## Resumo do Problema
+## Resumo das Solicitações
 
-Na categoria "Atualizações e Firmware", o check **Versão de Firmware** (`fw-001`) não está funcionando corretamente:
-
-| Sintoma | Causa |
-|---------|-------|
-| Dropdown não abre | Não há `evidence` sendo gerada (array vazio) |
-| Exibe "Valor: undefined" | O `evaluation_logic` busca em `results.version`, mas a versão está no nível raiz (`version`) |
-| Sem dados brutos | `rawData` está vazio porque `value` é `undefined` |
-
-### Análise dos Dados Coletados
-
-O endpoint `/api/v2/monitor/system/status` retorna a seguinte estrutura:
-
-```json
-{
-  "version": "v7.2.10",        // <-- Versão está aqui (nível raiz)
-  "serial": "FGT40FTK21045571",
-  "build": 1706,
-  "results": {
-    "hostname": "SAO-FW",
-    "model": "FGT40F",
-    "model_name": "FortiGate"
-    // version NÃO está dentro de results!
-  }
-}
-```
-
-A regra `fw-001` está configurada com:
-```json
-{
-  "source_key": "system_status",
-  "field_path": "results.version"  // <-- ERRADO! Deveria ser "version"
-}
-```
+1. **Melhorar exibição de evidências de "Versão do Firmware" (fw-001)**
+2. **Corrigir botão "Exportar PDF"** para ter layout similar à versão web
 
 ---
 
-## Alterações Necessárias
+## Parte 1: Implementar Formatador de Firmware (fw-001)
 
-### 1. Atualizar `evaluation_logic` da Regra no Banco de Dados
+O formatador `formatFirmwareEvidence` ainda não foi implementado na Edge Function. Esta é a causa raiz do dropdown não funcionar corretamente.
 
-Corrigir o `field_path` de `results.version` para `version`:
-
-```sql
-UPDATE compliance_rules 
-SET evaluation_logic = jsonb_set(
-  evaluation_logic,
-  '{field_path}',
-  '"version"'::jsonb
-)
-WHERE code = 'fw-001';
-```
-
-### 2. Criar Formatador `formatFirmwareEvidence`
-
-Nova funcao na Edge Function para formatar `fw-001`:
+### 1.1 Adicionar função `formatFirmwareEvidence` na Edge Function
 
 ```typescript
 function formatFirmwareEvidence(
@@ -71,11 +26,11 @@ function formatFirmwareEvidence(
     const systemStatus = rawData['system_status'] as Record<string, unknown> | undefined;
     
     if (!systemStatus) {
-      evidence.push({ label: 'Status', value: 'Dados nao disponiveis', type: 'text' });
+      evidence.push({ label: 'Status', value: 'Dados não disponíveis', type: 'text' });
       return { evidence, firmwareInfo, status: 'warn' };
     }
     
-    // Extrair versao do nivel raiz
+    // Extrair versão do nível raiz (não de results!)
     const version = systemStatus.version as string || '';
     const serial = systemStatus.serial as string || '';
     const build = systemStatus.build as number | string || '';
@@ -92,53 +47,16 @@ function formatFirmwareEvidence(
     firmwareInfo.hostname = hostname;
     firmwareInfo.model = model;
     
-    // Gerar evidencias amigaveis
     if (version) {
-      // Extrair versao limpa (ex: "v7.2.10" -> "7.2.10")
       const cleanVersion = version.replace(/^v/i, '');
       
-      evidence.push({
-        label: 'Versao do Firmware',
-        value: version,
-        type: 'code'
-      });
+      evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
+      if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
+      if (model) evidence.push({ label: 'Modelo', value: String(model), type: 'text' });
+      if (hostname) evidence.push({ label: 'Hostname', value: String(hostname), type: 'text' });
+      if (serial) evidence.push({ label: 'Serial', value: serial, type: 'code' });
       
-      if (build) {
-        evidence.push({
-          label: 'Build',
-          value: String(build),
-          type: 'text'
-        });
-      }
-      
-      if (model) {
-        evidence.push({
-          label: 'Modelo',
-          value: String(model),
-          type: 'text'
-        });
-      }
-      
-      if (hostname) {
-        evidence.push({
-          label: 'Hostname',
-          value: String(hostname),
-          type: 'text'
-        });
-      }
-      
-      if (serial) {
-        evidence.push({
-          label: 'Numero de Serie',
-          value: serial,
-          type: 'code'
-        });
-      }
-      
-      // Determinar status baseado na versao
-      // Versoes 7.2.x e 7.4.x sao consideradas atuais
-      // Versoes 7.0.x ou anteriores sao warning
-      // Versoes 6.x ou anteriores sao fail
+      // Avaliar versão
       const majorMinor = cleanVersion.match(/^(\d+)\.(\d+)/);
       let status: 'pass' | 'fail' | 'warn' = 'warn';
       
@@ -148,148 +66,216 @@ function formatFirmwareEvidence(
         
         if (major >= 7 && minor >= 2) {
           status = 'pass';
-          evidence.push({
-            label: 'Status',
-            value: '✅ Versao atual e suportada',
-            type: 'text'
-          });
+          evidence.push({ label: 'Avaliação', value: '✅ Versão atual e suportada', type: 'text' });
         } else if (major >= 7) {
           status = 'warn';
-          evidence.push({
-            label: 'Status',
-            value: '⚠️ Versao suportada, considerar atualizacao',
-            type: 'text'
-          });
+          evidence.push({ label: 'Avaliação', value: '⚠️ Considerar atualização', type: 'text' });
         } else {
           status = 'fail';
-          evidence.push({
-            label: 'Status',
-            value: '❌ Versao desatualizada - risco de seguranca',
-            type: 'text'
-          });
+          evidence.push({ label: 'Avaliação', value: '❌ Versão desatualizada', type: 'text' });
         }
       }
       
       return { evidence, firmwareInfo, status };
     } else {
-      evidence.push({ label: 'Status', value: '⚠️ Versao nao identificada', type: 'text' });
+      evidence.push({ label: 'Status', value: '⚠️ Versão não identificada', type: 'text' });
       return { evidence, firmwareInfo, status: 'warn' };
     }
-    
   } catch (e) {
     console.error('Error formatting firmware evidence:', e);
-    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+    evidence.push({ label: 'Erro', value: 'Falha ao processar', type: 'text' });
     return { evidence, firmwareInfo, status: 'warn' };
   }
 }
 ```
 
-### 3. Integrar Formatador no Processamento
+### 1.2 Integrar no processamento de regras
 
-Adicionar branch no switch de regras (apos `int-*`, antes do fallback generico):
+Adicionar tratamento específico para `fw-001` no switch de regras da função `processComplianceRules`.
+
+---
+
+## Parte 2: Correção do Exportar PDF
+
+O PDF atual usa `jsPDF` com `autoTable` para gerar tabelas simples. Para se aproximar do layout web, precisamos:
+
+### 2.1 Melhorias no Header do PDF
+
+| Atual | Proposto |
+|-------|----------|
+| Título "FortiGate Compliance Report" | Título dinâmico: "Relatório de Compliance - [Nome do Firewall]" |
+| Sem info do dispositivo | Incluir bloco com: Nome, URL, Modelo, Serial, Firmware, Uptime |
+
+### 2.2 Melhorias no Score Visual
+
+| Atual | Proposto |
+|-------|----------|
+| Círculo simples com % | Manter círculo + adicionar rótulo de risco (EXCELENTE, BOM, etc) - já implementado |
+
+### 2.3 Melhorias nas Categorias
+
+| Atual | Proposto |
+|-------|----------|
+| Tabela simples com Status/Verificação/Severidade/Detalhes | Adicionar **Evidências** nas linhas quando disponíveis |
+
+### 2.4 Alterações no `pdfExport.ts`
+
+#### 2.4.1 Adicionar parâmetros de dispositivo
 
 ```typescript
-} else if (rule.code === 'fw-001') {
-  // Firmware Version rule
-  fwResult = formatFirmwareEvidence(rawData);
-  evidence = fwResult.evidence;
-  status = fwResult.status;
-  if (status === 'pass') {
-    details = rule.pass_description || 'Firmware na versao recomendada';
-  } else if (status === 'fail') {
-    details = rule.fail_description || 'Firmware desatualizado';
-  } else {
-    details = 'Versao de firmware requer verificacao';
+export function exportReportToPDF(
+  report: ComplianceReport,
+  deviceInfo?: {
+    name?: string;
+    url?: string;
+    vendor?: string;
   }
+) {
+  // ... usar deviceInfo no header
 }
 ```
 
-### 4. Controlar Raw Data para fw-001
-
-Adicionar tratamento de rawData para a regra:
+#### 2.4.2 Adicionar bloco de informações do dispositivo (após header)
 
 ```typescript
-} else if (rule.code === 'fw-001' && fwResult) {
-  // Para fw-001, incluir dados de firmware resumidos
-  checkRawData = {
-    firmware_info: fwResult.firmwareInfo
-  };
+// Device Info Block
+if (deviceInfo?.name || report.systemInfo?.hostname) {
+  yPos += 10;
+  doc.setFillColor(245, 248, 255);
+  doc.roundedRect(14, yPos - 3, pageWidth - 28, 28, 3, 3, 'F');
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(60, 60, 60);
+  
+  // Nome do dispositivo
+  doc.text(`Dispositivo: ${deviceInfo?.name || report.systemInfo?.hostname || 'N/A'}`, 20, yPos + 5);
+  
+  // Modelo e Serial na mesma linha
+  const modelSerial = `Modelo: ${report.systemInfo?.model || 'N/A'} | Serial: ${report.systemInfo?.serial || 'N/A'}`;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(modelSerial, 20, yPos + 12);
+  
+  // Firmware e Uptime
+  const fwUptime = `Firmware: ${report.firmwareVersion || 'N/A'} | Uptime: ${report.systemInfo?.uptime || 'N/A'}`;
+  doc.text(fwUptime, 20, yPos + 19);
+  
+  yPos += 32;
 }
 ```
 
-### 5. Declarar Variavel `fwResult`
+#### 2.4.3 Incluir evidências nas tabelas de categorias
 
-Adicionar declaracao junto com as outras variaveis de resultado:
+Para cada categoria, ao invés de apenas mostrar "Detalhes" truncado, expandir para mostrar evidências quando relevantes:
 
 ```typescript
-let fwResult: { evidence: EvidenceItem[], firmwareInfo: Record<string, unknown>, status: 'pass' | 'fail' | 'warn' } | null = null;
+const checksData = category.checks.map(check => {
+  let detailsText = check.details || '-';
+  
+  // Incluir resumo das evidências quando disponíveis
+  if (check.evidence && check.evidence.length > 0) {
+    const evidenceSummary = check.evidence
+      .slice(0, 3) // Máximo 3 itens
+      .map(e => `${e.label}: ${e.value}`)
+      .join(' | ');
+    
+    if (evidenceSummary.length > 0 && evidenceSummary.length < 200) {
+      detailsText = evidenceSummary;
+    }
+  }
+  
+  return [
+    getStatusText(check.status),
+    check.name,
+    getSeverityText(check.severity),
+    sanitizeForPDF(detailsText).substring(0, 100) + (detailsText.length > 100 ? '...' : '')
+  ];
+});
+```
+
+#### 2.4.4 Atualizar Dashboard.tsx para passar deviceInfo
+
+```typescript
+const handleExportPDF = () => {
+  try {
+    const reportWithCVEs = { ...report, cves: loadedCVEs };
+    exportReportToPDF(reportWithCVEs, {
+      name: firewallName,
+      url: firewallUrl,
+      vendor: deviceVendor
+    });
+    toast.success('PDF exportado com sucesso!');
+  } catch (error) {
+    console.error('Error exporting PDF:', error);
+    toast.error('Erro ao exportar PDF');
+  }
+};
 ```
 
 ---
 
-## Arquivos Modificados
+## Arquivos a Modificar
 
 1. **`supabase/functions/agent-task-result/index.ts`**
-   - Adicionar funcao `formatFirmwareEvidence`
-   - Integrar no switch de processamento de regras
-   - Adicionar tratamento de rawData para fw-001
-   - Declarar variavel `fwResult`
+   - Adicionar função `formatFirmwareEvidence`
+   - Integrar no processamento de `fw-001`
+   - Declarar variável `fwResult`
+   - Adicionar tratamento de rawData para `fw-001`
 
-2. **Banco de Dados (SQL via ferramenta de insercao)**
-   - Corrigir `field_path` de `results.version` para `version` na regra `fw-001`
+2. **`src/utils/pdfExport.ts`**
+   - Atualizar assinatura para aceitar `deviceInfo`
+   - Adicionar bloco de informações do dispositivo
+   - Melhorar exibição de evidências nas tabelas
+   - Ajustar título dinâmico
 
----
-
-## Resultado Esperado
-
-### Antes (Problema)
-```
-Versao de Firmware
-  [Dropdown nao abre]
-  Status: warning
-  Details: Valor: undefined
-  Evidence: (vazio)
-  RawData: (vazio)
-```
-
-### Depois (Corrigido)
-```
-Versao de Firmware
-  [Dropdown abre normalmente]
-  Status: pass (para v7.2.x+) ou warn/fail (versoes antigas)
-  Details: Firmware na versao recomendada
-  Evidence:
-    - Versao do Firmware: v7.2.10
-    - Build: 1706
-    - Modelo: FGT40F
-    - Hostname: SAO-FW
-    - Numero de Serie: FGT40FTK21045571
-    - Status: ✅ Versao atual e suportada
-  RawData:
-    {
-      "firmware_info": {
-        "version": "v7.2.10",
-        "build": 1706,
-        "model": "FGT40F",
-        "hostname": "SAO-FW",
-        "serial": "FGT40FTK21045571"
-      }
-    }
-```
+3. **`src/components/Dashboard.tsx`**
+   - Passar `deviceInfo` para `exportReportToPDF`
 
 ---
 
-## Logica de Avaliacao de Versao
+## Layout Comparativo
 
-| Versao | Status | Descricao |
-|--------|--------|-----------|
-| 7.2.x ou superior | pass | Versao atual e suportada |
-| 7.0.x ou 7.1.x | warn | Suportada, considerar atualizacao |
-| 6.x ou inferior | fail | Desatualizada, risco de seguranca |
+### Web (atual)
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Análise de Compliance                    [PDF] [Reanalisar]│
+│  Gerado em: 26/01/2026 ...                                  │
+├──────────────┬──────────────────────────────────────────────┤
+│   SCORE      │  ┌ ShieldCheck ┐  Nome: SAO-FW              │
+│    55%       │  │  FortiGate  │  FortiOS: v7.2.10          │
+│   ATENÇÃO    │  └─────────────┘  URL: https://...          │
+│              │                   Modelo: FGT40F             │
+│              │                   Serial: FGT40FTK...        │
+│              │                   Uptime: 2d 5h 30m          │
+│              ├──────────────────────────────────────────────┤
+│              │  Verificações: 45  ✓32  ✗8  ⚠5               │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+### PDF (proposto)
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│         Relatório de Compliance - SAO-FW                    │
+│         Gerado em: 26/01/2026 02:54:38                      │
+├──────────────────────────────────────────────────────────────
+│ Dispositivo: SAO-FW                                         │
+│ Modelo: FGT40F | Serial: FGT40FTK21045571                   │
+│ Firmware: v7.2.10 | Uptime: 2d 5h 30m                       │
+├─────────────┬─────────────────┬─────────────────────────────┤
+│  COMPLIANCE │  EXPOSIÇÃO AO   │  COBERTURA UTM              │
+│    GERAL    │     RISCO       │                             │
+│     55%     │  ● 2 Críticos   │  ● 3/5 UTM Completo         │
+│   ATENÇÃO   │  ● 3 Altos      │  ● 1/5 UTM Parcial          │
+│             │  ● 3 Médios     │  ● 1/5 Sem UTM              │
+└─────────────┴─────────────────┴─────────────────────────────┘
+```
 
 ---
 
 ## Complexidade
 
-Baixa - Criacao de formatador especializado seguindo padrao existente + correcao de field_path no banco
+Média - Implementação de formatador pendente + melhorias estruturais no PDF
 
