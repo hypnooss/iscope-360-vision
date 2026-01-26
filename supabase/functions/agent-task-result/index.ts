@@ -568,6 +568,91 @@ function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
 }
 
 /**
+ * Format HA Heartbeat evidence (ha-003)
+ * Only shows data when HA is actually configured (not standalone)
+ */
+function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  status: 'pass' | 'fail' | 'warn' | 'unknown',
+  skipRawData: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
+    if (!haData) {
+      return {
+        evidence: [{ label: 'HA', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown',
+        skipRawData: true
+      };
+    }
+
+    const results = haData.results as Record<string, unknown> || haData;
+    const mode = results.mode as string || 'standalone';
+
+    // Se HA não está configurado, não faz sentido verificar heartbeat
+    if (mode === 'standalone') {
+      evidence.push({
+        label: 'Status',
+        value: 'N/A - HA não configurado',
+        type: 'text'
+      });
+      return { evidence, status: 'unknown', skipRawData: true };
+    }
+
+    // HA está ativo - verificar heartbeat devices
+    const hbdev = results.hbdev as string | undefined;
+
+    if (!hbdev || hbdev === '' || hbdev === '""') {
+      evidence.push({
+        label: 'Status',
+        value: '❌ Nenhum link de heartbeat configurado',
+        type: 'text'
+      });
+      return { evidence, status: 'fail', skipRawData: false };
+    }
+
+    // Contar interfaces de heartbeat (separadas por espaço ou vírgula)
+    const interfaces = hbdev.split(/[\s,]+/).filter(Boolean);
+    const count = interfaces.length;
+
+    if (count >= 2) {
+      evidence.push({
+        label: 'Status',
+        value: `✅ ${count} links de heartbeat configurados`,
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Interfaces',
+        value: interfaces.join(', '),
+        type: 'code'
+      });
+      return { evidence, status: 'pass', skipRawData: false };
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `⚠️ Apenas 1 link de heartbeat (ponto de falha)`,
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Interface',
+        value: interfaces[0] || hbdev,
+        type: 'code'
+      });
+      return { evidence, status: 'warn', skipRawData: false };
+    }
+  } catch (e) {
+    console.error('Error formatting HA Heartbeat evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown',
+      skipRawData: true
+    };
+  }
+}
+
+/**
  * Format Backup evidence (bkp-001)
  * Uses automation stitch/trigger/action data to detect backup configuration
  */
@@ -900,6 +985,87 @@ function formatInboundRuleEvidence(
 }
 
 /**
+ * Format Any-to-Any rules evidence (net-003)
+ * Detects policies with srcaddr=all AND dstaddr=all
+ */
+function formatAnyToAnyEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  vulnerablePolicies: Array<Record<string, unknown>>
+} {
+  const evidence: EvidenceItem[] = [];
+  const vulnerablePolicies: Array<Record<string, unknown>> = [];
+
+  try {
+    const policyData = rawData['firewall_policy'] as Record<string, unknown> | undefined;
+    const policies = (policyData?.results || []) as Array<Record<string, unknown>>;
+
+    if (!policies.length) {
+      evidence.push({ label: 'Status', value: 'Nenhuma política encontrada', type: 'text' });
+      return { evidence, vulnerablePolicies };
+    }
+
+    // Verificar cada policy para any-to-any
+    for (const policy of policies) {
+      const srcaddr = policy.srcaddr as Array<Record<string, unknown>> | undefined;
+      const dstaddr = policy.dstaddr as Array<Record<string, unknown>> | undefined;
+
+      const hasAllSrc = (srcaddr || []).some(
+        addr => String(addr.name || addr.q_origin_key || '').toLowerCase() === 'all'
+      );
+      const hasAllDst = (dstaddr || []).some(
+        addr => String(addr.name || addr.q_origin_key || '').toLowerCase() === 'all'
+      );
+
+      if (hasAllSrc && hasAllDst) {
+        vulnerablePolicies.push(policy);
+      }
+    }
+
+    // Gerar evidências
+    if (vulnerablePolicies.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: '✅ Nenhuma regra vulnerável encontrada',
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `❌ ${vulnerablePolicies.length} regra(s) any-any encontrada(s)`,
+        type: 'text'
+      });
+
+      // Detalhar até 5 policies
+      for (const policy of vulnerablePolicies.slice(0, 5)) {
+        const policyId = policy.policyid || policy.id || 'N/A';
+        const policyName = policy.name || `Policy ${policyId}`;
+        const action = policy.action || 'N/A';
+        const statusIcon = policy.status === 'enable' ? '🟢' : '🔴';
+
+        evidence.push({
+          label: `Regra ${policyId}`,
+          value: `${statusIcon} ${policyName} (${String(action).toUpperCase()})`,
+          type: 'text'
+        });
+      }
+
+      if (vulnerablePolicies.length > 5) {
+        evidence.push({
+          label: 'Aviso',
+          value: `... e mais ${vulnerablePolicies.length - 5} regra(s)`,
+          type: 'text'
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Error formatting Any-to-Any evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+
+  return { evidence, vulnerablePolicies };
+}
+
+/**
  * Format generic evidence with truncation for large objects
  */
 function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[] {
@@ -989,6 +1155,8 @@ function processComplianceRules(
     // Gerar evidências usando formatadores especializados baseados no código da regra
     let evidence: EvidenceItem[] = [];
     let inboundResult: { evidence: EvidenceItem[], relevantPolicies: Array<Record<string, unknown>> } | null = null;
+    let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
+    let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
     if (rule.code === 'lic-001') {
@@ -1009,6 +1177,17 @@ function processComplianceRules(
         status = 'pass';
         details = rule.pass_description || 'Nenhuma regra vulnerável encontrada';
       }
+    } else if (rule.code === 'net-003') {
+      // Regras Any-to-Any
+      anyToAnyResult = formatAnyToAnyEvidence(rawData);
+      evidence = anyToAnyResult.evidence;
+      if (anyToAnyResult.vulnerablePolicies.length > 0) {
+        status = 'fail';
+        details = rule.fail_description || `${anyToAnyResult.vulnerablePolicies.length} regra(s) any-any detectada(s)`;
+      } else {
+        status = 'pass';
+        details = rule.pass_description || 'Nenhuma regra any-any encontrada';
+      }
     } else if (rule.code.startsWith('vpn-')) {
       // VPN rules
       evidence = formatVPNEvidence(rawData, rule.code);
@@ -1018,6 +1197,20 @@ function processComplianceRules(
     } else if (rule.code === 'ha-001') {
       // High Availability
       evidence = formatHAEvidence(rawData);
+    } else if (rule.code === 'ha-003') {
+      // HA Heartbeat - verificar apenas se HA está configurado
+      haHeartbeatResult = formatHAHeartbeatEvidence(rawData);
+      evidence = haHeartbeatResult.evidence;
+      status = haHeartbeatResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Múltiplos links de heartbeat configurados';
+      } else if (status === 'fail') {
+        details = rule.fail_description || 'Nenhum link de heartbeat configurado';
+      } else if (status === 'warn') {
+        details = 'Apenas 1 link de heartbeat configurado (ponto único de falha)';
+      } else {
+        details = 'HA não configurado';
+      }
     } else if (rule.code === 'bkp-001') {
       // Backup - uses specialized formatter that returns status
       const backupResult = formatBackupEvidence(rawData);
@@ -1066,6 +1259,25 @@ function processComplianceRules(
           status: p.status
         }))
       };
+    } else if (rule.code === 'net-003' && anyToAnyResult && anyToAnyResult.vulnerablePolicies.length > 0) {
+      // Para net-003, só incluir rawData quando há policies any-any
+      checkRawData = {
+        policies_any_any: anyToAnyResult.vulnerablePolicies.map(p => ({
+          policyid: p.policyid,
+          name: p.name,
+          srcaddr: p.srcaddr,
+          dstaddr: p.dstaddr,
+          service: p.service,
+          action: p.action,
+          status: p.status
+        }))
+      };
+    } else if (rule.code === 'ha-003' && haHeartbeatResult && !haHeartbeatResult.skipRawData) {
+      // Para ha-003, incluir dados de HA apenas quando HA está configurado
+      const haData = rawData['system_ha'];
+      if (haData) {
+        checkRawData = { system_ha: haData };
+      }
     } else if (rule.code.startsWith('vpn-')) {
       // Para regras VPN, incluir dados específicos e resumidos
       if (rule.code === 'vpn-001') {
@@ -1096,11 +1308,11 @@ function processComplianceRules(
           };
         }
       }
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound e VPN), incluir dados brutos genéricos
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-* só têm rawData quando há políticas vulneráveis (tratado acima)
+    // Nota: regras inb-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou HA configurado (tratado acima)
     
     checks.push({
       id: rule.code,
