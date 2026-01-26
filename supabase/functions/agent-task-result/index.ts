@@ -779,8 +779,13 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
- * Format UTM Security Profile evidence - checks for policies with WAN/SD-WAN destination
+ * Format UTM Security Profile evidence - checks for policies with WAN/SD-WAN interfaces
  * without the corresponding security profile (av-profile, webfilter-profile, etc.)
+ * 
+ * Logic:
+ * - utm-001 (IPS/IDS): checks SOURCE interface is WAN (inbound traffic)
+ * - utm-004, utm-007, utm-009: check DESTINATION interface is WAN (outbound traffic)
+ * - All rules only evaluate policies with action = ACCEPT
  */
 function formatUTMSecurityProfileEvidence(
   rawData: Record<string, unknown>,
@@ -790,12 +795,12 @@ function formatUTMSecurityProfileEvidence(
   const vulnerablePolicies: Array<Record<string, unknown>> = [];
   
   try {
-    // Map rule code to corresponding profile field
-    const profileFieldMap: Record<string, { field: string, profileName: string }> = {
-      'utm-009': { field: 'av-profile', profileName: 'Antivirus' },
-      'utm-007': { field: 'application-list', profileName: 'Application Control' },
-      'utm-004': { field: 'webfilter-profile', profileName: 'Web Filter' },
-      'utm-001': { field: 'ips-sensor', profileName: 'IPS/IDS' }
+    // Map rule code to corresponding profile field and interface direction
+    const profileFieldMap: Record<string, { field: string, profileName: string, checkSource: boolean }> = {
+      'utm-009': { field: 'av-profile', profileName: 'Antivirus', checkSource: false },        // Destino WAN
+      'utm-007': { field: 'application-list', profileName: 'Application Control', checkSource: false }, // Destino WAN  
+      'utm-004': { field: 'webfilter-profile', profileName: 'Web Filter', checkSource: false }, // Destino WAN
+      'utm-001': { field: 'ips-sensor', profileName: 'IPS/IDS', checkSource: true }            // Origem WAN (inbound)
     };
     
     const profileConfig = profileFieldMap[ruleCode];
@@ -804,7 +809,7 @@ function formatUTMSecurityProfileEvidence(
       return { evidence, vulnerablePolicies };
     }
     
-    const { field: profileField, profileName } = profileConfig;
+    const { field: profileField, profileName, checkSource } = profileConfig;
     
     // Get firewall policies and interfaces
     const policyData = rawData['firewall_policy'] as Record<string, unknown> | undefined;
@@ -818,20 +823,31 @@ function formatUTMSecurityProfileEvidence(
       return { evidence, vulnerablePolicies };
     }
     
-    // Analyze policies with WAN/SD-WAN as DESTINATION without the security profile
+    // Analyze policies
     for (const policy of policies) {
       // Skip disabled policies
       if (policy.status === 'disable') continue;
       
-      // Check if DESTINATION interface is WAN/SD-WAN
-      const dstintf = policy.dstintf as Array<Record<string, unknown>> | undefined;
-      const dstintfNames = (dstintf || []).map(i => String(i.name || i.q_origin_key || ''));
+      // Skip policies where action is not ACCEPT
+      const action = String(policy.action || '').toLowerCase();
+      if (action !== 'accept') continue;
       
-      const isDestinationWan = dstintfNames.some(name => 
-        isWanInterface(name, interfaces)
-      );
+      // Check interface based on rule type
+      let hasWanInterface = false;
       
-      if (!isDestinationWan) continue; // Skip non-WAN destination policies
+      if (checkSource) {
+        // For IPS/IDS (utm-001): check SOURCE interface is WAN/SD-WAN
+        const srcintf = policy.srcintf as Array<Record<string, unknown>> | undefined;
+        const srcintfNames = (srcintf || []).map(i => String(i.name || i.q_origin_key || ''));
+        hasWanInterface = srcintfNames.some(name => isWanInterface(name, interfaces));
+      } else {
+        // For AV, AppCtrl, WebFilter: check DESTINATION interface is WAN/SD-WAN
+        const dstintf = policy.dstintf as Array<Record<string, unknown>> | undefined;
+        const dstintfNames = (dstintf || []).map(i => String(i.name || i.q_origin_key || ''));
+        hasWanInterface = dstintfNames.some(name => isWanInterface(name, interfaces));
+      }
+      
+      if (!hasWanInterface) continue; // Skip non-WAN interface policies
       
       // Check if the security profile is applied
       const profileValue = policy[profileField];
@@ -843,16 +859,18 @@ function formatUTMSecurityProfileEvidence(
     }
     
     // Generate evidence
+    const interfaceLabel = checkSource ? 'origem' : 'destino';
+    
     if (vulnerablePolicies.length === 0) {
       evidence.push({
         label: 'Status',
-        value: `✅ Todas as políticas com destino WAN possuem ${profileName}`,
+        value: `✅ Todas as políticas ACCEPT com ${interfaceLabel} WAN possuem ${profileName}`,
         type: 'text'
       });
     } else {
       evidence.push({
         label: 'Status',
-        value: `❌ ${vulnerablePolicies.length} política(s) sem ${profileName}`,
+        value: `❌ ${vulnerablePolicies.length} política(s) ACCEPT sem ${profileName}`,
         type: 'text'
       });
       
@@ -1505,11 +1523,16 @@ function processComplianceRules(
       }
     } else if (rule.code.startsWith('utm-') && utmResult && utmResult.vulnerablePolicies.length > 0) {
       // Para regras UTM, só incluir rawData quando há políticas sem perfil
+      // IPS/IDS (utm-001) usa srcintf; outros UTM usam dstintf
+      const checkSource = rule.code === 'utm-001';
       checkRawData = {
         policies_sem_perfil: utmResult.vulnerablePolicies.map(p => ({
           policyid: p.policyid,
           name: p.name,
-          dstintf: (p.dstintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key)
+          ...(checkSource 
+            ? { srcintf: (p.srcintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key) }
+            : { dstintf: (p.dstintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key) }
+          )
         }))
       };
     } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
