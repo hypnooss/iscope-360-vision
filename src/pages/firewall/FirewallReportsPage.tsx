@@ -45,7 +45,7 @@ interface GroupedFirewall {
 
 export default function FirewallReportsPage() {
   const { user, loading: authLoading } = useAuth();
-  const { hasModuleAccess } = useModules();
+  const { hasModuleAccess, loading: moduleLoading } = useModules();
   const navigate = useNavigate();
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,21 +60,23 @@ export default function FirewallReportsPage() {
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (authLoading || moduleLoading) return;
+    
+    if (!user) {
       navigate('/auth');
       return;
     }
     
-    if (!authLoading && user && !hasModuleAccess('scope_firewall')) {
+    if (!hasModuleAccess('scope_firewall')) {
       navigate('/modules');
     }
-  }, [user, authLoading, navigate, hasModuleAccess]);
+  }, [user, authLoading, moduleLoading, navigate, hasModuleAccess]);
 
   useEffect(() => {
-    if (user && hasModuleAccess('scope_firewall')) {
+    if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_firewall')) {
       fetchReports();
     }
-  }, [user]);
+  }, [user, authLoading, moduleLoading]);
 
   const fetchReports = async () => {
     try {
@@ -257,7 +259,15 @@ export default function FirewallReportsPage() {
     });
   };
 
-  if (authLoading) return null;
+  if (authLoading || moduleLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
