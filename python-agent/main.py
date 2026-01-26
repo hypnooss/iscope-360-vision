@@ -90,11 +90,24 @@ class AgentApp:
         # Processar tarefas pendentes se houver
         if result.get('has_pending_tasks'):
             self.logger.info("Tarefas pendentes detectadas. Processando...")
+            
+            # Garantir token válido ANTES de processar tarefas
+            # Tarefas podem levar vários minutos, então verificamos novamente
+            if not self.auth.is_access_token_valid():
+                self.logger.info("Token próximo de expirar, renovando antes de processar tarefas...")
+                self.auth.refresh_tokens()
+            
             try:
                 processed = self.task_executor.process_all()
                 self.logger.info(f"{processed} tarefas processadas")
-            except Exception as e:
-                self.logger.error(f"Erro ao processar tarefas: {e}")
+            except RuntimeError as e:
+                msg = str(e)
+                if "TOKEN_EXPIRED" in msg:
+                    # Token expirou durante execução - renovar e reportar erro
+                    self.logger.warning("Token expirou durante execução de tarefa")
+                    self.auth.refresh_tokens()
+                else:
+                    self.logger.error(f"Erro ao processar tarefas: {e}")
 
         return next_interval
 
