@@ -1,177 +1,173 @@
 
 
-# Plano: Correção do Filtro de Regras UTM Security Profiles
+# Plano: Melhorar Formatadores de Evidências para Políticas de Segurança
 
 ## Resumo do Problema
 
-As regras UTM estão analisando políticas incorretamente:
+Na categoria "Políticas de Segurança", três regras precisam de melhorias:
 
-1. **Falta filtro `action = ACCEPT`** em todas as regras UTM
-2. **utm-001 (IPS/IDS)** verifica interface de **destino** WAN, mas deveria verificar interface de **origem** WAN
-3. Nome de utm-001 contém "(Inbound)" que pode ser removido
+| Regra | Problema Identificado |
+|-------|----------------------|
+| **sec-002 (2FA)** | Exibe `results: []` - A API do FortiGate não retorna administradores devido a limitações de permissões do API token |
+| **sec-001 (Criptografia Forte)** | Exibe `results.strong-crypto enable` - Formato técnico pouco amigável |
+| **sec-003 (Timeout de Sessão)** | Exibe `results.admintimeout 5` - Formato técnico pouco amigável |
+
+---
+
+## Análise Técnica
+
+### sec-002 (Autenticação de Dois Fatores)
+
+**Causa raiz:** O endpoint `/api/v2/cmdb/system/admin` retorna `results: []` e `matched_count: 0` porque:
+- O API token FortiGate geralmente é gerado para um administrador específico
+- Por segurança, cada admin só pode ver suas próprias configurações, não de outros admins
+- Isso é uma limitação de segurança do FortiOS, não um bug
+
+**Solução:** 
+- Criar formatador especializado que reconheça quando `results` está vazio
+- Exibir mensagem informativa explicando a limitação
+- Ajustar status para "unknown" quando não há dados para avaliar
+
+### sec-001 (Criptografia Forte) e sec-003 (Timeout de Sessão)
+
+**Causa raiz:** Usam `formatGenericEvidence` que exibe o valor bruto sem formatação.
+
+**Solução:** Criar formatador especializado `formatSecurityPolicyEvidence` que:
+- Apresente as informações de forma clara e amigável
+- Use ícones de status (✅/❌) para indicar conformidade
+- Esconda raw data quando o valor já está claro nas evidências
 
 ---
 
 ## Alterações Necessárias
 
-### 1. Atualizar Nome da Regra no Banco de Dados
+### 1. Criar Formatador `formatSecurityPolicyEvidence`
 
-| Código | Nome Atual | Novo Nome |
-|--------|------------|-----------|
-| utm-001 | Security Profile - IPS/IDS (Inbound) | Security Profile - IPS/IDS |
-
-### 2. Modificar `formatUTMSecurityProfileEvidence` na Edge Function
-
-A função atual (linhas 785-886) precisa de duas correções:
-
-```text
-Alteração 1: Adicionar filtro action = ACCEPT
-- Antes: analisa todas as policies ativas (status != 'disable')
-- Depois: analisa apenas policies com action = 'accept'
-
-Alteração 2: IPS/IDS deve verificar origem (srcintf), não destino (dstintf)
-- utm-001: verificar srcintf (interface de ORIGEM é WAN/SD-WAN)
-- utm-004, utm-007, utm-009: manter verificação de dstintf (interface de DESTINO é WAN/SD-WAN)
-```
-
-### 3. Código Proposto (supabase/functions/agent-task-result/index.ts)
+Nova função na Edge Function para formatar sec-001, sec-002, sec-003:
 
 ```typescript
-function formatUTMSecurityProfileEvidence(
+function formatSecurityPolicyEvidence(
   rawData: Record<string, unknown>,
   ruleCode: string
-): { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } {
-  const evidence: EvidenceItem[] = [];
-  const vulnerablePolicies: Array<Record<string, unknown>> = [];
+): { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } {
   
-  try {
-    // Map rule code to corresponding profile field and interface direction
-    const profileFieldMap: Record<string, { field: string, profileName: string, checkSource: boolean }> = {
-      'utm-009': { field: 'av-profile', profileName: 'Antivirus', checkSource: false },        // Destino WAN
-      'utm-007': { field: 'application-list', profileName: 'Application Control', checkSource: false }, // Destino WAN  
-      'utm-004': { field: 'webfilter-profile', profileName: 'Web Filter', checkSource: false }, // Destino WAN
-      'utm-001': { field: 'ips-sensor', profileName: 'IPS/IDS', checkSource: true }            // Origem WAN (inbound)
-    };
+  if (ruleCode === 'sec-001') {
+    // Criptografia Forte
+    const globalData = rawData['system_global']?.results || rawData['system_global'];
+    const strongCrypto = globalData?.['strong-crypto'];
     
-    const profileConfig = profileFieldMap[ruleCode];
-    if (!profileConfig) {
-      evidence.push({ label: 'Erro', value: `Regra ${ruleCode} não mapeada`, type: 'text' });
-      return { evidence, vulnerablePolicies };
-    }
-    
-    const { field: profileField, profileName, checkSource } = profileConfig;
-    
-    // Get firewall policies and interfaces
-    const policyData = rawData['firewall_policy'] as Record<string, unknown> | undefined;
-    const interfaceData = rawData['system_interface'] as Record<string, unknown> | undefined;
-    
-    const policies = (policyData?.results || []) as Array<Record<string, unknown>>;
-    const interfaces = (interfaceData?.results || []) as Array<Record<string, unknown>>;
-    
-    if (!policies.length) {
-      evidence.push({ label: 'Status', value: 'Nenhuma política encontrada', type: 'text' });
-      return { evidence, vulnerablePolicies };
-    }
-    
-    // Analyze policies
-    for (const policy of policies) {
-      // Skip disabled policies
-      if (policy.status === 'disable') continue;
-      
-      // NOVO: Skip policies where action is not ACCEPT
-      const action = String(policy.action || '').toLowerCase();
-      if (action !== 'accept') continue;
-      
-      // Check interface based on rule type
-      let hasWanInterface = false;
-      
-      if (checkSource) {
-        // For IPS/IDS (utm-001): check SOURCE interface is WAN/SD-WAN
-        const srcintf = policy.srcintf as Array<Record<string, unknown>> | undefined;
-        const srcintfNames = (srcintf || []).map(i => String(i.name || i.q_origin_key || ''));
-        hasWanInterface = srcintfNames.some(name => isWanInterface(name, interfaces));
-      } else {
-        // For AV, AppCtrl, WebFilter: check DESTINATION interface is WAN/SD-WAN
-        const dstintf = policy.dstintf as Array<Record<string, unknown>> | undefined;
-        const dstintfNames = (dstintf || []).map(i => String(i.name || i.q_origin_key || ''));
-        hasWanInterface = dstintfNames.some(name => isWanInterface(name, interfaces));
-      }
-      
-      if (!hasWanInterface) continue; // Skip non-WAN interface policies
-      
-      // Check if the security profile is applied
-      const profileValue = policy[profileField];
-      const hasProfile = profileValue && String(profileValue).trim() !== '';
-      
-      if (!hasProfile) {
-        vulnerablePolicies.push(policy);
-      }
-    }
-    
-    // Generate evidence
-    const interfaceLabel = checkSource ? 'origem' : 'destino';
-    
-    if (vulnerablePolicies.length === 0) {
-      evidence.push({
-        label: 'Status',
-        value: `✅ Todas as políticas ACCEPT com ${interfaceLabel} WAN possuem ${profileName}`,
-        type: 'text'
-      });
+    if (strongCrypto === 'enable') {
+      return {
+        evidence: [{ label: 'Criptografia Forte', value: '✅ Habilitada', type: 'text' }],
+        status: 'pass',
+        skipRawData: true
+      };
     } else {
-      evidence.push({
-        label: 'Status',
-        value: `❌ ${vulnerablePolicies.length} política(s) ACCEPT sem ${profileName}`,
-        type: 'text'
-      });
-      
-      // Show details of problematic policies (max 5)
-      for (const policy of vulnerablePolicies.slice(0, 5)) {
-        const policyId = policy.policyid || policy.id || 'N/A';
-        const policyName = policy.name || `Policy ${policyId}`;
-        
-        evidence.push({
-          label: `Regra ${policyId}`,
-          value: String(policyName),
-          type: 'text'
-        });
-      }
-      
-      if (vulnerablePolicies.length > 5) {
-        evidence.push({
-          label: 'Aviso',
-          value: `... e mais ${vulnerablePolicies.length - 5} regra(s)`,
-          type: 'text'
-        });
-      }
+      return {
+        evidence: [{ label: 'Criptografia Forte', value: '❌ Desabilitada', type: 'text' }],
+        status: 'fail',
+        skipRawData: false
+      };
     }
-    
-  } catch (e) {
-    console.error('Error formatting UTM Security Profile evidence:', e);
-    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
   }
   
-  return { evidence, vulnerablePolicies };
+  if (ruleCode === 'sec-002') {
+    // Autenticação de Dois Fatores
+    const adminData = rawData['system_admin'];
+    const results = adminData?.results || [];
+    
+    if (results.length === 0) {
+      return {
+        evidence: [
+          { label: 'Status', value: '⚠️ Dados de administradores não disponíveis', type: 'text' },
+          { label: 'Motivo', value: 'API token sem permissão para listar administradores', type: 'text' },
+          { label: 'Ação Recomendada', value: 'Verifique manualmente no painel FortiGate', type: 'text' }
+        ],
+        status: 'unknown',
+        skipRawData: true
+      };
+    }
+    
+    // Verificar 2FA em cada admin
+    const adminsWithout2FA = results.filter(admin => 
+      admin['two-factor'] === 'disable' || !admin['two-factor']
+    );
+    
+    if (adminsWithout2FA.length === 0) {
+      return {
+        evidence: [{ label: 'Status', value: '✅ Todos os administradores com 2FA', type: 'text' }],
+        status: 'pass',
+        skipRawData: true
+      };
+    } else {
+      const evidence = [
+        { label: 'Status', value: `❌ ${adminsWithout2FA.length} admin(s) sem 2FA`, type: 'text' }
+      ];
+      for (const admin of adminsWithout2FA.slice(0, 5)) {
+        evidence.push({ label: 'Admin', value: admin.name || 'N/A', type: 'text' });
+      }
+      return { evidence, status: 'fail', skipRawData: false };
+    }
+  }
+  
+  if (ruleCode === 'sec-003') {
+    // Timeout de Sessão
+    const globalData = rawData['system_global']?.results || rawData['system_global'];
+    const timeout = globalData?.admintimeout;
+    
+    if (timeout !== undefined) {
+      const isCompliant = timeout <= 30;
+      return {
+        evidence: [
+          { label: 'Timeout de Sessão', value: `${timeout} minutos`, type: 'text' },
+          { label: 'Status', value: isCompliant ? '✅ Configuração adequada' : '⚠️ Timeout muito longo', type: 'text' }
+        ],
+        status: isCompliant ? 'pass' : 'warn',
+        skipRawData: true
+      };
+    }
+  }
+  
+  return { evidence: [], skipRawData: false };
 }
 ```
 
-### 4. Atualizar Exibição de Raw Data
+### 2. Integrar Formatador no Processamento
 
-Na seção de rawData (linha 1506-1514), incluir a interface correta baseada na regra:
+Adicionar branch no switch de regras (após linha ~1402):
 
 ```typescript
-} else if (rule.code.startsWith('utm-') && utmResult && utmResult.vulnerablePolicies.length > 0) {
-  const checkSource = rule.code === 'utm-001';
-  checkRawData = {
-    policies_sem_perfil: utmResult.vulnerablePolicies.map(p => ({
-      policyid: p.policyid,
-      name: p.name,
-      // Incluir srcintf para IPS/IDS, dstintf para outros
-      ...(checkSource 
-        ? { srcintf: (p.srcintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key) }
-        : { dstintf: (p.dstintf as Array<Record<string, unknown>> || []).map(i => i.name || i.q_origin_key) }
-      )
-    }))
-  };
+} else if (rule.code.startsWith('sec-')) {
+  // Security Policy rules (sec-001, sec-002, sec-003)
+  const secResult = formatSecurityPolicyEvidence(rawData, rule.code);
+  if (secResult.evidence.length > 0) {
+    evidence = secResult.evidence;
+    if (secResult.status) {
+      status = secResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Configuração de segurança adequada';
+      } else if (status === 'fail' || status === 'warn') {
+        details = rule.fail_description || 'Verificar configuração de segurança';
+      } else if (status === 'unknown') {
+        details = 'Não foi possível verificar - dados indisponíveis';
+      }
+    }
+  }
+}
+```
+
+### 3. Controlar Raw Data para Regras sec-*
+
+Adicionar lógica para suprimir rawData quando `skipRawData: true`:
+
+```typescript
+} else if (rule.code.startsWith('sec-') && secResult && !secResult.skipRawData) {
+  // Só incluir rawData se não foi suprimido
+  const sourceKey = logic.source_key || '';
+  const data = rawData[sourceKey];
+  if (data) {
+    checkRawData[sourceKey] = data;
+  }
 }
 ```
 
@@ -180,58 +176,62 @@ Na seção de rawData (linha 1506-1514), incluir a interface correta baseada na 
 ## Arquivos Modificados
 
 1. **`supabase/functions/agent-task-result/index.ts`**
-   - Modificar `formatUTMSecurityProfileEvidence` para:
-     - Adicionar filtro `action = accept`
-     - Verificar interface de origem (srcintf) para IPS/IDS
-     - Verificar interface de destino (dstintf) para AV/AppCtrl/WebFilter
-   - Atualizar rawData para incluir interface correta
-
-2. **Migração de Banco de Dados**
-   - Renomear utm-001 de "Security Profile - IPS/IDS (Inbound)" para "Security Profile - IPS/IDS"
+   - Adicionar função `formatSecurityPolicyEvidence`
+   - Integrar no switch de processamento de regras
+   - Controlar exibição de rawData
 
 ---
 
 ## Resultado Esperado
 
-### Antes (Problema)
+### sec-002 (Autenticação de Dois Fatores) - Antes
 ```
-Security Profile - Antivirus
-  Evidências: [JSON bruto]
-  Dados brutos: [JSON com todas as policies]
-```
-
-### Depois (Corrigido)
-
-Para regras sem problemas:
-```
-Security Profile - IPS/IDS
-  ✅ Todas as políticas ACCEPT com origem WAN possuem IPS/IDS
-  [Sem dados brutos exibidos]
+❌ Falha
+Evidências: []
+Dados brutos: {"results": []}
 ```
 
-Para regras com problemas:
+### sec-002 (Autenticação de Dois Fatores) - Depois
 ```
-Security Profile - Antivirus
-  ❌ 2 política(s) ACCEPT sem Antivirus
-  Regra 15: VPN-to-Internet
-  Regra 23: Guest-WiFi-Out
-  [Dados brutos apenas das políticas problemáticas]
+⚠️ Desconhecido
+  Status: ⚠️ Dados de administradores não disponíveis
+  Motivo: API token sem permissão para listar administradores
+  Ação Recomendada: Verifique manualmente no painel FortiGate
+[Sem dados brutos]
 ```
 
----
+### sec-001 (Criptografia Forte) - Antes
+```
+✅ Aprovado
+Evidências: results.strong-crypto enable
+Dados brutos: {"results.strong-crypto": "enable"}
+```
 
-## Lógica de Filtragem por Regra
+### sec-001 (Criptografia Forte) - Depois
+```
+✅ Aprovado
+  Criptografia Forte: ✅ Habilitada
+[Sem dados brutos]
+```
 
-| Regra | Filtro Action | Interface Verificada | Perfil Verificado |
-|-------|---------------|---------------------|-------------------|
-| utm-001 (IPS/IDS) | ACCEPT | srcintf (Origem WAN) | ips-sensor |
-| utm-004 (Web Filter) | ACCEPT | dstintf (Destino WAN) | webfilter-profile |
-| utm-007 (App Control) | ACCEPT | dstintf (Destino WAN) | application-list |
-| utm-009 (Antivirus) | ACCEPT | dstintf (Destino WAN) | av-profile |
+### sec-003 (Timeout de Sessão) - Antes
+```
+✅ Aprovado
+Evidências: results.admintimeout 5
+Dados brutos: {"results.admintimeout": 5}
+```
+
+### sec-003 (Timeout de Sessão) - Depois
+```
+✅ Aprovado
+  Timeout de Sessão: 5 minutos
+  Status: ✅ Configuração adequada
+[Sem dados brutos]
+```
 
 ---
 
 ## Complexidade
 
-Baixa - Ajuste de lógica condicional na função existente + renomeação no banco
+Baixa - Criação de formatador especializado seguindo padrão existente
 
