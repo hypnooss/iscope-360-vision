@@ -28,7 +28,11 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
   const handleExportPDF = () => {
     try {
       const reportWithCVEs = { ...report, cves: loadedCVEs };
-      exportReportToPDF(reportWithCVEs);
+      exportReportToPDF(reportWithCVEs, {
+        name: firewallName,
+        url: firewallUrl,
+        vendor: deviceVendor || undefined
+      });
       toast.success('PDF exportado com sucesso!');
     } catch (error) {
       console.error('Error exporting PDF:', error);
