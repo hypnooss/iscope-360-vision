@@ -22,7 +22,7 @@ interface AnalysisReport {
   client_name: string;
   score: number;
   created_at: string;
-  report_data: any;
+  report_data?: any; // Carregado sob demanda
 }
 
 interface FilterOption {
@@ -80,10 +80,10 @@ export default function FirewallReportsPage() {
 
   const fetchReports = async () => {
     try {
-      // Fetch analysis history
+      // Fetch analysis history - only lightweight fields for listing
       const { data: historyData } = await supabase
         .from('analysis_history')
-        .select('*')
+        .select('id, firewall_id, score, created_at')
         .order('created_at', { ascending: false });
 
       if (!historyData || historyData.length === 0) {
@@ -124,7 +124,7 @@ export default function FirewallReportsPage() {
           client_name: client?.name || 'N/A',
           score: h.score,
           created_at: h.created_at,
-          report_data: h.report_data,
+          // report_data será carregado sob demanda
         };
       });
 
@@ -216,29 +216,60 @@ export default function FirewallReportsPage() {
     return group.analyses.find(a => a.id === selectedId) || group.analyses[0];
   };
 
-  const handleViewReport = (group: GroupedFirewall) => {
-    const analysis = getSelectedAnalysis(group);
-    if (!analysis) return;
+  const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
+
+  const fetchReportData = async (analysisId: string): Promise<any | null> => {
+    const { data, error } = await supabase
+      .from('analysis_history')
+      .select('report_data')
+      .eq('id', analysisId)
+      .maybeSingle();
     
-    navigate(`/scope-firewall/firewalls/${group.firewall_id}/analysis`, { 
-      state: { report: analysis.report_data } 
-    });
+    if (error) {
+      console.error('Error fetching report data:', error);
+      toast.error('Erro ao carregar dados do relatório');
+      return null;
+    }
+    return data?.report_data;
   };
 
-  const handleDownloadPDF = (group: GroupedFirewall) => {
+  const handleViewReport = async (group: GroupedFirewall) => {
     const analysis = getSelectedAnalysis(group);
     if (!analysis) return;
     
+    setLoadingReportId(analysis.id);
     try {
-      const reportData = {
-        ...analysis.report_data,
-        generatedAt: new Date(analysis.created_at),
-      };
-      exportReportToPDF(reportData);
-      toast.success('PDF exportado com sucesso!');
+      const reportData = await fetchReportData(analysis.id);
+      if (reportData) {
+        navigate(`/scope-firewall/firewalls/${group.firewall_id}/analysis`, { 
+          state: { report: reportData } 
+        });
+      }
+    } finally {
+      setLoadingReportId(null);
+    }
+  };
+
+  const handleDownloadPDF = async (group: GroupedFirewall) => {
+    const analysis = getSelectedAnalysis(group);
+    if (!analysis) return;
+    
+    setLoadingReportId(analysis.id);
+    try {
+      const reportData = await fetchReportData(analysis.id);
+      if (reportData) {
+        const pdfData = {
+          ...reportData,
+          generatedAt: new Date(analysis.created_at),
+        };
+        exportReportToPDF(pdfData);
+        toast.success('PDF exportado com sucesso!');
+      }
     } catch (error) {
       console.error('Error exporting PDF:', error);
       toast.error('Erro ao exportar PDF');
+    } finally {
+      setLoadingReportId(null);
     }
   };
 
@@ -418,14 +449,20 @@ export default function FirewallReportsPage() {
                               variant="ghost"
                               size="icon"
                               onClick={() => handleViewReport(group)}
+                              disabled={loadingReportId === currentAnalysis?.id}
                               title="Visualizar"
                             >
-                              <Eye className="w-4 h-4" />
+                              {loadingReportId === currentAnalysis?.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleDownloadPDF(group)}
+                              disabled={loadingReportId === currentAnalysis?.id}
                               title="Baixar PDF"
                             >
                               <Download className="w-4 h-4" />
