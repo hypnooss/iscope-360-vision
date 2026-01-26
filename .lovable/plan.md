@@ -1,47 +1,42 @@
 
 
-# Plano: Correção do Recorte da Sombra do ScoreGauge
+# Plano: Aumentar Padding do ScoreGauge
 
-## Problema Identificado
+## Diagnóstico
 
-O efeito `drop-shadow(0 0 10px ...)` aplicado ao círculo de progresso está sendo cortado nos 4 lados porque:
+O código já foi atualizado com `p-3` (12px), mas a sombra ainda pode estar sendo cortada porque:
 
-1. O container `div` usa `inline-flex` sem padding
-2. O SVG tem dimensões exatas de `size x size` (200x200)
-3. A sombra de 10px se estende além dessas dimensões e é cortada pelo overflow do container pai
+1. O `drop-shadow` com blur de 10px pode se estender mais do que esperado devido à intensidade da cor
+2. Pode haver overflow no container pai (card) que está cortando a sombra
 
-## Solução
+## Solução Proposta
 
-Adicionar padding ao container principal do `ScoreGauge` para acomodar a sombra nos 4 lados.
+Aumentar o padding de `p-3` (12px) para `p-4` (16px) e verificar se o container pai não tem `overflow: hidden`.
 
-## Alteração Necessária
+### Alteração 1: Aumentar padding
 
 **Arquivo:** `src/components/ScoreGauge.tsx`
 
 **Linha 49 - Atual:**
 ```tsx
-<div className="relative inline-flex items-center justify-center">
+<div className="relative inline-flex items-center justify-center p-3">
 ```
 
 **Linha 49 - Proposto:**
 ```tsx
-<div className="relative inline-flex items-center justify-center p-3">
+<div className="relative inline-flex items-center justify-center p-4">
 ```
 
-O padding de `p-3` (12px) é suficiente para acomodar o blur de 10px da sombra em todos os lados:
-- Superior (top)
-- Inferior (bottom)  
-- Esquerdo (left)
-- Direito (right)
+### Alteração 2: Verificar se o container pai tem overflow
 
-## Resultado Visual
+Precisamos verificar onde o `ScoreGauge` é usado e garantir que o container pai não tenha `overflow: hidden` aplicado. Provavelmente está em um `Card` no Dashboard.
 
-| Antes | Depois |
-|-------|--------|
-| Sombra cortada nas bordas | Sombra visível completa em 360° |
-| Container justo ao SVG | Container com margem para o glow |
+## Passos
 
-## Complexidade
+1. Aumentar padding de `p-3` para `p-4` no `ScoreGauge.tsx`
+2. Verificar e ajustar o componente pai (possivelmente no `Dashboard.tsx`) se necessário
 
-Mínima - Apenas adição de uma classe CSS
+## Resultado Esperado
+
+Sombra/glow visível em 360° sem cortes em nenhum dos lados
 
