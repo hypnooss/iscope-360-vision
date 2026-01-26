@@ -813,91 +813,85 @@ function formatFirmwareEvidence(
     firmwareInfo.hostname = hostname;
     firmwareInfo.model = model;
     
-    // Mapa de versões mature da Fortinet (atualizado Jan 2025)
-    const matureVersions: Record<string, { latest: string; eol?: boolean }> = {
-      '7.6': { latest: '7.6.1' },
-      '7.4': { latest: '7.4.6' },
-      '7.2': { latest: '7.2.10' },
-      '7.0': { latest: '7.0.16', eol: true },
-      '6.4': { latest: '6.4.15', eol: true },
-    };
+    // Extract available firmware versions from system_firmware endpoint (FortiGuard data)
+    const systemFirmware = rawData['system_firmware'] as Record<string, unknown> | undefined;
+    let availableVersions: Array<{
+      version: string;
+      major: number;
+      minor: number;
+      patch: number;
+      maturity: string;
+    }> = [];
+    
+    if (systemFirmware) {
+      const fwResults = systemFirmware.results as Record<string, unknown> || systemFirmware;
+      const available = fwResults.available as Array<Record<string, unknown>> || [];
+      
+      availableVersions = available.map(v => ({
+        version: String(v.version || ''),
+        major: Number(v.major || 0),
+        minor: Number(v.minor || 0),
+        patch: Number(v.patch || 0),
+        maturity: String(v.maturity || '')
+      }));
+      
+      console.log(`[fw-001] Found ${availableVersions.length} available firmware versions from FortiGuard`);
+    } else {
+      console.log('[fw-001] No system_firmware data available');
+    }
     
     if (version) {
       const cleanVersion = version.replace(/^v/i, '');
       
-      // Evidências simplificadas - apenas versão e build
+      // Simplified evidence - only version and build
       evidence.push({ label: 'Versão do Firmware', value: version, type: 'code' });
       if (build) evidence.push({ label: 'Build', value: String(build), type: 'text' });
       
-      // Avaliar versão contra mature conhecida
+      // Extract major.minor.patch from current version
       const versionParts = cleanVersion.match(/^(\d+)\.(\d+)\.?(\d+)?/);
       let status: 'pass' | 'fail' | 'warn' = 'warn';
       
       if (versionParts) {
-        const major = parseInt(versionParts[1]);
-        const minor = parseInt(versionParts[2]);
-        const patch = parseInt(versionParts[3] || '0');
-        const branchKey = `${major}.${minor}`;
-        const fullVersion = `${major}.${minor}.${patch}`;
+        const currentMajor = parseInt(versionParts[1]);
+        const currentMinor = parseInt(versionParts[2]);
+        const currentPatch = parseInt(versionParts[3] || '0');
+        const branchKey = `${currentMajor}.${currentMinor}`;
         
-        const branchInfo = matureVersions[branchKey];
+        // Filter mature versions from the same branch (same major.minor)
+        const sameBranchMature = availableVersions
+          .filter(v => 
+            v.major === currentMajor && 
+            v.minor === currentMinor && 
+            v.maturity === 'M'
+          )
+          .sort((a, b) => b.patch - a.patch);
         
-        if (branchInfo) {
-          const latestParts = branchInfo.latest.match(/(\d+)\.(\d+)\.(\d+)/);
-          if (latestParts) {
-            const latestPatch = parseInt(latestParts[3]);
-            
-            if (patch >= latestPatch) {
-              // Na última versão mature do branch
-              if (branchInfo.eol) {
-                status = 'warn';
-                evidence.push({ 
-                  label: 'Status', 
-                  value: `⚠️ Branch ${branchKey} em fim de vida - Considerar migração`, 
-                  type: 'text' 
-                });
-              } else {
-                status = 'pass';
-                evidence.push({ 
-                  label: 'Status', 
-                  value: `✅ Última versão mature do branch ${branchKey}`, 
-                  type: 'text' 
-                });
-              }
-            } else {
-              // Não está na última mature
-              status = 'fail';
-              evidence.push({ 
-                label: 'Status', 
-                value: `❌ Atualização disponível: ${branchInfo.latest}`, 
-                type: 'text' 
-              });
-              evidence.push({ 
-                label: 'Versão Instalada', 
-                value: fullVersion, 
-                type: 'text' 
-              });
-              evidence.push({ 
-                label: 'Última Mature', 
-                value: branchInfo.latest, 
-                type: 'text' 
-              });
-            }
+        console.log(`[fw-001] Current: ${currentMajor}.${currentMinor}.${currentPatch}, Branch mature versions: ${sameBranchMature.length}`);
+        
+        if (sameBranchMature.length > 0) {
+          const latestMature = sameBranchMature[0];
+          
+          if (currentPatch >= latestMature.patch) {
+            status = 'pass';
+            evidence.push({ 
+              label: 'Status', 
+              value: `✅ Última versão mature do branch ${branchKey}`, 
+              type: 'text' 
+            });
+          } else {
+            status = 'fail';
+            evidence.push({ 
+              label: 'Status', 
+              value: `❌ Atualização disponível: ${latestMature.version}`, 
+              type: 'text' 
+            });
           }
-        } else if (major < 6 || (major === 6 && minor < 4)) {
-          // Versão muito antiga
-          status = 'fail';
-          evidence.push({ 
-            label: 'Status', 
-            value: '❌ Versão obsoleta - Migração urgente necessária', 
-            type: 'text' 
-          });
         } else {
-          // Branch desconhecido (possivelmente mais novo)
+          // No available versions to compare - cannot determine status
           status = 'warn';
           evidence.push({ 
             label: 'Status', 
-            value: `⚠️ Branch ${branchKey} não catalogado`, 
+            value: `⚠️ Não foi possível verificar atualizações disponíveis`, 
             type: 'text' 
           });
         }
