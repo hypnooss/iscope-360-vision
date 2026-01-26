@@ -1,109 +1,145 @@
 
 
-# Plano: Otimização de Performance da Página de Relatórios
+# Plano: Otimização de Performance - Páginas com Carregamento Pesado
 
-## Diagnóstico
+## Diagnóstico Completo
 
-A página de Relatórios (`/scope-firewall/reports`) está com **timeout** porque a consulta tenta baixar **41 MB de dados** de uma só vez.
+### Páginas Afetadas
 
-### Causa Raiz
+| Página | Arquivo | Query Problemática | Dados Carregados |
+|--------|---------|-------------------|------------------|
+| Relatórios Global | `ReportsPage.tsx` | Inclui `report_data` | ~450 MB (100 × 4.5 MB) |
+| Execuções de Tarefas | `TaskExecutionsPage.tsx` | `select('*')` | **79 MB** (inclui `result` de 25 MB cada) |
 
-| Problema | Valor |
-|----------|-------|
-| Query atual | `SELECT * FROM analysis_history` |
-| Registros | 9 análises |
-| Tamanho médio do `report_data` | **4.5 MB por registro** |
-| Total transferido | **41 MB** |
-| Limite de timeout do Supabase | 8 segundos |
+### Dados do Banco
 
-A coluna `report_data` contém o JSON completo da análise (incluindo raw_data de algumas regras), que não é necessário para a listagem.
+```text
+agent_tasks: 46 registros = 79 MB
+  - Campo 'result': até 25 MB por registro
+  - Problema: SELECT * carrega tudo de uma vez
+
+analysis_history: 9 registros = 41 MB
+  - Campo 'report_data': ~4.5 MB por registro
+```
 
 ---
 
 ## Solução
 
-Modificar a query para buscar **apenas os campos necessários** para a listagem, e carregar o `report_data` apenas quando o usuário clicar em "Visualizar".
+### Arquivo 1: `src/pages/ReportsPage.tsx`
 
-### Arquivo: `src/pages/firewall/FirewallReportsPage.tsx`
-
-#### 1. Otimizar a query de listagem
+#### 1.1 Remover `report_data` da listagem
 
 ```typescript
-// Antes (linha 86)
-.select('*')
+// Antes (linha 61)
+.select('id, score, created_at, firewall_id, report_data')
 
-// Depois - buscar apenas campos leves
-.select('id, firewall_id, score, created_at')
+// Depois
+.select('id, score, created_at, firewall_id')
 ```
 
-Isso reduz a transferência de **41 MB → ~10 KB** (melhoria de 99.97%).
-
-#### 2. Ajustar o tipo `AnalysisReport`
-
-Tornar `report_data` opcional na interface, já que não será carregado na listagem:
+#### 1.2 Tornar `report_data` opcional na interface
 
 ```typescript
-interface AnalysisReport {
+interface AnalysisHistoryItem {
   id: string;
-  firewall_id: string;
-  firewall_name: string;
-  client_id: string;
-  client_name: string;
   score: number;
   created_at: string;
-  report_data?: any;  // Opcional - carregado sob demanda
+  firewall_id: string;
+  report_data?: any; // Opcional
+  // ... resto
 }
 ```
 
-#### 3. Carregar `report_data` sob demanda
+#### 1.3 Carregar `report_data` sob demanda (handleView/handleDownload)
 
-Modificar `handleViewReport` para buscar o `report_data` apenas quando necessário:
+Adicionar função de carregamento sob demanda similar ao FirewallReportsPage.
+
+---
+
+### Arquivo 2: `src/pages/firewall/TaskExecutionsPage.tsx`
+
+#### 2.1 Substituir `select('*')` por campos específicos
 
 ```typescript
-const handleViewReport = async (group: GroupedFirewall) => {
-  const analysis = getSelectedAnalysis(group);
-  if (!analysis) return;
+// Antes (linha 121)
+.select('*')
+
+// Depois - excluir campos pesados (result, step_results, payload)
+.select(`
+  id,
+  agent_id,
+  task_type,
+  target_id,
+  target_type,
+  status,
+  priority,
+  error_message,
+  execution_time_ms,
+  created_at,
+  started_at,
+  completed_at,
+  expires_at,
+  timeout_at
+`)
+```
+
+Isso reduz de **79 MB para ~50 KB** na listagem.
+
+#### 2.2 Atualizar interface `AgentTask`
+
+Tornar `payload`, `result` e `step_results` opcionais:
+
+```typescript
+interface AgentTask {
+  // ... campos leves
+  payload?: Json;      // Opcional
+  result?: Json;       // Opcional  
+  step_results?: Json; // Opcional
+}
+```
+
+#### 2.3 Carregar dados pesados sob demanda no Dialog de detalhes
+
+Modificar `openDetails` para buscar `result`, `step_results` e `payload` apenas quando o usuário clicar:
+
+```typescript
+const openDetails = async (task: AgentTask) => {
+  setSelectedTask(task);
+  setDetailsOpen(true);
   
-  // Buscar report_data sob demanda (se ainda não carregado)
-  if (!analysis.report_data) {
+  // Carregar dados pesados sob demanda
+  if (!task.result) {
     const { data } = await supabase
-      .from('analysis_history')
-      .select('report_data')
-      .eq('id', analysis.id)
+      .from('agent_tasks')
+      .select('result, step_results, payload')
+      .eq('id', task.id)
       .single();
     
     if (data) {
-      analysis.report_data = data.report_data;
+      setSelectedTask({ ...task, ...data });
     }
   }
-  
-  navigate(`/scope-firewall/firewalls/${group.firewall_id}/analysis`, { 
-    state: { report: analysis.report_data } 
-  });
 };
 ```
-
-#### 4. Ajustar `handleDownloadPDF` da mesma forma
-
-Carregar o `report_data` antes de gerar o PDF se ainda não estiver em memória.
 
 ---
 
 ## Resultado Esperado
 
-| Métrica | Antes | Depois |
-|---------|-------|--------|
-| Dados transferidos na listagem | 41 MB | ~10 KB |
-| Tempo de carregamento | Timeout (>8s) | <500ms |
-| Dados carregados ao visualizar | Já em memória | ~4 MB sob demanda |
+| Página | Antes | Depois | Melhoria |
+|--------|-------|--------|----------|
+| ReportsPage | ~450 MB timeout | ~5 KB | 99.99% |
+| TaskExecutionsPage | 79 MB possível timeout | ~50 KB | 99.94% |
 
 ---
 
 ## Arquivos Modificados
 
-- `src/pages/firewall/FirewallReportsPage.tsx`
+1. `src/pages/ReportsPage.tsx`
+2. `src/pages/firewall/TaskExecutionsPage.tsx`
 
 ## Complexidade
 
-- Média - Refatoração de carregamento de dados
+- Média - Refatoração de queries e carregamento sob demanda em 2 páginas
 
