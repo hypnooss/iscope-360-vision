@@ -1,114 +1,101 @@
 
 
-# Plano: Correção da Página de Relatórios de Firewall
+# Plano: Otimização de Performance da Página de Relatórios
 
-## Problema Identificado
+## Diagnóstico
 
-A página **Firewall > Relatórios** (`/scope-firewall/reports`) não exibe nenhum conteúdo devido a um **race condition** na lógica de carregamento.
-
-## Análise Técnica
+A página de Relatórios (`/scope-firewall/reports`) está com **timeout** porque a consulta tenta baixar **41 MB de dados** de uma só vez.
 
 ### Causa Raiz
 
-No arquivo `src/pages/firewall/FirewallReportsPage.tsx`, o `useEffect` que dispara o `fetchReports()` tem dependências incompletas:
+| Problema | Valor |
+|----------|-------|
+| Query atual | `SELECT * FROM analysis_history` |
+| Registros | 9 análises |
+| Tamanho médio do `report_data` | **4.5 MB por registro** |
+| Total transferido | **41 MB** |
+| Limite de timeout do Supabase | 8 segundos |
 
-```typescript
-// Linhas 73-77 - Código atual com problema
-useEffect(() => {
-  if (user && hasModuleAccess('scope_firewall')) {
-    fetchReports();
-  }
-}, [user]); // <- Falta a dependência!
-```
-
-### Sequência do Bug
-
-1. O usuário navega para `/scope-firewall/reports`
-2. O componente monta e o `useEffect` executa
-3. Neste momento, o `AuthContext` ainda está carregando e `role = null`
-4. `hasModuleAccess('scope_firewall')` retorna `false` porque `role !== 'super_admin'`
-5. `fetchReports()` não é chamado
-6. O `AuthContext` termina de carregar e define `role = 'super_admin'`
-7. O `useEffect` **NÃO re-executa** porque `user` não mudou
-8. A página fica em branco com o spinner infinito (loading: true)
-
-### Evidências
-
-- Consulta SQL confirmou: usuário `bd66346a-44fc-47b1-a09b-2014a53539b6` tem role `super_admin`
-- Logs de rede **não mostram** requisição para `analysis_history`
-- Base de dados tem 9 análises disponíveis
+A coluna `report_data` contém o JSON completo da análise (incluindo raw_data de algumas regras), que não é necessário para a listagem.
 
 ---
 
-## Solucao Proposta
+## Solução
+
+Modificar a query para buscar **apenas os campos necessários** para a listagem, e carregar o `report_data` apenas quando o usuário clicar em "Visualizar".
 
 ### Arquivo: `src/pages/firewall/FirewallReportsPage.tsx`
 
-#### 1. Importar o loading do ModuleContext
-
-Adicionar `loading` aos imports do hook:
+#### 1. Otimizar a query de listagem
 
 ```typescript
-const { hasModuleAccess, loading: moduleLoading } = useModules();
+// Antes (linha 86)
+.select('*')
+
+// Depois - buscar apenas campos leves
+.select('id, firewall_id, score, created_at')
 ```
 
-#### 2. Corrigir o useEffect de carregamento de relatórios
+Isso reduz a transferência de **41 MB → ~10 KB** (melhoria de 99.97%).
 
-Atualizar as dependências e condições:
+#### 2. Ajustar o tipo `AnalysisReport`
 
-```typescript
-useEffect(() => {
-  // Só buscar quando auth e módulos estiverem prontos
-  if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_firewall')) {
-    fetchReports();
-  }
-}, [user, authLoading, moduleLoading]);
-```
-
-#### 3. Atualizar o useEffect de navegação
-
-Garantir que a navegação só aconteça quando tudo estiver carregado:
+Tornar `report_data` opcional na interface, já que não será carregado na listagem:
 
 ```typescript
-useEffect(() => {
-  if (authLoading || moduleLoading) return;
-  
-  if (!user) {
-    navigate('/auth');
-    return;
-  }
-  
-  if (!hasModuleAccess('scope_firewall')) {
-    navigate('/modules');
-  }
-}, [user, authLoading, moduleLoading, navigate, hasModuleAccess]);
-```
-
-#### 4. Mostrar loading durante carregamento inicial
-
-Atualizar o return inicial:
-
-```typescript
-if (authLoading || moduleLoading) {
-  return (
-    <AppLayout>
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    </AppLayout>
-  );
+interface AnalysisReport {
+  id: string;
+  firewall_id: string;
+  firewall_name: string;
+  client_id: string;
+  client_name: string;
+  score: number;
+  created_at: string;
+  report_data?: any;  // Opcional - carregado sob demanda
 }
 ```
+
+#### 3. Carregar `report_data` sob demanda
+
+Modificar `handleViewReport` para buscar o `report_data` apenas quando necessário:
+
+```typescript
+const handleViewReport = async (group: GroupedFirewall) => {
+  const analysis = getSelectedAnalysis(group);
+  if (!analysis) return;
+  
+  // Buscar report_data sob demanda (se ainda não carregado)
+  if (!analysis.report_data) {
+    const { data } = await supabase
+      .from('analysis_history')
+      .select('report_data')
+      .eq('id', analysis.id)
+      .single();
+    
+    if (data) {
+      analysis.report_data = data.report_data;
+    }
+  }
+  
+  navigate(`/scope-firewall/firewalls/${group.firewall_id}/analysis`, { 
+    state: { report: analysis.report_data } 
+  });
+};
+```
+
+#### 4. Ajustar `handleDownloadPDF` da mesma forma
+
+Carregar o `report_data` antes de gerar o PDF se ainda não estiver em memória.
 
 ---
 
 ## Resultado Esperado
 
-| Antes | Depois |
-|-------|--------|
-| Página em branco com spinner infinito | Carrega corretamente após auth/módulos prontos |
-| `fetchReports()` nunca executado | `fetchReports()` executa quando `role` está disponível |
-| 0 requisições para `analysis_history` | Requisição disparada e dados exibidos |
+| Métrica | Antes | Depois |
+|---------|-------|--------|
+| Dados transferidos na listagem | 41 MB | ~10 KB |
+| Tempo de carregamento | Timeout (>8s) | <500ms |
+| Dados carregados ao visualizar | Já em memória | ~4 MB sob demanda |
 
 ---
 
@@ -118,5 +105,5 @@ if (authLoading || moduleLoading) {
 
 ## Complexidade
 
-- Baixa - Correção pontual de dependências de useEffect
+- Média - Refatoração de carregamento de dados
 
