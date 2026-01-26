@@ -79,7 +79,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           </div>
           
           {/* Firewall Info + Stats combinados */}
-          <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col">
+          <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
             {/* Parte superior: Info do Firewall */}
             <div className="flex items-start gap-4">
               {/* Vendor Badge - Dynamic based on device type */}
