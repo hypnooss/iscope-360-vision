@@ -779,6 +779,103 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
+ * Format Security Policy evidence for sec-001 (Strong Crypto), sec-002 (2FA), sec-003 (Session Timeout)
+ * These rules evaluate global FortiGate security settings
+ */
+function formatSecurityPolicyEvidence(
+  rawData: Record<string, unknown>,
+  ruleCode: string
+): { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } {
+  const evidence: EvidenceItem[] = [];
+  
+  try {
+    if (ruleCode === 'sec-001') {
+      // Strong Crypto
+      const globalData = rawData['system_global'] as Record<string, unknown> | undefined;
+      const results = globalData?.results as Record<string, unknown> || globalData || {};
+      const strongCrypto = results['strong-crypto'];
+      
+      if (strongCrypto === 'enable') {
+        return {
+          evidence: [{ label: 'Criptografia Forte', value: '✅ Habilitada', type: 'text' }],
+          status: 'pass',
+          skipRawData: true
+        };
+      } else {
+        return {
+          evidence: [{ label: 'Criptografia Forte', value: '❌ Desabilitada', type: 'text' }],
+          status: 'fail',
+          skipRawData: false
+        };
+      }
+    }
+    
+    if (ruleCode === 'sec-002') {
+      // Two-Factor Authentication
+      const adminData = rawData['system_admin'] as Record<string, unknown> | undefined;
+      const results = (adminData?.results || []) as Array<Record<string, unknown>>;
+      
+      if (results.length === 0) {
+        return {
+          evidence: [
+            { label: 'Status', value: '⚠️ Dados de administradores não disponíveis', type: 'text' },
+            { label: 'Motivo', value: 'API token sem permissão para listar administradores', type: 'text' },
+            { label: 'Ação Recomendada', value: 'Verifique manualmente no painel FortiGate', type: 'text' }
+          ],
+          status: 'unknown',
+          skipRawData: true
+        };
+      }
+      
+      // Check 2FA in each admin
+      const adminsWithout2FA = results.filter(admin => 
+        admin['two-factor'] === 'disable' || !admin['two-factor']
+      );
+      
+      if (adminsWithout2FA.length === 0) {
+        return {
+          evidence: [{ label: 'Status', value: '✅ Todos os administradores com 2FA', type: 'text' }],
+          status: 'pass',
+          skipRawData: true
+        };
+      } else {
+        const ev: EvidenceItem[] = [
+          { label: 'Status', value: `❌ ${adminsWithout2FA.length} admin(s) sem 2FA`, type: 'text' }
+        ];
+        for (const admin of adminsWithout2FA.slice(0, 5)) {
+          ev.push({ label: 'Admin', value: String(admin.name || 'N/A'), type: 'text' });
+        }
+        return { evidence: ev, status: 'fail', skipRawData: false };
+      }
+    }
+    
+    if (ruleCode === 'sec-003') {
+      // Session Timeout
+      const globalData = rawData['system_global'] as Record<string, unknown> | undefined;
+      const results = globalData?.results as Record<string, unknown> || globalData || {};
+      const timeout = results.admintimeout as number | undefined;
+      
+      if (timeout !== undefined) {
+        const isCompliant = timeout <= 30;
+        return {
+          evidence: [
+            { label: 'Timeout de Sessão', value: `${timeout} minutos`, type: 'text' },
+            { label: 'Status', value: isCompliant ? '✅ Configuração adequada' : '⚠️ Timeout muito longo (recomendado ≤30min)', type: 'text' }
+          ],
+          status: isCompliant ? 'pass' : 'warn',
+          skipRawData: true
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Error formatting Security Policy evidence:', e);
+    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+  }
+  
+  return { evidence, skipRawData: false };
+}
+
+/**
  * Format UTM Security Profile evidence - checks for policies with WAN/SD-WAN interfaces
  * without the corresponding security profile (av-profile, webfilter-profile, etc.)
  * 
@@ -1321,6 +1418,7 @@ function processComplianceRules(
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
+    let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
     
     // Detectar regra e aplicar formatador apropriado
     if (rule.code === 'lic-001') {
@@ -1398,6 +1496,22 @@ function processComplianceRules(
       } else {
         status = 'pass';
         details = rule.pass_description || 'Todas as políticas com destino WAN possuem perfil';
+      }
+    } else if (rule.code.startsWith('sec-')) {
+      // Security Policy rules (sec-001, sec-002, sec-003)
+      secResult = formatSecurityPolicyEvidence(rawData, rule.code);
+      if (secResult.evidence.length > 0) {
+        evidence = secResult.evidence;
+        if (secResult.status) {
+          status = secResult.status;
+          if (status === 'pass') {
+            details = rule.pass_description || 'Configuração de segurança adequada';
+          } else if (status === 'fail' || status === 'warn') {
+            details = rule.fail_description || 'Verificar configuração de segurança';
+          } else if (status === 'unknown') {
+            details = 'Não foi possível verificar - dados indisponíveis';
+          }
+        }
       }
     } else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
@@ -1535,11 +1649,18 @@ function processComplianceRules(
           )
         }))
       };
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound, VPN, UTM, net-003, ha-003), incluir dados brutos genéricos
+    } else if (rule.code.startsWith('sec-') && secResult && !secResult.skipRawData) {
+      // Para regras sec-*, só incluir rawData se não foi suprimido
+      const sourceKey = logic.source_key || '';
+      const data = rawData[sourceKey];
+      if (data) {
+        checkRawData[sourceKey] = data;
+      }
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, UTM, sec-*, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-*, utm-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou HA configurado (tratado acima)
+    // Nota: regras inb-*, utm-*, sec-*, net-003 e ha-003 só têm rawData quando há políticas vulneráveis ou dados relevantes (tratado acima)
     
     checks.push({
       id: rule.code,
