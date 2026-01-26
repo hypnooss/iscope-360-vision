@@ -49,6 +49,8 @@ interface ComplianceRule {
   evaluation_logic: {
     source_key: string;
     field_path: string;
+    alt_source_key?: string;
+    alt_field_path?: string;
     conditions: Array<{
       operator: string;
       value?: unknown;
@@ -209,6 +211,10 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'system_admin': '/api/v2/cmdb/system/admin',
   'license_status': '/api/v2/monitor/license/status',
   'forticare_status': '/api/v2/monitor/system/forticare',
+  // Logging endpoints
+  'log_setting': '/api/v2/cmdb/log/setting',
+  'log_fortianalyzer': '/api/v2/cmdb/log.fortianalyzer/setting',
+  'log_fortiguard': '/api/v2/cmdb/log.fortiguard/setting',
   // Automation endpoints for backup
   'system_automation_stitch': '/api/v2/cmdb/system/automation-stitch',
   'system_automation_trigger': '/api/v2/cmdb/system/automation-trigger',
@@ -1104,8 +1110,17 @@ function processComplianceRules(
   for (const rule of rules) {
     const logic = rule.evaluation_logic;
     
-    // Mapear endpoint da API
-    const apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
+    // Mapear endpoint da API - tratar regras com múltiplos source_keys
+    let apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
+    
+    // Para regras com alt_source_key (como log-002), listar ambos endpoints
+    if (logic.alt_source_key) {
+      const altEndpoint = sourceKeyToEndpoint[logic.alt_source_key];
+      if (altEndpoint) {
+        const primaryEndpoint = sourceKeyToEndpoint[logic.source_key] || '';
+        apiEndpoint = [primaryEndpoint, altEndpoint].filter(Boolean).join(' | ');
+      }
+    }
     
     // Get the source data
     const sourceData = rawData[logic.source_key];
@@ -1278,6 +1293,27 @@ function processComplianceRules(
       if (haData) {
         checkRawData = { system_ha: haData };
       }
+    } else if (rule.code === 'log-002') {
+      // Para log-002, incluir dados de FortiAnalyzer e FortiCloud
+      const fazData = rawData['log_fortianalyzer'] as Record<string, unknown> | undefined;
+      const cloudData = rawData['log_fortiguard'] as Record<string, unknown> | undefined;
+      
+      const fazResults = fazData ? (fazData.results as Record<string, unknown> || fazData) : null;
+      const cloudResults = cloudData ? (cloudData.results as Record<string, unknown> || cloudData) : null;
+      
+      checkRawData = {
+        fortianalyzer: fazResults ? {
+          status: fazResults.status,
+          server: fazResults.server,
+          enc_algorithm: fazResults['enc-algorithm'],
+          ssl_min_proto_version: fazResults['ssl-min-proto-version']
+        } : null,
+        forticloud: cloudResults ? {
+          status: cloudResults.status,
+          upload_option: cloudResults['upload-option'],
+          upload_interval: cloudResults['upload-interval']
+        } : null
+      };
     } else if (rule.code.startsWith('vpn-')) {
       // Para regras VPN, incluir dados específicos e resumidos
       if (rule.code === 'vpn-001') {
