@@ -283,7 +283,9 @@ Deno.serve(async (req) => {
     let savedValidatedAt: string | null = null;
     let savedTenantId: string | null = null;
 
-    if (configData?.validated_permissions && Array.isArray(configData.validated_permissions)) {
+    if (configData?.validated_permissions && 
+        Array.isArray(configData.validated_permissions) && 
+        configData.validated_permissions.length > 0) {
       savedPermissions = configData.validated_permissions as PermissionStatus[];
       savedValidatedAt = configData.last_validated_at;
       savedTenantId = configData.validation_tenant_id;
