@@ -289,7 +289,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!configData.validation_tenant_id) {
+    // Check if tenant_id was passed via body (manual call) or use saved one (cron)
+    let tenantId = configData.validation_tenant_id;
+    
+    try {
+      const body = await req.json();
+      if (body.tenant_id) {
+        tenantId = body.tenant_id;
+        console.log('Tenant ID received from request body:', tenantId);
+        
+        // Update the tenant_id in database for future automatic validations
+        const { error: updateTenantError } = await supabase
+          .from('m365_global_config')
+          .update({ validation_tenant_id: tenantId })
+          .eq('id', configData.id);
+          
+        if (updateTenantError) {
+          console.error('Error updating validation_tenant_id:', updateTenantError);
+        } else {
+          console.log('Saved tenant_id for future automatic validations');
+        }
+      }
+    } catch {
+      // Empty body is OK for automatic cron calls
+      console.log('No body provided, using saved tenant_id');
+    }
+
+    if (!tenantId) {
       console.log('No validation tenant ID configured, skipping validation');
       return new Response(
         JSON.stringify({ success: true, message: 'No validation tenant ID configured', skipped: true }),
@@ -299,7 +325,6 @@ Deno.serve(async (req) => {
 
     const appId = configData.app_id;
     const clientSecret = await decryptSecret(configData.client_secret_encrypted);
-    const tenantId = configData.validation_tenant_id;
     const previousPermissions = configData.validated_permissions || [];
 
     console.log('Validating permissions for app:', appId);

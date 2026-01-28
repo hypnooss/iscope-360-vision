@@ -231,36 +231,40 @@ export default function SettingsPage() {
 
     setValidatingPermissions(true);
     try {
-      const { data, error } = await supabase.functions.invoke('get-m365-config', {
-        body: {},
+      // Call the validate-m365-permissions edge function
+      const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
+        body: { tenant_id: tenantIdForValidation }
       });
 
-      // Need to call with query params - use a different approach
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-m365-config?validate_permissions=true&tenant_id=${encodeURIComponent(tenantIdForValidation)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      if (error) throw error;
 
-      const result = await response.json();
-
-      if (result.permissions) {
+      if (data.success && data.permissions) {
         setM365Config(prev => ({
           ...prev,
-          permissions: result.permissions,
-          permissionsValidated: result.permissions_validated || true,
-          lastValidatedAt: result.last_validated_at || new Date().toISOString(),
+          permissions: data.permissions,
+          permissionsValidated: true,
+          lastValidatedAt: data.validatedAt,
           validationTenantId: tenantIdForValidation,
         }));
-        toast.success('Permissões validadas e salvas com sucesso');
+        
+        const failedRequired = data.failedRequired || 0;
+        const failedRecommended = data.failedRecommended || 0;
+        
+        if (failedRequired > 0) {
+          toast.error(`${failedRequired} permissão(ões) obrigatória(s) não concedida(s)`);
+        } else if (failedRecommended > 0) {
+          toast.warning(`Validado, mas ${failedRecommended} permissão(ões) recomendada(s) faltando`);
+        } else {
+          toast.success('Todas as permissões validadas com sucesso!');
+        }
+      } else if (data.skipped) {
+        toast.info(data.message || 'Validação ignorada');
+      } else {
+        throw new Error(data.error || 'Erro desconhecido na validação');
       }
     } catch (error) {
       console.error('Error validating permissions:', error);
-      toast.error('Erro ao validar permissões');
+      toast.error('Erro ao validar permissões. Verifique o Tenant ID e as credenciais.');
     } finally {
       setValidatingPermissions(false);
     }
