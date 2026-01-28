@@ -1,1 +1,19 @@
 project_id = "akbosdbyheezghieiefz"
+
+[functions.register-agent]
+verify_jwt = false
+
+[functions.agent-heartbeat]
+verify_jwt = false
+
+[functions.agent-refresh]
+verify_jwt = false
+
+[functions.agent-tasks]
+verify_jwt = false
+
+[functions.agent-step-result]
+verify_jwt = false
+
+[functions.agent-task-result]
+verify_jwt = false
