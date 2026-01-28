@@ -1,62 +1,73 @@
 
-
-# Plano: Corrigir Erro na Configuração do Microsoft 365
+# Plano: Corrigir Exibição de Permissões M365 Vazias
 
 ## Problema Identificado
 
-A Edge Function `update-m365-config` está falhando porque o segredo `M365_ENCRYPTION_KEY` **não está configurado** no Supabase.
-
-O código verifica se a chave existe (linha 122-130):
-```typescript
-const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
-if (!encryptionKey || encryptionKey.length !== 64) {
-  return new Response(
-    JSON.stringify({ error: 'Encryption key not configured. Contact administrator.' }),
-    { status: 500 ... }
-  );
-}
+A tabela `m365_global_config` contém:
+```
+validated_permissions: []  (array vazio)
+last_validated_at: null
+validation_tenant_id: null
 ```
 
-### Requisitos da Chave
-- Deve ter **64 caracteres hexadecimais** (representa 256 bits para AES-256-GCM)
-- Exemplo de formato: `a1b2c3d4e5f6...` (64 caracteres hex)
+O código JavaScript trata arrays vazios como truthy:
+```javascript
+// Linha 204 - SettingsPage.tsx
+permissions: data.permissions || defaultPermissions
+
+// Linha 313 - get-m365-config/index.ts
+let permissions = savedPermissions || defaultPermissions;
+```
+
+Como `[]` é truthy em JavaScript, o fallback para `defaultPermissions` nunca é acionado quando o array está vazio.
 
 ## Solução
 
-### Passo 1: Gerar uma Chave de Criptografia
+### Opção 1 (Recomendada): Corrigir a lógica de fallback
 
-Gerar uma chave AES-256 aleatória de 64 caracteres hex. Você pode usar este comando no terminal:
+Alterar a verificação para considerar arrays vazios:
 
-```bash
-openssl rand -hex 32
+**Arquivo: `src/pages/admin/SettingsPage.tsx`**
+```typescript
+// Linha 204 - antes:
+permissions: data.permissions || defaultPermissions,
+
+// Linha 204 - depois:
+permissions: (data.permissions && data.permissions.length > 0) ? data.permissions : defaultPermissions,
+
+// Repetir para linhas 185, 198, 215, 220
 ```
 
-Ou gerar manualmente uma string de 64 caracteres hexadecimais (0-9, a-f).
+**Arquivo: `supabase/functions/get-m365-config/index.ts`**
+```typescript
+// Linha 286-290 - adicionar verificação de length
+if (configData?.validated_permissions && 
+    Array.isArray(configData.validated_permissions) && 
+    configData.validated_permissions.length > 0) {
+  savedPermissions = configData.validated_permissions as PermissionStatus[];
+  // ...
+}
 
-### Passo 2: Adicionar o Segredo no Supabase
+// Linha 313 - já estará correto pois savedPermissions será null
+```
 
-1. Acesse o **Supabase Dashboard**
-2. Navegue para **Settings → Edge Functions**
-3. Na seção **Secrets**, adicione:
-   - **Nome**: `M365_ENCRYPTION_KEY`
-   - **Valor**: A chave gerada no passo 1 (64 caracteres hex)
+## Arquivos Afetados
 
-Link direto: https://supabase.com/dashboard/project/akbosdbyheezghieiefz/settings/functions
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/admin/SettingsPage.tsx` | Corrigir 5 ocorrências do fallback de permissions |
+| `supabase/functions/get-m365-config/index.ts` | Corrigir verificação do array de permissions |
 
-### Passo 3: Testar Novamente
+## Resultado Esperado
 
-Após adicionar o segredo, tente salvar as configurações do M365 novamente na página Administração → Configurações → Microsoft 365.
+Após a correção:
+1. Quando `validated_permissions` estiver vazio, o sistema usará `defaultPermissions`
+2. As permissões obrigatórias e recomendadas aparecerão na interface (em amarelo, indicando não validadas)
+3. O usuário poderá então clicar em "Validar Permissões" para verificar o status real
 
-## Por que essa chave é necessária?
+## Testes de Validação
 
-O sistema usa criptografia AES-256-GCM para proteger o `Client Secret` do Azure App Registration. Isso garante que:
-- O segredo nunca seja armazenado em texto puro no banco de dados
-- Mesmo com acesso ao banco, o valor real do `Client Secret` não pode ser lido
-- Há proteção adicional além das políticas RLS do Supabase
-
-## Importante
-
-- **Guarde essa chave em local seguro** - se perdê-la, você não conseguirá descriptografar os segredos existentes
-- A chave deve ser a mesma em todos os ambientes (development, staging, production) se você quiser compartilhar os dados
-- Não compartilhe essa chave em logs ou repositórios de código
-
+1. Acessar Administração → Configurações → Microsoft 365
+2. Verificar se as permissões obrigatórias e recomendadas aparecem na lista
+3. Clicar em "Validar Permissões" com um Tenant ID válido
+4. Confirmar que os indicadores mudam de amarelo para verde após validação bem-sucedida
