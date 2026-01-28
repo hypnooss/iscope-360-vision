@@ -182,7 +182,7 @@ export default function SettingsPage() {
               appId: retryData.app_id,
               clientSecret: retryData.masked_secret || '',
               isConfigured: retryData.has_client_secret,
-              permissions: retryData.permissions || defaultPermissions,
+              permissions: (retryData.permissions && retryData.permissions.length > 0) ? retryData.permissions : defaultPermissions,
               permissionsValidated: retryData.permissions_validated || false,
               lastValidatedAt: retryData.last_validated_at || null,
               validationTenantId: retryData.validation_tenant_id || null,
@@ -195,13 +195,13 @@ export default function SettingsPage() {
           }
         }
         
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
       } else if (data?.configured && data?.app_id) {
         setM365Config({
           appId: data.app_id,
           clientSecret: data.masked_secret || '',
           isConfigured: data.has_client_secret,
-          permissions: data.permissions || defaultPermissions,
+          permissions: (data.permissions && data.permissions.length > 0) ? data.permissions : defaultPermissions,
           permissionsValidated: data.permissions_validated || false,
           lastValidatedAt: data.last_validated_at || null,
           validationTenantId: data.validation_tenant_id || null,
@@ -212,12 +212,12 @@ export default function SettingsPage() {
           setTenantIdForValidation(data.validation_tenant_id);
         }
       } else {
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
         setNewAppId('');
       }
     } catch (error) {
       console.error('Error:', error);
-      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: defaultPermissions, permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
     } finally {
       setLoading(false);
     }
