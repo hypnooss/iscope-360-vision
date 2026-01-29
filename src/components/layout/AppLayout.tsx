@@ -108,6 +108,15 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'Relatórios', href: '/scope-firewall/reports', icon: FileText },
     ],
   },
+  'scope_external_domain': {
+    icon: Globe,
+    color: 'text-teal-500',
+    items: [
+      { label: 'Domínios Externos', href: '/scope-external-domain/domains', icon: Globe },
+      { label: 'Execuções', href: '/scope-external-domain/executions', icon: Activity },
+      { label: 'Relatórios', href: '/scope-external-domain/reports', icon: FileText },
+    ],
+  },
   'scope_m365': {
     icon: Cloud,
     color: 'text-blue-500',
@@ -159,6 +168,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (path.startsWith('/scope-firewall')) {
       setActiveModule('scope_firewall');
       setExpandedModules(prev => ({ ...prev, scope_firewall: true }));
+    } else if (path.startsWith('/scope-external-domain')) {
+      setActiveModule('scope_external_domain');
+      setExpandedModules(prev => ({ ...prev, scope_external_domain: true }));
     } else if (path.startsWith('/scope-m365')) {
       setActiveModule('scope_m365');
       setExpandedModules(prev => ({ ...prev, scope_m365: true }));

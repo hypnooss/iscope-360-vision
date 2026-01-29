@@ -17,6 +17,7 @@ interface ModulePermissions {
   firewall: ModulePermission;
   reports: ModulePermission;
   users: ModulePermission;
+  external_domain: ModulePermission;
 }
 
 interface CachedUserData {
@@ -46,6 +47,7 @@ const defaultPermissions: ModulePermissions = {
   firewall: 'view',
   reports: 'view',
   users: 'view',
+  external_domain: 'view',
 };
 
 const CACHE_KEY_PREFIX = 'user_data_';

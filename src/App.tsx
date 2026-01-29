@@ -29,6 +29,11 @@ const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsP
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
 
+// External Domain Module Pages - lazy loaded
+const ExternalDomainListPage = lazy(() => import("./pages/external-domain/ExternalDomainListPage"));
+const ExternalDomainExecutionsPage = lazy(() => import("./pages/external-domain/ExternalDomainExecutionsPage"));
+const ExternalDomainReportsPage = lazy(() => import("./pages/external-domain/ExternalDomainReportsPage"));
+
 // Microsoft 365 Module Pages - lazy loaded
 const M365DashboardPage = lazy(() => import("./pages/m365/M365DashboardPage"));
 const TenantConnectionPage = lazy(() => import("./pages/m365/TenantConnectionPage"));
@@ -72,7 +77,11 @@ const App = () => (
                 <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
                 <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                 <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
-                <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
+
+                {/* External Domain Module */}
+                <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
+                <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
+                <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
 
                 {/* Microsoft 365 Module */}
                 <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
