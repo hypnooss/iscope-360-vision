@@ -236,7 +236,14 @@ export default function SettingsPage() {
         body: { tenant_id: tenantIdForValidation }
       });
 
-      if (error) throw error;
+      // Handle function errors (but check if response has useful data)
+      if (error) {
+        console.error('Edge function error:', error);
+        // Even on error, the tenant_id might have been saved
+        // Re-fetch config to get the latest state
+        await checkM365Config();
+        throw new Error(error.message || 'Erro ao chamar função de validação');
+      }
 
       if (data.success && data.permissions) {
         setM365Config(prev => ({
@@ -259,12 +266,19 @@ export default function SettingsPage() {
         }
       } else if (data.skipped) {
         toast.info(data.message || 'Validação ignorada');
+      } else if (data.tenantIdSaved) {
+        // Tenant ID was saved but validation failed
+        setM365Config(prev => ({
+          ...prev,
+          validationTenantId: tenantIdForValidation,
+        }));
+        toast.error(data.error || 'Falha na validação. Verifique o Tenant ID e se o Admin Consent foi concedido.');
       } else {
         throw new Error(data.error || 'Erro desconhecido na validação');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error validating permissions:', error);
-      toast.error('Erro ao validar permissões. Verifique o Tenant ID e as credenciais.');
+      toast.error(error.message || 'Erro ao validar permissões. Verifique o Tenant ID e as credenciais.');
     } finally {
       setValidatingPermissions(false);
     }
