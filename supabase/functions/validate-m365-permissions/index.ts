@@ -342,12 +342,18 @@ Deno.serve(async (req) => {
         title: 'Falha na Conexão M365',
         message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
         severity: 'error',
-        metadata: { error: String(error) },
+        metadata: { error: String(error), tenantId },
       });
 
+      // Return error but indicate the tenant_id was saved
       return new Response(
-        JSON.stringify({ success: false, error: 'Failed to validate permissions' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          success: false, 
+          error: 'Failed to validate permissions. Check if the Tenant ID is correct and the app has admin consent.',
+          tenantIdSaved: true,
+          validationTenantId: tenantId,
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
