@@ -253,7 +253,21 @@ export default function ExternalDomainExecutionsPage() {
   const getDomainLabel = (domainId: string) => {
     const d = domains.find((x) => x.id === domainId);
     if (!d) return domainId;
-    return d.name ? `${d.name} (${d.domain})` : d.domain;
+
+    const domain = (d.domain || '').trim();
+    const name = (d.name || '').trim();
+
+    if (!name) return domain;
+    if (name.toLowerCase() === domain.toLowerCase()) return domain;
+    return `${name} (${domain})`;
+  };
+
+  const getDisplayTaskType = (task: AgentTask) => {
+    // Normalização visual para legado: tasks antigas de external_domain eram marcadas como ssh_command
+    if (task.target_type === 'external_domain' && task.task_type === 'ssh_command') {
+      return 'external_domain_analysis';
+    }
+    return task.task_type;
   };
 
   const formatDuration = (ms: number | null) => {
@@ -487,7 +501,7 @@ export default function ExternalDomainExecutionsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-mono text-xs">
-                            {task.task_type}
+                            {getDisplayTaskType(task)}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -561,7 +575,7 @@ export default function ExternalDomainExecutionsPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Tipo</p>
                     <Badge variant="outline" className="font-mono text-xs">
-                      {selectedTask.task_type}
+                      {getDisplayTaskType(selectedTask)}
                     </Badge>
                   </div>
                   <div>
