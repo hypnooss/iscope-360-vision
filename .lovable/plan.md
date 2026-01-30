@@ -1,109 +1,82 @@
 
-## Diagnóstico (por que o erro acontece)
-O erro **“new row violates row-level security policy for table external_domains”** significa que o Supabase bloqueou o INSERT por causa das políticas de RLS.
+Objetivo
+- Na tela “Domínio Externo > Domínios Externos”:
+  1) Trocar os cards (Domínios Ativos / Pendentes / Com problemas) por “Score Médio / Alertas Críticos / Falhas Críticas”, no mesmo padrão visual da tela “Firewall > Firewalls”.
+  2) Na tabela, na coluna “Domínio”, parar de exibir o mesmo domínio duas vezes e usar a tipografia padrão (igual às outras colunas).
 
-Pelos logs de rede, o app está tentando inserir corretamente:
-- `client_id`: 145988e9-14b5-49ca-b1e6-c9184cba86f0
-- `agent_id`: 73c20fe9-7d87-47bd-bfa3-7dfc969359d9
-- `created_by`: 799901ed-bf94-4076-9ce1-aa9d540c7293 (usuário logado)
-- `status`: pending
-- domínio e nome ok
+Contexto atual (como está hoje)
+- `ExternalDomainStatsCards.tsx` recebe `{ total, active, pending, issues }` e renderiza 4 cards com ícone Globe.
+- `ExternalDomainListPage.tsx` calcula stats de active/pending/issues via `useMemo()` com base em `domains`.
+- `ExternalDomainTable.tsx` na coluna Domínio mostra:
+  - `domain.name` (font-medium)
+  - `domain.domain` (text-xs muted)
+  Como hoje `name` está sendo definido como `payload.domain.trim()` no insert, isso vira “duplicado” na prática.
 
-A policy criada na migration de `external_domains` exige (WITH CHECK):
-- `has_client_access(auth.uid(), client_id)`  ✅ você tem (existe `user_clients` para esse client_id)
-- `get_module_permission(auth.uid(), 'external_domain') IN ('edit','full')` ❌ está falhando
+Mudanças planejadas (frontend)
 
-O motivo: a função `public.get_module_permission()` (definida em `supabase/migrations/20260112202447_...sql`) busca permissões na tabela `public.user_module_permissions`.  
-E, no seu banco, o usuário **super_admin** tem permissões `full` para: `dashboard`, `firewall`, `reports`, `users`, `m365`, mas **não tem linha para `external_domain`**.
+1) Atualizar os cards de estatísticas para o modelo do Firewall
+Arquivos:
+- `src/components/external-domain/ExternalDomainStatsCards.tsx`
+- `src/pages/external-domain/ExternalDomainListPage.tsx`
 
-Além disso, no frontend, `hasPermission()` retorna **true automaticamente para super_admin**, então o botão aparece mesmo sem existir a linha correspondente no banco, e o INSERT é negado no servidor.
+Ações:
+- Alterar a interface de props do componente `ExternalDomainStatsCards` para algo equivalente ao Firewall:
+  - `totalDomains: number`
+  - `averageScore: number`
+  - `criticalAlerts: number` (ex.: score < 50)
+  - `criticalFailures: number` (ex.: score < 30)
+- Atualizar o layout/estilo do `ExternalDomainStatsCards` para ficar “igual ao FirewallStatsCards”:
+  - Cards com ícones equivalentes:
+    - Total de Domínios: usar `Globe` (ou manter `Server` se quiser padronizar com Firewall, mas aqui faz sentido `Globe`)
+    - Score Médio: `TrendingUp`
+    - Alertas Críticos: `AlertTriangle`
+    - Falhas Críticas: `Shield`
+  - Mesma lógica de cor do score (success/warning/destructive) para o card de Score Médio.
+  - Manter grid 4 colunas e `glass-card` como no Firewall.
+- Em `ExternalDomainListPage.tsx`, substituir o `useMemo` atual (active/pending/issues) por um `useMemo` novo com as mesmas regras do Firewall:
+  - `totalDomains = domains.length`
+  - `domainsWithScore = domains.filter(d => d.last_score !== null)`
+  - `averageScore = domainsWithScore.length > 0 ? Math.round(sum/len) : 0`
+  - `criticalAlerts = domains.filter(d => d.last_score !== null && d.last_score < 50).length`
+  - `criticalFailures = domains.filter(d => d.last_score !== null && d.last_score < 30).length`
+- Atualizar a chamada do componente:
+  - Antes: `<ExternalDomainStatsCards total={...} active={...} pending={...} issues={...} />`
+  - Depois: `<ExternalDomainStatsCards totalDomains={...} averageScore={...} criticalAlerts={...} criticalFailures={...} />`
 
-Conclusão: é um desalinhamento entre:
-- Frontend: “super_admin sempre pode”
-- Backend/RLS: “só pode se `get_module_permission()` retornar edit/full”
+Observações/decisões:
+- Mesmo que a tabela não mostre score/status/última verificação, os cards ainda podem usar `last_score` que já vem do `external_domains` no `fetchData()` (o page já seleciona `*`).
+- Se quiser exatamente “igual ao Firewall”, podemos copiar literalmente a estrutura do JSX e só trocar `Firewalls` -> `Domínios` e as labels.
 
-Você confirmou que deseja: **super_admin = sempre FULL**. Vamos ajustar o backend para refletir isso.
+2) Corrigir a coluna “Domínio” para não duplicar e usar tipografia padrão
+Arquivo:
+- `src/components/external-domain/ExternalDomainTable.tsx`
 
----
+Ações:
+- Ajustar o `<TableCell>` da coluna Domínio para mostrar apenas um valor (preferência: `domain.domain`), sem “font-medium” e sem subtítulo em `text-xs`.
+  Opções:
+  - Opção A (mais simples e “padrão de tabela”): `TableCell>{domain.domain}</TableCell>`
+  - Opção B (mantém um leve destaque, mas ainda padrão): `TableCell><span>{domain.domain}</span></TableCell>` (sem classes)
+- Manter as demais colunas como estão.
 
-## Objetivo do ajuste
-1) Fazer com que **super_admin sempre passe nas policies** que usam `get_module_permission()`, inclusive para módulos novos como `external_domain`.  
-2) Opcional (recomendado): também “seedar” a permissão `external_domain` na tabela `user_module_permissions` para consistência e para o frontend exibir corretamente para usuários não-super-admin.
+Validação (checklist rápido)
+1) Abrir `/scope-external-domain/domains`
+2) Conferir cards:
+   - Total de Domínios
+   - Score Médio (com % e cor variando)
+   - Alertas Críticos
+   - Falhas Críticas
+3) Conferir tabela:
+   - Na coluna “Domínio” aparece apenas uma linha e com a mesma fonte/tamanho das outras células.
+4) Testar fluxo end-to-end:
+   - Adicionar domínio
+   - Verificar que os cards atualizam ao recarregar/listar
+   - Clicar “Analisar” e confirmar que o botão entra em loading e exibe toast de sucesso/erro como já está implementado
 
----
+Risco/impacto
+- Mudança é somente de UI/props; impacto principal é ajuste de typing e chamadas do componente.
+- Se houver lugares adicionais usando `ExternalDomainStatsCards`, precisaremos atualizar também (pelo nome/uso atual, parece ser só nessa página).
 
-## Plano de implementação (backend via migration)
-### Etapa 1 — Atualizar a função `public.get_module_permission()`
-Criar uma nova migration SQL em `supabase/migrations/` para substituir a função:
-
-Comportamento novo:
-- Se `has_role(_user_id, 'super_admin')` → retornar `'full'::module_permission` imediatamente.
-- Caso contrário, manter o comportamento atual:
-  - procurar em `user_module_permissions`
-  - se não existir, default `'view'`
-
-Isso resolve não só `external_domains`, mas qualquer tabela/policy que dependa dessa função.
-
-### Etapa 2 — “Seed”/Backfill de permissões do módulo `external_domain` (recomendado)
-Na mesma migration (ou outra), inserir permissões ausentes:
-
-- Para cada usuário com role `super_admin`:
-  - garantir que exista `user_module_permissions (user_id, module_name='external_domain', permission='full')`
-- Opcional: para usuários não super_admin, se você quiser padrão:
-  - inserir `'view'` se não existir (para evitar “buracos” de permissão e deixar o frontend consistente)
-
-Tudo com `INSERT ... SELECT ... WHERE NOT EXISTS (...)` para ser idempotente.
-
-### Etapa 3 — Ajustar `handle_new_user()` para novos usuários (recomendado)
-Hoje o trigger `handle_new_user()` cria permissões iniciais, mas não inclui `external_domain`.
-Atualizar o trigger para adicionar `external_domain`:
-- Primeiro usuário (super_admin): inserir `('external_domain', 'full')`
-- Usuários seguintes (role user): inserir `('external_domain', 'view')`
-
-Isso evita que o problema reapareça quando você criar novos usuários no futuro.
-
----
-
-## Plano de verificação (testes)
-### Teste A — Super admin (seu caso)
-1. Fazer login novamente (ou “Logout/Login” para garantir sessão fresca).
-2. Ir em **Domínio Externo → Domínios Externos**.
-3. Adicionar domínio (cliente/agent/domínio) e clicar **Adicionar**.
-4. Esperado:
-   - Sem erro de RLS
-   - Registro aparece na lista
-   - Se frequência != manual, schedule também salva
-
-### Teste B — Usuário comum sem edit
-1. Logar com usuário que não tem `external_domain` = edit/full.
-2. Esperado:
-   - Botão não aparece (frontend)
-   - Mesmo que tente via API, RLS bloqueia (backend)
-
-### Teste C — Usuário com edit
-1. Dar `external_domain=edit` para um usuário via `user_module_permissions`.
-2. Esperado:
-   - Consegue inserir e listar domínios somente dos clientes aos quais tem acesso (`user_clients`).
-
----
-
-## Arquivos/partes que serão alterados
-- `supabase/migrations/YYYYMMDDHHMMSS_fix_get_module_permission_super_admin.sql`
-  - `CREATE OR REPLACE FUNCTION public.get_module_permission(...)`
-  - backfill `user_module_permissions` para `external_domain`
-  - atualização do `handle_new_user()` (trigger)
-
-Nenhuma mudança no frontend é necessária para corrigir o 403 (o backend passará a aceitar como o UI já sugere). Opcionalmente, depois podemos alinhar o frontend/ModuleContext para usar um único modelo de permissões (mas isso é uma melhoria, não bloqueia o cadastro).
-
----
-
-## Riscos e cuidados
-- Alterar função usada por várias policies pode mudar comportamento esperado para super_admin (mas você explicitamente quer super_admin sempre FULL, então é intencional).
-- A migration deve ser idempotente (não criar duplicatas). Vamos usar `WHERE NOT EXISTS`/`ON CONFLICT` conforme o schema permitir.
-- Como isso é backend, a mudança aplica imediatamente no ambiente Test; em Live só quando publicar (se você publicar as migrations).
-
----
-
-## Resultado esperado após o ajuste
-- O INSERT em `external_domains` deixa de retornar 403 para super_admin.
-- O módulo Domínio Externo passa a funcionar “end-to-end” como o módulo Firewall no que diz respeito a permissões e cadastro.
+Arquivos que serão alterados
+- `src/components/external-domain/ExternalDomainStatsCards.tsx`
+- `src/pages/external-domain/ExternalDomainListPage.tsx`
+- `src/components/external-domain/ExternalDomainTable.tsx`
