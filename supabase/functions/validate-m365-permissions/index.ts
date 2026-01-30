@@ -203,6 +203,9 @@ async function createOrUpdateAlert(
     message: string;
     severity: 'info' | 'warning' | 'error';
     metadata?: Record<string, unknown>;
+    // Se definido, controla quem pode ver o alerta via RLS (system_alerts.target_role).
+    // null => visível para qualquer role (o frontend ainda pode filtrar quem renderiza o banner).
+    targetRole?: string | null;
   }
 ) {
   // Verificar se já existe um alerta ativo do mesmo tipo
@@ -222,6 +225,7 @@ async function createOrUpdateAlert(
         message: options.message,
         severity: options.severity,
         metadata: options.metadata || {},
+        target_role: options.targetRole ?? null,
         dismissed_by: [], // Reset dismissed users on update
         updated_at: new Date().toISOString(),
       })
@@ -235,7 +239,7 @@ async function createOrUpdateAlert(
         title: options.title,
         message: options.message,
         severity: options.severity,
-        target_role: 'super_admin',
+        target_role: options.targetRole ?? null,
         metadata: options.metadata || {},
       });
   }
@@ -342,6 +346,8 @@ Deno.serve(async (req) => {
         title: 'Falha na Conexão M365',
         message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
         severity: 'error',
+        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
+        targetRole: null,
         metadata: { error: String(error), tenantId },
       });
 
@@ -385,6 +391,8 @@ Deno.serve(async (req) => {
         title: 'Permissões M365 Críticas Faltando',
         message: `${failedRequired.length} permissão(ões) obrigatória(s) não está(ão) configurada(s): ${failedRequired.map(p => p.name).join(', ')}`,
         severity: 'error',
+        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
+        targetRole: null,
         metadata: {
           failedRequired: failedRequired.map(p => p.name),
           failedRecommended: failedRecommended.map(p => p.name),
@@ -400,6 +408,8 @@ Deno.serve(async (req) => {
         title: 'Permissões M365 Recomendadas Faltando',
         message: `${failedRecommended.length} permissão(ões) recomendada(s) não está(ão) configurada(s): ${failedRecommended.map(p => p.name).join(', ')}`,
         severity: 'warning',
+        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
+        targetRole: null,
         metadata: {
           failedRecommended: failedRecommended.map(p => p.name),
           newlyFailed: nowFailed.map(p => p.name),
