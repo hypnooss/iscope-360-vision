@@ -1,127 +1,111 @@
 
-## Objetivo (o que vamos corrigir agora)
+Objetivo
+- Atualizar e “profissionalizar” o README.md para refletir o projeto real (iScope 360), deixando claro: o que é, como rodar localmente, como configurar variáveis, como testar e como contribuir.
+- Idioma: PT-BR.
+- Público-alvo: equilibrado (dev + operação).
+- Detalhe sobre backend: somente o necessário para o frontend (mencionar que existe Supabase/Edge Functions e apontar para docs/migration).
 
-Você trouxe 2 pontos:
+O que encontrei no projeto (rápido diagnóstico)
+- README.md atual é o template padrão do Lovable, com placeholders (REPLACE_WITH_PROJECT_ID) e sem descrição do iScope 360.
+- Stack: Vite + React + TypeScript + Tailwind + shadcn-ui; TanStack Query; Supabase JS v2; React Router.
+- Há um conjunto grande de módulos/rotas no frontend, incluindo:
+  - Dashboard geral (/dashboard)
+  - Scope Firewall (/scope-firewall/*)
+  - Scope External Domain (/scope-external-domain/*)
+  - Scope M365 (/scope-m365/*)
+  - Admin/Usuários/Agents/Workspaces (/users, /agents, /workspaces, etc.)
+- Variáveis de ambiente relevantes para o frontend já existem no .env:
+  - VITE_SUPABASE_URL
+  - VITE_SUPABASE_PUBLISHABLE_KEY
+  - VITE_SUPABASE_PROJECT_ID
+- Existe documentação de migração e setup (docs/migration/*), e um python-agent com README próprio (python-agent/README.md). Como você pediu “somente frontend”, isso deve virar apenas referência no README principal (não duplicar).
 
-1) **UI**: No Domínio Externo, na seção expandida do check, você quer voltar o **ícone (prancheta/arquivo)** antes do título **“ANÁLISE EFETUADA”** (como era antes em “EVIDÊNCIAS COLETADAS”).
+Mudanças propostas no README.md (estrutura final sugerida)
+1) Título e descrição
+- “# iScope 360”
+- 2–4 linhas explicando o propósito (plataforma de análise/observabilidade/compliance de infraestrutura) alinhado com o texto do Index (“Gerencie sua Infraestrutura com Inteligência”).
+- Opcional: um “Status” curto (ex.: “Em desenvolvimento / Preview”).
 
-2) **Regra MX (Infraestrutura de Email)**: Em **“Prioridade MX Configuradas” (MX-003)** e **“Redundância MX” (MX-002)**, hoje está falhando quando o MX é um **hostname “alias”** (ex.: Microsoft 365) — mas esse hostname resolve em múltiplos IPs e, na prática, existe redundância. Precisamos validar isso corretamente.
+2) Links do projeto
+- Incluir:
+  - Preview URL (do seu projeto Lovable)
+  - Published URL (quando existir)
+  - (Opcional) Link do Supabase (apenas referência, sem credenciais)
+- Remover placeholders “REPLACE_WITH_PROJECT_ID”.
 
----
+3) Principais funcionalidades (visão de produto, alto nível)
+- Lista curta (bullets) com os módulos já existentes no código:
+  - Dashboard geral
+  - Firewall (compliance, análises, relatórios, execuções)
+  - External Domain (análises, relatórios, execuções)
+  - Microsoft 365 / Entra ID (conexão tenant, auditoria, análise)
+  - Gestão de usuários, administradores, agents, workspaces
+- Sem prometer coisas que não existem; usar linguagem “inclui telas/fluxos para…”.
 
-## Diagnóstico rápido (com base no código)
+4) Tecnologias
+- Manter, mas atualizar para refletir o repo:
+  - Vite, React 18, TypeScript, Tailwind, shadcn-ui/Radix
+  - React Router
+  - TanStack Query
+  - Supabase (Auth + Database via @supabase/supabase-js)
+  - Playwright (teste E2E — está em dependências)
 
-### (1) Ícone “prancheta” no título
-- Hoje, no `src/components/ComplianceCard.tsx`, o título “ANÁLISE EFETUADA” foi renderizado **sem ícone**.
-- O ícone usado em “Evidências Coletadas” (default) é o `FileText` do lucide-react.
-- Solução: adicionar `FileText` no header do bloco `variant === 'external_domain'`.
+5) Como rodar localmente (passo a passo)
+- Pré-requisitos:
+  - Node.js (sugerir LTS) e npm
+- Instalação e execução:
+  - npm i
+  - npm run dev
+- Outros scripts (do package.json):
+  - npm run build
+  - npm run preview
+  - npm run lint
 
-### (2) Regras MX e por que falham com Microsoft 365 / Gmail
-- As regras de MX estão definidas no SQL (migration), com estes operadores:
-  - **MX-002 Redundância MX**: `array_length_gte` de `data.records` >= 2
-  - **MX-003 Prioridades MX Configuradas**: `has_distinct_priorities` em `data.records`
-- Para provedores grandes, normalmente existe **1 MX record** (1 hostname), e a “redundância” está por trás do hostname (A/AAAA).
-- Hoje o pipeline pega apenas os MX records (priority + exchange), sem resolver A/AAAA do exchange.
+6) Variáveis de ambiente (frontend)
+- Explicar que o projeto usa Supabase no frontend e precisa das variáveis VITE_*.
+- Instruir como criar um .env local (ou usar o já existente) sem expor chaves no README:
+  - Exemplo com placeholders, tipo:
+    - VITE_SUPABASE_URL="https://<project-ref>.supabase.co"
+    - VITE_SUPABASE_PUBLISHABLE_KEY="<anon-key>"
+    - VITE_SUPABASE_PROJECT_ID="<project-ref>"
+- Nota de segurança: não commitar service_role key no frontend; somente anon key no client.
 
----
+7) Rotas principais (para orientar QA/operação)
+- Listar rotas principais que existem em src/App.tsx, agrupadas por módulo.
+- Isso ajuda quem testa a navegar rapidamente.
 
-## Estratégia de implementação (sem quebrar outros módulos)
+8) Backend (apenas referência, como você pediu)
+- Seção curta: “Backend e Supabase”
+  - “Este repositório já está preparado para Supabase…”
+  - Linkar para:
+    - docs/migration/migration_guide.md (migração)
+    - python-agent/README.md (agent)
+  - Não colocar tutorial detalhado de Edge Functions aqui (porque você pediu “Somente frontend”).
 
-### Parte A — UI (rápida e isolada)
-- Alterar apenas o `ComplianceCard.tsx` no bloco `external_domain`:
-  - Header vira `flex items-center gap-1.5`
-  - Recolocar `<FileText className="w-3 h-3" />` antes do texto “ANÁLISE EFETUADA”
+9) Testes (rápido)
+- Como há Playwright instalado, incluir:
+  - Onde ficam os testes (se existirem; se não existirem ainda, mencionar “Playwright está configurado e pode ser usado para E2E”).
+- Se eu não encontrar testes existentes ao revisar, vou escrever a seção de forma honesta (sem inventar comando “npm run test” se não existe script).
 
-Isso não mexe em permissões e não afeta Firewall/M365 (porque é só no variant `external_domain`).
+10) Contribuição e padrão de commits (opcional)
+- Seção curta para time:
+  - Branches, PRs, lint antes de commitar
+  - Observação: mudanças feitas via Lovable também commitam no repo (se estiver integrado ao GitHub)
 
----
+11) Licença / aviso legal (opcional)
+- Se você tiver uma licença definida, incluir; se não tiver, deixar uma linha “Licença: a definir”.
 
-### Parte B — “Redundância MX” e “Prioridades MX” com validação de alias (correção real)
-Vamos corrigir de forma sólida e compatível com o que você descreveu (nslookup retornando múltiplos IPs).
+Trabalho de verificação antes de escrever (para evitar README “mentiroso”)
+- Conferir se existe pasta de testes Playwright e/ou scripts adicionais (playwright.config.ts, e2e specs).
+- Conferir se há instruções específicas de build (vite.config.ts) relevantes.
+- Confirmar se existe alguma configuração obrigatória adicional no frontend (ex.: redirect de auth, callback URL).
 
-#### B1) Melhorar o payload do agente (python-agent)
-No `python-agent/agent/executors/dns_query.py`, no bloco `query_type == 'MX'`:
-- Para cada record MX (`exchange`), fazer resolve best-effort de:
-  - `A` e `AAAA` do hostname retornado (exchange)
-- Salvar junto do record, por exemplo:
-  - `resolved_ips: string[]` (IPs A + AAAA)
-  - `resolved_ip_count: number`
-  - opcional: `resolve_error?: string` (quando falhar)
+Critérios de aceite (o que você vai validar)
+- README está em PT-BR e menciona “iScope 360”.
+- Não há placeholders antigos de URL.
+- README explica claramente como rodar localmente e quais env vars são necessárias (sem expor segredos).
+- README descreve os módulos/rotas que realmente existem no projeto.
+- README aponta para docs/migration e python-agent sem duplicar conteúdo.
 
-Exemplo de estrutura por record:
-```json
-{
-  "priority": 0,
-  "exchange": "estrela-com-br.mail.protection.outlook.com",
-  "resolved_ips": ["52.101.194.19", "...", "2a01:111:f403:c931::1"],
-  "resolved_ip_count": 8
-}
-```
-
-Isso deixa explícito no dado bruto que existe redundância por trás do alias.
-
-#### B2) Ajustar a avaliação no backend (Edge Function) sem depender de mudar SQL
-No `supabase/functions/agent-task-result/index.ts`, dentro de `processComplianceRules`, já existe um padrão de **“override por rule.code”** (ex.: `fw-001` etc).
-
-Vamos adicionar overrides específicos para:
-- **MX-002 (Redundância MX)**
-  - `pass` se:
-    - `records.length >= 2` (comportamento atual), **OU**
-    - `records.length === 1` e `records[0].resolved_ip_count >= 2` (redundância via alias)
-  - `fail` se:
-    - `records.length === 0`, ou
-    - `records.length === 1` e `resolved_ip_count < 2` (ou não disponível)
-
-- **MX-003 (Prioridades MX Configuradas)**
-  - `pass` se:
-    - `has_distinct_priorities(records)` for verdadeiro (caso clássico com 2+ MX), **OU**
-    - `records.length === 1` e `records[0].resolved_ip_count >= 2` (provedor gerenciado: failover “atrás” do hostname)
-  - `warn/fail` (mantemos o comportamento atual) se:
-    - não for possível determinar redundância do alias e só existir 1 record sem evidência de múltiplos IPs
-
-Além disso, vamos melhorar o `details` (que é o que você quer que apareça para todos em “ANÁLISE EFETUADA”):
-- Para M365/Gmail com 1 MX alias resolvendo múltiplos IPs, algo como:
-  - “MX único (hostname gerenciado) resolve para X IP(s). Redundância provida pelo provedor.”
-
-Isso responde exatamente ao seu ponto: “o agent não validou esse alias”.
-
----
-
-## Arquivos que serão alterados
-
-1) `src/components/ComplianceCard.tsx`
-- Recolocar ícone `FileText` antes do título “ANÁLISE EFETUADA” no variant `external_domain`.
-
-2) `python-agent/agent/executors/dns_query.py`
-- Enriquecer retorno de MX com A/AAAA do hostname (`resolved_ips`, `resolved_ip_count`).
-
-3) `supabase/functions/agent-task-result/index.ts`
-- Adicionar overrides para `MX-002` e `MX-003` para considerar `resolved_ip_count` quando houver apenas 1 MX record.
-
----
-
-## Critérios de aceite (como você valida)
-
-### UI
-- Expandir qualquer check no Domínio Externo:
-  - “ANÁLISE EFETUADA” aparece com o mesmo ícone (prancheta/arquivo) que existia em “EVIDÊNCIAS COLETADAS”.
-
-### MX
-No relatório do domínio com MX do Microsoft 365:
-- **MX-002 Redundância MX** deve ficar **pass** se o hostname resolver para múltiplos IPs.
-- **MX-003 Prioridades MX Configuradas** não deve penalizar quando houver **1 MX alias** com múltiplos IPs (deve ficar **pass** com texto explicativo).
-- Continuar funcionando como antes para domínios com 2+ MX (prioridades distintas etc).
-
----
-
-## Riscos / Observações
-- A resolução A/AAAA do exchange é “best-effort”: DNS pode falhar por timeout/ratelimit. Vamos tratar falhas de forma segura (não quebrar execução; apenas não considerar o fallback).
-- Isso não muda o comportamento de Firewall/M365, apenas o módulo de Domínio Externo e somente as regras MX-002/MX-003 na geração do resultado.
-
----
-
-## Teste end-to-end recomendado (rápido)
-1) Abrir o relatório do domínio já na sua rota atual.
-2) Ir em “Infraestrutura de Email”:
-   - Expandir **Redundância MX** e **Prioridade MX Configuradas**.
-3) Repetir com um domínio “normal” (com 2 MX records), se você tiver, para garantir que não regredimos o caso clássico.
+Próximo passo (após sua aprovação)
+- Eu vou revisar rapidamente os arquivos de configuração de testes (Playwright) e, em seguida, reescrever o README.md completo seguindo a estrutura acima, mantendo o texto objetivo e copiável (com blocos de comando prontos).
