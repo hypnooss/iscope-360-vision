@@ -1368,6 +1368,7 @@ export type Database = {
         | "ssh_command"
         | "snmp_query"
         | "ping_check"
+        | "external_domain_analysis"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       device_category:
         | "firewall"
@@ -1538,6 +1539,7 @@ export const Constants = {
         "ssh_command",
         "snmp_query",
         "ping_check",
+        "external_domain_analysis",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       device_category: [
