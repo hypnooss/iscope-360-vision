@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
 import { toast } from 'sonner';
 import { TruncatedText } from '@/components/TruncatedText';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Loader2,
   ArrowLeft,
@@ -34,6 +35,43 @@ type LocationState = {
     client_name?: string;
   };
 };
+
+type InfoRowProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  /** Optional tooltip content (keeps value displayed short) */
+  tooltip?: string;
+};
+
+function InfoRow({ icon, label, value, tooltip }: InfoRowProps) {
+  return (
+    <div className="min-w-0 flex items-center gap-2">
+      <span className="flex-shrink-0 text-primary">{icon}</span>
+
+      {tooltip ? (
+        <TooltipProvider delayDuration={250}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="min-w-0 flex-1 font-medium text-foreground truncate" tabIndex={0}>
+                {value || 'N/A'}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm break-words">{tooltip}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <TruncatedText
+          text={value}
+          className="font-medium text-foreground"
+          maxWidthClassName="min-w-0 flex-1"
+        />
+      )}
+
+      <span className="text-xs text-muted-foreground whitespace-nowrap">{label}</span>
+    </div>
+  );
+}
 
 const getIconForCategory = (name: string): string => {
   const icons: Record<string, string> = {
@@ -282,13 +320,12 @@ export default function ExternalDomainAnalysisReportPage() {
     const hasDnskey = Boolean(dnsSummary?.dnssecHasDnskey);
     const hasDs = Boolean(dnsSummary?.dnssecHasDs);
     if (hasDnskey && hasDs) return 'Ativo';
-    if (hasDnskey || hasDs) return 'Parcial';
     return 'Inativo';
   })();
 
-  const dnssecTooltip = (dnsSummary?.dnssecNotes && dnsSummary.dnssecNotes.length > 0)
-    ? `${dnssecStatus} — ${dnsSummary.dnssecNotes.join(' | ')}`
-    : dnssecStatus;
+  const dnssecNotesTooltip = (dnsSummary?.dnssecNotes && dnsSummary.dnssecNotes.length > 0)
+    ? dnsSummary.dnssecNotes.join(' | ')
+    : undefined;
 
   useEffect(() => {
     if (initialReport) return;
@@ -457,77 +494,38 @@ export default function ExternalDomainAnalysisReportPage() {
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
                 </div>
 
-                <dl className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-                  <div className="min-w-0">
-                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                      Domínio
-                    </dt>
-                    <dd className="mt-1 min-w-0">
-                      <TruncatedText
-                        text={domain?.domain || 'N/A'}
-                        className="font-semibold text-foreground"
-                        maxWidthClassName="w-full"
-                      />
-                    </dd>
-                  </div>
+                <div className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                  <InfoRow
+                    icon={<Globe className="w-4 h-4" />}
+                    label="Domínio"
+                    value={domain?.domain || 'N/A'}
+                  />
 
-                  <div className="min-w-0">
-                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                      Nameservers (NS)
-                    </dt>
-                    <dd className="mt-1 min-w-0">
-                      <TruncatedText
-                        text={nsText}
-                        className="font-medium text-foreground"
-                        maxWidthClassName="w-full"
-                      />
-                    </dd>
-                  </div>
+                  <InfoRow
+                    icon={<ShieldX className="w-4 h-4" />}
+                    label="Nameservers (NS)"
+                    value={nsText}
+                  />
 
-                  <div className="min-w-0">
-                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                      SOA
-                    </dt>
-                    <dd className="mt-1 min-w-0">
-                      <TruncatedText
-                        text={dnsSummary?.soaMname || 'N/A'}
-                        className="font-medium text-foreground"
-                        maxWidthClassName="w-full"
-                      />
-                    </dd>
-                  </div>
+                  <InfoRow
+                    icon={<ShieldX className="w-4 h-4" />}
+                    label="SOA"
+                    value={dnsSummary?.soaMname || 'N/A'}
+                  />
 
-                  <div className="min-w-0">
-                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
-                      SOA Contact
-                    </dt>
-                    <dd className="mt-1 min-w-0">
-                      <TruncatedText
-                        text={dnsSummary?.soaContact || 'N/A'}
-                        className="font-medium text-foreground"
-                        maxWidthClassName="w-full"
-                      />
-                    </dd>
-                  </div>
+                  <InfoRow
+                    icon={<CalendarClock className="w-4 h-4" />}
+                    label="SOA Contact"
+                    value={dnsSummary?.soaContact || 'N/A'}
+                  />
 
-                  <div className="min-w-0 md:col-span-2">
-                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                      DNSSEC Status
-                    </dt>
-                    <dd className="mt-1 min-w-0">
-                      <TruncatedText
-                        text={dnssecTooltip}
-                        className="font-medium text-foreground"
-                        maxWidthClassName="w-full"
-                      />
-                    </dd>
-                  </div>
-                </dl>
+                  <InfoRow
+                    icon={<ShieldX className="w-4 h-4" />}
+                    label="DNSSEC Status"
+                    value={dnssecStatus}
+                    tooltip={dnssecNotesTooltip ? `Notes: ${dnssecNotesTooltip}` : undefined}
+                  />
+                </div>
               </div>
 
               {/* Separador */}
