@@ -43,6 +43,16 @@ export interface ComplianceReport {
   generatedAt: Date;
   firmwareVersion?: string;
   cves?: CVEInfo[];
+  // Optional summary for External Domain DNS reports
+  dnsSummary?: {
+    ns?: string[];
+    soaMname?: string | null;
+    soaContact?: string | null;
+    dnssecHasDnskey?: boolean;
+    dnssecHasDs?: boolean;
+    dnssecValidated?: boolean;
+    dnssecNotes?: string[];
+  };
   // System info from report
   systemInfo?: {
     hostname?: string;

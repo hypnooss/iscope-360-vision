@@ -9,6 +9,7 @@ import { CategorySection } from '@/components/CategorySection';
 import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
 import { toast } from 'sonner';
+import { TruncatedText } from '@/components/TruncatedText';
 import {
   Loader2,
   ArrowLeft,
@@ -101,6 +102,15 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
     categories: categories as ComplianceCategory[],
     generatedAt: new Date(createdAt || (raw.generatedAt as string) || Date.now()),
     firmwareVersion: (raw.firmwareVersion as string) ?? undefined,
+    dnsSummary: (raw.dns_summary as any) ? {
+      ns: (raw.dns_summary as any).ns ?? undefined,
+      soaMname: (raw.dns_summary as any).soa_mname ?? (raw.dns_summary as any).soaMname ?? null,
+      soaContact: (raw.dns_summary as any).soa_contact ?? (raw.dns_summary as any).soaContact ?? null,
+      dnssecHasDnskey: (raw.dns_summary as any).dnssec_has_dnskey ?? (raw.dns_summary as any).dnssecHasDnskey ?? undefined,
+      dnssecHasDs: (raw.dns_summary as any).dnssec_has_ds ?? (raw.dns_summary as any).dnssecHasDs ?? undefined,
+      dnssecValidated: (raw.dns_summary as any).dnssec_validated ?? (raw.dns_summary as any).dnssecValidated ?? undefined,
+      dnssecNotes: (raw.dns_summary as any).dnssec_notes ?? (raw.dns_summary as any).dnssecNotes ?? undefined,
+    } : undefined,
     systemInfo: undefined,
   };
 };
@@ -136,6 +146,23 @@ export default function ExternalDomainAnalysisReportPage() {
   const [clientName, setClientName] = useState<string | null>(state.domainMeta?.client_name || null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(state.analysisCreatedAt || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const dnsSummary = report?.dnsSummary;
+  const nsText = Array.isArray(dnsSummary?.ns) && dnsSummary?.ns.length > 0
+    ? dnsSummary.ns.join(', ')
+    : 'N/A';
+
+  const dnssecStatus = (() => {
+    const hasDnskey = Boolean(dnsSummary?.dnssecHasDnskey);
+    const hasDs = Boolean(dnsSummary?.dnssecHasDs);
+    if (hasDnskey && hasDs) return 'Ativo';
+    if (hasDnskey || hasDs) return 'Parcial';
+    return 'Inativo';
+  })();
+
+  const dnssecTooltip = (dnsSummary?.dnssecNotes && dnsSummary.dnssecNotes.length > 0)
+    ? `${dnssecStatus} — ${dnsSummary.dnssecNotes.join(' | ')}`
+    : dnssecStatus;
 
   useEffect(() => {
     if (initialReport) return;
@@ -308,24 +335,47 @@ export default function ExternalDomainAnalysisReportPage() {
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-primary flex-shrink-0" />
                     <span className="text-muted-foreground text-sm">Domínio:</span>
-                    <span className="font-semibold text-foreground truncate">{domain?.domain || 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">Cliente:</span>
-                    <span className="font-medium text-foreground truncate">{clientName || 'N/A'}</span>
+                    <TruncatedText
+                      text={domain?.domain || 'N/A'}
+                      className="font-semibold text-foreground"
+                      maxWidthClassName="max-w-[16rem]"
+                    />
                   </div>
                   <div className="flex items-center gap-2">
                     <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">Nome:</span>
-                    <span className="font-semibold text-foreground truncate">{domain?.name || 'N/A'}</span>
+                    <span className="text-muted-foreground text-sm">NS:</span>
+                    <TruncatedText
+                      text={nsText}
+                      className="font-medium text-foreground"
+                      maxWidthClassName="max-w-[16rem]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">SOA:</span>
+                    <TruncatedText
+                      text={dnsSummary?.soaMname || 'N/A'}
+                      className="font-medium text-foreground"
+                      maxWidthClassName="max-w-[16rem]"
+                    />
                   </div>
                   <div className="flex items-center gap-2">
                     <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">Data:</span>
-                    <span className="font-medium text-foreground text-sm truncate">
-                      {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
-                    </span>
+                    <span className="text-muted-foreground text-sm">SOA Contact:</span>
+                    <TruncatedText
+                      text={dnsSummary?.soaContact || 'N/A'}
+                      className="font-medium text-foreground text-sm"
+                      maxWidthClassName="max-w-[16rem]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">DNSSEC Status:</span>
+                    <TruncatedText
+                      text={dnssecTooltip}
+                      className="font-medium text-foreground text-sm"
+                      maxWidthClassName="max-w-[16rem]"
+                    />
                   </div>
                 </div>
               </div>

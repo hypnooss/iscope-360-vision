@@ -46,7 +46,10 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
   const normalizedStatus = (rawStatus === 'warn' ? 'warning' : rawStatus) as ComplianceStatus;
   const config = statusConfig[normalizedStatus] || statusConfig.pending;
   const StatusIcon = config.icon;
-  const hasEvidence = canViewEvidence && check.evidence && check.evidence.length > 0;
+  const hasEvidence = canViewEvidence && !!check.evidence && check.evidence.length > 0;
+  const hasAdminDetails = canViewEvidence && (!!check.apiEndpoint || !!check.rawData || hasEvidence);
+  const hasUserDetails = !!check.details || !!check.description || !!check.recommendation;
+  const canExpand = hasAdminDetails || hasUserDetails;
 
   return (
     <div 
@@ -58,7 +61,7 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
     >
       <div 
         className="flex items-start gap-3 cursor-pointer"
-        onClick={() => hasEvidence ? setIsExpanded(!isExpanded) : onClick?.()}
+        onClick={() => (canExpand ? setIsExpanded(!isExpanded) : onClick?.())}
       >
         <div className={cn("p-2 rounded-lg border", config.className)}>
           <StatusIcon className="w-4 h-4" />
@@ -86,7 +89,7 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
           )}
         </div>
 
-        {hasEvidence ? (
+        {canExpand ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Detalhes</span>
             {isExpanded ? (
@@ -101,36 +104,51 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
       </div>
 
       {/* Evidências expandidas */}
-      {isExpanded && hasEvidence && (
+      {isExpanded && canExpand && (
         <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
-          {check.apiEndpoint && (
+          {canViewEvidence && check.apiEndpoint && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <ExternalLink className="w-3 h-3" />
               <span>Endpoint consultado: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{check.apiEndpoint}</code></span>
             </div>
           )}
-          
-          <div className="space-y-2">
-            <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-              <FileText className="w-3 h-3" />
-              Evidências Coletadas
-            </h5>
-            
-            {check.evidence?.map((item, index) => (
-              <div key={index} className="bg-muted/30 rounded-md p-3 border border-border/30">
-                <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-                {item.type === 'code' ? (
-                  <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto">
-                    {item.value}
-                  </code>
-                ) : (
-                  <p className="text-sm text-foreground">{item.value}</p>
-                )}
-              </div>
-            ))}
-          </div>
 
-          {check.rawData && Object.keys(check.rawData).length > 0 && (
+          {(check.details || check.description) && (
+            <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+              <span className="text-xs font-medium text-muted-foreground block mb-1">Detalhes</span>
+              <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
+            </div>
+          )}
+          
+          {canViewEvidence && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <FileText className="w-3 h-3" />
+                Evidências Coletadas
+              </h5>
+              
+              {check.evidence && check.evidence.length > 0 ? (
+                check.evidence?.map((item, index) => (
+                  <div key={index} className="bg-muted/30 rounded-md p-3 border border-border/30">
+                    <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
+                    {item.type === 'code' ? (
+                      <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto">
+                        {item.value}
+                      </code>
+                    ) : (
+                      <p className="text-sm text-foreground">{item.value}</p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-3 border border-border/30">
+                  Nenhuma evidência disponível para este item.
+                </div>
+              )}
+            </div>
+          )}
+
+          {canViewEvidence && check.rawData && Object.keys(check.rawData).length > 0 && (
             <details className="text-xs">
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1">
                 <Code className="w-3 h-3" />
