@@ -494,46 +494,72 @@ export default function ExternalDomainAnalysisReportPage() {
             </div>
 
             <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
-              {/* Parte superior: Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-4 items-start">
+              {/* Parte superior: Info (match FortiGate card layout) */}
+              <div className="flex items-start gap-4">
                 <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
                   <Globe className="w-10 h-10 text-primary mb-1" />
-                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider">DOMÍNIO</span>
                 </div>
 
-                <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                  <InfoRow
-                    icon={<Globe className="w-4 h-4" />}
-                    label="Domínio"
-                    value={domain?.domain || 'N/A'}
-                    valueClassName="font-semibold"
-                  />
+                <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm flex-shrink-0">Domínio:</span>
+                    <TruncatedText
+                      text={domain?.domain || 'N/A'}
+                      className="font-semibold text-foreground"
+                      maxWidthClassName="min-w-0 flex-1"
+                    />
+                  </div>
 
-                  <InfoRow
-                    icon={<ShieldX className="w-4 h-4" />}
-                    label="Nameservers (NS)"
-                    value={nsText}
-                    valueClassName="font-semibold"
-                  />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm flex-shrink-0">Nameservers (NS):</span>
+                    <TruncatedText
+                      text={nsText}
+                      className="font-semibold text-foreground"
+                      maxWidthClassName="min-w-0 flex-1"
+                    />
+                  </div>
 
-                  <InfoRow
-                    icon={<ShieldX className="w-4 h-4" />}
-                    label="SOA"
-                    value={dnsSummary?.soaMname || 'N/A'}
-                  />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm flex-shrink-0">SOA:</span>
+                    <TruncatedText
+                      text={dnsSummary?.soaMname || 'N/A'}
+                      className="font-medium text-foreground"
+                      maxWidthClassName="min-w-0 flex-1"
+                    />
+                  </div>
 
-                  <InfoRow
-                    icon={<CalendarClock className="w-4 h-4" />}
-                    label="SOA Contact"
-                    value={dnsSummary?.soaContact || 'N/A'}
-                  />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm flex-shrink-0">SOA Contact:</span>
+                    <TruncatedText
+                      text={dnsSummary?.soaContact || 'N/A'}
+                      className="font-medium text-foreground"
+                      maxWidthClassName="min-w-0 flex-1"
+                    />
+                  </div>
 
-                  <InfoRow
-                    icon={<ShieldX className="w-4 h-4" />}
-                    label="DNSSEC Status"
-                    value={dnssecStatus}
-                    tooltip={dnssecNotesTooltip ? `Notes: ${dnssecNotesTooltip}` : undefined}
-                  />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm flex-shrink-0">DNSSEC Status:</span>
+                    {dnssecNotesTooltip ? (
+                      <TooltipProvider delayDuration={250}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="min-w-0 flex-1 font-medium text-foreground truncate" tabIndex={0}>
+                              {dnssecStatus || 'N/A'}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm break-words">Notes: {dnssecNotesTooltip}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="min-w-0 flex-1 font-medium text-foreground truncate">{dnssecStatus || 'N/A'}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
