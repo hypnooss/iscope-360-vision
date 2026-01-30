@@ -265,8 +265,23 @@ class TaskExecutor:
 
     def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
         credentials = target.get('credentials', {})
+        base_url = target.get('base_url') or target.get('url')
+        
+        # Extract domain from target or parse from base_url (fallback for DNS steps)
+        domain = target.get('domain')
+        if not domain and base_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(base_url)
+                domain = parsed.netloc or parsed.path
+                if domain:
+                    domain = domain.split('/')[0].split(':')[0]  # Remove port if present
+            except Exception:
+                pass
+        
         return {
-            'base_url': target.get('base_url') or target.get('url'),
+            'base_url': base_url,
+            'domain': domain,
             'api_key': credentials.get('api_key'),
             'host': target.get('host'),
             'port': target.get('port'),
