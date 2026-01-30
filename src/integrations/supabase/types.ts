@@ -428,6 +428,107 @@ export type Database = {
         }
         Relationships: []
       }
+      external_domain_schedules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          domain_id: string
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id: string
+          is_active: boolean
+          next_run_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          domain_id: string
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          domain_id?: string
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_domain_schedules_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "external_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_domains: {
+        Row: {
+          agent_id: string | null
+          client_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          domain: string
+          id: string
+          last_scan_at: string | null
+          last_score: number | null
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          domain: string
+          id?: string
+          last_scan_at?: string | null
+          last_score?: number | null
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          domain?: string
+          id?: string
+          last_scan_at?: string | null
+          last_score?: number | null
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_domains_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_domains_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firewalls: {
         Row: {
           agent_id: string | null
