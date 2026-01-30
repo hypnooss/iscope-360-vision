@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .insert({
         agent_id: domain.agent_id,
-        task_type: 'ssh_command',
+        task_type: 'external_domain_analysis',
         target_id: domain_id,
         target_type: 'external_domain',
         status: 'pending',

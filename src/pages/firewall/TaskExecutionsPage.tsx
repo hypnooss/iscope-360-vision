@@ -136,6 +136,7 @@ export default function TaskExecutionsPage() {
           expires_at,
           timeout_at
         `)
+        .eq('target_type', 'firewall')
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
