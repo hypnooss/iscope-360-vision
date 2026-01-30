@@ -1,69 +1,96 @@
 
-Contexto e causa raiz
-- Você executou uma tarefa de “Domínios externos” (external_domain) e, ao concluir, o banner não apareceu.
-- Ao inspecionar o backend, encontramos que o banner só aparece quando existe um registro em `system_alerts` para o evento.
-- No edge function `supabase/functions/agent-task-result/index.ts`:
-  - Para `task.target_type === 'firewall'`, o sistema cria um alerta `system_alerts` com `alert_type = 'firewall_analysis_completed'`.
-  - Para `task.target_type === 'external_domain'`, o sistema salva histórico em `external_domain_analysis_history`, mas NÃO cria nenhum `system_alerts`.
-- Resultado: mesmo com a UI do banner funcionando, não há “evento” para ele mostrar quando a análise de domínios externos finaliza.
+Contexto (o que está acontecendo e por quê)
+1) Execuções de “Domínios externos” aparecendo em “Firewall > Execuções”
+- A página `src/pages/firewall/TaskExecutionsPage.tsx` lista tarefas de `agent_tasks` apenas filtrando por data/status, mas não filtra por `target_type`.
+- Como `agent_tasks` hoje contém tarefas de `target_type = 'firewall'` e `target_type = 'external_domain'`, a tela de firewall acaba mostrando tudo.
 
-Objetivo do ajuste (confirmado com você)
-- Ao concluir uma análise de Domínios externos, exibir um banner de sucesso com botão “Ver Relatório”.
-- Esse banner deve ser visível para “Todos autenticados” (ou seja, `target_role = null`), e o acesso é naturalmente limitado por RLS do restante do sistema (cliente/domínio), além do próprio usuário precisar estar logado.
+2) “Domínio” aparece duplicado na tela de execuções de domínios externos
+- Em `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`, a função:
+  - `getDomainLabel()` retorna `name (domain)` quando `name` existe.
+- Se `name` for igual ao próprio `domain` (ex.: name="estrela.com.br" e domain="estrela.com.br"), isso vira `estrela.com.br (estrela.com.br)`.
 
-Solução proposta (sem mudanças de schema)
-A) Backend: criar alerta de conclusão para external_domain
-1) Arquivo: `supabase/functions/agent-task-result/index.ts`
-2) No bloco já existente que roda quando:
-   - `task.target_type === 'external_domain'`
-   - e `complianceResult && score !== null`
-3) Ajustar a inserção do histórico em `external_domain_analysis_history` para retornar o ID do relatório criado:
-   - trocar o insert atual por um insert com `.select('id').single()` (ou equivalente) para obter `report_id`.
-4) Depois do histórico ser salvo com sucesso, inserir um registro em `system_alerts` (modelo semelhante ao firewall):
-   - `alert_type`: `external_domain_analysis_completed`
-   - `title`: algo como “Análise Concluída”
-   - `message`: algo como `A análise do domínio "<nome do domínio>" foi concluída com score X%.`
-   - `severity`: `success` (para usar o visual “verde/teal” existente)
-   - `target_role`: `null` (visível para todos autenticados)
-   - `is_active`: `true`
-   - `expires_at`: manter um TTL longo no banco (ex.: 24h) para permitir que o alerta exista no backend, mas a UI ainda aplicará o “UI lifetime” (30s para não-M365)
-   - `metadata`: incluir pelo menos:
-     - `domain_id`: `task.target_id`
-     - `report_id`: id retornado de `external_domain_analysis_history`
-     - `score`: score calculado
-     - opcional: `domain_name` se buscarmos no banco (ver item 5)
-5) Complemento recomendado: buscar o “nome amigável” do domínio para melhorar a mensagem do banner:
-   - antes de criar o alerta, fazer um `select` em `external_domains` por `id=task.target_id` e pegar `name` e/ou `domain`.
-   - fallback: se não achar, usar “Domínio externo”.
+3) Coluna “Tipo” mostrando `ssh_command` e a dúvida “isso não é ssh_command”
+- No banco, `agent_tasks.task_type` é um enum (`agent_task_type`) e hoje inclui valores como `fortigate_compliance`, `ssh_command`, etc.
+- Para “Domínios externos”, o edge function `supabase/functions/trigger-external-domain-analysis/index.ts` cria a task com `task_type: 'ssh_command'`.
+- Porém, na prática, a execução real do “que o agent faz” vem do blueprint (RPC `rpc_get_agent_tasks` sempre traz steps do blueprint do device_type `external_domain`). Ou seja, `task_type` virou um rótulo legado e confuso nesse contexto.
+- Faz sentido você estranhar: do ponto de vista do produto, é “Análise de Domínio Externo”, não “ssh_command”.
 
-B) Frontend: adicionar ação “Ver Relatório” para esse novo tipo de alerta
-1) Arquivo: `src/components/alerts/SystemAlertBanner.tsx`
-2) O banner já está assinado no Realtime e já carrega `metadata`.
-3) Adicionar uma nova regra de ação, similar ao trecho existente para `firewall_analysis_completed`:
-   - Quando `primaryAlert.alert_type === 'external_domain_analysis_completed'` e `metadata.domain_id` e `metadata.report_id` existirem:
-     - Renderizar botão “Ver Relatório”
-     - Ao clicar:
-       - chamar `dismissAlert(alertId)` (como já acontece nos outros botões)
-       - navegar para: `/scope-external-domain/domains/${domainId}/report/${reportId}`
-4) Manter o restante do comportamento:
-   - Lifetimes: não-M365 continua expirar visualmente em 30s (conforme você disse “pode expirar”)
-   - M365 continua restrito a `super_admin` e `super_suporte` (já ajustado anteriormente)
+Objetivo do ajuste
+A) Separar corretamente as telas:
+- “Firewall > Execuções” deve listar apenas tasks de firewall.
+- “Domínio Externo > Execuções” deve listar apenas tasks de domínio externo (já faz).
 
-Cenários de teste (end-to-end)
-1) Como um usuário autenticado (role qualquer) com acesso ao client/domínio:
-   - Executar uma análise de Domínios externos
-   - Ao concluir:
-     - banner aparece com severidade “success”
-     - botão “Ver Relatório” abre exatamente a rota do relatório criado
-2) Confirmar que:
-   - Após atualizar a página logo após concluir (dentro de ~30s), o banner ainda aparece
-   - Após >30s, o banner pode não aparecer (comportamento esperado do UI lifetime)
-3) Confirmar que o relatório abre sem erro e que a página corresponde ao `report_id` inserido no histórico.
+B) Corrigir a duplicidade do nome do domínio:
+- Exibir apenas `domain` quando `name` estiver vazio OU for igual ao domain.
+- Exibir `name (domain)` apenas quando forem diferentes.
 
-Observações / riscos
-- Se o `agent-task-result` às vezes marca status `partial` ou termina sem `complianceResult`/`score`, o alerta só será criado quando houver score (igual ao comportamento atual do firewall). Se você quiser banner mesmo em “partial” ou “failed”, podemos adicionar alertas de warning/error em uma iteração futura.
-- O banner depende do usuário estar logado e do RLS permitir o SELECT em `system_alerts`. Como `target_role` será `null`, qualquer usuário autenticado poderá ver, mas ele ainda pode “não aparecer” se o usuário já tiver dispensado (`dismissed_by`) ou se o UI lifetime já tiver expirado.
+C) Tornar o “Tipo” tecnicamente correto e menos confuso:
+- Manter coluna técnica, mas com um valor técnico que represente “external domain analysis”, e não “ssh_command”.
+
+Solução proposta (mudanças)
+1) Firewall > Execuções: filtrar por target_type
+Arquivo: `src/pages/firewall/TaskExecutionsPage.tsx`
+- No `useQuery` de tarefas (query em `agent_tasks`), adicionar:
+  - `.eq('target_type', 'firewall')`
+- Isso garante que “Firewall > Execuções” não puxe tarefas de domínios externos.
+- Também avaliaremos o texto do placeholder de busca (“Buscar por firewall, agent ou tipo…”) e o lookup de firewalls: com esse filtro, ficará consistente.
+
+2) Domínio Externo > Execuções: ajustar o label do domínio para não duplicar
+Arquivo: `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+- Alterar `getDomainLabel(domainId)` para:
+  - Se não achou o domínio: retorna `domainId` (como hoje)
+  - Se `name` está vazio/null: retorna `domain`
+  - Se `name.trim().toLowerCase() === domain.trim().toLowerCase()`: retorna `domain`
+  - Senão: retorna `${name} (${domain})`
+- Isso corrigirá tanto a tabela quanto o modal de detalhes (ambos usam `getDomainLabel`).
+
+3) Tipo “ssh_command” para Domínios Externos: introduzir task_type específico
+Para não “mascarar” via UI apenas, vamos corrigir a origem.
+
+3.1) Banco: adicionar novo valor no enum `agent_task_type`
+Arquivo: novo migration SQL em `supabase/migrations/` (criado em modo implementação)
+- Executar:
+  - `ALTER TYPE agent_task_type ADD VALUE IF NOT EXISTS 'external_domain_analysis';`
+- Observação: não remove/renomeia `ssh_command` (para não quebrar histórico e nem outros usos).
+
+3.2) Criador de task de domínio externo: usar o novo task_type
+Arquivo: `supabase/functions/trigger-external-domain-analysis/index.ts`
+- Trocar:
+  - `task_type: 'ssh_command'`
+- Por:
+  - `task_type: 'external_domain_analysis'`
+
+3.3) UI (opcional, mas recomendado): exibir legados com consistência
+Arquivo: `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+- Como existem tarefas antigas já gravadas com `ssh_command`, faremos uma normalização de exibição:
+  - Se `task.target_type === 'external_domain'` e `task.task_type === 'ssh_command'`, exibir como `external_domain_analysis` (ex.: no Badge).
+  - Se `task.task_type === 'external_domain_analysis'`, exibir normalmente.
+- Isso mantém a coluna técnica “correta” sem precisar alterar dados históricos.
+
+Explicação curta que ficará documentada no produto (para você e para usuários internos)
+- “Tipo” = rótulo técnico da tarefa (enum no banco).
+- Para domínios externos, a execução usa steps do blueprint `external_domain` (pode envolver comandos via SSH no agent), mas o nome correto para o produto é `external_domain_analysis`.
+- `ssh_command` fica como legado/execução genérica, não como “tipo de análise”.
+
+Checklist de testes (end-to-end)
+1) Firewall > Execuções
+- Confirmar que só aparecem tasks com `target_type = firewall`.
+- Confirmar que tasks de domínio externo não “vazam” mais para lá.
+
+2) Domínio Externo > Execuções
+- Confirmar que “estrela.com.br (estrela.com.br)” vira “estrela.com.br”.
+- Confirmar que quando name != domain (ex.: “Estrela (estrela.com.br)”) mantém o formato com parênteses.
+
+3) Tipo
+- Criar uma nova execução de domínio externo e confirmar que “Tipo” mostra `external_domain_analysis`.
+- Confirmar que execuções antigas (se existirem) com `ssh_command` aparecem como `external_domain_analysis` (normalização visual).
 
 Arquivos que serão modificados
-- `supabase/functions/agent-task-result/index.ts`
-- `src/components/alerts/SystemAlertBanner.tsx`
+- `src/pages/firewall/TaskExecutionsPage.tsx`
+- `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+- `supabase/functions/trigger-external-domain-analysis/index.ts`
+- `supabase/migrations/<novo_migration>_add_external_domain_analysis_to_agent_task_type.sql` (novo)
+
+Riscos e considerações
+- Alterar enum exige migration; se o projeto já tiver ambiente Live publicado, vamos checar se há dependências antes de publicar (mas é uma adição de valor, baixo risco).
+- O histórico permanecerá com `ssh_command` em linhas antigas; por isso a normalização visual é importante para consistência.
