@@ -27,6 +27,8 @@ interface ExternalDomainTableProps {
   canEdit: boolean;
   analyzingId: string | null;
   onAnalyze: (domain: ExternalDomainRow) => Promise<void>;
+  onEdit: (domain: ExternalDomainRow) => void;
+  onDelete: (domain: ExternalDomainRow) => void;
 }
 
 const getScheduleLabel = (frequency?: string | null) => {
@@ -42,7 +44,15 @@ const getScheduleLabel = (frequency?: string | null) => {
   }
 };
 
-export function ExternalDomainTable({ domains, loading, canEdit, analyzingId, onAnalyze }: ExternalDomainTableProps) {
+export function ExternalDomainTable({
+  domains,
+  loading,
+  canEdit,
+  analyzingId,
+  onAnalyze,
+  onEdit,
+  onDelete,
+}: ExternalDomainTableProps) {
   return (
     <Card className="glass-card">
       <CardHeader>
@@ -102,10 +112,22 @@ export function ExternalDomainTable({ domains, loading, canEdit, analyzingId, on
                       </Button>
                       {canEdit && (
                         <>
-                          <Button variant="ghost" size="icon" title="Editar" disabled>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Editar"
+                            onClick={() => onEdit(domain)}
+                            disabled={analyzingId === domain.id}
+                          >
                             <Pencil className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" title="Excluir" disabled>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Excluir"
+                            onClick={() => onDelete(domain)}
+                            disabled={analyzingId === domain.id}
+                          >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </>

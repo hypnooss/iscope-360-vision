@@ -15,6 +15,8 @@ import {
 } from '@/components/external-domain/AddExternalDomainDialog';
 import { ExternalDomainStatsCards } from '@/components/external-domain/ExternalDomainStatsCards';
 import { ExternalDomainTable, type ExternalDomainRow } from '@/components/external-domain/ExternalDomainTable';
+import { EditExternalDomainDialog } from '@/components/external-domain/EditExternalDomainDialog';
+import { DeleteExternalDomainDialog } from '@/components/external-domain/DeleteExternalDomainDialog';
 
 interface Client {
   id: string;
@@ -34,6 +36,10 @@ export default function ExternalDomainListPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingDomain, setEditingDomain] = useState<ExternalDomainRow | null>(null);
+  const [deletingDomain, setDeletingDomain] = useState<ExternalDomainRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -224,6 +230,95 @@ export default function ExternalDomainListPage() {
     }
   };
 
+  const openEditDialog = (domain: ExternalDomainRow) => {
+    setEditingDomain(domain);
+    setShowEditDialog(true);
+  };
+
+  const handleEditDomain = async (payload: { agent_id: string; schedule: ScheduleFrequency }) => {
+    if (!user?.id) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+    if (!editingDomain) return;
+    if (!payload.agent_id) {
+      toast.error('Selecione um agent');
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('external_domains')
+      .update({
+        agent_id: payload.agent_id,
+      })
+      .eq('id', editingDomain.id);
+
+    if (updateError) {
+      toast.error('Erro ao atualizar domínio', { description: updateError.message });
+      return;
+    }
+
+    const { error: deleteSchedulesError } = await supabase
+      .from('external_domain_schedules')
+      .delete()
+      .eq('domain_id', editingDomain.id);
+
+    if (deleteSchedulesError) {
+      toast.error('Erro ao atualizar frequência', { description: deleteSchedulesError.message });
+      return;
+    }
+
+    if (payload.schedule !== 'manual') {
+      const { error: insertScheduleError } = await supabase
+        .from('external_domain_schedules')
+        .insert({
+          domain_id: editingDomain.id,
+          frequency: payload.schedule,
+          is_active: true,
+          created_by: user.id,
+        });
+
+      if (insertScheduleError) {
+        toast.error('Erro ao salvar frequência', { description: insertScheduleError.message });
+        return;
+      }
+    }
+
+    await fetchData();
+    setEditingDomain(null);
+    toast.success('Domínio atualizado com sucesso!');
+  };
+
+  const handleDeleteDomain = async (domain: ExternalDomainRow) => {
+    setDeleting(true);
+    try {
+      const { error: deleteTasksError } = await supabase
+        .from('agent_tasks')
+        .delete()
+        .eq('target_type', 'external_domain')
+        .eq('target_id', domain.id)
+        .in('status', ['pending', 'running']);
+
+      if (deleteTasksError) throw deleteTasksError;
+
+      const { error: deleteDomainError } = await supabase
+        .from('external_domains')
+        .delete()
+        .eq('id', domain.id);
+
+      if (deleteDomainError) throw deleteDomainError;
+
+      await fetchData();
+      setDeletingDomain(null);
+      toast.success('Domínio excluído com sucesso!');
+    } catch (error: any) {
+      console.error('Error deleting external domain:', error);
+      toast.error('Erro ao excluir domínio', { description: error?.message });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const canEdit = hasPermission('external_domain', 'edit');
 
   const stats = useMemo(() => {
@@ -274,6 +369,28 @@ export default function ExternalDomainListPage() {
           canEdit={canEdit}
           analyzingId={analyzing}
           onAnalyze={handleAnalyze}
+          onEdit={openEditDialog}
+          onDelete={(d) => setDeletingDomain(d)}
+        />
+
+        <EditExternalDomainDialog
+          open={showEditDialog}
+          onOpenChange={(open) => {
+            setShowEditDialog(open);
+            if (!open) setEditingDomain(null);
+          }}
+          domain={editingDomain}
+          onSave={handleEditDomain}
+        />
+
+        <DeleteExternalDomainDialog
+          open={!!deletingDomain}
+          onOpenChange={(open) => {
+            if (!open) setDeletingDomain(null);
+          }}
+          domain={deletingDomain}
+          onConfirm={handleDeleteDomain}
+          loading={deleting}
         />
       </div>
     </AppLayout>
