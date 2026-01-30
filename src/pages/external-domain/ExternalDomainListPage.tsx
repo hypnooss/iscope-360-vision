@@ -33,6 +33,7 @@ export default function ExternalDomainListPage() {
   const [domains, setDomains] = useState<ExternalDomainRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -107,6 +108,7 @@ export default function ExternalDomainListPage() {
           last_scan_at: d.last_scan_at,
           last_score: d.last_score,
           client_id: d.client_id,
+          agent_id: d.agent_id,
           client_name: clientMap.get(d.client_id)?.name,
           agent_name: d.agent_id ? agentMap.get(d.agent_id)?.name || null : null,
           schedule_frequency: activeSchedule?.frequency || 'manual',
@@ -134,7 +136,7 @@ export default function ExternalDomainListPage() {
       throw new Error('Campos obrigatórios não preenchidos');
     }
 
-    const name = payload.name?.trim() || payload.domain.trim();
+    const name = payload.domain.trim();
 
     const { data: inserted, error: insertError } = await supabase
       .from('external_domains')
@@ -143,7 +145,7 @@ export default function ExternalDomainListPage() {
         agent_id: payload.agent_id || null,
         domain: payload.domain.trim(),
         name,
-        description: payload.description?.trim() || null,
+        description: null,
         created_by: user.id,
         status: 'pending',
       })
@@ -173,6 +175,53 @@ export default function ExternalDomainListPage() {
 
     await fetchData();
     toast.success('Domínio adicionado com sucesso!');
+  };
+
+  const handleAnalyze = async (domain: ExternalDomainRow) => {
+    if (!domain.agent_id) {
+      toast.error('Agent não configurado', {
+        description: 'Configure um agent para este domínio antes de executar a análise.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    setAnalyzing(domain.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('trigger-external-domain-analysis', {
+        body: { domain_id: domain.id },
+      });
+
+      if (error) {
+        console.error('Trigger external domain analysis error:', error);
+        toast.error('Erro ao agendar análise', {
+          description: 'Não foi possível criar a tarefa de análise. Tente novamente.',
+          duration: 8000,
+        });
+        return;
+      }
+
+      if (!data?.success) {
+        toast.error(data?.error || 'Erro ao agendar análise', {
+          description: data?.message || 'Verifique a configuração do domínio.',
+          duration: 10000,
+        });
+        return;
+      }
+
+      toast.success('Análise agendada!', {
+        description: 'O agent irá processar em breve. Acompanhe o status na página.',
+        duration: 5000,
+      });
+    } catch (e: any) {
+      console.error('Trigger external domain analysis exception:', e);
+      toast.error('Erro inesperado', {
+        description: e?.message || 'Ocorreu um erro ao agendar a análise.',
+        duration: 8000,
+      });
+    } finally {
+      setAnalyzing(null);
+    }
   };
 
   const canEdit = hasPermission('external_domain', 'edit');
@@ -215,7 +264,13 @@ export default function ExternalDomainListPage() {
           issues={stats.issues}
         />
 
-        <ExternalDomainTable domains={domains} loading={loading} canEdit={canEdit} />
+        <ExternalDomainTable
+          domains={domains}
+          loading={loading}
+          canEdit={canEdit}
+          analyzingId={analyzing}
+          onAnalyze={handleAnalyze}
+        />
       </div>
     </AppLayout>
   );

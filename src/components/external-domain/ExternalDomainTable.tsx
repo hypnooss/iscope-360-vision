@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Globe, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Globe, Loader2, Play, Pencil, Trash2 } from 'lucide-react';
 import type { ScheduleFrequency } from '@/components/external-domain/AddExternalDomainDialog';
 
 export interface ExternalDomainRow {
@@ -14,6 +14,7 @@ export interface ExternalDomainRow {
   last_scan_at: string | null;
   last_score: number | null;
   client_id: string;
+  agent_id?: string | null;
   client_name?: string;
   agent_name?: string | null;
   schedule_frequency?: ScheduleFrequency | null;
@@ -24,28 +25,9 @@ interface ExternalDomainTableProps {
   domains: ExternalDomainRow[];
   loading: boolean;
   canEdit: boolean;
+  analyzingId: string | null;
+  onAnalyze: (domain: ExternalDomainRow) => Promise<void>;
 }
-
-const getScoreColor = (score: number | null) => {
-  if (score === null) return 'bg-muted text-muted-foreground';
-  if (score >= 90) return 'bg-success/10 text-success';
-  if (score >= 75) return 'bg-success/10 text-success';
-  if (score >= 60) return 'bg-warning/10 text-warning';
-  return 'bg-destructive/10 text-destructive';
-};
-
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'active':
-      return <Badge className="bg-success/10 text-success">Ativo</Badge>;
-    case 'inactive':
-      return <Badge className="bg-muted text-muted-foreground">Inativo</Badge>;
-    case 'pending':
-      return <Badge className="bg-warning/10 text-warning">Pendente</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-};
 
 const getScheduleLabel = (frequency?: string | null) => {
   switch (frequency) {
@@ -60,7 +42,7 @@ const getScheduleLabel = (frequency?: string | null) => {
   }
 };
 
-export function ExternalDomainTable({ domains, loading, canEdit }: ExternalDomainTableProps) {
+export function ExternalDomainTable({ domains, loading, canEdit, analyzingId, onAnalyze }: ExternalDomainTableProps) {
   return (
     <Card className="glass-card">
       <CardHeader>
@@ -89,9 +71,6 @@ export function ExternalDomainTable({ domains, loading, canEdit }: ExternalDomai
                 <TableHead>Cliente</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Frequência</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Última Verificação</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -109,19 +88,21 @@ export function ExternalDomainTable({ domains, loading, canEdit }: ExternalDomai
                   <TableCell>
                     <Badge variant="secondary">{getScheduleLabel(domain.schedule_frequency)}</Badge>
                   </TableCell>
-                  <TableCell>{getStatusBadge(domain.status)}</TableCell>
-                  <TableCell>
-                    {domain.last_score !== null ? (
-                      <Badge className={getScoreColor(domain.last_score)}>{domain.last_score}%</Badge>
-                    ) : (
-                      <Badge className="bg-muted text-muted-foreground">-</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {domain.last_scan_at ? new Date(domain.last_scan_at).toLocaleDateString('pt-BR') : 'Nunca'}
-                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Analisar"
+                        onClick={() => onAnalyze(domain)}
+                        disabled={analyzingId === domain.id}
+                      >
+                        {analyzingId === domain.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </Button>
                       {canEdit && (
                         <>
                           <Button variant="ghost" size="icon" title="Editar" disabled>
