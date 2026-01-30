@@ -46,21 +46,24 @@ interface ComplianceRule {
   pass_description: string | null;
   fail_description: string | null;
   weight: number;
-  evaluation_logic: {
-    source_key: string;
-    field_path: string;
-    alt_source_key?: string;
-    alt_field_path?: string;
-    conditions: Array<{
-      operator: string;
-      value?: unknown;
-      result: 'pass' | 'fail' | 'warn' | 'unknown';
-    }>;
-    default_result: 'pass' | 'fail' | 'warn' | 'unknown';
-    pass_message?: string;
-    fail_message?: string;
-  };
+  // Note: External Domain rules use a different shape: { step_id, field, operator, value/values/pattern }
+  evaluation_logic: Record<string, unknown>;
 }
+
+type NormalizedEvaluationLogic = {
+  source_key: string;
+  field_path: string;
+  alt_source_key?: string;
+  alt_field_path?: string;
+  conditions: Array<{
+    operator: string;
+    value?: unknown;
+    result: 'pass' | 'fail' | 'warn' | 'unknown';
+  }>;
+  default_result: 'pass' | 'fail' | 'warn' | 'unknown';
+  pass_message?: string;
+  fail_message?: string;
+};
 
 interface EvidenceItem {
   label: string;
@@ -91,6 +94,15 @@ interface ComplianceResult {
   system_info?: Record<string, unknown>;
   raw_data?: Record<string, unknown>;
   firmwareVersion?: string;
+  dns_summary?: {
+    ns?: string[];
+    soa_mname?: string | null;
+    soa_contact?: string | null;
+    dnssec_has_dnskey?: boolean;
+    dnssec_has_ds?: boolean;
+    dnssec_validated?: boolean;
+    dnssec_notes?: string[];
+  };
 }
 
 // ============================================
@@ -126,7 +138,9 @@ function parseUptimeString(uptimeStr: string): string {
 }
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split('.');
+  // Support paths like data.found[0].key_size_bits
+  const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1');
+  const keys = normalizedPath.split('.').filter(Boolean);
   let current: unknown = obj;
   
   for (const key of keys) {
@@ -143,6 +157,45 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
+function normalizeEvaluationLogic(rawLogic: Record<string, unknown>): NormalizedEvaluationLogic {
+  // Firewall-style format
+  if (typeof rawLogic?.source_key === 'string' && typeof rawLogic?.field_path === 'string') {
+    return {
+      source_key: rawLogic.source_key as string,
+      field_path: rawLogic.field_path as string,
+      alt_source_key: (typeof rawLogic.alt_source_key === 'string' ? rawLogic.alt_source_key : undefined),
+      alt_field_path: (typeof rawLogic.alt_field_path === 'string' ? rawLogic.alt_field_path : undefined),
+      conditions: (rawLogic.conditions as NormalizedEvaluationLogic['conditions']) || [],
+      default_result: ((rawLogic.default_result as NormalizedEvaluationLogic['default_result']) || 'unknown'),
+      pass_message: (typeof rawLogic.pass_message === 'string' ? rawLogic.pass_message : undefined),
+      fail_message: (typeof rawLogic.fail_message === 'string' ? rawLogic.fail_message : undefined),
+    };
+  }
+
+  // External Domain format: { step_id, field, operator, value/values/pattern }
+  const stepId = typeof rawLogic.step_id === 'string' ? (rawLogic.step_id as string) : '';
+  const field = typeof rawLogic.field === 'string' ? (rawLogic.field as string) : '';
+  const operator = typeof rawLogic.operator === 'string' ? (rawLogic.operator as string) : undefined;
+
+  const operatorValue =
+    rawLogic.pattern ??
+    rawLogic.values ??
+    rawLogic.value ??
+    (rawLogic.min !== undefined || rawLogic.max !== undefined
+      ? { min: rawLogic.min, max: rawLogic.max }
+      : undefined);
+
+  return {
+    source_key: stepId,
+    field_path: field,
+    conditions: operator
+      ? [{ operator, value: operatorValue, result: 'pass' }]
+      : [],
+    // Default to fail when rule cannot be satisfied
+    default_result: 'fail',
+  };
+}
+
 function evaluateCondition(
   value: unknown,
   condition: { operator: string; value?: unknown; result: string }
@@ -150,6 +203,51 @@ function evaluateCondition(
   const { operator, value: condValue, result } = condition;
   
   switch (operator) {
+    // ===== External Domain operators =====
+    case 'not_null':
+      if (value !== null && value !== undefined && value !== '') return result;
+      break;
+    case 'eq':
+      if (value === condValue) return result;
+      break;
+    case 'gte':
+      if (typeof value === 'number' && typeof condValue === 'number' && value >= condValue) return result;
+      break;
+    case 'in':
+      if (Array.isArray(condValue)) {
+        if (condValue.some(v => v === value)) return result;
+        if ((value === null || value === undefined) && (condValue.includes(null) || condValue.includes(undefined))) return result;
+      }
+      break;
+    case 'array_length_gte':
+      if (Array.isArray(value) && typeof condValue === 'number' && value.length >= condValue) return result;
+      break;
+    case 'array_length_lte':
+      if (Array.isArray(value) && typeof condValue === 'number' && value.length <= condValue) return result;
+      break;
+    case 'between':
+      if (typeof value === 'number' && condValue && typeof condValue === 'object') {
+        const min = (condValue as Record<string, unknown>).min;
+        const max = (condValue as Record<string, unknown>).max;
+        if (typeof min === 'number' && typeof max === 'number' && value >= min && value <= max) return result;
+      }
+      break;
+    case 'has_distinct_priorities':
+      if (Array.isArray(value)) {
+        const priorities = value
+          .map(v => (v && typeof v === 'object') ? (v as Record<string, unknown>).priority : undefined)
+          .filter(p => typeof p === 'number') as number[];
+        const unique = new Set(priorities);
+        if (unique.size >= 2) return result;
+      }
+      break;
+    case 'not_matches':
+      if (typeof value === 'string' && typeof condValue === 'string') {
+        const regex = new RegExp(condValue);
+        if (!regex.test(value)) return result;
+      }
+      break;
+
     case 'equals':
       if (value === condValue) return result;
       break;
@@ -235,6 +333,16 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'high_availability': '/api/sonicos/high-availability',
   'administration': '/api/sonicos/administration',
   'log_settings_sonic': '/api/sonicos/log/settings',
+
+  // External Domain (DNS)
+  'ns_records': 'DNS Query (NS)',
+  'soa_record': 'DNS Query (SOA)',
+  'dnssec_status': 'DNS Query (DNSSEC)',
+  'spf_record': 'DNS Query (SPF/TXT)',
+  'dmarc_record': 'DNS Query (DMARC/TXT)',
+  'dkim_records': 'DNS Query (DKIM/TXT)',
+  'mx_records': 'DNS Query (MX)',
+
   // Fallback
   'default': 'API do dispositivo'
 };
@@ -1589,6 +1697,56 @@ function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[
   }];
 };
 
+function formatExternalDomainEvidence(stepId: string, sourceData: unknown): EvidenceItem[] {
+  const data = (sourceData && typeof sourceData === 'object')
+    ? (sourceData as Record<string, unknown>).data
+    : undefined;
+
+  try {
+    if (stepId === 'ns_records') {
+      const records = (data && typeof data === 'object') ? (data as Record<string, unknown>).records : undefined;
+      const hosts = Array.isArray(records)
+        ? records
+            .map(r => (r && typeof r === 'object') ? (r as Record<string, unknown>).host : undefined)
+            .filter((h): h is string => typeof h === 'string')
+            .slice(0, 15)
+        : [];
+      return hosts.length
+        ? [{ label: 'Nameservers encontrados', value: hosts.join(', '), type: 'text' }]
+        : [{ label: 'Nameservers', value: 'Nenhum NS retornado', type: 'text' }];
+    }
+
+    if (stepId === 'soa_record') {
+      const mname = (data && typeof data === 'object') ? (data as Record<string, unknown>).mname : undefined;
+      const contact = (data && typeof data === 'object') ? (data as Record<string, unknown>).contact_email : undefined;
+      return [
+        { label: 'SOA mname', value: String(mname ?? 'N/A'), type: 'text' },
+        { label: 'SOA contact', value: String(contact ?? 'N/A'), type: 'text' },
+      ];
+    }
+
+    if (stepId === 'dnssec_status') {
+      const hasDnskey = (data && typeof data === 'object') ? (data as Record<string, unknown>).has_dnskey : undefined;
+      const hasDs = (data && typeof data === 'object') ? (data as Record<string, unknown>).has_ds : undefined;
+      const validated = (data && typeof data === 'object') ? (data as Record<string, unknown>).validated : undefined;
+      const notes = (data && typeof data === 'object') ? (data as Record<string, unknown>).notes : undefined;
+      const notesText = Array.isArray(notes)
+        ? notes.filter((n): n is string => typeof n === 'string').slice(0, 10).join(' | ')
+        : '';
+      return [
+        { label: 'DNSKEY', value: String(hasDnskey ?? 'N/A'), type: 'text' },
+        { label: 'DS', value: String(hasDs ?? 'N/A'), type: 'text' },
+        { label: 'Validated', value: String(validated ?? 'N/A'), type: 'text' },
+        ...(notesText ? [{ label: 'Notes', value: notesText, type: 'text' as const }] : []),
+      ];
+    }
+  } catch (_e) {
+    // fallthrough
+  }
+
+  return [];
+}
+
 function processComplianceRules(
   rawData: Record<string, unknown>,
   rules: ComplianceRule[]
@@ -1596,7 +1754,7 @@ function processComplianceRules(
   const checks: ComplianceCheck[] = [];
   
   for (const rule of rules) {
-    const logic = rule.evaluation_logic;
+    const logic = normalizeEvaluationLogic(rule.evaluation_logic);
     
     // Mapear endpoint da API - tratar regras com múltiplos source_keys
     let apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
@@ -1784,6 +1942,14 @@ function processComplianceRules(
       // Fallback genérico com truncamento
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
     }
+
+    // External Domain: default evidence for DNS steps
+    if (
+      evidence.length === 0 &&
+      ['ns_records', 'soa_record', 'dnssec_status', 'spf_record', 'dmarc_record', 'dkim_records', 'mx_records'].includes(logic.source_key)
+    ) {
+      evidence = formatExternalDomainEvidence(logic.source_key, sourceData);
+    }
     
     // Incluir dados brutos relevantes
     let checkRawData: Record<string, unknown> = {};
@@ -1936,6 +2102,15 @@ function processComplianceRules(
       // Para regra de firmware, incluir dados do sistema
       checkRawData = {
         firmware: fwResult.firmwareInfo
+      };
+    } else if (['ns_records', 'soa_record', 'dnssec_status', 'spf_record', 'dmarc_record', 'dkim_records', 'mx_records'].includes(logic.source_key)) {
+      // External Domain: include small raw snapshot to enable "Dados brutos" in UI
+      const src = sourceData as Record<string, unknown>;
+      const stepData = (src && typeof src === 'object') ? src.data : undefined;
+      checkRawData = {
+        step_id: logic.source_key,
+        field_path: logic.field_path,
+        data: stepData ?? sourceData,
       };
     } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && !rule.code.startsWith('fw-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
       // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, fw-*, net-003, ha-003), incluir dados brutos genéricos
@@ -2101,6 +2276,50 @@ function processComplianceRules(
   }
   
   console.log(`Extracted firmware version: "${firmwareVersion}" from raw data`);
+
+  // External Domain: lightweight DNS summary for the report header card
+  const dnsSummary: ComplianceResult['dns_summary'] | undefined = (() => {
+    const ns = rawData['ns_records'] as Record<string, unknown> | undefined;
+    const soa = rawData['soa_record'] as Record<string, unknown> | undefined;
+    const dnssec = rawData['dnssec_status'] as Record<string, unknown> | undefined;
+
+    const nsHosts = Array.isArray((ns?.data as any)?.records)
+      ? ((ns?.data as any).records as any[])
+          .map(r => r?.host)
+          .filter((h: any) => typeof h === 'string')
+      : undefined;
+
+    const soaMname = typeof (soa?.data as any)?.mname === 'string' ? (soa?.data as any).mname : null;
+    const soaContact = typeof (soa?.data as any)?.contact_email === 'string' ? (soa?.data as any).contact_email : null;
+
+    const dnssecHasDnskey = typeof (dnssec?.data as any)?.has_dnskey === 'boolean' ? (dnssec?.data as any).has_dnskey : undefined;
+    const dnssecHasDs = typeof (dnssec?.data as any)?.has_ds === 'boolean' ? (dnssec?.data as any).has_ds : undefined;
+    const dnssecValidated = typeof (dnssec?.data as any)?.validated === 'boolean' ? (dnssec?.data as any).validated : undefined;
+    const dnssecNotes = Array.isArray((dnssec?.data as any)?.notes)
+      ? ((dnssec?.data as any).notes as any[]).filter((n) => typeof n === 'string')
+      : undefined;
+
+    const hasAny = !!(
+      nsHosts?.length ||
+      soaMname ||
+      soaContact ||
+      dnssecHasDnskey !== undefined ||
+      dnssecHasDs !== undefined ||
+      dnssecValidated !== undefined ||
+      (dnssecNotes && dnssecNotes.length)
+    );
+    if (!hasAny) return undefined;
+
+    return {
+      ns: nsHosts,
+      soa_mname: soaMname,
+      soa_contact: soaContact,
+      dnssec_has_dnskey: dnssecHasDnskey,
+      dnssec_has_ds: dnssecHasDs,
+      dnssec_validated: dnssecValidated,
+      dnssec_notes: dnssecNotes,
+    };
+  })();
   
   return {
     score,
@@ -2108,6 +2327,7 @@ function processComplianceRules(
     categories,
     system_info: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
     firmwareVersion: firmwareVersion || undefined,
+    ...(dnsSummary ? { dns_summary: dnsSummary } : {}),
   };
 }
 
@@ -2431,6 +2651,7 @@ serve(async (req: Request) => {
         categories: complianceResult.categories,
         system_info: complianceResult.system_info,
         firmwareVersion: complianceResult.firmwareVersion,
+        ...(complianceResult.dns_summary ? { dns_summary: complianceResult.dns_summary } : {}),
         // raw_data is intentionally excluded - it's stored in agent_tasks.result
       };
 
