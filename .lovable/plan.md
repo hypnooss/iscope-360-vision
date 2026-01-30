@@ -1,111 +1,71 @@
 
-Objetivo
-- Atualizar e “profissionalizar” o README.md para refletir o projeto real (iScope 360), deixando claro: o que é, como rodar localmente, como configurar variáveis, como testar e como contribuir.
-- Idioma: PT-BR.
-- Público-alvo: equilibrado (dev + operação).
-- Detalhe sobre backend: somente o necessário para o frontend (mencionar que existe Supabase/Edge Functions e apontar para docs/migration).
+Contexto e diagnóstico (o que eu já confirmei)
+- Você relatou: o banner de alertas aparece, porém só depois de trocar de página ou dar refresh. Em produção.
+- No frontend, o banner de alertas é o componente `src/components/alerts/SystemAlertBanner.tsx`, renderizado no topo do `AppLayout` (então ele está montado durante navegação).
+- O componente cria uma assinatura Realtime via `supabase.channel(...).on('postgres_changes', ...)` e, quando recebe um evento, chama `fetchActiveAlerts()`.
 
-O que encontrei no projeto (rápido diagnóstico)
-- README.md atual é o template padrão do Lovable, com placeholders (REPLACE_WITH_PROJECT_ID) e sem descrição do iScope 360.
-- Stack: Vite + React + TypeScript + Tailwind + shadcn-ui; TanStack Query; Supabase JS v2; React Router.
-- Há um conjunto grande de módulos/rotas no frontend, incluindo:
-  - Dashboard geral (/dashboard)
-  - Scope Firewall (/scope-firewall/*)
-  - Scope External Domain (/scope-external-domain/*)
-  - Scope M365 (/scope-m365/*)
-  - Admin/Usuários/Agents/Workspaces (/users, /agents, /workspaces, etc.)
-- Variáveis de ambiente relevantes para o frontend já existem no .env:
-  - VITE_SUPABASE_URL
-  - VITE_SUPABASE_PUBLISHABLE_KEY
-  - VITE_SUPABASE_PROJECT_ID
-- Existe documentação de migração e setup (docs/migration/*), e um python-agent com README próprio (python-agent/README.md). Como você pediu “somente frontend”, isso deve virar apenas referência no README principal (não duplicar).
+O ponto crítico que explica “não é em tempo real”
+- Para o Realtime “postgres_changes” funcionar, a tabela precisa estar no publication `supabase_realtime` do Postgres.
+- Existe uma migration no repo dizendo isso:
+  - `supabase/migrations/20260125224356_00fcfaf4-323d-40b4-a6dd-fdb5a098590f.sql`
+  - Conteúdo: `ALTER PUBLICATION supabase_realtime ADD TABLE public.system_alerts;`
+- Porém, eu consultei o banco atual (ambiente onde o Lovable está conectado no momento) e a tabela `system_alerts` NÃO está no publication:
+  - Query executada: `select ... from pg_publication_tables where pubname='supabase_realtime' and tablename='system_alerts';`
+  - Resultado: vazio (`[]`)
+- Isso significa que, na prática, o Supabase Realtime não está emitindo eventos dessa tabela para o client, então o `.on('postgres_changes', ...)` nunca dispara. Por isso o banner só “atualiza” quando alguma ação força uma nova consulta (troca de rota, refresh, etc).
 
-Mudanças propostas no README.md (estrutura final sugerida)
-1) Título e descrição
-- “# iScope 360”
-- 2–4 linhas explicando o propósito (plataforma de análise/observabilidade/compliance de infraestrutura) alinhado com o texto do Index (“Gerencie sua Infraestrutura com Inteligência”).
-- Opcional: um “Status” curto (ex.: “Em desenvolvimento / Preview”).
+Objetivo da correção
+1) Garantir que `public.system_alerts` esteja no publication `supabase_realtime` (no banco do Supabase) de forma idempotente e segura.
+2) Tornar o `SystemAlertBanner` mais robusto:
+   - logs de diagnóstico (status de subscribe) para facilitar suporte
+   - fallback automático (polling) caso o Realtime não conecte (principalmente útil em produção e em ambientes com WebSocket bloqueado)
 
-2) Links do projeto
-- Incluir:
-  - Preview URL (do seu projeto Lovable)
-  - Published URL (quando existir)
-  - (Opcional) Link do Supabase (apenas referência, sem credenciais)
-- Remover placeholders “REPLACE_WITH_PROJECT_ID”.
+Plano de implementação (o que eu vou fazer em modo de edição)
+A) Banco de dados (migração)
+- Criar uma nova migration SQL idempotente que:
+  1. Verifica se `public.system_alerts` já está no `pg_publication_tables` para `supabase_realtime`
+  2. Só executa `ALTER PUBLICATION supabase_realtime ADD TABLE public.system_alerts;` se estiver faltando
+  3. (Opcional, recomendado) Garantir `REPLICA IDENTITY` adequado:
+     - Como a tabela tem PK `id`, normalmente já basta para UPDATE/DELETE. Ainda assim, posso configurar `REPLICA IDENTITY FULL` se você quiser garantir que payloads de UPDATE sempre venham completos (trade-off: maior volume de dados em updates). Vou deixar como decisão técnica conservadora: manter default, e só ajustar se for necessário.
+- Após a migration, validar no banco com a mesma query do publication.
 
-3) Principais funcionalidades (visão de produto, alto nível)
-- Lista curta (bullets) com os módulos já existentes no código:
-  - Dashboard geral
-  - Firewall (compliance, análises, relatórios, execuções)
-  - External Domain (análises, relatórios, execuções)
-  - Microsoft 365 / Entra ID (conexão tenant, auditoria, análise)
-  - Gestão de usuários, administradores, agents, workspaces
-- Sem prometer coisas que não existem; usar linguagem “inclui telas/fluxos para…”.
+Importante sobre “produção”
+- Como você disse que o problema está em produção, o ideal é:
+  - aplicar a migration e publicar para produção; ou
+  - se quiser corrigir imediatamente sem esperar publish, eu posso te dar a query para você rodar no Supabase SQL Editor com o ambiente Live selecionado (mas a execução manual fica por sua conta).
 
-4) Tecnologias
-- Manter, mas atualizar para refletir o repo:
-  - Vite, React 18, TypeScript, Tailwind, shadcn-ui/Radix
-  - React Router
-  - TanStack Query
-  - Supabase (Auth + Database via @supabase/supabase-js)
-  - Playwright (teste E2E — está em dependências)
+B) Frontend (robustez do realtime)
+- Ajustar `SystemAlertBanner.tsx` para:
+  1. Registrar status do canal (callback do `.subscribe(status => ...)`), para sabermos se está “SUBSCRIBED”, “TIMED_OUT”, “CLOSED”, etc.
+  2. Ao entrar em `SUBSCRIBED`, chamar `fetchActiveAlerts()` (garante sincronização inicial assim que o websocket conecta).
+  3. Implementar fallback: se não estiver `SUBSCRIBED` após X segundos (ex.: 5–10s), iniciar polling leve (ex.: a cada 30s) até a conexão estabilizar; ao estabilizar, parar polling.
+  4. Garantir cleanup correto:
+     - remover canal no unmount
+     - limpar interval do polling
+- Ajuste de escopo do evento:
+  - Manteremos `event: '*'` se você quer que o banner reflita inserts/updates (ex.: dismiss), mas posso reduzir para `INSERT`+`UPDATE` para diminuir ruído, se preferir.
 
-5) Como rodar localmente (passo a passo)
-- Pré-requisitos:
-  - Node.js (sugerir LTS) e npm
-- Instalação e execução:
-  - npm i
-  - npm run dev
-- Outros scripts (do package.json):
-  - npm run build
-  - npm run preview
-  - npm run lint
+C) Validação / teste end-to-end
+- Teste rápido guiado:
+  1. Com o app aberto, gerar um alerta novo (ex.: finalizar uma task de agent que cria alertas; ou inserir manualmente um registro em `system_alerts` com `is_active=true`)
+  2. Verificar se o banner aparece sem refresh
+  3. Verificar se ao “dispensar” (X) o banner some e não volta
+  4. Checar console: deve mostrar status “SUBSCRIBED” e logs de mudança chegando
 
-6) Variáveis de ambiente (frontend)
-- Explicar que o projeto usa Supabase no frontend e precisa das variáveis VITE_*.
-- Instruir como criar um .env local (ou usar o já existente) sem expor chaves no README:
-  - Exemplo com placeholders, tipo:
-    - VITE_SUPABASE_URL="https://<project-ref>.supabase.co"
-    - VITE_SUPABASE_PUBLISHABLE_KEY="<anon-key>"
-    - VITE_SUPABASE_PROJECT_ID="<project-ref>"
-- Nota de segurança: não commitar service_role key no frontend; somente anon key no client.
+Riscos e observações
+- Mesmo com publication correto, o Realtime pode falhar em algumas redes (proxy corporativo bloqueando websocket). O fallback por polling garante que o banner continue “quase real-time” (ex.: 30s) em ambientes restritos.
+- Como a sua base tem RLS, mas a assinatura de `postgres_changes` não depende das policies para “receber o evento”; o que depende de RLS é a leitura do dado via `fetchActiveAlerts()`. Como o usuário já enxerga alertas após refresh, as políticas parecem ok para o seu papel (super_admin/workspace_admin).
 
-7) Rotas principais (para orientar QA/operação)
-- Listar rotas principais que existem em src/App.tsx, agrupadas por módulo.
-- Isso ajuda quem testa a navegar rapidamente.
+Checklist do que será alterado (arquivos)
+- Banco:
+  - Nova migration em `supabase/migrations/` (para garantir publication).
+- Frontend:
+  - `src/components/alerts/SystemAlertBanner.tsx` (melhorias de subscribe + fallback + logs).
 
-8) Backend (apenas referência, como você pediu)
-- Seção curta: “Backend e Supabase”
-  - “Este repositório já está preparado para Supabase…”
-  - Linkar para:
-    - docs/migration/migration_guide.md (migração)
-    - python-agent/README.md (agent)
-  - Não colocar tutorial detalhado de Edge Functions aqui (porque você pediu “Somente frontend”).
+Critério de aceite (resultado esperado)
+- Um alerta criado por automação (agent / M365) aparece no topo do app automaticamente, sem refresh e sem trocar de rota.
+- Ao dispensar um alerta, ele some e não reaparece.
+- Console mostra a assinatura estabelecida (SUBSCRIBED) e eventos chegando.
 
-9) Testes (rápido)
-- Como há Playwright instalado, incluir:
-  - Onde ficam os testes (se existirem; se não existirem ainda, mencionar “Playwright está configurado e pode ser usado para E2E”).
-- Se eu não encontrar testes existentes ao revisar, vou escrever a seção de forma honesta (sem inventar comando “npm run test” se não existe script).
-
-10) Contribuição e padrão de commits (opcional)
-- Seção curta para time:
-  - Branches, PRs, lint antes de commitar
-  - Observação: mudanças feitas via Lovable também commitam no repo (se estiver integrado ao GitHub)
-
-11) Licença / aviso legal (opcional)
-- Se você tiver uma licença definida, incluir; se não tiver, deixar uma linha “Licença: a definir”.
-
-Trabalho de verificação antes de escrever (para evitar README “mentiroso”)
-- Conferir se existe pasta de testes Playwright e/ou scripts adicionais (playwright.config.ts, e2e specs).
-- Conferir se há instruções específicas de build (vite.config.ts) relevantes.
-- Confirmar se existe alguma configuração obrigatória adicional no frontend (ex.: redirect de auth, callback URL).
-
-Critérios de aceite (o que você vai validar)
-- README está em PT-BR e menciona “iScope 360”.
-- Não há placeholders antigos de URL.
-- README explica claramente como rodar localmente e quais env vars são necessárias (sem expor segredos).
-- README descreve os módulos/rotas que realmente existem no projeto.
-- README aponta para docs/migration e python-agent sem duplicar conteúdo.
-
-Próximo passo (após sua aprovação)
-- Eu vou revisar rapidamente os arquivos de configuração de testes (Playwright) e, em seguida, reescrever o README.md completo seguindo a estrutura acima, mantendo o texto objetivo e copiável (com blocos de comando prontos).
+Próximo passo
+- Eu vou executar primeiro a correção do publication via migration (idempotente) e depois ajustar o `SystemAlertBanner` para logs + fallback. Em seguida, validamos o comportamento no seu fluxo real (criação de alertas por task/tenant).
