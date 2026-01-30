@@ -1,146 +1,199 @@
 
-## Objetivo
-Na tela **Domínio Externo > Domínios Externos**:
-1) Fazer o botão **Editar** funcionar (permitindo alterar somente **Agent** e **Frequência**).
-2) Fazer o botão **Excluir** funcionar (excluindo também as **tarefas pendentes/rodando** desse domínio na fila do agent).
+Objetivo (o que vai mudar)
+1) Garantir que o botão “Analisar” (na lista de Domínios Externos) dispare uma tarefa que apareça imediatamente em “Domínio Externo > Execuções”, igual ao fluxo de Firewall.
+2) Evoluir a “análise de domínio externo” para uma varredura DNS completa (multi-steps), executada pelo python-agent, com:
+   - NS
+   - MX
+   - SOA (+ SOA Contact)
+   - SPF (TXT) com parsing detalhado
+   - DMARC (TXT) com parsing detalhado
+   - DKIM (TXT) usando a lista de selectors fornecida (cobre ~96%)
+   - DNSSEC best-effort (cadeia/validação best-effort + coleta DNSKEY/DS)
 
----
+Contexto atual (confirmado no código)
+- O botão “Analisar” já chama `supabase.functions.invoke('trigger-external-domain-analysis', { body: { domain_id } })` em `ExternalDomainListPage.tsx`.
+- A edge function `trigger-external-domain-analysis` já cria um registro em `agent_tasks` com:
+  - `target_type = 'external_domain'`
+  - `target_id = domain_id`
+  - `agent_id` do domínio
+  - `status = 'pending'`
+  - prevenção de duplicidade pending/running (não-expirada)
+- Porém:
+  - A página `ExternalDomainExecutionsPage.tsx` está com placeholder (stats zeradas + tasks = []) e não lista tarefas reais.
+  - A RPC `rpc_get_agent_tasks` (que o agent usa via edge function `agent-tasks`) para `external_domain` ainda retorna um blueprint simples `probe_https` (http_request). Não existe executor DNS no python-agent hoje.
+  - A edge function `agent-task-result` calcula compliance/score apenas para `target_type='firewall'`. Para domínio externo ainda não há processamento “final” específico — mas isso não impede o básico (task completar/falhar e aparecer em Execuções).
 
-## Contexto (como está hoje)
-- `ExternalDomainTable.tsx` já renderiza os ícones **Pencil** e **Trash2**, porém ambos estão `disabled`.
-- `ExternalDomainListPage.tsx` já tem:
-  - `fetchData()` (carrega domains, schedules, clients e agents)
-  - `handleAnalyze()` (Analisar)
-  - `handleAddDomain()` (Adicionar)
-- Já existe padrão pronto no módulo Firewall (`src/pages/firewall/FirewallListPage.tsx`) para:
-  - Abrir dialog de edição (`EditFirewallDialog`)
-  - Confirmar exclusão via `AlertDialog`
-  - Executar delete com toast e refresh
+Decisão de escopo (para entregar “o que de fato interessa” com segurança)
+Vamos entregar em 2 blocos bem fechados e testáveis:
+A) UX/Observabilidade: Execuções de Domínio Externo iguais às de Firewall (tarefas reais + detalhes + auto-refresh).
+B) Execução real: Blueprint multi-step DNS + executor `dns_query` no python-agent (com a lista DKIM fornecida) + ajustes mínimos para completar a tarefa corretamente no backend.
 
----
+A) Implementar Execuções reais para Domínio Externo (frontend)
+Arquivos:
+- src/pages/external-domain/ExternalDomainExecutionsPage.tsx
 
-## Design proposto (alto nível)
-### Editar
-- Adicionar um **dialog de edição** para Domínio Externo (novo componente), com os campos:
-  - **Domínio** (somente leitura)
-  - **Cliente** (somente leitura)
-  - **Agent** (editável)
-  - **Frequência** (editável)
-- Ao salvar:
-  - Atualizar `external_domains.agent_id`
-  - Atualizar frequência:
-    - Remover schedules existentes de `external_domain_schedules` para aquele `domain_id`
-    - Se frequência != `manual`, inserir um schedule ativo
-  - Recarregar lista (`fetchData()`) e exibir toast de sucesso
+Mudanças planejadas
+1) Trocar o placeholder por React Query, copiando o padrão de `src/pages/firewall/TaskExecutionsPage.tsx`, com ajustes:
+   - Query principal em `agent_tasks`:
+     - filtros de período (1h/6h/12h/24h) via `.gte('created_at', startTimeISO)`
+     - filtro de status quando `statusFilter !== 'all'`
+     - filtro fixo `eq('target_type', 'external_domain')`
+     - selecionar apenas colunas “leves” (sem `payload`, `result`, `step_results`) para performance.
+   - Auto-refresh:
+     - `refetchInterval` = 10s quando existir task `pending` ou `running`.
+2) Lookups para exibição humana:
+   - Buscar `agents(id, name)` e mapear `agent_id -> name`.
+   - Buscar `external_domains(id, domain, name)` e mapear `target_id -> domain/name`.
+3) Search na lista:
+   - pesquisar por `domain.name`, `domain.domain`, `agent.name` e `task.task_type`.
+4) Modal de detalhes:
+   - Ao abrir detalhes, buscar sob demanda em `agent_tasks`:
+     - `payload`, `result`, `error_message`, `execution_time_ms`
+   - E também (importante para multi-steps) buscar `task_step_results` por `task_id` para mostrar:
+     - step_id, status, duration_ms, erro e data (com opção de expandir).
+   - Isso deixa a tela pronta para o modo “vários steps” sem depender de “result final gigante”.
 
-### Excluir
-- Ao confirmar exclusão:
-  1) Apagar tarefas **pending/running** de `agent_tasks` relacionadas ao domínio:
-     - `target_type = 'external_domain'`
-     - `target_id = <domain.id>`
-     - `status IN ('pending', 'running')`
-  2) Apagar o registro em `external_domains` (as schedules serão removidas por cascade).
-  3) Recarregar lista (`fetchData()`) e exibir toast de sucesso.
+Pequena melhoria no UX do botão “Analisar”
+Arquivos:
+- src/pages/external-domain/ExternalDomainListPage.tsx
 
----
+Mudança planejada (opcional mas recomendada):
+- Após agendar com sucesso, além do toast, oferecer ação clara:
+  - navegar automaticamente para `/scope-external-domain/executions`
+  - ou manter na tela e adicionar “Ver Execuções” (ex.: `toast.success(..., { action: { label: 'Ver execuções', onClick: () => navigate(...) } })`), se o padrão do projeto já usar isso.
 
-## Alterações planejadas por arquivo
+B) Blueprint multi-step DNS + executor no python-agent (backend + agente)
+B1) Atualizar a RPC `rpc_get_agent_tasks` para external_domain (Supabase migration)
+Arquivo:
+- supabase/migrations/NEW__external_domain_dns_blueprint.sql (novo migration)
 
-### 1) `src/components/external-domain/ExternalDomainTable.tsx`
-**Objetivo:** tornar os botões “Editar” e “Excluir” clicáveis.
+Mudança:
+- Substituir o bloco “External domain tasks (probe HTTP/HTTPS)” por blueprint DNS multi-step (vários steps), retornando `executor: 'dns_query'` e `config` apropriado, com `domain` vindo de `external_domains.domain`.
 
-- Alterar props do componente para receber callbacks:
-  - `onEdit(domain: ExternalDomainRow): void`
-  - `onDelete(domain: ExternalDomainRow): void`
-- Remover `disabled` dos botões e ligar os handlers:
-  - Pencil → `onEdit(domain)`
-  - Trash → `onDelete(domain)`
-- Manter regra de permissão: só exibe botões se `canEdit`.
+Steps propostos (primeira versão)
+1) ns_records:
+   - query_type: "NS"
+2) mx_records:
+   - query_type: "MX"
+3) soa_record:
+   - query_type: "SOA"
+   - (SOA Contact vem do campo rname do SOA; vamos parsear para contato humano no executor)
+4) spf_record:
+   - query_type: "SPF" (internamente TXT + filtro `v=spf1`)
+5) dmarc_record:
+   - query_type: "DMARC" (TXT em `_dmarc.${domain}`)
+6) dkim_records:
+   - query_type: "DKIM"
+   - selectors: lista fornecida (abaixo)
+7) dnssec_status:
+   - query_type: "DNSSEC"
+   - best_effort: true
 
-### 2) `src/pages/external-domain/ExternalDomainListPage.tsx`
-**Objetivo:** controlar estados de edição/exclusão e executar update/delete no Supabase.
+Lista DKIM selectors (aprovada pelo usuário)
+amazonses,ses,ses1,ses2,mailchimp,mc,k1,k2,k3,mailgun,mg,hubspot,hs,hs1,s1,s2,sendgrid,hs2,salesforce,sfmc,pardot,ex,cttarget,opendkim,postfix,mx1,mx2,cpanel,plesk,sendinblue,mailjet,mailcow,zimbra,icewarp,tiflux,selector1,selector2,default
 
-Adicionar estados:
-- `showEditDialog: boolean`
-- `editingDomain: ExternalDomainRow | null`
-- `deletingDomain: ExternalDomainRow | null`
+Observação importante
+- A `task_type` armazenada no `agent_tasks` hoje é “ssh_command” (apenas rótulo). Isso já está alinhado com o comentário no edge function; o que manda são os `steps` retornados pela RPC. Não precisamos mexer nisso agora.
 
-Adicionar handlers:
-- `openEditDialog(domain)` → seta `editingDomain` + abre dialog
-- `handleEditDomain({ agent_id, schedule })`:
-  - update `external_domains` (somente `agent_id`)
-  - delete schedules anteriores de `external_domain_schedules` por `domain_id`
-  - inserir schedule se != manual
-  - `await fetchData()`, fechar dialog, toast success
-- `handleDeleteDomain(domain)`:
-  - delete `agent_tasks` onde:
-    - `target_type = 'external_domain'`
-    - `target_id = domain.id`
-    - `status in ('pending','running')`
-  - delete `external_domains` por `id`
-  - `await fetchData()`, fechar AlertDialog, toast success
+B2) Implementar executor `dns_query` no python-agent
+Arquivos:
+- python-agent/agent/executors/dns_query.py (novo)
+- python-agent/agent/tasks.py (editar para registrar executor)
+- python-agent/requirements.txt (editar para incluir dependência)
 
-UI:
-- Renderizar:
-  - `EditExternalDomainDialog` (novo componente) com `open`, `onOpenChange`, `domain`, `clients` (para mostrar nome), e `onSave`
-  - `AlertDialog` de confirmação (mesmo padrão de FirewallListPage), exibindo o domínio (ex.: `domain.domain`) na mensagem.
+Dependência
+- Adicionar `dnspython>=2.7.0` no requirements.
 
-Obs.: a lista de `clients` já existe no page; para “Cliente (somente leitura)” podemos exibir `editingDomain.client_name` (se disponível) e/ou mapear `client_id`→`clients[]`.
+Contrato do executor (compatível com TaskExecutor)
+- Input: `step.config` com { query_type, domain, selectors?, best_effort? }
+- Output:
+  - `{ status_code: 0, data: {...}, error: null }` em sucesso
+  - `{ status_code: 0, data: {...}, error: '...' }` em erro recuperável (mantém tarefa rodando para outros steps)
+- O TaskExecutor já envia progressivamente via `/agent-step-result`.
 
-### 3) Novo componente `src/components/external-domain/EditExternalDomainDialog.tsx`
-**Objetivo:** UX consistente com `EditFirewallDialog`.
+Formato de dados recomendado por step (para ficar fácil renderizar e consolidar)
+- NS:
+  - records: [{ host, ttl? }]
+- MX:
+  - records: [{ priority, exchange }]
+- SOA:
+  - mname, rname, serial, refresh, retry, expire, minimum
+  - contact_email (derivado de rname)
+- SPF:
+  - raw: string
+  - parsed: { mechanisms: [...], qualifiers: [...], includes: [...], ip4: [...], ip6: [...], a: [...], mx: [...], redirect?: string, all?: string }
+- DMARC:
+  - raw: string
+  - parsed: { v, p, sp, rua, ruf, pct, adkim, aspf, fo, rf, ri, ... } (somente os encontrados)
+- DKIM:
+  - found: [{ selector, txt_raw, key_type?, key_size_bits?, p_length, flags? }]
+  - missing_count / checked_count (para diagnósticos)
+- DNSSEC (best-effort):
+  - has_dnskey: boolean
+  - has_ds: boolean
+  - validated: boolean | "partial" | "unknown"
+  - notes: string[]
+  - records_sample: { dnskey_count, ds_count } (sem armazenar “gigante”)
 
-Comportamento:
-- Quando abrir (`open=true` e `domain != null`):
-  - Preencher estado local com:
-    - `client_id` (somente leitura)
-    - `domain` (somente leitura)
-    - `agent_id` (editável)
-    - `schedule` (editável, default manual quando não existir schedule ativo)
-  - Buscar agents disponíveis para o `client_id` (mesmo padrão do `AddExternalDomainDialog`):
-    - `supabase.from('agents').select('id,name,client_id').eq('client_id', client_id).eq('revoked', false).order('name')`
-- Botões:
-  - Cancelar: fecha dialog
-  - Salvar: chama `onSave({ agent_id, schedule })` com loading state
+B3) Ajustar o comportamento do `agent-task-result` para domínio externo (opcional nesta fase, mas recomendado)
+Arquivo:
+- supabase/functions/agent-task-result/index.ts
 
-Validações simples:
-- Agent obrigatório (já é exigido hoje para análise; e também para manter consistência com o cadastro atual).
-- Schedule sempre válido (manual/daily/weekly/monthly).
+Situação atual
+- Hoje ele reconstrói `rawData` a partir de `task_step_results` (modo progressivo), mas só processa “compliance rules” quando `target_type === 'firewall'`.
+- Para domínio externo, ele ainda consegue finalizar a task (atualizar status/result), mas não grava “relatório histórico” nem atualiza `external_domains.last_score/last_scan_at` de forma “inteligente”.
 
----
+O que vamos fazer agora (mínimo útil, sem inventar score final ainda)
+- Incluir um ramo `else if (task.target_type === 'external_domain')` para:
+  1) Reconstruir `rawData` do mesmo jeito (já existe)
+  2) Salvar `result` no `agent_tasks` como `rawData` (ou um resumo) para facilitar visualização no modal de Execuções
+  3) Atualizar `external_domains.last_scan_at = now()`
+- Score:
+  - Podemos colocar `last_score` como null inicialmente, até definirmos claramente pesos/regras (evitar “score fake”).
+  - Alternativa: score inicial bem simples baseado em presença e qualidade (SPF/DMARC/DNSSEC/DKIM) — mas só se você confirmar a regra numa próxima etapa. Nesta entrega, foco em executar, registrar e visualizar.
 
-## Considerações / Edge cases
-- Se o domínio não tiver schedule (manual), o dialog deve abrir com “Manual”.
-- Se houver múltiplos schedules no futuro, o page hoje seleciona o “ativo” (ou o primeiro). Vamos manter essa lógica: ao salvar, substituímos tudo por um único schedule (ou nenhum se manual), igual ao firewall.
-- Ao excluir, remover apenas tasks `pending/running` evita apagar histórico (completed/failed) caso seja útil manter rastreabilidade.
+(Em uma fase seguinte, aí sim criamos uma tabela `external_domain_analyses` + score/relatório e alimentamos a tela “Relatórios”.)
 
----
+C) Validação end-to-end (o que você vai conseguir testar)
+1) Em `/scope-external-domain/domains`:
+   - Clicar “Analisar” em um domínio com agent configurado
+   - Ver toast de sucesso
+2) Ir para `/scope-external-domain/executions`:
+   - Ver a task criada (status pending/running)
+   - Abrir detalhes e ver:
+     - payload (domain, client_id)
+     - step_results (quando o agent começar a enviar)
+3) Rodar o python-agent (do cliente) atualizado:
+   - Ele vai puxar a tarefa via `/agent-tasks`
+   - Executar steps DNS e enviar `agent-step-result` progressivo
+   - Finalizar com `agent-task-result`
+4) Voltar em Execuções:
+   - Conferir steps com status success/fail e dados por step
+   - Conferir task final `completed`/`failed` conforme comportamento real
 
-## Plano de validação (manual)
-1) **Editar**
-   - Abrir `/scope-external-domain/domains`
-   - Clicar no ícone de lápis em um domínio
-   - Alterar Agent e/ou Frequência
-   - Salvar
-   - Esperado:
-     - Toast de sucesso
-     - Tabela atualiza `Agent` e `Frequência`
-2) **Excluir**
-   - Clicar na lixeira
-   - Confirmar exclusão
-   - Esperado:
-     - Toast de sucesso
-     - Domínio some da tabela
-     - Tarefas pending/running desse domínio são removidas do `agent_tasks`
-3) **E2E**
-   - Adicionar domínio → editar → analisar → excluir
-   - Confirmar que o fluxo continua consistente e sem erros de permissão (RLS).
+Riscos e cuidados (já considerados no plano)
+- DNSSEC best-effort: validação completa pode ser complexa dependendo do resolvedor e cadeia; por isso o executor retornará “validated: true/false/partial/unknown” com notes, sem bloquear a execução.
+- DKIM selectors: a lista é grande (boa cobertura), mas pode aumentar o tempo de execução. Mitigação:
+  - timeouts curtos por query
+  - resolver com caching interno (dnspython já ajuda)
+  - limitar o tamanho armazenado do TXT (evitar JSON gigante)
+- Execuções UI: cuidado para não carregar `result` pesado de todas as tasks; por isso o padrão “carregar detalhes sob demanda”.
 
----
+Arquivos que serão alterados/criados (na implementação após aprovação)
+Frontend
+- Editar: src/pages/external-domain/ExternalDomainExecutionsPage.tsx
+- Editar (opcional UX): src/pages/external-domain/ExternalDomainListPage.tsx
 
-## Arquivos a alterar/criar
-- Alterar:
-  - `src/components/external-domain/ExternalDomainTable.tsx`
-  - `src/pages/external-domain/ExternalDomainListPage.tsx`
-- Criar:
-  - `src/components/external-domain/EditExternalDomainDialog.tsx`
+Supabase
+- Criar migration: supabase/migrations/NEW__external_domain_dns_blueprint.sql (update rpc_get_agent_tasks)
+- Editar (recomendado): supabase/functions/agent-task-result/index.ts
+
+Python Agent
+- Criar: python-agent/agent/executors/dns_query.py
+- Editar: python-agent/agent/tasks.py
+- Editar: python-agent/requirements.txt
+
+Critérios de aceite (objetivos de produto)
+- “Analisar” cria tarefa e ela aparece em Execuções imediatamente.
+- Execuções mostra progresso por step (quando agent envia).
+- A análise coleta e retorna (por step) os dados DNS pedidos: NS, MX, SOA(+contact), SPF parse, DMARC parse, DKIM (selectors lista), DNSSEC best-effort.
