@@ -1,87 +1,176 @@
 
-Diagnóstico do porquê você não vê nada em “Administração > Coletas > Domínios Externos”
-- A tela **/collections** (aba “Domínios Externos”) busca **device_types** por categoria `other`:
-  - `external -> 'other'` (mapeamento em `CollectionsPage.tsx`)
-- No banco (ambiente **test**), hoje **não existe** nenhum `device_types` com `code='external_domain'`:
-  - Query executada: `select ... from device_types where code='external_domain'` retornou `[]`
-- Também **não existe** nenhum `device_blueprints` associado a um device_type `external_domain`:
-  - Query executada: `select ... from device_blueprints join device_types where code='external_domain'` retornou `[]`
-- Ou seja: a RPC `rpc_get_agent_tasks` já foi atualizada para “buscar o blueprint no banco”, mas **os registros (device_type + blueprint) ainda não foram criados**, então:
-  1) A aba “Domínios Externos” fica vazia
-  2) A RPC cai no fallback `{"steps": []}` e o agente não recebe steps
+# Plano: Corrigir Passagem do Domínio para Steps de Análise
 
-O que precisa ser feito (para aparecer na UI e para o agent receber o blueprint do banco)
-1) Criar o `device_type` do Domínio Externo no banco
-   - Tabela: `public.device_types`
-   - Campos esperados:
-     - `vendor`: “iScope” (ou outro que você preferir)
-     - `name`: “Domínio Externo”
-     - `code`: `external_domain` (confirmado por você)
-     - `category`: `other` (isso é essencial para cair na aba “Domínios Externos”)
-     - `icon`: `Globe` (opcional)
-     - `is_active`: true
-   - Observação: RLS está ok para super_admin (existe policy “Super admins can manage device types”).
+## Problema Identificado
 
-2) Criar o `device_blueprint` no banco para esse device_type
-   - Tabela: `public.device_blueprints`
-   - Campos esperados:
-     - `device_type_id`: id do device_type criado acima
-     - `name`: “External Domain DNS Scan”
-     - `version`: “any”
-     - `is_active`: true
-     - `collection_steps`: JSON com steps:
-       - ns_records (dns_query, NS)
-       - mx_records (dns_query, MX)
-       - soa_record (dns_query, SOA)
-       - spf_record (dns_query, SPF)
-       - dmarc_record (dns_query, DMARC)
-       - dkim_records (dns_query, DKIM, selectors = lista aprovada)
-       - dnssec_status (dns_query, DNSSEC, best_effort true)
-   - Observação: também há policy para super_admin em device_blueprints.
+A análise de domínio externo falha com o erro "Missing domain" em todos os 7 steps porque o domínio não está sendo passado corretamente para o executor DNS.
 
-3) Validar imediatamente na UI
-   - Recarregar a página `/collections`
-   - Ir na aba “Domínios Externos”
-   - Esperado:
-     - aparecer 1 card “Domínio Externo” (device_type)
-     - dentro dele, aparecer 1 blueprint “External Domain DNS Scan” com os steps listados
-   - Se não aparecer:
-     - confirmar que você está logado como `super_admin`
-     - confirmar que `is_active=true` no device_type e no blueprint
-     - confirmar que `category='other'`
+### Fluxo Atual (com bug)
 
-4) Ajuste final do python-agent (para blueprint genérico funcionar)
-- Motivo: blueprint no banco não deve ter `config.domain` hardcoded.
-- Implementação:
-  - Alterar o executor `python-agent/agent/executors/dns_query.py` para:
-    - usar `config.domain` se vier preenchido
-    - caso contrário, derivar o domínio de `context.base_url` (que vem de `target.base_url` já montado na RPC como `https://{d.domain}`)
-- Resultado esperado:
-  - o mesmo blueprint serve para qualquer domínio cadastrado, sem duplicação por domínio.
+```text
+1. trigger-external-domain-analysis cria task com payload: { domain: "estrela.com.br" }
+2. rpc_get_agent_tasks retorna target: { base_url: "https://estrela.com.br" }
+3. Python _build_context NÃO extrai "domain" do target
+4. DNSQueryExecutor procura context.get('domain') → não encontra → "Missing domain"
+```
 
-Como vamos executar (passo a passo na implementação)
-A) Banco (data operations)
-- Inserir `device_types` (idempotente: checar por code antes; se existir, reutilizar id)
-- Inserir `device_blueprints` (idempotente: checar se já existe ativo para esse device_type; se existir, não duplicar ou criar como inativo “v2”)
+### Causa Raiz
 
-B) Código (python-agent)
-- Pequena alteração em `dns_query.py` para fallback via `base_url`.
+O método `_build_context` em `python-agent/agent/tasks.py` não extrai o domínio do `base_url` para incluir no contexto:
 
-C) Validação end-to-end (o que você vai testar)
-1) Administração > Coletas > Domínios Externos:
-   - Ver o device type + blueprint.
-2) Domínio Externo > Domínios:
-   - Clicar “Analisar”.
-3) Domínio Externo > Execuções:
-   - Ver task com steps vindo do blueprint (não vazio).
-4) Agent rodando:
-   - Executa DNS steps e envia step_results.
+```python
+def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
+    # Falta: extrair domain do base_url ou do target
+    return {
+        'base_url': target.get('base_url'),
+        # 'domain': AUSENTE!
+    }
+```
 
-Notas importantes
-- A migração que você mostrou (RPC) está correta para “buscar blueprint no banco”, mas isso só funciona quando os dados existirem.
-- O fato de você não ver nada na aba é consistente com “não existe device_type com category other/code external_domain no banco (test)”.
+## Solução
 
-Arquivos/áreas envolvidas (para referência)
-- UI: `src/pages/admin/CollectionsPage.tsx` (filtra por category = other na aba Domínios Externos)
-- RPC: `public.rpc_get_agent_tasks` (já atualizado para buscar blueprint no banco)
-- Python agent: `python-agent/agent/executors/dns_query.py` (falta ajuste para derivar domain do base_url)
+### Opção 1 (Mais Limpa): Adicionar `domain` no target da RPC
+
+Modificar a função `rpc_get_agent_tasks` para incluir um campo `domain` explícito no target de external_domains:
+
+```sql
+json_build_object(
+  'id', d.id,
+  'type', 'external_domain',
+  'domain', d.domain,  -- ADICIONAR
+  'base_url', ('https://' || d.domain),
+  'credentials', json_build_object()
+) as target
+```
+
+### Opção 2 (Compatibilidade): Modificar o Python para extrair domain
+
+Alterar `_build_context` para extrair o domínio de `base_url` quando disponível:
+
+```python
+def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
+    base_url = target.get('base_url') or target.get('url')
+    
+    # Extrair domain do base_url para steps DNS
+    domain = None
+    if base_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(base_url)
+            domain = parsed.netloc or parsed.path.split('/')[0]
+        except:
+            pass
+    
+    # Ou usar domain diretamente se disponível no target
+    domain = target.get('domain') or domain
+    
+    return {
+        'base_url': base_url,
+        'domain': domain,  # ADICIONAR
+        # ... resto
+    }
+```
+
+### Recomendação: Implementar Ambas
+
+Implementar ambas as correções garante compatibilidade e robustez:
+1. **Backend (RPC)**: Adicionar campo `domain` explícito para clareza
+2. **Python**: Adicionar fallback para extrair domain de base_url
+
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `rpc_get_agent_tasks` (migração SQL) | Adicionar `domain` ao target de external_domain |
+| `python-agent/agent/tasks.py` | Modificar `_build_context` para extrair e incluir `domain` |
+
+## Alteração Detalhada
+
+### 1. Migração SQL para atualizar a RPC
+
+```sql
+CREATE OR REPLACE FUNCTION rpc_get_agent_tasks(p_agent_id UUID, p_limit INTEGER DEFAULT 10)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_tasks JSON;
+BEGIN
+  SELECT json_agg(task_data)
+  INTO v_tasks
+  FROM (
+    -- Firewall tasks (mantém como está)
+    ...
+    
+    UNION ALL
+    
+    -- External domain tasks
+    SELECT
+      t.id,
+      t.task_type,
+      t.target_id,
+      t.target_type,
+      t.payload,
+      t.priority,
+      t.expires_at,
+      json_build_object(
+        'id', d.id,
+        'type', 'external_domain',
+        'domain', d.domain,  -- NOVO CAMPO
+        'base_url', ('https://' || d.domain),
+        'credentials', json_build_object()
+      ) as target,
+      ...
+  ) as task_data;
+  
+  ...
+END;
+$$;
+```
+
+### 2. Modificar Python tasks.py
+
+```python
+def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
+    credentials = target.get('credentials', {})
+    base_url = target.get('base_url') or target.get('url')
+    
+    # Extrair domain do target ou do base_url
+    domain = target.get('domain')
+    if not domain and base_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(base_url)
+            domain = parsed.netloc or parsed.path
+            if domain:
+                domain = domain.split('/')[0].split(':')[0]  # Remove port se houver
+        except Exception:
+            pass
+    
+    return {
+        'base_url': base_url,
+        'domain': domain,  # NOVO
+        'api_key': credentials.get('api_key'),
+        'host': target.get('host'),
+        'port': target.get('port'),
+        'credentials': credentials,
+        'username': credentials.get('username'),
+        'password': credentials.get('password'),
+        'community': credentials.get('community'),
+    }
+```
+
+## Resultado Esperado
+
+Após as correções:
+1. A RPC retorna `target.domain = "estrela.com.br"` 
+2. O Python extrai `domain` para o contexto
+3. O DNSQueryExecutor encontra `context.get('domain')` → "estrela.com.br"
+4. Todas as consultas DNS são executadas corretamente
+
+## Testes de Validação
+
+1. Disparar uma nova análise para o domínio estrela.com.br
+2. Verificar nos logs do agent que os steps executam sem erro "Missing domain"
+3. Confirmar que os resultados (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) são salvos no banco
