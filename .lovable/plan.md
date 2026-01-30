@@ -1,112 +1,127 @@
 
-## Contexto e objetivo (o que você pediu)
-Você quer ajustar a área expandida dos itens da **Análise de Compliance (Domínios Externos)**:
+## Objetivo (o que vamos corrigir agora)
 
-1) Trocar o título **“EVIDÊNCIAS COLETADAS”** por **“ANÁLISE EFETUADA”**  
-2) Onde hoje aparece um box com `data.records` (evidência), **remover esse box**  
-3) No lugar dele, mostrar o conteúdo que hoje está no box **“Detalhes”** (ex.: “Menos de 3 nameservers. Considere adicionar mais para resiliência.”)  
-4) Essa “ANÁLISE EFETUADA” deve ser visível para **todos os usuários do workspace** (não só Super Admin).  
-5) **Endpoint consultado** e **Dados brutos (JSON)** continuam **apenas para Super Admins**.
+Você trouxe 2 pontos:
 
-Além disso, esse comportamento deve valer para **todos os itens** do relatório de Domínio Externo, não só “Diversidade de Nameservers”.
+1) **UI**: No Domínio Externo, na seção expandida do check, você quer voltar o **ícone (prancheta/arquivo)** antes do título **“ANÁLISE EFETUADA”** (como era antes em “EVIDÊNCIAS COLETADAS”).
+
+2) **Regra MX (Infraestrutura de Email)**: Em **“Prioridade MX Configuradas” (MX-003)** e **“Redundância MX” (MX-002)**, hoje está falhando quando o MX é um **hostname “alias”** (ex.: Microsoft 365) — mas esse hostname resolve em múltiplos IPs e, na prática, existe redundância. Precisamos validar isso corretamente.
 
 ---
 
-## Diagnóstico (onde isso está hoje no código)
-- O bloco “Evidências Coletadas” e “Ver dados brutos (JSON)” é renderizado em:  
-  `src/components/ComplianceCard.tsx`
-- Hoje existe a regra:
-  - `canViewEvidence = role === 'super_admin' || role === 'super_suporte'`
-  - Isso controla evidências, endpoint e JSON.
-- O componente `ComplianceCard` é usado dentro de `CategorySection` (genérico), que é usado por Firewall, Domínio Externo e possivelmente outros relatórios.
+## Diagnóstico rápido (com base no código)
 
-Risco atual: se alterarmos `ComplianceCard` “no geral”, podemos afetar Firewall/M365. Então precisamos aplicar a mudança **somente** para Domínio Externo.
+### (1) Ícone “prancheta” no título
+- Hoje, no `src/components/ComplianceCard.tsx`, o título “ANÁLISE EFETUADA” foi renderizado **sem ícone**.
+- O ícone usado em “Evidências Coletadas” (default) é o `FileText` do lucide-react.
+- Solução: adicionar `FileText` no header do bloco `variant === 'external_domain'`.
 
----
-
-## Estratégia (como vamos aplicar apenas no Domínio Externo)
-### Opção escolhida: “variant” explícito (mais seguro)
-1) Adicionar um prop opcional em `CategorySection` para indicar o tipo de relatório (ex.: `variant?: 'default' | 'external_domain'`).
-2) `CategorySection` repassa esse `variant` para cada `ComplianceCard`.
-3) `ExternalDomainAnalysisReportPage.tsx` passa `variant="external_domain"` ao renderizar as categorias.
-4) Dashboard/Firewall/M365 continuam sem prop (default), então não muda nada nesses módulos.
-
-Isso evita heurísticas frágeis (ex.: tentar adivinhar pelo nome da categoria/step_id) e garante que a mudança ficará restrita ao Domínio Externo.
+### (2) Regras MX e por que falham com Microsoft 365 / Gmail
+- As regras de MX estão definidas no SQL (migration), com estes operadores:
+  - **MX-002 Redundância MX**: `array_length_gte` de `data.records` >= 2
+  - **MX-003 Prioridades MX Configuradas**: `has_distinct_priorities` em `data.records`
+- Para provedores grandes, normalmente existe **1 MX record** (1 hostname), e a “redundância” está por trás do hostname (A/AAAA).
+- Hoje o pipeline pega apenas os MX records (priority + exchange), sem resolver A/AAAA do exchange.
 
 ---
 
-## Mudanças de UI/Comportamento (como ficará o expand do card no Domínio Externo)
-### Quando `variant === 'external_domain'`:
-- Remover o box “Detalhes” (para não duplicar informação)
-- Criar a seção:
-  - Título: **ANÁLISE EFETUADA**
-  - Conteúdo: um box com o texto que hoje vem de `check.details || check.description`
-  - Se o texto for grande: truncar ou manter quebra de linha?  
-    - Vamos manter `whitespace-pre-line` (como já está), e limitar o layout usando `line-clamp` opcional + “ver mais” se precisar (se você preferir eu implemento já no mesmo passo; caso contrário, só mantém o comportamento atual do box, que já é bem estável).
-- **Não renderizar a lista de `check.evidence`** (incluindo `data.records`), ou seja, o “box do data.records” deixa de existir.
-- Continuar exibindo para Super Admin:
-  - `Endpoint consultado`
-  - `Ver dados brutos (JSON)`
+## Estratégia de implementação (sem quebrar outros módulos)
 
-### Para outros módulos (default):
-- Nada muda: mantém “Detalhes”, “Evidências Coletadas” (para Super Admins), etc.
+### Parte A — UI (rápida e isolada)
+- Alterar apenas o `ComplianceCard.tsx` no bloco `external_domain`:
+  - Header vira `flex items-center gap-1.5`
+  - Recolocar `<FileText className="w-3 h-3" />` antes do texto “ANÁLISE EFETUADA”
+
+Isso não mexe em permissões e não afeta Firewall/M365 (porque é só no variant `external_domain`).
 
 ---
 
-## Regras de acesso (como vamos garantir a visibilidade correta)
-- A nova seção **ANÁLISE EFETUADA** no variant `external_domain`:
-  - Deve aparecer para qualquer usuário autenticado que consiga ver o relatório.
-  - Então ela NÃO depende de `canViewEvidence` (Super Admin).
-- “Endpoint consultado” e “Dados brutos (JSON)”:
-  - Continuam dependendo de `canViewEvidence` (super_admin ou super_suporte), como hoje.
+### Parte B — “Redundância MX” e “Prioridades MX” com validação de alias (correção real)
+Vamos corrigir de forma sólida e compatível com o que você descreveu (nslookup retornando múltiplos IPs).
+
+#### B1) Melhorar o payload do agente (python-agent)
+No `python-agent/agent/executors/dns_query.py`, no bloco `query_type == 'MX'`:
+- Para cada record MX (`exchange`), fazer resolve best-effort de:
+  - `A` e `AAAA` do hostname retornado (exchange)
+- Salvar junto do record, por exemplo:
+  - `resolved_ips: string[]` (IPs A + AAAA)
+  - `resolved_ip_count: number`
+  - opcional: `resolve_error?: string` (quando falhar)
+
+Exemplo de estrutura por record:
+```json
+{
+  "priority": 0,
+  "exchange": "estrela-com-br.mail.protection.outlook.com",
+  "resolved_ips": ["52.101.194.19", "...", "2a01:111:f403:c931::1"],
+  "resolved_ip_count": 8
+}
+```
+
+Isso deixa explícito no dado bruto que existe redundância por trás do alias.
+
+#### B2) Ajustar a avaliação no backend (Edge Function) sem depender de mudar SQL
+No `supabase/functions/agent-task-result/index.ts`, dentro de `processComplianceRules`, já existe um padrão de **“override por rule.code”** (ex.: `fw-001` etc).
+
+Vamos adicionar overrides específicos para:
+- **MX-002 (Redundância MX)**
+  - `pass` se:
+    - `records.length >= 2` (comportamento atual), **OU**
+    - `records.length === 1` e `records[0].resolved_ip_count >= 2` (redundância via alias)
+  - `fail` se:
+    - `records.length === 0`, ou
+    - `records.length === 1` e `resolved_ip_count < 2` (ou não disponível)
+
+- **MX-003 (Prioridades MX Configuradas)**
+  - `pass` se:
+    - `has_distinct_priorities(records)` for verdadeiro (caso clássico com 2+ MX), **OU**
+    - `records.length === 1` e `records[0].resolved_ip_count >= 2` (provedor gerenciado: failover “atrás” do hostname)
+  - `warn/fail` (mantemos o comportamento atual) se:
+    - não for possível determinar redundância do alias e só existir 1 record sem evidência de múltiplos IPs
+
+Além disso, vamos melhorar o `details` (que é o que você quer que apareça para todos em “ANÁLISE EFETUADA”):
+- Para M365/Gmail com 1 MX alias resolvendo múltiplos IPs, algo como:
+  - “MX único (hostname gerenciado) resolve para X IP(s). Redundância provida pelo provedor.”
+
+Isso responde exatamente ao seu ponto: “o agent não validou esse alias”.
 
 ---
 
-## Passo a passo de implementação (arquivos e alterações)
-1) **`src/components/ComplianceCard.tsx`**
-   - Adicionar prop opcional `variant?: 'default' | 'external_domain'`
-   - Ajustar renderização do bloco expandido:
-     - Se `variant === 'external_domain'`:
-       - Renderizar cabeçalho “ANÁLISE EFETUADA”
-       - Renderizar 1 box com o texto do “Detalhes” (`check.details || check.description`)
-       - Não renderizar a seção “Evidências Coletadas” nem itens `check.evidence`
-     - Caso contrário:
-       - Mantém o fluxo atual (inclui “Detalhes” + “Evidências Coletadas” para Super Admins)
+## Arquivos que serão alterados
 
-2) **`src/components/CategorySection.tsx`**
-   - Adicionar prop `variant?: 'default' | 'external_domain'`
-   - Passar `variant` para `<ComplianceCard ... />`
+1) `src/components/ComplianceCard.tsx`
+- Recolocar ícone `FileText` antes do título “ANÁLISE EFETUADA” no variant `external_domain`.
 
-3) **`src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`**
-   - Ao renderizar `<CategorySection ... />`, passar `variant="external_domain"`
+2) `python-agent/agent/executors/dns_query.py`
+- Enriquecer retorno de MX com A/AAAA do hostname (`resolved_ips`, `resolved_ip_count`).
+
+3) `supabase/functions/agent-task-result/index.ts`
+- Adicionar overrides para `MX-002` e `MX-003` para considerar `resolved_ip_count` quando houver apenas 1 MX record.
 
 ---
 
-## Critérios de aceite (como validar que ficou certo)
-1) No relatório de Domínio Externo, ao expandir qualquer check:
-   - Não existe mais “EVIDÊNCIAS COLETADAS”
-   - Existe “ANÁLISE EFETUADA”
-   - O texto exibido corresponde ao que antes estava no box “Detalhes”
-   - Não existe mais box de `data.records`
-2) Logar com um usuário comum (role `user` / `workspace_admin`):
-   - Consegue ver “ANÁLISE EFETUADA”
-   - Não vê endpoint consultado nem JSON
-3) Logar como `super_admin`:
-   - Vê “ANÁLISE EFETUADA”
-   - Vê endpoint consultado e JSON
-4) Relatórios de Firewall continuam iguais (sem regressão visual/textual).
+## Critérios de aceite (como você valida)
+
+### UI
+- Expandir qualquer check no Domínio Externo:
+  - “ANÁLISE EFETUADA” aparece com o mesmo ícone (prancheta/arquivo) que existia em “EVIDÊNCIAS COLETADAS”.
+
+### MX
+No relatório do domínio com MX do Microsoft 365:
+- **MX-002 Redundância MX** deve ficar **pass** se o hostname resolver para múltiplos IPs.
+- **MX-003 Prioridades MX Configuradas** não deve penalizar quando houver **1 MX alias** com múltiplos IPs (deve ficar **pass** com texto explicativo).
+- Continuar funcionando como antes para domínios com 2+ MX (prioridades distintas etc).
 
 ---
 
-## Observações técnicas (curtas)
-- Essa mudança é puramente de UI/visibilidade; não altera banco nem edge functions.
-- Mantém o padrão de segurança atual: detalhes “sensíveis” (endpoint e raw json) continuam restritos.
+## Riscos / Observações
+- A resolução A/AAAA do exchange é “best-effort”: DNS pode falhar por timeout/ratelimit. Vamos tratar falhas de forma segura (não quebrar execução; apenas não considerar o fallback).
+- Isso não muda o comportamento de Firewall/M365, apenas o módulo de Domínio Externo e somente as regras MX-002/MX-003 na geração do resultado.
 
 ---
 
-## Teste end-to-end sugerido (rápido)
-- Abrir a rota atual que você mencionou:
-  `/scope-external-domain/domains/.../report/...`
-- Expandir “Segurança DNS > Diversidade de Nameservers”
-- Validar com usuário comum e com Super Admin (se possível em duas sessões/navegadores).
-
+## Teste end-to-end recomendado (rápido)
+1) Abrir o relatório do domínio já na sua rota atual.
+2) Ir em “Infraestrutura de Email”:
+   - Expandir **Redundância MX** e **Prioridade MX Configuradas**.
+3) Repetir com um domínio “normal” (com 2 MX records), se você tiver, para garantir que não regredimos o caso clássico.
