@@ -1,66 +1,95 @@
 
-Contexto do problema (o que está acontecendo)
-- Você executou uma tarefa de coleta/validação e, ao finalizar, o banner não apareceu nem após atualizar a página.
-- Hoje o banner (`SystemAlertBanner`) só mostra alertas para usuários com role `super_admin` ou `workspace_admin`, e só mostra alertas que:
-  1) estão `is_active = true`
-  2) não foram “dismissed” pelo usuário (`dismissed_by` não contém seu user_id)
-  3) NÃO expiraram pelo “UI lifetime” (30s por padrão; 5 min para alertas `m365_*`), baseado em `created_at`
-  4) passam pela RLS de `system_alerts` (inclui `target_role`)
+Objetivo (ajuste de parâmetros)
+- Alertas do tipo **M365*** (TENANT HOME) devem ser exibidos **somente** para as roles:
+  - `super_admin`
+  - `super_suporte`
+- Todos os **demais** alertas podem ser exibidos para **todos os usuários autenticados** (qualquer role).
 
-Diagnóstico mais provável (causa raiz)
-1) Alertas M365 estão sendo criados com `target_role = 'super_admin'`
-- No edge function `supabase/functions/validate-m365-permissions/index.ts`, ao criar um alerta M365 novo, ele faz:
-  - `target_role: 'super_admin'`
-- A policy de SELECT da tabela `system_alerts` exige:
-  - `target_role IS NULL OR has_role(auth.uid(), target_role)`
-- Resultado prático:
-  - Um usuário `workspace_admin` não consegue nem “ver” esses alertas (o REST retorna 200, mas a lista vem vazia ou sem o alerta específico por causa da RLS).
-  - Isso explica perfeitamente o sintoma “não aparece nem após refresh” no fluxo M365 (exatamente a rota que você está: `/scope-m365/tenant-connection`).
+Diagnóstico do estado atual (baseado no código)
+- `SystemAlertBanner.tsx` hoje:
+  - Só busca/assina alertas quando `role === 'super_admin' || role === 'workspace_admin'` (linhas 28–37 e 143).
+  - Isso impede usuários comuns e `super_suporte` de verem o banner, mesmo que o banco permita via RLS.
+- `system_alerts.target_role` no banco é **um único** role (não suporta múltiplas roles por linha).
+- Para satisfazer “M365 apenas super_admin e super_suporte” de forma forte (via RLS), precisamos criar **duas linhas** de alerta M365 (uma para cada role), ou mudar schema. Como queremos ajuste pontual, vamos pela opção das duas linhas.
 
-2) Para alertas não-M365 (ex.: `firewall_analysis_completed`)
-- Eles expiram no banner após 30s (por decisão de produto). Então, se você atualizar a página depois de alguns minutos, é esperado não aparecer.
-- Isso não é bug; é efeito colateral desejado do “UI lifetime” de 30s.
+Estratégia (sem mexer em schema do banco)
+1) Backend (edge function `validate-m365-permissions`):
+   - Para alertas M365, criar/atualizar **dois alertas ativos** com o mesmo `alert_type`, mas com `target_role` diferente:
+     - um com `target_role = 'super_admin'`
+     - outro com `target_role = 'super_suporte'`
+   - Para isso, ajustar a função helper `createOrUpdateAlert` para considerar “mesmo tipo” + “mesma role alvo” ao procurar/atualizar um alerta existente:
+     - Hoje ela busca apenas por `alert_type` e `is_active=true`. Isso impediria 2 alertas do mesmo tipo coexistirem.
+     - Vamos mudar o filtro para também comparar `target_role` (incluindo o caso `null`).
+   - Para alertas não-M365 (no futuro, se existirem em outros edge functions):
+     - Manter `target_role = null` (visível a qualquer role, sujeito ao restante da RLS e ao banner).
 
-Objetivo da correção agora
-- Garantir que alertas M365 sejam visíveis para `workspace_admin` também (ou para ambos: `super_admin` + `workspace_admin`), já que são alertas operacionais e você explicitou que “Problemas M365” devem ter tempo maior (5 min).
+2) Frontend (banner `SystemAlertBanner.tsx`):
+   - Remover o “gate” que limita o banner somente a `super_admin/workspace_admin`.
+   - Novo comportamento:
+     - Se houver `user` autenticado: buscar alertas.
+     - Assinar realtime quando houver `user` autenticado.
+     - Renderizar banner para qualquer role, desde que existam alertas visíveis.
+   - Manter o “UI lifetime” já definido:
+     - Default 30s
+     - `m365_*` 5 min (já está no `alertLifetime.ts`)
+   - Manter o dismiss e auto-hide já implementados.
+   - (Defesa extra) Filtrar `m365_*` no frontend caso `role` não seja `super_admin` ou `super_suporte`.
+     - Na prática, com `target_role` preenchido, a RLS já bloqueia, mas esse filtro evita qualquer regressão caso no futuro alguém gere M365 com `target_role=null`.
 
-Estratégia de implementação
-A) Ajustar a criação/atualização de alertas M365 (backend – edge function)
-1) Alterar `createOrUpdateAlert` (em `validate-m365-permissions/index.ts`) para aceitar `target_role` como parâmetro (ou definir uma regra padrão).
-2) Para alertas M365, mudar `target_role` de `'super_admin'` para uma das opções abaixo:
-   - Opção recomendada: `target_role: null` (aparece para qualquer usuário que a RLS permita; hoje o banner no UI ainda restringe para admin roles, então não “vaza” para usuários comuns na UI).
-   - Opção alternativa: `target_role: 'workspace_admin'` e, se necessário, criar também um alerta separado para `super_admin` (não recomendo duplicar).
-3) Garantir que quando o alerta for “update” (caso já exista), o `target_role` também seja ajustado (não só no insert), para corrigir alertas já existentes do mesmo tipo.
+Detalhes de implementação (passo a passo)
 
-B) Melhorar observabilidade (frontend – banner) para confirmar assinatura e dados retornando
-Mesmo que o problema principal seja RLS/target_role, vale deixar o banner um pouco mais “debugável”:
-1) Logar status do Realtime subscribe (SUBSCRIBED / TIMED_OUT / CLOSED).
-2) Logar quando o fetch retorna 0 alertas e por quê (ex.: role não permitida, expirado por lifetime, etc.) — com logs mais discretos (console.debug) para não poluir.
+A) Ajustar edge function `supabase/functions/validate-m365-permissions/index.ts`
+1. Alterar `createOrUpdateAlert`:
+   - Na query de `existingAlert`, adicionar condição por `target_role`:
+     - Se `options.targetRole` for `null`/`undefined`: procurar `target_role IS NULL`
+     - Se for `'super_admin'`/`'super_suporte'`: procurar `.eq('target_role', options.targetRole)`
+   - No update e insert, manter `target_role: options.targetRole ?? null` (já existe no diff).
+2. Onde hoje chamamos `createOrUpdateAlert` para M365 (`m365_connection_failure`, `m365_permission_failure`):
+   - Trocar de:
+     - `targetRole: null`
+   - Para:
+     - chamar 2 vezes:
+       - `targetRole: 'super_admin'`
+       - `targetRole: 'super_suporte'`
+3. Garantir que `dismissed_by` seja resetado em update (já está) para reaparecer quando o alerta “recai”.
 
-C) Plano de validação (passo a passo)
-1) Cenário M365 (o que você está testando agora):
-   - Disparar a validação/permissões M365 que gera `m365_connection_failure` ou `m365_permission_failure`.
-   - Confirmar que o alerta aparece para um usuário `workspace_admin` sem precisar trocar de rota.
-   - Confirmar que permanece por até 5 minutos (lifetime M365) ou até o usuário clicar em “Ver Configurações” / “X”.
-2) Confirmar no banco (apenas leitura) que o alerta foi criado/atualizado com `target_role = null` (ou `workspace_admin`), e `created_at` recente.
-3) Cenário não-M365:
-   - Confirmar que alertas de conclusão de tarefa (não M365) continuam expirando em 30s conforme combinado.
+B) Ajustar `src/components/alerts/SystemAlertBanner.tsx`
+1. Buscar alertas para qualquer usuário autenticado:
+   - `useEffect` de fetch: trocar condição baseada em role por condição baseada em `user?.id` (ou `session`).
+2. Realtime subscription para qualquer usuário autenticado:
+   - Remover o early-return que bloqueia se role não for admin.
+3. Renderização:
+   - Remover o `if (!['super_admin','workspace_admin'].includes(role...) || visibleAlerts.length === 0) return null;`
+   - Substituir por:
+     - `if (!user?.id || visibleAlerts.length === 0) return null;`
+4. Filtragem adicional para M365 (defesa):
+   - Antes de aplicar “lifetime”, filtrar:
+     - se `alert.alert_type.startsWith('m365_')` e `role` não está em `['super_admin','super_suporte']`, remover.
+   - Nota: Se o backend estiver correto (2 alertas com target_role), isso quase nunca será necessário, mas garante que “M365 não vaza” mesmo se no futuro target_role for setado incorretamente.
 
-Riscos / considerações
-- Se vocês realmente quiserem que somente super_admin veja alguns alertas M365, precisamos separar “alertas técnicos” (somente super_admin) vs “alertas operacionais” (workspace_admin também). Hoje está tudo caindo em super_admin, e isso está escondendo sinal importante do time operacional.
-- Se o alert estiver sendo criado mas não aparece, 99% das vezes é por (a) RLS/target_role ou (b) expiração pelo lifetime; esse ajuste endereça o (a).
+Testes / Validação (checklist prático)
+1) Como `workspace_admin`:
+   - Gerar um alerta M365 (ex.: tenant_id inválido / sem admin consent).
+   - Confirmar que **não aparece** no banner.
+2) Como `super_suporte`:
+   - Gerar o mesmo erro M365.
+   - Confirmar que aparece e fica até 5 minutos (ou até dismiss/ação).
+3) Como `super_admin`:
+   - Confirmar o mesmo.
+4) Como `user` (role padrão):
+   - Criar/ver um alerta não-M365 (se existir algum fluxo que crie alertas gerais) e confirmar que aparece por 30s.
+5) Confirmar que refresh dentro do lifetime ainda mostra o alerta (desde que não tenha sido dismissado).
 
-Entregáveis (mudanças esperadas)
-- Atualização de `supabase/functions/validate-m365-permissions/index.ts` para definir `target_role` compatível com `workspace_admin` (recomendado: null).
-- Pequena melhoria de logs no `SystemAlertBanner.tsx` (opcional, mas recomendada para garantir que o realtime está saudável).
+Riscos / Observações
+- Duplicação intencional de alertas M365:
+  - Haverá 2 registros no `system_alerts` para o mesmo `alert_type`, um por role. Isso é esperado.
+  - O banner mostra apenas 1 “primaryAlert” por vez e exibirá “+N outros” se ambos estiverem visíveis para um usuário (não ocorrerá, pois um usuário não deve ter simultaneamente super_admin e super_suporte; e mesmo se tiver, ele veria +1).
+- Se algum outro edge function criar alertas “globais”, ele pode continuar usando `target_role = null` para ser visível a todos, sem mudanças.
 
-Critério de aceite
-- Um usuário `workspace_admin` consegue ver alertas `m365_*` no banner, sem refresh, enquanto o alerta estiver dentro do lifetime (5 min) e `is_active=true`.
-- Atualizar a página dentro do lifetime não “perde” o alerta.
-- Após o lifetime, o alerta não aparece mais (como definido).
+Arquivos que serão modificados
+- `supabase/functions/validate-m365-permissions/index.ts`
+- `src/components/alerts/SystemAlertBanner.tsx`
 
-Sequência de execução (ordem)
-1) Ajustar edge function `validate-m365-permissions` (target_role).
-2) Validar via execução do fluxo M365.
-3) Se necessário, adicionar/ajustar logs do banner para confirmar realtime + fetch.
-
+Resultado esperado
+- M365*: somente `super_admin` e `super_suporte` veem (forçado por RLS via `target_role`).
+- Outros alertas: qualquer usuário autenticado pode ver (banner deixa de restringir por role).
