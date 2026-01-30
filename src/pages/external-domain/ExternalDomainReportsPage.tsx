@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileText, Download, Eye, Loader2, AlertTriangle, CheckCircle, Filter, Globe } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { FileText, Eye, Loader2, AlertTriangle, CheckCircle, Filter, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DomainReport {
@@ -74,10 +75,64 @@ export default function ExternalDomainReportsPage() {
 
   useEffect(() => {
     if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_external_domain')) {
-      // TODO: Buscar dados reais quando a tabela for criada
-      setLoading(false);
+      fetchReports();
     }
   }, [user, authLoading, moduleLoading, hasModuleAccess]);
+
+  const fetchReports = async () => {
+    try {
+      const { data: historyData } = await supabase
+        .from('external_domain_analysis_history')
+        .select('id, domain_id, score, created_at')
+        .order('created_at', { ascending: false });
+
+      if (!historyData || historyData.length === 0) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      const domainIds = [...new Set(historyData.map(h => h.domain_id))];
+      const { data: domainsData } = await supabase
+        .from('external_domains')
+        .select('id, name, domain, client_id')
+        .in('id', domainIds);
+
+      const clientIds = [...new Set((domainsData || []).map(d => d.client_id))];
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', clientIds);
+
+      const domainMap = new Map((domainsData || []).map(d => [d.id, d]));
+      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+
+      setClients((clientsData || []).map(c => ({ id: c.id, name: c.name })));
+      setDomains((domainsData || []).map(d => ({ id: d.id, name: d.name })));
+
+      const formattedReports: DomainReport[] = historyData.map(h => {
+        const domain = domainMap.get(h.domain_id);
+        const client = domain ? clientMap.get(domain.client_id) : null;
+        return {
+          id: h.id,
+          domain_id: h.domain_id,
+          domain_name: domain?.name || 'N/A',
+          domain_url: domain?.domain || 'N/A',
+          client_id: client?.id || '',
+          client_name: client?.name || 'N/A',
+          score: h.score,
+          created_at: h.created_at,
+        };
+      });
+
+      setReports(formattedReports);
+    } catch (error) {
+      console.error('Error fetching external domain reports:', error);
+      toast.error('Erro ao carregar relatórios');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filtered reports based on selected filters
   const filteredReports = useMemo(() => {
@@ -157,6 +212,55 @@ export default function ExternalDomainReportsPage() {
   const getSelectedAnalysis = (group: GroupedDomain) => {
     const selectedId = selectedAnalyses[group.domain_id];
     return group.analyses.find(a => a.id === selectedId) || group.analyses[0];
+  };
+
+  const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
+
+  const fetchReportData = async (analysisId: string): Promise<{ reportData: any; createdAt: string; domainId: string } | null> => {
+    const { data, error } = await supabase
+      .from('external_domain_analysis_history')
+      .select('report_data, created_at, domain_id')
+      .eq('id', analysisId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching external domain report data:', error);
+      toast.error('Erro ao carregar dados do relatório');
+      return null;
+    }
+
+    if (!data?.report_data) return null;
+    return {
+      reportData: data.report_data,
+      createdAt: data.created_at,
+      domainId: data.domain_id,
+    };
+  };
+
+  const handleViewReport = async (group: GroupedDomain) => {
+    const analysis = getSelectedAnalysis(group);
+    if (!analysis) return;
+
+    setLoadingReportId(analysis.id);
+    try {
+      const loaded = await fetchReportData(analysis.id);
+      if (!loaded) return;
+
+      navigate(`/scope-external-domain/domains/${group.domain_id}/report/${analysis.id}`, {
+        state: {
+          report: loaded.reportData,
+          analysisCreatedAt: loaded.createdAt,
+          domainMeta: {
+            domain_id: group.domain_id,
+            domain_name: group.domain_name,
+            domain_url: group.domain_url,
+            client_name: group.client_name,
+          },
+        },
+      });
+    } finally {
+      setLoadingReportId(null);
+    }
   };
 
   const getScoreColor = (score: number) => {
@@ -334,22 +438,19 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toast.info('Funcionalidade em desenvolvimento')}
-                              title="Visualizar"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toast.info('Funcionalidade em desenvolvimento')}
-                              title="Baixar PDF"
-                            >
-                              <Download className="w-4 h-4" />
-                            </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => handleViewReport(group)}
+                               disabled={loadingReportId === currentAnalysis?.id}
+                               title="Visualizar"
+                             >
+                               {loadingReportId === currentAnalysis?.id ? (
+                                 <Loader2 className="w-4 h-4 animate-spin" />
+                               ) : (
+                                 <Eye className="w-4 h-4" />
+                               )}
+                             </Button>
                           </div>
                         </TableCell>
                       </TableRow>

@@ -33,6 +33,7 @@ const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
 const ExternalDomainListPage = lazy(() => import("./pages/external-domain/ExternalDomainListPage"));
 const ExternalDomainExecutionsPage = lazy(() => import("./pages/external-domain/ExternalDomainExecutionsPage"));
 const ExternalDomainReportsPage = lazy(() => import("./pages/external-domain/ExternalDomainReportsPage"));
+const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-domain/ExternalDomainAnalysisReportPage"));
 
 // Microsoft 365 Module Pages - lazy loaded
 const M365DashboardPage = lazy(() => import("./pages/m365/M365DashboardPage"));
@@ -82,6 +83,7 @@ const App = () => (
                 <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
                 <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
                 <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
+                <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
 
                 {/* Microsoft 365 Module */}
                 <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
