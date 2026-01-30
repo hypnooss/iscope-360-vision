@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 interface CategorySectionProps {
   category: ComplianceCategory;
   index: number;
+  variant?: 'default' | 'external_domain';
 }
 
 const iconMap: Record<string, typeof Shield> = {
@@ -36,7 +37,7 @@ const categoryDescriptions: Record<string, string> = {
   'Licenciamento': 'Verifica o status do contrato FortiCare e licenças de segurança FortiGuard (AV, IPS, WebFilter, AppControl), incluindo datas de expiração.',
 };
 
-export function CategorySection({ category, index }: CategorySectionProps) {
+export function CategorySection({ category, index, variant = 'default' }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const Icon = iconMap[category.icon] || Shield;
 
@@ -100,7 +101,7 @@ export function CategorySection({ category, index }: CategorySectionProps) {
       {isExpanded && (
         <div className="space-y-3 pl-4 border-l-2 border-primary/20 ml-6 mb-6">
           {category.checks.map((check) => (
-            <ComplianceCard key={check.id} check={check} />
+            <ComplianceCard key={check.id} check={check} variant={variant} />
           ))}
         </div>
       )}

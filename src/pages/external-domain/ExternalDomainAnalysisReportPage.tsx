@@ -598,7 +598,12 @@ export default function ExternalDomainAnalysisReportPage() {
             <h2 className="text-xl font-semibold text-foreground mb-4">Verificações por Categoria</h2>
             {Array.isArray(report.categories) && report.categories.length > 0 ? (
               report.categories.map((category, index) => (
-                <CategorySection key={`${category.name}-${index}`} category={category} index={index} />
+                <CategorySection
+                  key={`${category.name}-${index}`}
+                  category={category}
+                  index={index}
+                  variant="external_domain"
+                />
               ))
             ) : (
               <div className="text-center py-8 text-muted-foreground">
