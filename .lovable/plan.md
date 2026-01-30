@@ -1,152 +1,121 @@
 
-Objetivo (confirmado)
-- Implementar “Domínio Externo > Relatórios” para listar análises concluídas e permitir abrir um relatório detalhado (página) mostrando “resultado das coletas vs regras de compliance”, reaproveitando o padrão de “Firewall > Relatórios”.
-- Fonte: nova tabela `external_domain_analysis_history` (já criada).
-- Visualização: abrir página de detalhe.
-- PDF: não implementar agora.
+## Objetivo (ajustes solicitados)
+1) Em **Domínio Externo > Relatórios**:
+- Trocar subtítulo do header para **“Histórico de análises de compliance”**
+- Na tabela, coluna **Domínio**: parar de mostrar “duas vezes” e ajustar tipografia (mostrar apenas o domínio, ex: `estrela.com.br`)
+- Trocar textos “verificação(ões)” para **“análise(s)”** em:
+  - Badge da linha (ex: “1 análise(s)”)
+  - CardDescription (ex: “X domínio(s) com Y análise(s) no total”)
+  - CardTitle (ex: “Histórico de Análises”)
 
-Estado atual (o que já existe)
-- Banco: `public.external_domain_analysis_history` já criada com índice e RLS.
-- Frontend:
-  - `src/pages/external-domain/ExternalDomainReportsPage.tsx` já tem layout e agrupamento, mas não busca dados reais e os botões ainda são “stub”.
-  - Rotas em `src/App.tsx` ainda não têm rota para uma página de detalhe de relatório de domínio.
-- Backend:
-  - `supabase/functions/agent-task-result/index.ts` calcula compliance e grava histórico apenas para `firewall`.
-  - Para `external_domain`, hoje salva `rawData` em `agent_tasks.result` e atualiza `external_domains.last_scan_at`, mas NÃO calcula score/checks nem grava em `external_domain_analysis_history`.
-- Observação: o aviso “Leaked Password Protection Disabled” será ignorado conforme você pediu (não bloqueia este trabalho).
+2) Em **Detalhe do relatório (análise de compliance de domínio externo)**:
+- Ajustar o layout para ficar **igual ao Firewall > Análise**, com o mesmo padrão visual:
+  - Header grande “Análise de Compliance”
+  - Subtítulo “Relatório gerado em …”
+  - Cards no mesmo grid (gauge à esquerda e painel info+stats à direita)
+- Incluir **botão “Reanalisar”** (sem PDF, conforme escopo anterior), agendando nova análise via `trigger-external-domain-analysis`.
 
-Implementação (o que eu vou mudar)
+---
 
-1) Backend — calcular compliance para external_domain e gravar histórico
-Arquivo: `supabase/functions/agent-task-result/index.ts`
+## O que vou mudar (arquivos)
 
-1.1. Estender a lógica que hoje roda apenas quando `task.target_type === 'firewall'` para também rodar quando `task.target_type === 'external_domain'`:
-- Condição: `(body.status === 'completed' || body.status === 'partial') && rawData`
-- Resolver `deviceTypeId`:
-  - Para firewall: mantém como está.
-  - Para external_domain: buscar em `device_types` com `code = 'external_domain'` e `is_active = true`.
-- Buscar regras de compliance em `compliance_rules` com `device_type_id = deviceTypeId` e `is_active = true`.
-- Reusar `processComplianceRules(rawData, rules)` (o motor já existe dentro dessa função).
+### 1) `src/pages/external-domain/ExternalDomainReportsPage.tsx`
+**1.1. Header da página**
+- Alterar:
+  - `Histórico de verificações de domínios externos` -> `Histórico de análises de compliance`
 
-1.2. Persistir resultados para external_domain:
-- Atualizar `external_domains` quando status completed/partial:
-  - `last_scan_at = now()`
-  - `last_score = complianceResult.score`
-- Inserir em `external_domain_analysis_history`:
-  - `domain_id = task.target_id`
-  - `score = complianceResult.score`
-  - `report_data = historyReportData` (versão leve, sem `raw_data`, mesma ideia do firewall)
-  - `analyzed_by = null` (a edge function não tem o usuário final; e a policy service_role permite inserir)
-- Manter o comportamento atual de salvar `agent_tasks.result` com `rawData` para external_domain (isso continua útil para a tela de Execuções).
+**1.2. Card de listagem**
+- Alterar `CardTitle`:
+  - `Histórico de Verificações` -> `Histórico de Análises`
+- Alterar `CardDescription`:
+  - `verificação(ões)` -> `análise(s)`
 
-1.3. Logging e tratamento de erros
-- Logs claros para:
-  - Identificar quando processou regras de external_domain
-  - Quantidade de regras aplicadas
-  - Sucesso/erro ao inserir em `external_domain_analysis_history`
-- Se falhar em gravar histórico, não quebrar o update do `agent_tasks` (o registro do resultado do task continua sendo prioridade).
+**1.3. Coluna “Domínio”**
+Hoje:
+- Mostra `domain_name` e `domain_url` (2 linhas) + badge, o que está parecendo “duplicado” no seu caso (porque name = domain).
+Mudança aprovada por você:
+- Mostrar **somente** `domain_url` (ex: `estrela.com.br`)
+- Ajustar fonte/tipografia:
+  - domínio em `font-medium` e tamanho `text-sm` (ou `text-base` se você quiser mais destaque; vou começar com `text-sm` alinhado ao restante da tabela)
+- Badge:
+  - `X verificação(ões)` -> `X análise(s)`
 
-2) Frontend — “Domínio Externo > Relatórios” (listagem real + botão visualizar)
-Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
+Implementação prática:
+- Remover o bloco que renderiza `<p>{group.domain_name}</p>` e `<p className="text-xs ...">{group.domain_url}</p>`
+- Substituir por **apenas** um `<p>` com `group.domain_url`
 
-2.1. Implementar `fetchReports()` espelhando o `FirewallReportsPage.tsx`, mas usando a nova tabela:
-- Ler `external_domain_analysis_history` com campos leves:
-  - `id, domain_id, score, created_at` (order desc)
-- Buscar dados de `external_domains` para os `domain_id` retornados:
-  - `id, name, domain, client_id`
-- Buscar `clients` para `client_id`:
-  - `id, name`
-- Montar `reports` no formato já esperado pela página e popular:
-  - `setClients(...)`, `setDomains(...)`
-  - `setReports(formattedReports)`
+---
 
-2.2. Botão “Visualizar” (carregar sob demanda + navegar para detalhe)
-- Adicionar `fetchReportData(analysisId)`:
-  - Query: `external_domain_analysis_history` select `report_data, created_at, domain_id` (ou pelo menos `report_data` + `created_at`)
-- Ao clicar em visualizar:
-  - Buscar o report_data
-  - Navegar para a nova rota de detalhe, passando `state`:
-    - `state: { report: reportData, analysisCreatedAt: created_at, domainMeta: { domain_id, domain_name, domain_url, client_name } }`
-  - Isso evita uma segunda chamada no detalhe (mas o detalhe ainda deve funcionar com refresh, sem state)
+### 2) `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
+Hoje essa página tem um layout “próprio” (Detalhes em card + gauge separado + stats em grid). Vamos refatorar para espelhar o padrão do Firewall (`src/pages/FirewallAnalysis.tsx` + `src/components/Dashboard.tsx`).
 
-2.3. Remover/ocultar PDF
-- Remover o botão “Baixar PDF” do External Domain Reports (ou manter desabilitado com tooltip “Em breve”, mas como você pediu “não por enquanto”, o mais simples é remover para não confundir).
-- Importante: não vamos reaproveitar o `exportReportToPDF` nesse módulo nesta etapa.
+**2.1. Header igual ao Firewall**
+- Trocar o header atual (“Relatório de Compliance / Resultado da análise…”) por:
+  - Título: **“Análise de Compliance”**
+  - Subtítulo: **“Relatório gerado em {data}”** (usando `generatedAt || report.generatedAt`)
+- À direita:
+  - Botão **Voltar** (outline)
+  - Botão **Reanalisar** (variant “cyber” igual ao Firewall), com ícone `RefreshCw` e estado de loading.
 
-3) Frontend — Página de detalhe do relatório (Domínio Externo)
-Novo arquivo:
-- `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
+**2.2. Botão “Reanalisar” (agendar análise)**
+- Adicionar estado `isRefreshing`
+- Implementar `handleRefresh` chamando:
+  - `supabase.functions.invoke('trigger-external-domain-analysis', { body: { domain_id: domainId } })`
+- Regras:
+  - Se o domínio não tiver `agent_id`, mostrar toast de erro (mesmo padrão da tela de listagem)
+  - Em sucesso: toast “Análise agendada!” (igual listagem), e opcionalmente sugerir acompanhar em Execuções
+- Observação importante (comportamento diferente do firewall):
+  - No firewall, “Reanalisar” gera resultado imediato (edge function retorna o relatório).
+  - No domínio externo, “Reanalisar” **agenda** uma tarefa; o relatório aparecerá depois quando o agent concluir.
+  - Não vou implementar polling automático nesta etapa; manteremos consistente com a tela de Domínios Externos.
 
-3.1. Rota
-- Atualizar `src/App.tsx`:
-  - Adicionar lazy import da nova página
-  - Adicionar rota, por exemplo:
-    - `/scope-external-domain/domains/:id/report/:analysisId`
-  - (onde `:id` é o domain_id)
+**2.3. Painel “info + stats” igual ao Firewall**
+- Substituir o Card “Detalhes” atual por um painel no estilo do Dashboard:
+  - Um `glass-card` com borda `border-primary/20`
+  - Parte superior: detalhes do domínio (Nome, Domínio, Cliente, Data) em grid com ícones (similar ao firewall)
+  - Separador horizontal
+  - Parte inferior: Stats cards compactos (Total/ Aprovadas/ Falhas/ Alertas)
+- Manter o gauge à esquerda como já está, mas ajustar containers para bater com o layout:
+  - Esquerda: gauge dentro do `glass-card rounded-xl p-6`
+  - Direita: painel combinado
 
-3.2. Fonte de dados (state ou fetch)
-Na página de detalhe:
-- Se existir `location.state.report`:
-  - Normalizar e renderizar direto
-- Se não existir (ex: usuário deu refresh/F5):
-  - Buscar:
-    - `external_domains` por `id` (para cabeçalho)
-    - `external_domain_analysis_history` por `analysisId` (ou fallback: “último do domínio” se o analysisId não existir)
-  - Montar `generatedAt` a partir do `created_at` do histórico
+**2.4. Banner de issues críticas (igual ao Dashboard)**
+- Adicionar o banner que aparece quando `report.failed > 0`, igual ao Dashboard.
+- Isso ajuda a padronizar a experiência e destacar problemas.
 
-3.3. Normalização do report
-- Reaproveitar a mesma estratégia de `normalizeReportData` do `FirewallAnalysis.tsx`:
-  - Normalizar `categories` (array vs object)
-  - Converter `warn` -> `warning`
-  - Calcular `totalChecks/passed/failed/warnings`
-- Implementação:
-  - Opção A (preferível): extrair `normalizeReportData` e helpers para um util compartilhado (ex: `src/lib/normalizeComplianceReport.ts`) e usar tanto no firewall quanto no external-domain.
-  - Opção B (mais rápida e segura para não quebrar firewall): duplicar a função na nova página (e depois refatorar quando estiver estável).
-- Vou escolher a abordagem com menor risco imediato: duplicar na nova página primeiro, e (se ficar tudo ok) fazer uma pequena refatoração opcional depois.
+**2.5. Seção “Verificações por Categoria”**
+- Adicionar o mesmo título “Verificações por Categoria”
+- Reusar `CategorySection` como já está, sem alterações funcionais.
 
-3.4. UI do detalhe (sem PDF, com cabeçalho específico)
-- Em vez de usar `Dashboard` (ele tem botões de PDF e campos de firewall), renderizar a página com:
-  - ScoreGauge
-  - StatCard (totais)
-  - CategorySection (categorias)
-- Cabeçalho: card mostrando
-  - Nome do domínio
-  - Domínio (ex: example.com)
-  - Cliente
-  - Data do relatório
-- Botões:
-  - “Voltar” para `/scope-external-domain/reports`
-  - Sem “Exportar PDF”
-  - Sem “Reanalisar” nesta página (reanálise já acontece na tela de Domínios; manter simples)
+**2.6. Dados necessários para reanálise**
+- Hoje, ao buscar domínio, você carrega: `id, name, domain, client_id`.
+- Vou incluir também `agent_id` na query para saber se o domínio pode ser reanalisado.
+  - Atualizar o type local do estado `domain`.
 
-4) Ajustes finais (UX e compatibilidade)
-- Garantir loading/empty states coerentes:
-  - Sem histórico: CTA para “Verificar Domínio”
-- Garantir que filtros cliente/domínio continuem funcionando como hoje.
-- Garantir que o clique em “Visualizar” sempre funcione mesmo se o report_data estiver grande (por isso carregamento sob demanda).
-- Checar que as RLS policies permitem:
-  - Usuário logado ver `external_domain_analysis_history` via join com `external_domains` + `has_client_access`.
+---
 
-5) Validação (passo a passo para você testar)
-- Fazer uma análise de domínio (fluxo já existente).
-- Confirmar no Supabase (Test):
-  - `external_domains.last_scan_at` atualizado
-  - `external_domains.last_score` preenchido
-  - Existe registro em `external_domain_analysis_history` para o domain_id
-- UI:
-  - Ir em “Domínio Externo > Relatórios” e ver a linha do domínio + quantidade de verificações
-  - Selecionar uma data diferente no select e ver score mudar
-  - Clicar “Visualizar” e abrir a página de detalhe com score e categorias
-  - Dar refresh (F5) na página de detalhe e confirmar que ela recarrega do banco corretamente
+## Sequência de execução
+1) Ajustes textuais e UI na listagem de relatórios (rápido e direto).
+2) Refatoração do detalhe para o layout do Firewall (header + grid + painel + banner).
+3) Implementar “Reanalisar” no detalhe chamando `trigger-external-domain-analysis`.
+4) Checagem manual (E2E):
+   - Abrir Relatórios: validar textos e coluna Domínio
+   - Abrir detalhe: conferir layout e botão Reanalisar
+   - Clicar Reanalisar: confirmar toast e que a tarefa aparece em Execuções; depois confirmar novo histórico no relatório.
 
-Arquivos que serão afetados
-- Backend:
-  - Editar: `supabase/functions/agent-task-result/index.ts`
-- Frontend:
-  - Editar: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
-  - Criar: `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
-  - Editar: `src/App.tsx`
+---
 
-Observações de segurança/operacionais
-- O alerta “Leaked Password Protection Disabled” será ignorado conforme sua instrução; não muda o escopo deste módulo.
-- A edge function opera como service_role, então a policy “Service role can manage external domain history” garantirá persistência do histórico.
+## Critérios de aceite
+- Em “Domínio Externo > Relatórios”:
+  - Subtítulo correto: “Histórico de análises de compliance”
+  - Coluna Domínio mostra apenas `estrela.com.br` (uma vez), com tipografia ajustada
+  - Badge e contadores usam “análise(s)”
+- No detalhe do relatório:
+  - Layout visual equivalente ao do Firewall (mesma estrutura de header e cards)
+  - Botão “Reanalisar” funciona (agenda tarefa) e mostra feedback por toast
+  - Sem botão PDF (mantido fora do escopo)
+
+---
+
+## Nota rápida (para próximas pequenas mudanças de texto)
+Mudanças como subtítulo, labels e pequenos ajustes de tipografia também podem ser feitas via **Visual Edits** no Lovable (sem custo de créditos), quando o elemento for estático/selecionável.
