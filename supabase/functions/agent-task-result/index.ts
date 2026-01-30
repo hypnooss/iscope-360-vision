@@ -2813,19 +2813,53 @@ serve(async (req: Request) => {
       } else if (task.target_type === 'external_domain') {
         console.log(`Saving external domain history for domain_id=${task.target_id} (score=${score})`);
 
-        const { error: historyError } = await supabase
+        const { data: historyData, error: historyError } = await supabase
           .from('external_domain_analysis_history')
           .insert({
             domain_id: task.target_id,
             score: score,
             report_data: historyReportData,
-          });
+          })
+          .select('id')
+          .single();
 
         if (historyError) {
           console.error('Failed to save external domain analysis history:', historyError);
           // Do not fail task update if history insertion fails
         } else {
-          console.log(`External domain history saved: domain_id=${task.target_id}, checks=${complianceResult.checks.length}`);
+          console.log(
+            `External domain history saved: domain_id=${task.target_id}, report_id=${historyData?.id}, checks=${complianceResult.checks.length}`,
+          );
+
+          // Best-effort: get a friendly domain name for the banner message.
+          const { data: domainRow } = await supabase
+            .from('external_domains')
+            .select('name, domain')
+            .eq('id', task.target_id)
+            .maybeSingle();
+
+          const domainLabel = domainRow?.name || domainRow?.domain || 'Domínio externo';
+
+          // Create system alert for analysis completion
+          await supabase
+            .from('system_alerts')
+            .insert({
+              alert_type: 'external_domain_analysis_completed',
+              title: 'Análise Concluída',
+              message: `A análise do domínio "${domainLabel}" foi concluída com score ${score}%.`,
+              severity: 'success',
+              target_role: null,
+              is_active: true,
+              // Keep a DB TTL; UI still applies its own lifetime.
+              expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+              metadata: {
+                domain_id: task.target_id,
+                report_id: historyData?.id || null,
+                score: score,
+                domain_name: domainRow?.name || null,
+                domain: domainRow?.domain || null,
+              },
+            });
         }
       }
     }

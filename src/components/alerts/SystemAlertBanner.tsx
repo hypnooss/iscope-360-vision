@@ -141,6 +141,11 @@ export function SystemAlertBanner() {
     navigate(`/scope-firewall/firewalls/${firewallId}/analysis`);
   };
 
+  const handleViewExternalDomainReport = async (alertId: string, domainId: string, reportId: string) => {
+    await dismissAlert(alertId);
+    navigate(`/scope-external-domain/domains/${domainId}/report/${reportId}`);
+  };
+
   const handleViewSettings = async (alertId: string) => {
     await dismissAlert(alertId);
     navigate('/settings');
@@ -264,6 +269,23 @@ export function SystemAlertBanner() {
                 Ver Análise
               </Button>
             )}
+
+            {primaryAlert.alert_type === 'external_domain_analysis_completed' &&
+              (primaryAlert.metadata as Record<string, unknown>)?.domain_id &&
+              (primaryAlert.metadata as Record<string, unknown>)?.report_id && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                  onClick={() => handleViewExternalDomainReport(
+                    primaryAlert.id,
+                    (primaryAlert.metadata as Record<string, unknown>).domain_id as string,
+                    (primaryAlert.metadata as Record<string, unknown>).report_id as string
+                  )}
+                >
+                  Ver Relatório
+                </Button>
+              )}
             
             {/* Botão X para dispensar */}
             <Button
