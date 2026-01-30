@@ -2367,7 +2367,12 @@ serve(async (req: Request) => {
     }
 
     // Prepare result to save
-    const resultToSave = complianceResult || body.result;
+    // - Firewall: save complianceResult (or legacy body.result)
+    // - External domain: save reconstructed rawData (progressive) to make executions modal useful
+    const resultToSave = task.target_type === 'external_domain'
+      ? (rawData || body.result || null)
+      : (complianceResult || body.result || null);
+
     const score = complianceResult?.score ?? null;
 
     // Update task with result
@@ -2387,6 +2392,16 @@ serve(async (req: Request) => {
         JSON.stringify({ error: 'Erro ao atualizar tarefa', code: 'INTERNAL_ERROR' } as TaskResultErrorResponse),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // External domain: record last scan timestamp (score rules will be defined later)
+    if ((body.status === 'completed' || body.status === 'partial') && task.target_type === 'external_domain') {
+      await supabase
+        .from('external_domains')
+        .update({
+          last_scan_at: new Date().toISOString(),
+        })
+        .eq('id', task.target_id);
     }
 
     // If we have a compliance result, save to analysis_history
