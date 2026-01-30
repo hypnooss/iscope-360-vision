@@ -78,10 +78,7 @@ export function ExternalDomainTable({ domains, loading, canEdit, analyzingId, on
               {domains.map((domain) => (
                 <TableRow key={domain.id}>
                   <TableCell>
-                    <div>
-                      <p className="font-medium">{domain.name}</p>
-                      <p className="text-xs text-muted-foreground">{domain.domain}</p>
-                    </div>
+                    {domain.domain}
                   </TableCell>
                   <TableCell>{domain.client_name || 'N/A'}</TableCell>
                   <TableCell>{domain.agent_name || 'N/A'}</TableCell>
