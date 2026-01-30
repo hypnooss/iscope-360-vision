@@ -1,99 +1,112 @@
 
-## Objetivo
-Deixar o card de informações do **Domínio Externo** com a mesma “harmonia” visual do card do **FortiGate**, mantendo o formato **“Título: Valor”** com ícones, mas com tipografia e espaçamento equivalentes ao padrão já usado em `src/components/Dashboard.tsx`.
+## Contexto e objetivo (o que você pediu)
+Você quer ajustar a área expandida dos itens da **Análise de Compliance (Domínios Externos)**:
+
+1) Trocar o título **“EVIDÊNCIAS COLETADAS”** por **“ANÁLISE EFETUADA”**  
+2) Onde hoje aparece um box com `data.records` (evidência), **remover esse box**  
+3) No lugar dele, mostrar o conteúdo que hoje está no box **“Detalhes”** (ex.: “Menos de 3 nameservers. Considere adicionar mais para resiliência.”)  
+4) Essa “ANÁLISE EFETUADA” deve ser visível para **todos os usuários do workspace** (não só Super Admin).  
+5) **Endpoint consultado** e **Dados brutos (JSON)** continuam **apenas para Super Admins**.
+
+Além disso, esse comportamento deve valer para **todos os itens** do relatório de Domínio Externo, não só “Diversidade de Nameservers”.
 
 ---
 
-## Diagnóstico (por que está “estranho”)
-Comparando com o FortiGate (print 2) vs Domínio Externo (print 1), os principais pontos que quebram a harmonia são:
+## Diagnóstico (onde isso está hoje no código)
+- O bloco “Evidências Coletadas” e “Ver dados brutos (JSON)” é renderizado em:  
+  `src/components/ComplianceCard.tsx`
+- Hoje existe a regra:
+  - `canViewEvidence = role === 'super_admin' || role === 'super_suporte'`
+  - Isso controla evidências, endpoint e JSON.
+- O componente `ComplianceCard` é usado dentro de `CategorySection` (genérico), que é usado por Firewall, Domínio Externo e possivelmente outros relatórios.
 
-1) **Tipografia diferente**
-- FortiGate usa `label` em `text-sm` e valores com “peso” mais consistente (`font-medium`/`font-semibold`).
-- Domínio Externo está usando `label` em `text-xs`, que fica “pequeno demais” e com aparência de “legenda”.
-
-2) **Densidade/respiração do grid**
-- FortiGate usa `gap-y-1.5` (bem “apertado, mas elegante”) e `gap-x-6`.
-- Domínio Externo está em `gap-y-4`, dando um espaçamento vertical mais alto, que pode passar sensação de “blocos soltos”.
-
-3) **Truncamento/width**
-- No FortiGate, apenas alguns campos truncam (e isso ajuda a leitura).
-- No Domínio Externo, como NS é muito longo, precisamos truncar, mas manter a linha com a mesma altura/ritmo dos demais.
+Risco atual: se alterarmos `ComplianceCard` “no geral”, podemos afetar Firewall/M365. Então precisamos aplicar a mudança **somente** para Domínio Externo.
 
 ---
 
-## O que será alterado
-Arquivo: `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
+## Estratégia (como vamos aplicar apenas no Domínio Externo)
+### Opção escolhida: “variant” explícito (mais seguro)
+1) Adicionar um prop opcional em `CategorySection` para indicar o tipo de relatório (ex.: `variant?: 'default' | 'external_domain'`).
+2) `CategorySection` repassa esse `variant` para cada `ComplianceCard`.
+3) `ExternalDomainAnalysisReportPage.tsx` passa `variant="external_domain"` ao renderizar as categorias.
+4) Dashboard/Firewall/M365 continuam sem prop (default), então não muda nada nesses módulos.
 
-### 1) Ajustar `InfoRow` para “bater” com o padrão do FortiGate
-Hoje (Domínio Externo):
-- `label` em `text-xs`
-- `value` em `font-medium`
-- `gap-2` ok, mas “peso visual” não está igual ao FortiGate
-
-Mudança proposta:
-- **Label**: trocar para `text-sm` (igual ao FortiGate), mantendo `text-muted-foreground` e `whitespace-nowrap`
-- **Value**: trocar para `font-medium`/`font-semibold` dependendo do campo:
-  - Domínio / NS: `font-semibold` (fica mais parecido com o “Nome” no FortiGate, que destaca o principal)
-  - SOA / SOA Contact / DNSSEC Status: `font-medium`
-- Manter `min-w-0 flex-1` no valor para truncamento correto
-- Manter tooltip apenas quando necessário (NS sempre tem tooltip via `TruncatedText`; DNSSEC notes via tooltip)
-
-Implementação (conceito, sem código final):
-- `label` com classes no estilo do FortiGate: `text-muted-foreground text-sm`
-- `value` com `font-medium text-foreground` e ajuste de `font-semibold` opcional via prop
-
-### 2) Tornar o grid “mais compacto” (mais harmônico)
-No container do grid do card info (onde ficam os `InfoRow`):
-- Ajustar `gap-y-4` para **`gap-y-1.5`** (igual ao FortiGate)
-- Manter `gap-x-6` (já está)
-- Ajustar o breakpoint para casar com FortiGate:
-  - FortiGate usa `sm:grid-cols-2`
-  - Domínio Externo hoje usa `md:grid-cols-2`
-  - Proposta: mudar para `sm:grid-cols-2` para “abrir” 2 colunas mais cedo, igual ao FortiGate (isso dá sensação de consistência entre módulos)
-
-### 3) Melhorar o alinhamento vertical (detalhe que dá “acabamento”)
-Adicionar ajuste leve para evitar desalinhamento entre linhas quando o valor está truncado:
-- Garantir `leading-none` ou `leading-tight` consistente no `InfoRow` (principalmente no valor truncado)
-- Manter ícone com `flex-shrink-0` e label fixo, valor flexível
-
-### 4) DNSSEC Status continua curto
-Confirmar e garantir:
-- **Somente “Ativo” / “Inativo”** como valor
-- Tooltip (se existir) apenas com notes, sem texto grande na linha
+Isso evita heurísticas frágeis (ex.: tentar adivinhar pelo nome da categoria/step_id) e garante que a mudança ficará restrita ao Domínio Externo.
 
 ---
 
-## Passo a passo de implementação
-1) Atualizar o `InfoRow` local:
-   - mudar `label` para `text-sm`
-   - permitir “peso” do valor (ex.: `valueClassName` opcional para Domínio/NS)
-   - garantir `min-w-0 flex-1` e truncamento estável
-2) Ajustar o grid do card info:
-   - `md:grid-cols-2` → `sm:grid-cols-2`
-   - `gap-y-4` → `gap-y-1.5`
-3) Revisar visualmente com base nos prints:
-   - conferir ritmo de linhas (altura semelhante ao FortiGate)
-   - conferir truncamento + tooltip no NS
-   - conferir mobile (1 coluna) sem “esmagar”
+## Mudanças de UI/Comportamento (como ficará o expand do card no Domínio Externo)
+### Quando `variant === 'external_domain'`:
+- Remover o box “Detalhes” (para não duplicar informação)
+- Criar a seção:
+  - Título: **ANÁLISE EFETUADA**
+  - Conteúdo: um box com o texto que hoje vem de `check.details || check.description`
+  - Se o texto for grande: truncar ou manter quebra de linha?  
+    - Vamos manter `whitespace-pre-line` (como já está), e limitar o layout usando `line-clamp` opcional + “ver mais” se precisar (se você preferir eu implemento já no mesmo passo; caso contrário, só mantém o comportamento atual do box, que já é bem estável).
+- **Não renderizar a lista de `check.evidence`** (incluindo `data.records`), ou seja, o “box do data.records” deixa de existir.
+- Continuar exibindo para Super Admin:
+  - `Endpoint consultado`
+  - `Ver dados brutos (JSON)`
+
+### Para outros módulos (default):
+- Nada muda: mantém “Detalhes”, “Evidências Coletadas” (para Super Admins), etc.
 
 ---
 
-## Critérios de aceite
-- Visual do card de info do Domínio Externo fica tão “harmônico” quanto o do FortiGate:
-  - mesma escala de fonte para títulos (`text-sm`)
-  - espaçamento vertical compacto (`gap-y-1.5`)
-  - destaque do campo principal (Domínio/NS) com peso semelhante ao “Nome” no FortiGate
-- “DNSSEC Status” aparece curto (Ativo/Inativo), sem texto grande
-- Truncamento de NS funciona e tooltip mostra completo
+## Regras de acesso (como vamos garantir a visibilidade correta)
+- A nova seção **ANÁLISE EFETUADA** no variant `external_domain`:
+  - Deve aparecer para qualquer usuário autenticado que consiga ver o relatório.
+  - Então ela NÃO depende de `canViewEvidence` (Super Admin).
+- “Endpoint consultado” e “Dados brutos (JSON)”:
+  - Continuam dependendo de `canViewEvidence` (super_admin ou super_suporte), como hoje.
 
 ---
 
-## Teste (end-to-end / UI)
-1) Abrir um relatório de Domínio Externo com NS longo
-2) Validar Desktop:
-   - alinhamento das colunas
-   - ritmo/altura das linhas semelhante ao FortiGate
-3) Validar Mobile:
-   - 1 coluna, sem overflow
-4) Hover/focus:
-   - tooltip do NS e tooltip de notes do DNSSEC (se houver) funcionando
+## Passo a passo de implementação (arquivos e alterações)
+1) **`src/components/ComplianceCard.tsx`**
+   - Adicionar prop opcional `variant?: 'default' | 'external_domain'`
+   - Ajustar renderização do bloco expandido:
+     - Se `variant === 'external_domain'`:
+       - Renderizar cabeçalho “ANÁLISE EFETUADA”
+       - Renderizar 1 box com o texto do “Detalhes” (`check.details || check.description`)
+       - Não renderizar a seção “Evidências Coletadas” nem itens `check.evidence`
+     - Caso contrário:
+       - Mantém o fluxo atual (inclui “Detalhes” + “Evidências Coletadas” para Super Admins)
+
+2) **`src/components/CategorySection.tsx`**
+   - Adicionar prop `variant?: 'default' | 'external_domain'`
+   - Passar `variant` para `<ComplianceCard ... />`
+
+3) **`src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`**
+   - Ao renderizar `<CategorySection ... />`, passar `variant="external_domain"`
+
+---
+
+## Critérios de aceite (como validar que ficou certo)
+1) No relatório de Domínio Externo, ao expandir qualquer check:
+   - Não existe mais “EVIDÊNCIAS COLETADAS”
+   - Existe “ANÁLISE EFETUADA”
+   - O texto exibido corresponde ao que antes estava no box “Detalhes”
+   - Não existe mais box de `data.records`
+2) Logar com um usuário comum (role `user` / `workspace_admin`):
+   - Consegue ver “ANÁLISE EFETUADA”
+   - Não vê endpoint consultado nem JSON
+3) Logar como `super_admin`:
+   - Vê “ANÁLISE EFETUADA”
+   - Vê endpoint consultado e JSON
+4) Relatórios de Firewall continuam iguais (sem regressão visual/textual).
+
+---
+
+## Observações técnicas (curtas)
+- Essa mudança é puramente de UI/visibilidade; não altera banco nem edge functions.
+- Mantém o padrão de segurança atual: detalhes “sensíveis” (endpoint e raw json) continuam restritos.
+
+---
+
+## Teste end-to-end sugerido (rápido)
+- Abrir a rota atual que você mencionou:
+  `/scope-external-domain/domains/.../report/...`
+- Expandir “Segurança DNS > Diversidade de Nameservers”
+- Validar com usuário comum e com Super Admin (se possível em duas sessões/navegadores).
+
