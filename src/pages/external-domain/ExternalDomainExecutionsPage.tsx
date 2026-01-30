@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -8,6 +8,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -96,6 +106,10 @@ export default function ExternalDomainExecutionsPage() {
   const [selectedTaskSteps, setSelectedTaskSteps] = useState<TaskStepResultRow[]>([]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
+
+  const queryClient = useQueryClient();
 
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -157,6 +171,49 @@ export default function ExternalDomainExecutionsPage() {
   });
 
   const hasActiveTasks = tasks.some((t) => t.status === 'running' || t.status === 'pending');
+
+  const cancelMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase
+        .from('agent_tasks')
+        .update({
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+          error_message: 'Cancelada pelo usuário',
+        })
+        .eq('id', taskId)
+        .in('status', ['pending', 'running']);
+
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Tarefa cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['external-domain-agent-tasks'] });
+
+      // Atualiza detalhes abertos (se for a mesma task)
+      setSelectedTask((prev) => {
+        if (!prev || prev.id !== taskToCancel?.id) return prev;
+        return {
+          ...prev,
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+          error_message: prev.error_message || 'Cancelada pelo usuário',
+        };
+      });
+
+      setCancelOpen(false);
+      setTaskToCancel(null);
+    },
+    onError: (e: any) => {
+      console.error('Failed to cancel task:', e);
+      toast.error('Erro ao cancelar tarefa', { description: e?.message });
+    },
+  });
+
+  const requestCancel = (task: AgentTask) => {
+    setTaskToCancel(task);
+    setCancelOpen(true);
+  };
 
   const { data: agents = [] } = useQuery({
     queryKey: ['agents-lookup'],
@@ -449,6 +506,17 @@ export default function ExternalDomainExecutionsPage() {
                           {formatDuration(task.execution_time_ms)}
                         </TableCell>
                         <TableCell className="text-right">
+                          {(task.status === 'pending' || task.status === 'running') && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => requestCancel(task)}
+                              disabled={cancelMutation.isPending}
+                              title="Encerrar execução"
+                            >
+                              <Ban className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -625,6 +693,37 @@ export default function ExternalDomainExecutionsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Cancel confirm */}
+        <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Encerrar execução?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a tarefa como <span className="font-medium">cancelada</span>. Se o agent já estiver executando, ele pode
+                ainda terminar o step atual, mas a execução ficará registrada como encerrada.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => {
+                  setTaskToCancel(null);
+                }}
+              >
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!taskToCancel) return;
+                  cancelMutation.mutate(taskToCancel.id);
+                }}
+                disabled={!taskToCancel || cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
