@@ -1,35 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Globe, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Placeholder interface - será ajustada quando a tabela for criada no banco
-interface ExternalDomain {
+import { supabase } from '@/integrations/supabase/client';
+
+import {
+  AddExternalDomainDialog,
+  type AddExternalDomainPayload,
+  type ScheduleFrequency,
+} from '@/components/external-domain/AddExternalDomainDialog';
+import { ExternalDomainStatsCards } from '@/components/external-domain/ExternalDomainStatsCards';
+import { ExternalDomainTable, type ExternalDomainRow } from '@/components/external-domain/ExternalDomainTable';
+
+interface Client {
   id: string;
   name: string;
-  domain: string;
-  description: string | null;
-  status: 'active' | 'inactive' | 'pending';
-  last_scan_at: string | null;
-  last_score: number | null;
-  client_id: string;
-  client_name?: string;
-  created_at: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
 }
 
 export default function ExternalDomainListPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
-  const [domains, setDomains] = useState<ExternalDomain[]>([]);
+  const [domains, setDomains] = useState<ExternalDomainRow[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,33 +47,143 @@ export default function ExternalDomainListPage() {
 
   useEffect(() => {
     if (user && hasModuleAccess('scope_external_domain')) {
-      // TODO: Buscar dados reais quando a tabela for criada
-      setLoading(false);
+      fetchData();
     }
   }, [user, hasModuleAccess]);
 
-  const getScoreColor = (score: number | null) => {
-    if (score === null) return 'bg-muted text-muted-foreground';
-    if (score >= 90) return 'bg-success/10 text-success';
-    if (score >= 75) return 'bg-success/10 text-success';
-    if (score >= 60) return 'bg-warning/10 text-warning';
-    return 'bg-destructive/10 text-destructive';
-  };
+  const fetchData = async () => {
+    try {
+      setLoading(true);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge className="bg-success/10 text-success">Ativo</Badge>;
-      case 'inactive':
-        return <Badge className="bg-muted text-muted-foreground">Inativo</Badge>;
-      case 'pending':
-        return <Badge className="bg-warning/10 text-warning">Pendente</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+      // Busca principal em paralelo
+      const [clientsRes, domainsRes, agentsRes] = await Promise.all([
+        supabase.from('clients').select('id, name').order('name'),
+        supabase.from('external_domains').select('*').order('created_at', { ascending: false }),
+        supabase.from('agents').select('id, name').eq('revoked', false),
+      ]);
+
+      if (clientsRes.error) throw clientsRes.error;
+      if (domainsRes.error) throw domainsRes.error;
+      if (agentsRes.error) throw agentsRes.error;
+
+      setClients(clientsRes.data || []);
+
+      if (!domainsRes.data || domainsRes.data.length === 0) {
+        setDomains([]);
+        return;
+      }
+
+      const domainIds = domainsRes.data.map((d) => d.id);
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from('external_domain_schedules')
+        .select('domain_id, frequency, is_active')
+        .in('domain_id', domainIds);
+
+      if (schedulesError) throw schedulesError;
+
+      const clientMap = new Map((clientsRes.data || []).map((c) => [c.id, c]));
+      const agentMap = new Map((agentsRes.data || []).map((a: Agent) => [a.id, a]));
+      const scheduleMap = new Map<string, { frequency: ScheduleFrequency; is_active: boolean }[]>();
+
+      for (const schedule of schedulesData || []) {
+        const existing = scheduleMap.get(schedule.domain_id) || [];
+        existing.push({
+          frequency: schedule.frequency as ScheduleFrequency,
+          is_active: schedule.is_active,
+        });
+        scheduleMap.set(schedule.domain_id, existing);
+      }
+
+      const combined: ExternalDomainRow[] = (domainsRes.data || []).map((d) => {
+        const schedules = scheduleMap.get(d.id) || [];
+        const activeSchedule = schedules.find((s) => s.is_active) || schedules[0];
+
+        return {
+          id: d.id,
+          name: d.name,
+          domain: d.domain,
+          description: d.description,
+          status: d.status,
+          last_scan_at: d.last_scan_at,
+          last_score: d.last_score,
+          client_id: d.client_id,
+          client_name: clientMap.get(d.client_id)?.name,
+          agent_name: d.agent_id ? agentMap.get(d.agent_id)?.name || null : null,
+          schedule_frequency: activeSchedule?.frequency || 'manual',
+          created_at: d.created_at,
+        };
+      });
+
+      setDomains(combined);
+    } catch (error: any) {
+      console.error('Error fetching external domains:', error);
+      toast.error('Erro ao carregar domínios', { description: error?.message });
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleAddDomain = async (payload: AddExternalDomainPayload) => {
+    if (!user?.id) {
+      toast.error('Usuário não autenticado');
+      throw new Error('Usuário não autenticado');
+    }
+
+    if (!payload.client_id || !payload.agent_id || !payload.domain.trim()) {
+      toast.error('Preencha todos os campos obrigatórios');
+      throw new Error('Campos obrigatórios não preenchidos');
+    }
+
+    const name = payload.name?.trim() || payload.domain.trim();
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('external_domains')
+      .insert({
+        client_id: payload.client_id,
+        agent_id: payload.agent_id || null,
+        domain: payload.domain.trim(),
+        name,
+        description: payload.description?.trim() || null,
+        created_by: user.id,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      toast.error('Erro ao adicionar domínio: ' + insertError.message);
+      throw insertError;
+    }
+
+    if (payload.schedule !== 'manual') {
+      const { error: scheduleError } = await supabase
+        .from('external_domain_schedules')
+        .insert({
+          domain_id: inserted.id,
+          frequency: payload.schedule,
+          is_active: true,
+          created_by: user.id,
+        });
+
+      if (scheduleError) {
+        toast.error('Domínio criado, mas falhou ao salvar frequência', { description: scheduleError.message });
+        throw scheduleError;
+      }
+    }
+
+    await fetchData();
+    toast.success('Domínio adicionado com sucesso!');
+  };
+
   const canEdit = hasPermission('external_domain', 'edit');
+
+  const stats = useMemo(() => {
+    const total = domains.length;
+    const active = domains.filter((d) => d.status === 'active').length;
+    const pending = domains.filter((d) => d.status === 'pending').length;
+    const issues = domains.filter((d) => d.last_score !== null && d.last_score < 60).length;
+    return { total, active, pending, issues };
+  }, [domains]);
 
   if (authLoading) return null;
 
@@ -91,148 +203,19 @@ export default function ExternalDomainListPage() {
           </div>
           {canEdit && (
             <div className="flex gap-2">
-              <Button onClick={() => toast.info('Funcionalidade em desenvolvimento')}>
-                <Plus className="w-4 h-4 mr-2" />
-                Adicionar Domínio
-              </Button>
+              <AddExternalDomainDialog clients={clients} onDomainAdded={handleAddDomain} />
             </div>
           )}
         </div>
 
-        {/* Stats Cards - Placeholder */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card className="glass-card">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-primary/10">
-                  <Globe className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-sm text-muted-foreground">Total de Domínios</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-success/10">
-                  <Globe className="w-6 h-6 text-success" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-sm text-muted-foreground">Domínios Ativos</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-warning/10">
-                  <Globe className="w-6 h-6 text-warning" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-sm text-muted-foreground">Pendentes</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-destructive/10">
-                  <Globe className="w-6 h-6 text-destructive" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-sm text-muted-foreground">Com Problemas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <ExternalDomainStatsCards
+          total={stats.total}
+          active={stats.active}
+          pending={stats.pending}
+          issues={stats.issues}
+        />
 
-        {/* Domains Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="w-5 h-5" />
-              Lista de Domínios
-            </CardTitle>
-            <CardDescription>{domains.length} domínio(s) cadastrado(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </div>
-            ) : domains.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Globe className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum domínio cadastrado</p>
-                <p className="text-sm mt-2">Adicione um domínio para começar o monitoramento</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Domínio</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead>Última Verificação</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {domains.map((domain) => (
-                    <TableRow key={domain.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{domain.name}</p>
-                          <p className="text-xs text-muted-foreground">{domain.domain}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>{domain.client_name || 'N/A'}</TableCell>
-                      <TableCell>{getStatusBadge(domain.status)}</TableCell>
-                      <TableCell>
-                        {domain.last_score !== null ? (
-                          <Badge className={getScoreColor(domain.last_score)}>
-                            {domain.last_score}%
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-muted text-muted-foreground">-</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {domain.last_scan_at
-                          ? new Date(domain.last_scan_at).toLocaleDateString('pt-BR')
-                          : 'Nunca'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {canEdit && (
-                            <>
-                              <Button variant="ghost" size="icon" title="Editar">
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" title="Excluir">
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <ExternalDomainTable domains={domains} loading={loading} canEdit={canEdit} />
       </div>
     </AppLayout>
   );

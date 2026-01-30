@@ -59,3 +59,61 @@ export function getDeviceUrlError(url: string): string | null {
   
   return null;
 }
+
+/**
+ * Valida se o valor informado representa um domínio externo válido.
+ * Aceita:
+ *  - example.com
+ *  - https://example.com
+ *  - https://example.com:8443
+ * Rejeita:
+ *  - paths, query strings, fragmentos
+ *  - espaços
+ */
+export function getExternalDomainError(value: string): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+
+  if (!trimmed) return null;
+  if (/\s/.test(trimmed)) return 'Domínio não deve conter espaços.';
+
+  const hasProtocol = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+
+  if (hasProtocol) {
+    try {
+      const parsed = new URL(trimmed);
+
+      if (!parsed.hostname) {
+        return 'URL inválida. Exemplo: https://example.com';
+      }
+      if (parsed.username || parsed.password) {
+        return 'URL não deve conter usuário/senha.';
+      }
+      if (parsed.pathname !== '/' && parsed.pathname !== '') {
+        return 'URL não deve conter caminho (path). Use apenas o endereço base.';
+      }
+      if (parsed.search) {
+        return 'URL não deve conter parâmetros (?...). Use apenas o endereço base.';
+      }
+      if (parsed.hash) {
+        return 'URL não deve conter fragmento (#...). Use apenas o endereço base.';
+      }
+      return null;
+    } catch {
+      return 'URL inválida. Exemplo: https://example.com';
+    }
+  }
+
+  // Sem protocolo: validar hostname (sub.domínio.tld) com porta opcional
+  if (/[/?#]/.test(trimmed)) {
+    return 'Domínio não deve conter caminho (path), parâmetros (?...) ou fragmento (#...).';
+  }
+
+  const hostnamePattern = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+(:\d{1,5})?$/;
+  if (!hostnamePattern.test(trimmed)) {
+    return 'Domínio inválido. Exemplo: example.com';
+  }
+
+  return null;
+}
