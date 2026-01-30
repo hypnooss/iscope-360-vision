@@ -1,176 +1,88 @@
 
-# Plano: Validação de Permissões M365 Manual e Automática
+## Objetivo
+Trazer (“puxar”) todos os arquivos do seu repositório GitHub para este projeto Lovable, substituindo o código atual pelo código que está no GitHub, de forma segura e verificável.
 
-## Situação Atual
+## O que é possível fazer no Lovable (importante)
+- O Lovable tem integração com GitHub para **sincronizar** o código do projeto com um repositório GitHub.
+- Na prática, para “puxar todos os arquivos de um repo existente para dentro do projeto”, o caminho mais confiável é:
+  1) **conectar o projeto Lovable ao GitHub**, e
+  2) **enviar (push)** o conteúdo do seu repositório existente para o repositório que o Lovable usa para sincronizar.
+  
+Isso faz o Lovable receber exatamente os arquivos do GitHub via sync (equivalente a “puxar tudo”).
 
-### Problemas Identificados
+## Pré-requisitos (para não perder nada)
+1) Você precisa ter o **link do repositório GitHub** que contém os arquivos (ex.: `https://github.com/sua-org/seu-repo`).
+2) Você confirmou que:
+   - é um **repo existente**
+   - pode **autorizar o app do Lovable**
+   - quer **substituir** o código atual pelo do GitHub
 
-1. **Botão "Validar Permissões"**: Usa `import.meta.env.VITE_SUPABASE_URL` que pode não funcionar corretamente. Deve usar a URL do Supabase hardcoded ou o cliente Supabase.
+## Plano de execução (alto nível)
+### Fase 1 — Preparação e segurança (evitar perda de código)
+1) Confirmar se este projeto Lovable já está conectado a algum GitHub:
+   - Se já estiver, vamos identificar qual repo ele está usando.
+2) Criar um “backup” do estado atual (para reverter se algo der errado):
+   - Opção A: criar um commit/tag/branch de backup no repo conectado.
+   - Opção B: duplicar (remix) o projeto no Lovable antes de sobrescrever (backup visual do projeto).
 
-2. **Edge Function `validate-m365-permissions`**: Existe e está completa mas:
-   - Não está declarada no `supabase/config.toml`
-   - Não é chamada por nenhum cron job
+### Fase 2 — Conectar o projeto ao GitHub (se ainda não estiver)
+3) No Lovable: **Project Settings → GitHub → Connect project**
+4) Autorizar o Lovable GitHub App e escolher a conta/org.
+5) Escolher a opção que o Lovable oferece (normalmente “Create repository” para o projeto).
+   - Resultado: teremos um repositório “repo-do-lovable” que representa este projeto.
 
-3. **Cron Job**: As extensões `pg_cron` e `pg_net` não estão instaladas no banco de dados, impedindo a execução automática.
+### Fase 3 — Substituir o conteúdo pelo seu repo existente (o “pull” real)
+6) No seu computador (ou GitHub Codespaces):
+   - Clonar o seu repo existente (fonte):
+     ```sh
+     git clone <URL_DO_REPO_EXISTENTE>
+     ```
+   - Clonar o repo criado/conectado pelo Lovable (destino):
+     ```sh
+     git clone <URL_DO_REPO_DO_LOVABLE>
+     ```
+7) Copiar todo o conteúdo do repo existente para o repo do Lovable (destino), e sobrescrever arquivos:
+   - Copiar pastas principais (`src/`, `public/`, configs, etc.).
+   - Atenção especial para não carregar secrets (ex.: `.env`), e para manter/ajustar arquivos específicos do Lovable se necessário.
+8) Fazer commit e push no repo do Lovable:
+   ```sh
+   git add -A
+   git commit -m "Sync: import code from existing GitHub repo"
+   git push
+   ```
+9) Aguardar o sync: o Lovable deve “puxar” essas mudanças automaticamente (bidirectional sync).
 
-4. **Dados no banco**: `validation_tenant_id` está `null`, então a validação automática não funcionaria mesmo se o cron existisse.
+### Fase 4 — Validação no Preview
+10) Abrir o Preview do Lovable e checar:
+   - Página inicial carrega sem tela branca
+   - Console sem erros críticos
+   - Rotas principais funcionando
+11) Se houver erros de build por diferenças de dependências:
+   - Ajustar `package.json` para bater com o repo importado
+   - Conferir `vite.config.ts`, `tailwind.config.ts`, `tsconfig.json`, etc.
 
-## Solução
+### Fase 5 — Ajustes comuns pós-import (checklist)
+12) Conferir integrações Supabase:
+   - `src/integrations/supabase/client.ts` pode precisar bater com o novo repo (URL/anon key costumam vir do ambiente do Lovable; não devem ficar hardcoded).
+   - Edge functions e `supabase/config.toml` devem ser compatíveis com o projeto “iScope” já conectado.
+13) Conferir assets/branding:
+   - Logo, favicon, título (`index.html`) e rotas em `src/App.tsx`.
 
-### 1. Corrigir o botão "Validar Permissões"
+## Pontos de atenção / riscos
+- “Overwrite with GitHub” vai substituir o código atual: por isso a Fase 1 (backup) é essencial.
+- Se seu repo existente tiver bibliotecas diferentes (ex.: outra versão do React/Vite), pode quebrar o build até alinhar dependências.
+- Arquivos de segredo (`.env`, tokens) não devem ser commitados; no Lovable/Supabase o ideal é usar Secrets/Env do ambiente.
 
-**Arquivo: `src/pages/admin/SettingsPage.tsx`**
+## O que eu preciso de você para executar perfeitamente
+1) O link do repositório GitHub existente (URL).
+2) Confirmar se quer importar a branch:
+   - `main` (mais comum) ou outra (ex.: `develop`)?
+3) Se o repo existente já tem Supabase/Edge Functions próprios, confirmar se devemos:
+   - manter as funções atuais do Lovable e adaptar, ou
+   - substituir também as funções do `supabase/functions/`.
 
-Alterar a função `validatePermissions` para usar o cliente Supabase diretamente ao invés de `fetch` com `import.meta.env`:
-
-```typescript
-const validatePermissions = async () => {
-  if (!tenantIdForValidation.trim()) {
-    toast.error('Informe o Tenant ID para validar as permissões');
-    return;
-  }
-
-  setValidatingPermissions(true);
-  try {
-    // Chamar a edge function validate-m365-permissions
-    const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
-      body: { tenant_id: tenantIdForValidation }
-    });
-
-    if (error) throw error;
-
-    if (data.success && data.permissions) {
-      setM365Config(prev => ({
-        ...prev,
-        permissions: data.permissions,
-        permissionsValidated: true,
-        lastValidatedAt: data.validatedAt,
-        validationTenantId: tenantIdForValidation,
-      }));
-      toast.success('Permissões validadas com sucesso');
-    } else if (data.skipped) {
-      toast.info(data.message || 'Validação ignorada');
-    } else {
-      throw new Error(data.error || 'Erro desconhecido');
-    }
-  } catch (error) {
-    console.error('Error validating permissions:', error);
-    toast.error('Erro ao validar permissões');
-  } finally {
-    setValidatingPermissions(false);
-  }
-};
-```
-
-### 2. Atualizar Edge Function `validate-m365-permissions`
-
-**Arquivo: `supabase/functions/validate-m365-permissions/index.ts`**
-
-Modificar para:
-- Aceitar `tenant_id` via body (para chamadas manuais) ou usar o salvo no banco (para cron)
-- Salvar o `validation_tenant_id` quando passado manualmente
-- Manter a lógica de alertas existente
-
-```typescript
-// No início do handler, após obter o body:
-let tenantId = configData.validation_tenant_id;
-
-// Verificar se foi passado via body (chamada manual)
-try {
-  const body = await req.json();
-  if (body.tenant_id) {
-    tenantId = body.tenant_id;
-    // Atualizar o tenant_id no banco para futuras validações automáticas
-    await supabase
-      .from('m365_global_config')
-      .update({ validation_tenant_id: tenantId })
-      .eq('id', configData.id);
-  }
-} catch {
-  // Body vazio é OK para chamadas automáticas via cron
-}
-
-if (!tenantId) {
-  return new Response(
-    JSON.stringify({ success: true, message: 'No validation tenant ID configured', skipped: true }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-```
-
-### 3. Adicionar função ao config.toml
-
-**Arquivo: `supabase/config.toml`**
-
-Adicionar a declaração da função:
-
-```toml
-[functions.validate-m365-permissions]
-verify_jwt = false
-```
-
-### 4. Habilitar extensões e criar Cron Job
-
-**Migração SQL** para:
-1. Habilitar `pg_cron` e `pg_net`
-2. Criar o cron job para validação automática a cada hora
-
-```sql
--- Habilitar extensões necessárias
-CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
-
--- Agendar validação de permissões M365 a cada hora
-SELECT cron.schedule(
-  'm365-permissions-hourly',
-  '0 * * * *',  -- A cada hora, no minuto 0
-  $$
-  SELECT net.http_post(
-    url := 'https://akbosdbyheezghieiefz.supabase.co/functions/v1/validate-m365-permissions',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo"}'::jsonb,
-    body := '{}'::jsonb
-  ) AS request_id;
-  $$
-);
-```
-
-## Arquivos Afetados
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/admin/SettingsPage.tsx` | Alterar `validatePermissions` para usar a edge function correta |
-| `supabase/functions/validate-m365-permissions/index.ts` | Aceitar `tenant_id` via body e atualizar no banco |
-| `supabase/config.toml` | Adicionar `validate-m365-permissions` |
-| Nova migração SQL | Habilitar extensões e criar cron job |
-
-## Fluxo Final
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    VALIDAÇÃO MANUAL                          │
-├─────────────────────────────────────────────────────────────┤
-│  1. Usuário insere Tenant ID                                │
-│  2. Clica "Validar Permissões"                              │
-│  3. Frontend chama validate-m365-permissions                │
-│  4. Function salva tenant_id + valida permissões            │
-│  5. Salva resultados no banco + cria alertas se necessário  │
-│  6. Frontend atualiza UI com resultados                     │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                   VALIDAÇÃO AUTOMÁTICA                       │
-├─────────────────────────────────────────────────────────────┤
-│  1. pg_cron executa a cada hora                             │
-│  2. Chama validate-m365-permissions via HTTP                │
-│  3. Function usa tenant_id salvo anteriormente              │
-│  4. Valida permissões e atualiza banco                      │
-│  5. Cria/atualiza alertas se permissões falharem            │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Resultado Esperado
-
-1. **Botão funciona**: Ao clicar em "Validar Permissões", o sistema conecta ao Azure, testa cada permissão e mostra o resultado
-2. **Tenant ID salvo**: O Tenant ID inserido é salvo no banco para validações futuras
-3. **Validação automática**: A cada hora, o sistema verifica as permissões automaticamente
-4. **Alertas**: Se permissões obrigatórias falharem, super_admins veem um alerta no sistema
+## Critério de pronto (Definition of Done)
+- O código do GitHub está presente no projeto Lovable (via sync).
+- O Preview abre sem erros críticos.
+- Navegação principal funciona e as integrações essenciais (Supabase/rotas) estão estáveis.
+- Existe um caminho claro de rollback (branch/tag ou remix) caso precise reverter.
