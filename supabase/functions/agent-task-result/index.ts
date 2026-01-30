@@ -2316,28 +2316,41 @@ serve(async (req: Request) => {
     }
 
     // If task completed successfully and has raw data, process with compliance rules
-    if ((body.status === 'completed' || body.status === 'partial') && rawData && task.target_type === 'firewall') {
-      // Get device_type_id and name from firewall
-      const { data: firewall } = await supabase
-        .from('firewalls')
-        .select('device_type_id, name')
-        .eq('id', task.target_id)
-        .single();
+    if ((body.status === 'completed' || body.status === 'partial') && rawData) {
+      let deviceTypeId: string | null = null;
 
-      // Store firewall name for later use in alerts
-      firewallName = firewall?.name || null;
-      let deviceTypeId = firewall?.device_type_id;
+      if (task.target_type === 'firewall') {
+        // Get device_type_id and name from firewall
+        const { data: firewall } = await supabase
+          .from('firewalls')
+          .select('device_type_id, name')
+          .eq('id', task.target_id)
+          .single();
 
-      // If no device_type_id, use default FortiGate
-      if (!deviceTypeId) {
-        const { data: defaultType } = await supabase
+        // Store firewall name for later use in alerts
+        firewallName = firewall?.name || null;
+        deviceTypeId = firewall?.device_type_id || null;
+
+        // If no device_type_id, use default FortiGate
+        if (!deviceTypeId) {
+          const { data: defaultType } = await supabase
+            .from('device_types')
+            .select('id')
+            .eq('code', 'fortigate')
+            .eq('is_active', true)
+            .single();
+
+          deviceTypeId = defaultType?.id || null;
+        }
+      } else if (task.target_type === 'external_domain') {
+        const { data: externalDomainType } = await supabase
           .from('device_types')
           .select('id')
-          .eq('code', 'fortigate')
+          .eq('code', 'external_domain')
           .eq('is_active', true)
           .single();
-        
-        deviceTypeId = defaultType?.id;
+
+        deviceTypeId = externalDomainType?.id || null;
       }
 
       if (deviceTypeId) {
@@ -2351,18 +2364,21 @@ serve(async (req: Request) => {
           .order('name');
 
         if (rules && rules.length > 0) {
-          console.log(`Processing ${rules.length} compliance rules for device type ${deviceTypeId}`);
-          complianceResult = processComplianceRules(
-            rawData,
-            rules as ComplianceRule[]
+          console.log(
+            `Processing ${rules.length} compliance rules for ${task.target_type} (device type ${deviceTypeId})`
           );
-          
+          complianceResult = processComplianceRules(rawData, rules as ComplianceRule[]);
+
           // Store raw data for debugging/auditing (only for legacy mode)
           // In progressive mode, raw data is already in task_step_results
           if (body.result) {
             complianceResult.raw_data = rawData;
           }
+        } else {
+          console.log(`No compliance rules found for ${task.target_type} (device type ${deviceTypeId})`);
         }
+      } else {
+        console.log(`No device type resolved for target_type=${task.target_type}`);
       }
     }
 
@@ -2394,17 +2410,18 @@ serve(async (req: Request) => {
       );
     }
 
-    // External domain: record last scan timestamp (score rules will be defined later)
+    // External domain: update last scan + last score (when available)
     if ((body.status === 'completed' || body.status === 'partial') && task.target_type === 'external_domain') {
       await supabase
         .from('external_domains')
         .update({
           last_scan_at: new Date().toISOString(),
+          ...(score !== null ? { last_score: score } : {}),
         })
         .eq('id', task.target_id);
     }
 
-    // If we have a compliance result, save to analysis_history
+    // If we have a compliance result, save to history (firewall or external_domain)
     if (complianceResult && score !== null) {
       // Create a lightweight version of the compliance result for history
       // Exclude raw_data to avoid timeout on large datasets (raw_data is already in agent_tasks.result)
@@ -2416,57 +2433,76 @@ serve(async (req: Request) => {
         firmwareVersion: complianceResult.firmwareVersion,
         // raw_data is intentionally excluded - it's stored in agent_tasks.result
       };
-      
-      // Save to analysis_history
-      const { data: analysisData, error: historyError } = await supabase
-        .from('analysis_history')
-        .insert({
-          firewall_id: task.target_id,
-          score: score,
-          report_data: historyReportData,
-        })
-        .select('id')
-        .single();
-      
-      if (historyError) {
-        console.error('Failed to save analysis history:', historyError);
-      }
 
-      // Update firewall last_analysis_at and last_score
-      await supabase
-        .from('firewalls')
-        .update({
-          last_analysis_at: new Date().toISOString(),
-          last_score: score,
-        })
-        .eq('id', task.target_id);
-
-      // Use firewall name from earlier query (already fetched at line 644)
-      const alertFirewallName = firewallName || 'Dispositivo';
-      
-      console.log(`Creating analysis alert for firewall: ${alertFirewallName} (id: ${task.target_id})`);
-
-      // Create system alert for analysis completion
-      // Always use 'success' severity for completed analyses (green/teal color)
-      const alertSeverity = 'success';
-      await supabase
-        .from('system_alerts')
-        .insert({
-          alert_type: 'firewall_analysis_completed',
-          title: 'Análise Concluída',
-          message: `A análise do firewall "${alertFirewallName}" foi concluída com score ${score}%.`,
-          severity: alertSeverity,
-          target_role: null,
-          is_active: true,
-          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          metadata: {
+      if (task.target_type === 'firewall') {
+        // Save to analysis_history
+        const { data: analysisData, error: historyError } = await supabase
+          .from('analysis_history')
+          .insert({
             firewall_id: task.target_id,
             score: score,
-            analysis_id: analysisData?.id || null
-          }
-        });
+            report_data: historyReportData,
+          })
+          .select('id')
+          .single();
 
-      console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}, alert created`);
+        if (historyError) {
+          console.error('Failed to save analysis history:', historyError);
+        }
+
+        // Update firewall last_analysis_at and last_score
+        await supabase
+          .from('firewalls')
+          .update({
+            last_analysis_at: new Date().toISOString(),
+            last_score: score,
+          })
+          .eq('id', task.target_id);
+
+        // Use firewall name from earlier query
+        const alertFirewallName = firewallName || 'Dispositivo';
+
+        console.log(`Creating analysis alert for firewall: ${alertFirewallName} (id: ${task.target_id})`);
+
+        // Create system alert for analysis completion
+        // Always use 'success' severity for completed analyses (green/teal color)
+        const alertSeverity = 'success';
+        await supabase
+          .from('system_alerts')
+          .insert({
+            alert_type: 'firewall_analysis_completed',
+            title: 'Análise Concluída',
+            message: `A análise do firewall "${alertFirewallName}" foi concluída com score ${score}%.`,
+            severity: alertSeverity,
+            target_role: null,
+            is_active: true,
+            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            metadata: {
+              firewall_id: task.target_id,
+              score: score,
+              analysis_id: analysisData?.id || null
+            }
+          });
+
+        console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}, alert created`);
+      } else if (task.target_type === 'external_domain') {
+        console.log(`Saving external domain history for domain_id=${task.target_id} (score=${score})`);
+
+        const { error: historyError } = await supabase
+          .from('external_domain_analysis_history')
+          .insert({
+            domain_id: task.target_id,
+            score: score,
+            report_data: historyReportData,
+          });
+
+        if (historyError) {
+          console.error('Failed to save external domain analysis history:', historyError);
+          // Do not fail task update if history insertion fails
+        } else {
+          console.log(`External domain history saved: domain_id=${task.target_id}, checks=${complianceResult.checks.length}`);
+        }
+      }
     }
 
     console.log(`Task ${body.task_id} updated to ${dbStatus} by agent ${agentId}`);
