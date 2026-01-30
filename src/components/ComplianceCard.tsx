@@ -118,7 +118,8 @@ export function ComplianceCard({ check, onClick, variant = 'default' }: Complian
           {/* Domínios Externos: "ANÁLISE EFETUADA" visível para todos; sem lista de evidências */}
           {variant === 'external_domain' && (check.details || check.description) && (
             <div className="space-y-2">
-              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <FileText className="w-3 h-3" />
                 ANÁLISE EFETUADA
               </h5>
               <div className="bg-muted/30 rounded-md p-3 border border-border/30">

@@ -1879,6 +1879,41 @@ function processComplianceRules(
     
     // Use rule description or generate one
     const description = rule.description || rule.name;
+
+    // =====================================================
+    // External Domain - MX alias handling (Microsoft 365/Gmail)
+    // If there is only 1 MX record, redundancy may exist behind the hostname
+    // (A/AAAA resolves to multiple IPs). The agent now enriches each record with
+    // resolved_ip_count/resolved_ips.
+    // =====================================================
+    if (logic.source_key === 'mx_records' && (rule.code === 'MX-002' || rule.code === 'MX-003')) {
+      const records = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+      const single = records.length === 1 ? records[0] : undefined;
+      const resolvedIpCount = typeof single?.resolved_ip_count === 'number'
+        ? (single.resolved_ip_count as number)
+        : (Array.isArray(single?.resolved_ips) ? (single!.resolved_ips as unknown[]).length : 0);
+
+      const hasMultipleMx = records.length >= 2;
+      const hasAliasRedundancy = records.length === 1 && resolvedIpCount >= 2;
+
+      if (rule.code === 'MX-002') {
+        // Redundância MX
+        status = (hasMultipleMx || hasAliasRedundancy) ? 'pass' : 'fail';
+        if (status === 'pass' && hasAliasRedundancy) {
+          details = `MX único (hostname gerenciado) resolve para ${resolvedIpCount} IP(s). Redundância provida pelo provedor.`;
+        }
+      }
+
+      if (rule.code === 'MX-003') {
+        // Prioridades MX configuradas
+        // Caso clássico: 2+ MX com prioridades distintas (já coberto pelo operador SQL)
+        // Caso alias: 1 MX, mas com múltiplos IPs atrás do hostname => considerar adequado.
+        if (hasAliasRedundancy) {
+          status = 'pass';
+          details = `MX único (hostname gerenciado) resolve para ${resolvedIpCount} IP(s). Prioridade/failover é gerenciado pelo provedor.`;
+        }
+      }
+    }
     
     // Gerar evidências usando formatadores especializados baseados no código da regra
     let evidence: EvidenceItem[] = [];
