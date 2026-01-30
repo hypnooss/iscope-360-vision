@@ -26,14 +26,14 @@ export function SystemAlertBanner() {
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
 
   useEffect(() => {
-    if (role === 'super_admin' || role === 'workspace_admin') {
+    if (user?.id) {
       fetchActiveAlerts();
     }
-  }, [role]);
+  }, [user?.id, role]);
 
   // Subscription para alertas em tempo real
   useEffect(() => {
-    if (role !== 'super_admin' && role !== 'workspace_admin') return;
+    if (!user?.id) return;
 
     const channel = supabase
       .channel('system_alerts_changes')
@@ -75,9 +75,18 @@ export function SystemAlertBanner() {
         return !dismissedBy.includes(user?.id || '');
       });
 
+      // Regra de negócio:
+      // - Alertas M365* (TENANT HOME): apenas super_admin e super_suporte
+      // - Demais alertas: qualquer usuário autenticado
+      const canSeeM365 = ['super_admin', 'super_suporte'].includes(role || '');
+      const roleFiltered = filteredData.filter((alert) => {
+        if (alert.alert_type?.startsWith('m365_')) return canSeeM365;
+        return true;
+      });
+
       // Filtrar alertas expirados pelo “lifetime” do banner (UI lifetime)
       const nowMs = Date.now();
-      const notExpired = filteredData.filter((alert) => {
+      const notExpired = roleFiltered.filter((alert) => {
         const ageMs = getAlertAgeMs(alert.created_at, nowMs);
         const lifetimeMs = getAlertLifetimeMs(alert.alert_type);
         return ageMs < lifetimeMs;
@@ -140,7 +149,7 @@ export function SystemAlertBanner() {
   // Filtrar alertas dispensados localmente
   const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
 
-  if (!['super_admin', 'workspace_admin'].includes(role || '') || visibleAlerts.length === 0) {
+  if (!user?.id || visibleAlerts.length === 0) {
     return null;
   }
 

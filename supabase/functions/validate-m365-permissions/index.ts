@@ -208,13 +208,21 @@ async function createOrUpdateAlert(
     targetRole?: string | null;
   }
 ) {
-  // Verificar se já existe um alerta ativo do mesmo tipo
-  const { data: existingAlert } = await supabase
+  // Verificar se já existe um alerta ativo do mesmo tipo E com o mesmo target_role.
+  // (Necessário para permitir 2 alertas M365 do mesmo tipo: um p/ super_admin e outro p/ super_suporte)
+  let existingQuery = supabase
     .from('system_alerts')
     .select('id')
     .eq('alert_type', options.alertType)
-    .eq('is_active', true)
-    .maybeSingle();
+    .eq('is_active', true);
+
+  if (options.targetRole === null || options.targetRole === undefined) {
+    existingQuery = existingQuery.is('target_role', null);
+  } else {
+    existingQuery = existingQuery.eq('target_role', options.targetRole);
+  }
+
+  const { data: existingAlert } = await existingQuery.maybeSingle();
 
   if (existingAlert) {
     // Atualizar alerta existente
@@ -340,16 +348,25 @@ Deno.serve(async (req) => {
     } catch (error) {
       console.error('Failed to validate permissions:', error);
       
-      // Criar alerta de erro de conexão
-      await createOrUpdateAlert(supabase, {
-        alertType: 'm365_connection_failure',
-        title: 'Falha na Conexão M365',
-        message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
-        severity: 'error',
-        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
-        targetRole: null,
-        metadata: { error: String(error), tenantId },
-      });
+      // Alerta M365 (TENANT HOME): deve ser visível apenas para super_admin e super_suporte
+      await Promise.all([
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_connection_failure',
+          title: 'Falha na Conexão M365',
+          message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
+          severity: 'error',
+          targetRole: 'super_admin',
+          metadata: { error: String(error), tenantId },
+        }),
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_connection_failure',
+          title: 'Falha na Conexão M365',
+          message: 'Não foi possível conectar à API Microsoft Graph para validar permissões.',
+          severity: 'error',
+          targetRole: 'super_suporte',
+          metadata: { error: String(error), tenantId },
+        }),
+      ]);
 
       // Return error but indicate the tenant_id was saved
       return new Response(
@@ -386,35 +403,60 @@ Deno.serve(async (req) => {
 
     if (failedRequired.length > 0) {
       // Permissões obrigatórias falhando - alerta de erro
-      await createOrUpdateAlert(supabase, {
-        alertType: 'm365_permission_failure',
-        title: 'Permissões M365 Críticas Faltando',
-        message: `${failedRequired.length} permissão(ões) obrigatória(s) não está(ão) configurada(s): ${failedRequired.map(p => p.name).join(', ')}`,
-        severity: 'error',
-        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
-        targetRole: null,
-        metadata: {
-          failedRequired: failedRequired.map(p => p.name),
-          failedRecommended: failedRecommended.map(p => p.name),
-          newlyFailed: nowFailed.map(p => p.name),
-        },
-      });
+      await Promise.all([
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_permission_failure',
+          title: 'Permissões M365 Críticas Faltando',
+          message: `${failedRequired.length} permissão(ões) obrigatória(s) não está(ão) configurada(s): ${failedRequired.map(p => p.name).join(', ')}`,
+          severity: 'error',
+          targetRole: 'super_admin',
+          metadata: {
+            failedRequired: failedRequired.map(p => p.name),
+            failedRecommended: failedRecommended.map(p => p.name),
+            newlyFailed: nowFailed.map(p => p.name),
+          },
+        }),
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_permission_failure',
+          title: 'Permissões M365 Críticas Faltando',
+          message: `${failedRequired.length} permissão(ões) obrigatória(s) não está(ão) configurada(s): ${failedRequired.map(p => p.name).join(', ')}`,
+          severity: 'error',
+          targetRole: 'super_suporte',
+          metadata: {
+            failedRequired: failedRequired.map(p => p.name),
+            failedRecommended: failedRecommended.map(p => p.name),
+            newlyFailed: nowFailed.map(p => p.name),
+          },
+        }),
+      ]);
 
       console.log('Created/updated error alert for missing required permissions');
     } else if (failedRecommended.length > 0 && nowFailed.length > 0) {
       // Apenas recomendadas falhando E houve mudança - alerta de warning
-      await createOrUpdateAlert(supabase, {
-        alertType: 'm365_permission_failure',
-        title: 'Permissões M365 Recomendadas Faltando',
-        message: `${failedRecommended.length} permissão(ões) recomendada(s) não está(ão) configurada(s): ${failedRecommended.map(p => p.name).join(', ')}`,
-        severity: 'warning',
-        // Importante: não restringir a super_admin, senão workspace_admin não vê o banner.
-        targetRole: null,
-        metadata: {
-          failedRecommended: failedRecommended.map(p => p.name),
-          newlyFailed: nowFailed.map(p => p.name),
-        },
-      });
+      await Promise.all([
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_permission_failure',
+          title: 'Permissões M365 Recomendadas Faltando',
+          message: `${failedRecommended.length} permissão(ões) recomendada(s) não está(ão) configurada(s): ${failedRecommended.map(p => p.name).join(', ')}`,
+          severity: 'warning',
+          targetRole: 'super_admin',
+          metadata: {
+            failedRecommended: failedRecommended.map(p => p.name),
+            newlyFailed: nowFailed.map(p => p.name),
+          },
+        }),
+        createOrUpdateAlert(supabase, {
+          alertType: 'm365_permission_failure',
+          title: 'Permissões M365 Recomendadas Faltando',
+          message: `${failedRecommended.length} permissão(ões) recomendada(s) não está(ão) configurada(s): ${failedRecommended.map(p => p.name).join(', ')}`,
+          severity: 'warning',
+          targetRole: 'super_suporte',
+          metadata: {
+            failedRecommended: failedRecommended.map(p => p.name),
+            newlyFailed: nowFailed.map(p => p.name),
+          },
+        }),
+      ]);
 
       console.log('Created/updated warning alert for missing recommended permissions');
     } else if (failedRequired.length === 0 && nowFailed.length === 0) {
