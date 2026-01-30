@@ -1,141 +1,109 @@
 
-## Contexto e ajuste de rumo (importante)
-- Você informou corretamente: **Leaked Password Protection só está disponível no plano Pro (ou acima)** no Supabase. Então **não dá para ativar isso no seu projeto atual** via dashboard, e vamos seguir sem essa etapa.
-- Já existe migration criando as tabelas necessárias para Domínio Externo:
-  - `supabase/migrations/20260130014618_1a6df5b4-b48a-4094-a8bd-20a142d9e5a1.sql` cria:
-    - `public.external_domains`
-    - `public.external_domain_schedules`
-    - índices + triggers `updated_at` + RLS policies
-- Também existe uma migration “fix linter” para RLS:
-  - `supabase/migrations/20260130014824_ea26f19d-3518-41c6-a351-334da9281a05.sql` ajusta policies de `rate_limits` e `task_step_results`.
+## Diagnóstico (por que o erro acontece)
+O erro **“new row violates row-level security policy for table external_domains”** significa que o Supabase bloqueou o INSERT por causa das políticas de RLS.
 
-## Problema atual
-Na rota `/scope-external-domain/domains` (`src/pages/external-domain/ExternalDomainListPage.tsx`):
-- O botão **Adicionar Domínio** só mostra toast.
-- A lista de domínios é placeholder (sem busca no Supabase).
-- Os cards de estatística são fixos “0”.
+Pelos logs de rede, o app está tentando inserir corretamente:
+- `client_id`: 145988e9-14b5-49ca-b1e6-c9184cba86f0
+- `agent_id`: 73c20fe9-7d87-47bd-bfa3-7dfc969359d9
+- `created_by`: 799901ed-bf94-4076-9ce1-aa9d540c7293 (usuário logado)
+- `status`: pending
+- domínio e nome ok
 
-## Objetivo desta entrega
-1) Botão **Adicionar Domínio** abrir um **modal de cadastro** no mesmo padrão do Firewall (Dialog + ScrollArea + Selects).
-2) Cadastro **salvar no Supabase** (`external_domains` + `external_domain_schedules`) respeitando permissões (RLS).
-3) Página listar domínios reais do Supabase (com client_name / schedule / agent opcionalmente), e atualizar contadores.
+A policy criada na migration de `external_domains` exige (WITH CHECK):
+- `has_client_access(auth.uid(), client_id)`  ✅ você tem (existe `user_clients` para esse client_id)
+- `get_module_permission(auth.uid(), 'external_domain') IN ('edit','full')` ❌ está falhando
 
----
+O motivo: a função `public.get_module_permission()` (definida em `supabase/migrations/20260112202447_...sql`) busca permissões na tabela `public.user_module_permissions`.  
+E, no seu banco, o usuário **super_admin** tem permissões `full` para: `dashboard`, `firewall`, `reports`, `users`, `m365`, mas **não tem linha para `external_domain`**.
 
-## Implementação (frontend)
+Além disso, no frontend, `hasPermission()` retorna **true automaticamente para super_admin**, então o botão aparece mesmo sem existir a linha correspondente no banco, e o INSERT é negado no servidor.
 
-### 1) Criar o modal `AddExternalDomainDialog` espelhado do Firewall
-Criar arquivo:
-- `src/components/external-domain/AddExternalDomainDialog.tsx`
+Conclusão: é um desalinhamento entre:
+- Frontend: “super_admin sempre pode”
+- Backend/RLS: “só pode se `get_module_permission()` retornar edit/full”
 
-Padrão a copiar/seguir:
-- `src/components/firewall/AddFirewallDialog.tsx`
-
-Campos (conforme combinado):
-- **Cliente*** (Select) – lista de `clients`
-- **Agent*** (Select) – carregar de `agents` filtrando por `client_id` e `revoked=false` (igual firewall)
-- **Domínio Externo*** (Input)
-- **Nome (opcional)** (Input)  
-  - Se vazio, vamos preencher automaticamente no submit com o próprio domínio (para cumprir `name not null` da tabela).
-- **Descrição** (Textarea)
-- **Frequência de Análise** (Select) – `manual | daily | weekly | monthly`
-
-Comportamento:
-- Quando trocar Cliente: limpar Agent selecionado e recarregar lista de agents do cliente.
-- Botão “Adicionar”:
-  - disabled enquanto `saving` ou se campos obrigatórios não preenchidos.
-  - mostrar feedback de erro (toast + erro inline no domínio).
-
-### 2) Validação do “Domínio Externo”
-Hoje existe `src/lib/urlValidation.ts` com validação de “base URL de dispositivo” (exige http/https e proíbe barras finais etc.).
-Para Domínio Externo, o input pode ser:
-- `example.com` (sem protocolo) OU
-- `https://example.com` (com protocolo)
-E deve bloquear path/query/hash.
-
-Plano de validação:
-- Adicionar uma função nova no mesmo arquivo para manter o padrão do projeto:
-  - `getExternalDomainError(value: string): string | null`
-- Regras sugeridas:
-  - Trim obrigatório
-  - Proibir espaços
-  - Se começar com http(s), usar `new URL()` e exigir `pathname === '/'` e sem `search/hash`
-  - Se não tiver protocolo, validar via regex de hostname (`sub.domínio.tld`) e proibir barras e `?` `#`
-  - (Opcional) normalizar: salvar em `domain` exatamente como digitado, ou padronizar removendo `http(s)://` — definiremos um padrão para evitar duplicidade futura.
-
-### 3) Atualizar `ExternalDomainListPage` para usar Supabase de verdade
-Arquivo a alterar:
-- `src/pages/external-domain/ExternalDomainListPage.tsx`
-
-Mudanças:
-1. Importar e usar:
-   - `supabase` (`@/integrations/supabase/client`)
-   - `AddExternalDomainDialog`
-2. Criar estados adicionais (mesmo modelo do FirewallListPage):
-   - `clients`, `agents` (se necessário manter global; mas o modal já busca agents por cliente — podemos manter apenas `clients` na página)
-   - `domains` com dados reais
-3. Implementar `fetchData()`:
-   - `clients`: `supabase.from('clients').select('*').order('name')`
-   - `external_domains`: `supabase.from('external_domains').select('*').order('created_at', { ascending: false })`
-   - `external_domain_schedules`: buscar por `domain_id in (...)` (igual faz com `analysis_schedules`)
-   - `agents`: opcional para mapear `agent_id -> name` na tabela (ou buscar no modal apenas; para a listagem fica melhor trazer nomes)
-4. Combinar os dados em memória (mapas) como no firewall:
-   - `clientMap`, `agentMap`, `scheduleMap`
-5. Substituir o botão atual:
-   - antes: `<Button onClick={() => toast.info(...)}/>`
-   - depois: `<AddExternalDomainDialog clients={clients} onDomainAdded={handleAddDomain} />`
-6. Implementar `handleAddDomain(formData)` semelhante ao firewall:
-   - Insert em `external_domains`:
-     - `client_id`, `agent_id`, `domain`, `name`, `description`, `created_by: user?.id`, `status: 'pending'`
-   - Se schedule !== 'manual': insert em `external_domain_schedules` com `domain_id`, `frequency`, `is_active: true`, `created_by: user?.id`
-   - `await fetchData()` e `toast.success(...)`
-7. Atualizar cards “0” para valores reais:
-   - total = `domains.length`
-   - ativos = count `status === 'active'`
-   - pendentes = count `status === 'pending'`
-   - com problemas = por enquanto: `last_score !== null && last_score < 60` (ou 0 se preferir não assumir regra; definiremos um critério simples e explícito)
+Você confirmou que deseja: **super_admin = sempre FULL**. Vamos ajustar o backend para refletir isso.
 
 ---
 
-## Ajustes importantes / correções de consistência
-### 4) Reverter alterações indevidas em `src/integrations/supabase/types.ts`
-Você mostrou que em mensagens anteriores houve “edited src/integrations/supabase/types.ts”, mas o próprio projeto avisa que esse arquivo é gerado automaticamente e **não deve ser editado**.
-
-Plano:
-- Comparar com o conteúdo esperado (gerado) e **reverter quaisquer alterações locais** feitas nele.
-- Se necessário, ajustar nossos tipos no frontend usando interfaces locais (como já é feito no FirewallListPage) em vez de tocar no `types.ts`.
+## Objetivo do ajuste
+1) Fazer com que **super_admin sempre passe nas policies** que usam `get_module_permission()`, inclusive para módulos novos como `external_domain`.  
+2) Opcional (recomendado): também “seedar” a permissão `external_domain` na tabela `user_module_permissions` para consistência e para o frontend exibir corretamente para usuários não-super-admin.
 
 ---
 
-## Segurança e permissões (RLS)
-- As policies da migration `external_domains` já seguem o padrão correto:
-  - Ver: `has_client_access(auth.uid(), client_id)`
-  - Gerenciar: precisa `get_module_permission(auth.uid(), 'external_domain') in ('edit','full')`
-- No frontend, o botão continua condicionado por:
-  - `hasPermission('external_domain', 'edit')` (já existe no AuthContext)
+## Plano de implementação (backend via migration)
+### Etapa 1 — Atualizar a função `public.get_module_permission()`
+Criar uma nova migration SQL em `supabase/migrations/` para substituir a função:
+
+Comportamento novo:
+- Se `has_role(_user_id, 'super_admin')` → retornar `'full'::module_permission` imediatamente.
+- Caso contrário, manter o comportamento atual:
+  - procurar em `user_module_permissions`
+  - se não existir, default `'view'`
+
+Isso resolve não só `external_domains`, mas qualquer tabela/policy que dependa dessa função.
+
+### Etapa 2 — “Seed”/Backfill de permissões do módulo `external_domain` (recomendado)
+Na mesma migration (ou outra), inserir permissões ausentes:
+
+- Para cada usuário com role `super_admin`:
+  - garantir que exista `user_module_permissions (user_id, module_name='external_domain', permission='full')`
+- Opcional: para usuários não super_admin, se você quiser padrão:
+  - inserir `'view'` se não existir (para evitar “buracos” de permissão e deixar o frontend consistente)
+
+Tudo com `INSERT ... SELECT ... WHERE NOT EXISTS (...)` para ser idempotente.
+
+### Etapa 3 — Ajustar `handle_new_user()` para novos usuários (recomendado)
+Hoje o trigger `handle_new_user()` cria permissões iniciais, mas não inclui `external_domain`.
+Atualizar o trigger para adicionar `external_domain`:
+- Primeiro usuário (super_admin): inserir `('external_domain', 'full')`
+- Usuários seguintes (role user): inserir `('external_domain', 'view')`
+
+Isso evita que o problema reapareça quando você criar novos usuários no futuro.
 
 ---
 
-## Checklist de teste end-to-end (aceitação)
-1. Logar com um usuário que tenha acesso ao módulo `scope_external_domain`.
-2. Ir em **Domínio Externo > Domínios Externos**.
-3. Clicar **Adicionar Domínio**:
-   - Modal abre
-   - Cliente obrigatório
-   - Agent habilita só após escolher cliente
-   - Domínio valida corretamente (bloqueia `https://example.com/path` e aceita `example.com`)
-4. Salvar:
+## Plano de verificação (testes)
+### Teste A — Super admin (seu caso)
+1. Fazer login novamente (ou “Logout/Login” para garantir sessão fresca).
+2. Ir em **Domínio Externo → Domínios Externos**.
+3. Adicionar domínio (cliente/agent/domínio) e clicar **Adicionar**.
+4. Esperado:
+   - Sem erro de RLS
    - Registro aparece na lista
-   - Se frequência != manual, schedule é criado
-5. Testar um usuário sem permissão edit:
-   - Não vê botão
-   - Não consegue inserir (RLS bloqueia)
+   - Se frequência != manual, schedule também salva
+
+### Teste B — Usuário comum sem edit
+1. Logar com usuário que não tem `external_domain` = edit/full.
+2. Esperado:
+   - Botão não aparece (frontend)
+   - Mesmo que tente via API, RLS bloqueia (backend)
+
+### Teste C — Usuário com edit
+1. Dar `external_domain=edit` para um usuário via `user_module_permissions`.
+2. Esperado:
+   - Consegue inserir e listar domínios somente dos clientes aos quais tem acesso (`user_clients`).
 
 ---
 
-## Entregáveis ao final
-- Modal de cadastro funcionando (igual ao firewall em UX).
-- Persistência no Supabase (`external_domains` e `external_domain_schedules`).
-- Listagem real em `/scope-external-domain/domains`.
-- `types.ts` intacto (sem edições manuais).
+## Arquivos/partes que serão alterados
+- `supabase/migrations/YYYYMMDDHHMMSS_fix_get_module_permission_super_admin.sql`
+  - `CREATE OR REPLACE FUNCTION public.get_module_permission(...)`
+  - backfill `user_module_permissions` para `external_domain`
+  - atualização do `handle_new_user()` (trigger)
 
+Nenhuma mudança no frontend é necessária para corrigir o 403 (o backend passará a aceitar como o UI já sugere). Opcionalmente, depois podemos alinhar o frontend/ModuleContext para usar um único modelo de permissões (mas isso é uma melhoria, não bloqueia o cadastro).
+
+---
+
+## Riscos e cuidados
+- Alterar função usada por várias policies pode mudar comportamento esperado para super_admin (mas você explicitamente quer super_admin sempre FULL, então é intencional).
+- A migration deve ser idempotente (não criar duplicatas). Vamos usar `WHERE NOT EXISTS`/`ON CONFLICT` conforme o schema permitir.
+- Como isso é backend, a mudança aplica imediatamente no ambiente Test; em Live só quando publicar (se você publicar as migrations).
+
+---
+
+## Resultado esperado após o ajuste
+- O INSERT em `external_domains` deixa de retornar 403 para super_admin.
+- O módulo Domínio Externo passa a funcionar “end-to-end” como o módulo Firewall no que diz respeito a permissões e cadastro.
