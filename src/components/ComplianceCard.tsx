@@ -7,6 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 interface ComplianceCardProps {
   check: ComplianceCheck;
   onClick?: () => void;
+  /** UI variant to specialize behavior per report type */
+  variant?: 'default' | 'external_domain';
 }
 
 const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; className: string; label: string }> = {
@@ -34,7 +36,7 @@ const severityColorsPass: Record<string, string> = {
   info: 'bg-muted text-muted-foreground',
 };
 
-export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
+export function ComplianceCard({ check, onClick, variant = 'default' }: ComplianceCardProps) {
   const { role } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -113,14 +115,27 @@ export function ComplianceCard({ check, onClick }: ComplianceCardProps) {
             </div>
           )}
 
-          {(check.details || check.description) && (
+          {/* Domínios Externos: "ANÁLISE EFETUADA" visível para todos; sem lista de evidências */}
+          {variant === 'external_domain' && (check.details || check.description) && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                ANÁLISE EFETUADA
+              </h5>
+              <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+                <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Default: mantém box de detalhes + evidências restritas */}
+          {variant !== 'external_domain' && (check.details || check.description) && (
             <div className="bg-muted/30 rounded-md p-3 border border-border/30">
               <span className="text-xs font-medium text-muted-foreground block mb-1">Detalhes</span>
               <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
             </div>
           )}
           
-          {canViewEvidence && (
+          {variant !== 'external_domain' && canViewEvidence && (
             <div className="space-y-2">
               <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <FileText className="w-3 h-3" />
