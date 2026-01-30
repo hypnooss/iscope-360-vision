@@ -1,102 +1,101 @@
 
-## Objetivo do ajuste (UI do card de informações)
-1) Reverter o layout do card de informações para o padrão “**valor à frente do título**” (em linha), evitando o visual “em coluna (título em cima / valor embaixo)” que ficou estranho/esmagado.
-2) Simplificar **DNSSEC Status** para exibir apenas **“Ativo”** ou **“Inativo”** (sem o texto longo). Opcionalmente manter as *notes* apenas em tooltip (sem poluir o layout).
+## O que você quis dizer (requisito corrigido)
+Você quer o padrão **“título antes do valor”** (ex.: **“Domínio: estrela.com.br”**), mantendo os ícones, e garantindo que o layout não fique desalinhado/esmagado.
+
+Além disso, **DNSSEC Status** deve exibir apenas **“Ativo”** ou **“Inativo”**, com qualquer detalhe/notes somente em tooltip.
 
 ---
 
-## O que vou mudar (alto nível)
-### 1) `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
-#### 1.1. Reorganizar o bloco “Parte superior: Info”
-Hoje está assim:
-- `<dl>` com `<dt>` em cima e `<dd>` embaixo, em grid 2 colunas.
+## Diagnóstico rápido do porquê “esmagou”
+Hoje o `InfoRow` está assim (ordem):
+- ícone
+- **valor** (flexível / truncado)
+- **label** (sempre `whitespace-nowrap`)
 
-Vamos trocar para itens em formato “linha”:
-- Cada informação vira um “row” com:
-  - ícone pequeno
-  - **valor (forte, truncado com tooltip)**
-  - **título (muted, menor)**
-- Exemplo visual (conceito):
-  - `[icon] estrela.com.br   Domínio`
-  - `[icon] jacob..., rachel...   Nameservers (NS)`
-  - `[icon] jacob.ns.cloudflare.com   SOA`
-  - `[icon] dns@cloudflare.com   SOA Contact`
-  - `[icon] Ativo   DNSSEC Status`
-
-Isso atende exatamente “valores a frente do título”.
-
-#### 1.2. Garantir alinhamento e evitar “esmagar”
-Para não ficar desalinhado/espremido:
-- Usar `grid` responsivo com **2 colunas no desktop** e **1 coluna no mobile**:
-  - `grid-cols-1 md:grid-cols-2`
-- Cada item terá:
-  - `min-w-0` no container
-  - um `flex items-center gap-2` interno
-  - o valor com `TruncatedText` usando `maxWidthClassName="min-w-0 flex-1"` (para truncar corretamente sem quebrar o layout)
-- Ajustar espaçamentos:
-  - `gap-x-8 gap-y-3` ou `gap-4` conforme necessário para “respirar” melhor.
-
-#### 1.3. DNSSEC Status: apenas “Ativo” / “Inativo”
-Hoje:
-- O UI usa `dnssecTooltip` que concatena `status + notes`, o que cria aquele texto gigante.
-
-Novo comportamento:
-- `dnssecLabel` (texto exibido) = **Ativo** se tiver DNSKEY e DS; caso contrário **Inativo**.
-- Se existirem `dnssecNotes`, elas ficam **apenas no tooltip** (hover no status), mas o texto exibido no card permanece curto.
-  - Implementação: `TruncatedText` recebe `text={dnssecLabel}` (curto).
-  - E podemos colocar um tooltip separado (Radix Tooltip) no ícone/linha, mostrando notes (ou reutilizar `TruncatedText` somente para exibir status e adicionar outro tooltip discreto para notes).
-- Se você preferir “sem tooltip nenhum” para DNSSEC, também dá para desligar e mostrar só Ativo/Inativo (mas vou manter tooltip com notes como “debug/auditoria” sem poluir a tela).
+Isso faz com que, em telas menores/linhas longas, o label fique “colado” e empurre o valor, além de dar sensação de desalinhamento porque o “título” fica no fim.
 
 ---
 
-## Detalhes técnicos (como será implementado)
-### A) Criar um pequeno componente interno (no mesmo arquivo) para padronizar as linhas
-No `ExternalDomainAnalysisReportPage.tsx`, criar algo como `InfoRow` (local, não precisa arquivo novo):
-- Props: `icon`, `label`, `value`, `valueClassName?`, `tooltip?`
-- Layout base:
-  - `<div className="min-w-0 flex items-center gap-2">`
-  - ícone `flex-shrink-0`
-  - `<TruncatedText ... className="font-medium ... flex-1 min-w-0" />`
-  - `<span className="text-xs text-muted-foreground whitespace-nowrap">Label</span>`
+## Mudanças propostas (frontend)
+Arquivo: `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
 
-Isso garante consistência entre todas as linhas.
+### 1) Refatorar o `InfoRow` para “Título: Valor”
+Vou reordenar e ajustar as classes para ficarem previsíveis:
 
-### B) Ajustar `TruncatedText` usage (sem mexer no componente)
-- Usar `maxWidthClassName="min-w-0 flex-1"` em vez de `w-full` dentro de flex-row.
-- Isso é um detalhe crucial: `w-full` em flex às vezes causa quebra/espremida; `flex-1 min-w-0` tende a ficar perfeito para truncar.
+**Nova ordem do row:**
+1. Ícone (fixo)
+2. **Título** (muted, fixo, com `:`)  
+3. **Valor** (flexível, truncado, com tooltip)
+
+**Estrutura sugerida (conceito):**
+- container: `flex items-center gap-2 min-w-0`
+- ícone: `flex-shrink-0`
+- título: `flex-shrink-0 text-xs text-muted-foreground whitespace-nowrap`
+- valor: `min-w-0 flex-1`
+  - usa `TruncatedText` com `maxWidthClassName="min-w-0 flex-1"` para truncar sem quebrar o grid
+
+Isso garante:
+- o título nunca “quebra” (fica estável)
+- o valor ocupa o resto da linha e trunca corretamente
+- alinhamento consistente entre linhas
+
+### 2) Tooltip (sem poluir) e acessibilidade
+Para linhas com `tooltip` (DNSSEC notes), vou manter o tooltip **somente no valor**, não no row inteiro.
+- O valor exibido continua curto (Ativo/Inativo)
+- Tooltip mostra apenas as notes (se existirem)
+- Mantém foco por teclado (`tabIndex={0}`) como já está
+
+### 3) Ajuste fino de espaçamento do grid
+O container dos itens está em:
+```text
+grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3
+```
+Se ainda ficar “apertado”, vou ajustar levemente:
+- `gap-y-3` → `gap-y-4` (mais respiro vertical)
+- e/ou `gap-x-8` → `gap-x-6` (menos distância horizontal, reduz chance de compressão)
+
+A decisão final vai ser visual (desktop + mobile) no preview.
 
 ---
 
-## Sequência de execução
-1) Alterar o markup do card info em `ExternalDomainAnalysisReportPage.tsx`:
-   - Remover `<dl>/<dt>/<dd>` atual
-   - Inserir grid de `InfoRow` com “valor antes do título”
-2) Ajustar cálculo de DNSSEC:
-   - Remover “Parcial”
-   - Exibir apenas “Ativo”/“Inativo”
-   - Deixar notes apenas em tooltip (se existirem)
-3) Revisar responsividade:
-   - Desktop: 2 colunas
-   - Mobile: 1 coluna, sem quebras estranhas
-4) Validação visual no preview.
+## DNSSEC Status (confirmando regra)
+Já está calculando:
+- **Ativo** se `dnssecHasDnskey && dnssecHasDs`
+- caso contrário **Inativo**
+E o tooltip (`dnssecNotesTooltip`) fica só para notes.
+Vou manter exatamente isso; apenas garantir que o texto longo não apareça como valor em nenhum cenário.
 
 ---
 
-## Critérios de aceite
-- Card de info fica visualmente alinhado e legível.
-- Cada linha mostra **valor primeiro** e **título depois**, sem ficar “em coluna”.
-- Nameservers continuam truncados com “...” e tooltip mostra o texto completo.
-- DNSSEC Status aparece só como **Ativo** ou **Inativo** (sem texto longo).
+## Critérios de aceite (o que você vai ver)
+1) No card de informações, cada item aparece como:
+- **“Domínio: estrela.com.br”**
+- **“Nameservers (NS): rachel.ns… , jacob.ns…”** (truncado + tooltip no hover)
+- **“SOA: …”**, **“SOA Contact: …”**
+- **“DNSSEC Status: Ativo/Inativo”** (curto), com notes só em tooltip (se existirem)
+
+2) Nada “esmagado”:
+- o título não invade/empurra
+- o valor trunca corretamente em vez de quebrar layout
 
 ---
 
-## Testes recomendados (E2E/UI)
-1) Abrir o relatório atual na rota:
-   - `/scope-external-domain/domains/4016b956-6e71-4516-924d-78f88ff7823f/report/41a955ad-7e38-4f16-a448-6f435051c9a3`
-2) Verificar no desktop:
-   - alinhamento das linhas
-   - truncamento de NS funcionando
-   - DNSSEC curto (Ativo/Inativo)
-3) Verificar no mobile:
-   - grid vira 1 coluna
-   - nada “esmagado” / overflow
+## Plano de execução (passo a passo)
+1) Alterar o componente local `InfoRow`:
+   - reordenar label/valor para **Título: Valor**
+   - ajustar classes (`flex-shrink-0` no título, `min-w-0 flex-1` no valor)
+   - manter tooltip apenas no valor quando existir
+2) Ajustar o separador “:” no título
+3) Ajustar `gap-x/gap-y` do grid se necessário após inspeção visual
+4) Validar no preview:
+   - Desktop (>= md): 2 colunas
+   - Mobile: 1 coluna, truncamento + tooltip funcionando
+
+---
+
+## Testes recomendados (rápidos)
+- Abrir o relatório atual na rota informada
+- Testar:
+  - hover/focus no valor de NS (tooltip mostra completo)
+  - DNSSEC Status mostra somente Ativo/Inativo
+  - mobile: nada sai do card / sem sobreposição
