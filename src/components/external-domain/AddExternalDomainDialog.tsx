@@ -7,7 +7,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -38,8 +37,6 @@ export interface AddExternalDomainPayload {
   client_id: string;
   agent_id: string;
   domain: string;
-  name?: string;
-  description?: string;
   schedule: ScheduleFrequency;
 }
 
@@ -74,8 +71,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
     client_id: '',
     agent_id: '',
     domain: '',
-    name: '',
-    description: '',
     schedule: 'manual' as ScheduleFrequency,
   });
 
@@ -119,8 +114,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
       client_id: '',
       agent_id: '',
       domain: '',
-      name: '',
-      description: '',
       schedule: 'manual',
     });
     setAgents([]);
@@ -148,8 +141,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
         client_id: formData.client_id,
         agent_id: formData.agent_id,
         domain: normalizedDomain,
-        name: formData.name.trim() || undefined,
-        description: formData.description.trim() || undefined,
         schedule: formData.schedule,
       });
 
@@ -243,31 +234,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
                 className={domainError ? 'border-destructive' : ''}
               />
               {domainError && <p className="text-sm text-destructive">{domainError}</p>}
-            </div>
-
-            {/* Nome */}
-            <div className="space-y-2">
-              <Label htmlFor="ext-name">Nome (opcional)</Label>
-              <Input
-                id="ext-name"
-                value={formData.name}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Ex: Site institucional"
-              />
-              <p className="text-xs text-muted-foreground">
-                Se não informar, usaremos o próprio domínio como nome.
-              </p>
-            </div>
-
-            {/* Descrição */}
-            <div className="space-y-2">
-              <Label htmlFor="ext-desc">Descrição</Label>
-              <Textarea
-                id="ext-desc"
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Descrição opcional"
-              />
             </div>
 
             {/* Schedule */}
