@@ -227,11 +227,15 @@ export default function ExternalDomainListPage() {
   const canEdit = hasPermission('external_domain', 'edit');
 
   const stats = useMemo(() => {
-    const total = domains.length;
-    const active = domains.filter((d) => d.status === 'active').length;
-    const pending = domains.filter((d) => d.status === 'pending').length;
-    const issues = domains.filter((d) => d.last_score !== null && d.last_score < 60).length;
-    return { total, active, pending, issues };
+    const totalDomains = domains.length;
+    const domainsWithScore = domains.filter((d) => d.last_score !== null);
+    const averageScore =
+      domainsWithScore.length > 0
+        ? Math.round(domainsWithScore.reduce((sum, d) => sum + (d.last_score || 0), 0) / domainsWithScore.length)
+        : 0;
+    const criticalAlerts = domains.filter((d) => d.last_score !== null && d.last_score < 50).length;
+    const criticalFailures = domains.filter((d) => d.last_score !== null && d.last_score < 30).length;
+    return { totalDomains, averageScore, criticalAlerts, criticalFailures };
   }, [domains]);
 
   if (authLoading) return null;
@@ -258,10 +262,10 @@ export default function ExternalDomainListPage() {
         </div>
 
         <ExternalDomainStatsCards
-          total={stats.total}
-          active={stats.active}
-          pending={stats.pending}
-          issues={stats.issues}
+          totalDomains={stats.totalDomains}
+          averageScore={stats.averageScore}
+          criticalAlerts={stats.criticalAlerts}
+          criticalFailures={stats.criticalFailures}
         />
 
         <ExternalDomainTable
