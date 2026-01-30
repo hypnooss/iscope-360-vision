@@ -1,202 +1,134 @@
 
-## Contexto do problema (o que está acontecendo hoje)
+## Diagnóstico (com base no seu print + dados do banco)
+### 1) Card de Info mostrando N/A (NS / SOA / SOA Contact)
+- Eu consultei o registro do relatório (`external_domain_analysis_history.id = 0553491b-...`) e o campo **`report_data.dns_summary` está NULL**.
+- Como o Frontend usa `report_data.dns_summary` para preencher NS/SOA/SOA Contact, isso explica o **N/A** no topo, mesmo com “dados brutos” existindo dentro de cada check.
 
-1) **Card grande (info) do relatório de Domínio Externo**
-- Hoje ele mostra “Domínio / Cliente / Nome / Data”, mas você quer que ele mostre dados técnicos de DNS:
-  - **NS**
-  - **SOA**
-  - **SOA Contact**
-  - **DNSSEC Status**
-- E para textos longos: **truncar com “...”** e, ao passar o mouse, **mostrar o conteúdo completo** (tooltip ou alternativa equivalente).
-
-2) **Checks “parecem desativados” + sem fonte/evidências/dados brutos**
-- No UI, ao clicar em um check (ex: “Segurança DNS > Diversidade de Nameservers”), “não acontece nada”.
-- Para Super Admins, você quer ver:
-  - **Fonte dos dados** (no Firewall era “Endpoint consultado”)
-  - **Evidências coletadas**
-  - **Dados brutos (JSON)**
-
-### Por que isso está falhando (raiz provável)
-- No backend, as regras de Domínio Externo foram inseridas com `evaluation_logic` no formato:
-  - `{"step_id": "...", "field": "...", "operator": "...", ...}`
-- Mas a edge function `agent-task-result` hoje só sabe avaliar regras no formato:
-  - `evaluation_logic.source_key`, `evaluation_logic.field_path`, `evaluation_logic.conditions[]` (estilo firewall)
-- Resultado: muitas regras ficam com **status “unknown”** porque “dados não disponíveis” (o backend não está lendo corretamente a estrutura do rawData para essas regras).
-- E no frontend, o componente `ComplianceCard` só “abre detalhes” quando existe `check.evidence` — se `evidence` vier vazio/undefined, o clique não expande nem mostra nada (parece “desativado”).
+### 2) Evidência “Nenhum NS retornado” (mesmo com records presentes)
+- O check `DNS-004` no banco está assim:
+  - `rawData.data.records` tem 2 NS (Cloudflare), exatamente como você mostrou.
+  - Porém `evidence` gravado ficou: “Nenhum NS retornado”.
+- Isso indica que **na hora de gerar evidência**, o formatter não conseguiu “enxergar” os records no formato esperado (ou leu de um caminho diferente do que o rawData final acabou guardando).
+- E como **todos os itens de “Segurança DNS” estão com o mesmo sintoma**, é bem provável que a leitura/normalização do step de DNS no backend esteja inconsistente entre:
+  - “pegar valor para avaliar a regra”
+  - “gerar evidência”
+  - “gerar dns_summary”
 
 ---
 
-## Objetivos (o que vou implementar)
+## Objetivo (o que vamos corrigir)
+1) Fazer o card de Info (NS/SOA/SOA Contact/DNSSEC) funcionar:
+   - Para relatórios novos (via `dns_summary` corretamente preenchido no backend)
+   - E também ter um **fallback** no frontend para relatórios antigos/sem `dns_summary`.
 
-### A) Card grande (info) — substituir campos e melhorar UX
-- Remover do card grande:
-  - **Nome**
-  - **Cliente**
-  - **Data**
-- Inserir:
-  - **NS** (lista ou string consolidada)
-  - **SOA** (mname)
-  - **SOA Contact** (contact_email)
-  - **DNSSEC Status** (baseado no step `dnssec_status`)
-- Implementar “texto truncado + tooltip” para valores longos.
+2) Corrigir as evidências de “Segurança DNS” para refletirem os dados reais:
+   - Ex: mostrar “rachel.ns.cloudflare.com, jacob.ns.cloudflare.com” em vez de “Nenhum NS retornado”.
 
-### B) Validar e corrigir as verificações de Domínio Externo
-- Ajustar o backend para conseguir **avaliar corretamente** as regras cujo `evaluation_logic` usa `step_id/field/operator`.
-- Garantir que o resultado final (report_data) inclua informações suficientes para:
-  - Mostrar “Fonte dos dados” (para Super Admin)
-  - Mostrar evidências (quando fizer sentido)
-  - Mostrar dados brutos (para Super Admin)
-
-### C) Tornar os checks clicáveis/expansíveis mesmo sem evidência
-- Alterar o `ComplianceCard` para permitir expandir detalhes quando existir **qualquer uma** destas coisas (para super admin):
-  - `apiEndpoint` (Fonte)
-  - `rawData`
-  - `evidence`
-- E também permitir expandir para mostrar ao menos “Detalhes” (description/details), mesmo sem evidência, para que o clique nunca pareça “morto”.
+3) (Conseqüência) Garantir que a avaliação das regras use o mesmo “step data” que alimenta evidências e o resumo do header, evitando inconsistências.
 
 ---
 
-## Exploração dos dados disponíveis (já existentes no projeto)
-Os steps do blueprint de domínio externo (pelo SQL de migração) são:
-- `ns_records`
-- `mx_records`
-- `soa_record`
-- `spf_record`
-- `dmarc_record`
-- `dkim_records`
-- `dnssec_status`
+## Mudanças planejadas (implementação)
 
-O Python Agent (executor dns_query) retorna dados estruturados como:
-- NS: `data.records[{host}]`
-- SOA: `data.mname`, `data.contact_email`, `data.serial`, etc
-- DNSSEC: `data.has_dnskey`, `data.has_ds`, `data.validated`, `data.notes[]`
+### A) Backend — robustez na leitura dos steps DNS e geração consistente (Edge Function)
+Arquivo: `supabase/functions/agent-task-result/index.ts`
 
-Isso nos permite alimentar tanto:
-- O card grande (NS/SOA/DNSSEC)
-- Evidências e raw JSON por check
+#### A1) Criar um helper único para resolver “step payload” por step_id
+Implementar um helper interno (sem imports) como:
+- `getStepPayload(rawData, stepId)`
+que tenta:
+1. `rawData[stepId]` (formato “map por step_id”)
+2. Se não existir, procurar em estruturas alternativas (caso existam):
+   - `rawData.steps[]` com `{ step_id, data }`
+   - `rawData.results[]` etc. (vamos cobrir os formatos comuns)
+3. Retornar sempre um objeto consistente: `{ data, step_id }` quando possível.
 
----
+Isso é importante porque hoje o comportamento está sugerindo que:
+- os dados aparecem em `rawData`/rawData snapshot do check,
+- mas o formatter/evaluator às vezes não encontra o mesmo caminho.
 
-## Mudanças propostas (arquivos e o que muda)
+#### A2) Padronizar a extração de NS/SOA/DNSSEC para evidências
+Atualizar `formatExternalDomainEvidence(stepId, sourceData)` para aceitar mais variações:
+- NS:
+  - `data.records` pode ser:
+    - array de objetos: `{ host: string }`
+    - array de strings: `"ns1..."` (caso algum executor retorne assim)
+    - objetos com chaves alternativas: `{ name }` / `{ value }`
+- SOA:
+  - suportar `mname` ou `soa_mname`
+  - suportar `contact_email` ou `soa_contact`
+- DNSSEC:
+  - suportar `has_dnskey` / `hasDs` etc (variações de naming)
 
-### 1) Backend: `supabase/functions/agent-task-result/index.ts`
-#### 1.1. Suporte ao `evaluation_logic` de Domínio Externo (step_id/field/operator)
-- Implementar um “adaptador” dentro do processamento de regras para que, quando `evaluation_logic.step_id` existir:
-  - `source_key = step_id` (ex: `ns_records`)
-  - `field_path = field` (ex: `data.records`)
-  - Avaliar operadores do domínio externo:
-    - `not_null`
-    - `eq`
-    - `gte`
-    - `in` (com `values`)
-    - `array_length_gte`
-    - `array_length_lte`
-    - `between` (min/max)
-    - `has_distinct_priorities`
-    - `not_matches` (regex invertido)
-- Isso vai fazer com que as regras deixem de “unknown” e passem a dar pass/fail/warn de acordo com o esperado.
+E principalmente:
+- Garantir que, se houver 1+ NS encontrados, a evidência sempre liste esses NS.
+- Só mostrar “Nenhum NS retornado” se realmente não existir nada.
 
-#### 1.2. “Fonte dos dados” coerente para Domínio Externo
-- Expandir o `sourceKeyToEndpoint` para incluir:
-  - `ns_records` -> `DNS Query (NS)`
-  - `soa_record` -> `DNS Query (SOA)`
-  - `dnssec_status` -> `DNS Query (DNSSEC)`
-  - `spf_record` -> `DNS Query (SPF/TXT)`
-  - `dmarc_record` -> `DNS Query (DMARC/TXT)`
-  - `dkim_records` -> `DNS Query (DKIM/TXT)`
-  - `mx_records` -> `DNS Query (MX)`
-- Assim, no UI “Fonte dos dados” fica padronizado (mesmo conceito do “endpoint” do Firewall, só que aqui é “DNS Query (tipo)”).
+#### A3) Garantir que `dns_summary` seja preenchido usando o mesmo helper
+Alterar a construção de `dnsSummary` para usar o mesmo `getStepPayload(rawData, 'ns_records')`, etc.
+Com isso, `report_data.dns_summary` deve começar a vir preenchido em relatórios novos.
 
-#### 1.3. Incluir um “resumo DNS” no report_data para o card grande
-Hoje o historyReportData salva `score/checks/categories/...`. Vou adicionar também algo como:
-- `dns_summary: { ns: string[], soa_mname: string|null, soa_contact: string|null, dnssec_status: string, dnssec_has_dnskey: boolean, dnssec_has_ds: boolean }`
+#### A4) Logs de diagnóstico (temporários, mas úteis)
+Adicionar logs claros e pequenos (sem dump gigante) quando `target_type === external_domain`:
+- `ns_records`: se encontrou payload? quantos records?
+- `soa_record`: mname/contact (ou “missing”)
+- `dnssec_status`: flags principais
+- Isso vai acelerar se existir algum caso específico de domínio/step retornando em outro formato.
 
-Importante: isso é leve e não explode o tamanho do JSON.
-
-#### 1.4. Evidências/dados brutos para checks (Domínio Externo)
-- Para Domínio Externo, mesmo que não exista um formatter dedicado, vamos garantir evidências básicas:
-  - Para `ns_records`: evidência listando os NS encontrados
-  - Para `soa_record`: evidência com mname e contact_email
-  - Para `dnssec_status`: evidência com has_dnskey/has_ds + notes (se houver)
-  - Para SPF/DMARC/DKIM/MX: evidência com “raw” e/ou itens principais (onde existir)
-- E também preencher `rawData` com um recorte do step correspondente para Super Admins (sem ser gigante).
+> Nota: As análises já gravadas no histórico não serão “reprocessadas” automaticamente. Você precisará rodar uma nova coleta para ver `dns_summary` preenchido no histórico novo.
 
 ---
 
-### 2) Frontend: Card grande com NS/SOA/DNSSEC (truncado + tooltip)
+### B) Frontend — fallback do card de Info para relatórios antigos/sem dns_summary
 Arquivo: `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
 
-#### 2.1. Remover Nome/Cliente/Data e inserir campos DNS
-- No bloco “Parte superior: Info”:
-  - Remover os itens “Cliente”, “Nome”, “Data”
-  - Inserir:
-    - **NS**: exibir como string “ns1..., ns2..., ns3...”
-    - **SOA**: `soa_mname`
-    - **SOA Contact**: `soa_contact`
-    - **DNSSEC Status**: texto amigável:
-      - “Ativo” se `has_dnskey && has_ds`
-      - “Parcial” ou “Incompleto” se apenas um deles existir
-      - “Inativo” se nenhum existir
-      - (e opcional: tooltip com notes)
-- A informação de “Cliente” e “Data” ainda continuam disponíveis em outros lugares (breadcrumb e header já mostram a data). Se você quiser, posso manter “Data” apenas no subtítulo do header e não no card (ficaria consistente com o Firewall).
+#### B1) Fallback: derivar NS/SOA/DNSSEC a partir dos checks quando `report.dnsSummary` estiver vazio
+Se `report.dnsSummary` não existir, vamos tentar:
+- procurar dentro de `report.categories[].checks[]` checks cujo `rawData.step_id` seja:
+  - `ns_records` → extrair `rawData.data.records`
+  - `soa_record` → extrair `rawData.data.mname` / `contact_email`
+  - `dnssec_status` → extrair flags
+E montar um dnsSummary “local” somente para exibir o card.
 
-#### 2.2. Truncar texto + tooltip no hover
-- Implementar um mini componente reaproveitável, por exemplo:
-  - `TruncatedText` (pode ser dentro do próprio arquivo ou um componente compartilhado)
-- Estratégia:
-  - Visual: `truncate` (Tailwind) + `max-w-*`
-  - Hover: `Tooltip` do Radix (já existe em `src/components/ui/tooltip.tsx`)
-- Isso garante:
-  - Layout limpo
-  - Acesso ao valor completo sem quebrar a UI
+Isso resolve imediatamente o “N/A” para relatórios legados, sem exigir reanálise.
 
 ---
 
-### 3) Frontend: Checks clicáveis + mostrar Fonte/Evidências/RawData
-Arquivo: `src/components/ComplianceCard.tsx`
-
-#### 3.1. Tornar o card expansível mesmo sem `evidence`
-- Ajustar a lógica:
-  - `hasDetails = canViewEvidence && (check.evidence?.length || check.rawData || check.apiEndpoint)`
-  - E/ou permitir expandir sempre, exibindo ao menos a seção “Detalhes” com `check.details` / `check.description`
-- O clique no card deve:
-  - Alternar expand/collapse sempre (ou pelo menos quando há conteúdo para mostrar).
-- Isso resolve a sensação de “verificação desativada”.
-
-#### 3.2. Exibir “Fonte dos dados” mesmo sem evidência
-- Mostrar a linha “Fonte dos dados” quando:
-  - `canViewEvidence && check.apiEndpoint` (para Domínio Externo vai virar “DNS Query (NS)” etc)
-
-#### 3.3. Evidências + Dados brutos
-- Manter como já está, mas agora:
-  - Evidência vai existir para Domínio Externo (por backend)
-  - E mesmo se não existir, o card ainda abre e mostra a fonte e/ou rawData quando presentes
+### C) (Opcional, mas recomendado) Alinhar “Fonte dos dados”
+Arquivo: `src/components/ComplianceCard.tsx` (ou manter como está se já estiver ok)
+Atualmente aparece “Endpoint consultado: DNS Query (NS)”.
+Se você preferir o texto “Fonte dos dados: DNS Query (NS)” (mais alinhado ao que você descreveu), faremos um ajuste de label apenas (sem lógica).
 
 ---
 
-## Sequência de implementação (passo a passo)
-1) Ajustar backend (`agent-task-result`) para suportar `evaluation_logic.step_id/field/operator` e mapear “fonte” para DNS.
-2) Enriquecer `report_data` com `dns_summary`.
-3) Ajustar frontend (`ExternalDomainAnalysisReportPage`) para renderizar NS/SOA/SOA Contact/DNSSEC com truncamento + tooltip.
-4) Ajustar `ComplianceCard` para expandir corretamente e exibir fonte/evidências/rawData conforme permissões.
-5) Validar end-to-end gerando nova coleta para um domínio real:
-   - Conferir score/categorias mudaram de “unknown”
-   - Ver “Fonte dos dados” em checks
-   - Ver evidências e JSON bruto para Super Admin
-   - Conferir card grande com DNS fields, truncamento e tooltip funcionando
+## Como vamos validar (passo a passo)
+1) Abrir o relatório atual (o mesmo id do print):
+   - Confirmar que o card de info passa a mostrar NS/SOA/SOA Contact (via fallback do frontend), sem N/A indevido.
+   - Confirmar que “Diversidade de Nameservers” continua falhando (porque são 2 NS e a regra pede >=3), mas:
+     - Evidência deve mostrar os 2 NS encontrados, não “Nenhum NS retornado”.
+
+2) Rodar uma nova coleta do domínio:
+   - Confirmar que o novo registro em `external_domain_analysis_history.report_data.dns_summary` vem preenchido.
+   - Confirmar que as evidências em “Segurança DNS” agora batem com os dados brutos.
+
+3) Conferir mais 2 checks de Segurança DNS:
+   - DNSSEC Habilitado (DNS-001)
+   - Registro DS (DNS-002)
+   Para garantir que o formatter + evaluator estão consistentes.
 
 ---
 
-## Critérios de aceite (checklist)
-- Card grande mostra **NS / SOA / SOA Contact / DNSSEC Status** e não mostra Nome/Cliente/Data.
-- Textos longos no card ficam com “...” e tooltip no hover mostra o texto completo.
-- Checks de “Segurança DNS > Diversidade de Nameservers” deixam de parecer “desativados”:
-  - Card expande e mostra ao menos detalhes
-  - Para Super Admin: mostra fonte, evidências e dados brutos quando disponíveis
-- Regras de Domínio Externo passam a avaliar corretamente usando os steps (`ns_records`, `soa_record`, `dnssec_status`, etc).
+## Arquivos que serão alterados
+- `supabase/functions/agent-task-result/index.ts` (principal correção: normalização/extração e evidências + dns_summary)
+- `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx` (fallback para evitar N/A em relatórios sem dns_summary)
+- (Opcional) `src/components/ComplianceCard.tsx` (apenas texto “Endpoint consultado” → “Fonte dos dados”, se você quiser)
 
 ---
 
-## Observação importante sobre dados já gerados
-As análises antigas (já gravadas no histórico) podem continuar “sem evidência/sem score correto” porque foram calculadas antes da correção do engine de avaliação.
-Após a mudança, você deve rodar **uma nova coleta** para ver o relatório completo e consistente.
+## Resultado esperado (critérios de aceite)
+- No card grande:
+  - NS / SOA / SOA Contact deixam de aparecer como N/A quando existirem dados nos checks.
+- Em “Segurança DNS”:
+  - Evidência de NS mostra efetivamente os NS encontrados.
+  - Regras continuam falhando/passar conforme o número real de NS (ex: 2 → falha no DNS-004).
+- Relatórios novos passam a gravar `report_data.dns_summary` no histórico, e o frontend usa esse caminho de forma preferencial.
