@@ -157,6 +157,52 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
+/**
+ * External Domain step payload normalizer.
+ * Agents may store step results in different shapes; this helper returns a consistent object:
+ * { step_id, data, ...rest }
+ */
+function getStepPayload(rawData: Record<string, unknown>, stepId: string): Record<string, unknown> | undefined {
+  if (!stepId) return undefined;
+
+  const direct = rawData[stepId];
+  if (direct && typeof direct === 'object') {
+    const obj = direct as Record<string, unknown>;
+    // If it already looks like { data: {...} }
+    if ('data' in obj && (obj as any).data && typeof (obj as any).data === 'object') {
+      return { step_id: stepId, ...obj };
+    }
+    // If it looks like the inner payload { records: [...] }
+    return { step_id: stepId, data: obj };
+  }
+
+  // Common alternative format: rawData.steps = [{ step_id, data }]
+  const steps = rawData.steps;
+  if (Array.isArray(steps)) {
+    const found = steps.find((s) => s && typeof s === 'object' && (s as any).step_id === stepId);
+    if (found && typeof found === 'object') {
+      const f = found as Record<string, unknown>;
+      const data = (f as any).data;
+      if (data && typeof data === 'object') return { step_id: stepId, ...f };
+      return { step_id: stepId, data: f };
+    }
+  }
+
+  // Alternative: rawData.results = [{ step_id, data }]
+  const results = rawData.results;
+  if (Array.isArray(results)) {
+    const found = results.find((s) => s && typeof s === 'object' && (s as any).step_id === stepId);
+    if (found && typeof found === 'object') {
+      const f = found as Record<string, unknown>;
+      const data = (f as any).data;
+      if (data && typeof data === 'object') return { step_id: stepId, ...f };
+      return { step_id: stepId, data: f };
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeEvaluationLogic(rawLogic: Record<string, unknown>): NormalizedEvaluationLogic {
   // Firewall-style format
   if (typeof rawLogic?.source_key === 'string' && typeof rawLogic?.field_path === 'string') {
@@ -1698,27 +1744,44 @@ function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[
 };
 
 function formatExternalDomainEvidence(stepId: string, sourceData: unknown): EvidenceItem[] {
-  const data = (sourceData && typeof sourceData === 'object')
-    ? (sourceData as Record<string, unknown>).data
-    : undefined;
+  const srcObj = (sourceData && typeof sourceData === 'object') ? (sourceData as Record<string, unknown>) : undefined;
+  const data = srcObj?.data;
 
   try {
     if (stepId === 'ns_records') {
-      const records = (data && typeof data === 'object') ? (data as Record<string, unknown>).records : undefined;
+      // Accept multiple shapes:
+      // - { data: { records: [{host}] } }
+      // - { data: { records: ["ns1"] } }
+      // - { data: { records: [{name}] } }
+      // - { data: { records: [{value}] } }
+      // - { data: { answers: [...] } } (fallback)
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const records = d?.records ?? d?.answers;
+
       const hosts = Array.isArray(records)
         ? records
-            .map(r => (r && typeof r === 'object') ? (r as Record<string, unknown>).host : undefined)
-            .filter((h): h is string => typeof h === 'string')
-            .slice(0, 15)
+            .map((r) => {
+              if (typeof r === 'string') return r;
+              if (r && typeof r === 'object') {
+                const o = r as Record<string, unknown>;
+                const host = o.host ?? o.name ?? o.value;
+                return typeof host === 'string' ? host : undefined;
+              }
+              return undefined;
+            })
+            .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+            .slice(0, 50)
         : [];
+
       return hosts.length
         ? [{ label: 'Nameservers encontrados', value: hosts.join(', '), type: 'text' }]
         : [{ label: 'Nameservers', value: 'Nenhum NS retornado', type: 'text' }];
     }
 
     if (stepId === 'soa_record') {
-      const mname = (data && typeof data === 'object') ? (data as Record<string, unknown>).mname : undefined;
-      const contact = (data && typeof data === 'object') ? (data as Record<string, unknown>).contact_email : undefined;
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const mname = d?.mname ?? d?.soa_mname;
+      const contact = d?.contact_email ?? d?.soa_contact;
       return [
         { label: 'SOA mname', value: String(mname ?? 'N/A'), type: 'text' },
         { label: 'SOA contact', value: String(contact ?? 'N/A'), type: 'text' },
@@ -1726,10 +1789,11 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
     }
 
     if (stepId === 'dnssec_status') {
-      const hasDnskey = (data && typeof data === 'object') ? (data as Record<string, unknown>).has_dnskey : undefined;
-      const hasDs = (data && typeof data === 'object') ? (data as Record<string, unknown>).has_ds : undefined;
-      const validated = (data && typeof data === 'object') ? (data as Record<string, unknown>).validated : undefined;
-      const notes = (data && typeof data === 'object') ? (data as Record<string, unknown>).notes : undefined;
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const hasDnskey = d?.has_dnskey ?? d?.hasDnskey ?? d?.has_dns_key;
+      const hasDs = d?.has_ds ?? d?.hasDs;
+      const validated = d?.validated ?? d?.is_validated;
+      const notes = d?.notes ?? d?.note;
       const notesText = Array.isArray(notes)
         ? notes.filter((n): n is string => typeof n === 'string').slice(0, 10).join(' | ')
         : '';
@@ -1769,7 +1833,10 @@ function processComplianceRules(
     }
     
     // Get the source data
-    const sourceData = rawData[logic.source_key];
+    const isExternalDnsStep = ['ns_records', 'soa_record', 'dnssec_status', 'spf_record', 'dmarc_record', 'dkim_records', 'mx_records'].includes(logic.source_key);
+    const sourceData = isExternalDnsStep
+      ? getStepPayload(rawData, logic.source_key)
+      : rawData[logic.source_key];
     if (!sourceData) {
       checks.push({
         id: rule.code,
@@ -1944,10 +2011,7 @@ function processComplianceRules(
     }
 
     // External Domain: default evidence for DNS steps
-    if (
-      evidence.length === 0 &&
-      ['ns_records', 'soa_record', 'dnssec_status', 'spf_record', 'dmarc_record', 'dkim_records', 'mx_records'].includes(logic.source_key)
-    ) {
+    if (evidence.length === 0 && isExternalDnsStep) {
       evidence = formatExternalDomainEvidence(logic.source_key, sourceData);
     }
     
@@ -2103,7 +2167,7 @@ function processComplianceRules(
       checkRawData = {
         firmware: fwResult.firmwareInfo
       };
-    } else if (['ns_records', 'soa_record', 'dnssec_status', 'spf_record', 'dmarc_record', 'dkim_records', 'mx_records'].includes(logic.source_key)) {
+    } else if (isExternalDnsStep) {
       // External Domain: include small raw snapshot to enable "Dados brutos" in UI
       const src = sourceData as Record<string, unknown>;
       const stepData = (src && typeof src === 'object') ? src.data : undefined;
@@ -2279,13 +2343,18 @@ function processComplianceRules(
 
   // External Domain: lightweight DNS summary for the report header card
   const dnsSummary: ComplianceResult['dns_summary'] | undefined = (() => {
-    const ns = rawData['ns_records'] as Record<string, unknown> | undefined;
-    const soa = rawData['soa_record'] as Record<string, unknown> | undefined;
-    const dnssec = rawData['dnssec_status'] as Record<string, unknown> | undefined;
+    const ns = getStepPayload(rawData, 'ns_records');
+    const soa = getStepPayload(rawData, 'soa_record');
+    const dnssec = getStepPayload(rawData, 'dnssec_status');
 
-    const nsHosts = Array.isArray((ns?.data as any)?.records)
-      ? ((ns?.data as any).records as any[])
-          .map(r => r?.host)
+    const nsRecords = (ns?.data as any)?.records ?? (ns?.data as any)?.answers;
+    const nsHosts = Array.isArray(nsRecords)
+      ? (nsRecords as any[])
+          .map((r) => {
+            if (typeof r === 'string') return r;
+            const host = r?.host ?? r?.name ?? r?.value;
+            return typeof host === 'string' ? host : undefined;
+          })
           .filter((h: any) => typeof h === 'string')
       : undefined;
 
