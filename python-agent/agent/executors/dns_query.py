@@ -58,7 +58,33 @@ class DNSQueryExecutor(BaseExecutor):
 
             if query_type == 'MX':
                 answers = resolver.resolve(domain, 'MX')
-                records = [{'priority': int(r.preference), 'exchange': str(r.exchange).rstrip('.')} for r in answers]
+                records: List[Dict[str, Any]] = []
+
+                for r in answers:
+                    exchange = str(r.exchange).rstrip('.')
+                    resolved: List[str] = []
+
+                    # Best-effort: resolve A/AAAA behind MX exchange (alias/provedor gerenciado)
+                    try:
+                        ips: set[str] = set()
+                        for rrtype in ['A', 'AAAA']:
+                            try:
+                                ip_answers = resolver.resolve(exchange, rrtype)
+                                for ip in ip_answers:
+                                    ips.add(str(ip))
+                            except Exception:
+                                # ignore A/AAAA lookup failures (timeout/NXDOMAIN/etc)
+                                pass
+                        resolved = sorted(list(ips))
+                    except Exception:
+                        resolved = []
+
+                    records.append({
+                        'priority': int(r.preference),
+                        'exchange': exchange,
+                        'resolved_ips': resolved,
+                        'resolved_ip_count': len(resolved),
+                    })
                 records.sort(key=lambda x: x['priority'])
                 return {
                     'status_code': 0,
