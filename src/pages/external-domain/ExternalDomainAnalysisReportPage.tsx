@@ -2,14 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { StatCard } from '@/components/StatCard';
 import { CategorySection } from '@/components/CategorySection';
 import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
-import { Loader2, ArrowLeft, ListChecks, ShieldX, AlertTriangle, CheckCircle2, Globe } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  Loader2,
+  ArrowLeft,
+  ListChecks,
+  ShieldX,
+  AlertTriangle,
+  CheckCircle2,
+  Globe,
+  RefreshCw,
+  Building2,
+  CalendarClock,
+  XCircle,
+} from 'lucide-react';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -112,15 +124,18 @@ export default function ExternalDomainAnalysisReportPage() {
     name: string;
     domain: string;
     client_id: string;
+    agent_id?: string | null;
   } | null>(state.domainMeta ? {
     id: state.domainMeta.domain_id,
     name: state.domainMeta.domain_name,
     domain: state.domainMeta.domain_url,
     client_id: '',
+    agent_id: null,
   } : null);
 
   const [clientName, setClientName] = useState<string | null>(state.domainMeta?.client_name || null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(state.analysisCreatedAt || null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (initialReport) return;
@@ -134,7 +149,7 @@ export default function ExternalDomainAnalysisReportPage() {
     try {
       const { data: domainData } = await supabase
         .from('external_domains')
-        .select('id, name, domain, client_id')
+        .select('id, name, domain, client_id, agent_id')
         .eq('id', dId)
         .maybeSingle();
 
@@ -174,6 +189,31 @@ export default function ExternalDomainAnalysisReportPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!domainId) return;
+
+    if (!domain?.agent_id) {
+      toast.error('Este domínio não possui um agente associado para reanálise.');
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('trigger-external-domain-analysis', {
+        body: { domain_id: domainId },
+      });
+
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any)?.details || (data as any)?.error);
+
+      toast.success('Análise agendada! Acompanhe o status em Execuções.');
+    } catch (err: any) {
+      toast.error(`Erro ao reanalisar: ${err?.message || 'erro desconhecido'}`);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -228,65 +268,111 @@ export default function ExternalDomainAnalysisReportPage() {
           ]}
         />
 
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Relatório de Compliance</h1>
-            <p className="text-muted-foreground">Resultado da análise do domínio externo</p>
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
+              <p className="text-muted-foreground">
+                Relatório gerado em {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
+              </p>
+            </div>
+
+            <div className="flex gap-3 ml-auto">
+              <Button variant="outline" size="lg" onClick={() => navigate('/scope-external-domain/reports')}>
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </Button>
+              <Button variant="cyber" size="lg" onClick={handleRefresh} disabled={isRefreshing}>
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Reanalisar
+              </Button>
+            </div>
           </div>
 
-          <Button variant="outline" onClick={() => navigate('/scope-external-domain/reports')}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar
-          </Button>
-        </div>
+          {/* Score + Info + Stats */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="lg:col-span-1 glass-card rounded-xl p-6 flex items-center justify-center">
+              <ScoreGauge score={report.overallScore} />
+            </div>
 
-        <Card className="glass-card mb-8">
-          <CardHeader>
-            <CardTitle>Detalhes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Nome</p>
-                <p className="font-medium text-foreground">{domain?.name}</p>
+            <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
+              {/* Parte superior: Info */}
+              <div className="flex items-start gap-4">
+                <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
+                  <Globe className="w-10 h-10 text-primary mb-1" />
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
+                </div>
+
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">Domínio:</span>
+                    <span className="font-semibold text-foreground truncate">{domain?.domain || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">Cliente:</span>
+                    <span className="font-medium text-foreground truncate">{clientName || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">Nome:</span>
+                    <span className="font-semibold text-foreground truncate">{domain?.name || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-muted-foreground text-sm">Data:</span>
+                    <span className="font-medium text-foreground text-sm truncate">
+                      {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Domínio</p>
-                <p className="font-medium text-foreground">{domain?.domain}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Cliente</p>
-                <p className="font-medium text-foreground">{clientName || 'N/A'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Data</p>
-                <p className="font-medium text-foreground">
-                  {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
-                </p>
+
+              {/* Separador */}
+              <div className="border-t border-border/50 my-4" />
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard title="Total" value={report.totalChecks} icon={ListChecks} variant="default" compact />
+                <StatCard title="Aprovadas" value={report.passed} icon={CheckCircle2} variant="success" compact />
+                <StatCard title="Falhas" value={report.failed} icon={ShieldX} variant="destructive" compact />
+                <StatCard title="Alertas" value={report.warnings} icon={AlertTriangle} variant="warning" compact />
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <Card className="glass-card lg:col-span-1">
-            <CardContent className="pt-6 flex items-center justify-center">
-              <ScoreGauge score={report.overallScore} />
-            </CardContent>
-          </Card>
-
-          <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Total" value={report.totalChecks} icon={ListChecks} variant="default" compact />
-            <StatCard title="Aprovados" value={report.passed} icon={CheckCircle2} variant="success" compact />
-            <StatCard title="Falhas" value={report.failed} icon={ShieldX} variant="destructive" compact />
-            <StatCard title="Alertas" value={report.warnings} icon={AlertTriangle} variant="warning" compact />
           </div>
-        </div>
 
-        <div>
-          {report.categories.map((category, index) => (
-            <CategorySection key={`${category.name}-${index}`} category={category} index={index} />
-          ))}
+          {/* Critical banner */}
+          {report.failed > 0 && (
+            <div className="glass-card rounded-xl p-4 mb-8 border-destructive/50 bg-destructive/5 animate-fade-in">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-destructive/20">
+                  <XCircle className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-destructive">
+                    {report.failed} {report.failed === 1 ? 'problema crítico encontrado' : 'problemas críticos encontrados'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">Revise as falhas abaixo e aplique as correções recomendadas.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Categories */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-foreground mb-4">Verificações por Categoria</h2>
+            {Array.isArray(report.categories) && report.categories.length > 0 ? (
+              report.categories.map((category, index) => (
+                <CategorySection key={`${category.name}-${index}`} category={category} index={index} />
+              ))
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>Nenhuma categoria de verificação disponível.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </AppLayout>

@@ -301,7 +301,7 @@ export default function ExternalDomainReportsPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
-          <p className="text-muted-foreground">Histórico de verificações de domínios externos</p>
+          <p className="text-muted-foreground">Histórico de análises de compliance</p>
         </div>
 
         {/* Filters */}
@@ -348,10 +348,10 @@ export default function ExternalDomainReportsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Histórico de Verificações
+              Histórico de Análises
             </CardTitle>
             <CardDescription>
-              {groupedDomains.length} domínio(s) com {filteredReports.length} verificação(ões) no total
+              {groupedDomains.length} domínio(s) com {filteredReports.length} análise(s) no total
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -393,11 +393,10 @@ export default function ExternalDomainReportsPage() {
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <div>
-                              <p>{group.domain_name}</p>
-                              <p className="text-xs text-muted-foreground">{group.domain_url}</p>
+                              <p className="text-sm font-medium text-foreground">{group.domain_url}</p>
                             </div>
                             <Badge variant="secondary" className="text-xs">
-                              {group.analyses.length} verificação(ões)
+                              {group.analyses.length} análise(s)
                             </Badge>
                           </div>
                         </TableCell>
