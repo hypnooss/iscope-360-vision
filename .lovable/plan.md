@@ -1,82 +1,146 @@
 
-Objetivo
-- Na tela “Domínio Externo > Domínios Externos”:
-  1) Trocar os cards (Domínios Ativos / Pendentes / Com problemas) por “Score Médio / Alertas Críticos / Falhas Críticas”, no mesmo padrão visual da tela “Firewall > Firewalls”.
-  2) Na tabela, na coluna “Domínio”, parar de exibir o mesmo domínio duas vezes e usar a tipografia padrão (igual às outras colunas).
+## Objetivo
+Na tela **Domínio Externo > Domínios Externos**:
+1) Fazer o botão **Editar** funcionar (permitindo alterar somente **Agent** e **Frequência**).
+2) Fazer o botão **Excluir** funcionar (excluindo também as **tarefas pendentes/rodando** desse domínio na fila do agent).
 
-Contexto atual (como está hoje)
-- `ExternalDomainStatsCards.tsx` recebe `{ total, active, pending, issues }` e renderiza 4 cards com ícone Globe.
-- `ExternalDomainListPage.tsx` calcula stats de active/pending/issues via `useMemo()` com base em `domains`.
-- `ExternalDomainTable.tsx` na coluna Domínio mostra:
-  - `domain.name` (font-medium)
-  - `domain.domain` (text-xs muted)
-  Como hoje `name` está sendo definido como `payload.domain.trim()` no insert, isso vira “duplicado” na prática.
+---
 
-Mudanças planejadas (frontend)
+## Contexto (como está hoje)
+- `ExternalDomainTable.tsx` já renderiza os ícones **Pencil** e **Trash2**, porém ambos estão `disabled`.
+- `ExternalDomainListPage.tsx` já tem:
+  - `fetchData()` (carrega domains, schedules, clients e agents)
+  - `handleAnalyze()` (Analisar)
+  - `handleAddDomain()` (Adicionar)
+- Já existe padrão pronto no módulo Firewall (`src/pages/firewall/FirewallListPage.tsx`) para:
+  - Abrir dialog de edição (`EditFirewallDialog`)
+  - Confirmar exclusão via `AlertDialog`
+  - Executar delete com toast e refresh
 
-1) Atualizar os cards de estatísticas para o modelo do Firewall
-Arquivos:
-- `src/components/external-domain/ExternalDomainStatsCards.tsx`
-- `src/pages/external-domain/ExternalDomainListPage.tsx`
+---
 
-Ações:
-- Alterar a interface de props do componente `ExternalDomainStatsCards` para algo equivalente ao Firewall:
-  - `totalDomains: number`
-  - `averageScore: number`
-  - `criticalAlerts: number` (ex.: score < 50)
-  - `criticalFailures: number` (ex.: score < 30)
-- Atualizar o layout/estilo do `ExternalDomainStatsCards` para ficar “igual ao FirewallStatsCards”:
-  - Cards com ícones equivalentes:
-    - Total de Domínios: usar `Globe` (ou manter `Server` se quiser padronizar com Firewall, mas aqui faz sentido `Globe`)
-    - Score Médio: `TrendingUp`
-    - Alertas Críticos: `AlertTriangle`
-    - Falhas Críticas: `Shield`
-  - Mesma lógica de cor do score (success/warning/destructive) para o card de Score Médio.
-  - Manter grid 4 colunas e `glass-card` como no Firewall.
-- Em `ExternalDomainListPage.tsx`, substituir o `useMemo` atual (active/pending/issues) por um `useMemo` novo com as mesmas regras do Firewall:
-  - `totalDomains = domains.length`
-  - `domainsWithScore = domains.filter(d => d.last_score !== null)`
-  - `averageScore = domainsWithScore.length > 0 ? Math.round(sum/len) : 0`
-  - `criticalAlerts = domains.filter(d => d.last_score !== null && d.last_score < 50).length`
-  - `criticalFailures = domains.filter(d => d.last_score !== null && d.last_score < 30).length`
-- Atualizar a chamada do componente:
-  - Antes: `<ExternalDomainStatsCards total={...} active={...} pending={...} issues={...} />`
-  - Depois: `<ExternalDomainStatsCards totalDomains={...} averageScore={...} criticalAlerts={...} criticalFailures={...} />`
+## Design proposto (alto nível)
+### Editar
+- Adicionar um **dialog de edição** para Domínio Externo (novo componente), com os campos:
+  - **Domínio** (somente leitura)
+  - **Cliente** (somente leitura)
+  - **Agent** (editável)
+  - **Frequência** (editável)
+- Ao salvar:
+  - Atualizar `external_domains.agent_id`
+  - Atualizar frequência:
+    - Remover schedules existentes de `external_domain_schedules` para aquele `domain_id`
+    - Se frequência != `manual`, inserir um schedule ativo
+  - Recarregar lista (`fetchData()`) e exibir toast de sucesso
 
-Observações/decisões:
-- Mesmo que a tabela não mostre score/status/última verificação, os cards ainda podem usar `last_score` que já vem do `external_domains` no `fetchData()` (o page já seleciona `*`).
-- Se quiser exatamente “igual ao Firewall”, podemos copiar literalmente a estrutura do JSX e só trocar `Firewalls` -> `Domínios` e as labels.
+### Excluir
+- Ao confirmar exclusão:
+  1) Apagar tarefas **pending/running** de `agent_tasks` relacionadas ao domínio:
+     - `target_type = 'external_domain'`
+     - `target_id = <domain.id>`
+     - `status IN ('pending', 'running')`
+  2) Apagar o registro em `external_domains` (as schedules serão removidas por cascade).
+  3) Recarregar lista (`fetchData()`) e exibir toast de sucesso.
 
-2) Corrigir a coluna “Domínio” para não duplicar e usar tipografia padrão
-Arquivo:
-- `src/components/external-domain/ExternalDomainTable.tsx`
+---
 
-Ações:
-- Ajustar o `<TableCell>` da coluna Domínio para mostrar apenas um valor (preferência: `domain.domain`), sem “font-medium” e sem subtítulo em `text-xs`.
-  Opções:
-  - Opção A (mais simples e “padrão de tabela”): `TableCell>{domain.domain}</TableCell>`
-  - Opção B (mantém um leve destaque, mas ainda padrão): `TableCell><span>{domain.domain}</span></TableCell>` (sem classes)
-- Manter as demais colunas como estão.
+## Alterações planejadas por arquivo
 
-Validação (checklist rápido)
-1) Abrir `/scope-external-domain/domains`
-2) Conferir cards:
-   - Total de Domínios
-   - Score Médio (com % e cor variando)
-   - Alertas Críticos
-   - Falhas Críticas
-3) Conferir tabela:
-   - Na coluna “Domínio” aparece apenas uma linha e com a mesma fonte/tamanho das outras células.
-4) Testar fluxo end-to-end:
-   - Adicionar domínio
-   - Verificar que os cards atualizam ao recarregar/listar
-   - Clicar “Analisar” e confirmar que o botão entra em loading e exibe toast de sucesso/erro como já está implementado
+### 1) `src/components/external-domain/ExternalDomainTable.tsx`
+**Objetivo:** tornar os botões “Editar” e “Excluir” clicáveis.
 
-Risco/impacto
-- Mudança é somente de UI/props; impacto principal é ajuste de typing e chamadas do componente.
-- Se houver lugares adicionais usando `ExternalDomainStatsCards`, precisaremos atualizar também (pelo nome/uso atual, parece ser só nessa página).
+- Alterar props do componente para receber callbacks:
+  - `onEdit(domain: ExternalDomainRow): void`
+  - `onDelete(domain: ExternalDomainRow): void`
+- Remover `disabled` dos botões e ligar os handlers:
+  - Pencil → `onEdit(domain)`
+  - Trash → `onDelete(domain)`
+- Manter regra de permissão: só exibe botões se `canEdit`.
 
-Arquivos que serão alterados
-- `src/components/external-domain/ExternalDomainStatsCards.tsx`
-- `src/pages/external-domain/ExternalDomainListPage.tsx`
-- `src/components/external-domain/ExternalDomainTable.tsx`
+### 2) `src/pages/external-domain/ExternalDomainListPage.tsx`
+**Objetivo:** controlar estados de edição/exclusão e executar update/delete no Supabase.
+
+Adicionar estados:
+- `showEditDialog: boolean`
+- `editingDomain: ExternalDomainRow | null`
+- `deletingDomain: ExternalDomainRow | null`
+
+Adicionar handlers:
+- `openEditDialog(domain)` → seta `editingDomain` + abre dialog
+- `handleEditDomain({ agent_id, schedule })`:
+  - update `external_domains` (somente `agent_id`)
+  - delete schedules anteriores de `external_domain_schedules` por `domain_id`
+  - inserir schedule se != manual
+  - `await fetchData()`, fechar dialog, toast success
+- `handleDeleteDomain(domain)`:
+  - delete `agent_tasks` onde:
+    - `target_type = 'external_domain'`
+    - `target_id = domain.id`
+    - `status in ('pending','running')`
+  - delete `external_domains` por `id`
+  - `await fetchData()`, fechar AlertDialog, toast success
+
+UI:
+- Renderizar:
+  - `EditExternalDomainDialog` (novo componente) com `open`, `onOpenChange`, `domain`, `clients` (para mostrar nome), e `onSave`
+  - `AlertDialog` de confirmação (mesmo padrão de FirewallListPage), exibindo o domínio (ex.: `domain.domain`) na mensagem.
+
+Obs.: a lista de `clients` já existe no page; para “Cliente (somente leitura)” podemos exibir `editingDomain.client_name` (se disponível) e/ou mapear `client_id`→`clients[]`.
+
+### 3) Novo componente `src/components/external-domain/EditExternalDomainDialog.tsx`
+**Objetivo:** UX consistente com `EditFirewallDialog`.
+
+Comportamento:
+- Quando abrir (`open=true` e `domain != null`):
+  - Preencher estado local com:
+    - `client_id` (somente leitura)
+    - `domain` (somente leitura)
+    - `agent_id` (editável)
+    - `schedule` (editável, default manual quando não existir schedule ativo)
+  - Buscar agents disponíveis para o `client_id` (mesmo padrão do `AddExternalDomainDialog`):
+    - `supabase.from('agents').select('id,name,client_id').eq('client_id', client_id).eq('revoked', false).order('name')`
+- Botões:
+  - Cancelar: fecha dialog
+  - Salvar: chama `onSave({ agent_id, schedule })` com loading state
+
+Validações simples:
+- Agent obrigatório (já é exigido hoje para análise; e também para manter consistência com o cadastro atual).
+- Schedule sempre válido (manual/daily/weekly/monthly).
+
+---
+
+## Considerações / Edge cases
+- Se o domínio não tiver schedule (manual), o dialog deve abrir com “Manual”.
+- Se houver múltiplos schedules no futuro, o page hoje seleciona o “ativo” (ou o primeiro). Vamos manter essa lógica: ao salvar, substituímos tudo por um único schedule (ou nenhum se manual), igual ao firewall.
+- Ao excluir, remover apenas tasks `pending/running` evita apagar histórico (completed/failed) caso seja útil manter rastreabilidade.
+
+---
+
+## Plano de validação (manual)
+1) **Editar**
+   - Abrir `/scope-external-domain/domains`
+   - Clicar no ícone de lápis em um domínio
+   - Alterar Agent e/ou Frequência
+   - Salvar
+   - Esperado:
+     - Toast de sucesso
+     - Tabela atualiza `Agent` e `Frequência`
+2) **Excluir**
+   - Clicar na lixeira
+   - Confirmar exclusão
+   - Esperado:
+     - Toast de sucesso
+     - Domínio some da tabela
+     - Tarefas pending/running desse domínio são removidas do `agent_tasks`
+3) **E2E**
+   - Adicionar domínio → editar → analisar → excluir
+   - Confirmar que o fluxo continua consistente e sem erros de permissão (RLS).
+
+---
+
+## Arquivos a alterar/criar
+- Alterar:
+  - `src/components/external-domain/ExternalDomainTable.tsx`
+  - `src/pages/external-domain/ExternalDomainListPage.tsx`
+- Criar:
+  - `src/components/external-domain/EditExternalDomainDialog.tsx`
