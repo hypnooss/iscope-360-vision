@@ -60,12 +60,130 @@ const calculatePassRate = (checks: { status: string }[]): number => {
   return Math.round((passed / checks.length) * 100);
 };
 
+const deriveDnsSummaryFromCategories = (categories: ComplianceCategory[]): ComplianceReport['dnsSummary'] | undefined => {
+  const allChecks = categories.flatMap((c) => c.checks || []);
+
+  const findByStep = (stepId: string) => allChecks.find((ch: any) => (ch as any)?.rawData?.step_id === stepId);
+
+  const nsCheck: any = findByStep('ns_records');
+  const soaCheck: any = findByStep('soa_record');
+  const dnssecCheck: any = findByStep('dnssec_status');
+
+  const nsRecords = nsCheck?.rawData?.data?.records;
+  const ns = Array.isArray(nsRecords)
+    ? nsRecords
+        .map((r: any) => {
+          if (typeof r === 'string') return r;
+          const host = r?.host ?? r?.name ?? r?.value;
+          return typeof host === 'string' ? host : undefined;
+        })
+        .filter((h: any) => typeof h === 'string' && h.trim().length > 0)
+    : undefined;
+
+  const soaMname = (soaCheck?.rawData?.data?.mname ?? soaCheck?.rawData?.data?.soa_mname) ?? null;
+  const soaContact = (soaCheck?.rawData?.data?.contact_email ?? soaCheck?.rawData?.data?.soa_contact) ?? null;
+
+  const dnssecData = dnssecCheck?.rawData?.data;
+  const dnssecHasDnskey = typeof dnssecData?.has_dnskey === 'boolean'
+    ? dnssecData.has_dnskey
+    : (typeof dnssecData?.hasDnskey === 'boolean' ? dnssecData.hasDnskey : undefined);
+  const dnssecHasDs = typeof dnssecData?.has_ds === 'boolean'
+    ? dnssecData.has_ds
+    : (typeof dnssecData?.hasDs === 'boolean' ? dnssecData.hasDs : undefined);
+  const dnssecValidated = typeof dnssecData?.validated === 'boolean'
+    ? dnssecData.validated
+    : (typeof dnssecData?.is_validated === 'boolean' ? dnssecData.is_validated : undefined);
+  const dnssecNotes = Array.isArray(dnssecData?.notes)
+    ? dnssecData.notes.filter((n: any) => typeof n === 'string')
+    : undefined;
+
+  const hasAny = !!(
+    (ns && ns.length) ||
+    (typeof soaMname === 'string' && soaMname) ||
+    (typeof soaContact === 'string' && soaContact) ||
+    dnssecHasDnskey !== undefined ||
+    dnssecHasDs !== undefined ||
+    dnssecValidated !== undefined ||
+    (dnssecNotes && dnssecNotes.length)
+  );
+  if (!hasAny) return undefined;
+
+  return {
+    ns,
+    soaMname: typeof soaMname === 'string' ? soaMname : null,
+    soaContact: typeof soaContact === 'string' ? soaContact : null,
+    dnssecHasDnskey,
+    dnssecHasDs,
+    dnssecValidated,
+    dnssecNotes,
+  };
+};
+
+const deriveDnsEvidenceFromRawData = (rawData: any): any[] | undefined => {
+  const stepId = rawData?.step_id;
+  const data = rawData?.data;
+  if (!stepId || !data) return undefined;
+
+  if (stepId === 'ns_records') {
+    const records = data?.records;
+    const hosts = Array.isArray(records)
+      ? records
+          .map((r: any) => (typeof r === 'string' ? r : (r?.host ?? r?.name ?? r?.value)))
+          .filter((h: any) => typeof h === 'string' && h.trim().length > 0)
+      : [];
+    return hosts.length
+      ? [{ label: 'Nameservers encontrados', value: hosts.join(', '), type: 'text' }]
+      : [{ label: 'Nameservers', value: 'Nenhum NS retornado', type: 'text' }];
+  }
+
+  if (stepId === 'soa_record') {
+    const mname = data?.mname ?? data?.soa_mname;
+    const contact = data?.contact_email ?? data?.soa_contact;
+    return [
+      { label: 'SOA mname', value: String(mname ?? 'N/A'), type: 'text' },
+      { label: 'SOA contact', value: String(contact ?? 'N/A'), type: 'text' },
+    ];
+  }
+
+  if (stepId === 'dnssec_status') {
+    const hasDnskey = data?.has_dnskey ?? data?.hasDnskey ?? data?.has_dns_key;
+    const hasDs = data?.has_ds ?? data?.hasDs;
+    const validated = data?.validated ?? data?.is_validated;
+    const notes = Array.isArray(data?.notes) ? data.notes.filter((n: any) => typeof n === 'string') : [];
+
+    const items = [
+      { label: 'DNSKEY', value: String(hasDnskey ?? 'N/A'), type: 'text' },
+      { label: 'DS', value: String(hasDs ?? 'N/A'), type: 'text' },
+      { label: 'Validated', value: String(validated ?? 'N/A'), type: 'text' },
+    ];
+    if (notes.length) items.push({ label: 'Notes', value: notes.slice(0, 10).join(' | '), type: 'text' });
+    return items;
+  }
+
+  return undefined;
+};
+
 const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): ComplianceReport => {
-  const normalizeCheck = (check: Record<string, unknown>) => ({
-    ...check,
-    description: check.description || check.details || check.name || '',
-    status: check.status === 'warn' ? 'warning' : check.status,
-  });
+  const normalizeCheck = (check: Record<string, unknown>) => {
+    const rawData: any = (check as any).rawData;
+    const stepId = rawData?.step_id;
+    const isDnsStep = ['ns_records', 'soa_record', 'dnssec_status'].includes(stepId);
+
+    const currentEvidence: any[] | undefined = (check as any).evidence;
+    const hasBadNsEvidence = Array.isArray(currentEvidence)
+      && currentEvidence.some((e) => (e?.value === 'Nenhum NS retornado'));
+
+    const derivedEvidence = (isDnsStep && (!Array.isArray(currentEvidence) || currentEvidence.length === 0 || hasBadNsEvidence))
+      ? deriveDnsEvidenceFromRawData(rawData)
+      : undefined;
+
+    return {
+      ...check,
+      description: check.description || check.details || check.name || '',
+      status: check.status === 'warn' ? 'warning' : check.status,
+      evidence: derivedEvidence ?? (check as any).evidence,
+    };
+  };
 
   let categories = raw.categories;
   if (categories && !Array.isArray(categories)) {
@@ -93,6 +211,22 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
     ?? (categories as ComplianceCategory[])?.flatMap(c => c.checks)
     ?? [];
 
+  const dnsSummaryFromBackend: ComplianceReport['dnsSummary'] | undefined = (raw.dns_summary as any)
+    ? {
+        ns: (raw.dns_summary as any).ns ?? undefined,
+        soaMname: (raw.dns_summary as any).soa_mname ?? (raw.dns_summary as any).soaMname ?? null,
+        soaContact: (raw.dns_summary as any).soa_contact ?? (raw.dns_summary as any).soaContact ?? null,
+        dnssecHasDnskey: (raw.dns_summary as any).dnssec_has_dnskey ?? (raw.dns_summary as any).dnssecHasDnskey ?? undefined,
+        dnssecHasDs: (raw.dns_summary as any).dnssec_has_ds ?? (raw.dns_summary as any).dnssecHasDs ?? undefined,
+        dnssecValidated: (raw.dns_summary as any).dnssec_validated ?? (raw.dns_summary as any).dnssecValidated ?? undefined,
+        dnssecNotes: (raw.dns_summary as any).dnssec_notes ?? (raw.dns_summary as any).dnssecNotes ?? undefined,
+      }
+    : undefined;
+
+  const dnsSummaryDerived = !dnsSummaryFromBackend
+    ? deriveDnsSummaryFromCategories(categories as ComplianceCategory[])
+    : undefined;
+
   return {
     overallScore: (raw.overallScore as number) ?? (raw.score as number) ?? 0,
     totalChecks: allChecks.length,
@@ -102,15 +236,7 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
     categories: categories as ComplianceCategory[],
     generatedAt: new Date(createdAt || (raw.generatedAt as string) || Date.now()),
     firmwareVersion: (raw.firmwareVersion as string) ?? undefined,
-    dnsSummary: (raw.dns_summary as any) ? {
-      ns: (raw.dns_summary as any).ns ?? undefined,
-      soaMname: (raw.dns_summary as any).soa_mname ?? (raw.dns_summary as any).soaMname ?? null,
-      soaContact: (raw.dns_summary as any).soa_contact ?? (raw.dns_summary as any).soaContact ?? null,
-      dnssecHasDnskey: (raw.dns_summary as any).dnssec_has_dnskey ?? (raw.dns_summary as any).dnssecHasDnskey ?? undefined,
-      dnssecHasDs: (raw.dns_summary as any).dnssec_has_ds ?? (raw.dns_summary as any).dnssecHasDs ?? undefined,
-      dnssecValidated: (raw.dns_summary as any).dnssec_validated ?? (raw.dns_summary as any).dnssecValidated ?? undefined,
-      dnssecNotes: (raw.dns_summary as any).dnssec_notes ?? (raw.dns_summary as any).dnssecNotes ?? undefined,
-    } : undefined,
+    dnsSummary: dnsSummaryFromBackend ?? dnsSummaryDerived,
     systemInfo: undefined,
   };
 };
