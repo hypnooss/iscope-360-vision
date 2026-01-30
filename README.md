@@ -1,73 +1,148 @@
-# Welcome to your Lovable project
+# iScope 360
 
-## Project info
+Plataforma web para análise de **compliance**, **segurança** e **boas práticas** em infraestrutura (rede, domínios externos e Microsoft 365), com dashboards, relatórios e fluxos de gestão.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+> Status: em desenvolvimento (Preview)
 
-## How can I edit this code?
+## Links
 
-There are several ways of editing your application.
+- **Preview (Lovable):** https://id-preview--d760b909-6da2-4037-9fd2-c67de04113d1.lovable.app
+- **Publicado:** (ainda não publicado)
 
-**Use Lovable**
+## Principais funcionalidades (alto nível)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- **Dashboard geral** para visão consolidada.
+- **Scope Firewall**: cadastro de firewalls, análises, execuções e relatórios.
+- **Scope External Domain**: cadastro de domínios, análises, execuções e relatórios.
+- **Scope M365 / Entra ID**: conexão de tenant, auditoria e páginas de análise.
+- **Administração**: gestão de usuários, administradores, agentes e workspaces.
 
-Changes made via Lovable will be committed automatically to this repo.
+> Observação: esta lista reflete as rotas/telas existentes no frontend (veja “Rotas principais”).
 
-**Use your preferred IDE**
+## Tecnologias
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- **Vite** + **React 18** + **TypeScript**
+- **Tailwind CSS** + **shadcn/ui** (Radix)
+- **React Router** (roteamento)
+- **TanStack Query** (cache/requests)
+- **Supabase JS v2** (integração no frontend)
+- **Playwright** (E2E – base configurada)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Como rodar localmente
 
-Follow these steps:
+### Pré-requisitos
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+- Node.js **LTS** (recomendado) + npm
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Instalação
 
-# Step 3: Install the necessary dependencies.
+```bash
 npm i
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+### Ambiente de desenvolvimento
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Outros scripts úteis
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+npm run build
+npm run build:dev
+npm run preview
+npm run lint
+```
 
-**Use GitHub Codespaces**
+## Variáveis de ambiente (frontend)
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+O frontend usa Supabase via variáveis `VITE_*`.
 
-## What technologies are used for this project?
+Crie um arquivo **.env** (ou ajuste o existente) com:
 
-This project is built with:
+```bash
+VITE_SUPABASE_URL="https://<project-ref>.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY="<anon-key>"
+VITE_SUPABASE_PROJECT_ID="<project-ref>"
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Nota de segurança
 
-## How can I deploy this project?
+- **Nunca** coloque `service_role` no frontend.
+- No client, use apenas a **anon key/publishable**.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Rotas principais (atalhos para QA/operação)
 
-## Can I connect a custom domain to my Lovable project?
+Rotas definidas em `src/App.tsx`:
 
-Yes, you can!
+### Públicas
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- `/` (landing)
+- `/auth` (autenticação)
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+### Seleção de módulo e dashboard
+
+- `/modules`
+- `/dashboard`
+
+### Scope Firewall
+
+- `/scope-firewall/dashboard`
+- `/scope-firewall/firewalls`
+- `/scope-firewall/firewalls/:id/analysis`
+- `/scope-firewall/executions`
+- `/scope-firewall/reports`
+
+### Scope External Domain
+
+- `/scope-external-domain/domains`
+- `/scope-external-domain/executions`
+- `/scope-external-domain/reports`
+- `/scope-external-domain/domains/:id/report/:analysisId`
+
+### Scope M365
+
+- `/scope-m365/dashboard`
+- `/scope-m365/tenant-connection`
+- `/scope-m365/oauth-callback`
+- `/scope-m365/entra-id`
+- `/scope-m365/entra-id/audit-logs`
+- `/scope-m365/entra-id/analysis`
+
+### Admin
+
+- `/users`
+- `/agents`
+- `/workspaces` (rota recomendada)
+- `/administrators`
+- `/settings`
+- `/collections`
+
+## Backend (referência — somente o necessário para o frontend)
+
+Este repositório inclui integrações com Supabase e Edge Functions, mas o setup detalhado do backend fica referenciado em:
+
+- Migração/estrutura: `docs/migration/migration_guide.md`
+- Agent (Python): `python-agent/README.md`
+
+## Testes (E2E)
+
+O projeto tem Playwright instalado e `playwright.config.ts` configurado.
+
+- Coloque specs E2E em `e2e/` (pasta padrão; crie se ainda não existir).
+- Execução local (exemplo):
+
+```bash
+npx playwright test
+```
+
+## Contribuição (rápido)
+
+- Rode `npm run lint` antes de abrir PR.
+- Prefira PRs pequenos e descritivos.
+- Mudanças feitas via **Lovable** podem ser commitadas automaticamente no repositório quando integrado.
+
+## Licença
+
+Licença: a definir.
