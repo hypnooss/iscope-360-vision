@@ -49,6 +49,8 @@ function InfoRow({ icon, label, value, tooltip }: InfoRowProps) {
     <div className="min-w-0 flex items-center gap-2">
       <span className="flex-shrink-0 text-primary">{icon}</span>
 
+      <span className="flex-shrink-0 text-xs text-muted-foreground whitespace-nowrap">{label}:</span>
+
       {tooltip ? (
         <TooltipProvider delayDuration={250}>
           <Tooltip>
@@ -67,8 +69,6 @@ function InfoRow({ icon, label, value, tooltip }: InfoRowProps) {
           maxWidthClassName="min-w-0 flex-1"
         />
       )}
-
-      <span className="text-xs text-muted-foreground whitespace-nowrap">{label}</span>
     </div>
   );
 }
@@ -494,7 +494,7 @@ export default function ExternalDomainAnalysisReportPage() {
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
                 </div>
 
-                <div className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                <div className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                   <InfoRow
                     icon={<Globe className="w-4 h-4" />}
                     label="Domínio"
