@@ -451,59 +451,83 @@ export default function ExternalDomainAnalysisReportPage() {
 
             <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
               {/* Parte superior: Info */}
-              <div className="flex items-start gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr] gap-4 items-start">
                 <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
                   <Globe className="w-10 h-10 text-primary mb-1" />
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">Domínio:</span>
-                    <TruncatedText
-                      text={domain?.domain || 'N/A'}
-                      className="font-semibold text-foreground"
-                      maxWidthClassName="max-w-[16rem]"
-                    />
+                <dl className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                  <div className="min-w-0">
+                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+                      Domínio
+                    </dt>
+                    <dd className="mt-1 min-w-0">
+                      <TruncatedText
+                        text={domain?.domain || 'N/A'}
+                        className="font-semibold text-foreground"
+                        maxWidthClassName="w-full"
+                      />
+                    </dd>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">NS:</span>
-                    <TruncatedText
-                      text={nsText}
-                      className="font-medium text-foreground"
-                      maxWidthClassName="max-w-[16rem]"
-                    />
+
+                  <div className="min-w-0">
+                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                      Nameservers (NS)
+                    </dt>
+                    <dd className="mt-1 min-w-0">
+                      <TruncatedText
+                        text={nsText}
+                        className="font-medium text-foreground"
+                        maxWidthClassName="w-full"
+                      />
+                    </dd>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">SOA:</span>
-                    <TruncatedText
-                      text={dnsSummary?.soaMname || 'N/A'}
-                      className="font-medium text-foreground"
-                      maxWidthClassName="max-w-[16rem]"
-                    />
+
+                  <div className="min-w-0">
+                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                      SOA
+                    </dt>
+                    <dd className="mt-1 min-w-0">
+                      <TruncatedText
+                        text={dnsSummary?.soaMname || 'N/A'}
+                        className="font-medium text-foreground"
+                        maxWidthClassName="w-full"
+                      />
+                    </dd>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">SOA Contact:</span>
-                    <TruncatedText
-                      text={dnsSummary?.soaContact || 'N/A'}
-                      className="font-medium text-foreground text-sm"
-                      maxWidthClassName="max-w-[16rem]"
-                    />
+
+                  <div className="min-w-0">
+                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
+                      SOA Contact
+                    </dt>
+                    <dd className="mt-1 min-w-0">
+                      <TruncatedText
+                        text={dnsSummary?.soaContact || 'N/A'}
+                        className="font-medium text-foreground"
+                        maxWidthClassName="w-full"
+                      />
+                    </dd>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm">DNSSEC Status:</span>
-                    <TruncatedText
-                      text={dnssecTooltip}
-                      className="font-medium text-foreground text-sm"
-                      maxWidthClassName="max-w-[16rem]"
-                    />
+
+                  <div className="min-w-0 md:col-span-2">
+                    <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
+                      DNSSEC Status
+                    </dt>
+                    <dd className="mt-1 min-w-0">
+                      <TruncatedText
+                        text={dnssecTooltip}
+                        className="font-medium text-foreground"
+                        maxWidthClassName="w-full"
+                      />
+                    </dd>
                   </div>
-                </div>
+                </dl>
               </div>
 
               {/* Separador */}
