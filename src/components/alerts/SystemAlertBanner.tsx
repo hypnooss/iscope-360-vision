@@ -154,9 +154,9 @@ export function SystemAlertBanner() {
   // Filtrar alertas dispensados localmente
   const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
 
-  if (!user?.id || visibleAlerts.length === 0) {
-    return null;
-  }
+  // Mostrar apenas o alerta mais importante (primeiro da lista ordenada)
+  // Importante: hooks abaixo NÃO podem ser condicionais (Rules of Hooks).
+  const primaryAlert = visibleAlerts[0] ?? null;
 
   const getSeverityStyles = (severity: string) => {
     switch (severity) {
@@ -195,9 +195,6 @@ export function SystemAlertBanner() {
     }
   };
 
-  // Mostrar apenas o alerta mais importante (primeiro da lista ordenada)
-  const primaryAlert = visibleAlerts[0];
-
   const expireAlertLocally = useCallback(
     (alertId: string) => {
       setDismissedLocally((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
@@ -210,6 +207,10 @@ export function SystemAlertBanner() {
   );
 
   useAlertAutoHide(primaryAlert, expireAlertLocally);
+
+  if (!user?.id || !primaryAlert) {
+    return null;
+  }
 
   const styles = getSeverityStyles(primaryAlert.severity);
   const IconComponent = styles.Icon;
