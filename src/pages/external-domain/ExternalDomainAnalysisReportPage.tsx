@@ -42,20 +42,25 @@ type InfoRowProps = {
   value: string;
   /** Optional tooltip content (keeps value displayed short) */
   tooltip?: string;
+  /** Optional extra classes for the value (e.g. "font-semibold") */
+  valueClassName?: string;
 };
 
-function InfoRow({ icon, label, value, tooltip }: InfoRowProps) {
+function InfoRow({ icon, label, value, tooltip, valueClassName }: InfoRowProps) {
   return (
-    <div className="min-w-0 flex items-center gap-2">
+    <div className="min-w-0 flex items-center gap-2 leading-tight">
       <span className="flex-shrink-0 text-primary">{icon}</span>
 
-      <span className="flex-shrink-0 text-xs text-muted-foreground whitespace-nowrap">{label}:</span>
+      <span className="flex-shrink-0 text-sm text-muted-foreground whitespace-nowrap">{label}:</span>
 
       {tooltip ? (
         <TooltipProvider delayDuration={250}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="min-w-0 flex-1 font-medium text-foreground truncate" tabIndex={0}>
+              <span
+                className={`min-w-0 flex-1 font-medium text-foreground truncate ${valueClassName || ''}`}
+                tabIndex={0}
+              >
                 {value || 'N/A'}
               </span>
             </TooltipTrigger>
@@ -65,7 +70,7 @@ function InfoRow({ icon, label, value, tooltip }: InfoRowProps) {
       ) : (
         <TruncatedText
           text={value}
-          className="font-medium text-foreground"
+          className={`font-medium text-foreground leading-tight ${valueClassName || ''}`}
           maxWidthClassName="min-w-0 flex-1"
         />
       )}
@@ -494,17 +499,19 @@ export default function ExternalDomainAnalysisReportPage() {
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Domínio</span>
                 </div>
 
-                <div className="min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
                   <InfoRow
                     icon={<Globe className="w-4 h-4" />}
                     label="Domínio"
                     value={domain?.domain || 'N/A'}
+                    valueClassName="font-semibold"
                   />
 
                   <InfoRow
                     icon={<ShieldX className="w-4 h-4" />}
                     label="Nameservers (NS)"
                     value={nsText}
+                    valueClassName="font-semibold"
                   />
 
                   <InfoRow
