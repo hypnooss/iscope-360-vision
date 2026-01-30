@@ -428,6 +428,41 @@ export type Database = {
         }
         Relationships: []
       }
+      external_domain_analysis_history: {
+        Row: {
+          analyzed_by: string | null
+          created_at: string
+          domain_id: string
+          id: string
+          report_data: Json
+          score: number
+        }
+        Insert: {
+          analyzed_by?: string | null
+          created_at?: string
+          domain_id: string
+          id?: string
+          report_data: Json
+          score: number
+        }
+        Update: {
+          analyzed_by?: string | null
+          created_at?: string
+          domain_id?: string
+          id?: string
+          report_data?: Json
+          score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_domain_analysis_history_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "external_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       external_domain_schedules: {
         Row: {
           created_at: string
