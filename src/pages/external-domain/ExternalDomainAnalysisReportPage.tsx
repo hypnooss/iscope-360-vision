@@ -496,7 +496,7 @@ export default function ExternalDomainAnalysisReportPage() {
             <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
               {/* Parte superior: Info (match FortiGate card layout) */}
               <div className="flex items-start gap-4">
-                <div className="hidden sm:flex flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
+                <div className="hidden sm:flex w-24 h-24 flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
                   <Globe className="w-10 h-10 text-primary mb-1" />
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">DOMÍNIO</span>
                 </div>
