@@ -1,154 +1,141 @@
 
-## Objetivo
-Fazer com que **Domínio Externo > Domínios Externos** tenha o botão **Adicionar Domínio** abrindo uma tela (modal) de cadastro **espelhada do cadastro de firewall**, contendo **Domínio Externo, Agent, Cliente e Frequência de Análise**, e já preparada para funcionar com Supabase (criar/listar).
+## Contexto e ajuste de rumo (importante)
+- Você informou corretamente: **Leaked Password Protection só está disponível no plano Pro (ou acima)** no Supabase. Então **não dá para ativar isso no seu projeto atual** via dashboard, e vamos seguir sem essa etapa.
+- Já existe migration criando as tabelas necessárias para Domínio Externo:
+  - `supabase/migrations/20260130014618_1a6df5b4-b48a-4094-a8bd-20a142d9e5a1.sql` cria:
+    - `public.external_domains`
+    - `public.external_domain_schedules`
+    - índices + triggers `updated_at` + RLS policies
+- Também existe uma migration “fix linter” para RLS:
+  - `supabase/migrations/20260130014824_ea26f19d-3518-41c6-a351-334da9281a05.sql` ajusta policies de `rate_limits` e `task_step_results`.
 
-## O que existe hoje (diagnóstico rápido)
-- A página **`/scope-external-domain/domains`** (`src/pages/external-domain/ExternalDomainListPage.tsx`) está **placeholder**:
-  - Botão “Adicionar Domínio” apenas mostra toast “Funcionalidade em desenvolvimento”.
-  - Não busca dados do Supabase ainda (lista vazia por padrão).
-- O fluxo “espelho” que você quer já existe no módulo Firewall:
-  - `src/components/firewall/AddFirewallDialog.tsx` (modal com formulário)
-  - `src/pages/firewall/FirewallListPage.tsx` (carrega clientes/agentes, abre modal e salva no banco)
+## Problema atual
+Na rota `/scope-external-domain/domains` (`src/pages/external-domain/ExternalDomainListPage.tsx`):
+- O botão **Adicionar Domínio** só mostra toast.
+- A lista de domínios é placeholder (sem busca no Supabase).
+- Os cards de estatística são fixos “0”.
 
-## Decisões que vou seguir (com base no que você respondeu)
-- Implementar **no mesmo modelo do cadastro de firewall**:
-  - Um **Dialog** (modal) com formulário.
-  - Campos: **Cliente**, **Agent**, **Domínio Externo**, **Descrição (opcional)**, **Frequência de análise**.
-  - Agent filtrado por Cliente (igual firewall).
-- Para “estar funcionando” de fato, vou implementar também o **mínimo de banco** para salvar e listar:
-  - Criar tabela **`external_domains`**
-  - Criar tabela **`external_domain_schedules`** (equivalente ao `analysis_schedules` do firewall)
-  - Adicionar **RLS policies** seguindo o mesmo padrão do firewall (por `has_client_access()` + permissão por módulo via `get_module_permission()`).
-
-> Observação: hoje não existe tabela `external_domains` no Supabase; sem isso o cadastro até abriria, mas não teria persistência nem listagem real. O “funcionando” aqui vai significar: abre modal, valida, salva, e aparece na lista.
+## Objetivo desta entrega
+1) Botão **Adicionar Domínio** abrir um **modal de cadastro** no mesmo padrão do Firewall (Dialog + ScrollArea + Selects).
+2) Cadastro **salvar no Supabase** (`external_domains` + `external_domain_schedules`) respeitando permissões (RLS).
+3) Página listar domínios reais do Supabase (com client_name / schedule / agent opcionalmente), e atualizar contadores.
 
 ---
 
-## Escopo de implementação (alto nível)
-### 1) Banco de dados (Supabase / migrations)
-Criar migration(s) em `supabase/migrations/` para:
+## Implementação (frontend)
 
-**Tabela `external_domains`**
-- Colunas propostas:
-  - `id uuid primary key default gen_random_uuid()`
-  - `created_at timestamptz default now()`
-  - `updated_at timestamptz default now()`
-  - `created_by uuid null`
-  - `client_id uuid not null` (relacionamento lógico com `clients`)
-  - `agent_id uuid null` (relacionamento lógico com `agents`)
-  - `name text not null` (nome amigável)
-  - `domain text not null` (domínio/URL informado)
-  - `description text null`
-  - `status text not null default 'pending'` (por enquanto como texto simples para não travar em enum)
-  - `last_scan_at timestamptz null`
-  - `last_score integer null`
-
-**Tabela `external_domain_schedules`**
-- Colunas propostas:
-  - `id uuid primary key default gen_random_uuid()`
-  - `created_at timestamptz default now()`
-  - `updated_at timestamptz default now()`
-  - `created_by uuid null`
-  - `domain_id uuid not null` (ref. `external_domains.id`, com `on delete cascade`)
-  - `frequency schedule_frequency not null` (reusar o enum já existente `schedule_frequency`)
-  - `is_active boolean not null default true`
-  - `next_run_at timestamptz null`
-
-**RLS**
-- Ativar RLS nas duas tabelas.
-- Políticas (mesmo padrão do firewall):
-  - SELECT: permitir se `has_client_access(auth.uid(), client_id)` (no caso do schedule, via join do domain).
-  - ALL (insert/update/delete): permitir se:
-    - `has_client_access(...)` E `get_module_permission(auth.uid(), 'external_domain') IN ('edit','full')`
-- (Opcional, mas recomendado) Índices:
-  - `external_domains(client_id)`
-  - `external_domains(agent_id)`
-  - `external_domain_schedules(domain_id)`
-
-### 2) UI: criar modal “Adicionar Domínio”
-Criar um componente novo, espelhado de `AddFirewallDialog`, por exemplo:
+### 1) Criar o modal `AddExternalDomainDialog` espelhado do Firewall
+Criar arquivo:
 - `src/components/external-domain/AddExternalDomainDialog.tsx`
 
+Padrão a copiar/seguir:
+- `src/components/firewall/AddFirewallDialog.tsx`
+
+Campos (conforme combinado):
+- **Cliente*** (Select) – lista de `clients`
+- **Agent*** (Select) – carregar de `agents` filtrando por `client_id` e `revoked=false` (igual firewall)
+- **Domínio Externo*** (Input)
+- **Nome (opcional)** (Input)  
+  - Se vazio, vamos preencher automaticamente no submit com o próprio domínio (para cumprir `name not null` da tabela).
+- **Descrição** (Textarea)
+- **Frequência de Análise** (Select) – `manual | daily | weekly | monthly`
+
 Comportamento:
-- Modal (Radix Dialog) com ScrollArea.
-- Campos (na ordem, alinhado ao firewall):
-  1. **Cliente*** (Select) – carregado de `clients`
-  2. **Agent*** (Select) – carregado de `agents` filtrando por `client_id` e `revoked=false`
-  3. **Domínio Externo*** (Input) – validação
-  4. **Nome (opcional)** (Input) – ou derivar automaticamente do domínio se você preferir
-  5. **Descrição** (Textarea)
-  6. **Frequência de Análise** (Select: manual/daily/weekly/monthly)
+- Quando trocar Cliente: limpar Agent selecionado e recarregar lista de agents do cliente.
+- Botão “Adicionar”:
+  - disabled enquanto `saving` ou se campos obrigatórios não preenchidos.
+  - mostrar feedback de erro (toast + erro inline no domínio).
 
-Validação (client-side):
-- Cliente obrigatório.
-- Agent obrigatório (como você pediu).
-- Domínio obrigatório.
-- Criar função de validação específica (ex.: `getExternalDomainError()`), aceitando:
-  - `example.com` (sem protocolo) **ou**
-  - `https://example.com` (com protocolo)
-  - Bloquear espaços, caminhos e query (`/path`, `?x=1`) para manter consistente com o estilo do projeto.
-- Botão “Adicionar” desabilitado com erro de validação.
+### 2) Validação do “Domínio Externo”
+Hoje existe `src/lib/urlValidation.ts` com validação de “base URL de dispositivo” (exige http/https e proíbe barras finais etc.).
+Para Domínio Externo, o input pode ser:
+- `example.com` (sem protocolo) OU
+- `https://example.com` (com protocolo)
+E deve bloquear path/query/hash.
 
-### 3) Lógica: salvar no Supabase e atualizar lista
-No modelo do firewall:
+Plano de validação:
+- Adicionar uma função nova no mesmo arquivo para manter o padrão do projeto:
+  - `getExternalDomainError(value: string): string | null`
+- Regras sugeridas:
+  - Trim obrigatório
+  - Proibir espaços
+  - Se começar com http(s), usar `new URL()` e exigir `pathname === '/'` e sem `search/hash`
+  - Se não tiver protocolo, validar via regex de hostname (`sub.domínio.tld`) e proibir barras e `?` `#`
+  - (Opcional) normalizar: salvar em `domain` exatamente como digitado, ou padronizar removendo `http(s)://` — definiremos um padrão para evitar duplicidade futura.
 
-**Em `ExternalDomainListPage.tsx`:**
-- Carregar dados reais:
-  - `clients` (para o modal)
-  - `agents` (para o modal ou buscar sob demanda ao trocar cliente, como firewall)
-  - `external_domains` (lista)
-  - `external_domain_schedules` (para mostrar schedule na lista, se você quiser já exibir)
-- Substituir o botão atual por:
-  - `<AddExternalDomainDialog clients={clients} onDomainAdded={handleAddDomain} />`
+### 3) Atualizar `ExternalDomainListPage` para usar Supabase de verdade
+Arquivo a alterar:
+- `src/pages/external-domain/ExternalDomainListPage.tsx`
 
-**Função `handleAddDomain`**
-- `insert` em `external_domains` com:
-  - `client_id`, `agent_id`, `domain`, `name`, `description`, `created_by`
-  - `status` inicial: `pending` (ou `active` se você preferir)
-- Se `schedule !== 'manual'`, inserir em `external_domain_schedules`.
+Mudanças:
+1. Importar e usar:
+   - `supabase` (`@/integrations/supabase/client`)
+   - `AddExternalDomainDialog`
+2. Criar estados adicionais (mesmo modelo do FirewallListPage):
+   - `clients`, `agents` (se necessário manter global; mas o modal já busca agents por cliente — podemos manter apenas `clients` na página)
+   - `domains` com dados reais
+3. Implementar `fetchData()`:
+   - `clients`: `supabase.from('clients').select('*').order('name')`
+   - `external_domains`: `supabase.from('external_domains').select('*').order('created_at', { ascending: false })`
+   - `external_domain_schedules`: buscar por `domain_id in (...)` (igual faz com `analysis_schedules`)
+   - `agents`: opcional para mapear `agent_id -> name` na tabela (ou buscar no modal apenas; para a listagem fica melhor trazer nomes)
+4. Combinar os dados em memória (mapas) como no firewall:
+   - `clientMap`, `agentMap`, `scheduleMap`
+5. Substituir o botão atual:
+   - antes: `<Button onClick={() => toast.info(...)}/>`
+   - depois: `<AddExternalDomainDialog clients={clients} onDomainAdded={handleAddDomain} />`
+6. Implementar `handleAddDomain(formData)` semelhante ao firewall:
+   - Insert em `external_domains`:
+     - `client_id`, `agent_id`, `domain`, `name`, `description`, `created_by: user?.id`, `status: 'pending'`
+   - Se schedule !== 'manual': insert em `external_domain_schedules` com `domain_id`, `frequency`, `is_active: true`, `created_by: user?.id`
+   - `await fetchData()` e `toast.success(...)`
+7. Atualizar cards “0” para valores reais:
+   - total = `domains.length`
+   - ativos = count `status === 'active'`
+   - pendentes = count `status === 'pending'`
+   - com problemas = por enquanto: `last_score !== null && last_score < 60` (ou 0 se preferir não assumir regra; definiremos um critério simples e explícito)
 
-**Após salvar:**
-- Recarregar lista (ou usar update local).
-- Toast de sucesso/erro.
+---
 
-### 4) Ajustes de permissões e visibilidade
-- Manter a regra existente da página:
-  - Só mostra botão se `hasPermission('external_domain', 'edit')`.
-- Garantir que as políticas do banco estejam alinhadas com essa permissão:
-  - usar `get_module_permission(auth.uid(), 'external_domain')`.
+## Ajustes importantes / correções de consistência
+### 4) Reverter alterações indevidas em `src/integrations/supabase/types.ts`
+Você mostrou que em mensagens anteriores houve “edited src/integrations/supabase/types.ts”, mas o próprio projeto avisa que esse arquivo é gerado automaticamente e **não deve ser editado**.
 
-### 5) QA / Testes manuais (checklist objetivo)
-1. Logar e acessar: **Domínio Externo > Domínios Externos**
-2. Clicar **Adicionar Domínio**:
+Plano:
+- Comparar com o conteúdo esperado (gerado) e **reverter quaisquer alterações locais** feitas nele.
+- Se necessário, ajustar nossos tipos no frontend usando interfaces locais (como já é feito no FirewallListPage) em vez de tocar no `types.ts`.
+
+---
+
+## Segurança e permissões (RLS)
+- As policies da migration `external_domains` já seguem o padrão correto:
+  - Ver: `has_client_access(auth.uid(), client_id)`
+  - Gerenciar: precisa `get_module_permission(auth.uid(), 'external_domain') in ('edit','full')`
+- No frontend, o botão continua condicionado por:
+  - `hasPermission('external_domain', 'edit')` (já existe no AuthContext)
+
+---
+
+## Checklist de teste end-to-end (aceitação)
+1. Logar com um usuário que tenha acesso ao módulo `scope_external_domain`.
+2. Ir em **Domínio Externo > Domínios Externos**.
+3. Clicar **Adicionar Domínio**:
    - Modal abre
    - Cliente obrigatório
-   - Agent só habilita depois de escolher Cliente
-3. Preencher e salvar:
-   - Inserção no Supabase ocorre sem erro de RLS
-   - Novo domínio aparece na lista
-4. Validar que um usuário sem permissão “edit”:
-   - Não vê o botão
-   - Não consegue inserir mesmo via chamadas diretas (RLS bloqueia)
+   - Agent habilita só após escolher cliente
+   - Domínio valida corretamente (bloqueia `https://example.com/path` e aceita `example.com`)
+4. Salvar:
+   - Registro aparece na lista
+   - Se frequência != manual, schedule é criado
+5. Testar um usuário sem permissão edit:
+   - Não vê botão
+   - Não consegue inserir (RLS bloqueia)
 
 ---
 
-## Arquivos que serão alterados/criados (quando você aprovar)
-- `src/pages/external-domain/ExternalDomainListPage.tsx` (trocar toast por modal + fetch real)
-- `src/components/external-domain/AddExternalDomainDialog.tsx` (novo, espelhado do firewall)
-- `src/lib/urlValidation.ts` (opcional: adicionar helper de validação para domínio externo, ou criar util novo)
-- `supabase/migrations/....sql` (nova migration criando tabelas + RLS)
+## Entregáveis ao final
+- Modal de cadastro funcionando (igual ao firewall em UX).
+- Persistência no Supabase (`external_domains` e `external_domain_schedules`).
+- Listagem real em `/scope-external-domain/domains`.
+- `types.ts` intacto (sem edições manuais).
 
----
-
-## Pontos de atenção / riscos
-- Como o módulo Domínio Externo ainda está “placeholder” em Execuções/Relatórios, o cadastro vai funcionar e listar, mas **essas outras páginas continuarão sem dados** até implementarmos tabelas e fluxo de tarefas/relatórios.
-- RLS precisa ser bem alinhado ao modelo `has_client_access` para evitar:
-  - usuário vendo domínios de outros clientes
-  - usuário não conseguindo salvar por falta de policy
-
----
-
-## Próximo passo após este (sugestão)
-Depois do cadastro estar ok, evoluir para:
-- iniciar “análise do domínio” (criar tarefas no `agent_tasks` com `target_type = 'external_domain'`)
-- preencher Execuções e Relatórios com dados reais (tabelas e edge functions)
