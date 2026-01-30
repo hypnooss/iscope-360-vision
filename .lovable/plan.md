@@ -1,199 +1,108 @@
 
-Objetivo (o que vai mudar)
-1) Garantir que o botão “Analisar” (na lista de Domínios Externos) dispare uma tarefa que apareça imediatamente em “Domínio Externo > Execuções”, igual ao fluxo de Firewall.
-2) Evoluir a “análise de domínio externo” para uma varredura DNS completa (multi-steps), executada pelo python-agent, com:
-   - NS
-   - MX
-   - SOA (+ SOA Contact)
-   - SPF (TXT) com parsing detalhado
-   - DMARC (TXT) com parsing detalhado
-   - DKIM (TXT) usando a lista de selectors fornecida (cobre ~96%)
-   - DNSSEC best-effort (cadeia/validação best-effort + coleta DNSKEY/DS)
+Objetivo
+- Tirar o blueprint de “Domínios Externos” do hardcode (dentro da RPC `rpc_get_agent_tasks`) e passar a usar o mesmo mecanismo de blueprints de Firewalls: `device_types` + `device_blueprints`.
+- Garantir que esse blueprint apareça em **Administração > Coletas > Domínios Externos** (rota `/collections`, aba “Domínios Externos”).
 
-Contexto atual (confirmado no código)
-- O botão “Analisar” já chama `supabase.functions.invoke('trigger-external-domain-analysis', { body: { domain_id } })` em `ExternalDomainListPage.tsx`.
-- A edge function `trigger-external-domain-analysis` já cria um registro em `agent_tasks` com:
-  - `target_type = 'external_domain'`
-  - `target_id = domain_id`
-  - `agent_id` do domínio
-  - `status = 'pending'`
-  - prevenção de duplicidade pending/running (não-expirada)
-- Porém:
-  - A página `ExternalDomainExecutionsPage.tsx` está com placeholder (stats zeradas + tasks = []) e não lista tarefas reais.
-  - A RPC `rpc_get_agent_tasks` (que o agent usa via edge function `agent-tasks`) para `external_domain` ainda retorna um blueprint simples `probe_https` (http_request). Não existe executor DNS no python-agent hoje.
-  - A edge function `agent-task-result` calcula compliance/score apenas para `target_type='firewall'`. Para domínio externo ainda não há processamento “final” específico — mas isso não impede o básico (task completar/falhar e aparecer em Execuções).
+Diagnóstico (como está hoje)
+- Hoje o blueprint de Domínios Externos está hardcoded dentro da função SQL `public.rpc_get_agent_tasks` (ver migration `supabase/migrations/20260130025010_...sql`, bloco “External domain tasks (DNS multi-step)”).
+- Já existe um sistema de blueprints no banco:
+  - `device_types` (categoria)
+  - `device_blueprints` (collection_steps JSONB)
+- A UI de **Administração > Coletas** já lista device types e blueprints por categoria:
+  - A aba “Domínios Externos” mapeia para `device_types.category = 'other'`.
+  - Os blueprints são lidos de `device_blueprints` pelo `device_type_id` (via `DeviceTypeCard`/`BlueprintsManagement`).
 
-Decisão de escopo (para entregar “o que de fato interessa” com segurança)
-Vamos entregar em 2 blocos bem fechados e testáveis:
-A) UX/Observabilidade: Execuções de Domínio Externo iguais às de Firewall (tarefas reais + detalhes + auto-refresh).
-B) Execução real: Blueprint multi-step DNS + executor `dns_query` no python-agent (com a lista DKIM fornecida) + ajustes mínimos para completar a tarefa corretamente no backend.
+Decisão técnica (para ficar igual a Firewalls)
+1) Criar um `device_type` “Domínio Externo” no banco (categoria `other`, code `external_domain`).
+2) Criar um `device_blueprint` ativo para esse `device_type`, contendo os steps DNS (NS/MX/SOA/SPF/DMARC/DKIM/DNSSEC).
+3) Alterar a RPC `rpc_get_agent_tasks` para:
+   - no branch de `target_type = 'external_domain'`, buscar o blueprint em `device_blueprints` pelo `device_type` `code = 'external_domain'` (igual ao que já é feito para firewall via `f.device_type_id` e fallback `fortigate`).
+4) Ajustar o python-agent/executor `dns_query` para não depender de `config.domain` fixo (porque um blueprint “global” não pode vir com o domínio hardcoded):
+   - se `config.domain` estiver vazio, derivar do `context.base_url` (já vem do `target.base_url`), extraindo o hostname.
 
-A) Implementar Execuções reais para Domínio Externo (frontend)
-Arquivos:
-- src/pages/external-domain/ExternalDomainExecutionsPage.tsx
+Por que essa abordagem resolve exatamente o que você pediu
+- Blueprint deixa de estar hardcoded e passa a ser gerenciado no banco (CRUD via UI admin, ou SQL).
+- O blueprint passa a aparecer automaticamente em **Administração > Coletas > Domínios Externos**, porque a UI já lista tudo que estiver em `device_types.category='other'` e seus `device_blueprints`.
 
-Mudanças planejadas
-1) Trocar o placeholder por React Query, copiando o padrão de `src/pages/firewall/TaskExecutionsPage.tsx`, com ajustes:
-   - Query principal em `agent_tasks`:
-     - filtros de período (1h/6h/12h/24h) via `.gte('created_at', startTimeISO)`
-     - filtro de status quando `statusFilter !== 'all'`
-     - filtro fixo `eq('target_type', 'external_domain')`
-     - selecionar apenas colunas “leves” (sem `payload`, `result`, `step_results`) para performance.
-   - Auto-refresh:
-     - `refetchInterval` = 10s quando existir task `pending` ou `running`.
-2) Lookups para exibição humana:
-   - Buscar `agents(id, name)` e mapear `agent_id -> name`.
-   - Buscar `external_domains(id, domain, name)` e mapear `target_id -> domain/name`.
-3) Search na lista:
-   - pesquisar por `domain.name`, `domain.domain`, `agent.name` e `task.task_type`.
-4) Modal de detalhes:
-   - Ao abrir detalhes, buscar sob demanda em `agent_tasks`:
-     - `payload`, `result`, `error_message`, `execution_time_ms`
-   - E também (importante para multi-steps) buscar `task_step_results` por `task_id` para mostrar:
-     - step_id, status, duration_ms, erro e data (com opção de expandir).
-   - Isso deixa a tela pronta para o modo “vários steps” sem depender de “result final gigante”.
+Escopo de implementação (o que vou mudar)
 
-Pequena melhoria no UX do botão “Analisar”
-Arquivos:
-- src/pages/external-domain/ExternalDomainListPage.tsx
+A) Banco de dados (schema vs dados)
+Importante: no seu projeto, as regras dizem:
+- Alterações de “estrutura” (ex.: criar/alterar função SQL) via migration.
+- Inserções/updates de dados (ex.: criar `device_type` e `device_blueprint`) via ferramenta de “insert”/“data operation”, não migration.
 
-Mudança planejada (opcional mas recomendada):
-- Após agendar com sucesso, além do toast, oferecer ação clara:
-  - navegar automaticamente para `/scope-external-domain/executions`
-  - ou manter na tela e adicionar “Ver Execuções” (ex.: `toast.success(..., { action: { label: 'Ver execuções', onClick: () => navigate(...) } })`), se o padrão do projeto já usar isso.
+A1) Migration (schema): atualizar `rpc_get_agent_tasks`
+- Remover o JSON hardcoded do blueprint de external_domain dentro da função e trocar por:
+  - `SELECT db.collection_steps FROM device_blueprints db WHERE db.device_type_id = (SELECT id FROM device_types WHERE code='external_domain' AND is_active=true LIMIT 1) AND db.is_active=true ORDER BY db.version DESC LIMIT 1`
+  - Fallback: `{"steps": []}` se não houver blueprint cadastrado.
+- Mantém o resto da RPC igual (JOIN com `external_domains` para montar `target.base_url` etc).
 
-B) Blueprint multi-step DNS + executor no python-agent (backend + agente)
-B1) Atualizar a RPC `rpc_get_agent_tasks` para external_domain (Supabase migration)
-Arquivo:
-- supabase/migrations/NEW__external_domain_dns_blueprint.sql (novo migration)
+A2) Data operations (dados): criar `device_type` e `device_blueprint`
+- Inserir `device_types` (se não existir) com:
+  - vendor: “iScope” (ou “Precísio Analytics” se preferir, mas vou seguir iScope como padrão)
+  - name: “Domínio Externo”
+  - code: `external_domain` (confirmado por você)
+  - category: `other`
+  - icon: `Globe`
+  - is_active: true
+- Inserir `device_blueprints` (se não existir um ativo) para esse device_type:
+  - name: “External Domain DNS Scan”
+  - version: “any”
+  - is_active: true
+  - collection_steps: JSON com steps:
+    - ns_records (dns_query, query_type NS)
+    - mx_records (dns_query, query_type MX)
+    - soa_record (dns_query, query_type SOA)
+    - spf_record (dns_query, query_type SPF)
+    - dmarc_record (dns_query, query_type DMARC)
+    - dkim_records (dns_query, query_type DKIM, selectors = sua lista)
+    - dnssec_status (dns_query, query_type DNSSEC, best_effort true)
+  - Observação: nesse blueprint armazenado no banco, eu NÃO vou salvar o campo `domain` dentro do config (porque ele varia por tarefa). Isso será resolvido no agent (item B).
 
-Mudança:
-- Substituir o bloco “External domain tasks (probe HTTP/HTTPS)” por blueprint DNS multi-step (vários steps), retornando `executor: 'dns_query'` e `config` apropriado, com `domain` vindo de `external_domains.domain`.
+B) Python-agent: deixar blueprint “genérico” funcionar
+B1) Ajustar `DNSQueryExecutor` (`python-agent/agent/executors/dns_query.py`)
+- Se `step.config.domain` estiver ausente:
+  - pegar `context['base_url']`
+  - extrair hostname (ex.: `https://example.com` -> `example.com`)
+  - usar isso como domínio base.
+- Isso faz o blueprint ser 100% gerenciável no banco e reaproveitável para qualquer domínio.
 
-Steps propostos (primeira versão)
-1) ns_records:
-   - query_type: "NS"
-2) mx_records:
-   - query_type: "MX"
-3) soa_record:
-   - query_type: "SOA"
-   - (SOA Contact vem do campo rname do SOA; vamos parsear para contato humano no executor)
-4) spf_record:
-   - query_type: "SPF" (internamente TXT + filtro `v=spf1`)
-5) dmarc_record:
-   - query_type: "DMARC" (TXT em `_dmarc.${domain}`)
-6) dkim_records:
-   - query_type: "DKIM"
-   - selectors: lista fornecida (abaixo)
-7) dnssec_status:
-   - query_type: "DNSSEC"
-   - best_effort: true
+C) UI (Administração > Coletas)
+- A princípio não precisa mudar nada na UI:
+  - `/collections` já busca `device_types` por categoria (external -> `other`) e carrega `device_blueprints` por `device_type_id`.
+- Critério: assim que o `device_type` e o `device_blueprint` existirem, o card vai aparecer e a blueprint vai ser exibida/gerenciável ali.
+- Se por algum motivo vocês quiserem uma tela “BlueprintsManagement” dedicada nessa aba (além do `DeviceTypeCard`), aí sim eu adiciono, mas hoje já existe gestão dentro de `DeviceTypeCard`.
 
-Lista DKIM selectors (aprovada pelo usuário)
-amazonses,ses,ses1,ses2,mailchimp,mc,k1,k2,k3,mailgun,mg,hubspot,hs,hs1,s1,s2,sendgrid,hs2,salesforce,sfmc,pardot,ex,cttarget,opendkim,postfix,mx1,mx2,cpanel,plesk,sendinblue,mailjet,mailcow,zimbra,icewarp,tiflux,selector1,selector2,default
+Plano de validação (aceite)
+1) Banco
+- Confirmar que existe `device_types` com `code = external_domain` e `category = other`.
+- Confirmar que existe `device_blueprints` ativo para esse device_type com os steps DNS.
 
-Observação importante
-- A `task_type` armazenada no `agent_tasks` hoje é “ssh_command” (apenas rótulo). Isso já está alinhado com o comentário no edge function; o que manda são os `steps` retornados pela RPC. Não precisamos mexer nisso agora.
+2) UI Admin
+- Ir em **Administração > Coletas > Domínios Externos**
+- Ver o “tipo de dispositivo” Domínio Externo listado.
+- Ver a blueprint “External Domain DNS Scan” listada no card, com o JSON dos steps.
 
-B2) Implementar executor `dns_query` no python-agent
-Arquivos:
-- python-agent/agent/executors/dns_query.py (novo)
-- python-agent/agent/tasks.py (editar para registrar executor)
-- python-agent/requirements.txt (editar para incluir dependência)
+3) Fluxo do agent
+- Disparar “Analisar” para um domínio externo
+- Confirmar que:
+  - o agent recebe o blueprint vindo do banco (via RPC)
+  - os steps executam mesmo sem `config.domain` (porque o executor deriva do `base_url`)
+  - os resultados aparecem em Execuções.
 
-Dependência
-- Adicionar `dnspython>=2.7.0` no requirements.
+Notas técnicas / detalhes de implementação
+- A RPC atual monta `target.base_url` como `https://{d.domain}`; isso já é suficiente para o agent derivar o domínio.
+- O padrão de seleção de blueprint por `device_types.code` é coerente com o fallback que já existe para FortiGate (`device_types.code = 'fortigate'`).
 
-Contrato do executor (compatível com TaskExecutor)
-- Input: `step.config` com { query_type, domain, selectors?, best_effort? }
-- Output:
-  - `{ status_code: 0, data: {...}, error: null }` em sucesso
-  - `{ status_code: 0, data: {...}, error: '...' }` em erro recuperável (mantém tarefa rodando para outros steps)
-- O TaskExecutor já envia progressivamente via `/agent-step-result`.
+Entregáveis (arquivos/touchpoints)
+- Supabase:
+  - Migration: atualizar `rpc_get_agent_tasks` (schema).
+  - Data operations: inserir `device_types` + `device_blueprints` para `external_domain`.
+- Python-agent:
+  - Editar `python-agent/agent/executors/dns_query.py` (fallback domain via base_url).
+- Frontend:
+  - Sem mudanças obrigatórias, apenas validação em `/collections`.
 
-Formato de dados recomendado por step (para ficar fácil renderizar e consolidar)
-- NS:
-  - records: [{ host, ttl? }]
-- MX:
-  - records: [{ priority, exchange }]
-- SOA:
-  - mname, rname, serial, refresh, retry, expire, minimum
-  - contact_email (derivado de rname)
-- SPF:
-  - raw: string
-  - parsed: { mechanisms: [...], qualifiers: [...], includes: [...], ip4: [...], ip6: [...], a: [...], mx: [...], redirect?: string, all?: string }
-- DMARC:
-  - raw: string
-  - parsed: { v, p, sp, rua, ruf, pct, adkim, aspf, fo, rf, ri, ... } (somente os encontrados)
-- DKIM:
-  - found: [{ selector, txt_raw, key_type?, key_size_bits?, p_length, flags? }]
-  - missing_count / checked_count (para diagnósticos)
-- DNSSEC (best-effort):
-  - has_dnskey: boolean
-  - has_ds: boolean
-  - validated: boolean | "partial" | "unknown"
-  - notes: string[]
-  - records_sample: { dnskey_count, ds_count } (sem armazenar “gigante”)
-
-B3) Ajustar o comportamento do `agent-task-result` para domínio externo (opcional nesta fase, mas recomendado)
-Arquivo:
-- supabase/functions/agent-task-result/index.ts
-
-Situação atual
-- Hoje ele reconstrói `rawData` a partir de `task_step_results` (modo progressivo), mas só processa “compliance rules” quando `target_type === 'firewall'`.
-- Para domínio externo, ele ainda consegue finalizar a task (atualizar status/result), mas não grava “relatório histórico” nem atualiza `external_domains.last_score/last_scan_at` de forma “inteligente”.
-
-O que vamos fazer agora (mínimo útil, sem inventar score final ainda)
-- Incluir um ramo `else if (task.target_type === 'external_domain')` para:
-  1) Reconstruir `rawData` do mesmo jeito (já existe)
-  2) Salvar `result` no `agent_tasks` como `rawData` (ou um resumo) para facilitar visualização no modal de Execuções
-  3) Atualizar `external_domains.last_scan_at = now()`
-- Score:
-  - Podemos colocar `last_score` como null inicialmente, até definirmos claramente pesos/regras (evitar “score fake”).
-  - Alternativa: score inicial bem simples baseado em presença e qualidade (SPF/DMARC/DNSSEC/DKIM) — mas só se você confirmar a regra numa próxima etapa. Nesta entrega, foco em executar, registrar e visualizar.
-
-(Em uma fase seguinte, aí sim criamos uma tabela `external_domain_analyses` + score/relatório e alimentamos a tela “Relatórios”.)
-
-C) Validação end-to-end (o que você vai conseguir testar)
-1) Em `/scope-external-domain/domains`:
-   - Clicar “Analisar” em um domínio com agent configurado
-   - Ver toast de sucesso
-2) Ir para `/scope-external-domain/executions`:
-   - Ver a task criada (status pending/running)
-   - Abrir detalhes e ver:
-     - payload (domain, client_id)
-     - step_results (quando o agent começar a enviar)
-3) Rodar o python-agent (do cliente) atualizado:
-   - Ele vai puxar a tarefa via `/agent-tasks`
-   - Executar steps DNS e enviar `agent-step-result` progressivo
-   - Finalizar com `agent-task-result`
-4) Voltar em Execuções:
-   - Conferir steps com status success/fail e dados por step
-   - Conferir task final `completed`/`failed` conforme comportamento real
-
-Riscos e cuidados (já considerados no plano)
-- DNSSEC best-effort: validação completa pode ser complexa dependendo do resolvedor e cadeia; por isso o executor retornará “validated: true/false/partial/unknown” com notes, sem bloquear a execução.
-- DKIM selectors: a lista é grande (boa cobertura), mas pode aumentar o tempo de execução. Mitigação:
-  - timeouts curtos por query
-  - resolver com caching interno (dnspython já ajuda)
-  - limitar o tamanho armazenado do TXT (evitar JSON gigante)
-- Execuções UI: cuidado para não carregar `result` pesado de todas as tasks; por isso o padrão “carregar detalhes sob demanda”.
-
-Arquivos que serão alterados/criados (na implementação após aprovação)
-Frontend
-- Editar: src/pages/external-domain/ExternalDomainExecutionsPage.tsx
-- Editar (opcional UX): src/pages/external-domain/ExternalDomainListPage.tsx
-
-Supabase
-- Criar migration: supabase/migrations/NEW__external_domain_dns_blueprint.sql (update rpc_get_agent_tasks)
-- Editar (recomendado): supabase/functions/agent-task-result/index.ts
-
-Python Agent
-- Criar: python-agent/agent/executors/dns_query.py
-- Editar: python-agent/agent/tasks.py
-- Editar: python-agent/requirements.txt
-
-Critérios de aceite (objetivos de produto)
-- “Analisar” cria tarefa e ela aparece em Execuções imediatamente.
-- Execuções mostra progresso por step (quando agent envia).
-- A análise coleta e retorna (por step) os dados DNS pedidos: NS, MX, SOA(+contact), SPF parse, DMARC parse, DKIM (selectors lista), DNSSEC best-effort.
+Riscos / edge cases
+- Se já existir algum `device_type` `external_domain` criado manualmente, a inserção deve ser idempotente (verificar por `code` antes de inserir).
+- Se o `base_url` vier vazio por algum motivo, o executor deve falhar de forma “segura” com mensagem clara (ex.: “domain não informado e base_url ausente”).
