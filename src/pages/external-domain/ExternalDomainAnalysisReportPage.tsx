@@ -463,7 +463,9 @@ export default function ExternalDomainAnalysisReportPage() {
           ]}
         />
 
-        <div className="max-w-7xl mx-auto">
+        {/* Match FortiGate report top spacing (breadcrumb outside, content padded inside) */}
+        <div className="pt-6 lg:pt-8">
+          <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
             <div>
@@ -577,6 +579,7 @@ export default function ExternalDomainAnalysisReportPage() {
                 <p>Nenhuma categoria de verificação disponível.</p>
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>
