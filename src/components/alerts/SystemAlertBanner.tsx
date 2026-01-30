@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, X, Settings, Info, AlertCircle, Shield } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { getAlertAgeMs, getAlertLifetimeMs } from './alertLifetime';
+import { useAlertAutoHide } from './useAlertAutoHide';
 
 interface SystemAlert {
   id: string;
@@ -73,8 +75,16 @@ export function SystemAlertBanner() {
         return !dismissedBy.includes(user?.id || '');
       });
 
+      // Filtrar alertas expirados pelo “lifetime” do banner (UI lifetime)
+      const nowMs = Date.now();
+      const notExpired = filteredData.filter((alert) => {
+        const ageMs = getAlertAgeMs(alert.created_at, nowMs);
+        const lifetimeMs = getAlertLifetimeMs(alert.alert_type);
+        return ageMs < lifetimeMs;
+      });
+
       // Ordenar por severidade (error > warning > success > info)
-      const sortedData = filteredData.sort((a, b) => {
+      const sortedData = notExpired.sort((a, b) => {
         const severityOrder: Record<string, number> = { error: 0, warning: 1, success: 2, info: 3 };
         return (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4);
       });
@@ -120,6 +130,11 @@ export function SystemAlertBanner() {
   const handleViewAnalysis = async (alertId: string, firewallId: string) => {
     await dismissAlert(alertId);
     navigate(`/scope-firewall/firewalls/${firewallId}/analysis`);
+  };
+
+  const handleViewSettings = async (alertId: string) => {
+    await dismissAlert(alertId);
+    navigate('/settings');
   };
 
   // Filtrar alertas dispensados localmente
@@ -168,6 +183,20 @@ export function SystemAlertBanner() {
 
   // Mostrar apenas o alerta mais importante (primeiro da lista ordenada)
   const primaryAlert = visibleAlerts[0];
+
+  const expireAlertLocally = useCallback(
+    (alertId: string) => {
+      setDismissedLocally((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
+      // Reavaliar e promover o próximo alerta, se existir
+      fetchActiveAlerts();
+    },
+    // fetchActiveAlerts é estável o suficiente aqui (não depende de props); evita refatoração ampla.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  useAlertAutoHide(primaryAlert, expireAlertLocally);
+
   const styles = getSeverityStyles(primaryAlert.severity);
   const IconComponent = styles.Icon;
 
@@ -205,12 +234,10 @@ export function SystemAlertBanner() {
                 variant="outline"
                 size="sm"
                 className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                asChild
+                onClick={() => handleViewSettings(primaryAlert.id)}
               >
-                <Link to="/settings">
-                  <Settings className="h-3.5 w-3.5 mr-1.5" />
-                  Ver Configurações
-                </Link>
+                <Settings className="h-3.5 w-3.5 mr-1.5" />
+                Ver Configurações
               </Button>
             )}
             
