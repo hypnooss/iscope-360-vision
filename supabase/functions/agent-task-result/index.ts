@@ -2125,7 +2125,106 @@ function processComplianceRules(
       } else {
         details = rule.fail_description || `${intResult.vulnerableInterfaces.length} interface(s) vulnerável(is)`;
       }
-    } else if (value !== undefined && value !== null) {
+    }
+    // ========== EVIDÊNCIAS ESPECÍFICAS POR REGRA (External Domain) ==========
+    
+    // MX-001: Registro MX Configurado (só exchange)
+    else if (rule.code === 'MX-001') {
+      const mxData = sourceData as Record<string, unknown>;
+      const records = (mxData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+      if (records.length > 0) {
+        const exchanges = records.map(r => String(r.exchange)).filter(Boolean);
+        evidence = [{ 
+          label: 'Servidores MX', 
+          value: exchanges.join(', '), 
+          type: 'text' 
+        }];
+      }
+    }
+    // MX-002: Redundância MX (exchange + IPs resolvidos + quantidade)
+    else if (rule.code === 'MX-002') {
+      const mxData = sourceData as Record<string, unknown>;
+      const records = (mxData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+      if (records.length > 0) {
+        // Manter formato JSON para frontend renderizar com todos os campos
+        evidence = [{ label: 'data.records', value: JSON.stringify(records), type: 'code' }];
+      }
+    }
+    // MX-003: Prioridades MX (só exchange e priority)
+    else if (rule.code === 'MX-003') {
+      const mxData = sourceData as Record<string, unknown>;
+      const records = (mxData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+      if (records.length > 0) {
+        const simplified = records.map(r => ({ exchange: r.exchange, priority: r.priority }));
+        evidence = [{ label: 'data.records.simplified', value: JSON.stringify(simplified), type: 'code' }];
+      }
+    }
+    // DKIM-001: DKIM Configurado (só quantidade de chaves)
+    else if (rule.code === 'DKIM-001') {
+      const dkimData = sourceData as Record<string, unknown>;
+      const found = (dkimData?.data as Record<string, unknown>)?.found as Array<Record<string, unknown>> || [];
+      evidence = [{ 
+        label: 'Chaves DKIM Encontradas', 
+        value: found.length > 0 ? `${found.length} chave(s) configurada(s)` : 'Nenhuma chave DKIM encontrada', 
+        type: 'text' 
+      }];
+    }
+    // DKIM-002: Tamanho da Chave DKIM (mostrar seletor + tamanho)
+    else if (rule.code === 'DKIM-002') {
+      const dkimData = sourceData as Record<string, unknown>;
+      const found = (dkimData?.data as Record<string, unknown>)?.found as Array<Record<string, unknown>> || [];
+      if (found.length > 0) {
+        const keyInfo = found.map(k => `${k.selector || k.name}: ${k.key_size_bits || '?'} bits`).join(', ');
+        evidence = [{ label: 'Tamanho das Chaves', value: keyInfo, type: 'text' }];
+      } else {
+        evidence = [{ label: 'Tamanho das Chaves', value: 'Nenhuma chave DKIM encontrada', type: 'text' }];
+      }
+    }
+    // DKIM-003: Redundância DKIM (só nomes das chaves)
+    else if (rule.code === 'DKIM-003') {
+      const dkimData = sourceData as Record<string, unknown>;
+      const found = (dkimData?.data as Record<string, unknown>)?.found as Array<Record<string, unknown>> || [];
+      if (found.length > 0) {
+        const keyNames = found.map(k => String(k.selector || k.name)).filter(Boolean);
+        evidence = [{ label: 'Seletores DKIM', value: keyNames.join(', '), type: 'text' }];
+      } else {
+        evidence = [{ label: 'Seletores DKIM', value: 'Nenhum seletor encontrado', type: 'text' }];
+      }
+    }
+    // DMARC-003: Relatórios RUA (só rua)
+    else if (rule.code === 'DMARC-003') {
+      const dmarcData = sourceData as Record<string, unknown>;
+      const parsed = ((dmarcData?.data as Record<string, unknown>)?.parsed || {}) as Record<string, unknown>;
+      const rua = parsed.rua;
+      evidence = [{ 
+        label: 'Relatórios (RUA)', 
+        value: rua ? String(rua) : 'Não configurado', 
+        type: 'text' 
+      }];
+    }
+    // DMARC-005: Alinhamento SPF Estrito (só aspf)
+    else if (rule.code === 'DMARC-005') {
+      const dmarcData = sourceData as Record<string, unknown>;
+      const parsed = ((dmarcData?.data as Record<string, unknown>)?.parsed || {}) as Record<string, unknown>;
+      const aspf = parsed.aspf;
+      evidence = [{ 
+        label: 'data.parsed.aspf', 
+        value: aspf ? String(aspf) : 'Não configurado (padrão: relaxado)', 
+        type: 'text' 
+      }];
+    }
+    // DMARC-006: Alinhamento DKIM Estrito (só adkim)
+    else if (rule.code === 'DMARC-006') {
+      const dmarcData = sourceData as Record<string, unknown>;
+      const parsed = ((dmarcData?.data as Record<string, unknown>)?.parsed || {}) as Record<string, unknown>;
+      const adkim = parsed.adkim;
+      evidence = [{ 
+        label: 'data.parsed.adkim', 
+        value: adkim ? String(adkim) : 'Não configurado (padrão: relaxado)', 
+        type: 'text' 
+      }];
+    }
+    else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
     }

@@ -74,6 +74,13 @@ const LABEL_TRANSLATIONS: Record<string, string> = {
   'data.parsed.sp': 'Política de Subdomínio',
   'data.parsed.rua': 'Relatórios (RUA)',
   'data.parsed.ruf': 'Relatórios Forenses (RUF)',
+  // Novos labels para evidências específicas
+  'Servidores MX': 'Servidores MX',
+  'Chaves DKIM Encontradas': 'Chaves DKIM Encontradas',
+  'Seletores DKIM': 'Seletores DKIM',
+  'Tamanho das Chaves': 'Tamanho das Chaves',
+  'Relatórios (RUA)': 'Relatórios (RUA)',
+  'data.records.simplified': 'Servidores MX',
 };
 
 // Mapa de valores booleanos/técnicos para valores legíveis
@@ -294,6 +301,31 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  // ========== TRATAMENTO MX SIMPLIFICADO (MX-003) ==========
+  const isMxSimplifiedByLabel = item.label === 'data.records.simplified';
+  
+  if (isMxSimplifiedByLabel && Array.isArray(parsed)) {
+    const records = parsed as Array<Record<string, unknown>>;
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {records.map((rec, idx) => (
+          <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">Servidor MX</span>
+              <span className="text-sm text-foreground font-mono">{String(rec.exchange)}</span>
+            </div>
+            {rec.priority !== undefined && (
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Prioridade</span>
+                <span className="text-sm text-foreground font-mono">{String(rec.priority)}</span>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     );
   }
