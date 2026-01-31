@@ -1,134 +1,125 @@
 
-# Plano: Opção 2 - Score Integrado (com Preview Temporário)
 
-## Estratégia de Segurança
+# Plano: Redesign do Header - Layout com Grid Definido
 
-Criaremos uma página de preview temporária em `/preview/domain-report` que usa dados mockados. Isso permite:
-1. Ver o novo layout sem afetar a página funcional
-2. Testar diferentes ajustes sem risco
-3. Aprovar antes de aplicar na página real
+## Problema Identificado
 
----
+O layout atual do preview tem várias falhas:
+1. Grid 2x2 com 5 itens deixou DNSSEC sozinho e desalinhado
+2. Gaps muito pequenos entre informações (gap-y-1.5)
+3. Espaço desperdiçado com o badge "DOMÍNIO"
+4. Informações desorganizadas sem estrutura clara
 
-## Arquivos a Criar
+## Nova Abordagem: Grid Tabular Definido
 
-### 1. `src/pages/preview/DomainReportPreview.tsx` (NOVO)
+Em vez de tentar encaixar 5 informações em um grid 2x2, vou usar uma **lista vertical estruturada (tabela)** onde cada linha tem label à esquerda e valor à direita, com larguras definidas.
 
-Página de preview com dados mockados e o novo layout da Opção 2.
-
----
-
-## Arquivos a Modificar
-
-### 2. `src/App.tsx`
-
-Adicionar rota temporária para preview:
-```typescript
-// Adicionar import
-const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
-
-// Adicionar rota (antes do catch-all)
-<Route path="/preview/domain-report" element={<DomainReportPreview />} />
-```
-
----
-
-## Novo Layout - Opção 2 (Score Integrado)
-
-O novo design consolida tudo em um único card:
-
-### Estrutura Visual
+### Estrutura Visual Proposta
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                                                              │
-│  ┌──────────┐                                                                │
-│  │          │                                                                │
-│  │    79    │   🌐 Domínio          brinquedosestrela.com.br                │
-│  │  ──────  │   📡 SOA              e.sec.dns.br                            │
-│  │  de 100  │   🔒 Nameservers      e.sec.dns.br, f.sec.dns.br              │
-│  │   Bom    │   📧 SOA Contact      hostmaster@registro.br                  │
-│  │          │   🛡️ DNSSEC           Ativo                                   │
-│  └──────────┘                                                                │
+│   ┌───────────┐    ┌─────────────────────────────────────────────────────┐  │
+│   │           │    │ Domínio ─────────────── brinquedosestrela.com.br   │  │
+│   │    79     │    │ SOA ────────────────────── e.sec.dns.br            │  │
+│   │  ──────── │    │ Nameservers ─────── e.sec.dns.br, f.sec.dns.br     │  │
+│   │  de 100   │    │ SOA Contact ─────── hostmaster@registro.br         │  │
+│   │   Bom     │    │ DNSSEC Status ─────────────────── Ativo            │  │
+│   │           │    │ Workspace ──────────────────── Cliente XYZ         │  │
+│   └───────────┘    └─────────────────────────────────────────────────────┘  │
 │                                                                              │
-│ ─────────────────────────────────────────────────────────────────────────────│
+│ ────────────────────────────────────────────────────────────────────────────│
 │                                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Total     │  │  Aprovadas  │  │   Falhas    │  │   Alertas   │         │
-│  │     23      │  │     18      │  │      5      │  │      0      │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
+│   Total: 23        Aprovadas: 18        Falhas: 5         Alertas: 0        │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Mudanças Principais
 
-| Antes | Depois |
-|-------|--------|
-| Grid 1x3 (Gauge 1/3 + Info 2/3) | Card único com flex row |
-| ScoreGauge size=200 (default) | ScoreGauge size=140 |
-| Info colada nas bordas | Info com padding e gaps maiores |
-| Badge "DOMÍNIO" grande (w-24 h-24) | Removido (integrado ao score) |
-| Espaço central vazio | Informações alinhadas à direita do score |
+| Aspecto | Antes (Preview Atual) | Depois |
+|---------|----------------------|--------|
+| Layout Info | Grid 2x2 desbalanceado | Lista vertical com labels fixos |
+| Gauge Size | 140px (números apertados) | 160px (melhor legibilidade) |
+| Gap entre infos | gap-y-1.5 (muito apertado) | gap-y-2.5 ou espaçamento tabular |
+| Alinhamento | Informações flutuando | Colunas definidas (label + valor) |
+| Badge "DOMÍNIO" | Presente | Removido |
+| Informações | 5 itens em grid 2x2 | 6 itens em lista vertical |
 
-### Código do Novo Layout
+---
+
+## Implementação Técnica
+
+### Arquivo: `src/pages/preview/DomainReportPreview.tsx`
+
+Substituir o grid de informações por uma **tabela estilizada** ou **lista de definições**:
 
 ```tsx
-{/* Score Integrado - Card Único */}
+{/* Layout Principal */}
 <div className="glass-card rounded-xl p-6 border border-primary/20 mb-6">
-  <div className="flex flex-col lg:flex-row gap-6">
+  <div className="flex flex-col lg:flex-row gap-8">
     
-    {/* Score compacto à esquerda */}
-    <div className="flex-shrink-0 flex items-center justify-center lg:justify-start">
-      <ScoreGauge score={79} size={140} />
+    {/* Score à esquerda - tamanho maior para legibilidade */}
+    <div className="flex-shrink-0 flex items-center justify-center">
+      <ScoreGauge score={score} size={160} />
     </div>
-    
-    {/* Informações centrais */}
-    <div className="flex-1 min-w-0 flex flex-col justify-center">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-        <InfoRow icon={<Globe />} label="Domínio" value="brinquedosestrela.com.br" />
-        <InfoRow icon={<Server />} label="SOA" value="e.sec.dns.br" />
-        <InfoRow icon={<Network />} label="Nameservers" value="e.sec.dns.br, f.sec.dns.br" />
-        <InfoRow icon={<Mail />} label="SOA Contact" value="hostmaster@registro.br" />
-        <InfoRow icon={<Shield />} label="DNSSEC" value="Ativo" />
+
+    {/* Informações em formato tabular */}
+    <div className="flex-1 flex flex-col justify-center">
+      <div className="space-y-2.5">
+        <InfoTableRow label="Domínio" value={domain} highlight />
+        <InfoTableRow label="SOA" value={soa} />
+        <InfoTableRow label="Nameservers" value={nameservers.join(", ")} />
+        <InfoTableRow label="SOA Contact" value={soaContact} />
+        <InfoTableRow label="DNSSEC Status" value={dnssec ? "Ativo" : "Inativo"} status={dnssec} />
+        <InfoTableRow label="Workspace" value={clientName} />
       </div>
     </div>
   </div>
-  
-  {/* Separador */}
+
+  {/* Separador e Stats */}
   <div className="border-t border-border/50 my-5" />
-  
-  {/* Stats horizontais */}
   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-    <StatCard title="Total" value={23} icon={ListChecks} variant="default" compact />
-    <StatCard title="Aprovadas" value={18} icon={CheckCircle2} variant="success" compact />
-    <StatCard title="Falhas" value={5} icon={ShieldX} variant="destructive" compact />
-    <StatCard title="Alertas" value={0} icon={AlertTriangle} variant="warning" compact />
+    {/* StatCards compactos */}
   </div>
 </div>
 ```
 
----
+### Novo Componente: InfoTableRow
 
-## Melhorias Específicas
+```tsx
+interface InfoTableRowProps {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  status?: boolean; // para DNSSEC mostrar cor verde/vermelho
+}
 
-### 1. Score Menor e Integrado
-- Tamanho reduzido de 200px para 140px
-- Alinhado à esquerda no desktop, centralizado no mobile
-- Remove o card separado do gauge
+function InfoTableRow({ label, value, highlight, status }: InfoTableRowProps) {
+  return (
+    <div className="flex items-center gap-4">
+      <span className="text-sm text-muted-foreground w-28 flex-shrink-0">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-border/30 max-w-[40px]" />
+      <span className={cn(
+        "text-sm font-medium flex-1 truncate",
+        highlight && "text-primary font-semibold",
+        status === true && "text-success",
+        status === false && "text-destructive"
+      )}>
+        {value || "N/A"}
+      </span>
+    </div>
+  );
+}
+```
 
-### 2. Informações com Mais Espaço
-- `gap-y-3` ao invés de `gap-y-1.5` (dobro do espaçamento vertical)
-- `gap-x-8` ao invés de `gap-x-6` (mais espaço horizontal)
-- Padding geral `p-6` (era `p-5`)
-
-### 3. Badge "DOMÍNIO" Removido
-- O contexto já é claro pelo título da página
-- Economiza ~100px de largura
-
-### 4. Stats Mantidos Abaixo
-- Aproveitam toda a largura do card
-- Separados por borda sutil
+Esta estrutura:
+- Mantém labels com largura fixa (w-28 = 112px)
+- Adiciona linha pontilhada/separador visual entre label e valor
+- Permite valores truncarem com ellipsis se muito longos
+- Destaca valores importantes com cores
 
 ---
 
@@ -136,26 +127,26 @@ O novo design consolida tudo em um único card:
 
 | Viewport | Comportamento |
 |----------|---------------|
-| Desktop (lg+) | Score à esquerda, Info à direita, Stats abaixo |
-| Tablet (sm-lg) | Score centralizado em cima, Info abaixo, Stats 2x2 |
-| Mobile (<sm) | Tudo empilhado verticalmente |
+| Desktop (lg+) | Gauge à esquerda (160px), tabela à direita |
+| Tablet/Mobile | Gauge centralizado em cima, tabela abaixo empilhada |
 
 ---
 
-## Fluxo de Teste
+## Arquivos a Modificar
 
-1. Criar página de preview com dados mockados
-2. Acessar `/preview/domain-report`
-3. Revisar e ajustar conforme feedback
-4. Se aprovado, aplicar na página real
-5. Remover rota e arquivo de preview
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/preview/DomainReportPreview.tsx` | Redesign completo com layout tabular |
 
 ---
 
 ## Resultado Esperado
 
-Após implementar, você poderá:
-1. Acessar `/preview/domain-report` no browser
-2. Ver o novo layout com dados de exemplo
-3. Comparar lado a lado com a página atual
-4. Solicitar ajustes sem afetar nada funcional
+Após a atualização, o preview terá:
+1. Score legível (160px) sem números esmagados
+2. Informações em lista vertical clara e organizada
+3. Labels alinhados à esquerda com largura consistente
+4. Valores alinhados à direita de cada label
+5. Sem espaços vazios no centro
+6. Visual limpo e profissional
+
