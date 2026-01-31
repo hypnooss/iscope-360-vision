@@ -161,10 +161,10 @@ export default function EntraIdPage() {
             </CardContent>
           </Card>
 
-          {/* Audit Logs - Active */}
+          {/* Security Insights */}
           <Card 
             className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => navigate('/scope-m365/entra-id/audit-logs')}
+            onClick={() => navigate('/scope-m365/entra-id/security-insights')}
           >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -173,9 +173,9 @@ export default function EntraIdPage() {
                 </div>
                 <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <CardTitle className="text-lg mt-3">Logs de Auditoria</CardTitle>
+              <CardTitle className="text-lg mt-3">Insights de Segurança</CardTitle>
               <CardDescription>
-                Atividades de login, alterações e eventos de segurança
+                Análise consolidada de riscos e indicadores de segurança
               </CardDescription>
             </CardHeader>
             <CardContent>
