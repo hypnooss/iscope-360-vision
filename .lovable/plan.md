@@ -1,182 +1,175 @@
 
-# Plano: Exibir Evidências Legíveis nos Cards de Domínio Externo
+# Plano: Evidências Humanizadas para Domínio Externo
 
-## Objetivo
+## Diagnóstico
 
-Adicionar uma seção "EVIDÊNCIAS COLETADAS" nos cards de itens do relatório de Domínio Externo, exibindo as evidências de forma legível para humanos (não como JSON bruto).
+Analisei o código e confirmei:
 
----
+**Onde está a inteligência de negócio:**
+A lógica está no backend, especificamente na edge function `supabase/functions/agent-task-result/index.ts`:
+- **Função `formatExternalDomainEvidence()`** (linhas 1746-1812): Transforma dados brutos em evidências legíveis
+- **Função `formatGenericEvidence()`** (linhas 1719-1744): Fallback genérico que mostra `data.records`, `data.has_dnskey` como labels — é por isso que aparecem nomes técnicos
 
-## Estrutura Proposta
-
-### Card Contraído (sem alteração)
-- Nome do card de item
-- Descrição da verificação  
-- Sugestão de melhoria
-
-### Card Expandido (nova estrutura)
-- Endpoint consultado ← somente super admins
-- **ANÁLISE EFETUADA**
-  - Explicação da análise efetuada
-- **EVIDÊNCIAS COLETADAS** ← NOVO
-  - Evidências formatadas de forma legível
-  - Exemplo para "Diversidade de Nameservers":
-    ```
-    Nameserver
-    ns77.domaincontrol.com
-    
-    Nameserver  
-    ns78.domaincontrol.com
-    ```
-- Ver dados brutos (JSON) ← somente super admins
+O problema é que nem todos os tipos de checks têm formatação específica, então o fallback genérico mostra o path do campo como label.
 
 ---
 
-## Alterações Técnicas
+## Solução Proposta
 
-### 1. Arquivo: `src/components/ComplianceCard.tsx`
+Temos **duas opções**:
 
-**Adicionar seção de evidências para variant `external_domain`:**
+### Opção A: Corrigir no Backend (Recomendado)
+Expandir a função `formatExternalDomainEvidence()` para cobrir TODOS os tipos de checks de domínio externo com evidências humanizadas.
 
-Após a seção "ANÁLISE EFETUADA" (linha ~154), adicionar:
+**Vantagens:**
+- Resolve na raiz do problema
+- Todos os clientes (web, API, futuras integrações) recebem dados formatados
+- Não depende do frontend para traduzir
 
-```tsx
-{/* Domínios Externos: "EVIDÊNCIAS COLETADAS" para todos */}
-{variant === 'external_domain' && check.evidence && check.evidence.length > 0 && (
-  <div className="space-y-2">
-    <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-      <FileText className="w-3 h-3" />
-      EVIDÊNCIAS COLETADAS
-    </h5>
-    <div className="space-y-2">
-      {check.evidence.map((item, index) => (
-        <EvidenceItemDisplay key={index} item={item} />
-      ))}
-    </div>
-  </div>
-)}
+**Desvantagens:**
+- Requer deploy da edge function
+
+### Opção B: Corrigir no Frontend
+Criar lógica de transformação no componente `EvidenceDisplay.tsx` que interpreta os labels técnicos e traduz para português.
+
+**Vantagens:**
+- Mais rápido para testar
+- Não requer deploy de edge function
+
+**Desvantagens:**
+- Duplica lógica (frontend + backend)
+- Se outro cliente consumir a API, receberá dados técnicos
+
+---
+
+## Recomendação: Combinação
+
+1. **Frontend imediato** para melhorar a UX agora
+2. **Backend futuro** para resolver na raiz
+
+---
+
+## Alterações no Frontend
+
+### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
+
+#### 1. Adicionar mapeamento de labels técnicos → legíveis
+
+```typescript
+// Mapa de labels técnicos para labels amigáveis
+const LABEL_TRANSLATIONS: Record<string, string> = {
+  'data.records': 'Nameservers',       // Ocultar para ns_records
+  'data.has_dnskey': 'Status',
+  'data.has_ds': 'Registro DS',
+  'data.validated': 'Validação DNSSEC',
+  'data.mname': 'Servidor Primário',
+  'data.contact_email': 'Contato do Administrador',
+  'Nameservers encontrados': 'Nameservers',
+  'DNSKEY': 'Status DNSKEY',
+  'DS': 'Status DS',
+  'Validated': 'Validação',
+  'SOA mname': 'Nameserver Primário',
+  'SOA contact': 'Email do Responsável',
+};
 ```
 
-**Criar componente interno `EvidenceItemDisplay`:**
+#### 2. Adicionar mapeamento de valores booleanos → legíveis
 
-Novo componente para renderizar cada evidência de forma elegante:
+```typescript
+// Mapa de valores booleanos/técnicos para valores legíveis
+const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
+  'data.has_dnskey': {
+    'true': 'DNSSEC Ativado',
+    'false': 'DNSSEC Desativado',
+  },
+  'DNSKEY': {
+    'true': 'Presente ✓',
+    'false': 'Ausente ✗',
+  },
+  'DS': {
+    'true': 'Presente ✓',
+    'false': 'Ausente ✗',
+  },
+  'data.validated': {
+    'true': 'Validação OK ✓',
+    'false': 'Não validado',
+    'unknown': 'Não verificado',
+    'partial': 'Parcialmente validado',
+  },
+};
+```
 
-```tsx
-function EvidenceItemDisplay({ item }: { item: EvidenceItem }) {
-  // Detectar se é uma lista (múltiplos valores separados por vírgula)
-  const isList = item.value.includes(',') && !item.type?.includes('code');
-  
-  // Renderização especial para listas (ex: nameservers, registros MX)
-  if (isList) {
-    const values = item.value.split(',').map(v => v.trim()).filter(Boolean);
-    return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
-        {values.map((val, idx) => (
-          <div key={idx} className="flex flex-col">
-            <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
-            <span className="text-sm text-foreground font-mono">{val}</span>
-          </div>
-        ))}
-      </div>
-    );
+#### 3. Adicionar lista de labels a ocultar
+
+```typescript
+// Labels que devem ser completamente ocultos (não aparecem na UI)
+const HIDDEN_LABELS = ['data.records'];
+```
+
+#### 4. Modificar `EvidenceItemDisplay` para usar as traduções
+
+```typescript
+export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
+  // Ocultar labels específicos
+  if (HIDDEN_LABELS.includes(item.label)) {
+    return null;
   }
   
-  // Renderização para JSON/código
-  if (item.type === 'code' || item.type === 'json') {
-    // Tentar parsear e formatar de forma legível
-    return <FormattedCodeEvidence item={item} />;
-  }
+  // Traduzir label
+  const translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
   
-  // Renderização padrão para texto simples
-  return (
-    <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-      <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-      <p className="text-sm text-foreground">{item.value}</p>
-    </div>
-  );
+  // Traduzir valor se houver transformação
+  const transformedValue = VALUE_TRANSFORMATIONS[item.label]?.[item.value] || item.value;
+  
+  // ... resto da lógica de renderização usando translatedLabel e transformedValue
 }
 ```
 
-**Criar componente `FormattedCodeEvidence` para parsear JSON e exibir de forma legível:**
+#### 5. Atualizar `FIELD_LABELS` para incluir host → Nameserver
 
-```tsx
-function FormattedCodeEvidence({ item }: { item: EvidenceItem }) {
-  // Tentar parsear JSON
-  let parsed: unknown = null;
-  try {
-    parsed = JSON.parse(item.value);
-  } catch {
-    // Não é JSON válido, exibir como código
-  }
-  
-  // Se for array de objetos (ex: registros DKIM, MX), renderizar como lista
-  if (Array.isArray(parsed)) {
-    return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-        <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
-        {parsed.map((record, idx) => (
-          <RecordDisplay key={idx} record={record} />
-        ))}
-      </div>
-    );
-  }
-  
-  // Fallback: exibir como código formatado
-  return (
-    <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-      <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-      <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto whitespace-pre-wrap">
-        {item.value}
-      </code>
-    </div>
-  );
-}
+```typescript
+const FIELD_LABELS: Record<string, string> = {
+  // ... existentes ...
+  host: 'Nameserver',  // Alterado de 'Host' para 'Nameserver'
+};
 ```
 
-**Criar componente `RecordDisplay` para exibir registros DNS de forma amigável:**
+---
 
-```tsx
-function RecordDisplay({ record }: { record: Record<string, unknown> }) {
-  // Mapear campos para labels legíveis
-  const fieldLabels: Record<string, string> = {
-    name: 'Nome',
-    host: 'Host',
-    value: 'Valor',
-    selector: 'Seletor',
-    key_type: 'Tipo de Chave',
-    key_size_bits: 'Tamanho da Chave',
-    priority: 'Prioridade',
-    exchange: 'Servidor MX',
-    txt_raw: 'Registro TXT',
-    flags: 'Flags',
-    // Adicionar mais conforme necessário
-  };
-  
-  // Filtrar campos relevantes (excluir campos técnicos)
-  const hiddenFields = ['p_length', 'txt_raw']; // Muito longos/técnicos
-  
-  const entries = Object.entries(record)
-    .filter(([key, value]) => 
-      value !== null && 
-      value !== undefined && 
-      !hiddenFields.includes(key)
-    );
-  
-  return (
-    <div className="border-l-2 border-primary/30 pl-3 space-y-1">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex flex-col">
-          <span className="text-xs text-muted-foreground">
-            {fieldLabels[key] || key}
-          </span>
-          <span className="text-sm text-foreground font-mono break-all">
-            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+## Resultado Visual Esperado
+
+### Diversidade de Nameservers
+
+**Antes:**
+```
+data.records
+├─ Host
+│  ns77.domaincontrol.com
+├─ Host
+│  ns78.domaincontrol.com
+```
+
+**Depois:**
+```
+Nameserver
+ns77.domaincontrol.com
+
+Nameserver
+ns78.domaincontrol.com
+```
+
+### DNSSEC Habilitado
+
+**Antes:**
+```
+data.has_dnskey
+false
+```
+
+**Depois:**
+```
+Status
+DNSSEC Desativado
 ```
 
 ---
@@ -185,57 +178,19 @@ function RecordDisplay({ record }: { record: Record<string, unknown> }) {
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/ComplianceCard.tsx` | Adicionar seção "EVIDÊNCIAS COLETADAS" para external_domain + componentes de formatação |
-
----
-
-## Resultado Visual Esperado
-
-**Antes (card expandido):**
-```
-ANÁLISE EFETUADA
-[Texto da análise]
-
-Ver dados brutos (JSON) ← super admin only
-```
-
-**Depois (card expandido):**
-```
-ANÁLISE EFETUADA
-[Texto da análise]
-
-EVIDÊNCIAS COLETADAS
-┌─────────────────────────────────────┐
-│ Nameserver                          │
-│ ns77.domaincontrol.com              │
-├─────────────────────────────────────┤
-│ Nameserver                          │
-│ ns78.domaincontrol.com              │
-└─────────────────────────────────────┘
-
-Ver dados brutos (JSON) ← super admin only
-```
-
----
-
-## Exemplos de Formatação por Tipo de Check
-
-| Check | Dados Brutos | Exibição Legível |
-|-------|--------------|------------------|
-| Nameservers | `["ns77.domaincontrol.com", "ns78.domaincontrol.com"]` | Duas linhas: "Nameserver: ns77..." / "Nameserver: ns78..." |
-| DKIM | `[{selector: "selector1", key_type: "rsa", key_size_bits: 2048}]` | "Seletor: selector1" / "Tipo: RSA" / "Tamanho: 2048 bits" |
-| MX | `[{exchange: "mx1.example.com", priority: 10}]` | "Servidor MX: mx1.example.com" / "Prioridade: 10" |
-| SPF | `{record: "v=spf1 include:_spf.google.com ~all"}` | "Registro SPF: v=spf1 include:_spf.google.com ~all" |
-| DMARC | `{policy: "reject", rua: "mailto:..."}` | "Política: reject" / "Relatórios (rua): mailto:..." |
+| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar mapas de tradução e transformação de labels/valores |
 
 ---
 
 ## Considerações
 
-1. **Visibilidade**: As evidências serão visíveis para todos os usuários (não apenas super admins), pois são informações importantes para entender o resultado da análise
+1. **Extensível**: Os mapas podem ser facilmente expandidos para novos tipos de checks
+2. **Fallback**: Se um label não tiver tradução, mostra o original
+3. **Manutenção**: Centralizado em um único arquivo
+4. **Futuro**: Quando o backend for atualizado, o frontend vai funcionar com ambos os formatos
 
-2. **Fallback**: Se o parsing falhar, o sistema exibirá o valor original como texto simples
+---
 
-3. **Responsividade**: Os campos longos (como chaves DKIM) terão `break-all` para não quebrar o layout
+## Próximos Passos
 
-4. **Consistência**: O estilo visual será consistente com o resto do card (cores, bordas, espaçamento)
+Após implementar, podemos validar check por check e adicionar mais traduções conforme necessário.
