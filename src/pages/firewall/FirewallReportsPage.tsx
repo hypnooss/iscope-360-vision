@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { FileText, Download, Eye, Loader2, AlertTriangle, CheckCircle, Filter } from 'lucide-react';
 import { toast } from 'sonner';
-import { exportReportToPDF } from '@/utils/pdfExport';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 
 interface AnalysisReport {
   id: string;
@@ -49,6 +50,7 @@ export default function FirewallReportsPage() {
   const navigate = useNavigate();
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const { downloadPDF } = usePDFDownload();
   
   // Filter states
   const [selectedClient, setSelectedClient] = useState<string>('all');
@@ -258,11 +260,20 @@ export default function FirewallReportsPage() {
     try {
       const reportData = await fetchReportData(analysis.id);
       if (reportData) {
-        const pdfData = {
-          ...reportData,
-          generatedAt: new Date(analysis.created_at),
-        };
-        exportReportToPDF(pdfData);
+        const filename = `iscope360-${sanitizePDFFilename(group.firewall_name)}-${getPDFDateString()}.pdf`;
+        
+        await downloadPDF(
+          <FirewallPDF
+            report={{
+              ...reportData,
+              generatedAt: new Date(analysis.created_at),
+            }}
+            deviceInfo={{
+              name: group.firewall_name,
+            }}
+          />,
+          filename
+        );
         toast.success('PDF exportado com sucesso!');
       }
     } catch (error) {
