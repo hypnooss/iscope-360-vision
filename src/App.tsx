@@ -41,6 +41,7 @@ const TenantConnectionPage = lazy(() => import("./pages/m365/TenantConnectionPag
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
 const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
 const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecurityInsightsPage"));
+const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdApplicationInsightsPage"));
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 
 // Preview pages (temporary)
@@ -95,6 +96,7 @@ const App = () => (
                 <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
                 <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
                 <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
+                <Route path="/scope-m365/entra-id/applications" element={<EntraIdApplicationInsightsPage />} />
                 <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
                 <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
 

@@ -228,7 +228,10 @@ export default function EntraIdPage() {
           </Card>
 
           {/* Applications */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
+          <Card 
+            className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
+            onClick={() => navigate('/scope-m365/entra-id/applications')}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="p-2 rounded-lg bg-purple-500/10">
@@ -238,13 +241,13 @@ export default function EntraIdPage() {
               </div>
               <CardTitle className="text-lg mt-3">Aplicativos</CardTitle>
               <CardDescription>
-                App Registrations, Enterprise Apps e permissões
+                App Registrations, Enterprise Apps e análise de credenciais
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
+              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                Disponível
+              </Badge>
             </CardContent>
           </Card>
 
