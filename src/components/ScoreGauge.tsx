@@ -35,8 +35,7 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
   const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
   
   const getColor = () => {
-    if (score >= 90) return 'hsl(var(--success))';
-    if (score >= 75) return 'hsl(142, 71%, 45%)'; // Verde mais claro para "Bom"
+    if (score >= 75) return 'hsl(var(--primary))'; // Verde-água do tema
     if (score >= 60) return 'hsl(var(--warning))';
     return 'hsl(var(--destructive))';
   };

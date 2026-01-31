@@ -321,6 +321,15 @@ export default function ExternalDomainAnalysisReportPage() {
     ? dnsSummary.ns.join(', ')
     : 'N/A';
 
+  // Count only critical severity failures for the banner
+  const criticalOnlyCount = useMemo(() => {
+    if (!report?.categories) return 0;
+    return report.categories
+      .flatMap(c => c.checks)
+      .filter(check => check.status === 'fail' && check.severity === 'critical')
+      .length;
+  }, [report]);
+
   const dnssecStatus = (() => {
     const hasDnskey = Boolean(dnsSummary?.dnssecHasDnskey);
     const hasDs = Boolean(dnsSummary?.dnssecHasDs);
@@ -576,8 +585,8 @@ export default function ExternalDomainAnalysisReportPage() {
             </div>
           </div>
 
-          {/* Critical banner */}
-          {report.failed > 0 && (
+          {/* Critical banner - only shows for critical severity items */}
+          {criticalOnlyCount > 0 && (
             <div className="glass-card rounded-xl p-4 mb-8 border-destructive/50 bg-destructive/5 animate-fade-in">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-destructive/20">
@@ -585,7 +594,7 @@ export default function ExternalDomainAnalysisReportPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-destructive">
-                    {report.failed} {report.failed === 1 ? 'problema crítico encontrado' : 'problemas críticos encontrados'}
+                    {criticalOnlyCount} {criticalOnlyCount === 1 ? 'problema crítico encontrado' : 'problemas críticos encontrados'}
                   </h3>
                   <p className="text-sm text-muted-foreground">Revise as falhas abaixo e aplique as correções recomendadas.</p>
                 </div>
