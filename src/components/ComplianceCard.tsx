@@ -9,7 +9,19 @@ interface ComplianceCardProps {
   onClick?: () => void;
   /** UI variant to specialize behavior per report type */
   variant?: 'default' | 'external_domain';
+  /** Category color key for hover effects (e.g., "sky-500", "purple-500") */
+  categoryColorKey?: string;
 }
+
+// Mapa de classes de hover para cada cor de categoria (Tailwind purge-safe)
+const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> = {
+  'sky-500': { border: 'hover:border-sky-500/50', text: 'group-hover:text-sky-500' },
+  'blue-500': { border: 'hover:border-blue-500/50', text: 'group-hover:text-blue-500' },
+  'violet-500': { border: 'hover:border-violet-500/50', text: 'group-hover:text-violet-500' },
+  'teal-500': { border: 'hover:border-teal-500/50', text: 'group-hover:text-teal-500' },
+  'purple-500': { border: 'hover:border-purple-500/50', text: 'group-hover:text-purple-500' },
+  'slate-500': { border: 'hover:border-slate-500/50', text: 'group-hover:text-slate-500' },
+};
 
 const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; className: string; label: string }> = {
   pass: { icon: CheckCircle, className: 'status-pass', label: 'Aprovado' },
@@ -44,9 +56,14 @@ const severityLabels: Record<string, string> = {
   info: 'Info',
 };
 
-export function ComplianceCard({ check, onClick, variant = 'default' }: ComplianceCardProps) {
+export function ComplianceCard({ check, onClick, variant = 'default', categoryColorKey }: ComplianceCardProps) {
   const { role } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Obter classes de hover baseadas na cor da categoria
+  const hoverClasses = categoryColorKey 
+    ? CATEGORY_HOVER_CLASSES[categoryColorKey] 
+    : null;
   
   // Apenas super_admin e super_suporte podem ver evidências
   const canViewEvidence = role === 'super_admin' || role === 'super_suporte';
@@ -64,8 +81,8 @@ export function ComplianceCard({ check, onClick, variant = 'default' }: Complian
   return (
     <div 
       className={cn(
-        "glass-card rounded-lg p-4 transition-all duration-200 hover:border-primary/50 group",
-        "animate-fade-in"
+        "glass-card rounded-lg p-4 transition-all duration-200 group animate-fade-in",
+        hoverClasses?.border || "hover:border-primary/50"
       )}
       style={{ animationDelay: `${Math.random() * 0.3}s` }}
     >
@@ -105,7 +122,7 @@ export function ComplianceCard({ check, onClick, variant = 'default' }: Complian
             {isExpanded ? (
               <ChevronDown className="w-5 h-5 text-primary" />
             ) : (
-              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              <ChevronRight className={cn("w-5 h-5 text-muted-foreground transition-colors", hoverClasses?.text || "group-hover:text-primary")} />
             )}
           </div>
         ) : (
