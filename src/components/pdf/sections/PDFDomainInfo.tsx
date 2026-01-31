@@ -2,22 +2,26 @@ import React from 'react';
 import { View, Text, StyleSheet } from '@react-pdf/renderer';
 import { colors, typography, spacing, radius } from '../styles/pdfStyles';
 import { PDFStatusIcon } from '../shared/PDFStatusIcon';
-import { PDFDivider } from '../shared/PDFDivider';
 
 const styles = StyleSheet.create({
   container: {
+    marginTop: spacing.itemGap,
+  },
+  section: {
     backgroundColor: colors.cardBg,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     padding: spacing.cardPadding,
     borderWidth: 1,
-    borderColor: colors.borderPrimary,
-    marginBottom: spacing.sectionGap,
+    borderColor: colors.border,
+    marginBottom: spacing.itemGap,
   },
-  title: {
-    fontSize: typography.subheading,
+  sectionTitle: {
+    fontSize: typography.bodySmall,
     fontFamily: typography.bold,
     color: colors.primary,
     marginBottom: spacing.itemGap,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   grid: {
     flexDirection: 'row',
@@ -42,11 +46,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: typography.bold,
   },
-  valueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -60,15 +59,31 @@ const styles = StyleSheet.create({
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
     marginBottom: 2,
+    paddingLeft: 8,
   },
-  section: {
-    marginTop: spacing.itemGap,
+  emailAuthGrid: {
+    flexDirection: 'row',
+    gap: spacing.itemGap,
   },
-  sectionTitle: {
-    fontSize: typography.body,
+  emailAuthItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: spacing.itemGap,
+    backgroundColor: colors.pageBg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emailAuthLabel: {
+    fontSize: typography.bodySmall,
     fontFamily: typography.bold,
-    color: colors.textSecondary,
-    marginBottom: spacing.tight,
+    color: colors.textPrimary,
+  },
+  emailAuthStatus: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
   },
 });
 
@@ -109,86 +124,87 @@ export const PDFDomainInfo: React.FC<PDFDomainInfoProps> = ({ data }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Informações do Domínio</Text>
-      
-      {/* Basic Info Grid */}
-      <View style={styles.grid}>
-        {soa && (
-          <View style={styles.gridItem}>
-            <Text style={styles.label}>SOA (Autoridade)</Text>
-            <Text style={styles.value}>{soa}</Text>
-          </View>
-        )}
+      {/* DNS Infrastructure */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Infraestrutura DNS</Text>
         
-        {contactEmail && (
-          <View style={styles.gridItem}>
-            <Text style={styles.label}>Contato</Text>
-            <Text style={styles.value}>{contactEmail}</Text>
-          </View>
-        )}
-        
-        {dnssec !== undefined && (
-          <View style={styles.gridItem}>
-            <Text style={styles.label}>DNSSEC</Text>
-            <View style={styles.statusRow}>
-              <PDFStatusIcon status={dnssec ? 'pass' : 'fail'} size={12} />
-              <Text style={styles.statusLabel}>
-                {dnssec ? 'Habilitado' : 'Desabilitado'}
-              </Text>
+        <View style={styles.grid}>
+          {soa && (
+            <View style={styles.gridItem}>
+              <Text style={styles.label}>SOA Primary</Text>
+              <Text style={styles.value}>{soa}</Text>
             </View>
+          )}
+          
+          {dnssec !== undefined && (
+            <View style={styles.gridItem}>
+              <Text style={styles.label}>DNSSEC</Text>
+              <View style={styles.statusRow}>
+                <PDFStatusIcon status={dnssec ? 'pass' : 'fail'} size={10} />
+                <Text style={styles.statusLabel}>
+                  {dnssec ? 'Ativo' : 'Inativo'}
+                </Text>
+              </View>
+            </View>
+          )}
+          
+          {contactEmail && (
+            <View style={styles.gridItem}>
+              <Text style={styles.label}>Contato</Text>
+              <Text style={styles.value}>{contactEmail}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Nameservers */}
+        {nameservers.length > 0 && (
+          <View style={styles.gridItemFull}>
+            <Text style={styles.label}>Nameservers</Text>
+            {nameservers.map((ns, index) => (
+              <Text key={index} style={styles.listItem}>
+                • {ns}
+              </Text>
+            ))}
           </View>
         )}
       </View>
 
-      {/* Nameservers */}
-      {nameservers.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Nameservers</Text>
-          {nameservers.map((ns, index) => (
-            <Text key={index} style={styles.listItem}>
-              • {ns}
-            </Text>
-          ))}
-        </View>
-      )}
-
-      <PDFDivider style={{ marginVertical: spacing.itemGap }} />
-
       {/* Email Authentication */}
-      <Text style={styles.sectionTitle}>Autenticação de Email</Text>
-      <View style={styles.grid}>
-        {/* SPF */}
-        <View style={styles.gridItem}>
-          <Text style={styles.label}>SPF</Text>
-          <View style={styles.statusRow}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Autenticação de Email</Text>
+        
+        <View style={styles.emailAuthGrid}>
+          {/* SPF */}
+          <View style={styles.emailAuthItem}>
             <PDFStatusIcon status={spf?.valid ? 'pass' : 'fail'} size={12} />
-            <Text style={styles.statusLabel}>
-              {spf?.valid ? 'Válido' : 'Inválido ou Ausente'}
-            </Text>
+            <View>
+              <Text style={styles.emailAuthLabel}>SPF</Text>
+              <Text style={styles.emailAuthStatus}>
+                {spf?.valid ? 'Válido' : 'Inválido'}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        {/* DKIM */}
-        <View style={styles.gridItem}>
-          <Text style={styles.label}>DKIM</Text>
-          <View style={styles.statusRow}>
+          {/* DKIM */}
+          <View style={styles.emailAuthItem}>
             <PDFStatusIcon status={dkim?.valid ? 'pass' : 'fail'} size={12} />
-            <Text style={styles.statusLabel}>
-              {dkim?.valid ? 'Configurado' : 'Não Encontrado'}
-            </Text>
+            <View>
+              <Text style={styles.emailAuthLabel}>DKIM</Text>
+              <Text style={styles.emailAuthStatus}>
+                {dkim?.valid ? 'Configurado' : 'Ausente'}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        {/* DMARC */}
-        <View style={styles.gridItem}>
-          <Text style={styles.label}>DMARC</Text>
-          <View style={styles.statusRow}>
+          {/* DMARC */}
+          <View style={styles.emailAuthItem}>
             <PDFStatusIcon status={dmarc?.valid ? 'pass' : 'fail'} size={12} />
-            <Text style={styles.statusLabel}>
-              {dmarc?.valid 
-                ? `Política: ${dmarc.policy || 'none'}` 
-                : 'Não Configurado'}
-            </Text>
+            <View>
+              <Text style={styles.emailAuthLabel}>DMARC</Text>
+              <Text style={styles.emailAuthStatus}>
+                {dmarc?.valid ? `Ativo (${dmarc.policy || 'none'})` : 'Ausente'}
+              </Text>
+            </View>
           </View>
         </View>
       </View>

@@ -8,38 +8,40 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.cardPadding,
     borderWidth: 1,
-    borderColor: colors.danger,
-    marginBottom: spacing.sectionGap,
+    borderColor: colors.borderDanger,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.danger,
+    marginTop: spacing.sectionGap,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.itemGap,
+    gap: 8,
   },
   iconCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
   iconText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: typography.bold,
-    color: colors.textPrimary,
+    color: colors.pageBg,
   },
   title: {
     fontSize: typography.subheading,
     fontFamily: typography.bold,
     color: colors.danger,
+    flex: 1,
   },
   count: {
     fontSize: typography.subheading,
     fontFamily: typography.bold,
-    color: colors.dangerLight,
-    marginLeft: 4,
+    color: colors.textMuted,
   },
   issuesList: {
     marginTop: spacing.tight,
@@ -68,7 +70,7 @@ const styles = StyleSheet.create({
   },
   issueDescription: {
     fontSize: typography.caption,
-    color: colors.dangerLight,
+    color: colors.textSecondary,
     lineHeight: 1.3,
   },
   truncatedNote: {
@@ -86,6 +88,12 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     color: colors.success,
     fontFamily: typography.bold,
+  },
+  // Success container style
+  containerSuccess: {
+    backgroundColor: colors.successBg,
+    borderColor: colors.success,
+    borderLeftColor: colors.success,
   },
 });
 
@@ -113,13 +121,10 @@ export const PDFIssuesSummary: React.FC<PDFIssuesSummaryProps> = ({
   // If no issues, show success state
   if (issues.length === 0) {
     return (
-      <View style={[styles.container, { 
-        backgroundColor: colors.successBg, 
-        borderColor: colors.success 
-      }]}>
+      <View style={[styles.container, styles.containerSuccess]}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>
-            ✓ Nenhum problema encontrado
+            Nenhum problema encontrado
           </Text>
         </View>
       </View>

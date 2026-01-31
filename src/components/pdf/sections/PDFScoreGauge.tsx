@@ -1,17 +1,19 @@
 import React from 'react';
 import { View, Text, Svg, Path, Circle, StyleSheet } from '@react-pdf/renderer';
-import { colors, typography, spacing, getScoreColor } from '../styles/pdfStyles';
+import { colors, typography, spacing, getScoreColor, getScoreLabel } from '../styles/pdfStyles';
 
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.cardBg,
+    borderRadius: 8,
     padding: spacing.cardPadding,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   gaugeWrapper: {
     position: 'relative',
-    width: 120,
-    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -28,16 +30,24 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontFamily: typography.bold,
   },
-  scoreLabel: {
-    fontSize: typography.caption,
-    color: colors.textMuted,
+  classificationBadge: {
     marginTop: 4,
-    textTransform: 'uppercase',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  classificationText: {
+    fontSize: typography.caption,
+    fontFamily: typography.bold,
+    color: colors.pageBg,
     letterSpacing: 1,
   },
-  labelContainer: {
+  label: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
     marginTop: 8,
-    alignItems: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 });
 
@@ -80,13 +90,14 @@ const polarToCartesian = (
 
 export const PDFScoreGauge: React.FC<PDFScoreGaugeProps> = ({
   score,
-  size = 120,
-  label = 'Score',
+  size = 140,
+  label = 'Score de Conformidade',
 }) => {
   const scoreColor = getScoreColor(score);
+  const { label: classification } = getScoreLabel(score);
   const center = size / 2;
-  const radius = (size - 16) / 2; // Account for stroke width
-  const strokeWidth = 8;
+  const radius = (size - 20) / 2; // Account for stroke width
+  const strokeWidth = 12;
   
   // Calculate arc (270 degrees max, from 135 to 405)
   const startAngle = 135;
@@ -107,7 +118,7 @@ export const PDFScoreGauge: React.FC<PDFScoreGaugeProps> = ({
           {/* Background Arc */}
           <Path
             d={bgArcPath}
-            stroke={colors.cardBgLight}
+            stroke={colors.border}
             strokeWidth={strokeWidth}
             fill="none"
             strokeLinecap="round"
@@ -124,13 +135,12 @@ export const PDFScoreGauge: React.FC<PDFScoreGaugeProps> = ({
             />
           )}
           
-          {/* Center glow effect */}
+          {/* Inner circle for visual depth */}
           <Circle
             cx={center}
             cy={center}
-            r={radius - 20}
-            fill={colors.cardBg}
-            opacity={0.5}
+            r={radius - 25}
+            fill={colors.pageBg}
           />
         </Svg>
         
@@ -142,10 +152,13 @@ export const PDFScoreGauge: React.FC<PDFScoreGaugeProps> = ({
         </View>
       </View>
       
-      {/* Label */}
-      <View style={styles.labelContainer}>
-        <Text style={styles.scoreLabel}>{label}</Text>
+      {/* Classification Badge */}
+      <View style={[styles.classificationBadge, { backgroundColor: scoreColor }]}>
+        <Text style={styles.classificationText}>{classification}</Text>
       </View>
+      
+      {/* Label */}
+      <Text style={styles.label}>{label}</Text>
     </View>
   );
 };

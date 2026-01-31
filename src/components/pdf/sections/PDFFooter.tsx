@@ -6,8 +6,8 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: spacing.page,
-    left: spacing.page,
-    right: spacing.page,
+    left: spacing.pageHorizontal,
+    right: spacing.pageHorizontal,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -48,8 +48,10 @@ const styles = StyleSheet.create({
   },
   confidential: {
     fontSize: typography.tiny,
-    color: colors.textDark,
+    color: colors.textMuted,
     marginRight: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });
 
@@ -72,7 +74,7 @@ export const PDFFooter: React.FC<PDFFooterProps> = ({
       {/* Right: Page Number */}
       <View style={styles.right}>
         {showConfidential && (
-          <Text style={styles.confidential}>CONFIDENCIAL</Text>
+          <Text style={styles.confidential}>Confidencial</Text>
         )}
         <Text style={styles.pageLabel}>Página </Text>
         <Text 
