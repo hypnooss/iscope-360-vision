@@ -43,6 +43,9 @@ const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
 const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecurityInsightsPage"));
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 
+// Preview pages (temporary)
+const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
+
 const queryClient = new QueryClient();
 
 // Loading fallback component
@@ -107,6 +110,9 @@ const App = () => (
                 <Route path="/administrators" element={<AdministratorsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/collections" element={<CollectionsPage />} />
+
+                {/* Preview routes (temporary) */}
+                <Route path="/preview/domain-report" element={<DomainReportPreview />} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
