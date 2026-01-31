@@ -1,125 +1,183 @@
 
+# Redesign Completo: Header de Relatório Universal
 
-# Plano: Redesign do Header - Layout com Grid Definido
+## Visão Criativa
 
-## Problema Identificado
+Após analisar dezenas de dashboards de cybersecurity modernos, identifiquei um padrão que diferencia os melhores: **hierarquia visual forte com destaque ao indicador principal** e **uso de cores para comunicar estado, não decoração**.
 
-O layout atual do preview tem várias falhas:
-1. Grid 2x2 com 5 itens deixou DNSSEC sozinho e desalinhado
-2. Gaps muito pequenos entre informações (gap-y-1.5)
-3. Espaço desperdiçado com o badge "DOMÍNIO"
-4. Informações desorganizadas sem estrutura clara
-
-## Nova Abordagem: Grid Tabular Definido
-
-Em vez de tentar encaixar 5 informações em um grid 2x2, vou usar uma **lista vertical estruturada (tabela)** onde cada linha tem label à esquerda e valor à direita, com larguras definidas.
-
-### Estrutura Visual Proposta
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                                                                              │
-│   ┌───────────┐    ┌─────────────────────────────────────────────────────┐  │
-│   │           │    │ Domínio ─────────────── brinquedosestrela.com.br   │  │
-│   │    79     │    │ SOA ────────────────────── e.sec.dns.br            │  │
-│   │  ──────── │    │ Nameservers ─────── e.sec.dns.br, f.sec.dns.br     │  │
-│   │  de 100   │    │ SOA Contact ─────── hostmaster@registro.br         │  │
-│   │   Bom     │    │ DNSSEC Status ─────────────────── Ativo            │  │
-│   │           │    │ Workspace ──────────────────── Cliente XYZ         │  │
-│   └───────────┘    └─────────────────────────────────────────────────────┘  │
-│                                                                              │
-│ ────────────────────────────────────────────────────────────────────────────│
-│                                                                              │
-│   Total: 23        Aprovadas: 18        Falhas: 5         Alertas: 0        │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Mudanças Principais
-
-| Aspecto | Antes (Preview Atual) | Depois |
-|---------|----------------------|--------|
-| Layout Info | Grid 2x2 desbalanceado | Lista vertical com labels fixos |
-| Gauge Size | 140px (números apertados) | 160px (melhor legibilidade) |
-| Gap entre infos | gap-y-1.5 (muito apertado) | gap-y-2.5 ou espaçamento tabular |
-| Alinhamento | Informações flutuando | Colunas definidas (label + valor) |
-| Badge "DOMÍNIO" | Presente | Removido |
-| Informações | 5 itens em grid 2x2 | 6 itens em lista vertical |
+O novo design será **completamente diferente** do atual - inspirado nos melhores exemplos de Dribbble/Behance, mas adaptado ao contexto Precisio.
 
 ---
 
-## Implementação Técnica
+## Conceito: "Command Center Header"
 
-### Arquivo: `src/pages/preview/DomainReportPreview.tsx`
+Em vez de um card com informações espalhadas, vou criar um **painel de comando** que comunica instantaneamente:
 
-Substituir o grid de informações por uma **tabela estilizada** ou **lista de definições**:
+1. **O quê** está sendo analisado (domínio/firewall)
+2. **Como** está (score visual dominante)
+3. **Resumo executivo** (stats de impacto)
+
+---
+
+## Estrutura Visual
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                                     │ │
+│  │    B R I N Q U E D O S E S T R E L A . C O M . B R                                 │ │
+│  │    ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔                                      │ │
+│  │                                                                                     │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                          │
+│  ┌───────────────────────────────┐  ┌────────────────────────────────────────────────┐  │
+│  │                               │  │                                                │  │
+│  │         ╭───────────╮         │  │  SOA Primary        e.sec.dns.br               │  │
+│  │        ╱             ╲        │  │  ──────────────────────────────────            │  │
+│  │       │      79       │       │  │  Nameservers        e.sec.dns.br               │  │
+│  │       │    ─────      │       │  │                     f.sec.dns.br               │  │
+│  │       │    de 100     │       │  │  ──────────────────────────────────            │  │
+│  │        ╲     Bom     ╱        │  │  SOA Contact        hostmaster@registro.br     │  │
+│  │         ╰───────────╯         │  │  ──────────────────────────────────            │  │
+│  │                               │  │  DNSSEC             ● Ativo                    │  │
+│  │    ┌─────┐ ┌─────┐ ┌─────┐   │  │  ──────────────────────────────────            │  │
+│  │    │ 23  │ │ 18  │ │  5  │   │  │  Workspace          Brinquedos Estrela S/A     │  │
+│  │    │Total│ │Pass │ │Fail │   │  │                                                │  │
+│  │    └─────┘ └─────┘ └─────┘   │  │                                                │  │
+│  │                               │  │                                                │  │
+│  └───────────────────────────────┘  └────────────────────────────────────────────────┘  │
+│                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Elementos Principais
+
+### 1. Faixa de Identificação (Novo)
+
+Título principal do alvo em **destaque máximo**:
+- Fonte grande (text-2xl ou text-3xl)
+- Letter-spacing expandido para visual "tech"
+- Underline gradiente sutil
+- Remove ambiguidade: o usuário sabe imediatamente O QUE está vendo
 
 ```tsx
-{/* Layout Principal */}
-<div className="glass-card rounded-xl p-6 border border-primary/20 mb-6">
-  <div className="flex flex-col lg:flex-row gap-8">
-    
-    {/* Score à esquerda - tamanho maior para legibilidade */}
-    <div className="flex-shrink-0 flex items-center justify-center">
-      <ScoreGauge score={score} size={160} />
-    </div>
+<div className="text-center mb-6">
+  <h2 className="text-2xl font-bold tracking-widest text-foreground uppercase">
+    {domain}
+  </h2>
+  <div className="h-0.5 w-32 mx-auto mt-2 bg-gradient-to-r from-transparent via-primary to-transparent" />
+</div>
+```
 
-    {/* Informações em formato tabular */}
-    <div className="flex-1 flex flex-col justify-center">
-      <div className="space-y-2.5">
-        <InfoTableRow label="Domínio" value={domain} highlight />
-        <InfoTableRow label="SOA" value={soa} />
-        <InfoTableRow label="Nameservers" value={nameservers.join(", ")} />
-        <InfoTableRow label="SOA Contact" value={soaContact} />
-        <InfoTableRow label="DNSSEC Status" value={dnssec ? "Ativo" : "Inativo"} status={dnssec} />
-        <InfoTableRow label="Workspace" value={clientName} />
-      </div>
-    </div>
-  </div>
+### 2. Painel Esquerdo: Score + Stats Integrados
 
-  {/* Separador e Stats */}
-  <div className="border-t border-border/50 my-5" />
-  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-    {/* StatCards compactos */}
+Gauge maior (180px) com mini-stats abaixo em linha horizontal:
+
+```tsx
+<div className="flex flex-col items-center">
+  <ScoreGauge score={79} size={180} />
+  
+  <div className="flex gap-4 mt-4">
+    <MiniStat value={23} label="Total" />
+    <MiniStat value={18} label="Pass" variant="success" />
+    <MiniStat value={5} label="Fail" variant="destructive" />
   </div>
 </div>
 ```
 
-### Novo Componente: InfoTableRow
-
+O **MiniStat** é um novo componente ultra-compacto:
 ```tsx
-interface InfoTableRowProps {
-  label: string;
-  value: string;
-  highlight?: boolean;
-  status?: boolean; // para DNSSEC mostrar cor verde/vermelho
-}
-
-function InfoTableRow({ label, value, highlight, status }: InfoTableRowProps) {
+function MiniStat({ value, label, variant }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="text-sm text-muted-foreground w-28 flex-shrink-0">
-        {label}
+    <div className="text-center">
+      <span className={cn("text-lg font-bold tabular-nums", variantColor[variant])}>
+        {value}
       </span>
-      <span className="h-px flex-1 bg-border/30 max-w-[40px]" />
-      <span className={cn(
-        "text-sm font-medium flex-1 truncate",
-        highlight && "text-primary font-semibold",
-        status === true && "text-success",
-        status === false && "text-destructive"
-      )}>
-        {value || "N/A"}
-      </span>
+      <span className="text-xs text-muted-foreground block">{label}</span>
     </div>
   );
 }
 ```
 
-Esta estrutura:
-- Mantém labels com largura fixa (w-28 = 112px)
-- Adiciona linha pontilhada/separador visual entre label e valor
-- Permite valores truncarem com ellipsis se muito longos
-- Destaca valores importantes com cores
+### 3. Painel Direito: Informações Estruturadas
+
+Lista vertical com separadores visuais claros:
+
+```tsx
+<div className="space-y-3">
+  <DetailRow label="SOA Primary" value={soa} />
+  <DetailRow label="Nameservers" value={nameservers} multiline />
+  <DetailRow label="SOA Contact" value={soaContact} />
+  <DetailRow label="DNSSEC" value="Ativo" indicator="success" />
+  <DetailRow label="Workspace" value={clientName} />
+</div>
+```
+
+O **DetailRow** é elegante e consistente:
+```tsx
+function DetailRow({ label, value, indicator, multiline }) {
+  return (
+    <>
+      <div className="flex items-start gap-4">
+        <span className="text-sm text-muted-foreground w-28 flex-shrink-0">
+          {label}
+        </span>
+        <div className="flex-1">
+          {indicator && (
+            <span className={cn("inline-block w-2 h-2 rounded-full mr-2", indicatorColors[indicator])} />
+          )}
+          {multiline ? (
+            <div className="space-y-0.5">
+              {value.map((v, i) => (
+                <div key={i} className="text-sm font-medium text-foreground">{v}</div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-sm font-medium text-foreground">{value}</span>
+          )}
+        </div>
+      </div>
+      <div className="border-b border-border/30" />
+    </>
+  );
+}
+```
+
+---
+
+## Adaptabilidade para Outros Módulos
+
+O design é **genérico por natureza**:
+
+| Módulo | Título Principal | Detalhes |
+|--------|-----------------|----------|
+| Domínio Externo | `brinquedosestrela.com.br` | SOA, NS, DNSSEC, Contact |
+| Firewall | `FortiGate-HQ` | Firmware, Modelo, Serial, Uptime |
+| Entra ID | `contoso.onmicrosoft.com` | Tenant ID, Licenças, MFA Status |
+
+A estrutura permanece idêntica, apenas os campos mudam.
+
+---
+
+## Paleta e Estilo
+
+- **Background**: Card com gradiente sutil (usando `--gradient-card`)
+- **Borda**: Linha fina com cor primária (`border-primary/20`)
+- **Glow sutil**: Box-shadow com cor primária em baixa opacidade
+- **Separadores**: Linhas com `border-border/30` para leveza
+
+---
+
+## Componentes a Criar
+
+| Componente | Descrição |
+|------------|-----------|
+| `ReportHeader` | Container principal reutilizável |
+| `MiniStat` | Stat ultra-compacto (valor + label) |
+| `DetailRow` | Linha de detalhe com label e valor |
 
 ---
 
@@ -127,26 +185,25 @@ Esta estrutura:
 
 | Viewport | Comportamento |
 |----------|---------------|
-| Desktop (lg+) | Gauge à esquerda (160px), tabela à direita |
-| Tablet/Mobile | Gauge centralizado em cima, tabela abaixo empilhada |
+| Desktop (lg+) | Dois painéis lado a lado |
+| Tablet (md-lg) | Painéis empilhados, gauge centralizado |
+| Mobile (<md) | Tudo empilhado, gauge 140px |
 
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/preview/DomainReportPreview.tsx` | Redesign completo com layout tabular |
+`src/pages/preview/DomainReportPreview.tsx`
+
+Vou reescrever completamente com o novo conceito "Command Center".
 
 ---
 
 ## Resultado Esperado
 
-Após a atualização, o preview terá:
-1. Score legível (160px) sem números esmagados
-2. Informações em lista vertical clara e organizada
-3. Labels alinhados à esquerda com largura consistente
-4. Valores alinhados à direita de cada label
-5. Sem espaços vazios no centro
-6. Visual limpo e profissional
-
+Um header que:
+1. Identifica claramente o alvo da análise
+2. Comunica o score de forma impactante
+3. Organiza informações de maneira profissional
+4. Funciona para qualquer tipo de relatório
+5. Parece um produto de cybersecurity moderno e premium
