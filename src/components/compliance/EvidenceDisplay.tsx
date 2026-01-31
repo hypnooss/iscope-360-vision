@@ -154,7 +154,7 @@ function formatSOAValue(label: string, value: string): string {
 }
 
 // Campos que devem ser ocultados dentro de records (muito técnicos ou longos)
-const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw'];
+const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw', 'flags', 'name'];
 
 // Campos ocultos por contexto (para cards específicos)
 const CONTEXT_HIDDEN_FIELDS: Record<string, string[]> = {
@@ -194,7 +194,11 @@ function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) 
             {getLabel(key)}
           </span>
           <span className="text-sm text-foreground font-mono break-all">
-            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+            {Array.isArray(value) 
+              ? value.join(', ')
+              : typeof value === 'object' 
+                ? JSON.stringify(value) 
+                : String(value)}
           </span>
         </div>
       ))}
@@ -253,21 +257,36 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
      (parsed[0] as Record<string, unknown>).selector !== undefined);
   
   if (isDkimRecord && Array.isArray(parsed)) {
-    return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-        {parsed.map((record, idx) => (
-          <RecordDisplay 
-            key={idx} 
-            record={record as Record<string, unknown>}
-            labelOverrides={{ 
-              selector: 'Seletor',
-              key_type: 'Tipo de Chave',
-              key_size_bits: 'Tamanho da Chave (bits)',
-            }}
-          />
-        ))}
-      </div>
-    );
+    // Determinar contexto pelo label
+    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
+                              item.label.toLowerCase().includes('redundancy');
+    
+    if (isRedundancyCheck) {
+      // Redundância DKIM: mostrar nomes das chaves
+      return (
+        <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
+          {parsed.map((record, idx) => {
+            const rec = record as Record<string, unknown>;
+            const keyName = rec.name || rec.selector || 'Chave DKIM';
+            return (
+              <div key={idx} className="flex flex-col">
+                <span className="text-xs font-medium text-muted-foreground">Chave DKIM</span>
+                <span className="text-sm text-foreground font-mono">{String(keyName)}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    } else {
+      // DKIM Configurado: mostrar que chaves foram encontradas
+      const keyCount = parsed.length;
+      return (
+        <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+          <span className="text-xs font-medium text-muted-foreground block mb-1">Chaves DKIM Encontradas</span>
+          <span className="text-sm text-foreground">{keyCount} chave(s) configurada(s)</span>
+        </div>
+      );
+    }
   }
 
   // NOVO: Tratamento especial para registros MX
@@ -277,12 +296,14 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   
   if (isMxRecord && Array.isArray(parsed)) {
     // Determinar contexto baseado no label
-    // Se for "Redundância MX", mostrar todos os campos
+    // Se for "Redundância MX", mostrar todos os campos incluindo IPs
     // Senão, ocultar priority, resolved_ips, resolved_ip_count
     const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
                                item.label.toLowerCase().includes('redundancy');
     
-    const context = isRedundancyCheck ? 'mx_redundancy' : 'mx_simple';
+    // Para redundância, NÃO aplicar contexto (mostra tudo incluindo IPs)
+    // Para outros cards MX, ocultar campos técnicos
+    const context = isRedundancyCheck ? undefined : 'mx_simple';
     
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
@@ -291,7 +312,12 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
             key={idx} 
             record={record as Record<string, unknown>}
             context={context}
-            labelOverrides={{ exchange: 'Servidor MX' }}
+            labelOverrides={{ 
+              exchange: 'Servidor MX',
+              priority: 'Prioridade',
+              resolved_ips: 'IPs Resolvidos',
+              resolved_ip_count: 'Quantidade de IPs',
+            }}
           />
         ))}
       </div>
