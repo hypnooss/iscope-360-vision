@@ -1804,6 +1804,91 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
         ...(notesText ? [{ label: 'Notes', value: notesText, type: 'text' as const }] : []),
       ];
     }
+
+    // ========== SPF RECORD ==========
+    if (stepId === 'spf_record') {
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const evidence: EvidenceItem[] = [];
+      
+      if (d?.raw) {
+        evidence.push({ label: 'data.raw', value: String(d.raw), type: 'text' });
+      }
+      
+      const parsed = d?.parsed as Record<string, unknown> | undefined;
+      if (parsed) {
+        if (parsed.includes && Array.isArray(parsed.includes)) {
+          evidence.push({ label: 'data.parsed.includes', value: (parsed.includes as string[]).join(', '), type: 'text' });
+        }
+        if (parsed.all) {
+          evidence.push({ label: 'data.parsed.all', value: String(parsed.all), type: 'text' });
+        }
+      }
+      
+      return evidence.length > 0 ? evidence : [];
+    }
+
+    // ========== DMARC RECORD ==========
+    if (stepId === 'dmarc_record') {
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const evidence: EvidenceItem[] = [];
+      
+      if (d?.raw) {
+        evidence.push({ label: 'data.raw', value: String(d.raw), type: 'text' });
+      }
+      
+      const parsed = d?.parsed as Record<string, unknown> | undefined;
+      if (parsed) {
+        if (parsed.p) {
+          evidence.push({ label: 'data.parsed.p', value: String(parsed.p), type: 'text' });
+        }
+        if (parsed.sp) {
+          evidence.push({ label: 'data.parsed.sp', value: String(parsed.sp), type: 'text' });
+        }
+        if (parsed.aspf) {
+          evidence.push({ label: 'data.parsed.aspf', value: String(parsed.aspf), type: 'text' });
+        }
+        if (parsed.adkim) {
+          evidence.push({ label: 'data.parsed.adkim', value: String(parsed.adkim), type: 'text' });
+        }
+        if (parsed.rua) {
+          evidence.push({ label: 'data.parsed.rua', value: String(parsed.rua), type: 'text' });
+        }
+        if (parsed.ruf) {
+          evidence.push({ label: 'data.parsed.ruf', value: String(parsed.ruf), type: 'text' });
+        }
+        if (parsed.pct !== undefined) {
+          evidence.push({ label: 'data.parsed.pct', value: String(parsed.pct), type: 'text' });
+        }
+      }
+      
+      return evidence.length > 0 ? evidence : [];
+    }
+
+    // ========== DKIM RECORDS ==========
+    if (stepId === 'dkim_records') {
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const found = d?.found as Array<Record<string, unknown>> | undefined;
+      
+      if (Array.isArray(found) && found.length > 0) {
+        // Return JSON representation for frontend to format
+        return [{ label: 'data.found', value: JSON.stringify(found), type: 'code' }];
+      }
+      
+      return [];
+    }
+
+    // ========== MX RECORDS ==========
+    if (stepId === 'mx_records') {
+      const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+      const records = d?.records as Array<Record<string, unknown>> | undefined;
+      
+      if (Array.isArray(records) && records.length > 0) {
+        // Return JSON representation for frontend to format
+        return [{ label: 'data.records', value: JSON.stringify(records), type: 'code' }];
+      }
+      
+      return [];
+    }
   } catch (_e) {
     // fallthrough
   }

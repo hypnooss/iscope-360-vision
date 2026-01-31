@@ -40,7 +40,6 @@ const FIELD_LABELS: Record<string, string> = {
 
 // Mapa de labels técnicos para labels amigáveis (do backend)
 const LABEL_TRANSLATIONS: Record<string, string> = {
-  'data.records': 'Nameservers',
   'data.has_dnskey': 'Status',
   'data.has_ds': 'Registro DS',
   'data.validated': 'Validação DNSSEC',
@@ -63,8 +62,6 @@ const LABEL_TRANSLATIONS: Record<string, string> = {
   'data.parsed.includes': 'Mecanismos Include',
   'data.parsed.all': 'Política ALL',
   'data.raw': 'Registro SPF',
-  // MX translations
-  'data.records[0].exchange': 'Servidor MX',
   // DKIM translations
   'data.found': 'Registros DKIM',
   'data.found[]': 'Registros DKIM',
@@ -156,28 +153,18 @@ function formatSOAValue(label: string, value: string): string {
 // Campos que devem ser ocultados dentro de records (muito técnicos ou longos)
 const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw', 'flags', 'name'];
 
-// Campos ocultos por contexto (para cards específicos)
-const CONTEXT_HIDDEN_FIELDS: Record<string, string[]> = {
-  'mx_simple': ['priority', 'resolved_ips', 'resolved_ip_count'],
-};
-
 interface RecordDisplayProps {
   record: Record<string, unknown>;
-  context?: string;
   labelOverrides?: Record<string, string>;
 }
 
-function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) {
-  // Campos ocultos para este contexto específico
-  const contextHiddenFields = context ? (CONTEXT_HIDDEN_FIELDS[context] || []) : [];
-  
+function RecordDisplay({ record, labelOverrides }: RecordDisplayProps) {
   const entries = Object.entries(record)
     .filter(([key, value]) => 
       value !== null && 
       value !== undefined && 
       value !== '' &&
-      !HIDDEN_FIELDS.includes(key) &&
-      !contextHiddenFields.includes(key)
+      !HIDDEN_FIELDS.includes(key)
     );
 
   if (entries.length === 0) return null;
@@ -219,8 +206,100 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
     // Não é JSON válido
   }
 
-  // Tratamento especial para Nameservers (data.records)
-  if (item.label === 'data.records' || item.label === 'Nameservers') {
+  // PRIMEIRO: Detectar tipo pelo conteúdo JSON (antes de verificar labels)
+  const isDkimByContent = Array.isArray(parsed) && 
+    parsed.length > 0 && 
+    typeof parsed[0] === 'object' && 
+    (parsed[0] as Record<string, unknown>).selector !== undefined;
+
+  const isMxByContent = Array.isArray(parsed) && 
+    parsed.length > 0 && 
+    typeof parsed[0] === 'object' && 
+    (parsed[0] as Record<string, unknown>).exchange !== undefined;
+
+  const isNameserverByContent = Array.isArray(parsed) && 
+    parsed.length > 0 && 
+    (typeof parsed[0] === 'string' || 
+      (typeof parsed[0] === 'object' && 
+        (parsed[0] as Record<string, unknown>).host !== undefined &&
+        (parsed[0] as Record<string, unknown>).exchange === undefined));
+
+  // ========== TRATAMENTO DKIM ==========
+  if (isDkimByContent) {
+    const records = parsed as Array<Record<string, unknown>>;
+    
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {records.map((rec, idx) => {
+          const selectorName = rec.selector || rec.name || `Chave ${idx + 1}`;
+          return (
+            <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Seletor</span>
+                <span className="text-sm text-foreground font-mono">{String(selectorName)}</span>
+              </div>
+              {rec.key_type && (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Tipo de Chave</span>
+                  <span className="text-sm text-foreground font-mono">{String(rec.key_type)}</span>
+                </div>
+              )}
+              {rec.key_size_bits && (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Tamanho da Chave</span>
+                  <span className="text-sm text-foreground font-mono">{String(rec.key_size_bits)} bits</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ========== TRATAMENTO MX ==========
+  if (isMxByContent) {
+    const records = parsed as Array<Record<string, unknown>>;
+    
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {records.map((rec, idx) => {
+          const ips = rec.resolved_ips;
+          const ipsDisplay = Array.isArray(ips) ? ips.join(', ') : '';
+          
+          return (
+            <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Servidor MX</span>
+                <span className="text-sm text-foreground font-mono">{String(rec.exchange)}</span>
+              </div>
+              {rec.priority !== undefined && (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Prioridade</span>
+                  <span className="text-sm text-foreground font-mono">{String(rec.priority)}</span>
+                </div>
+              )}
+              {ipsDisplay && (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">IPs Resolvidos</span>
+                  <span className="text-sm text-foreground font-mono break-all">{ipsDisplay}</span>
+                </div>
+              )}
+              {rec.resolved_ip_count !== undefined && (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Quantidade de IPs</span>
+                  <span className="text-sm text-foreground font-mono">{String(rec.resolved_ip_count)}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ========== TRATAMENTO NAMESERVERS ==========
+  if (isNameserverByContent || item.label === 'data.records' || item.label === 'Nameservers' || item.label === 'Nameservers encontrados') {
     if (Array.isArray(parsed)) {
       const hosts = parsed
         .map(r => {
@@ -249,82 +328,7 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
     }
   }
 
-  // NOVO: Tratamento especial para registros DKIM
-  const isDkimRecord = item.label.includes('DKIM') || 
-    item.label === 'data.found' || 
-    item.label === 'data.found[]' ||
-    (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 
-     (parsed[0] as Record<string, unknown>).selector !== undefined);
-  
-  if (isDkimRecord && Array.isArray(parsed)) {
-    // Determinar contexto pelo label
-    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
-                              item.label.toLowerCase().includes('redundancy');
-    
-    if (isRedundancyCheck) {
-      // Redundância DKIM: mostrar nomes das chaves
-      return (
-        <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
-          {parsed.map((record, idx) => {
-            const rec = record as Record<string, unknown>;
-            const keyName = rec.name || rec.selector || 'Chave DKIM';
-            return (
-              <div key={idx} className="flex flex-col">
-                <span className="text-xs font-medium text-muted-foreground">Chave DKIM</span>
-                <span className="text-sm text-foreground font-mono">{String(keyName)}</span>
-              </div>
-            );
-          })}
-        </div>
-      );
-    } else {
-      // DKIM Configurado: mostrar que chaves foram encontradas
-      const keyCount = parsed.length;
-      return (
-        <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-          <span className="text-xs font-medium text-muted-foreground block mb-1">Chaves DKIM Encontradas</span>
-          <span className="text-sm text-foreground">{keyCount} chave(s) configurada(s)</span>
-        </div>
-      );
-    }
-  }
-
-  // NOVO: Tratamento especial para registros MX
-  const isMxRecord = item.label.includes('MX') || 
-    (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 
-     (parsed[0] as Record<string, unknown>).exchange !== undefined);
-  
-  if (isMxRecord && Array.isArray(parsed)) {
-    // Determinar contexto baseado no label
-    // Se for "Redundância MX", mostrar todos os campos incluindo IPs
-    // Senão, ocultar priority, resolved_ips, resolved_ip_count
-    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
-                               item.label.toLowerCase().includes('redundancy');
-    
-    // Para redundância, NÃO aplicar contexto (mostra tudo incluindo IPs)
-    // Para outros cards MX, ocultar campos técnicos
-    const context = isRedundancyCheck ? undefined : 'mx_simple';
-    
-    return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-        {parsed.map((record, idx) => (
-          <RecordDisplay 
-            key={idx} 
-            record={record as Record<string, unknown>}
-            context={context}
-            labelOverrides={{ 
-              exchange: 'Servidor MX',
-              priority: 'Prioridade',
-              resolved_ips: 'IPs Resolvidos',
-              resolved_ip_count: 'Quantidade de IPs',
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  // Se for array de objetos (ex: registros DKIM, MX), renderizar como lista
+  // Se for array de objetos genérico
   if (Array.isArray(parsed) && parsed.length > 0) {
     // Se for array de strings simples
     if (typeof parsed[0] === 'string') {
@@ -340,7 +344,7 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
       );
     }
     
-    // Se for array de objetos
+    // Se for array de objetos genérico
     if (typeof parsed[0] === 'object') {
       return (
         <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
