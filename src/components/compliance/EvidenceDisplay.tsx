@@ -3,7 +3,7 @@ import { EvidenceItem } from '@/types/compliance';
 // Mapear campos técnicos para labels legíveis em português
 const FIELD_LABELS: Record<string, string> = {
   name: 'Nome',
-  host: 'Host',
+  host: 'Nameserver',
   value: 'Valor',
   selector: 'Seletor',
   key_type: 'Tipo de Chave',
@@ -36,7 +36,52 @@ const FIELD_LABELS: Record<string, string> = {
   rname: 'Email do Responsável',
 };
 
-// Campos que devem ser ocultados (muito técnicos ou longos)
+// Mapa de labels técnicos para labels amigáveis (do backend)
+const LABEL_TRANSLATIONS: Record<string, string> = {
+  'data.records': 'Nameservers',
+  'data.has_dnskey': 'Status',
+  'data.has_ds': 'Registro DS',
+  'data.validated': 'Validação DNSSEC',
+  'data.mname': 'Servidor Primário',
+  'data.contact_email': 'Contato do Administrador',
+  'Nameservers encontrados': 'Nameservers',
+  'DNSKEY': 'Status DNSKEY',
+  'DS': 'Status DS',
+  'Validated': 'Validação',
+  'SOA mname': 'Nameserver Primário',
+  'SOA contact': 'Email do Responsável',
+};
+
+// Mapa de valores booleanos/técnicos para valores legíveis
+const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
+  'data.has_dnskey': {
+    'true': 'DNSSEC Ativado ✓',
+    'false': 'DNSSEC Desativado ✗',
+  },
+  'data.has_ds': {
+    'true': 'Presente ✓',
+    'false': 'Ausente ✗',
+  },
+  'DNSKEY': {
+    'true': 'Presente ✓',
+    'false': 'Ausente ✗',
+  },
+  'DS': {
+    'true': 'Presente ✓',
+    'false': 'Ausente ✗',
+  },
+  'data.validated': {
+    'true': 'Validação OK ✓',
+    'false': 'Não validado ✗',
+    'unknown': 'Não verificado',
+    'partial': 'Parcialmente validado',
+  },
+};
+
+// Labels que devem ser completamente ocultos (não aparecem na UI)
+const HIDDEN_LABELS = ['data.records'];
+
+// Campos que devem ser ocultados dentro de records (muito técnicos ou longos)
 const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw'];
 
 interface RecordDisplayProps {
@@ -138,17 +183,31 @@ interface EvidenceItemDisplayProps {
 }
 
 export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
+  // Ocultar labels específicos (não aparecem na UI)
+  if (HIDDEN_LABELS.includes(item.label)) {
+    return null;
+  }
+
+  // Traduzir label técnico para legível
+  const translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
+  
+  // Traduzir valor se houver transformação definida
+  const transformedValue = VALUE_TRANSFORMATIONS[item.label]?.[item.value] || item.value;
+
+  // Criar item transformado para uso nos componentes
+  const transformedItem = { ...item, label: translatedLabel, value: transformedValue };
+
   // Detectar se é uma lista (múltiplos valores separados por vírgula)
-  const isList = item.value.includes(',') && item.type !== 'code' && item.type !== 'json';
+  const isList = transformedItem.value.includes(',') && transformedItem.type !== 'code' && transformedItem.type !== 'json';
   
   // Renderização especial para listas (ex: nameservers, registros MX)
   if (isList) {
-    const values = item.value.split(',').map(v => v.trim()).filter(Boolean);
+    const values = transformedItem.value.split(',').map(v => v.trim()).filter(Boolean);
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
         {values.map((val, idx) => (
           <div key={idx} className="flex flex-col">
-            <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
+            <span className="text-xs font-medium text-muted-foreground">{transformedItem.label}</span>
             <span className="text-sm text-foreground font-mono">{val}</span>
           </div>
         ))}
@@ -157,15 +216,15 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
   }
   
   // Renderização para JSON/código
-  if (item.type === 'code' || item.type === 'json') {
-    return <FormattedCodeEvidence item={item} />;
+  if (transformedItem.type === 'code' || transformedItem.type === 'json') {
+    return <FormattedCodeEvidence item={transformedItem} />;
   }
   
   // Renderização padrão para texto simples
   return (
     <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-      <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-      <p className="text-sm text-foreground">{item.value}</p>
+      <span className="text-xs font-medium text-muted-foreground block mb-1">{transformedItem.label}</span>
+      <p className="text-sm text-foreground">{transformedItem.value}</p>
     </div>
   );
 }
