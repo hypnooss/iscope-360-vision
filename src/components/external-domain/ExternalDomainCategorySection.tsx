@@ -18,29 +18,29 @@ interface ExternalDomainCategorySectionProps {
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   'Autenticação de Email - SPF': { 
+    bg: 'bg-sky-500/10', 
+    text: 'text-sky-500', 
+    border: 'border-sky-500/30' 
+  },
+  'Autenticação de Email - DKIM': { 
     bg: 'bg-blue-500/10', 
     text: 'text-blue-500', 
     border: 'border-blue-500/30' 
   },
-  'Autenticação de Email - DKIM': { 
-    bg: 'bg-cyan-500/10', 
-    text: 'text-cyan-500', 
-    border: 'border-cyan-500/30' 
-  },
   'Autenticação de Email - DMARC': { 
-    bg: 'bg-indigo-500/10', 
-    text: 'text-indigo-500', 
-    border: 'border-indigo-500/30' 
-  },
-  'Segurança DNS': { 
-    bg: 'bg-emerald-500/10', 
-    text: 'text-emerald-500', 
-    border: 'border-emerald-500/30' 
-  },
-  'Infraestrutura de Email': { 
     bg: 'bg-violet-500/10', 
     text: 'text-violet-500', 
     border: 'border-violet-500/30' 
+  },
+  'Segurança DNS': { 
+    bg: 'bg-teal-500/10', 
+    text: 'text-teal-500', 
+    border: 'border-teal-500/30' 
+  },
+  'Infraestrutura de Email': { 
+    bg: 'bg-purple-500/10', 
+    text: 'text-purple-500', 
+    border: 'border-purple-500/30' 
   },
 };
 
@@ -110,12 +110,9 @@ export function ExternalDomainCategorySection({
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <span className={`text-2xl font-bold tabular-nums ${getPassRateColor(category.passRate)}`}>
-                  {category.passRate}%
-                </span>
-                <p className="text-xs text-muted-foreground">aprovação</p>
-              </div>
+              <span className={`text-lg font-semibold tabular-nums ${getPassRateColor(category.passRate)}`}>
+                {category.passRate}%
+              </span>
               {isOpen ? (
                 <ChevronDown className="w-5 h-5 text-muted-foreground" />
               ) : (
