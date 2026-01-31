@@ -150,7 +150,12 @@ export function ExternalDomainCategorySection({
         </CollapsibleTrigger>
         <CollapsibleContent className={`pt-4 space-y-3 pl-4 border-l-2 ml-6 mb-6 ${colors.border}`}>
           {category.checks.map((check) => (
-            <ComplianceCard key={check.id} check={check} variant="external_domain" />
+            <ComplianceCard 
+              key={check.id} 
+              check={check} 
+              variant="external_domain" 
+              categoryColorKey={colors.text.replace('text-', '')}
+            />
           ))}
         </CollapsibleContent>
       </Collapsible>
