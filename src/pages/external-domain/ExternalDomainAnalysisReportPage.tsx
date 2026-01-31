@@ -17,7 +17,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import { exportExternalDomainReportToPDF } from '@/utils/pdfExport';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -399,6 +400,7 @@ export default function ExternalDomainAnalysisReportPage() {
   const [clientName, setClientName] = useState<string | null>(state.domainMeta?.client_name || null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(state.analysisCreatedAt || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const dnsSummary = report?.dnsSummary;
   const nsText = Array.isArray(dnsSummary?.ns) && dnsSummary?.ns.length > 0
@@ -572,23 +574,34 @@ export default function ExternalDomainAnalysisReportPage() {
               <Button 
                 variant="outline" 
                 size="lg" 
-                onClick={() => {
-                  const emailAuth = deriveEmailAuthStatus(report.categories);
-                  exportExternalDomainReportToPDF(
-                    report,
-                    {
-                      name: domain?.name || 'Domínio',
-                      domain: domain?.domain || '',
-                      clientName: clientName || undefined,
-                    },
-                    dnsSummary || undefined,
-                    emailAuth
-                  );
-                  toast.success('PDF exportado com sucesso!');
+                disabled={isExportingPDF}
+                onClick={async () => {
+                  try {
+                    const emailAuth = deriveEmailAuthStatus(report.categories);
+                    const filename = `iscope360-${sanitizePDFFilename(domain?.domain || 'domain')}-${getPDFDateString()}.pdf`;
+                    
+                    await downloadPDF(
+                      <ExternalDomainPDF
+                        report={report}
+                        domainInfo={{
+                          name: domain?.name || 'Domínio',
+                          domain: domain?.domain || '',
+                          clientName: clientName || undefined,
+                        }}
+                        dnsSummary={dnsSummary || undefined}
+                        emailAuth={emailAuth}
+                      />,
+                      filename
+                    );
+                    toast.success('PDF exportado com sucesso!');
+                  } catch (err) {
+                    console.error('PDF export error:', err);
+                    toast.error('Erro ao exportar PDF');
+                  }
                 }}
               >
-                <FileDown className="w-4 h-4" />
-                Exportar PDF
+                <FileDown className={cn("w-4 h-4", isExportingPDF && "animate-pulse")} />
+                {isExportingPDF ? 'Gerando...' : 'Exportar PDF'}
               </Button>
               <Button variant="cyber" size="lg" onClick={handleRefresh} disabled={isRefreshing}>
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
