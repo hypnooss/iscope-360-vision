@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.entra-id-security-insights]
 verify_jwt = false
+
+[functions.exchange-online-insights]
+verify_jwt = false
