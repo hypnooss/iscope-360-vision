@@ -1,88 +1,69 @@
 
-# Plano: Atualização do MiniStat TOTAL + Adição de SPF/DKIM/DMARC
+# Plano: Criar FirewallReportPreview
 
-## Alterações Solicitadas
+## Objetivo
+Criar uma página de preview similar ao DomainReportPreview, mas adaptada para relatórios de Firewall, usando o mesmo padrão "Command Center Header".
 
-1. **MiniStat "TOTAL"**: Usar cor verde-água (primary) em vez de neutro
-2. **Remover**: DetailRow "Workspace"
-3. **Adicionar**: DetailRows para SPF, DKIM e DMARC com status
+## Arquivo a Criar
+`src/pages/preview/FirewallReportPreview.tsx`
 
----
-
-## Implementação
-
-### 1. Adicionar variante "primary" ao MiniStat
-
-No objeto `variantStyles`, adicionar:
+## Estrutura do Mock Data (Firewall)
 
 ```tsx
-primary: {
-  text: "text-primary",           // verde-água
-  border: "border-primary/30",
-  bg: "bg-primary/10"
-}
+const mockData = {
+  hostname: "FGT-DATACENTER-01",
+  score: 85,
+  vendor: "Fortinet",
+  model: "FortiGate 200F",
+  serial: "FGT200F2R23456789",
+  firmware: "v7.4.3 build 2573",
+  uptime: "127 dias",
+  stats: {
+    total: 42,
+    passed: 36,
+    failed: 6,
+  },
+  security: {
+    adminPasswordChanged: true,
+    haEnabled: true,
+    syslogConfigured: true,
+    vpnActive: false,
+  },
+};
 ```
 
-E alterar a chamada do MiniStat de TOTAL:
+## DetailRows para Firewall
+
+| Label | Valor | Indicador |
+|-------|-------|-----------|
+| Vendor | Fortinet | - |
+| Modelo | FortiGate 200F | - |
+| Serial | FGT200F2R23456789 | - |
+| Firmware | v7.4.3 build 2573 | - |
+| Uptime | 127 dias | - |
+| Admin Password | Alterada / Padrão | ● |
+| HA Cluster | Ativo / Inativo | ● |
+| Syslog | Configurado / Ausente | ● |
+
+## Componentes Reutilizados
+
+Os componentes `MiniStat` e `DetailRow` serão copiados do DomainReportPreview (idênticos).
+
+## Rota a Adicionar
+
+No `App.tsx`:
 ```tsx
-<MiniStat value={stats.total} label="Total" variant="primary" />
+<Route path="/preview/firewall-report" element={<FirewallReportPreview />} />
 ```
 
-### 2. Atualizar mockData com status de email
+## Diferenças Visuais em Relação ao Domain
 
-Adicionar ao `mockData`:
-```tsx
-emailAuth: {
-  spf: true,    // ou "valid" / "invalid"
-  dkim: true,
-  dmarc: false,
-}
-```
+1. **Título**: Hostname do firewall (ex: `FGT-DATACENTER-01`)
+2. **DetailRows**: Campos específicos de firewall (Vendor, Model, Serial, Firmware, Uptime)
+3. **Indicadores de Status**: Admin Password, HA, Syslog (em vez de SPF/DKIM/DMARC)
+4. **Notas de Design**: Atualizadas para refletir contexto de firewall
 
-### 3. Substituir Workspace por SPF/DKIM/DMARC
+## Arquivos Modificados
 
-No painel de detalhes, remover:
-```tsx
-<DetailRow label="Workspace" value={clientName} highlight />
-```
-
-E adicionar:
-```tsx
-<DetailRow 
-  label="SPF" 
-  value={emailAuth.spf ? "Válido" : "Ausente"} 
-  indicator={emailAuth.spf ? "success" : "error"}
-/>
-<DetailRow 
-  label="DKIM" 
-  value={emailAuth.dkim ? "Válido" : "Ausente"} 
-  indicator={emailAuth.dkim ? "success" : "error"}
-/>
-<DetailRow 
-  label="DMARC" 
-  value={emailAuth.dmarc ? "Válido" : "Ausente"} 
-  indicator={emailAuth.dmarc ? "success" : "error"}
-/>
-```
-
----
-
-## Resultado Visual Esperado
-
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| **MiniStat Total** | Neutro (cinza) | Verde-água (primary) com borda e bg coloridos |
-| **Workspace** | Presente | Removido |
-| **SPF/DKIM/DMARC** | Ausentes | Exibidos com indicadores ●/● de status |
-
----
-
-## Arquivo a Modificar
-
-`src/pages/preview/DomainReportPreview.tsx`
-
-- Linha 24-27: Adicionar "primary" à interface MiniStatProps
-- Linha 31-35: Adicionar variante "primary" ao variantStyles
-- Linha 5-18: Adicionar emailAuth ao mockData
-- Linha 193: Alterar variant para "primary"
-- Linha 209: Substituir Workspace por SPF/DKIM/DMARC rows
+1. **Criar**: `src/pages/preview/FirewallReportPreview.tsx`
+2. **Editar**: `src/App.tsx` (adicionar rota)
