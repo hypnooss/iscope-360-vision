@@ -1,222 +1,302 @@
 
-# Plano: Traduções e Ajustes por Tipo de Card MX/SPF
+# Plano: Humanização de Evidências DKIM/DMARC e Nova Regra
 
 ## Resumo das Alterações
 
-Precisamos criar lógica específica por tipo de check para controlar quais campos são exibidos e suas traduções.
+### 1. Traduções de Labels (Frontend)
+
+Adicionar mapeamentos para todos os labels técnicos identificados:
+
+| Label Técnico | Tradução |
+|--------------|----------|
+| `data.found` / `data.found[]` | Ocultar/Processar como lista DKIM |
+| `data.parsed.aspf` | Alinhamento SPF |
+| `data.parsed.adkim` | Alinhamento DKIM |
+| `data.parsed.pct` | Cobertura |
+| `data.parsed.p` | Política DMARC |
+| `data.parsed.sp` | Política de Subdomínio |
+| `data.parsed.rua` | Relatórios (RUA) |
+| `data.parsed.ruf` | Relatórios Forenses (RUF) |
+| `data.raw` (contexto DMARC) | Registro DMARC |
+
+### 2. Transformações de Valores (Frontend)
+
+Para tornar valores técnicos compreensíveis:
+
+| Campo | Valor Original | Valor Humanizado |
+|-------|---------------|------------------|
+| `data.parsed.aspf` | `r` | Relaxado (r) |
+| `data.parsed.aspf` | `s` | Estrito (s) ✓ |
+| `data.parsed.adkim` | `r` | Relaxado (r) |
+| `data.parsed.adkim` | `s` | Estrito (s) ✓ |
+| `data.parsed.p` | `reject` | Rejeitar (reject) ✓ |
+| `data.parsed.p` | `quarantine` | Quarentena (quarantine) |
+| `data.parsed.p` | `none` | Nenhuma (none) ✗ |
+| `data.parsed.sp` | `reject` | Rejeitar (reject) ✓ |
+| `data.parsed.sp` | `quarantine` | Quarentena (quarantine) |
+| `data.parsed.sp` | `none` | Nenhuma (none) ✗ |
+| `data.parsed.pct` | `100` | 100% (cobertura total) ✓ |
+
+### 3. Tratamento Especial para DKIM (Frontend)
+
+Criar handler específico para `data.found` que exibe registros DKIM de forma legível:
+
+```
+EVIDÊNCIAS COLETADAS
+
+Seletor
+default
+
+Tipo de Chave
+rsa
+
+Tamanho da Chave (bits)
+2048
+```
+
+### 4. Tratamento Especial para Política DMARC (Frontend)
+
+No card "Política DMARC Restritiva", exibir AMBAS as políticas (p e sp):
+
+```
+EVIDÊNCIAS COLETADAS
+
+Política DMARC
+Rejeitar (reject) ✓
+
+Política de Subdomínio
+Rejeitar (reject) ✓
+```
+
+### 5. Corrigir Label "Registro SPF" em DMARC (Frontend)
+
+O label `data.raw` deve ser traduzido para "Registro DMARC" quando no contexto de DMARC, não "Registro SPF".
 
 ---
 
-## Alterações em `src/components/compliance/EvidenceDisplay.tsx`
+## Alterações no Frontend
 
-### 1. Adicionar traduções de labels técnicos
+### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
+
+#### 1. Expandir LABEL_TRANSLATIONS
 
 ```typescript
 const LABEL_TRANSLATIONS: Record<string, string> = {
   // ... existentes ...
-  'data.records[0].exchange': 'Servidor MX',
-  'data.parsed.includes': 'DNS Lookups (includes)',
-  'data.parsed.all': 'Política SPF (all)',
-  'data.raw': 'Registro SPF',
+  
+  // DKIM translations
+  'data.found': 'Registros DKIM',
+  'data.found[]': 'Registros DKIM',
+  'data.found[0].key_size_bits': 'Tamanho da Chave (bits)',
+  
+  // DMARC translations
+  'data.parsed.aspf': 'Alinhamento SPF',
+  'data.parsed.adkim': 'Alinhamento DKIM',
+  'data.parsed.pct': 'Cobertura',
+  'data.parsed.p': 'Política DMARC',
+  'data.parsed.sp': 'Política de Subdomínio',
+  'data.parsed.rua': 'Relatórios (RUA)',
+  'data.parsed.ruf': 'Relatórios Forenses (RUF)',
 };
 ```
 
-### 2. Adicionar traduções para campos dentro de records MX
+#### 2. Expandir VALUE_TRANSFORMATIONS
 
 ```typescript
-const FIELD_LABELS: Record<string, string> = {
+const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
   // ... existentes ...
-  resolved_ips: 'IPs Resolvidos',
-  resolved_ip_count: 'Quantidade de IPs',
+  
+  // DMARC alignment values
+  'data.parsed.aspf': {
+    'r': 'Relaxado (r)',
+    's': 'Estrito (s) ✓',
+  },
+  'data.parsed.adkim': {
+    'r': 'Relaxado (r)',
+    's': 'Estrito (s) ✓',
+  },
+  
+  // DMARC policy values
+  'data.parsed.p': {
+    'reject': 'Rejeitar (reject) ✓',
+    'quarantine': 'Quarentena (quarantine)',
+    'none': 'Nenhuma (none) ✗',
+  },
+  'data.parsed.sp': {
+    'reject': 'Rejeitar (reject) ✓',
+    'quarantine': 'Quarentena (quarantine)',
+    'none': 'Nenhuma (none) ✗',
+  },
+  
+  // DMARC coverage
+  'data.parsed.pct': {
+    '100': '100% (cobertura total) ✓',
+  },
 };
 ```
 
-### 3. Criar lista de campos ocultos POR TIPO DE LABEL
-
-Para os cards "Prioridades MX Configuradas" e "Registro MX Configurado", precisamos ocultar campos específicos:
+#### 3. Criar tratamento especial para DKIM em FormattedCodeEvidence
 
 ```typescript
-// Campos a ocultar por contexto de label
-const CONTEXT_HIDDEN_FIELDS: Record<string, string[]> = {
-  // Para cards de MX simples (não redundância), ocultar estes campos
-  'mx_priorities': ['priority', 'resolved_ips', 'resolved_ip_count'],
-  'mx_record': ['priority', 'resolved_ips', 'resolved_ip_count'],
-};
-```
+// Detectar se é registro DKIM
+const isDkimRecord = item.label.includes('DKIM') || 
+  item.label === 'data.found' || 
+  item.label === 'data.found[]' ||
+  (Array.isArray(parsed) && parsed[0]?.selector !== undefined);
 
-### 4. Modificar RecordDisplay para aceitar contexto
-
-Atualizar o componente `RecordDisplay` para receber um parâmetro opcional de contexto que determina quais campos ocultar:
-
-```typescript
-interface RecordDisplayProps {
-  record: Record<string, unknown>;
-  context?: string;  // Contexto para ocultar campos específicos
-  labelOverrides?: Record<string, string>;  // Sobrescrever labels para este contexto
-}
-
-function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) {
-  // Campos ocultos para este contexto específico
-  const contextHiddenFields = context ? (CONTEXT_HIDDEN_FIELDS[context] || []) : [];
-  
-  const entries = Object.entries(record)
-    .filter(([key, value]) => 
-      value !== null && 
-      value !== undefined && 
-      value !== '' &&
-      !HIDDEN_FIELDS.includes(key) &&
-      !contextHiddenFields.includes(key)  // Aplicar ocultos por contexto
-    );
-
-  // ... resto do código ...
-  // Usar labelOverrides se fornecido
-  const getLabel = (key: string) => 
-    labelOverrides?.[key] || FIELD_LABELS[key] || key;
+if (isDkimRecord && Array.isArray(parsed)) {
+  return (
+    <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+      {parsed.map((record, idx) => (
+        <RecordDisplay 
+          key={idx} 
+          record={record as Record<string, unknown>}
+          labelOverrides={{ 
+            selector: 'Seletor',
+            key_type: 'Tipo de Chave',
+            key_size_bits: 'Tamanho da Chave (bits)',
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 ```
 
-### 5. Criar tratamento especial para registros MX no FormattedCodeEvidence
+#### 4. Criar lógica para detectar contexto DMARC vs SPF
 
-Modificar a lógica de `FormattedCodeEvidence` para detectar se é um registro MX e aplicar formatação específica:
+O label `data.raw` precisa ser traduzido corretamente baseado no contexto:
+- Em cards SPF → "Registro SPF"  
+- Em cards DMARC → "Registro DMARC"
 
-```typescript
-function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
-  // ... código existente ...
+Isso pode ser feito detectando o conteúdo (v=DMARC1 vs v=spf1).
 
-  // NOVO: Tratamento especial para registros MX
-  // Detectar se é registro MX pelo label ou conteúdo
-  const isMxRecord = item.label.includes('MX') || 
-    (Array.isArray(parsed) && parsed[0]?.exchange);
-  
-  if (isMxRecord && Array.isArray(parsed)) {
-    // Determinar contexto baseado no label
-    // Se for "Redundância MX", mostrar todos os campos
-    // Senão, ocultar priority, resolved_ips, resolved_ip_count
-    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
-                               item.label.toLowerCase().includes('redundancy');
-    
-    const context = isRedundancyCheck ? 'mx_redundancy' : 'mx_simple';
-    
-    return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-        {parsed.map((record, idx) => (
-          <RecordDisplay 
-            key={idx} 
-            record={record as Record<string, unknown>}
-            context={context}
-            labelOverrides={{ exchange: 'Servidor MX' }}
-          />
-        ))}
-      </div>
-    );
-  }
-  
-  // ... resto do código ...
-}
+---
+
+## Alterações no Backend (Banco de Dados)
+
+### Nova regra: DMARC-006 (Alinhamento DKIM Estrito)
+
+Criar via SQL:
+
+```sql
+INSERT INTO compliance_rules (
+  device_type_id,
+  code,
+  name,
+  description,
+  category,
+  severity,
+  weight,
+  evaluation_logic,
+  pass_description,
+  fail_description,
+  recommendation,
+  is_active
+) VALUES (
+  'd5562218-5a3d-4ca6-9591-03e220dbf7e1',  -- Domínio Externo
+  'DMARC-006',
+  'Alinhamento DKIM Estrito',
+  'Verifica se o DMARC exige alinhamento estrito de DKIM (adkim=s).',
+  'Autenticação de Email - DMARC',
+  'low',
+  3,
+  '{"field": "data.parsed.adkim", "operator": "eq", "step_id": "dmarc_record", "value": "s"}',
+  'Alinhamento DKIM estrito está configurado.',
+  'Alinhamento DKIM relaxado permite subdomínios, reduzindo proteção.',
+  'Adicione "adkim=s" ao DMARC para exigir correspondência exata do domínio DKIM.',
+  true
+);
 ```
 
 ---
 
-## Detalhamento por Card
-
-### Card: Prioridades MX Configuradas
-| Campo Original | Ação |
-|----------------|------|
-| exchange | Exibir como "Servidor MX" |
-| priority | **OCULTAR** |
-| resolved_ips | **OCULTAR** |
-| resolved_ip_count | **OCULTAR** |
-
-### Card: Redundância MX
-| Campo Original | Ação |
-|----------------|------|
-| exchange | Exibir como "Servidor MX" |
-| priority | Exibir como "Prioridade" (já existe) |
-| resolved_ips | Exibir como "IPs Resolvidos" |
-| resolved_ip_count | Exibir como "Quantidade de IPs" |
-
-### Card: Registro MX Configurado
-| Campo Original | Ação |
-|----------------|------|
-| exchange | Exibir como "Servidor MX" |
-| priority | **OCULTAR** |
-| resolved_ips | **OCULTAR** |
-| resolved_ip_count | **OCULTAR** |
-
-### Card: Limite de DNS Lookups SPF
-| Campo Original | Tradução |
-|----------------|----------|
-| data.parsed.includes | "Mecanismos Include" |
-
-### Card: Política SPF Restritiva
-| Campo Original | Tradução |
-|----------------|----------|
-| data.parsed.all | "Política ALL" |
-
-### Card: Registro SPF Configurado
-| Campo Original | Tradução |
-|----------------|----------|
-| data.raw | "Registro SPF" |
-
----
-
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar traduções, criar contexto de campos ocultos, modificar RecordDisplay |
+| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar traduções DKIM/DMARC, tratamento especial para arrays DKIM, lógica de contexto SPF/DMARC |
+
+## SQL a Executar
+
+| Tabela | Operação |
+|--------|----------|
+| `compliance_rules` | INSERT da regra DMARC-006 |
 
 ---
 
 ## Resultado Visual Esperado
 
-### Prioridades MX Configuradas (DEPOIS)
+### DKIM Configurado (DEPOIS)
 ```
 EVIDÊNCIAS COLETADAS
-Servidor MX
-estrela-com-br.mail.protection.outlook.com
-```
-*(sem Prioridade, resolved_ips, resolved_ip_count)*
 
-### Redundância MX (DEPOIS)
+Seletor
+default
+
+Tipo de Chave
+rsa
+
+Tamanho da Chave (bits)
+2048
+```
+
+### Alinhamento SPF Estrito (DEPOIS)
 ```
 EVIDÊNCIAS COLETADAS
-Servidor MX
-mx1.example.com
 
-Prioridade
-10
-
-IPs Resolvidos
-["192.168.1.1", "192.168.1.2"]
-
-Quantidade de IPs
-2
-```
-*(todos os campos traduzidos)*
-
-### Limite de DNS Lookups SPF (DEPOIS)
-```
-Mecanismos Include
-["_spf.google.com", "_spf.outlook.com"]
+Alinhamento SPF
+Relaxado (r)
 ```
 
-### Política SPF Restritiva (DEPOIS)
+### Alinhamento DKIM Estrito (NOVO CARD)
 ```
-Política ALL
--all
+EVIDÊNCIAS COLETADAS
+
+Alinhamento DKIM
+Estrito (s) ✓
 ```
 
-### Registro SPF Configurado (DEPOIS)
+### Política DMARC Restritiva (DEPOIS)
 ```
-Registro SPF
-v=spf1 include:_spf.google.com ~all
+EVIDÊNCIAS COLETADAS
+
+Política DMARC
+Rejeitar (reject) ✓
+
+Política de Subdomínio
+Rejeitar (reject) ✓
+```
+
+### DMARC Configurado (DEPOIS)
+```
+EVIDÊNCIAS COLETADAS
+
+Registro DMARC
+v=DMARC1;p=reject;sp=reject;...
+```
+
+### Cobertura DMARC Total (DEPOIS)
+```
+EVIDÊNCIAS COLETADAS
+
+Cobertura
+100% (cobertura total) ✓
+```
+
+### Relatórios DMARC (RUA) (DEPOIS)
+```
+EVIDÊNCIAS COLETADAS
+
+Relatórios (RUA)
+mailto:db93c273a8@rua.easydmarc.com
 ```
 
 ---
 
 ## Considerações Técnicas
 
-1. **Detecção de contexto**: Usaremos o label do item para determinar qual card está sendo renderizado e aplicar as regras corretas
-2. **Fallback seguro**: Se não conseguirmos determinar o contexto, mostramos todos os campos (comportamento atual)
-3. **Extensível**: Fácil adicionar novos contextos e regras para outros tipos de checks
+1. **Detecção de contexto DMARC/SPF**: Usaremos o conteúdo do registro (`v=DMARC1` vs `v=spf1`) para determinar a tradução correta de `data.raw`
+2. **Política de subdomínio**: Será extraída do mesmo registro DMARC e exibida junto com a política principal
+3. **Nova regra DMARC-006**: Seguirá o mesmo padrão da DMARC-005 (aspf), mas para adkim
+4. **Fallback seguro**: Labels não traduzidos continuam funcionando
