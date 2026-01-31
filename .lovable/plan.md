@@ -1,264 +1,211 @@
 
-# Plano: Transformar Logs de Auditoria em Insights de Segurança do Entra ID
 
-## Visao Geral
+# Plano: Cores por Categoria no Relatório de Domínios Externos
 
-Reimplementar a area de Logs de Auditoria do modulo Microsoft 365/Entra ID para apresentar **insights de seguranca consolidados** em vez de logs crus. A nova abordagem foca em analise, correlacao e classificacao de riscos, entregando valor estrategico para tomada de decisao.
+## Objetivo
+
+Aplicar o esquema visual de cores por categorias (como no módulo Security Insights) no relatório de domínios externos, subdividir a categoria "Autenticação de Email" em SPF, DKIM e DMARC, e incluir a **pontuação de aprovação** no header de cada categoria.
 
 ---
 
-## Arquitetura da Solucao
+## Parte 1: Atualização do Banco de Dados
+
+### Migração SQL
+
+Criar uma migração para atualizar o campo `category` das regras existentes:
+
+| Regra | Categoria Atual | Nova Categoria |
+|-------|-----------------|----------------|
+| SPF-001, SPF-002, SPF-003 | Autenticação de Email | Autenticação de Email - SPF |
+| DKIM-001, DKIM-002, DKIM-003 | Autenticação de Email | Autenticação de Email - DKIM |
+| DMARC-001 a DMARC-005 | Autenticação de Email | Autenticação de Email - DMARC |
+| DNS-001 a DNS-006 | Segurança DNS | (mantém) |
+| MX-001 a MX-005 | Infraestrutura de Email | (mantém) |
+
+```sql
+UPDATE compliance_rules 
+SET category = 'Autenticação de Email - SPF'
+WHERE code LIKE 'SPF-%';
+
+UPDATE compliance_rules 
+SET category = 'Autenticação de Email - DKIM'
+WHERE code LIKE 'DKIM-%';
+
+UPDATE compliance_rules 
+SET category = 'Autenticação de Email - DMARC'
+WHERE code LIKE 'DMARC-%';
+```
+
+---
+
+## Parte 2: Novo Componente de Categoria
+
+### Arquivo: `src/components/external-domain/ExternalDomainCategorySection.tsx`
+
+Componente inspirado no `InsightCategorySection`, adaptado para compliance de domínios externos.
+
+### Layout do Header (Atualizado)
 
 ```text
-+------------------+     +------------------------+     +-------------------+
-|   Frontend       |     |   Edge Function        |     |   Microsoft       |
-|   (React)        |<--->|   entra-id-security-   |<--->|   Graph API       |
-|                  |     |   insights             |     |                   |
-+------------------+     +------------------------+     +-------------------+
-        |                          |
-        v                          v
-  InsightCard               Correlacao e Analise
-  InsightGrid               Classificacao de Risco
-  InsightDetailDialog       Agregacao de Dados
++---------------------------------------------------------------------------------+
+| [Icone] Nome da Categoria  [X verificações] [Y críticos]        [XX% aprovação] |
++---------------------------------------------------------------------------------+
+|   +-- ComplianceCard 1 (item existente - não modificar)                         |
+|   +-- ComplianceCard 2                                                          |
+|   +-- ComplianceCard 3                                                          |
++---------------------------------------------------------------------------------+
 ```
 
----
+### Esquema de Cores (Cores Frias)
 
-## Fase 1: Nova Edge Function - `entra-id-security-insights`
+| Categoria | Cor | Classes Tailwind |
+|-----------|-----|------------------|
+| Autenticação de Email - SPF | Azul | `bg-blue-500/10`, `text-blue-500`, `border-blue-500/30` |
+| Autenticação de Email - DKIM | Ciano | `bg-cyan-500/10`, `text-cyan-500`, `border-cyan-500/30` |
+| Autenticação de Email - DMARC | Indigo | `bg-indigo-500/10`, `text-indigo-500`, `border-indigo-500/30` |
+| Segurança DNS | Verde-esmeralda | `bg-emerald-500/10`, `text-emerald-500`, `border-emerald-500/30` |
+| Infraestrutura de Email | Violeta | `bg-violet-500/10`, `text-violet-500`, `border-violet-500/30` |
 
-### Objetivo
-Processar logs do Entra ID internamente e retornar apenas insights consolidados, nunca logs crus.
+### Ícones por Categoria
 
-### Insights a Implementar
+| Categoria | Ícone Lucide |
+|-----------|--------------|
+| Autenticação de Email - SPF | `ShieldCheck` |
+| Autenticação de Email - DKIM | `KeyRound` |
+| Autenticação de Email - DMARC | `ShieldAlert` |
+| Segurança DNS | `Globe` |
+| Infraestrutura de Email | `Mail` |
 
-#### Categoria: Seguranca de Identidade
-| ID | Insight | Fonte de Dados | Severidade |
-|----|---------|----------------|------------|
-| SI-001 | Usuarios com logins suspeitos | signInLogs (riskState) | Alta/Critica |
-| SI-002 | Multiplas tentativas falhas | signInLogs (status.errorCode) | Media |
-| SI-003 | Login de paises incomuns | signInLogs (location) | Alta |
-| SI-004 | Login de IPs com reputacao ruim | signInLogs + IP reputation | Alta |
-| SI-005 | Login bem-sucedido apos varias falhas | Correlacao signInLogs | Critica |
-| SI-006 | Usuarios sem MFA configurado | authenticationMethods | Alta |
-| SI-007 | Contas privilegiadas sem MFA | directoryRoles + authMethods | Critica |
-| SI-008 | Mudancas de senha seguidas de login anomalo | Correlacao auditLogs + signIn | Alta |
+### Funcionalidades do Componente
 
-#### Categoria: Comportamento e Risco
-| ID | Insight | Fonte de Dados | Severidade |
-|----|---------|----------------|------------|
-| CR-001 | Usuarios com comportamento fora do padrao | signInLogs (analise temporal) | Media |
-| CR-002 | Contas inativas com permissoes elevadas | users + directoryRoles + signIn | Alta |
-| CR-003 | Contas de servico com uso inesperado | servicePrincipals + signInLogs | Media |
-| CR-004 | Login fora de horario padrao | signInLogs (timestamp analysis) | Baixa |
-
-#### Categoria: Governanca e Compliance
-| ID | Insight | Fonte de Dados | Severidade |
-|----|---------|----------------|------------|
-| GC-001 | Usuarios com funcoes administrativas | directoryRoleAssignments | Info |
-| GC-002 | Alteracoes recentes em roles sensiveis | auditLogs (RoleManagement) | Alta |
-| GC-003 | Usuarios recem-criados com acesso elevado | Correlacao users + roles | Alta |
-| GC-004 | Funcoes atribuidas sem justificativa | auditLogs (lack of notes) | Media |
-
-### Estrutura de Resposta da Edge Function
-
-```typescript
-interface SecurityInsight {
-  id: string;
-  code: string;
-  title: string;
-  description: string;
-  category: 'identity_security' | 'behavior_risk' | 'governance';
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
-  affectedCount: number;
-  affectedUsers: Array<{
-    id: string;
-    displayName: string;
-    userPrincipalName: string;
-    details?: Record<string, unknown>;
-  }>;
-  criteria: string;
-  recommendation: string;
-  detectedAt: string;
-  timeRange: { from: string; to: string };
-}
-
-interface SecurityInsightsResponse {
-  success: boolean;
-  insights: SecurityInsight[];
-  summary: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    total: number;
-  };
-  analyzedPeriod: { from: string; to: string };
-  tenant: { id: string; domain: string };
-}
-```
+1. **Header colapsável** com cor de fundo e ícone da categoria
+2. **Badge de verificações** mostrando quantidade total
+3. **Badge de críticos/altos** (se houver falhas)
+4. **Pontuação de aprovação** (`passRate`) no lado direito, com cores:
+   - Verde (≥80%): `text-emerald-500`
+   - Amarelo (≥60%): `text-amber-500`
+   - Vermelho (<60%): `text-red-500`
+5. **Chevron** para indicar estado expandido/colapsado
+6. **ComplianceCards** (componente existente, sem modificações)
 
 ---
 
-## Fase 2: Novos Componentes React
+## Parte 3: Atualização da Página de Relatório
 
-### 2.1 `InsightCard.tsx`
-Card de insight individual com:
-- Icone de severidade (cores: vermelho/laranja/amarelo/azul)
-- Titulo descritivo do risco
-- Quantidade de usuarios afetados
-- Badge de severidade
-- Botao para expandir detalhes
+### Arquivo: `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
 
-### 2.2 `InsightDetailDialog.tsx`
-Dialog modal para exibir:
-- Lista de usuarios afetados
-- Criterio que gerou o insight
-- Recomendacao de acao
-- Timeline de deteccao
+Alterações:
 
-### 2.3 `InsightSummaryCards.tsx`
-Cards de resumo no topo da pagina:
-- Total de insights
-- Insights criticos
-- Insights de alta prioridade
-- Insights de media/baixa prioridade
-
-### 2.4 `InsightCategorySection.tsx`
-Agrupamento colapsavel por categoria:
-- Seguranca de Identidade
-- Comportamento e Risco
-- Governanca e Compliance
-
----
-
-## Fase 3: Nova Pagina - `EntraIdSecurityInsightsPage.tsx`
-
-### Layout
-```text
-+-------------------------------------------------------+
-|  Breadcrumb: M365 > Entra ID > Insights de Seguranca  |
-+-------------------------------------------------------+
-|  Header: Insights de Seguranca        [Atualizar]     |
-|  Subtitle: Analise consolidada de riscos              |
-+-------------------------------------------------------+
-|  Tenant Info Card (se conectado)                      |
-+-------------------------------------------------------+
-|  Summary Cards (4 cards: Critical, High, Med, Total)  |
-+-------------------------------------------------------+
-|  Filtros: Periodo | Categoria | Severidade            |
-+-------------------------------------------------------+
-|  Categoria: Seguranca de Identidade      [Expandir]   |
-|    - InsightCard 1                                    |
-|    - InsightCard 2                                    |
-+-------------------------------------------------------+
-|  Categoria: Comportamento e Risco        [Expandir]   |
-|    - InsightCard 3                                    |
-+-------------------------------------------------------+
-|  Categoria: Governanca e Compliance      [Expandir]   |
-|    - InsightCard 4                                    |
-+-------------------------------------------------------+
-```
-
----
-
-## Fase 4: Atualizacoes de Navegacao
-
-### 4.1 Renomear rota e menu
-- **Antes**: `/scope-m365/entra-id/audit-logs` - "Logs de Auditoria"
-- **Depois**: `/scope-m365/entra-id/security-insights` - "Insights de Seguranca"
-
-### 4.2 Atualizar `EntraIdPage.tsx`
-- Alterar card de "Logs de Auditoria" para "Insights de Seguranca"
-- Nova descricao: "Analise consolidada de riscos e indicadores de seguranca"
-
-### 4.3 Atualizar `App.tsx`
-- Nova rota: `/scope-m365/entra-id/security-insights`
-- Redirect da rota antiga para a nova (compatibilidade)
-
----
-
-## Fase 5: Hook Customizado
-
-### `useEntraIdSecurityInsights.ts`
-```typescript
-interface UseEntraIdSecurityInsightsOptions {
-  tenantRecordId: string | null;
-  dateRange?: { from: Date; to: Date };
-  categories?: string[];
-  severities?: string[];
-}
-
-interface UseEntraIdSecurityInsightsResult {
-  insights: SecurityInsight[];
-  summary: InsightsSummary;
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-}
-```
+1. Importar o novo componente `ExternalDomainCategorySection`
+2. Substituir `CategorySection` por `ExternalDomainCategorySection` na renderização
+3. Manter todas as outras funcionalidades inalteradas
 
 ---
 
 ## Arquivos a Criar
 
-| Arquivo | Descricao |
+| Arquivo | Descrição |
 |---------|-----------|
-| `supabase/functions/entra-id-security-insights/index.ts` | Edge function de analise |
-| `src/hooks/useEntraIdSecurityInsights.ts` | Hook de dados |
-| `src/pages/m365/EntraIdSecurityInsightsPage.tsx` | Nova pagina |
-| `src/components/m365/insights/InsightCard.tsx` | Card de insight |
-| `src/components/m365/insights/InsightDetailDialog.tsx` | Dialog de detalhes |
-| `src/components/m365/insights/InsightSummaryCards.tsx` | Cards de resumo |
-| `src/components/m365/insights/InsightCategorySection.tsx` | Secao por categoria |
-| `src/types/securityInsights.ts` | Tipos TypeScript |
+| `src/components/external-domain/ExternalDomainCategorySection.tsx` | Novo componente de categoria com cores e pontuação |
+| `supabase/migrations/[timestamp]_split_email_auth_categories.sql` | Migração para subdividir categorias de email |
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteracao |
+| Arquivo | Alteração |
 |---------|-----------|
-| `src/App.tsx` | Nova rota + redirect |
-| `src/pages/m365/EntraIdPage.tsx` | Atualizar card de navegacao |
-| `supabase/config.toml` | Registrar nova edge function |
+| `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx` | Usar novo componente de categoria |
 
-## Arquivos a Remover/Deprecar
+## Arquivos que NÃO serão modificados
 
-| Arquivo | Acao |
-|---------|------|
-| `src/pages/m365/EntraIdAuditLogsPage.tsx` | Remover (substituido) |
-| `src/hooks/useEntraIdAuditLogs.ts` | Remover (substituido) |
-| `supabase/functions/entra-id-audit-logs/` | Manter para compatibilidade interna |
+| Arquivo | Motivo |
+|---------|--------|
+| `src/components/ComplianceCard.tsx` | Itens dentro das categorias permanecem inalterados |
+| `src/components/CategorySection.tsx` | Componente usado por outros módulos (Firewall) |
 
 ---
 
-## Criterios de Aceite
+## Seção Técnica
 
-1. A tela de Insights de Seguranca nao exibe logs crus
-2. Todos os dados sao apresentados como insights ou indicadores consolidados
-3. Insights sao claros, acionaveis e classificados por severidade
-4. Usuario consegue identificar rapidamente:
-   - Quem esta em risco (lista de usuarios afetados)
-   - Qual o tipo de risco (categoria + titulo)
-   - Por que aquilo importa (criterio + recomendacao)
-5. Linguagem executiva e orientada a risco, nao tecnica
-6. Cards expansiveis para ver detalhes sem sobrecarregar a interface
+### Estrutura do Novo Componente
+
+```typescript
+interface ExternalDomainCategorySectionProps {
+  category: ComplianceCategory;
+  index: number;
+  defaultOpen?: boolean;
+}
+
+// Mapa de cores por categoria
+const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  'Autenticação de Email - SPF': { bg: 'bg-blue-500/10', text: 'text-blue-500', border: 'border-blue-500/30' },
+  'Autenticação de Email - DKIM': { bg: 'bg-cyan-500/10', text: 'text-cyan-500', border: 'border-cyan-500/30' },
+  'Autenticação de Email - DMARC': { bg: 'bg-indigo-500/10', text: 'text-indigo-500', border: 'border-indigo-500/30' },
+  'Segurança DNS': { bg: 'bg-emerald-500/10', text: 'text-emerald-500', border: 'border-emerald-500/30' },
+  'Infraestrutura de Email': { bg: 'bg-violet-500/10', text: 'text-violet-500', border: 'border-violet-500/30' },
+};
+
+// Mapa de ícones por categoria
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  'Autenticação de Email - SPF': ShieldCheck,
+  'Autenticação de Email - DKIM': KeyRound,
+  'Autenticação de Email - DMARC': ShieldAlert,
+  'Segurança DNS': Globe,
+  'Infraestrutura de Email': Mail,
+};
+```
+
+### Cálculo de Badges
+
+```typescript
+// Contagem de críticos/altos (falhas com severidade crítica ou alta)
+const criticalCount = category.checks.filter(
+  c => c.status === 'fail' && (c.severity === 'critical' || c.severity === 'high')
+).length;
+
+// Cor da pontuação baseada no passRate
+const getPassRateColor = (passRate: number) => {
+  if (passRate >= 80) return 'text-emerald-500';
+  if (passRate >= 60) return 'text-amber-500';
+  return 'text-red-500';
+};
+```
 
 ---
 
-## Estimativa de Implementacao
+## Resultado Esperado
 
-| Fase | Esforco |
-|------|---------|
-| Edge Function | Alto (logica de correlacao complexa) |
-| Componentes React | Medio (reutiliza padroes existentes) |
-| Nova Pagina | Baixo (composicao de componentes) |
-| Atualizacoes de Navegacao | Baixo |
-| Testes e Ajustes | Medio |
+Antes:
+```text
+[Fundo genérico] Autenticação de Email    12 verificações    85%
+  - SPF-001, DKIM-001, DMARC-001...
+```
+
+Depois:
+```text
+[Fundo Azul]     Autenticação de Email - SPF    3 verificações    [0 críticos]    100%
+  - SPF-001, SPF-002, SPF-003
+
+[Fundo Ciano]    Autenticação de Email - DKIM   3 verificações    [1 crítico]     67%
+  - DKIM-001, DKIM-002, DKIM-003
+
+[Fundo Indigo]   Autenticação de Email - DMARC  5 verificações    [2 críticos]    60%
+  - DMARC-001, DMARC-002...
+
+[Fundo Verde]    Segurança DNS                  6 verificações    [0 críticos]    100%
+  - DNS-001, DNS-002...
+
+[Fundo Violeta]  Infraestrutura de Email        5 verificações    [0 críticos]    80%
+  - MX-001, MX-002...
+```
 
 ---
 
-## Dependencias Externas
+## Critérios de Aceite
 
-- Licenca Azure AD Premium P1/P2 para alguns insights (signInLogs, riskState)
-- Permissoes Graph API: `AuditLog.Read.All`, `Directory.Read.All`, `Reports.Read.All`
-- Permissoes ja configuradas no app M365 global
+1. Cada categoria tem cor de fundo e ícone específico (cores frias)
+2. Header mostra: ícone, nome, quantidade de verificações, críticos (se houver) e pontuação
+3. Pontuação usa cores semânticas (verde/amarelo/vermelho) baseadas no percentual
+4. Categoria "Autenticação de Email" subdividida em SPF, DKIM e DMARC
+5. ComplianceCards dentro das categorias permanecem inalterados
+6. Cores quentes (vermelho/laranja/amarelo) reservadas para severidade de alertas
 
