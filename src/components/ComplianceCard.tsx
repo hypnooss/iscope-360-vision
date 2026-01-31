@@ -3,6 +3,7 @@ import { CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown, Code, F
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { EvidenceItemDisplay } from '@/components/compliance/EvidenceDisplay';
 
 interface ComplianceCardProps {
   check: ComplianceCheck;
@@ -149,6 +150,21 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
               </h5>
               <div className="bg-muted/30 rounded-md p-3 border border-border/30">
                 <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Domínios Externos: "EVIDÊNCIAS COLETADAS" visível para todos */}
+          {variant === 'external_domain' && check.evidence && check.evidence.length > 0 && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <FileText className="w-3 h-3" />
+                EVIDÊNCIAS COLETADAS
+              </h5>
+              <div className="space-y-2">
+                {check.evidence.map((item, index) => (
+                  <EvidenceItemDisplay key={index} item={item} />
+                ))}
               </div>
             </div>
           )}
