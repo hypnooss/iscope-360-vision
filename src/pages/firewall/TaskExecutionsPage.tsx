@@ -116,6 +116,19 @@ export default function TaskExecutionsPage() {
     queryKey: ['agent-tasks', statusFilter, timeFilter],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
+
+      // Importante: não confiar apenas em target_type.
+      // Existem tasks legadas (ex.: domínio externo) com target_type='firewall' por default.
+      // Aqui garantimos que só voltam tasks cujo target_id existe em firewalls acessíveis.
+      const { data: firewallRows, error: firewallsError } = await supabase
+        .from('firewalls')
+        .select('id')
+        .limit(1000);
+
+      if (firewallsError) throw firewallsError;
+
+      const firewallIds = (firewallRows ?? []).map((f) => f.id);
+      if (firewallIds.length === 0) return [] as AgentTask[];
       
       // Query otimizada: exclui campos pesados (result, step_results, payload)
       let query = supabase
@@ -137,6 +150,7 @@ export default function TaskExecutionsPage() {
           timeout_at
         `)
         .eq('target_type', 'firewall')
+        .in('target_id', firewallIds)
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
