@@ -55,7 +55,56 @@ interface ExchangeInsight {
   detectedAt: string;
 }
 
-// Get access token from Microsoft
+// Encryption utilities
+function fromHex(hex: string): Uint8Array {
+  const matches = hex.match(/.{1,2}/g);
+  if (!matches) return new Uint8Array();
+  return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
+}
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex) {
+    throw new Error('M365_ENCRYPTION_KEY não está configurada');
+  }
+  
+  const keyBytes = fromHex(keyHex);
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes.buffer as ArrayBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+}
+
+async function decryptSecret(encrypted: string): Promise<string> {
+  if (!encrypted.includes(':')) {
+    try {
+      return atob(encrypted);
+    } catch {
+      return encrypted;
+    }
+  }
+  
+  try {
+    const [ivHex, ciphertextHex] = encrypted.split(':');
+    const iv = fromHex(ivHex);
+    const ciphertext = fromHex(ciphertextHex);
+    const key = await getEncryptionKey();
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      ciphertext.buffer as ArrayBuffer
+    );
+    
+    return new TextDecoder().decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    throw new Error('Falha ao decriptar secret');
+  }
+}
 async function getAccessToken(
   tenantId: string,
   clientId: string,
@@ -487,21 +536,7 @@ Deno.serve(async (req) => {
     }
 
     // Decrypt client secret
-    const encryptionKey = Deno.env.get("M365_ENCRYPTION_KEY");
-    if (!encryptionKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Encryption key not configured", errorCode: "ENCRYPTION_ERROR" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-      );
-    }
-
-    // Simple decryption (base64)
-    let clientSecret: string;
-    try {
-      clientSecret = atob(globalConfig.client_secret_encrypted);
-    } catch {
-      clientSecret = globalConfig.client_secret_encrypted;
-    }
+    const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
 
     // Get access token
     console.log("Getting access token for tenant:", tenant.tenant_id);
