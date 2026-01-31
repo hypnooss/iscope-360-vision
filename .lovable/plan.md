@@ -1,161 +1,111 @@
 
-# Plano: Humanização de Evidências DKIM/DMARC e Nova Regra
+# Plano: Correções nas Evidências MX, DKIM e DMARC
 
-## Resumo das Alterações
+## Problemas Identificados
 
-### 1. Traduções de Labels (Frontend)
+### 1. Redundância MX - IPs não exibidos
+O contexto `mx_redundancy` não está definido em `CONTEXT_HIDDEN_FIELDS`, mas deveria manter resolved_ips visível. O código na linha 285 define `context = 'mx_redundancy'`, mas não há entrada correspondente - então todos os campos são exibidos. O problema real é que os campos `resolved_ips` e `resolved_ip_count` estão sendo processados mas podem estar em formato JSON.
 
-Adicionar mapeamentos para todos os labels técnicos identificados:
+### 2. DKIM Configurado e Redundância DKIM - JSON muito longo
+O tratamento DKIM atual usa `RecordDisplay` que mostra TODOS os campos não ocultos. Campos como `txt_raw`, `name`, `flags`, etc. estão sendo exibidos. Para simplificar:
+- **DKIM Configurado**: Mostrar apenas que chaves foram encontradas (quantidade)
+- **Redundância DKIM**: Mostrar apenas os nomes das chaves DKIM
 
-| Label Técnico | Tradução |
-|--------------|----------|
-| `data.found` / `data.found[]` | Ocultar/Processar como lista DKIM |
-| `data.parsed.aspf` | Alinhamento SPF |
-| `data.parsed.adkim` | Alinhamento DKIM |
-| `data.parsed.pct` | Cobertura |
-| `data.parsed.p` | Política DMARC |
-| `data.parsed.sp` | Política de Subdomínio |
-| `data.parsed.rua` | Relatórios (RUA) |
-| `data.parsed.ruf` | Relatórios Forenses (RUF) |
-| `data.raw` (contexto DMARC) | Registro DMARC |
-
-### 2. Transformações de Valores (Frontend)
-
-Para tornar valores técnicos compreensíveis:
-
-| Campo | Valor Original | Valor Humanizado |
-|-------|---------------|------------------|
-| `data.parsed.aspf` | `r` | Relaxado (r) |
-| `data.parsed.aspf` | `s` | Estrito (s) ✓ |
-| `data.parsed.adkim` | `r` | Relaxado (r) |
-| `data.parsed.adkim` | `s` | Estrito (s) ✓ |
-| `data.parsed.p` | `reject` | Rejeitar (reject) ✓ |
-| `data.parsed.p` | `quarantine` | Quarentena (quarantine) |
-| `data.parsed.p` | `none` | Nenhuma (none) ✗ |
-| `data.parsed.sp` | `reject` | Rejeitar (reject) ✓ |
-| `data.parsed.sp` | `quarantine` | Quarentena (quarantine) |
-| `data.parsed.sp` | `none` | Nenhuma (none) ✗ |
-| `data.parsed.pct` | `100` | 100% (cobertura total) ✓ |
-
-### 3. Tratamento Especial para DKIM (Frontend)
-
-Criar handler específico para `data.found` que exibe registros DKIM de forma legível:
-
-```
-EVIDÊNCIAS COLETADAS
-
-Seletor
-default
-
-Tipo de Chave
-rsa
-
-Tamanho da Chave (bits)
-2048
-```
-
-### 4. Tratamento Especial para Política DMARC (Frontend)
-
-No card "Política DMARC Restritiva", exibir AMBAS as políticas (p e sp):
-
-```
-EVIDÊNCIAS COLETADAS
-
-Política DMARC
-Rejeitar (reject) ✓
-
-Política de Subdomínio
-Rejeitar (reject) ✓
-```
-
-### 5. Corrigir Label "Registro SPF" em DMARC (Frontend)
-
-O label `data.raw` deve ser traduzido para "Registro DMARC" quando no contexto de DMARC, não "Registro SPF".
+### 3. Alinhamentos DMARC (aspf, adkim, rua) - Sem evidências
+Os labels `data.parsed.aspf`, `data.parsed.adkim` e `data.parsed.rua` estão mapeados em `LABEL_TRANSLATIONS` e `VALUE_TRANSFORMATIONS`, mas as evidências não estão aparecendo. Isso sugere que os valores estão chegando como texto simples e as transformações estão sendo aplicadas, mas o label traduzido precisa ser passado corretamente.
 
 ---
 
-## Alterações no Frontend
+## Alterações no `src/components/compliance/EvidenceDisplay.tsx`
 
-### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
+### 1. Corrigir tratamento de Redundância MX
 
-#### 1. Expandir LABEL_TRANSLATIONS
+Adicionar formatação específica para `resolved_ips` quando é um array JSON:
 
 ```typescript
-const LABEL_TRANSLATIONS: Record<string, string> = {
-  // ... existentes ...
-  
-  // DKIM translations
-  'data.found': 'Registros DKIM',
-  'data.found[]': 'Registros DKIM',
-  'data.found[0].key_size_bits': 'Tamanho da Chave (bits)',
-  
-  // DMARC translations
-  'data.parsed.aspf': 'Alinhamento SPF',
-  'data.parsed.adkim': 'Alinhamento DKIM',
-  'data.parsed.pct': 'Cobertura',
-  'data.parsed.p': 'Política DMARC',
-  'data.parsed.sp': 'Política de Subdomínio',
-  'data.parsed.rua': 'Relatórios (RUA)',
-  'data.parsed.ruf': 'Relatórios Forenses (RUF)',
-};
+// Em FIELD_LABELS, garantir que existe:
+resolved_ips: 'IPs Resolvidos',
+resolved_ip_count: 'Quantidade de IPs',
+
+// Em RecordDisplay, formatar arrays de IPs
+{typeof value === 'object' && Array.isArray(value) 
+  ? value.join(', ') 
+  : typeof value === 'object' 
+    ? JSON.stringify(value) 
+    : String(value)}
 ```
 
-#### 2. Expandir VALUE_TRANSFORMATIONS
+### 2. Simplificar exibição DKIM
+
+Criar tratamento específico para DKIM que detecta o contexto do card:
 
 ```typescript
-const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
-  // ... existentes ...
-  
-  // DMARC alignment values
-  'data.parsed.aspf': {
-    'r': 'Relaxado (r)',
-    's': 'Estrito (s) ✓',
-  },
-  'data.parsed.adkim': {
-    'r': 'Relaxado (r)',
-    's': 'Estrito (s) ✓',
-  },
-  
-  // DMARC policy values
-  'data.parsed.p': {
-    'reject': 'Rejeitar (reject) ✓',
-    'quarantine': 'Quarentena (quarantine)',
-    'none': 'Nenhuma (none) ✗',
-  },
-  'data.parsed.sp': {
-    'reject': 'Rejeitar (reject) ✓',
-    'quarantine': 'Quarentena (quarantine)',
-    'none': 'Nenhuma (none) ✗',
-  },
-  
-  // DMARC coverage
-  'data.parsed.pct': {
-    '100': '100% (cobertura total) ✓',
-  },
-};
-```
+// Para DKIM Configurado: mostrar contagem de chaves
+// Para Redundância DKIM: mostrar nomes das chaves
 
-#### 3. Criar tratamento especial para DKIM em FormattedCodeEvidence
-
-```typescript
-// Detectar se é registro DKIM
 const isDkimRecord = item.label.includes('DKIM') || 
   item.label === 'data.found' || 
   item.label === 'data.found[]' ||
   (Array.isArray(parsed) && parsed[0]?.selector !== undefined);
 
 if (isDkimRecord && Array.isArray(parsed)) {
+  // Determinar contexto pelo label
+  const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
+                            item.label.toLowerCase().includes('redundancy');
+  
+  if (isRedundancyCheck) {
+    // Redundância DKIM: mostrar nomes das chaves
+    return (
+      <div className="...">
+        {parsed.map((record, idx) => (
+          <div key={idx} className="flex flex-col">
+            <span className="text-xs...">Chave DKIM</span>
+            <span className="text-sm...">{record.name || record.selector}</span>
+          </div>
+        ))}
+      </div>
+    );
+  } else {
+    // DKIM Configurado: mostrar que chaves foram encontradas
+    return (
+      <div className="...">
+        <span className="text-xs...">Chaves DKIM Encontradas</span>
+        <span className="text-sm...">{parsed.length} chave(s) configurada(s)</span>
+      </div>
+    );
+  }
+}
+```
+
+### 3. Adicionar campos DKIM a HIDDEN_FIELDS
+
+Garantir que campos muito técnicos do DKIM não apareçam:
+
+```typescript
+const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw', 'flags'];
+```
+
+### 4. Corrigir exibição do contexto MX
+
+Para Redundância MX, não aplicar contexto (ou criar um contexto explícito que não oculte nada):
+
+```typescript
+// No tratamento MX
+if (isMxRecord && Array.isArray(parsed)) {
+  const isRedundancyCheck = item.label.toLowerCase().includes('redundância');
+  
+  // Para redundância, NÃO ocultar campos técnicos
+  // Para outros cards MX, ocultar priority, resolved_ips, resolved_ip_count
+  const context = isRedundancyCheck ? undefined : 'mx_simple';
+  
   return (
-    <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+    <div className="...">
       {parsed.map((record, idx) => (
         <RecordDisplay 
           key={idx} 
           record={record as Record<string, unknown>}
-          labelOverrides={{ 
-            selector: 'Seletor',
-            key_type: 'Tipo de Chave',
-            key_size_bits: 'Tamanho da Chave (bits)',
-          }}
+          context={context}
+          labelOverrides={{ exchange: 'Servidor MX' }}
         />
       ))}
     </div>
@@ -163,85 +113,74 @@ if (isDkimRecord && Array.isArray(parsed)) {
 }
 ```
 
-#### 4. Criar lógica para detectar contexto DMARC vs SPF
+### 5. Corrigir formatação de arrays em RecordDisplay
 
-O label `data.raw` precisa ser traduzido corretamente baseado no contexto:
-- Em cards SPF → "Registro SPF"  
-- Em cards DMARC → "Registro DMARC"
+Modificar `RecordDisplay` para formatar arrays de forma legível:
 
-Isso pode ser feito detectando o conteúdo (v=DMARC1 vs v=spf1).
+```typescript
+function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) {
+  // ...existing code...
 
----
-
-## Alterações no Backend (Banco de Dados)
-
-### Nova regra: DMARC-006 (Alinhamento DKIM Estrito)
-
-Criar via SQL:
-
-```sql
-INSERT INTO compliance_rules (
-  device_type_id,
-  code,
-  name,
-  description,
-  category,
-  severity,
-  weight,
-  evaluation_logic,
-  pass_description,
-  fail_description,
-  recommendation,
-  is_active
-) VALUES (
-  'd5562218-5a3d-4ca6-9591-03e220dbf7e1',  -- Domínio Externo
-  'DMARC-006',
-  'Alinhamento DKIM Estrito',
-  'Verifica se o DMARC exige alinhamento estrito de DKIM (adkim=s).',
-  'Autenticação de Email - DMARC',
-  'low',
-  3,
-  '{"field": "data.parsed.adkim", "operator": "eq", "step_id": "dmarc_record", "value": "s"}',
-  'Alinhamento DKIM estrito está configurado.',
-  'Alinhamento DKIM relaxado permite subdomínios, reduzindo proteção.',
-  'Adicione "adkim=s" ao DMARC para exigir correspondência exata do domínio DKIM.',
-  true
-);
+  return (
+    <div className="...">
+      {entries.map(([key, value]) => (
+        <div key={key} className="flex flex-col">
+          <span className="...">{getLabel(key)}</span>
+          <span className="...">
+            {Array.isArray(value) 
+              ? value.join(', ')
+              : typeof value === 'object' 
+                ? JSON.stringify(value) 
+                : String(value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 ```
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar traduções DKIM/DMARC, tratamento especial para arrays DKIM, lógica de contexto SPF/DMARC |
-
-## SQL a Executar
-
-| Tabela | Operação |
-|--------|----------|
-| `compliance_rules` | INSERT da regra DMARC-006 |
 
 ---
 
 ## Resultado Visual Esperado
 
-### DKIM Configurado (DEPOIS)
+### Redundância MX (CORRIGIDO)
 ```
 EVIDÊNCIAS COLETADAS
 
-Seletor
-default
+Servidor MX
+estrela-com-br.mail.protection.outlook.com
 
-Tipo de Chave
-rsa
+Prioridade
+10
 
-Tamanho da Chave (bits)
-2048
+IPs Resolvidos
+192.168.1.1, 192.168.1.2
+
+Quantidade de IPs
+2
 ```
 
-### Alinhamento SPF Estrito (DEPOIS)
+### DKIM Configurado (CORRIGIDO)
+```
+EVIDÊNCIAS COLETADAS
+
+Chaves DKIM Encontradas
+2 chave(s) configurada(s)
+```
+
+### Redundância DKIM (CORRIGIDO)
+```
+EVIDÊNCIAS COLETADAS
+
+Chave DKIM
+selector1._domainkey.precisio.io
+
+Chave DKIM
+selector2._domainkey.precisio.io
+```
+
+### Alinhamento SPF Estrito (CORRIGIDO)
 ```
 EVIDÊNCIAS COLETADAS
 
@@ -249,7 +188,7 @@ Alinhamento SPF
 Relaxado (r)
 ```
 
-### Alinhamento DKIM Estrito (NOVO CARD)
+### Alinhamento DKIM Estrito (CORRIGIDO)
 ```
 EVIDÊNCIAS COLETADAS
 
@@ -257,34 +196,7 @@ Alinhamento DKIM
 Estrito (s) ✓
 ```
 
-### Política DMARC Restritiva (DEPOIS)
-```
-EVIDÊNCIAS COLETADAS
-
-Política DMARC
-Rejeitar (reject) ✓
-
-Política de Subdomínio
-Rejeitar (reject) ✓
-```
-
-### DMARC Configurado (DEPOIS)
-```
-EVIDÊNCIAS COLETADAS
-
-Registro DMARC
-v=DMARC1;p=reject;sp=reject;...
-```
-
-### Cobertura DMARC Total (DEPOIS)
-```
-EVIDÊNCIAS COLETADAS
-
-Cobertura
-100% (cobertura total) ✓
-```
-
-### Relatórios DMARC (RUA) (DEPOIS)
+### Relatórios DMARC (RUA) (CORRIGIDO)
 ```
 EVIDÊNCIAS COLETADAS
 
@@ -294,9 +206,17 @@ mailto:db93c273a8@rua.easydmarc.com
 
 ---
 
+## Arquivo a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/compliance/EvidenceDisplay.tsx` | Simplificar DKIM, corrigir MX redundância, formatar arrays |
+
+---
+
 ## Considerações Técnicas
 
-1. **Detecção de contexto DMARC/SPF**: Usaremos o conteúdo do registro (`v=DMARC1` vs `v=spf1`) para determinar a tradução correta de `data.raw`
-2. **Política de subdomínio**: Será extraída do mesmo registro DMARC e exibida junto com a política principal
-3. **Nova regra DMARC-006**: Seguirá o mesmo padrão da DMARC-005 (aspf), mas para adkim
-4. **Fallback seguro**: Labels não traduzidos continuam funcionando
+1. **Contexto por label**: Usamos o label do item para determinar qual tratamento aplicar
+2. **Fallback**: Se parsing falhar, mostra valor original
+3. **Arrays**: IPs e outros arrays são formatados com vírgulas para legibilidade
+4. **DKIM simplificado**: Não expor dados técnicos como chave pública ou flags
