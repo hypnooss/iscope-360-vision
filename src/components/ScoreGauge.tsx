@@ -71,6 +71,9 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           className="transition-all duration-1000 ease-out"
+          style={{
+            filter: `drop-shadow(0 0 2px ${getColor()})`,
+          }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
