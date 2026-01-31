@@ -40,7 +40,7 @@ const M365DashboardPage = lazy(() => import("./pages/m365/M365DashboardPage"));
 const TenantConnectionPage = lazy(() => import("./pages/m365/TenantConnectionPage"));
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
 const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
-const EntraIdAuditLogsPage = lazy(() => import("./pages/m365/EntraIdAuditLogsPage"));
+const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecurityInsightsPage"));
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 
 const queryClient = new QueryClient();
@@ -90,7 +90,8 @@ const App = () => (
                 <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
                 <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
                 <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
-                <Route path="/scope-m365/entra-id/audit-logs" element={<EntraIdAuditLogsPage />} />
+                <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
+                <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
                 <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
 
                 {/* Legacy routes - redirect to new structure */}
