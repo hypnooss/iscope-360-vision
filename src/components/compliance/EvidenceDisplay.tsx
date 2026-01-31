@@ -65,6 +65,18 @@ const LABEL_TRANSLATIONS: Record<string, string> = {
   'data.raw': 'Registro SPF',
   // MX translations
   'data.records[0].exchange': 'Servidor MX',
+  // DKIM translations
+  'data.found': 'Registros DKIM',
+  'data.found[]': 'Registros DKIM',
+  'data.found[0].key_size_bits': 'Tamanho da Chave (bits)',
+  // DMARC translations
+  'data.parsed.aspf': 'Alinhamento SPF',
+  'data.parsed.adkim': 'Alinhamento DKIM',
+  'data.parsed.pct': 'Cobertura',
+  'data.parsed.p': 'Política DMARC',
+  'data.parsed.sp': 'Política de Subdomínio',
+  'data.parsed.rua': 'Relatórios (RUA)',
+  'data.parsed.ruf': 'Relatórios Forenses (RUF)',
 };
 
 // Mapa de valores booleanos/técnicos para valores legíveis
@@ -90,6 +102,30 @@ const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
     'false': 'Não validado ✗',
     'unknown': 'Não verificado',
     'partial': 'Parcialmente validado',
+  },
+  // DMARC alignment values
+  'data.parsed.aspf': {
+    'r': 'Relaxado (r)',
+    's': 'Estrito (s) ✓',
+  },
+  'data.parsed.adkim': {
+    'r': 'Relaxado (r)',
+    's': 'Estrito (s) ✓',
+  },
+  // DMARC policy values
+  'data.parsed.p': {
+    'reject': 'Rejeitar (reject) ✓',
+    'quarantine': 'Quarentena (quarantine)',
+    'none': 'Nenhuma (none) ✗',
+  },
+  'data.parsed.sp': {
+    'reject': 'Rejeitar (reject) ✓',
+    'quarantine': 'Quarentena (quarantine)',
+    'none': 'Nenhuma (none) ✗',
+  },
+  // DMARC coverage
+  'data.parsed.pct': {
+    '100': '100% (cobertura total) ✓',
   },
 };
 
@@ -209,6 +245,31 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
     }
   }
 
+  // NOVO: Tratamento especial para registros DKIM
+  const isDkimRecord = item.label.includes('DKIM') || 
+    item.label === 'data.found' || 
+    item.label === 'data.found[]' ||
+    (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 
+     (parsed[0] as Record<string, unknown>).selector !== undefined);
+  
+  if (isDkimRecord && Array.isArray(parsed)) {
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {parsed.map((record, idx) => (
+          <RecordDisplay 
+            key={idx} 
+            record={record as Record<string, unknown>}
+            labelOverrides={{ 
+              selector: 'Seletor',
+              key_type: 'Tipo de Chave',
+              key_size_bits: 'Tamanho da Chave (bits)',
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
   // NOVO: Tratamento especial para registros MX
   const isMxRecord = item.label.includes('MX') || 
     (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 
@@ -297,8 +358,16 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
     return null;
   }
 
-  // Traduzir label técnico para legível
-  const translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
+  // Detectar contexto DMARC vs SPF para o label data.raw
+  let translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
+  if (item.label === 'data.raw') {
+    // Detectar pelo conteúdo se é DMARC ou SPF
+    if (item.value.startsWith('v=DMARC1')) {
+      translatedLabel = 'Registro DMARC';
+    } else if (item.value.startsWith('v=spf1')) {
+      translatedLabel = 'Registro SPF';
+    }
+  }
   
   // Traduzir valor se houver transformação definida
   let transformedValue = VALUE_TRANSFORMATIONS[item.label]?.[item.value] || item.value;
