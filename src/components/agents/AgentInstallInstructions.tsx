@@ -1,0 +1,80 @@
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { Check, Copy } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+
+const PROJECT_REF = "akbosdbyheezghieiefz";
+const INSTALL_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/agent-install`;
+
+const STATUS_CMD = "systemctl status iscope-agent --no-pager";
+const LOGS_CMD = "journalctl -u iscope-agent -f --no-pager";
+
+type Props = {
+  activationCode: string;
+  className?: string;
+};
+
+async function copyToClipboard(text: string, label: string) {
+  await navigator.clipboard.writeText(text);
+  toast.success(`${label} copiado!`);
+}
+
+export function AgentInstallInstructions({ activationCode, className }: Props) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const installCommand = useMemo(
+    () => `curl -fsSL ${INSTALL_URL} | sudo bash -s -- --activation-code "${activationCode}"`,
+    [activationCode],
+  );
+
+  const doCopy = async (key: string, value: string, label: string) => {
+    await copyToClipboard(value, label);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  return (
+    <div className={cn("space-y-4", className)}>
+      <div className="space-y-2">
+        <Label>Instalar agent (Linux)</Label>
+        <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
+          <div className="flex items-start gap-2">
+            <code className="flex-1 text-xs sm:text-sm font-mono break-all text-foreground">{installCommand}</code>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => doCopy("install", installCommand, "Comando")}
+              title="Copiar comando"
+            >
+              {copied === "install" ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">Passo 1: copie e cole no servidor Linux (como root ou com sudo).</p>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => doCopy("status", STATUS_CMD, "Verificação")}
+            className="gap-2">
+            {copied === "status" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            Copiar verificação
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => doCopy("logs", LOGS_CMD, "Logs")}
+            className="gap-2">
+            {copied === "logs" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            Copiar logs
+          </Button>
+        </div>
+
+        <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+          <li>O serviço deve ficar como <span className="text-foreground">active (running)</span>.</li>
+          <li>Veja logs no <span className="text-foreground">journalctl</span> para confirmar o heartbeat.</li>
+          <li>Volte aqui e confira se o status do Agent mudou para <span className="text-foreground">Online</span>.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}

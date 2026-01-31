@@ -46,6 +46,7 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { AgentInstallInstructions } from "@/components/agents/AgentInstallInstructions";
 
 interface Agent {
   id: string;
@@ -79,6 +80,10 @@ export default function AgentsPage() {
   const [activationCode, setActivationCode] = useState<string | null>(null);
   const [activationExpiresAt, setActivationExpiresAt] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
+
+  // Instructions dialog (pending agents)
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const [instructionsAgent, setInstructionsAgent] = useState<Agent | null>(null);
 
   // Details dialog
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -229,6 +234,11 @@ export default function AgentsPage() {
       toast.success("Código copiado!");
       setTimeout(() => setCodeCopied(false), 2000);
     }
+  };
+
+  const openInstructions = (agent: Agent) => {
+    setInstructionsAgent(agent);
+    setInstructionsOpen(true);
   };
 
   const handleCloseCreateDialog = () => {
@@ -426,6 +436,9 @@ export default function AgentsPage() {
                       </div>
                     </div>
                   </div>
+
+                  <AgentInstallInstructions activationCode={activationCode} />
+
                   <div className="flex items-center gap-2 text-sm text-warning">
                     <Clock className="w-4 h-4" />
                     <span>
@@ -493,6 +506,8 @@ export default function AgentsPage() {
                 <TableBody>
                   {agents.map((agent) => {
                     const status = getAgentStatus(agent);
+                    const isPendingWithCode =
+                      !agent.revoked && !agent.last_seen && !!agent.activation_code;
                     return (
                       <TableRow key={agent.id}>
                         <TableCell>
@@ -538,6 +553,16 @@ export default function AgentsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {isPendingWithCode && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openInstructions(agent)}
+                                title="Instruções"
+                              >
+                                <Bot className="w-4 h-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -692,6 +717,14 @@ export default function AgentsPage() {
                         Gere um novo código para reativar este agent se necessário.
                       </p>
                     )}
+
+                    {(newActivationCode?.code || selectedAgent.activation_code) && (
+                      <div className="pt-4">
+                        <AgentInstallInstructions
+                          activationCode={(newActivationCode?.code || selectedAgent.activation_code) as string}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -790,7 +823,32 @@ export default function AgentsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Instructions Dialog */}
+        <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Instruções de Instalação</DialogTitle>
+              <DialogDescription>
+                Copie e cole o comando abaixo no servidor Linux para ativar o agent.
+              </DialogDescription>
+            </DialogHeader>
+
+            {instructionsAgent?.activation_code && (
+              <div className="py-2">
+                <AgentInstallInstructions activationCode={instructionsAgent.activation_code} />
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setInstructionsOpen(false)}>
+                Fechar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
 }
+

@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.validate-m365-permissions]
 verify_jwt = false
+
+[functions.agent-install]
+verify_jwt = false
