@@ -9,11 +9,15 @@ const mockData = {
   nameservers: ["e.sec.dns.br", "f.sec.dns.br"],
   soaContact: "hostmaster@registro.br",
   dnssec: true,
-  clientName: "Brinquedos Estrela S/A",
   stats: {
     total: 23,
     passed: 18,
     failed: 5,
+  },
+  emailAuth: {
+    spf: true,
+    dkim: true,
+    dmarc: false,
   },
 };
 
@@ -24,7 +28,7 @@ const mockData = {
 interface MiniStatProps {
   value: number;
   label: string;
-  variant?: "default" | "success" | "destructive";
+  variant?: "default" | "primary" | "success" | "destructive";
 }
 
 function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
@@ -33,6 +37,11 @@ function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
       text: "text-foreground",
       border: "border-border/30",
       bg: "bg-background/50"
+    },
+    primary: {
+      text: "text-primary",
+      border: "border-primary/30",
+      bg: "bg-primary/10"
     },
     success: {
       text: "text-sky-400",
@@ -130,7 +139,7 @@ function DetailRow({ label, value, indicator, highlight }: DetailRowProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function DomainReportPreview() {
-  const { domain, score, soa, nameservers, soaContact, dnssec, clientName, stats } = mockData;
+  const { domain, score, soa, nameservers, soaContact, dnssec, stats, emailAuth } = mockData;
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -190,7 +199,7 @@ export default function DomainReportPreview() {
 
                 {/* Mini Stats Row */}
                 <div className="flex gap-3 mt-6">
-                  <MiniStat value={stats.total} label="Total" />
+                  <MiniStat value={stats.total} label="Total" variant="primary" />
                   <MiniStat value={stats.passed} label="Aprovadas" variant="success" />
                   <MiniStat value={stats.failed} label="Falhas" variant="destructive" />
                 </div>
@@ -206,7 +215,21 @@ export default function DomainReportPreview() {
                   value={dnssec ? "Ativo" : "Inativo"} 
                   indicator={dnssec ? "success" : "error"}
                 />
-                <DetailRow label="Workspace" value={clientName} highlight />
+                <DetailRow 
+                  label="SPF" 
+                  value={emailAuth.spf ? "Válido" : "Ausente"} 
+                  indicator={emailAuth.spf ? "success" : "error"}
+                />
+                <DetailRow 
+                  label="DKIM" 
+                  value={emailAuth.dkim ? "Válido" : "Ausente"} 
+                  indicator={emailAuth.dkim ? "success" : "error"}
+                />
+                <DetailRow 
+                  label="DMARC" 
+                  value={emailAuth.dmarc ? "Válido" : "Ausente"} 
+                  indicator={emailAuth.dmarc ? "success" : "error"}
+                />
               </div>
             </div>
           </div>
