@@ -315,9 +315,9 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
       
       if (hosts.length > 0) {
         return (
-          <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
+          <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
             {hosts.map((host, idx) => (
-              <div key={idx} className="flex flex-col">
+              <div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
                 <span className="text-xs font-medium text-muted-foreground">Nameserver</span>
                 <span className="text-sm text-foreground font-mono">{String(host)}</span>
               </div>
@@ -333,9 +333,9 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
     // Se for array de strings simples
     if (typeof parsed[0] === 'string') {
       return (
-        <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
+        <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
           {parsed.map((val, idx) => (
-            <div key={idx} className="flex flex-col">
+            <div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
               <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
               <span className="text-sm text-foreground font-mono">{String(val)}</span>
             </div>
@@ -348,7 +348,9 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
     if (typeof parsed[0] === 'object') {
       return (
         <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-          <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
+          <div className="border-l-2 border-primary/30 pl-3 mb-2">
+            <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
+          </div>
           {parsed.map((record, idx) => (
             <RecordDisplay key={idx} record={record as Record<string, unknown>} />
           ))}
@@ -361,7 +363,9 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
-        <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
+        <div className="border-l-2 border-primary/30 pl-3">
+          <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
+        </div>
         <RecordDisplay record={parsed as Record<string, unknown>} />
       </div>
     );
@@ -370,10 +374,12 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   // Fallback: exibir como código formatado
   return (
     <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-      <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-      <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto whitespace-pre-wrap">
-        {item.value}
-      </code>
+      <div className="border-l-2 border-primary/30 pl-3">
+        <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
+        <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto whitespace-pre-wrap">
+          {item.value}
+        </code>
+      </div>
     </div>
   );
 }
@@ -415,9 +421,9 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
   if (isList) {
     const values = transformedItem.value.split(',').map(v => v.trim()).filter(Boolean);
     return (
-      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
         {values.map((val, idx) => (
-          <div key={idx} className="flex flex-col">
+          <div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
             <span className="text-xs font-medium text-muted-foreground">{transformedItem.label}</span>
             <span className="text-sm text-foreground font-mono">{val}</span>
           </div>
@@ -434,8 +440,10 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
   // Renderização padrão para texto simples
   return (
     <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-      <span className="text-xs font-medium text-muted-foreground block mb-1">{transformedItem.label}</span>
-      <p className="text-sm text-foreground">{transformedItem.value}</p>
+      <div className="border-l-2 border-primary/30 pl-3">
+        <span className="text-xs font-medium text-muted-foreground block mb-1">{transformedItem.label}</span>
+        <p className="text-sm text-foreground">{transformedItem.value}</p>
+      </div>
     </div>
   );
 }
