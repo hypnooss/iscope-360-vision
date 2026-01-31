@@ -1,63 +1,88 @@
 
+# Plano: Atualização do MiniStat TOTAL + Adição de SPF/DKIM/DMARC
 
-# Plano: Colorização dos Cards MiniStat
+## Alterações Solicitadas
 
-## Alterações no Componente MiniStat
+1. **MiniStat "TOTAL"**: Usar cor verde-água (primary) em vez de neutro
+2. **Remover**: DetailRow "Workspace"
+3. **Adicionar**: DetailRows para SPF, DKIM e DMARC com status
 
-### Arquivo: `src/pages/preview/DomainReportPreview.tsx`
+---
 
-Modificar o componente `MiniStat` para incluir estilos de borda e background coloridos por variante:
+## Implementação
+
+### 1. Adicionar variante "primary" ao MiniStat
+
+No objeto `variantStyles`, adicionar:
 
 ```tsx
-function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
-  const variantStyles = {
-    default: {
-      text: "text-foreground",
-      border: "border-border/30",
-      bg: "bg-background/50"
-    },
-    success: {
-      text: "text-sky-400",
-      border: "border-sky-500/30",
-      bg: "bg-sky-500/10"
-    },
-    destructive: {
-      text: "text-rose-400",
-      border: "border-rose-500/30",
-      bg: "bg-rose-500/10"
-    }
-  };
-
-  const style = variantStyles[variant];
-
-  return (
-    <div className={cn(
-      "text-center px-4 py-2 rounded-lg border",
-      style.bg,
-      style.border
-    )}>
-      <span className={cn("text-xl font-bold tabular-nums block", style.text)}>
-        {value}
-      </span>
-      <span className="text-[11px] text-muted-foreground uppercase tracking-wider">
-        {label}
-      </span>
-    </div>
-  );
+primary: {
+  text: "text-primary",           // verde-água
+  border: "border-primary/30",
+  bg: "bg-primary/10"
 }
 ```
 
-## Resultado Visual
+E alterar a chamada do MiniStat de TOTAL:
+```tsx
+<MiniStat value={stats.total} label="Total" variant="primary" />
+```
 
-| Card | Antes | Depois |
-|------|-------|--------|
-| **Total** | Borda cinza, bg neutro | Sem alteração (neutro) |
-| **Aprovadas** | Texto verde (emerald-400) | Texto azul (sky-400), borda azul sutil, bg azul 10% |
-| **Falhas** | Texto rosa (rose-400) | Texto rosa, borda rosa sutil, bg rosa 10% |
+### 2. Atualizar mockData com status de email
 
-## Paleta de Cores Aplicada
+Adicionar ao `mockData`:
+```tsx
+emailAuth: {
+  spf: true,    // ou "valid" / "invalid"
+  dkim: true,
+  dmarc: false,
+}
+```
 
-- **Aprovadas**: `sky-400` (texto), `sky-500/30` (borda), `sky-500/10` (background)
-- **Falhas**: `rose-400` (texto), `rose-500/30` (borda), `rose-500/10` (background)
-- **Total**: Mantém estilo neutro para contraste
+### 3. Substituir Workspace por SPF/DKIM/DMARC
 
+No painel de detalhes, remover:
+```tsx
+<DetailRow label="Workspace" value={clientName} highlight />
+```
+
+E adicionar:
+```tsx
+<DetailRow 
+  label="SPF" 
+  value={emailAuth.spf ? "Válido" : "Ausente"} 
+  indicator={emailAuth.spf ? "success" : "error"}
+/>
+<DetailRow 
+  label="DKIM" 
+  value={emailAuth.dkim ? "Válido" : "Ausente"} 
+  indicator={emailAuth.dkim ? "success" : "error"}
+/>
+<DetailRow 
+  label="DMARC" 
+  value={emailAuth.dmarc ? "Válido" : "Ausente"} 
+  indicator={emailAuth.dmarc ? "success" : "error"}
+/>
+```
+
+---
+
+## Resultado Visual Esperado
+
+| Elemento | Antes | Depois |
+|----------|-------|--------|
+| **MiniStat Total** | Neutro (cinza) | Verde-água (primary) com borda e bg coloridos |
+| **Workspace** | Presente | Removido |
+| **SPF/DKIM/DMARC** | Ausentes | Exibidos com indicadores ●/● de status |
+
+---
+
+## Arquivo a Modificar
+
+`src/pages/preview/DomainReportPreview.tsx`
+
+- Linha 24-27: Adicionar "primary" à interface MiniStatProps
+- Linha 31-35: Adicionar variante "primary" ao variantStyles
+- Linha 5-18: Adicionar emailAuth ao mockData
+- Linha 193: Alterar variant para "primary"
+- Linha 209: Substituir Workspace por SPF/DKIM/DMARC rows
