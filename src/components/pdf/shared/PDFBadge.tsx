@@ -1,14 +1,31 @@
 import { View, Text, StyleSheet } from '@react-pdf/renderer';
-import { colors, radius, typography, getSeverityColors } from '../styles/pdfStyles';
+import { colors, radius, typography, getSeverityColors, getStatusColors } from '../styles/pdfStyles';
 
-interface PDFBadgeProps {
-  label: string;
-  variant?: 'severity' | 'status' | 'custom';
-  severity?: 'critical' | 'high' | 'medium' | 'low';
-  status?: 'pass' | 'fail' | 'warning' | 'pending';
+export interface PDFBadgeProps {
+  // Option 1: Just pass a label with optional colors
+  label?: string;
   bgColor?: string;
   textColor?: string;
+  // Option 2: Pass severity directly (auto-generates label and colors)
+  severity?: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  // Option 3: Pass status directly (auto-generates label and colors)
+  status?: 'pass' | 'fail' | 'warning' | 'pending';
 }
+
+const severityLabels: Record<string, string> = {
+  critical: 'Crítico',
+  high: 'Alto',
+  medium: 'Médio',
+  low: 'Baixo',
+  info: 'Info',
+};
+
+const statusLabels: Record<string, string> = {
+  pass: 'OK',
+  fail: 'Falha',
+  warning: 'Alerta',
+  pending: 'Pendente',
+};
 
 const styles = StyleSheet.create({
   badge: {
@@ -27,7 +44,6 @@ const styles = StyleSheet.create({
 
 export function PDFBadge({ 
   label, 
-  variant = 'custom', 
   severity,
   status,
   bgColor,
@@ -35,37 +51,27 @@ export function PDFBadge({
 }: PDFBadgeProps) {
   let bg = bgColor || colors.cardBgLight;
   let text = textColor || colors.textMuted;
+  let displayLabel = label || '';
 
-  if (variant === 'severity' && severity) {
+  // If severity is provided, use severity colors and label
+  if (severity) {
     const severityColors = getSeverityColors(severity);
     bg = severityColors.bg;
     text = severityColors.text;
+    displayLabel = label || severityLabels[severity] || severity;
   }
 
-  if (variant === 'status' && status) {
-    switch (status) {
-      case 'pass':
-        bg = colors.successBg;
-        text = colors.success;
-        break;
-      case 'fail':
-        bg = colors.dangerBg;
-        text = colors.danger;
-        break;
-      case 'warning':
-        bg = colors.warningBg;
-        text = colors.warning;
-        break;
-      case 'pending':
-        bg = colors.infoBg;
-        text = colors.info;
-        break;
-    }
+  // If status is provided, use status colors and label
+  if (status) {
+    const statusColors = getStatusColors(status);
+    bg = statusColors.bg;
+    text = statusColors.text;
+    displayLabel = label || statusLabels[status] || status;
   }
 
   return (
     <View style={[styles.badge, { backgroundColor: bg }]}>
-      <Text style={[styles.text, { color: text }]}>{label}</Text>
+      <Text style={[styles.text, { color: text }]}>{displayLabel}</Text>
     </View>
   );
 }
