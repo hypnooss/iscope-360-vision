@@ -1,60 +1,72 @@
 
 
-# Plano: Corrigir Validação da Permissão MailboxSettings.Read
+# Plano: Corrigir Erro 400 na Edge Function exchange-online-insights
 
 ## Problema Identificado
 
-O teste da permissão `MailboxSettings.Read` está falhando com o erro:
+A Edge Function `exchange-online-insights` está falhando com erro 400 (Bad Request) ao tentar buscar usuários.
 
+**Causa raiz**: O filtro `$filter=mail ne null` é considerado uma "advanced query" pela Microsoft Graph API e requer headers especiais que não estão sendo enviados.
+
+**URL atual (linha 142)**:
+```typescript
+"https://graph.microsoft.com/v1.0/users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail&$top=100"
 ```
-ExplicitTargetMailboxIdShouldNotBeNullOrWhiteSpace - The Id is invalid.
-```
 
-**Causa raiz**: A URL atual tenta buscar `mailboxSettings` diretamente na coleção `/users`, mas a Microsoft Graph API **não suporta** a propriedade `mailboxSettings` em queries de coleção. Ela só funciona quando buscamos um usuário específico.
+## Requisitos da Microsoft Graph API para Advanced Queries
 
-## Solução
+Para usar operadores como `ne` (not equal), a API exige:
+1. Header `ConsistencyLevel: eventual`
+2. Query parameter `$count=true`
 
-Modificar a lógica de teste para:
-1. Primeiro buscar um usuário válido (usando `User.Read.All` que já sabemos que funciona)
-2. Depois testar `mailboxSettings` nesse usuário específico
+Sem esses elementos, a API retorna **400 Bad Request**.
 
 ## Arquivo a Modificar
 
-`supabase/functions/validate-m365-permissions/index.ts`
+`supabase/functions/exchange-online-insights/index.ts`
 
-## Mudança Técnica
+## Correção Técnica
 
-Alterar o case `MailboxSettings.Read` para usar uma abordagem em duas etapas, buscando primeiro o ID de um usuário e depois testando o endpoint correto:
+Modificar a função `fetchUsersWithMailbox` (linhas 137-166) para incluir os headers e parâmetros necessários:
 
 ```typescript
-// Antes (incorreto)
-case 'MailboxSettings.Read':
-  url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings';
-  break;
+// Antes (linha 141-146)
+let nextLink: string | null =
+  "https://graph.microsoft.com/v1.0/users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail&$top=100";
 
-// Depois (correto)
-case 'MailboxSettings.Read': {
-  // Primeiro buscar um usuário
-  const usersResp = await fetch(
-    'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
-    { headers: { 'Authorization': `Bearer ${accessToken}` } }
-  );
-  if (!usersResp.ok) {
-    await usersResp.text();
-    return false;
-  }
-  const usersData = await usersResp.json();
-  const userId = usersData.value?.[0]?.id;
-  if (!userId) return false;
-  
-  // Agora testar mailboxSettings no usuário específico
-  url = `https://graph.microsoft.com/v1.0/users/${userId}/mailboxSettings`;
-  break;
-}
+while (nextLink) {
+  const fetchResponse: Response = await fetch(nextLink, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+// Depois
+let nextLink: string | null =
+  "https://graph.microsoft.com/v1.0/users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail&$top=100&$count=true";
+
+while (nextLink) {
+  const fetchResponse: Response = await fetch(nextLink, {
+    headers: { 
+      Authorization: `Bearer ${accessToken}`,
+      ConsistencyLevel: 'eventual'
+    },
+  });
 ```
+
+## Mudanças Detalhadas
+
+| Linha | Antes | Depois |
+|-------|-------|--------|
+| 141-142 | URL sem `$count=true` | Adicionar `&$count=true` ao final da URL |
+| 145-147 | Headers com apenas `Authorization` | Adicionar header `ConsistencyLevel: 'eventual'` |
+
+## Documentação de Referência
+
+- [Microsoft Graph Advanced Query Capabilities](https://learn.microsoft.com/en-us/graph/aad-advanced-queries)
+- O operador `ne` (not equal) é classificado como "advanced query" e requer o modo eventual consistency
 
 ## Resultado Esperado
 
-- A permissão `MailboxSettings.Read` será validada corretamente usando o endpoint `/users/{id}/mailboxSettings`
-- O indicador no Tenant Home mudará de amarelo para verde após a próxima validação
+- A chamada à API retornará status 200 em vez de 400
+- Usuários com email serão listados corretamente
+- Os insights do Exchange Online serão gerados normalmente
 
