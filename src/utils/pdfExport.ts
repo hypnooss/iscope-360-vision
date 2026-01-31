@@ -67,6 +67,30 @@ function getRiskClassification(score: number): { label: string; color: [number, 
   return { label: 'RISCO ALTO', color: [239, 68, 68] };
 }
 
+// Sanitize text for PDF export - handles special characters
+function sanitizeTextForPDF(text: string): string {
+  if (!text) return '-';
+  return text
+    .replace(/≥/g, '>=')
+    .replace(/≤/g, '<=')
+    .replace(/→/g, '->')
+    .replace(/←/g, '<-')
+    .replace(/•/g, '-')
+    .replace(/✓/g, '(OK)')
+    .replace(/✗/g, '(X)')
+    .replace(/✔/g, '(OK)')
+    .replace(/✕/g, '(X)')
+    .replace(/—/g, '-')
+    .replace(/–/g, '-')
+    .replace(/"/g, '"')
+    .replace(/"/g, '"')
+    .replace(/'/g, "'")
+    .replace(/'/g, "'")
+    .replace(/…/g, '...')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Descritivos de cada categoria de analise
 const categoryDescriptions: Record<string, string> = {
   'Segurança de Interfaces': 'Verifica configuracoes de acesso as interfaces de gerenciamento, incluindo protocolos inseguros como HTTP e Telnet.',
@@ -1162,12 +1186,15 @@ export function exportExternalDomainReportToPDF(
   doc.text('Resumo por Categoria', 14, yPos);
   yPos += 5;
 
-  const categoryData = report.categories.map(cat => [
-    cat.name,
-    `${cat.passRate}%`,
-    `${cat.checks.filter(c => c.status === 'pass').length}/${cat.checks.length}`,
-    `${cat.checks.filter(c => c.status === 'fail').length} falhas`
-  ]);
+  const categoryData = report.categories.map(cat => {
+    const failCount = cat.checks.filter(c => c.status === 'fail').length;
+    return [
+      cat.name,
+      `${cat.passRate}%`,
+      `${cat.checks.filter(c => c.status === 'pass').length}/${cat.checks.length}`,
+      `${failCount} ${failCount === 1 ? 'falha' : 'falhas'}`
+    ];
+  });
 
   autoTable(doc, {
     startY: yPos,
@@ -1228,8 +1255,10 @@ export function exportExternalDomainReportToPDF(
     const issuesData = criticalIssues.map(issue => [
       issue.name,
       getSeverityText(issue.severity),
-      (issue.details || issue.description || '-').substring(0, 50) + ((issue.details?.length || 0) > 50 ? '...' : ''),
-      (issue.recommendation || '-').substring(0, 45) + ((issue.recommendation?.length || 0) > 45 ? '...' : '')
+      sanitizeTextForPDF(issue.details || issue.description || '-').substring(0, 55) + 
+        ((issue.details?.length || 0) > 55 ? '...' : ''),
+      sanitizeTextForPDF(issue.recommendation || '-').substring(0, 50) + 
+        ((issue.recommendation?.length || 0) > 50 ? '...' : '')
     ]);
 
     autoTable(doc, {
@@ -1296,18 +1325,19 @@ export function exportExternalDomainReportToPDF(
       if (check.evidence && check.evidence.length > 0) {
         evidenceText = check.evidence
           .slice(0, 2)
-          .map(e => `${e.label}: ${e.value}`)
+          .map(e => `${e.label}: ${sanitizeTextForPDF(e.value)}`)
           .join(' | ')
-          .substring(0, 60);
-        if (evidenceText.length >= 60) evidenceText += '...';
+          .substring(0, 70);
+        if (evidenceText.length >= 70) evidenceText += '...';
       }
+      
+      const detailText = sanitizeTextForPDF(check.details || check.description || evidenceText || '-');
       
       return [
         getStatusText(check.status),
         check.name,
         getSeverityText(check.severity),
-        (check.details || check.description || evidenceText || '-').substring(0, 55) + 
-          ((check.details?.length || check.description?.length || 0) > 55 ? '...' : '')
+        detailText.substring(0, 65) + (detailText.length > 65 ? '...' : '')
       ];
     });
 
