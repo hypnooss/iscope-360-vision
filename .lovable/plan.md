@@ -1,106 +1,100 @@
 
 
-# Plano: Ajustes Visuais no Componente de Categorias
+# Plano: Corrigir Badge de Criticidade nas Categorias
 
-## Objetivo
+## Problema Identificado
 
-Aplicar três ajustes visuais no componente `ExternalDomainCategorySection.tsx`:
-
-1. Remover o texto "aprovação" abaixo da pontuação
-2. Diminuir o tamanho da fonte da pontuação
-3. Diversificar as cores das categorias
+O badge mostra "2 críticos" mas os itens são na verdade 2 de severidade "Alto" (high) e 1 "Médio" (medium). O código atual conta tanto `critical` quanto `high` mas usa o label "críticos", o que é incorreto.
 
 ---
 
-## Alterações Detalhadas
+## Solução
+
+Separar a contagem de críticos e altos, ou ajustar o texto do badge para refletir corretamente o que está sendo contado.
+
+### Opção Escolhida: Badge com Contagem Separada
+
+Mostrar badges separados para cada nível de severidade quando houver falhas:
+- Badge vermelho para críticos (se houver)
+- Badge laranja para altos (se houver)
+
+---
+
+## Alterações
 
 ### Arquivo: `src/components/external-domain/ExternalDomainCategorySection.tsx`
 
-### 1. Remover texto "aprovação"
+### 1. Separar contagens por severidade
 
-**Linha 117 - Remover:**
+**Substituir (linhas 72-75):**
 ```typescript
-<p className="text-xs text-muted-foreground">aprovação</p>
+// Count critical and high severity failures
+const criticalHighCount = category.checks.filter(
+  c => c.status === 'fail' && (c.severity === 'critical' || c.severity === 'high')
+).length;
 ```
 
-### 2. Diminuir tamanho da fonte
-
-**Linha 114 - Alterar de:**
+**Por:**
 ```typescript
-<span className={`text-2xl font-bold tabular-nums ${getPassRateColor(category.passRate)}`}>
+// Count failures by severity
+const criticalCount = category.checks.filter(
+  c => c.status === 'fail' && c.severity === 'critical'
+).length;
+
+const highCount = category.checks.filter(
+  c => c.status === 'fail' && c.severity === 'high'
+).length;
 ```
 
-**Para:**
+### 2. Atualizar renderização dos badges
+
+**Substituir (linhas 105-109):**
 ```typescript
-<span className={`text-lg font-semibold tabular-nums ${getPassRateColor(category.passRate)}`}>
+{criticalHighCount > 0 && (
+  <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">
+    {criticalHighCount} crítico{criticalHighCount !== 1 ? 's' : ''}
+  </Badge>
+)}
 ```
 
-### 3. Diversificar cores das categorias
-
-**Linhas 19-44 - Novo mapa de cores mais distintas:**
-
-| Categoria | Cor Atual | Nova Cor |
-|-----------|-----------|----------|
-| SPF | blue-500 | sky-500 |
-| DKIM | cyan-500 | blue-500 |
-| DMARC | indigo-500 | violet-500 |
-| Segurança DNS | emerald-500 | teal-500 |
-| Infraestrutura de Email | violet-500 | purple-500 |
-
+**Por:**
 ```typescript
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Autenticação de Email - SPF': { 
-    bg: 'bg-sky-500/10', 
-    text: 'text-sky-500', 
-    border: 'border-sky-500/30' 
-  },
-  'Autenticação de Email - DKIM': { 
-    bg: 'bg-blue-500/10', 
-    text: 'text-blue-500', 
-    border: 'border-blue-500/30' 
-  },
-  'Autenticação de Email - DMARC': { 
-    bg: 'bg-violet-500/10', 
-    text: 'text-violet-500', 
-    border: 'border-violet-500/30' 
-  },
-  'Segurança DNS': { 
-    bg: 'bg-teal-500/10', 
-    text: 'text-teal-500', 
-    border: 'border-teal-500/30' 
-  },
-  'Infraestrutura de Email': { 
-    bg: 'bg-purple-500/10', 
-    text: 'text-purple-500', 
-    border: 'border-purple-500/30' 
-  },
-};
+{criticalCount > 0 && (
+  <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">
+    {criticalCount} crítico{criticalCount !== 1 ? 's' : ''}
+  </Badge>
+)}
+{highCount > 0 && (
+  <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
+    {highCount} alto{highCount !== 1 ? 's' : ''}
+  </Badge>
+)}
 ```
 
 ---
 
-## Resultado Visual Esperado
+## Resultado Visual
 
 **Antes:**
 ```
-[Segurança DNS]                    50%
-                                   aprovação
+[Segurança DNS]  [6 verificações]  [2 críticos]     50%
 ```
 
-**Depois:**
+**Depois (exemplo com 0 críticos e 2 altos):**
 ```
-[Segurança DNS]                    50%
+[Segurança DNS]  [6 verificações]  [2 altos]        50%
 ```
 
-- Porcentagem menor e mais elegante
-- Sem o texto "aprovação" redundante
-- Cores mais distintas entre as 5 categorias
+**Ou se houver ambos:**
+```
+[Segurança DNS]  [6 verificações]  [1 crítico]  [2 altos]  50%
+```
 
 ---
 
 ## Arquivo a Modificar
 
-| Arquivo | Alterações |
-|---------|------------|
-| `src/components/external-domain/ExternalDomainCategorySection.tsx` | Remover texto "aprovação", diminuir fonte, diversificar cores |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/external-domain/ExternalDomainCategorySection.tsx` | Separar contagem de críticos/altos e exibir badges corretos |
 
