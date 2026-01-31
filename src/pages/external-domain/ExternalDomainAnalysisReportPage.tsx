@@ -45,16 +45,16 @@ function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
       border: "border-border/30",
       bg: "bg-background/50"
     },
-    primary: {
-      text: "text-primary",
-      border: "border-primary/30",
-      bg: "bg-primary/10"
-    },
-    success: {
-      text: "text-sky-400",
-      border: "border-sky-500/30",
-      bg: "bg-sky-500/10"
-    },
+  primary: {
+    text: "text-sky-400",
+    border: "border-sky-500/30",
+    bg: "bg-sky-500/10"
+  },
+  success: {
+    text: "text-primary",
+    border: "border-primary/30",
+    bg: "bg-primary/10"
+  },
     destructive: {
       text: "text-rose-400",
       border: "border-rose-500/30",
