@@ -18,27 +18,27 @@ interface ExternalDomainCategorySectionProps {
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   'Segurança DNS': { 
-    bg: 'bg-cyan-600/10', 
+    bg: 'bg-cyan-600/5', 
     text: 'text-cyan-600', 
     border: 'border-cyan-600/30' 
   },
   'Infraestrutura de Email': { 
-    bg: 'bg-violet-500/10', 
+    bg: 'bg-violet-500/5', 
     text: 'text-violet-500', 
     border: 'border-violet-500/30' 
   },
   'Autenticação de Email - SPF': { 
-    bg: 'bg-emerald-600/10', 
+    bg: 'bg-emerald-600/5', 
     text: 'text-emerald-600', 
     border: 'border-emerald-600/30' 
   },
   'Autenticação de Email - DKIM': { 
-    bg: 'bg-pink-500/10', 
+    bg: 'bg-pink-500/5', 
     text: 'text-pink-500', 
     border: 'border-pink-500/30' 
   },
   'Autenticação de Email - DMARC': { 
-    bg: 'bg-amber-500/10', 
+    bg: 'bg-amber-500/5', 
     text: 'text-amber-500', 
     border: 'border-amber-500/30' 
   },
