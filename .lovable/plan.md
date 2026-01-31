@@ -1,298 +1,391 @@
 
-# Plano: Nova Secao Aplicativos (Entra ID)
+# Plano: Nova Seção Exchange Online
 
-## Visao Geral
+## Visão Geral
 
-Criar uma nova secao **Aplicativos** no modulo Entra ID, seguindo **exatamente** o padrao visual e arquitetural da secao **Insights de Seguranca** existente. A secao analisara App Registrations e Enterprise Applications com foco em riscos de seguranca, expiracao de credenciais e governanca.
+Criar uma nova seção **Exchange Online** no módulo Microsoft 365, seguindo **exatamente** o padrão visual e arquitetural da seção **Insights de Segurança** existente. A seção analisará riscos de segurança, configurações inseguras e desvios de boas práticas no serviço de e-mail.
 
 ---
 
-## Arquitetura da Solucao
+## Análise de Permissões Necessárias
 
-A implementacao seguira a mesma estrutura da secao Security Insights:
+### Situação Atual
 
-```text
-+----------------------------------------------------------+
-|                    ARQUITETURA                           |
-+----------------------------------------------------------+
-|                                                          |
-|  Frontend                                                |
-|  +----------------------------------------------------+  |
-|  | EntraIdApplicationInsightsPage.tsx                 |  |
-|  |   - Reutiliza InsightSummaryCards                  |  |
-|  |   - Usa AppInsightCategorySection (novo)           |  |
-|  |   - Usa AppInsightCard (novo)                      |  |
-|  +----------------------------------------------------+  |
-|                         |                                |
-|                         v                                |
-|  +----------------------------------------------------+  |
-|  | useEntraIdApplicationInsights.ts (hook)            |  |
-|  |   - Chama edge function                            |  |
-|  |   - Gerencia estado (loading, error, data)         |  |
-|  +----------------------------------------------------+  |
-|                         |                                |
-|                         v                                |
-|  Backend (Edge Function)                                 |
-|  +----------------------------------------------------+  |
-|  | entra-id-application-insights/index.ts             |  |
-|  |   - Busca apps via Microsoft Graph API             |  |
-|  |   - Analisa credenciais e permissoes               |  |
-|  |   - Gera insights de risco                         |  |
-|  +----------------------------------------------------+  |
-|                                                          |
-+----------------------------------------------------------+
-```
+Após pesquisa detalhada, identifiquei que a **Microsoft Graph API** possui **limitações significativas** para Exchange Online:
+
+| Funcionalidade | API Disponível | Permissão Necessária | Status |
+|----------------|----------------|----------------------|--------|
+| Inbox Rules (por usuário) | Graph v1.0 | `MailboxSettings.Read` | Disponível |
+| Mailbox Settings | Graph v1.0 | `MailboxSettings.Read` | Disponível |
+| Mailbox Delegates (Send As/Full Access) | Graph v1.0 | `MailboxSettings.Read` | Parcial |
+| Mail Flow Rules (Transport) | **NÃO** | Requer PowerShell | Não disponível |
+| Políticas Anti-Spam | **NÃO** | Requer PowerShell | Não disponível |
+| Políticas Anti-Phishing | **NÃO** | Requer PowerShell | Não disponível |
+| Conectores de Transporte | **NÃO** | Requer PowerShell | Não disponível |
+| SMTP Auth Settings | **NÃO** | Requer PowerShell | Não disponível |
+| Limites de Envio | **NÃO** | Requer PowerShell | Não disponível |
+| Políticas de Retenção | Graph Beta | `MailboxSettings.Read` | Parcial |
+
+### Permissões Adicionais Necessárias
+
+Para a primeira versão via Graph API, precisaremos adicionar:
+
+| Permissão | Tipo | Descrição |
+|-----------|------|-----------|
+| `MailboxSettings.Read` | Application | Ler configurações de mailbox e inbox rules |
+| `Mail.Read` | Application | Ler regras de inbox (necessário para listar rules) |
+| `User.Read.All` | Application | Já temos - para listar usuários |
+
+### Limitações e Alternativas
+
+Para as análises que requerem PowerShell (transport rules, políticas anti-spam, conectores, SMTP auth), existem duas opções futuras:
+
+1. **Exchange Online Management API** (via OAuth) - requer configuração adicional
+2. **Agente Python local** - já temos a infraestrutura, pode executar comandos PowerShell
+
+Para a **primeira versão**, focaremos nas análises possíveis via Graph API.
+
+---
+
+## Análises Implementáveis na Primeira Versão
+
+### Via Microsoft Graph API
+
+| Código | Título | Categoria | Severidade | API |
+|--------|--------|-----------|------------|-----|
+| EXO-001 | Regras de redirecionamento externo | `mail_flow` | Crítico | `/users/{id}/mailFolders/inbox/messageRules` |
+| EXO-002 | Regras com ações de encaminhamento | `mail_flow` | Alto | `/users/{id}/mailFolders/inbox/messageRules` |
+| EXO-003 | Regras que movem para lixeira automaticamente | `mail_flow` | Médio | `/users/{id}/mailFolders/inbox/messageRules` |
+| EXO-004 | Mailboxes com muitas regras de inbox | `security_hygiene` | Baixo | `/users/{id}/mailFolders/inbox/messageRules` |
+| EXO-005 | Configuração de fuso horário inconsistente | `governance` | Info | `/users/{id}/mailboxSettings` |
+| EXO-006 | Respostas automáticas habilitadas | `governance` | Info | `/users/{id}/mailboxSettings` |
+
+### Roadmap Futuro (Requer PowerShell/Agent)
+
+| Código | Título | Categoria | Dependência |
+|--------|--------|-----------|-------------|
+| EXO-101 | Transport Rules muito permissivas | `mail_flow` | PowerShell |
+| EXO-102 | Políticas Anti-Spam fracas | `security` | PowerShell |
+| EXO-103 | SMTP Auth habilitado | `security` | PowerShell |
+| EXO-104 | Conectores sem TLS | `security` | PowerShell |
+| EXO-105 | Usuários sem política de retenção | `governance` | PowerShell |
 
 ---
 
 ## Categorias de Insights
 
-Os insights serao agrupados em 3 categorias (mesmo padrao dos Security Insights):
-
-| Categoria | Codigo | Descricao |
-|-----------|--------|-----------|
-| `credential_expiration` | Expiracao de Credenciais | Secrets/Certificados vencidos ou proximos do vencimento |
-| `privileged_permissions` | Permissoes Privilegiadas | Apps com permissoes criticas ou Admin Consent |
-| `security_hygiene` | Higiene de Seguranca | Apps inativos, sem rotacao, multiplas credenciais |
-
----
-
-## Insights a Implementar
-
-### Categoria: Expiracao de Credenciais
-
-| Codigo | Titulo | Severidade | Criterio |
-|--------|--------|------------|----------|
-| APP-001 | Credenciais vencidas | Critico | Secrets/Certs com `endDateTime` < hoje |
-| APP-002 | Credenciais a vencer em 30 dias | Alto | Secrets/Certs com `endDateTime` entre hoje e +30d |
-| APP-003 | Credenciais a vencer em 90 dias | Medio | Secrets/Certs com `endDateTime` entre +30d e +90d |
-
-### Categoria: Permissoes Privilegiadas
-
-| Codigo | Titulo | Severidade | Criterio |
-|--------|--------|------------|----------|
-| APP-004 | Apps com permissoes criticas | Critico | Apps com `Directory.ReadWrite.All`, `Application.ReadWrite.All`, `RoleManagement.ReadWrite.Directory` |
-| APP-005 | Apps com Admin Consent | Alto | Apps cujo Service Principal possui `oauth2PermissionGrants` com `consentType: AllPrincipals` |
-| APP-006 | Apps com permissoes de leitura global | Medio | Apps com `Directory.Read.All`, `User.Read.All`, `Group.Read.All` |
-
-### Categoria: Higiene de Seguranca
-
-| Codigo | Titulo | Severidade | Criterio |
-|--------|--------|------------|----------|
-| APP-007 | Apps sem credencial redundante | Medio | Apps com apenas 1 credencial ativa (sem backup) |
-| APP-008 | Credenciais sem rotacao (>1 ano) | Alto | Secrets/Certs criados ha mais de 365 dias e ainda ativos |
-| APP-009 | Apps sem owner definido | Baixo | App Registrations sem proprietario atribuido |
+| Categoria | Código | Descrição | Cor |
+|-----------|--------|-----------|-----|
+| `mail_flow` | Fluxo de E-mail | Regras de redirecionamento e encaminhamento | Purple |
+| `mailbox_access` | Acesso a Mailbox | Permissões delegadas e compartilhamento | Blue |
+| `security_policies` | Políticas de Segurança | Anti-spam, anti-phishing, DLP | Red |
+| `security_hygiene` | Higiene de Segurança | Configurações e boas práticas | Cyan |
+| `governance` | Governança | Retenção e compliance | Emerald |
 
 ---
 
-## Arquivos a Criar/Modificar
+## Arquivos a Criar
 
-### Novos Arquivos
+### Tipos TypeScript
 
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/types/applicationInsights.ts` | Tipos TypeScript para Application Insights |
-| `src/hooks/useEntraIdApplicationInsights.ts` | Hook para buscar dados da edge function |
-| `src/pages/m365/EntraIdApplicationInsightsPage.tsx` | Pagina principal da secao |
-| `src/components/m365/applications/AppInsightSummaryCards.tsx` | Cards de resumo (reutiliza estrutura existente) |
-| `src/components/m365/applications/AppInsightCategorySection.tsx` | Secao colapsavel por categoria |
-| `src/components/m365/applications/AppInsightCard.tsx` | Card individual de insight de app |
-| `src/components/m365/applications/AppInsightDetailDialog.tsx` | Dialog de detalhes do insight |
-| `supabase/functions/entra-id-application-insights/index.ts` | Edge function para buscar e analisar apps |
+```text
+src/types/exchangeInsights.ts
+```
 
-### Arquivos a Modificar
+Definir:
+- `ExoInsightCategory` (mail_flow, mailbox_access, security_policies, security_hygiene, governance)
+- `ExoInsightSeverity` (critical, high, medium, low, info)
+- `AffectedMailbox` (id, displayName, userPrincipalName, details)
+- `ExchangeInsight` (id, code, title, description, category, severity, affectedCount, affectedMailboxes, criteria, recommendation, detectedAt)
+- `ExoInsightsSummary`
+- `ExchangeInsightsResponse`
+- Constantes de cores e labels
 
-| Arquivo | Modificacao |
+### Edge Function
+
+```text
+supabase/functions/exchange-online-insights/index.ts
+```
+
+Fluxo:
+1. Autenticar com Microsoft Graph
+2. Buscar lista de usuários com mailbox
+3. Para cada usuário (batch de 10):
+   - Buscar inbox rules: `GET /users/{id}/mailFolders/inbox/messageRules`
+   - Buscar mailbox settings: `GET /users/{id}/mailboxSettings`
+4. Analisar regras de redirecionamento
+5. Gerar insights categorizados
+6. Retornar response padronizada
+
+### Hook de Dados
+
+```text
+src/hooks/useExchangeOnlineInsights.ts
+```
+
+Seguir padrão do `useEntraIdSecurityInsights`:
+- Estado para insights, summary, loading, error
+- Função refresh para chamar edge function
+- Retornar dados tipados
+
+### Componentes de UI
+
+```text
+src/components/m365/exchange/
+├── ExoInsightSummaryCards.tsx
+├── ExoInsightCategorySection.tsx
+├── ExoInsightCard.tsx
+├── ExoInsightDetailDialog.tsx
+└── index.ts
+```
+
+Reutilizar padrão visual dos componentes de `applications/` e `insights/`.
+
+### Página Principal
+
+```text
+src/pages/m365/ExchangeOnlinePage.tsx
+```
+
+Layout idêntico a `EntraIdSecurityInsightsPage`:
+- Breadcrumb
+- Header com título e botão Atualizar
+- Card de tenant conectado
+- Summary cards no topo
+- Insights por categoria (colapsáveis)
+- Estados de loading, error e empty
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Modificação |
 |---------|-------------|
-| `src/App.tsx` | Adicionar rota `/scope-m365/entra-id/applications` |
-| `src/pages/m365/EntraIdPage.tsx` | Ativar card "Aplicativos" com link para nova rota |
+| `src/App.tsx` | Adicionar rota `/scope-m365/exchange-online` |
+| `src/pages/m365/M365DashboardPage.tsx` | Ativar card Exchange Online com link |
+| `supabase/config.toml` | Adicionar configuração da nova edge function |
 
 ---
 
-## Detalhes Tecnicos
+## Detalhes Técnicos
 
-### 1. Tipos TypeScript (`src/types/applicationInsights.ts`)
+### Estrutura da Edge Function
 
 ```typescript
-export type AppInsightCategory = 
-  | 'credential_expiration' 
-  | 'privileged_permissions' 
-  | 'security_hygiene';
-
-export type AppInsightSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-
-export interface AffectedApplication {
-  id: string;
-  appId: string;
-  displayName: string;
-  appType: 'AppRegistration' | 'EnterpriseApp';
-  details?: {
-    credentialType?: 'Secret' | 'Certificate';
-    expiresAt?: string;
-    daysUntilExpiration?: number;
-    permissions?: string[];
-    hasAdminConsent?: boolean;
-    ownerCount?: number;
-  };
-}
-
-export interface ApplicationInsight {
-  id: string;
-  code: string;
-  title: string;
-  description: string;
-  category: AppInsightCategory;
-  severity: AppInsightSeverity;
-  affectedCount: number;
-  affectedApplications: AffectedApplication[];
-  criteria: string;
-  recommendation: string;
-  detectedAt: string;
-}
-
-export interface AppInsightsSummary {
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  info: number;
-  total: number;
-  expiredCredentials: number;
-  expiringIn30Days: number;
-  privilegedApps: number;
+// Fluxo principal
+async function main(tenantRecordId: string) {
+  // 1. Buscar credenciais do tenant
+  const tenant = await getTenantConfig(tenantRecordId);
+  const accessToken = await getAccessToken(tenant);
+  
+  // 2. Buscar usuários com mailbox
+  const users = await fetchUsersWithMailbox(accessToken);
+  
+  // 3. Buscar inbox rules para cada usuário (em batches)
+  const allRules = await fetchAllInboxRules(accessToken, users);
+  
+  // 4. Buscar mailbox settings
+  const allSettings = await fetchAllMailboxSettings(accessToken, users);
+  
+  // 5. Analisar e gerar insights
+  const insights = [
+    analyzeExternalForwarding(allRules),
+    analyzeForwardingRules(allRules),
+    analyzeDeleteRules(allRules),
+    analyzeRuleCount(allRules),
+    analyzeAutoReplies(allSettings),
+  ].filter(Boolean);
+  
+  return { success: true, insights, summary: calculateSummary(insights) };
 }
 ```
 
-### 2. Edge Function (`supabase/functions/entra-id-application-insights/index.ts`)
+### API Endpoints Utilizados
 
-A edge function ira:
+```text
+GET /users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail
+GET /users/{id}/mailFolders/inbox/messageRules
+GET /users/{id}/mailboxSettings
+```
 
-1. **Autenticar** com Microsoft Graph usando credenciais do tenant
-2. **Buscar dados** via Graph API:
-   - `GET /applications` - App Registrations
-   - `GET /servicePrincipals` - Enterprise Apps
-   - `GET /servicePrincipals/{id}/oauth2PermissionGrants` - Permissoes delegadas
-   - `GET /servicePrincipals/{id}/appRoleAssignments` - App Roles
-3. **Analisar** credenciais e permissoes
-4. **Gerar insights** categorizados por severidade
+### Análise de Regras de Redirecionamento
 
-Permissoes Graph necessarias:
-- `Application.Read.All`
-- `Directory.Read.All`
+```typescript
+function analyzeExternalForwarding(rules: InboxRule[]): ExchangeInsight | null {
+  const externalForwarding = rules.filter(rule => {
+    const forwardTo = rule.actions?.forwardTo || [];
+    const redirectTo = rule.actions?.redirectTo || [];
+    
+    // Verificar se redireciona para domínio externo
+    const allTargets = [...forwardTo, ...redirectTo];
+    return allTargets.some(target => {
+      const email = target.emailAddress?.address || '';
+      return !email.endsWith('@' + tenantDomain);
+    });
+  });
+  
+  if (externalForwarding.length === 0) return null;
+  
+  return {
+    id: 'EXO-001',
+    code: 'EXO-001',
+    title: 'Regras de redirecionamento para domínios externos',
+    description: `${externalForwarding.length} regra(s) de inbox estão redirecionando e-mails para endereços externos ao domínio da organização.`,
+    category: 'mail_flow',
+    severity: 'critical',
+    // ...
+  };
+}
+```
 
-### 3. Layout da Pagina (mesmo padrao de Security Insights)
+---
+
+## Layout Visual
 
 ```text
 +----------------------------------------------------------+
 |                                                          |
-|  [Breadcrumb] Microsoft 365 > Entra ID > Aplicativos     |
+|  [Breadcrumb] Microsoft 365 > Exchange Online            |
 |                                                          |
-|  APLICATIVOS                          [Atualizar]        |
-|  Analise de riscos em App Registrations e Enterprise Apps|
+|  EXCHANGE ONLINE                      [Atualizar]        |
+|  Análise de riscos e configurações do serviço de e-mail  |
 |                                                          |
 |  +-------------+  +-------------+  +-------------+       |
-|  | Vencidos    |  | A Vencer    |  | Privilegiados|      |
-|  | 3           |  | 7           |  | 12          |       |
-|  | Credenciais |  | em 30 dias  |  | com Admin   |       |
+|  | Críticos    |  | Alto Risco  |  | Médio       |      |
+|  | 2           |  | 5           |  | 8           |       |
+|  | insights    |  | insights    |  | insights    |       |
 |  +-------------+  +-------------+  +-------------+       |
 |                                                          |
 |  [TENANT: contoso.onmicrosoft.com]  [Conectado]          |
 |                                                          |
 |  +------------------------------------------------------+|
-|  | EXPIRACAO DE CREDENCIAIS                     4 apps  ||
-|  |   [Critico: 2] [Alto: 2]                             ||
+|  | FLUXO DE E-MAIL                              3 itens ||
+|  |   [Crítico: 1] [Alto: 2]                             ||
 |  +------------------------------------------------------+|
-|     [Card] Credenciais vencidas                          |
-|     [Card] Credenciais a vencer em 30 dias               |
+|     [Card] Regras de redirecionamento externo            |
+|     [Card] Regras de encaminhamento ativo                |
 |                                                          |
 |  +------------------------------------------------------+|
-|  | PERMISSOES PRIVILEGIADAS                    12 apps  ||
-|  |   [Critico: 3] [Alto: 9]                             ||
+|  | HIGIENE DE SEGURANÇA                         2 itens ||
 |  +------------------------------------------------------+|
-|     [Card] Apps com permissoes criticas                  |
-|     [Card] Apps com Admin Consent                        |
+|     [Card] Mailboxes com excesso de regras               |
+|                                                          |
+|  +------------------------------------------------------+|
+|  | GOVERNANÇA                                   3 itens ||
+|  +------------------------------------------------------+|
+|     [Card] Respostas automáticas habilitadas             |
 |                                                          |
 +----------------------------------------------------------+
 ```
 
-### 4. Card de Insight (AppInsightCard)
-
-O card seguira exatamente o mesmo padrao visual de `InsightCard`:
-
-- Borda esquerda colorida por severidade
-- Icone de severidade com background colorido
-- Badge de severidade + codigo
-- Titulo + descricao
-- Contador de apps afetados (icone de cubo/app)
-- Botao "Ver detalhes" que abre dialog
-
-### 5. Dialog de Detalhes (AppInsightDetailDialog)
-
-O dialog seguira o padrao de `InsightDetailDialog`:
-
-- Header com severidade, codigo e categoria
-- Descricao do insight
-- Criterio de deteccao
-- Recomendacao (destacada em amarelo)
-- Lista de aplicativos afetados com:
-  - Nome do app
-  - Tipo (App Registration / Enterprise App)
-  - Detalhes relevantes (data de expiracao, permissoes, etc.)
-
 ---
 
-## Sequencia de Implementacao
+## Sequência de Implementação
 
 | Etapa | Tarefa | Arquivos |
 |-------|--------|----------|
-| 1 | Criar tipos TypeScript | `src/types/applicationInsights.ts` |
-| 2 | Criar Edge Function | `supabase/functions/entra-id-application-insights/index.ts` |
-| 3 | Criar hook de dados | `src/hooks/useEntraIdApplicationInsights.ts` |
-| 4 | Criar componentes de UI | `src/components/m365/applications/*.tsx` |
-| 5 | Criar pagina principal | `src/pages/m365/EntraIdApplicationInsightsPage.tsx` |
-| 6 | Adicionar rota e ativar menu | `src/App.tsx`, `src/pages/m365/EntraIdPage.tsx` |
+| 1 | Criar tipos TypeScript | `src/types/exchangeInsights.ts` |
+| 2 | Criar Edge Function | `supabase/functions/exchange-online-insights/index.ts` |
+| 3 | Atualizar config.toml | `supabase/config.toml` |
+| 4 | Criar hook de dados | `src/hooks/useExchangeOnlineInsights.ts` |
+| 5 | Criar componentes de UI | `src/components/m365/exchange/*.tsx` |
+| 6 | Criar página principal | `src/pages/m365/ExchangeOnlinePage.tsx` |
+| 7 | Adicionar rota e ativar menu | `src/App.tsx`, `src/pages/m365/M365DashboardPage.tsx` |
 
 ---
 
-## Permissoes Microsoft Graph Necessarias
+## Permissões a Solicitar ao Tenant
 
-Para que a edge function funcione, o App Registration do iScope no Entra ID do cliente precisa ter:
+Ao conectar um novo tenant ou reconectar, será necessário solicitar:
 
-| Permissao | Tipo | Necessidade |
-|-----------|------|-------------|
-| `Application.Read.All` | Application | Obrigatoria |
-| `Directory.Read.All` | Application | Obrigatoria |
+| Permissão | Tipo | Justificativa |
+|-----------|------|---------------|
+| `MailboxSettings.Read` | Application | Ler regras de inbox e configurações de mailbox |
+| `Mail.Read` | Application | Necessário para acessar messageRules |
 
-Essas permissoes ja estao listadas na tabela `m365_required_permissions` do sistema.
+Essas permissões devem ser adicionadas à tabela `m365_required_permissions` (se existir) ou documentadas para o processo de conexão.
 
 ---
 
-## Cores e Estilos (Padrao Existente)
+## Limitações Conhecidas
 
-As cores de severidade seguem o padrao ja definido em `src/types/securityInsights.ts`:
+### Não Disponível via Graph API (requer PowerShell)
 
-- **Critico**: Red-500 (#EF4444)
-- **Alto**: Orange-500 (#F97316)
-- **Medio**: Amber-500 (#F59E0B)
-- **Baixo**: Blue-500 (#3B82F6)
-- **Info**: Slate-500 (#64748B)
+1. **Transport Rules (Mail Flow Rules)** - regras de transporte globais
+2. **Políticas Anti-Spam** - configurações de spam filter
+3. **Políticas Anti-Phishing** - proteção contra phishing
+4. **Conectores de Transporte** - connectors de entrada/saída
+5. **SMTP Auth Settings** - configurações de autenticação SMTP
+6. **Limites de Envio** - quotas de envio por usuário
+7. **Políticas de Retenção** - retention policies globais
+8. **Full Access / Send As Permissions** - permissões de mailbox delegadas (parcial)
 
-As cores de categoria serao:
+### Roadmap para Versões Futuras
 
-- **Expiracao de Credenciais**: Red/Rose (`bg-rose-500/10`, `text-rose-500`)
-- **Permissoes Privilegiadas**: Purple (`bg-purple-500/10`, `text-purple-500`)
-- **Higiene de Seguranca**: Cyan/Teal (`bg-cyan-500/10`, `text-cyan-500`)
+Para implementar as análises acima, será necessário:
+
+1. **Opção A**: Integrar com Exchange Online Management API (requer configuração OAuth adicional)
+2. **Opção B**: Usar o Python Agent existente para executar comandos PowerShell e enviar resultados
+
+A arquitetura do Python Agent já suporta execução de comandos remotos, podendo ser estendida para PowerShell.
+
+---
+
+## Cores e Estilos
+
+### Categorias
+
+```typescript
+export const EXO_CATEGORY_COLORS: Record<ExoInsightCategory, { bg: string; text: string; border: string }> = {
+  mail_flow: {
+    bg: 'bg-purple-500/10',
+    text: 'text-purple-500',
+    border: 'border-purple-500/30',
+  },
+  mailbox_access: {
+    bg: 'bg-blue-500/10',
+    text: 'text-blue-500',
+    border: 'border-blue-500/30',
+  },
+  security_policies: {
+    bg: 'bg-red-500/10',
+    text: 'text-red-500',
+    border: 'border-red-500/30',
+  },
+  security_hygiene: {
+    bg: 'bg-cyan-500/10',
+    text: 'text-cyan-500',
+    border: 'border-cyan-500/30',
+  },
+  governance: {
+    bg: 'bg-emerald-500/10',
+    text: 'text-emerald-500',
+    border: 'border-emerald-500/30',
+  },
+};
+```
+
+### Severidades
+
+Reutilizar as cores padrão já definidas em `securityInsights.ts`.
 
 ---
 
 ## Resultado Esperado
 
-- Secao "Aplicativos" acessivel em `/scope-m365/entra-id/applications`
-- Card na pagina Entra ID ativo e clicavel
-- Layout identico a secao "Insights de Seguranca"
-- Cards de resumo no topo com metricas principais
-- Insights agrupados por categoria (colapsaveis)
-- Dialog de detalhes com lista de apps afetados
-- Linguagem orientada a risco e decisao
-- Destaques visuais para situacoes criticas
+- Seção "Exchange Online" acessível em `/scope-m365/exchange-online`
+- Card no dashboard M365 ativo e clicável
+- Layout idêntico à seção "Insights de Segurança"
+- Análise de regras de inbox para todos os usuários
+- Identificação de redirecionamentos externos (risco crítico)
+- Cards de resumo no topo com métricas principais
+- Insights agrupados por categoria (colapsáveis)
+- Dialog de detalhes com lista de mailboxes afetadas
+- Linguagem orientada a risco e decisão
+- Preparado para expansão futura com PowerShell/Agent
 
+---
+
+## Nota sobre Escopo
+
+Esta primeira versão foca nas análises possíveis via Microsoft Graph API. Para cobertura completa conforme especificado (transport rules, políticas anti-spam, conectores, SMTP auth, etc.), será necessário uma segunda fase utilizando PowerShell via Python Agent ou Exchange Online Management API.
