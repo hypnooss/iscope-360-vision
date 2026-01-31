@@ -1,167 +1,283 @@
 
+# Plano: Evidências Específicas por Card (MX, DKIM, DMARC)
 
-# Plano: Adicionar Borda Verde em Todos os Campos de Evidência
+## Problema Identificado
 
-## Objetivo
+O backend usa `formatExternalDomainEvidence()` que gera as **mesmas evidências** para todos os checks que usam o mesmo step_id:
 
-Padronizar a exibição de TODAS as evidências coletadas com a borda verde à esquerda (`border-l-2 border-primary`) e garantir separação visual clara quando há múltiplos valores.
+| Check | step_id | Problema |
+|-------|---------|----------|
+| MX-001 (Registro MX Configurado) | mx_records | Mostra IPs resolvidos (não deveria) |
+| MX-002 (Redundância MX) | mx_records | Deveria mostrar IPs resolvidos |
+| MX-003 (Prioridades MX) | mx_records | Mostra IPs resolvidos (não deveria) |
+| DKIM-001 (DKIM Configurado) | dkim_records | Mostra JSON completo (deveria mostrar só quantidade) |
+| DKIM-003 (Redundância DKIM) | dkim_records | Mostra JSON completo (deveria mostrar só nomes) |
+| DMARC-003 (Relatórios RUA) | dmarc_record | Mostra p, sp, pct (deveria mostrar só rua) |
+| DMARC-005 (Alinhamento SPF) | dmarc_record | Mostra tudo (deveria mostrar só aspf) |
+| DMARC-006 (Alinhamento DKIM) | dmarc_record | Mostra tudo (deveria mostrar só adkim) |
 
-## Alterações no Arquivo
+## Solução
 
-### `src/components/compliance/EvidenceDisplay.tsx`
+Criar evidências específicas **por `rule.code`** no backend, usando a mesma lógica que já existe para regras como `lic-001`, `utm-*`, etc.
 
-#### 1. Tratamento de Nameservers (linhas 317-326)
+---
 
-Adicionar borda verde em cada nameserver:
+## Alterações no Backend
+
+### Arquivo: `supabase/functions/agent-task-result/index.ts`
+
+Adicionar tratamento específico por rule.code após a linha ~2128 (onde estão os outros formatadores), antes do fallback genérico:
 
 ```typescript
-// ANTES
-<div key={idx} className="flex flex-col">
+// ========== EVIDÊNCIAS ESPECÍFICAS POR REGRA ==========
 
-// DEPOIS
-<div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
+// MX-001: Registro MX Configurado (só exchange)
+else if (rule.code === 'MX-001') {
+  const mxData = sourceData as Record<string, unknown>;
+  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
+  if (records.length > 0) {
+    const exchanges = records.map(r => String(r.exchange)).filter(Boolean);
+    evidence = [{ 
+      label: 'Servidores MX', 
+      value: exchanges.join(', '), 
+      type: 'text' 
+    }];
+  }
+}
+
+// MX-002: Redundância MX (exchange + IPs resolvidos + quantidade)
+else if (rule.code === 'MX-002') {
+  const mxData = sourceData as Record<string, unknown>;
+  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
+  if (records.length > 0) {
+    // Manter formato JSON para frontend renderizar com todos os campos
+    evidence = [{ label: 'data.records', value: JSON.stringify(records), type: 'code' }];
+  }
+}
+
+// MX-003: Prioridades MX (só exchange e priority)
+else if (rule.code === 'MX-003') {
+  const mxData = sourceData as Record<string, unknown>;
+  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
+  if (records.length > 0) {
+    const simplified = records.map(r => ({ exchange: r.exchange, priority: r.priority }));
+    evidence = [{ label: 'data.records.simplified', value: JSON.stringify(simplified), type: 'code' }];
+  }
+}
+
+// DKIM-001: DKIM Configurado (só quantidade de chaves)
+else if (rule.code === 'DKIM-001') {
+  const dkimData = sourceData as Record<string, unknown>;
+  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
+  evidence = [{ 
+    label: 'Chaves DKIM Encontradas', 
+    value: found.length > 0 ? `${found.length} chave(s) configurada(s)` : 'Nenhuma chave DKIM encontrada', 
+    type: 'text' 
+  }];
+}
+
+// DKIM-002: Tamanho da Chave DKIM (mostrar seletor + tamanho)
+else if (rule.code === 'DKIM-002') {
+  const dkimData = sourceData as Record<string, unknown>;
+  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
+  if (found.length > 0) {
+    const keyInfo = found.map(k => `${k.selector || k.name}: ${k.key_size_bits || '?'} bits`).join(', ');
+    evidence = [{ label: 'Tamanho das Chaves', value: keyInfo, type: 'text' }];
+  }
+}
+
+// DKIM-003: Redundância DKIM (só nomes das chaves)
+else if (rule.code === 'DKIM-003') {
+  const dkimData = sourceData as Record<string, unknown>;
+  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
+  if (found.length > 0) {
+    const keyNames = found.map(k => String(k.selector || k.name)).filter(Boolean);
+    evidence = [{ label: 'Seletores DKIM', value: keyNames.join(', '), type: 'text' }];
+  } else {
+    evidence = [{ label: 'Seletores DKIM', value: 'Nenhum seletor encontrado', type: 'text' }];
+  }
+}
+
+// DMARC-003: Relatórios RUA (só rua)
+else if (rule.code === 'DMARC-003') {
+  const dmarcData = sourceData as Record<string, unknown>;
+  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
+  const rua = parsed.rua;
+  evidence = [{ 
+    label: 'Relatórios (RUA)', 
+    value: rua ? String(rua) : 'Não configurado', 
+    type: 'text' 
+  }];
+}
+
+// DMARC-005: Alinhamento SPF Estrito (só aspf)
+else if (rule.code === 'DMARC-005') {
+  const dmarcData = sourceData as Record<string, unknown>;
+  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
+  const aspf = parsed.aspf;
+  evidence = [{ 
+    label: 'data.parsed.aspf', 
+    value: aspf ? String(aspf) : 'Não configurado (padrão: relaxado)', 
+    type: 'text' 
+  }];
+}
+
+// DMARC-006: Alinhamento DKIM Estrito (só adkim)
+else if (rule.code === 'DMARC-006') {
+  const dmarcData = sourceData as Record<string, unknown>;
+  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
+  const adkim = parsed.adkim;
+  evidence = [{ 
+    label: 'data.parsed.adkim', 
+    value: adkim ? String(adkim) : 'Não configurado (padrão: relaxado)', 
+    type: 'text' 
+  }];
+}
 ```
 
-#### 2. Tratamento de Arrays de Strings (linhas 336-344)
+---
 
-Adicionar borda verde em cada item:
+## Alterações no Frontend
+
+### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
+
+#### 1. Adicionar tratamento para MX simplificado (MX-003)
+
+Detectar `data.records.simplified` e renderizar apenas exchange + priority:
 
 ```typescript
-// ANTES
-<div key={idx} className="flex flex-col">
+// Tratamento MX simplificado (sem IPs)
+const isMxSimplifiedByLabel = item.label === 'data.records.simplified';
 
-// DEPOIS
-<div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
+if (isMxSimplifiedByLabel && Array.isArray(parsed)) {
+  const records = parsed as Array<Record<string, unknown>>;
+  return (
+    <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+      {records.map((rec, idx) => (
+        <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Servidor MX</span>
+            <span className="text-sm text-foreground font-mono">{String(rec.exchange)}</span>
+          </div>
+          {rec.priority !== undefined && (
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">Prioridade</span>
+              <span className="text-sm text-foreground font-mono">{String(rec.priority)}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 ```
 
-#### 3. Tratamento de Listas com Vírgula (linhas 417-426)
-
-Adicionar borda verde em cada valor da lista:
+#### 2. Adicionar tradução para novos labels
 
 ```typescript
-// ANTES
-<div key={idx} className="flex flex-col">
-
-// DEPOIS
-<div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
-```
-
-#### 4. Renderização Padrão de Texto Simples (linhas 435-440)
-
-Adicionar borda verde no container:
-
-```typescript
-// ANTES
-<div className="bg-muted/30 rounded-md p-3 border border-border/30">
-  <span className="text-xs font-medium text-muted-foreground block mb-1">...</span>
-  <p className="text-sm text-foreground">...</p>
-</div>
-
-// DEPOIS
-<div className="bg-muted/30 rounded-md p-3 border border-border/30">
-  <div className="border-l-2 border-primary/30 pl-3">
-    <span className="text-xs font-medium text-muted-foreground block mb-1">...</span>
-    <p className="text-sm text-foreground">...</p>
-  </div>
-</div>
-```
-
-#### 5. Fallback de Código (linhas 371-378)
-
-Adicionar borda verde:
-
-```typescript
-// ANTES
-<div className="bg-muted/30 rounded-md p-3 border border-border/30">
-  <span>...</span>
-  <code>...</code>
-</div>
-
-// DEPOIS
-<div className="bg-muted/30 rounded-md p-3 border border-border/30">
-  <div className="border-l-2 border-primary/30 pl-3">
-    <span>...</span>
-    <code>...</code>
-  </div>
-</div>
-```
-
-#### 6. Tratamento de Objeto Simples (linhas 361-368)
-
-Adicionar borda verde no label antes do RecordDisplay:
-
-```typescript
-// ANTES
-<span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
-
-// DEPOIS
-<div className="border-l-2 border-primary/30 pl-3">
-  <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
-</div>
-```
-
-#### 7. Array de Objetos Genérico (linhas 348-357)
-
-Adicionar borda no label:
-
-```typescript
-// ANTES  
-<span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
-
-// DEPOIS
-<div className="border-l-2 border-primary/30 pl-3 mb-2">
-  <span className="text-xs font-medium text-muted-foreground block">{item.label}</span>
-</div>
+const LABEL_TRANSLATIONS: Record<string, string> = {
+  // ... existing translations ...
+  'Servidores MX': 'Servidores MX',
+  'Chaves DKIM Encontradas': 'Chaves DKIM Encontradas',
+  'Seletores DKIM': 'Seletores DKIM',
+  'Tamanho das Chaves': 'Tamanho das Chaves',
+};
 ```
 
 ---
 
 ## Resultado Visual Esperado
 
-### Nameservers (ANTES)
+### MX-001: Registro MX Configurado
 ```
-Nameserver
-ns77.domaincontrol.com
+EVIDÊNCIAS COLETADAS
 
-Nameserver
-ns78.domaincontrol.com
-```
-
-### Nameservers (DEPOIS)
-```
-│ Nameserver
-│ ns77.domaincontrol.com
-
-│ Nameserver
-│ ns78.domaincontrol.com
+│ Servidores MX
+│ precisio-io.mail.protection.outlook.com
 ```
 
-### Texto Simples (ANTES)
+### MX-002: Redundância MX
 ```
-Alinhamento SPF
-Relaxado (r)
+EVIDÊNCIAS COLETADAS
+
+│ Servidor MX
+│ precisio-io.mail.protection.outlook.com
+
+│ Prioridade
+│ 0
+
+│ IPs Resolvidos
+│ 52.101.11.17, 52.101.42.13, ...
+
+│ Quantidade de IPs
+│ 8
 ```
 
-### Texto Simples (DEPOIS)
+### MX-003: Prioridades MX Configuradas
 ```
+EVIDÊNCIAS COLETADAS
+
+│ Servidor MX
+│ precisio-io.mail.protection.outlook.com
+
+│ Prioridade
+│ 0
+```
+
+### DKIM-001: DKIM Configurado
+```
+EVIDÊNCIAS COLETADAS
+
+│ Chaves DKIM Encontradas
+│ 2 chave(s) configurada(s)
+```
+
+### DKIM-003: Redundância DKIM
+```
+EVIDÊNCIAS COLETADAS
+
+│ Seletores DKIM
+│ selector1._domainkey.precisio.io, selector2._domainkey.precisio.io
+```
+
+### DMARC-003: Relatórios RUA
+```
+EVIDÊNCIAS COLETADAS
+
+│ Relatórios (RUA)
+│ mailto:db93c273a8@rua.easydmarc.com
+```
+
+### DMARC-005: Alinhamento SPF Estrito
+```
+EVIDÊNCIAS COLETADAS
+
 │ Alinhamento SPF
 │ Relaxado (r)
 ```
 
+### DMARC-006: Alinhamento DKIM Estrito
+```
+EVIDÊNCIAS COLETADAS
+
+│ Alinhamento DKIM
+│ Estrito (s) ✓
+```
+
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar `border-l-2 border-primary/30 pl-3` em todos os campos de evidência |
+| `supabase/functions/agent-task-result/index.ts` | Adicionar tratamento específico por rule.code para MX, DKIM e DMARC |
+| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar tratamento para `data.records.simplified` |
 
 ---
 
 ## Considerações Técnicas
 
-1. **Consistência visual**: Todos os campos terão a mesma aparência com borda verde
-2. **Separação de itens**: Quando há múltiplos valores (Nameservers, IPs), cada um terá sua própria borda
-3. **Já implementado**: MX e DKIM já usam esse padrão - apenas estender para os outros casos
-4. **Classe utilizada**: `border-l-2 border-primary/30 pl-3` (borda 2px, cor primária 30% opacidade, padding left)
-
+1. **Separação de responsabilidades**: Backend gera evidências específicas por regra, frontend só renderiza
+2. **Retrocompatibilidade**: MX-002 continua usando `data.records` com todos os campos
+3. **Nova análise**: Após deploy, uma nova análise de domínio é necessária para gerar as evidências corretas
+4. **Labels existentes**: Aproveitamos as traduções e transformações já definidas no frontend
