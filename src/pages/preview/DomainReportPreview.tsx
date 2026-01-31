@@ -1,4 +1,4 @@
-import { Globe, Server, Network, Mail, Shield, ListChecks, CheckCircle2, ShieldX, AlertTriangle } from "lucide-react";
+import { ListChecks, CheckCircle2, ShieldX, AlertTriangle } from "lucide-react";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { StatCard } from "@/components/StatCard";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const mockData = {
   nameservers: ["e.sec.dns.br", "f.sec.dns.br"],
   soaContact: "hostmaster@registro.br",
   dnssec: true,
+  clientName: "Brinquedos Estrela S/A",
   stats: {
     total: 23,
     passed: 18,
@@ -19,34 +20,36 @@ const mockData = {
   },
 };
 
-interface InfoRowProps {
-  icon: React.ReactNode;
+interface InfoTableRowProps {
   label: string;
   value: string;
   highlight?: boolean;
+  status?: boolean;
 }
 
-function InfoRow({ icon, label, value, highlight = false }: InfoRowProps) {
+function InfoTableRow({ label, value, highlight, status }: InfoTableRowProps) {
   return (
-    <div className="flex items-center gap-3 min-w-0">
-      <div className="flex-shrink-0 text-muted-foreground">{icon}</div>
-      <div className="min-w-0 flex-1">
-        <span className="text-xs text-muted-foreground block">{label}</span>
-        <span
-          className={cn(
-            "text-sm font-medium truncate block",
-            highlight ? "text-primary" : "text-foreground"
-          )}
-        >
-          {value}
-        </span>
-      </div>
+    <div className="flex items-center gap-4">
+      <span className="text-sm text-muted-foreground w-32 flex-shrink-0">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-border/30 max-w-[60px]" />
+      <span
+        className={cn(
+          "text-sm font-medium flex-1 truncate",
+          highlight && "text-primary font-semibold",
+          status === true && "text-emerald-500",
+          status === false && "text-destructive"
+        )}
+      >
+        {value || "N/A"}
+      </span>
     </div>
   );
 }
 
 export default function DomainReportPreview() {
-  const { domain, score, soa, nameservers, soaContact, dnssec, stats } = mockData;
+  const { domain, score, soa, nameservers, soaContact, dnssec, clientName, stats } = mockData;
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -54,48 +57,31 @@ export default function DomainReportPreview() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">Preview: Domain Report Header</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Este é um preview do novo layout (Opção 2 - Score Integrado). A página funcional não foi alterada.
+          Layout tabular com Score à esquerda e informações estruturadas à direita.
         </p>
       </div>
 
-      {/* Score Integrado - Card Único */}
-      <div className="glass-card rounded-xl p-6 border border-primary/20 mb-6 max-w-5xl">
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Score compacto à esquerda */}
+      {/* Score Integrado - Card Único com Layout Tabular */}
+      <div className="glass-card rounded-xl p-6 border border-primary/20 mb-6 max-w-4xl">
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Score à esquerda - tamanho maior para legibilidade */}
           <div className="flex-shrink-0 flex items-center justify-center lg:justify-start">
-            <ScoreGauge score={score} size={140} />
+            <ScoreGauge score={score} size={160} />
           </div>
 
-          {/* Informações centrais */}
-          <div className="flex-1 min-w-0 flex flex-col justify-center">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-              <InfoRow
-                icon={<Globe className="w-4 h-4" />}
-                label="Domínio"
-                value={domain}
-                highlight
+          {/* Informações em formato tabular */}
+          <div className="flex-1 flex flex-col justify-center min-w-0">
+            <div className="space-y-2.5">
+              <InfoTableRow label="Domínio" value={domain} highlight />
+              <InfoTableRow label="SOA" value={soa} />
+              <InfoTableRow label="Nameservers" value={nameservers.join(", ")} />
+              <InfoTableRow label="SOA Contact" value={soaContact} />
+              <InfoTableRow 
+                label="DNSSEC Status" 
+                value={dnssec ? "Ativo" : "Inativo"} 
+                status={dnssec} 
               />
-              <InfoRow
-                icon={<Server className="w-4 h-4" />}
-                label="SOA"
-                value={soa}
-              />
-              <InfoRow
-                icon={<Network className="w-4 h-4" />}
-                label="Nameservers"
-                value={nameservers.join(", ")}
-              />
-              <InfoRow
-                icon={<Mail className="w-4 h-4" />}
-                label="SOA Contact"
-                value={soaContact}
-              />
-              <InfoRow
-                icon={<Shield className="w-4 h-4" />}
-                label="DNSSEC"
-                value={dnssec ? "Ativo" : "Inativo"}
-                highlight={dnssec}
-              />
+              <InfoTableRow label="Workspace" value={clientName} />
             </div>
           </div>
         </div>
@@ -137,16 +123,17 @@ export default function DomainReportPreview() {
       </div>
 
       {/* Notas de Design */}
-      <div className="max-w-5xl glass-card rounded-xl p-5 border border-border/50">
-        <h2 className="text-lg font-semibold mb-3">Mudanças Aplicadas</h2>
+      <div className="max-w-4xl glass-card rounded-xl p-5 border border-border/50">
+        <h2 className="text-lg font-semibold mb-3">Mudanças Aplicadas (v2)</h2>
         <ul className="space-y-2 text-sm text-muted-foreground">
-          <li>✓ Score reduzido de 200px para 140px</li>
-          <li>✓ Card único consolidando score + informações + stats</li>
-          <li>✓ Espaçamento vertical aumentado (gap-y-3)</li>
-          <li>✓ Espaçamento horizontal aumentado (gap-x-8)</li>
-          <li>✓ Badge "DOMÍNIO" removido (redundante)</li>
-          <li>✓ Stats integrados na parte inferior do card</li>
-          <li>✓ Responsivo: empilha verticalmente em mobile</li>
+          <li>✓ Score aumentado para 160px (melhor legibilidade)</li>
+          <li>✓ Layout tabular com labels fixos (w-32 = 128px)</li>
+          <li>✓ Lista vertical de 6 itens organizada</li>
+          <li>✓ Separador visual entre label e valor</li>
+          <li>✓ Espaçamento vertical aumentado (space-y-2.5)</li>
+          <li>✓ Gap horizontal aumentado (gap-8)</li>
+          <li>✓ Campo "Workspace" adicionado</li>
+          <li>✓ DNSSEC com cor verde/vermelho baseado no status</li>
         </ul>
       </div>
     </div>
