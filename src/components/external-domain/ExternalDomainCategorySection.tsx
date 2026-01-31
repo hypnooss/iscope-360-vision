@@ -69,9 +69,13 @@ export function ExternalDomainCategorySection({
   const colors = CATEGORY_COLORS[category.name] || DEFAULT_COLORS;
   const Icon = CATEGORY_ICONS[category.name] || Shield;
 
-  // Count critical and high severity failures
-  const criticalHighCount = category.checks.filter(
-    c => c.status === 'fail' && (c.severity === 'critical' || c.severity === 'high')
+  // Count failures by severity
+  const criticalCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'critical'
+  ).length;
+
+  const highCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'high'
   ).length;
 
   // Get pass rate color based on percentage
@@ -102,9 +106,14 @@ export function ExternalDomainCategorySection({
               <Badge variant="secondary" className="text-xs">
                 {category.checks.length} verificaç{category.checks.length !== 1 ? 'ões' : 'ão'}
               </Badge>
-              {criticalHighCount > 0 && (
+              {criticalCount > 0 && (
                 <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">
-                  {criticalHighCount} crítico{criticalHighCount !== 1 ? 's' : ''}
+                  {criticalCount} crítico{criticalCount !== 1 ? 's' : ''}
+                </Badge>
+              )}
+              {highCount > 0 && (
+                <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
+                  {highCount} alto{highCount !== 1 ? 's' : ''}
                 </Badge>
               )}
             </div>
