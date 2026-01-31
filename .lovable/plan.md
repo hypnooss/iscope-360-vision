@@ -1,182 +1,222 @@
 
-# Plano: Corrigir Exibição de Evidências
+# Plano: Traduções e Ajustes por Tipo de Card MX/SPF
 
-## Problema Identificado
+## Resumo das Alterações
 
-A abordagem anterior tinha 2 falhas:
-
-1. **`data.records` foi ESCONDIDO** - Isso removeu completamente as evidências de Nameservers em vez de processá-las
-2. **Fallback genérico do backend** - Quando não há formatador específico, o backend envia labels técnicos como `data.refresh`, `data.serial`, `data.records`
-
-## Solução
-
-Em vez de esconder labels, precisamos **processar o conteúdo JSON** deles e exibir de forma formatada.
+Precisamos criar lógica específica por tipo de check para controlar quais campos são exibidos e suas traduções.
 
 ---
 
 ## Alterações em `src/components/compliance/EvidenceDisplay.tsx`
 
-### 1. Remover `data.records` do HIDDEN_LABELS
-
-O label não deve ser oculto - o conteúdo JSON deve ser parseado e exibido.
-
-```typescript
-// Labels que devem ser completamente ocultos (não aparecem na UI)
-const HIDDEN_LABELS: string[] = [];  // Vazio - não esconder nada por padrão
-```
-
-### 2. Adicionar mais traduções de labels
+### 1. Adicionar traduções de labels técnicos
 
 ```typescript
 const LABEL_TRANSLATIONS: Record<string, string> = {
   // ... existentes ...
-  'data.records': 'Nameservers',
-  'data.refresh': 'Tempo de Refresh',
-  'data.serial': 'Número Serial',
-  'data.expire': 'Tempo de Expiração',
-  'data.minimum': 'TTL Mínimo',
-  'data.retry': 'Tempo de Retry',
-  'data.ttl': 'TTL',
-  'data.mname': 'Nameserver Primário',
-  'data.rname': 'Email do Responsável',
+  'data.records[0].exchange': 'Servidor MX',
+  'data.parsed.includes': 'DNS Lookups (includes)',
+  'data.parsed.all': 'Política SPF (all)',
+  'data.raw': 'Registro SPF',
 };
 ```
 
-### 3. Adicionar formatação de valores numéricos para SOA
+### 2. Adicionar traduções para campos dentro de records MX
 
 ```typescript
-const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
+const FIELD_LABELS: Record<string, string> = {
   // ... existentes ...
-  // Para valores numéricos do SOA, adicionar unidade
+  resolved_ips: 'IPs Resolvidos',
+  resolved_ip_count: 'Quantidade de IPs',
 };
+```
 
-// OU criar função de formatação especial
-function formatSOAValue(label: string, value: string): string {
-  // Para campos de tempo do SOA, converter segundos para formato legível
-  if (['data.refresh', 'data.retry', 'data.expire', 'data.minimum', 'data.ttl'].includes(label)) {
-    const seconds = parseInt(value, 10);
-    if (!isNaN(seconds)) {
-      if (seconds >= 86400) {
-        return `${Math.floor(seconds / 86400)} dia(s) (${seconds}s)`;
-      } else if (seconds >= 3600) {
-        return `${Math.floor(seconds / 3600)} hora(s) (${seconds}s)`;
-      } else if (seconds >= 60) {
-        return `${Math.floor(seconds / 60)} minuto(s) (${seconds}s)`;
-      }
-      return `${seconds} segundos`;
-    }
-  }
-  return value;
+### 3. Criar lista de campos ocultos POR TIPO DE LABEL
+
+Para os cards "Prioridades MX Configuradas" e "Registro MX Configurado", precisamos ocultar campos específicos:
+
+```typescript
+// Campos a ocultar por contexto de label
+const CONTEXT_HIDDEN_FIELDS: Record<string, string[]> = {
+  // Para cards de MX simples (não redundância), ocultar estes campos
+  'mx_priorities': ['priority', 'resolved_ips', 'resolved_ip_count'],
+  'mx_record': ['priority', 'resolved_ips', 'resolved_ip_count'],
+};
+```
+
+### 4. Modificar RecordDisplay para aceitar contexto
+
+Atualizar o componente `RecordDisplay` para receber um parâmetro opcional de contexto que determina quais campos ocultar:
+
+```typescript
+interface RecordDisplayProps {
+  record: Record<string, unknown>;
+  context?: string;  // Contexto para ocultar campos específicos
+  labelOverrides?: Record<string, string>;  // Sobrescrever labels para este contexto
+}
+
+function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) {
+  // Campos ocultos para este contexto específico
+  const contextHiddenFields = context ? (CONTEXT_HIDDEN_FIELDS[context] || []) : [];
+  
+  const entries = Object.entries(record)
+    .filter(([key, value]) => 
+      value !== null && 
+      value !== undefined && 
+      value !== '' &&
+      !HIDDEN_FIELDS.includes(key) &&
+      !contextHiddenFields.includes(key)  // Aplicar ocultos por contexto
+    );
+
+  // ... resto do código ...
+  // Usar labelOverrides se fornecido
+  const getLabel = (key: string) => 
+    labelOverrides?.[key] || FIELD_LABELS[key] || key;
 }
 ```
 
-### 4. Melhorar parsing de JSON em `data.records`
+### 5. Criar tratamento especial para registros MX no FormattedCodeEvidence
 
-Quando o label é `data.records` e o valor é um JSON de nameservers, parsear e exibir cada host individualmente:
+Modificar a lógica de `FormattedCodeEvidence` para detectar se é um registro MX e aplicar formatação específica:
 
 ```typescript
 function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   // ... código existente ...
 
-  // NOVO: Tratamento especial para data.records (nameservers)
-  if (item.label === 'data.records' || item.label === 'Nameservers') {
-    // Se for array de objetos com 'host' ou 'name'
-    if (Array.isArray(parsed)) {
-      const hosts = parsed
-        .map(r => {
-          if (typeof r === 'string') return r;
-          if (r && typeof r === 'object') {
-            return (r as Record<string, unknown>).host || 
-                   (r as Record<string, unknown>).name ||
-                   (r as Record<string, unknown>).value;
-          }
-          return null;
-        })
-        .filter(Boolean);
-      
-      if (hosts.length > 0) {
-        return (
-          <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
-            {hosts.map((host, idx) => (
-              <div key={idx} className="flex flex-col">
-                <span className="text-xs font-medium text-muted-foreground">Nameserver</span>
-                <span className="text-sm text-foreground font-mono">{String(host)}</span>
-              </div>
-            ))}
-          </div>
-        );
-      }
-    }
+  // NOVO: Tratamento especial para registros MX
+  // Detectar se é registro MX pelo label ou conteúdo
+  const isMxRecord = item.label.includes('MX') || 
+    (Array.isArray(parsed) && parsed[0]?.exchange);
+  
+  if (isMxRecord && Array.isArray(parsed)) {
+    // Determinar contexto baseado no label
+    // Se for "Redundância MX", mostrar todos os campos
+    // Senão, ocultar priority, resolved_ips, resolved_ip_count
+    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
+                               item.label.toLowerCase().includes('redundancy');
+    
+    const context = isRedundancyCheck ? 'mx_redundancy' : 'mx_simple';
+    
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {parsed.map((record, idx) => (
+          <RecordDisplay 
+            key={idx} 
+            record={record as Record<string, unknown>}
+            context={context}
+            labelOverrides={{ exchange: 'Servidor MX' }}
+          />
+        ))}
+      </div>
+    );
   }
   
-  // ... resto do código existente ...
+  // ... resto do código ...
 }
 ```
 
 ---
 
-## Resultado Visual Esperado
+## Detalhamento por Card
 
-### Diversidade de Nameservers (CORRIGIDO)
+### Card: Prioridades MX Configuradas
+| Campo Original | Ação |
+|----------------|------|
+| exchange | Exibir como "Servidor MX" |
+| priority | **OCULTAR** |
+| resolved_ips | **OCULTAR** |
+| resolved_ip_count | **OCULTAR** |
 
-**Antes:**
-```
-EVIDÊNCIAS COLETADAS
-(vazio - data.records estava escondido)
-```
+### Card: Redundância MX
+| Campo Original | Ação |
+|----------------|------|
+| exchange | Exibir como "Servidor MX" |
+| priority | Exibir como "Prioridade" (já existe) |
+| resolved_ips | Exibir como "IPs Resolvidos" |
+| resolved_ip_count | Exibir como "Quantidade de IPs" |
 
-**Depois:**
-```
-EVIDÊNCIAS COLETADAS
-Nameserver
-ns77.domaincontrol.com
+### Card: Registro MX Configurado
+| Campo Original | Ação |
+|----------------|------|
+| exchange | Exibir como "Servidor MX" |
+| priority | **OCULTAR** |
+| resolved_ips | **OCULTAR** |
+| resolved_ip_count | **OCULTAR** |
 
-Nameserver
-ns78.domaincontrol.com
-```
+### Card: Limite de DNS Lookups SPF
+| Campo Original | Tradução |
+|----------------|----------|
+| data.parsed.includes | "Mecanismos Include" |
 
-### SOA Refresh Adequado (CORRIGIDO)
+### Card: Política SPF Restritiva
+| Campo Original | Tradução |
+|----------------|----------|
+| data.parsed.all | "Política ALL" |
 
-**Antes:**
-```
-data.refresh
-86400
-```
-
-**Depois:**
-```
-Tempo de Refresh
-1 dia(s) (86400s)
-```
-
-### SOA Serial Atualizado (CORRIGIDO)
-
-**Antes:**
-```
-data.serial
-2026001000
-```
-
-**Depois:**
-```
-Número Serial
-2026001000
-```
+### Card: Registro SPF Configurado
+| Campo Original | Tradução |
+|----------------|----------|
+| data.raw | "Registro SPF" |
 
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/compliance/EvidenceDisplay.tsx` | Remover HIDDEN_LABELS, adicionar mais traduções, melhorar parsing de JSON |
+| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar traduções, criar contexto de campos ocultos, modificar RecordDisplay |
 
 ---
 
-## Considerações
+## Resultado Visual Esperado
 
-1. **Extensível**: Fácil adicionar mais traduções conforme novos checks aparecem
-2. **Fallback seguro**: Se parsing falhar, mostra o valor original
-3. **Formatação de tempo**: Valores de segundos são convertidos para formato legível (dias, horas, minutos)
-4. **Sem quebra**: Labels não traduzidos continuam funcionando com o nome original
+### Prioridades MX Configuradas (DEPOIS)
+```
+EVIDÊNCIAS COLETADAS
+Servidor MX
+estrela-com-br.mail.protection.outlook.com
+```
+*(sem Prioridade, resolved_ips, resolved_ip_count)*
 
+### Redundância MX (DEPOIS)
+```
+EVIDÊNCIAS COLETADAS
+Servidor MX
+mx1.example.com
+
+Prioridade
+10
+
+IPs Resolvidos
+["192.168.1.1", "192.168.1.2"]
+
+Quantidade de IPs
+2
+```
+*(todos os campos traduzidos)*
+
+### Limite de DNS Lookups SPF (DEPOIS)
+```
+Mecanismos Include
+["_spf.google.com", "_spf.outlook.com"]
+```
+
+### Política SPF Restritiva (DEPOIS)
+```
+Política ALL
+-all
+```
+
+### Registro SPF Configurado (DEPOIS)
+```
+Registro SPF
+v=spf1 include:_spf.google.com ~all
+```
+
+---
+
+## Considerações Técnicas
+
+1. **Detecção de contexto**: Usaremos o label do item para determinar qual card está sendo renderizado e aplicar as regras corretas
+2. **Fallback seguro**: Se não conseguirmos determinar o contexto, mostramos todos os campos (comportamento atual)
+3. **Extensível**: Fácil adicionar novos contextos e regras para outros tipos de checks
