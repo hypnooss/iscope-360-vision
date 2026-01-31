@@ -45,6 +45,7 @@ const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"
 
 // Preview pages (temporary)
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
+const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 
 const queryClient = new QueryClient();
 
@@ -113,6 +114,7 @@ const App = () => (
 
                 {/* Preview routes (temporary) */}
                 <Route path="/preview/domain-report" element={<DomainReportPreview />} />
+                <Route path="/preview/firewall-report" element={<FirewallReportPreview />} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
