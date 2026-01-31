@@ -64,6 +64,28 @@ export default function M365DashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Exchange - Now Available */}
+          <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-lg transition-shadow cursor-pointer group"
+                onClick={() => navigate('/scope-m365/exchange-online')}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Users className="w-6 h-6 text-purple-500" />
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-purple-500 transition-colors" />
+              </div>
+              <CardTitle className="text-lg mt-3">Exchange Online</CardTitle>
+              <CardDescription>
+                Auditoria de caixas de correio, regras e delegações
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" size="sm" className="mt-2">
+                Acessar
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* SharePoint - Coming Soon */}
           <Card className="glass-card border-l-4 border-l-green-500 opacity-60">
             <CardHeader className="pb-2">
@@ -73,24 +95,6 @@ export default function M365DashboardPage() {
               <CardTitle className="text-lg mt-3">SharePoint</CardTitle>
               <CardDescription>
                 Análise de sites, permissões e compartilhamentos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
-
-          {/* Exchange - Coming Soon */}
-          <Card className="glass-card border-l-4 border-l-purple-500 opacity-60">
-            <CardHeader className="pb-2">
-              <div className="p-2 rounded-lg bg-purple-500/10 w-fit">
-                <Users className="w-6 h-6 text-purple-500" />
-              </div>
-              <CardTitle className="text-lg mt-3">Exchange Online</CardTitle>
-              <CardDescription>
-                Auditoria de caixas de correio, regras e delegações
               </CardDescription>
             </CardHeader>
             <CardContent>
