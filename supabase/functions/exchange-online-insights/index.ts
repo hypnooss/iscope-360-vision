@@ -139,11 +139,14 @@ async function fetchUsersWithMailbox(
 ): Promise<UserMailbox[]> {
   const users: UserMailbox[] = [];
   let nextLink: string | null =
-    "https://graph.microsoft.com/v1.0/users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail&$top=100";
+    "https://graph.microsoft.com/v1.0/users?$filter=mail ne null&$select=id,displayName,userPrincipalName,mail&$top=100&$count=true";
 
   while (nextLink) {
     const fetchResponse: Response = await fetch(nextLink, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { 
+        Authorization: `Bearer ${accessToken}`,
+        ConsistencyLevel: 'eventual'
+      },
     });
 
     if (!fetchResponse.ok) {
