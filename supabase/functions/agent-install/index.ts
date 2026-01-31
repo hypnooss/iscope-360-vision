@@ -24,6 +24,8 @@ ACTIVATION_CODE=""
 VERSION="latest"
 POLL_INTERVAL="120"
 
+PYTHON_BIN=""
+
 INSTALL_DIR="/opt/iscope-agent"
 CONFIG_DIR="/etc/iscope"
 STATE_DIR="/var/lib/iscope"
@@ -116,6 +118,44 @@ detect_os() {
   fi
 }
 
+choose_python() {
+  local candidates=("python3.11" "python3.10" "python3.9" "python3.8" "python3")
+  local c
+  for c in "\${candidates[@]}"; do
+    if command -v "$c" >/dev/null 2>&1; then
+      PYTHON_BIN="$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+require_python_min_version() {
+  # Require Python >= 3.9
+  if [[ -z "\${PYTHON_BIN:-}" ]]; then
+    echo "Erro: não consegui localizar Python no sistema."
+    echo "Instale python39 e tente novamente. Ex.: sudo dnf install -y python39 python39-pip"
+    exit 1
+  fi
+
+  local ver
+  ver="\$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
+  local maj min
+  maj="\${ver%%.*}"
+  min="\${ver#*.}"
+
+  if [[ -z "\${maj:-}" || -z "\${min:-}" ]]; then
+    echo "Erro: falha ao detectar versão do Python usando '$PYTHON_BIN'."
+    exit 1
+  fi
+
+  if [[ "$maj" -lt 3 || ( "$maj" -eq 3 && "$min" -lt 9 ) ]]; then
+    echo "Erro: Python >= 3.9 é obrigatório. Detectado: $ver ($PYTHON_BIN)"
+    echo "Oracle Linux/RHEL 8: sudo dnf install -y python39 python39-pip"
+    exit 1
+  fi
+}
+
 install_deps() {
   local os_id
   os_id="$(detect_os)"
@@ -128,12 +168,17 @@ install_deps() {
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    dnf install -y python3 python3-pip gcc openssl-devel libffi-devel
+    # OL/RHEL-like: prefer python39+ to avoid EOL Python 3.6 issues
+    dnf install -y gcc openssl-devel libffi-devel || true
+    dnf install -y python39 python39-pip python39-devel || true
+    dnf install -y python3 python3-pip python3-devel || true
     return
   fi
 
   if command -v yum >/dev/null 2>&1; then
-    yum install -y python3 python3-pip gcc openssl-devel libffi-devel
+    yum install -y gcc openssl-devel libffi-devel || true
+    yum install -y python39 python39-pip python39-devel || true
+    yum install -y python3 python3-pip python3-devel || true
     return
   fi
 
@@ -231,9 +276,24 @@ download_release() {
 
 setup_venv() {
   echo "Configurando ambiente Python (venv)..."
-  python3 -m venv "$INSTALL_DIR/venv"
+  if ! choose_python; then
+    echo "Erro: Python não encontrado após instalar dependências."
+    echo "Tente: sudo dnf install -y python39 python39-pip"
+    exit 1
+  fi
+
+  require_python_min_version
+
+  "$PYTHON_BIN" -m venv "$INSTALL_DIR/venv"
   "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
-  "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+
+  # Offline bundle support: if wheels/ exists, install without hitting PyPI
+  if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
+    echo "Instalando dependências (offline wheels bundle)..."
+    "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
+  else
+    "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+  fi
 }
 
 write_env_file() {
