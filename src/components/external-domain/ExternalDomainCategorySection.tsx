@@ -69,13 +69,21 @@ export function ExternalDomainCategorySection({
   const colors = CATEGORY_COLORS[category.name] || DEFAULT_COLORS;
   const Icon = CATEGORY_ICONS[category.name] || Shield;
 
-  // Count failures by severity
+  // Count failures by severity (only active/failing items)
   const criticalCount = category.checks.filter(
     c => c.status === 'fail' && c.severity === 'critical'
   ).length;
 
   const highCount = category.checks.filter(
     c => c.status === 'fail' && c.severity === 'high'
+  ).length;
+
+  const mediumCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'medium'
+  ).length;
+
+  const lowCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'low'
   ).length;
 
   // Get pass rate color based on percentage
@@ -114,6 +122,16 @@ export function ExternalDomainCategorySection({
               {highCount > 0 && (
                 <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
                   {highCount} alto{highCount !== 1 ? 's' : ''}
+                </Badge>
+              )}
+              {mediumCount > 0 && (
+                <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs">
+                  {mediumCount} médio{mediumCount !== 1 ? 's' : ''}
+                </Badge>
+              )}
+              {lowCount > 0 && (
+                <Badge className="bg-blue-400/10 text-blue-400 border-blue-400/20 text-xs">
+                  {lowCount} baixo{lowCount !== 1 ? 's' : ''}
                 </Badge>
               )}
             </div>
