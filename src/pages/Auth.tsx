@@ -10,28 +10,27 @@ import logoIscope from '@/assets/logo-iscope.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
-
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
+  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
 });
-
 const emailSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: z.string().email('Email inválido')
 });
-
 const passwordSchema = z.object({
   password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-  confirmPassword: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-}).refine((data) => data.password === data.confirmPassword, {
+  confirmPassword: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+}).refine(data => data.password === data.confirmPassword, {
   message: 'As senhas não coincidem',
-  path: ['confirmPassword'],
+  path: ['confirmPassword']
 });
-
 type AuthView = 'login' | 'forgot-password' | 'email-sent' | 'reset-password' | 'success';
-
 export default function Auth() {
-  const { user, loading, signIn } = useAuth();
+  const {
+    user,
+    loading,
+    signIn
+  } = useAuth();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -47,11 +46,9 @@ export default function Auth() {
   const [resetEmail, setResetEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   useEffect(() => {
     // Não redirecionar se estiver no fluxo de recuperação de senha
     if (isRecoveryFlow) return;
-    
     if (!loading && user) {
       navigate('/dashboard');
     }
@@ -59,29 +56,33 @@ export default function Auth() {
 
   // Detectar evento de recuperação de senha quando usuário clica no link do email
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const {
+      data: {
+        subscription
+      }
+    } = supabase.auth.onAuthStateChange(event => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecoveryFlow(true);
         setCurrentView('reset-password');
       }
     });
-
     return () => subscription.unsubscribe();
   }, []);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const validation = loginSchema.safeParse({ email: loginEmail, password: loginPassword });
+    const validation = loginSchema.safeParse({
+      email: loginEmail,
+      password: loginPassword
+    });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
     }
-
     setIsSubmitting(true);
-    const { error } = await signIn(loginEmail, loginPassword);
+    const {
+      error
+    } = await signIn(loginEmail, loginPassword);
     setIsSubmitting(false);
-
     if (error) {
       if (error.message.includes('Invalid login credentials')) {
         toast.error('Email ou senha incorretos');
@@ -95,24 +96,22 @@ export default function Auth() {
       navigate('/dashboard');
     }
   };
-
   const handleSendResetCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const validation = emailSchema.safeParse({ email: resetEmail });
+    const validation = emailSchema.safeParse({
+      email: resetEmail
+    });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
     }
-
     setIsSubmitting(true);
-    
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/auth`,
+    const {
+      error
+    } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo: `${window.location.origin}/auth`
     });
-    
     setIsSubmitting(false);
-
     if (error) {
       toast.error('Erro ao enviar email. Tente novamente.');
       console.error('Reset password error:', error);
@@ -120,24 +119,23 @@ export default function Auth() {
       setCurrentView('email-sent');
     }
   };
-
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const validation = passwordSchema.safeParse({ password: newPassword, confirmPassword });
+    const validation = passwordSchema.safeParse({
+      password: newPassword,
+      confirmPassword
+    });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
     }
-
     setIsSubmitting(true);
-    
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
+    const {
+      error
+    } = await supabase.auth.updateUser({
+      password: newPassword
     });
-    
     setIsSubmitting(false);
-
     if (error) {
       toast.error('Erro ao redefinir senha. Tente novamente.');
       console.error('Update password error:', error);
@@ -146,7 +144,6 @@ export default function Auth() {
       setCurrentView('success');
     }
   };
-
   const resetFlow = async () => {
     // Se estamos no fluxo de reset, fazer logout para limpar a sessão de recuperação
     if (currentView === 'reset-password' || currentView === 'success') {
@@ -158,80 +155,42 @@ export default function Auth() {
     setNewPassword('');
     setConfirmPassword('');
   };
-
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+    return <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+      </div>;
   }
-
-  const renderLoginView = () => (
-    <Card className="glass-card border-border/50">
+  const renderLoginView = () => <Card className="glass-card border-border/50">
       <CardContent className="pt-6">
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="login-email">Email</Label>
-            <Input
-              id="login-email"
-              type="email"
-              placeholder="seu@email.com"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              required
-            />
+            <Input id="login-email" type="email" placeholder="seu@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="login-password">Senha</Label>
             <div className="relative">
-              <Input
-                id="login-password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPassword(!showPassword)}
-              >
+              <Input id="login-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
+            {isSubmitting ? <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Entrando...
-              </>
-            ) : (
-              'Entrar'
-            )}
+              </> : 'Entrar'}
           </Button>
-          <button
-            type="button"
-            className="w-full text-sm text-primary hover:underline"
-            onClick={() => setCurrentView('forgot-password')}
-          >
+          <button type="button" className="w-full text-sm text-primary hover:underline" onClick={() => setCurrentView('forgot-password')}>
             Esqueceu sua senha?
           </button>
         </form>
       </CardContent>
-    </Card>
-  );
-
-  const renderForgotPasswordView = () => (
-    <Card className="glass-card border-border/50">
+    </Card>;
+  const renderForgotPasswordView = () => <Card className="glass-card border-border/50">
       <CardHeader>
-        <button
-          type="button"
-          onClick={resetFlow}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
-        >
+        <button type="button" onClick={resetFlow} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
           <ArrowLeft className="w-4 h-4" />
           Voltar ao login
         </button>
@@ -247,32 +206,18 @@ export default function Auth() {
         <form onSubmit={handleSendResetCode} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="reset-email">Email</Label>
-            <Input
-              id="reset-email"
-              type="email"
-              placeholder="seu@email.com"
-              value={resetEmail}
-              onChange={(e) => setResetEmail(e.target.value)}
-              required
-            />
+            <Input id="reset-email" type="email" placeholder="seu@email.com" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required />
           </div>
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
+            {isSubmitting ? <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Enviando...
-              </>
-            ) : (
-              'Enviar Link de Recuperação'
-            )}
+              </> : 'Enviar Link de Recuperação'}
           </Button>
         </form>
       </CardContent>
-    </Card>
-  );
-
-  const renderEmailSentView = () => (
-    <Card className="glass-card border-border/50">
+    </Card>;
+  const renderEmailSentView = () => <Card className="glass-card border-border/50">
       <CardHeader className="text-center">
         <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           <Mail className="w-6 h-6 text-primary" />
@@ -296,11 +241,8 @@ export default function Auth() {
           </Button>
         </div>
       </CardContent>
-    </Card>
-  );
-
-  const renderResetPasswordView = () => (
-    <Card className="glass-card border-border/50">
+    </Card>;
+  const renderResetPasswordView = () => <Card className="glass-card border-border/50">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <KeyRound className="w-5 h-5 text-primary" />
@@ -315,19 +257,8 @@ export default function Auth() {
           <div className="space-y-2">
             <Label htmlFor="new-password">Nova Senha</Label>
             <div className="relative">
-              <Input
-                id="new-password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPassword(!showPassword)}
-              >
+              <Input id="new-password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
@@ -335,40 +266,22 @@ export default function Auth() {
           <div className="space-y-2">
             <Label htmlFor="confirm-password">Confirmar Senha</Label>
             <div className="relative">
-              <Input
-                id="confirm-password"
-                type={showConfirmPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              >
+              <Input id="confirm-password" type={showConfirmPassword ? 'text' : 'password'} placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
                 {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
+            {isSubmitting ? <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Redefinindo...
-              </>
-            ) : (
-              'Redefinir Senha'
-            )}
+              </> : 'Redefinir Senha'}
           </Button>
         </form>
       </CardContent>
-    </Card>
-  );
-
-  const renderSuccessView = () => (
-    <Card className="glass-card border-border/50">
+    </Card>;
+  const renderSuccessView = () => <Card className="glass-card border-border/50">
       <CardHeader className="text-center">
         <div className="mx-auto w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
           <CheckCircle className="w-6 h-6 text-green-500" />
@@ -383,9 +296,7 @@ export default function Auth() {
           Voltar ao Login
         </Button>
       </CardContent>
-    </Card>
-  );
-
+    </Card>;
   const renderCurrentView = () => {
     switch (currentView) {
       case 'forgot-password':
@@ -400,15 +311,13 @@ export default function Auth() {
         return renderLoginView();
     }
   };
-
-  return (
-    <div className="min-h-screen bg-background cyber-grid flex items-center justify-center p-4">
+  return <div className="min-h-screen bg-background cyber-grid flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-12">
           <div className="flex flex-col items-center gap-4">
             <img src={logoIscope} alt="iScope 360" className="h-12 w-auto" />
-            <span className="text-2xl font-bold text-foreground">iScope 360</span>
+            <span className="font-bold text-foreground text-4xl">iScope 360</span>
           </div>
         </div>
 
@@ -418,6 +327,5 @@ export default function Auth() {
           Acesso restrito. Contate o administrador para obter credenciais.
         </p>
       </div>
-    </div>
-  );
+    </div>;
 }
