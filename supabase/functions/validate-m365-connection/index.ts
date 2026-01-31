@@ -286,11 +286,26 @@ serve(async (req) => {
             console.log(`Permission ${permission} fallback: ${signInsResponse.status} - granted: ${granted}`);
           }
         } else if (permission === 'MailboxSettings.Read') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings', {
+          // Primeiro buscar um usuário (mailboxSettings não funciona em queries de coleção)
+          const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+          if (usersResp.ok) {
+            const usersData = await usersResp.json();
+            const userId = usersData.value?.[0]?.id;
+            if (userId) {
+              // Testar mailboxSettings no usuário específico
+              const mailboxResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${userId}/mailboxSettings`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+              });
+              granted = mailboxResponse.ok;
+              console.log(`Permission ${permission}: ${mailboxResponse.status} - granted: ${granted}`);
+            } else {
+              console.log(`Permission ${permission}: no users found to test - granted: false`);
+            }
+          } else {
+            console.log(`Permission ${permission}: could not fetch users - granted: false`);
+          }
         } else if (permission === 'Mail.Read') {
           // Test by getting a user first, then try to access their inbox rules
           const usersResponse = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
