@@ -19,6 +19,9 @@ const REQUIRED_PERMISSIONS = [
   'Application.Read.All',
   'AuditLog.Read.All',
   'Policy.Read.All',
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
 ];
 
 const OPTIONAL_PERMISSIONS = [
@@ -359,6 +362,9 @@ Deno.serve(async (req) => {
       { permission: 'AuditLog.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1' },
       { permission: 'Policy.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy' },
       { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
+      // Exchange Online
+      { permission: 'MailboxSettings.Read', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings' },
+      { permission: 'Mail.Read', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id' },
     ];
 
     // Test Directory.Read.All with fallback strategy

@@ -595,7 +595,20 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                       </li>
                     </ul>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-2 border-t border-border/30">
+                    <p className="text-xs font-medium text-muted-foreground">Exchange Online:</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        MailboxSettings.Read - Ler configurações de mailbox
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                        Mail.Read - Ler regras de inbox
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2 pt-2 border-t border-border/30">
                     <p className="text-xs font-medium text-muted-foreground">Opcionais (requer Azure AD Premium):</p>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-2">

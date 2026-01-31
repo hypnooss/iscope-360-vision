@@ -59,16 +59,26 @@ export default function SettingsPage() {
   const [savingAgentSettings, setSavingAgentSettings] = useState(false);
 
   const defaultPermissions: PermissionStatus[] = [
+    // Core permissions
     { name: 'User.Read.All', granted: false, type: 'required' },
     { name: 'Directory.Read.All', granted: false, type: 'required' },
     { name: 'Organization.Read.All', granted: false, type: 'required' },
     { name: 'Domain.Read.All', granted: false, type: 'required' },
+    // Entra ID / Security
     { name: 'Group.Read.All', granted: false, type: 'recommended' },
     { name: 'Application.Read.All', granted: false, type: 'recommended' },
     { name: 'Policy.Read.All', granted: false, type: 'recommended' },
     { name: 'Reports.Read.All', granted: false, type: 'recommended' },
     { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
+    // Exchange Online
+    { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
+    { name: 'Mail.Read', granted: false, type: 'recommended' },
   ];
+
+  // Group permissions by module for display
+  const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All'];
+  const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
+  const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -491,12 +501,12 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  <div className="grid gap-2 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
+                      <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
                       <ul className="text-sm space-y-1">
                         {m365Config.permissions
-                          .filter(p => p.type === 'required')
+                          .filter(p => corePermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
                               <span 
@@ -510,10 +520,27 @@ export default function SettingsPage() {
                       </ul>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Recomendadas</p>
+                      <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
                       <ul className="text-sm space-y-1">
                         {m365Config.permissions
-                          .filter(p => p.type === 'recommended')
+                          .filter(p => entraIdPermissions.includes(p.name))
+                          .map(perm => (
+                            <li key={perm.name} className="flex items-center gap-2">
+                              <span 
+                                className={`w-2 h-2 rounded-full ${
+                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
+                                }`}
+                              />
+                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
+                      <ul className="text-sm space-y-1">
+                        {m365Config.permissions
+                          .filter(p => exchangeOnlinePermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
                               <span 
