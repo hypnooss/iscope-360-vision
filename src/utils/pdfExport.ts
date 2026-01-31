@@ -365,7 +365,7 @@ export function exportReportToPDF(
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(80, 80, 80);
   
-  const statsText = `Total: ${report.totalChecks} verificacoes  |  ${report.passed} aprovadas  |  ${report.failed} falhas  |  ${report.warnings} alertas`;
+  const statsText = `Total: ${report.totalChecks} verificações  |  ${report.passed} aprovadas  |  ${report.failed} falhas  |  ${report.warnings} alertas`;
   doc.text(statsText, pageWidth / 2, yPos, { align: 'center' });
   
   yPos += 5;
@@ -1169,7 +1169,7 @@ export function exportExternalDomainReportToPDF(
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(148, 163, 184);
-  doc.text('VERIFICACOES', card2X + cardWidth/2, cardY + 10, { align: 'center' });
+  doc.text('VERIFICAÇÕES', card2X + cardWidth/2, cardY + 10, { align: 'center' });
   
   // Stats with colored dots
   const statsY = cardY + 20;
@@ -1351,39 +1351,42 @@ export function exportExternalDomainReportToPDF(
   yPos = (doc as any).lastAutoTable.finalY + 12;
 
   // ═══════════════════════════════════════════════════════════════
-  // CRITICAL/HIGH ISSUES FOUND
+  // ALL ISSUES FOUND (any severity)
   // ═══════════════════════════════════════════════════════════════
   
-  const criticalHighIssues = report.categories
+  const allIssues = report.categories
     .flatMap(c => c.checks)
-    .filter(c => c.status === 'fail' && (c.severity === 'critical' || c.severity === 'high'));
+    .filter(c => c.status === 'fail');
   
-  if (criticalHighIssues.length > 0) {
+  if (allIssues.length > 0) {
     checkPageBreak(30);
+    
+    const displayCount = Math.min(allIssues.length, 12);
+    const boxHeight = 10 + displayCount * 8 + (allIssues.length > 12 ? 8 : 0);
     
     doc.setFillColor(254, 242, 242); // red-50
     doc.setDrawColor(252, 165, 165); // red-300
-    doc.roundedRect(marginLeft, yPos, contentWidth, 10 + criticalHighIssues.length * 8, 3, 3, 'FD');
+    doc.roundedRect(marginLeft, yPos, contentWidth, boxHeight, 3, 3, 'FD');
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(185, 28, 28);
-    doc.text(`Problemas Encontrados (${criticalHighIssues.length})`, marginLeft + 6, yPos + 7);
+    doc.text(`Problemas Encontrados (${allIssues.length})`, marginLeft + 6, yPos + 7);
     
     let issueY = yPos + 14;
-    for (const issue of criticalHighIssues.slice(0, 8)) {
+    for (const issue of allIssues.slice(0, 12)) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(127, 29, 29);
-      const issueName = issue.name.length > 70 ? issue.name.substring(0, 67) + '...' : issue.name;
+      const issueName = issue.name.length > 70 ? issue.name.substring(0, 67) + '...': issue.name;
       doc.text(`• ${issueName}`, marginLeft + 8, issueY);
       issueY += 7;
     }
-    if (criticalHighIssues.length > 8) {
-      doc.text(`  ... e mais ${criticalHighIssues.length - 8} problemas`, marginLeft + 8, issueY);
+    if (allIssues.length > 12) {
+      doc.text(`  ... e mais ${allIssues.length - 12} problemas`, marginLeft + 8, issueY);
     }
     
-    yPos += 18 + Math.min(criticalHighIssues.length, 8) * 8;
+    yPos += boxHeight + 8;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1460,7 +1463,7 @@ export function exportExternalDomainReportToPDF(
         doc.setFontSize(9);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(185, 28, 28);
-        doc.text('Recomendacao:', marginLeft + 12, yPos);
+        doc.text('Recomendação:', marginLeft + 12, yPos);
         yPos += 5;
         
         const recText = sanitizeTextForPDF(check.recommendation);
