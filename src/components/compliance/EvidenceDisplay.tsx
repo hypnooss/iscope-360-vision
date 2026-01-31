@@ -34,6 +34,8 @@ const FIELD_LABELS: Record<string, string> = {
   serial: 'Serial',
   mname: 'Nameserver Primário',
   rname: 'Email do Responsável',
+  resolved_ips: 'IPs Resolvidos',
+  resolved_ip_count: 'Quantidade de IPs',
 };
 
 // Mapa de labels técnicos para labels amigáveis (do backend)
@@ -57,6 +59,12 @@ const LABEL_TRANSLATIONS: Record<string, string> = {
   'Validated': 'Validação',
   'SOA mname': 'Nameserver Primário',
   'SOA contact': 'Email do Responsável',
+  // SPF translations
+  'data.parsed.includes': 'Mecanismos Include',
+  'data.parsed.all': 'Política ALL',
+  'data.raw': 'Registro SPF',
+  // MX translations
+  'data.records[0].exchange': 'Servidor MX',
 };
 
 // Mapa de valores booleanos/técnicos para valores legíveis
@@ -112,27 +120,42 @@ function formatSOAValue(label: string, value: string): string {
 // Campos que devem ser ocultados dentro de records (muito técnicos ou longos)
 const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw'];
 
+// Campos ocultos por contexto (para cards específicos)
+const CONTEXT_HIDDEN_FIELDS: Record<string, string[]> = {
+  'mx_simple': ['priority', 'resolved_ips', 'resolved_ip_count'],
+};
+
 interface RecordDisplayProps {
   record: Record<string, unknown>;
+  context?: string;
+  labelOverrides?: Record<string, string>;
 }
 
-function RecordDisplay({ record }: RecordDisplayProps) {
+function RecordDisplay({ record, context, labelOverrides }: RecordDisplayProps) {
+  // Campos ocultos para este contexto específico
+  const contextHiddenFields = context ? (CONTEXT_HIDDEN_FIELDS[context] || []) : [];
+  
   const entries = Object.entries(record)
     .filter(([key, value]) => 
       value !== null && 
       value !== undefined && 
       value !== '' &&
-      !HIDDEN_FIELDS.includes(key)
+      !HIDDEN_FIELDS.includes(key) &&
+      !contextHiddenFields.includes(key)
     );
 
   if (entries.length === 0) return null;
+
+  // Helper para obter label traduzido
+  const getLabel = (key: string) => 
+    labelOverrides?.[key] || FIELD_LABELS[key] || key;
 
   return (
     <div className="border-l-2 border-primary/30 pl-3 space-y-1">
       {entries.map(([key, value]) => (
         <div key={key} className="flex flex-col">
           <span className="text-xs text-muted-foreground">
-            {FIELD_LABELS[key] || key}
+            {getLabel(key)}
           </span>
           <span className="text-sm text-foreground font-mono break-all">
             {typeof value === 'object' ? JSON.stringify(value) : String(value)}
@@ -184,6 +207,34 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
         );
       }
     }
+  }
+
+  // NOVO: Tratamento especial para registros MX
+  const isMxRecord = item.label.includes('MX') || 
+    (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && 
+     (parsed[0] as Record<string, unknown>).exchange !== undefined);
+  
+  if (isMxRecord && Array.isArray(parsed)) {
+    // Determinar contexto baseado no label
+    // Se for "Redundância MX", mostrar todos os campos
+    // Senão, ocultar priority, resolved_ips, resolved_ip_count
+    const isRedundancyCheck = item.label.toLowerCase().includes('redundância') ||
+                               item.label.toLowerCase().includes('redundancy');
+    
+    const context = isRedundancyCheck ? 'mx_redundancy' : 'mx_simple';
+    
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {parsed.map((record, idx) => (
+          <RecordDisplay 
+            key={idx} 
+            record={record as Record<string, unknown>}
+            context={context}
+            labelOverrides={{ exchange: 'Servidor MX' }}
+          />
+        ))}
+      </div>
+    );
   }
 
   // Se for array de objetos (ex: registros DKIM, MX), renderizar como lista
