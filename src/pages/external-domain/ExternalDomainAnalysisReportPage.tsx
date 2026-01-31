@@ -10,12 +10,14 @@ import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
 import { toast } from 'sonner';
 import {
   Loader2,
+  FileDown,
   ArrowLeft,
   Globe,
   RefreshCw,
   XCircle,
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import { exportExternalDomainReportToPDF } from '@/utils/pdfExport';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -567,9 +569,26 @@ export default function ExternalDomainAnalysisReportPage() {
             </div>
 
             <div className="flex gap-3 ml-auto">
-              <Button variant="outline" size="lg" onClick={() => navigate('/scope-external-domain/reports')}>
-                <ArrowLeft className="w-4 h-4" />
-                Voltar
+              <Button 
+                variant="outline" 
+                size="lg" 
+                onClick={() => {
+                  const emailAuth = deriveEmailAuthStatus(report.categories);
+                  exportExternalDomainReportToPDF(
+                    report,
+                    {
+                      name: domain?.name || 'Domínio',
+                      domain: domain?.domain || '',
+                      clientName: clientName || undefined,
+                    },
+                    dnsSummary || undefined,
+                    emailAuth
+                  );
+                  toast.success('PDF exportado com sucesso!');
+                }}
+              >
+                <FileDown className="w-4 h-4" />
+                Exportar PDF
               </Button>
               <Button variant="cyber" size="lg" onClick={handleRefresh} disabled={isRefreshing}>
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
