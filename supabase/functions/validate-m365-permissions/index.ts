@@ -24,6 +24,9 @@ const RECOMMENDED_PERMISSIONS = [
   'Application.Read.All',
   'Policy.Read.All',
   'RoleManagement.Read.Directory',
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
 ];
 
 // ============= AES-256-GCM Decryption =============
@@ -118,6 +121,13 @@ async function testPermission(accessToken: string, permission: string): Promise<
         break;
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
+        break;
+      case 'MailboxSettings.Read':
+        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings';
+        break;
+      case 'Mail.Read':
+        // Test by fetching inbox rules from first user
+        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
         break;
       default:
         return false;

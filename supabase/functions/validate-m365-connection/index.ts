@@ -19,13 +19,16 @@ interface PermissionStatus {
   required: boolean;
 }
 
-// Required permissions for Entra ID module
+// Required permissions for Entra ID and Exchange Online modules
 const REQUIRED_PERMISSIONS = [
   'User.Read.All',
   'Directory.Read.All', 
   'Group.Read.All',
   'Application.Read.All',
   'AuditLog.Read.All',
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
 ];
 
 // ========== Encryption Utilities ==========
@@ -281,6 +284,34 @@ serve(async (req) => {
             });
             granted = signInsResponse.ok || signInsResponse.status === 400;
             console.log(`Permission ${permission} fallback: ${signInsResponse.status} - granted: ${granted}`);
+          }
+        } else if (permission === 'MailboxSettings.Read') {
+          const response = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+        } else if (permission === 'Mail.Read') {
+          // Test by getting a user first, then try to access their inbox rules
+          const usersResponse = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (usersResponse.ok) {
+            const usersData = await usersResponse.json();
+            const userId = usersData.value?.[0]?.id;
+            if (userId) {
+              const rulesResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${userId}/mailFolders/inbox/messageRules?$top=1`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+              });
+              granted = rulesResponse.ok;
+              console.log(`Permission ${permission}: ${rulesResponse.status} - granted: ${granted}`);
+            } else {
+              granted = false;
+              console.log(`Permission ${permission}: no users found to test - granted: false`);
+            }
+          } else {
+            granted = false;
+            console.log(`Permission ${permission}: could not fetch users - granted: false`);
           }
         }
       } catch (e) {
