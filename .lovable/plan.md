@@ -1,156 +1,133 @@
 
-# Plano: Evidências Humanizadas para Domínio Externo
+# Plano: Corrigir Exibição de Evidências
 
-## Diagnóstico
+## Problema Identificado
 
-Analisei o código e confirmei:
+A abordagem anterior tinha 2 falhas:
 
-**Onde está a inteligência de negócio:**
-A lógica está no backend, especificamente na edge function `supabase/functions/agent-task-result/index.ts`:
-- **Função `formatExternalDomainEvidence()`** (linhas 1746-1812): Transforma dados brutos em evidências legíveis
-- **Função `formatGenericEvidence()`** (linhas 1719-1744): Fallback genérico que mostra `data.records`, `data.has_dnskey` como labels — é por isso que aparecem nomes técnicos
+1. **`data.records` foi ESCONDIDO** - Isso removeu completamente as evidências de Nameservers em vez de processá-las
+2. **Fallback genérico do backend** - Quando não há formatador específico, o backend envia labels técnicos como `data.refresh`, `data.serial`, `data.records`
 
-O problema é que nem todos os tipos de checks têm formatação específica, então o fallback genérico mostra o path do campo como label.
+## Solução
 
----
-
-## Solução Proposta
-
-Temos **duas opções**:
-
-### Opção A: Corrigir no Backend (Recomendado)
-Expandir a função `formatExternalDomainEvidence()` para cobrir TODOS os tipos de checks de domínio externo com evidências humanizadas.
-
-**Vantagens:**
-- Resolve na raiz do problema
-- Todos os clientes (web, API, futuras integrações) recebem dados formatados
-- Não depende do frontend para traduzir
-
-**Desvantagens:**
-- Requer deploy da edge function
-
-### Opção B: Corrigir no Frontend
-Criar lógica de transformação no componente `EvidenceDisplay.tsx` que interpreta os labels técnicos e traduz para português.
-
-**Vantagens:**
-- Mais rápido para testar
-- Não requer deploy de edge function
-
-**Desvantagens:**
-- Duplica lógica (frontend + backend)
-- Se outro cliente consumir a API, receberá dados técnicos
+Em vez de esconder labels, precisamos **processar o conteúdo JSON** deles e exibir de forma formatada.
 
 ---
 
-## Recomendação: Combinação
+## Alterações em `src/components/compliance/EvidenceDisplay.tsx`
 
-1. **Frontend imediato** para melhorar a UX agora
-2. **Backend futuro** para resolver na raiz
+### 1. Remover `data.records` do HIDDEN_LABELS
 
----
-
-## Alterações no Frontend
-
-### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
-
-#### 1. Adicionar mapeamento de labels técnicos → legíveis
-
-```typescript
-// Mapa de labels técnicos para labels amigáveis
-const LABEL_TRANSLATIONS: Record<string, string> = {
-  'data.records': 'Nameservers',       // Ocultar para ns_records
-  'data.has_dnskey': 'Status',
-  'data.has_ds': 'Registro DS',
-  'data.validated': 'Validação DNSSEC',
-  'data.mname': 'Servidor Primário',
-  'data.contact_email': 'Contato do Administrador',
-  'Nameservers encontrados': 'Nameservers',
-  'DNSKEY': 'Status DNSKEY',
-  'DS': 'Status DS',
-  'Validated': 'Validação',
-  'SOA mname': 'Nameserver Primário',
-  'SOA contact': 'Email do Responsável',
-};
-```
-
-#### 2. Adicionar mapeamento de valores booleanos → legíveis
-
-```typescript
-// Mapa de valores booleanos/técnicos para valores legíveis
-const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
-  'data.has_dnskey': {
-    'true': 'DNSSEC Ativado',
-    'false': 'DNSSEC Desativado',
-  },
-  'DNSKEY': {
-    'true': 'Presente ✓',
-    'false': 'Ausente ✗',
-  },
-  'DS': {
-    'true': 'Presente ✓',
-    'false': 'Ausente ✗',
-  },
-  'data.validated': {
-    'true': 'Validação OK ✓',
-    'false': 'Não validado',
-    'unknown': 'Não verificado',
-    'partial': 'Parcialmente validado',
-  },
-};
-```
-
-#### 3. Adicionar lista de labels a ocultar
+O label não deve ser oculto - o conteúdo JSON deve ser parseado e exibido.
 
 ```typescript
 // Labels que devem ser completamente ocultos (não aparecem na UI)
-const HIDDEN_LABELS = ['data.records'];
+const HIDDEN_LABELS: string[] = [];  // Vazio - não esconder nada por padrão
 ```
 
-#### 4. Modificar `EvidenceItemDisplay` para usar as traduções
+### 2. Adicionar mais traduções de labels
 
 ```typescript
-export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
-  // Ocultar labels específicos
-  if (HIDDEN_LABELS.includes(item.label)) {
-    return null;
+const LABEL_TRANSLATIONS: Record<string, string> = {
+  // ... existentes ...
+  'data.records': 'Nameservers',
+  'data.refresh': 'Tempo de Refresh',
+  'data.serial': 'Número Serial',
+  'data.expire': 'Tempo de Expiração',
+  'data.minimum': 'TTL Mínimo',
+  'data.retry': 'Tempo de Retry',
+  'data.ttl': 'TTL',
+  'data.mname': 'Nameserver Primário',
+  'data.rname': 'Email do Responsável',
+};
+```
+
+### 3. Adicionar formatação de valores numéricos para SOA
+
+```typescript
+const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
+  // ... existentes ...
+  // Para valores numéricos do SOA, adicionar unidade
+};
+
+// OU criar função de formatação especial
+function formatSOAValue(label: string, value: string): string {
+  // Para campos de tempo do SOA, converter segundos para formato legível
+  if (['data.refresh', 'data.retry', 'data.expire', 'data.minimum', 'data.ttl'].includes(label)) {
+    const seconds = parseInt(value, 10);
+    if (!isNaN(seconds)) {
+      if (seconds >= 86400) {
+        return `${Math.floor(seconds / 86400)} dia(s) (${seconds}s)`;
+      } else if (seconds >= 3600) {
+        return `${Math.floor(seconds / 3600)} hora(s) (${seconds}s)`;
+      } else if (seconds >= 60) {
+        return `${Math.floor(seconds / 60)} minuto(s) (${seconds}s)`;
+      }
+      return `${seconds} segundos`;
+    }
   }
-  
-  // Traduzir label
-  const translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
-  
-  // Traduzir valor se houver transformação
-  const transformedValue = VALUE_TRANSFORMATIONS[item.label]?.[item.value] || item.value;
-  
-  // ... resto da lógica de renderização usando translatedLabel e transformedValue
+  return value;
 }
 ```
 
-#### 5. Atualizar `FIELD_LABELS` para incluir host → Nameserver
+### 4. Melhorar parsing de JSON em `data.records`
+
+Quando o label é `data.records` e o valor é um JSON de nameservers, parsear e exibir cada host individualmente:
 
 ```typescript
-const FIELD_LABELS: Record<string, string> = {
-  // ... existentes ...
-  host: 'Nameserver',  // Alterado de 'Host' para 'Nameserver'
-};
+function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
+  // ... código existente ...
+
+  // NOVO: Tratamento especial para data.records (nameservers)
+  if (item.label === 'data.records' || item.label === 'Nameservers') {
+    // Se for array de objetos com 'host' ou 'name'
+    if (Array.isArray(parsed)) {
+      const hosts = parsed
+        .map(r => {
+          if (typeof r === 'string') return r;
+          if (r && typeof r === 'object') {
+            return (r as Record<string, unknown>).host || 
+                   (r as Record<string, unknown>).name ||
+                   (r as Record<string, unknown>).value;
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      if (hosts.length > 0) {
+        return (
+          <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
+            {hosts.map((host, idx) => (
+              <div key={idx} className="flex flex-col">
+                <span className="text-xs font-medium text-muted-foreground">Nameserver</span>
+                <span className="text-sm text-foreground font-mono">{String(host)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+    }
+  }
+  
+  // ... resto do código existente ...
+}
 ```
 
 ---
 
 ## Resultado Visual Esperado
 
-### Diversidade de Nameservers
+### Diversidade de Nameservers (CORRIGIDO)
 
 **Antes:**
 ```
-data.records
-├─ Host
-│  ns77.domaincontrol.com
-├─ Host
-│  ns78.domaincontrol.com
+EVIDÊNCIAS COLETADAS
+(vazio - data.records estava escondido)
 ```
 
 **Depois:**
 ```
+EVIDÊNCIAS COLETADAS
 Nameserver
 ns77.domaincontrol.com
 
@@ -158,18 +135,32 @@ Nameserver
 ns78.domaincontrol.com
 ```
 
-### DNSSEC Habilitado
+### SOA Refresh Adequado (CORRIGIDO)
 
 **Antes:**
 ```
-data.has_dnskey
-false
+data.refresh
+86400
 ```
 
 **Depois:**
 ```
-Status
-DNSSEC Desativado
+Tempo de Refresh
+1 dia(s) (86400s)
+```
+
+### SOA Serial Atualizado (CORRIGIDO)
+
+**Antes:**
+```
+data.serial
+2026001000
+```
+
+**Depois:**
+```
+Número Serial
+2026001000
 ```
 
 ---
@@ -178,19 +169,14 @@ DNSSEC Desativado
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar mapas de tradução e transformação de labels/valores |
+| `src/components/compliance/EvidenceDisplay.tsx` | Remover HIDDEN_LABELS, adicionar mais traduções, melhorar parsing de JSON |
 
 ---
 
 ## Considerações
 
-1. **Extensível**: Os mapas podem ser facilmente expandidos para novos tipos de checks
-2. **Fallback**: Se um label não tiver tradução, mostra o original
-3. **Manutenção**: Centralizado em um único arquivo
-4. **Futuro**: Quando o backend for atualizado, o frontend vai funcionar com ambos os formatos
+1. **Extensível**: Fácil adicionar mais traduções conforme novos checks aparecem
+2. **Fallback seguro**: Se parsing falhar, mostra o valor original
+3. **Formatação de tempo**: Valores de segundos são convertidos para formato legível (dias, horas, minutos)
+4. **Sem quebra**: Labels não traduzidos continuam funcionando com o nome original
 
----
-
-## Próximos Passos
-
-Após implementar, podemos validar check por check e adicionar mais traduções conforme necessário.
