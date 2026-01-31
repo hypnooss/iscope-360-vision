@@ -1,135 +1,135 @@
-import { EvidenceItem } from '@/types/compliance';
+import { EvidenceItem } from "@/types/compliance";
 
 // Mapear campos técnicos para labels legíveis em português
 const FIELD_LABELS: Record<string, string> = {
-  name: 'Nome',
-  host: 'Nameserver',
-  value: 'Valor',
-  selector: 'Seletor',
-  key_type: 'Tipo de Chave',
-  key_size_bits: 'Tamanho da Chave (bits)',
-  priority: 'Prioridade',
-  exchange: 'Servidor MX',
-  txt_raw: 'Registro TXT',
-  flags: 'Flags',
-  record: 'Registro',
-  policy: 'Política',
-  rua: 'Relatórios (rua)',
-  ruf: 'Relatórios Forenses (ruf)',
-  pct: 'Percentual',
-  sp: 'Política de Subdomínio',
-  adkim: 'Alinhamento DKIM',
-  aspf: 'Alinhamento SPF',
-  ttl: 'TTL',
-  type: 'Tipo',
-  ip: 'IP',
-  ipv4: 'IPv4',
-  ipv6: 'IPv6',
-  cname: 'CNAME',
-  target: 'Destino',
-  expire: 'Expiração',
-  minimum: 'Mínimo',
-  refresh: 'Refresh',
-  retry: 'Retry',
-  serial: 'Serial',
-  mname: 'Nameserver Primário',
-  rname: 'Email do Responsável',
-  resolved_ips: 'IPs Resolvidos',
-  resolved_ip_count: 'Quantidade de IPs',
+  name: "Nome",
+  host: "Nameserver",
+  value: "Valor",
+  selector: "Seletor",
+  key_type: "Tipo de Chave",
+  key_size_bits: "Tamanho da Chave (bits)",
+  priority: "Prioridade",
+  exchange: "Servidor MX",
+  txt_raw: "Registro TXT",
+  flags: "Flags",
+  record: "Registro",
+  policy: "Política",
+  rua: "Relatórios (rua)",
+  ruf: "Relatórios Forenses (ruf)",
+  pct: "Percentual",
+  sp: "Política de Subdomínio",
+  adkim: "Alinhamento DKIM",
+  aspf: "Alinhamento SPF",
+  ttl: "TTL",
+  type: "Tipo",
+  ip: "IP",
+  ipv4: "IPv4",
+  ipv6: "IPv6",
+  cname: "CNAME",
+  target: "Destino",
+  expire: "Expiração",
+  minimum: "Mínimo",
+  refresh: "Refresh",
+  retry: "Retry",
+  serial: "Serial",
+  mname: "Nameserver Primário",
+  rname: "Email do Responsável",
+  resolved_ips: "IPs Resolvidos",
+  resolved_ip_count: "Quantidade de IPs",
 };
 
 // Mapa de labels técnicos para labels amigáveis (do backend)
 const LABEL_TRANSLATIONS: Record<string, string> = {
-  'data.has_dnskey': 'Status',
-  'data.has_ds': 'Registro DS',
-  'data.validated': 'Validação DNSSEC',
-  'data.mname': 'Servidor Primário',
-  'data.rname': 'Email do Responsável',
-  'data.contact_email': 'Contato do Administrador',
-  'data.refresh': 'Tempo de Refresh',
-  'data.serial': 'Número Serial',
-  'data.expire': 'Tempo de Expiração',
-  'data.minimum': 'TTL Mínimo',
-  'data.retry': 'Tempo de Retry',
-  'data.ttl': 'TTL',
-  'Nameservers encontrados': 'Nameservers',
-  'DNSKEY': 'Status DNSKEY',
-  'DS': 'Status DS',
-  'Validated': 'Validação',
-  'SOA mname': 'Nameserver Primário',
-  'SOA contact': 'Email do Responsável',
+  "data.has_dnskey": "Status",
+  "data.has_ds": "Registro DS",
+  "data.validated": "Validação DNSSEC",
+  "data.mname": "Servidor Primário",
+  "data.rname": "Email do Responsável",
+  "data.contact_email": "Contato do Administrador",
+  "data.refresh": "Tempo de Refresh",
+  "data.serial": "Número Serial",
+  "data.expire": "Tempo de Expiração",
+  "data.minimum": "TTL Mínimo",
+  "data.retry": "Tempo de Retry",
+  "data.ttl": "TTL",
+  "Nameservers encontrados": "Nameservers",
+  DNSKEY: "Status DNSKEY",
+  DS: "Status DS",
+  Validated: "Validação",
+  "SOA mname": "Nameserver Primário",
+  "SOA contact": "Email do Responsável",
   // SPF translations
-  'data.parsed.includes': 'Mecanismos Include',
-  'data.parsed.all': 'Política ALL',
-  'data.raw': 'Registro SPF',
+  "data.parsed.includes": "Mecanismos Include",
+  "data.parsed.all": "Política ALL",
+  "data.raw": "Registro SPF",
   // DKIM translations
-  'data.found': 'Registros DKIM',
-  'data.found[]': 'Registros DKIM',
-  'data.found[0].key_size_bits': 'Tamanho da Chave (bits)',
+  "data.found": "Registros DKIM",
+  "data.found[]": "Registros DKIM",
+  "data.found[0].key_size_bits": "Tamanho da Chave (bits)",
   // DMARC translations
-  'data.parsed.aspf': 'Alinhamento SPF',
-  'data.parsed.adkim': 'Alinhamento DKIM',
-  'data.parsed.pct': 'Cobertura',
-  'data.parsed.p': 'Política DMARC',
-  'data.parsed.sp': 'Política de Subdomínio',
-  'data.parsed.rua': 'Relatórios (RUA)',
-  'data.parsed.ruf': 'Relatórios Forenses (RUF)',
+  "data.parsed.aspf": "Alinhamento SPF",
+  "data.parsed.adkim": "Alinhamento DKIM",
+  "data.parsed.pct": "Cobertura",
+  "data.parsed.p": "Política DMARC",
+  "data.parsed.sp": "Política de Subdomínio",
+  "data.parsed.rua": "Relatórios (RUA)",
+  "data.parsed.ruf": "Relatórios Forenses (RUF)",
   // Novos labels para evidências específicas
-  'Servidores MX': 'Servidores MX',
-  'Chaves DKIM Encontradas': 'Chaves DKIM Encontradas',
-  'Seletores DKIM': 'Seletores DKIM',
-  'Tamanho das Chaves': 'Tamanho das Chaves',
-  'Relatórios (RUA)': 'Relatórios (RUA)',
-  'data.records.simplified': 'Servidores MX',
+  "Servidores MX": "Servidores MX",
+  "Chaves DKIM Encontradas": "Chaves DKIM Encontradas",
+  "Seletores DKIM": "Seletores DKIM",
+  "Tamanho das Chaves": "Tamanho das Chaves",
+  "Relatórios (RUA)": "Relatórios (RUA)",
+  "data.records.simplified": "Servidores MX",
 };
 
 // Mapa de valores booleanos/técnicos para valores legíveis
 const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
-  'data.has_dnskey': {
-    'true': 'DNSSEC Ativado ✓',
-    'false': 'DNSSEC Desativado ✗',
+  "data.has_dnskey": {
+    true: "DNSSEC Ativado",
+    false: "DNSSEC Desativado",
   },
-  'data.has_ds': {
-    'true': 'Presente ✓',
-    'false': 'Ausente ✗',
+  "data.has_ds": {
+    true: "Presente",
+    false: "Ausente",
   },
-  'DNSKEY': {
-    'true': 'Presente ✓',
-    'false': 'Ausente ✗',
+  DNSKEY: {
+    true: "Presente",
+    false: "Ausente",
   },
-  'DS': {
-    'true': 'Presente ✓',
-    'false': 'Ausente ✗',
+  DS: {
+    true: "Presente",
+    false: "Ausente",
   },
-  'data.validated': {
-    'true': 'Validação OK ✓',
-    'false': 'Não validado ✗',
-    'unknown': 'Não verificado',
-    'partial': 'Parcialmente validado',
+  "data.validated": {
+    true: "Validação OK",
+    false: "Não validado",
+    unknown: "Não verificado",
+    partial: "Parcialmente validado",
   },
   // DMARC alignment values
-  'data.parsed.aspf': {
-    'r': 'Relaxado (r)',
-    's': 'Estrito (s) ✓',
+  "data.parsed.aspf": {
+    r: "Relaxado (r)",
+    s: "Estrito (s)",
   },
-  'data.parsed.adkim': {
-    'r': 'Relaxado (r)',
-    's': 'Estrito (s) ✓',
+  "data.parsed.adkim": {
+    r: "Relaxado (r)",
+    s: "Estrito (s)",
   },
   // DMARC policy values
-  'data.parsed.p': {
-    'reject': 'Rejeitar (reject) ✓',
-    'quarantine': 'Quarentena (quarantine)',
-    'none': 'Nenhuma (none) ✗',
+  "data.parsed.p": {
+    reject: "Rejeitar (reject)",
+    quarantine: "Quarentena (quarantine)",
+    none: "Nenhuma (none)",
   },
-  'data.parsed.sp': {
-    'reject': 'Rejeitar (reject) ✓',
-    'quarantine': 'Quarentena (quarantine)',
-    'none': 'Nenhuma (none) ✗',
+  "data.parsed.sp": {
+    reject: "Rejeitar (reject)",
+    quarantine: "Quarentena (quarantine)",
+    none: "Nenhuma (none)",
   },
   // DMARC coverage
-  'data.parsed.pct': {
-    '100': '100% (cobertura total) ✓',
+  "data.parsed.pct": {
+    "100": "100% (cobertura total)",
   },
 };
 
@@ -137,7 +137,7 @@ const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
 const HIDDEN_LABELS: string[] = [];
 
 // Campos de tempo SOA que devem ser formatados
-const SOA_TIME_FIELDS = ['data.refresh', 'data.retry', 'data.expire', 'data.minimum', 'data.ttl'];
+const SOA_TIME_FIELDS = ["data.refresh", "data.retry", "data.expire", "data.minimum", "data.ttl"];
 
 // Formata valores de tempo SOA (segundos) para formato legível
 function formatSOAValue(label: string, value: string): string {
@@ -158,7 +158,7 @@ function formatSOAValue(label: string, value: string): string {
 }
 
 // Campos que devem ser ocultados dentro de records (muito técnicos ou longos)
-const HIDDEN_FIELDS = ['p_length', 'p', 'txt_raw', 'flags', 'name'];
+const HIDDEN_FIELDS = ["p_length", "p", "txt_raw", "flags", "name"];
 
 interface RecordDisplayProps {
   record: Record<string, unknown>;
@@ -166,32 +166,25 @@ interface RecordDisplayProps {
 }
 
 function RecordDisplay({ record, labelOverrides }: RecordDisplayProps) {
-  const entries = Object.entries(record)
-    .filter(([key, value]) => 
-      value !== null && 
-      value !== undefined && 
-      value !== '' &&
-      !HIDDEN_FIELDS.includes(key)
-    );
+  const entries = Object.entries(record).filter(
+    ([key, value]) => value !== null && value !== undefined && value !== "" && !HIDDEN_FIELDS.includes(key),
+  );
 
   if (entries.length === 0) return null;
 
   // Helper para obter label traduzido
-  const getLabel = (key: string) => 
-    labelOverrides?.[key] || FIELD_LABELS[key] || key;
+  const getLabel = (key: string) => labelOverrides?.[key] || FIELD_LABELS[key] || key;
 
   return (
     <div className="border-l-2 border-primary/30 pl-3 space-y-1">
       {entries.map(([key, value]) => (
         <div key={key} className="flex flex-col">
-          <span className="text-xs text-muted-foreground">
-            {getLabel(key)}
-          </span>
+          <span className="text-xs text-muted-foreground">{getLabel(key)}</span>
           <span className="text-sm text-foreground font-mono break-all">
-            {Array.isArray(value) 
-              ? value.join(', ')
-              : typeof value === 'object' 
-                ? JSON.stringify(value) 
+            {Array.isArray(value)
+              ? value.join(", ")
+              : typeof value === "object"
+                ? JSON.stringify(value)
                 : String(value)}
           </span>
         </div>
@@ -214,27 +207,30 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   }
 
   // PRIMEIRO: Detectar tipo pelo conteúdo JSON (antes de verificar labels)
-  const isDkimByContent = Array.isArray(parsed) && 
-    parsed.length > 0 && 
-    typeof parsed[0] === 'object' && 
+  const isDkimByContent =
+    Array.isArray(parsed) &&
+    parsed.length > 0 &&
+    typeof parsed[0] === "object" &&
     (parsed[0] as Record<string, unknown>).selector !== undefined;
 
-  const isMxByContent = Array.isArray(parsed) && 
-    parsed.length > 0 && 
-    typeof parsed[0] === 'object' && 
+  const isMxByContent =
+    Array.isArray(parsed) &&
+    parsed.length > 0 &&
+    typeof parsed[0] === "object" &&
     (parsed[0] as Record<string, unknown>).exchange !== undefined;
 
-  const isNameserverByContent = Array.isArray(parsed) && 
-    parsed.length > 0 && 
-    (typeof parsed[0] === 'string' || 
-      (typeof parsed[0] === 'object' && 
+  const isNameserverByContent =
+    Array.isArray(parsed) &&
+    parsed.length > 0 &&
+    (typeof parsed[0] === "string" ||
+      (typeof parsed[0] === "object" &&
         (parsed[0] as Record<string, unknown>).host !== undefined &&
         (parsed[0] as Record<string, unknown>).exchange === undefined));
 
   // ========== TRATAMENTO DKIM ==========
   if (isDkimByContent) {
     const records = parsed as Array<Record<string, unknown>>;
-    
+
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
         {records.map((rec, idx) => {
@@ -267,13 +263,13 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   // ========== TRATAMENTO MX ==========
   if (isMxByContent) {
     const records = parsed as Array<Record<string, unknown>>;
-    
+
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
         {records.map((rec, idx) => {
           const ips = rec.resolved_ips;
-          const ipsDisplay = Array.isArray(ips) ? ips.join(', ') : '';
-          
+          const ipsDisplay = Array.isArray(ips) ? ips.join(", ") : "";
+
           return (
             <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
               <div className="flex flex-col">
@@ -306,8 +302,8 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   }
 
   // ========== TRATAMENTO MX SIMPLIFICADO (MX-003) ==========
-  const isMxSimplifiedByLabel = item.label === 'data.records.simplified';
-  
+  const isMxSimplifiedByLabel = item.label === "data.records.simplified";
+
   if (isMxSimplifiedByLabel && Array.isArray(parsed)) {
     const records = parsed as Array<Record<string, unknown>>;
     return (
@@ -331,20 +327,27 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   }
 
   // ========== TRATAMENTO NAMESERVERS ==========
-  if (isNameserverByContent || item.label === 'data.records' || item.label === 'Nameservers' || item.label === 'Nameservers encontrados') {
+  if (
+    isNameserverByContent ||
+    item.label === "data.records" ||
+    item.label === "Nameservers" ||
+    item.label === "Nameservers encontrados"
+  ) {
     if (Array.isArray(parsed)) {
       const hosts = parsed
-        .map(r => {
-          if (typeof r === 'string') return r;
-          if (r && typeof r === 'object') {
-            return (r as Record<string, unknown>).host || 
-                   (r as Record<string, unknown>).name ||
-                   (r as Record<string, unknown>).value;
+        .map((r) => {
+          if (typeof r === "string") return r;
+          if (r && typeof r === "object") {
+            return (
+              (r as Record<string, unknown>).host ||
+              (r as Record<string, unknown>).name ||
+              (r as Record<string, unknown>).value
+            );
           }
           return null;
         })
         .filter(Boolean);
-      
+
       if (hosts.length > 0) {
         return (
           <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
@@ -363,7 +366,7 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   // Se for array de objetos genérico
   if (Array.isArray(parsed) && parsed.length > 0) {
     // Se for array de strings simples
-    if (typeof parsed[0] === 'string') {
+    if (typeof parsed[0] === "string") {
       return (
         <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
           {parsed.map((val, idx) => (
@@ -375,9 +378,9 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
         </div>
       );
     }
-    
+
     // Se for array de objetos genérico
-    if (typeof parsed[0] === 'object') {
+    if (typeof parsed[0] === "object") {
       return (
         <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
           <div className="border-l-2 border-primary/30 pl-3 mb-2">
@@ -392,7 +395,7 @@ function FormattedCodeEvidence({ item }: FormattedCodeEvidenceProps) {
   }
 
   // Se for objeto simples
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-2">
         <div className="border-l-2 border-primary/30 pl-3">
@@ -428,18 +431,18 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
 
   // Detectar contexto DMARC vs SPF para o label data.raw
   let translatedLabel = LABEL_TRANSLATIONS[item.label] || item.label;
-  if (item.label === 'data.raw') {
+  if (item.label === "data.raw") {
     // Detectar pelo conteúdo se é DMARC ou SPF
-    if (item.value.startsWith('v=DMARC1')) {
-      translatedLabel = 'Registro DMARC';
-    } else if (item.value.startsWith('v=spf1')) {
-      translatedLabel = 'Registro SPF';
+    if (item.value.startsWith("v=DMARC1")) {
+      translatedLabel = "Registro DMARC";
+    } else if (item.value.startsWith("v=spf1")) {
+      translatedLabel = "Registro SPF";
     }
   }
-  
+
   // Traduzir valor se houver transformação definida
   let transformedValue = VALUE_TRANSFORMATIONS[item.label]?.[item.value] || item.value;
-  
+
   // Aplicar formatação de tempo SOA se aplicável
   transformedValue = formatSOAValue(item.label, transformedValue);
 
@@ -447,11 +450,15 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
   const transformedItem = { ...item, label: translatedLabel, value: transformedValue };
 
   // Detectar se é uma lista (múltiplos valores separados por vírgula)
-  const isList = transformedItem.value.includes(',') && transformedItem.type !== 'code' && transformedItem.type !== 'json';
-  
+  const isList =
+    transformedItem.value.includes(",") && transformedItem.type !== "code" && transformedItem.type !== "json";
+
   // Renderização especial para listas (ex: nameservers, registros MX)
   if (isList) {
-    const values = transformedItem.value.split(',').map(v => v.trim()).filter(Boolean);
+    const values = transformedItem.value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
     return (
       <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
         {values.map((val, idx) => (
@@ -463,12 +470,12 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
       </div>
     );
   }
-  
+
   // Renderização para JSON/código
-  if (transformedItem.type === 'code' || transformedItem.type === 'json') {
+  if (transformedItem.type === "code" || transformedItem.type === "json") {
     return <FormattedCodeEvidence item={transformedItem} />;
   }
-  
+
   // Renderização padrão para texto simples
   return (
     <div className="bg-muted/30 rounded-md p-3 border border-border/30">
