@@ -160,8 +160,7 @@ export default function FirewallReportPreview() {
         <div 
           className="relative overflow-hidden rounded-2xl border border-primary/20"
           style={{
-            background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))",
-            boxShadow: "0 0 60px hsl(175 80% 45% / 0.08), 0 4px 24px hsl(220 20% 0% / 0.4)"
+            background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
           }}
         >
           {/* Subtle grid pattern overlay */}

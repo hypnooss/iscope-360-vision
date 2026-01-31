@@ -4,26 +4,18 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
-import { StatCard } from '@/components/StatCard';
 import { ExternalDomainCategorySection } from '@/components/external-domain/ExternalDomainCategorySection';
 import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
 import { toast } from 'sonner';
-import { TruncatedText } from '@/components/TruncatedText';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Loader2,
   ArrowLeft,
-  ListChecks,
-  ShieldX,
-  AlertTriangle,
-  CheckCircle2,
   Globe,
   RefreshCw,
-  Building2,
-  CalendarClock,
   XCircle,
 } from 'lucide-react';
+import { cn } from "@/lib/utils";
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -36,47 +28,137 @@ type LocationState = {
   };
 };
 
-type InfoRowProps = {
-  icon: React.ReactNode;
+// ─────────────────────────────────────────────────────────────────────────────
+// MiniStat: Ultra-compact stat display for Command Center Header
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MiniStatProps {
+  value: number;
   label: string;
-  value: string;
-  /** Optional tooltip content (keeps value displayed short) */
-  tooltip?: string;
-  /** Optional extra classes for the value (e.g. "font-semibold") */
-  valueClassName?: string;
-};
+  variant?: "default" | "primary" | "success" | "destructive";
+}
 
-function InfoRow({ icon, label, value, tooltip, valueClassName }: InfoRowProps) {
+function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
+  const variantStyles = {
+    default: {
+      text: "text-foreground",
+      border: "border-border/30",
+      bg: "bg-background/50"
+    },
+    primary: {
+      text: "text-primary",
+      border: "border-primary/30",
+      bg: "bg-primary/10"
+    },
+    success: {
+      text: "text-sky-400",
+      border: "border-sky-500/30",
+      bg: "bg-sky-500/10"
+    },
+    destructive: {
+      text: "text-rose-400",
+      border: "border-rose-500/30",
+      bg: "bg-rose-500/10"
+    }
+  };
+
+  const style = variantStyles[variant];
+
   return (
-    <div className="min-w-0 flex items-center gap-2 leading-tight">
-      <span className="flex-shrink-0 text-primary">{icon}</span>
-
-      <span className="flex-shrink-0 text-sm text-muted-foreground whitespace-nowrap">{label}:</span>
-
-      {tooltip ? (
-        <TooltipProvider delayDuration={250}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className={`min-w-0 flex-1 font-medium text-foreground truncate ${valueClassName || ''}`}
-                tabIndex={0}
-              >
-                {value || 'N/A'}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-sm break-words">{tooltip}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : (
-        <TruncatedText
-          text={value}
-          className={`font-medium text-foreground leading-tight ${valueClassName || ''}`}
-          maxWidthClassName="min-w-0 flex-1"
-        />
-      )}
+    <div className={cn(
+      "text-center px-4 py-2 rounded-lg border min-w-[100px]",
+      style.bg,
+      style.border
+    )}>
+      <span className={cn("text-xl font-bold tabular-nums block", style.text)}>
+        {value}
+      </span>
+      <span className="text-[11px] text-muted-foreground uppercase tracking-wider">
+        {label}
+      </span>
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DetailRow: Structured info row with label and value
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DetailRowProps {
+  label: string;
+  value: string | string[];
+  indicator?: "success" | "error";
+  highlight?: boolean;
+}
+
+function DetailRow({ label, value, indicator, highlight }: DetailRowProps) {
+  const isMultiline = Array.isArray(value);
+  
+  return (
+    <div className="group">
+      <div className="flex items-start gap-3 py-2">
+        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
+          {label}
+        </span>
+        <div className="flex-1 min-w-0">
+          {indicator && (
+            <span 
+              className={cn(
+                "inline-block w-2 h-2 rounded-full mr-2 mt-1.5",
+                indicator === "success" ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+              )} 
+            />
+          )}
+          {isMultiline ? (
+            <div className="space-y-0.5">
+              {value.map((v, i) => (
+                <div 
+                  key={i} 
+                  className={cn(
+                    "text-sm font-medium",
+                    highlight ? "text-primary" : "text-foreground"
+                  )}
+                >
+                  {v}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span 
+              className={cn(
+                "text-sm font-medium",
+                highlight ? "text-primary" : "text-foreground",
+                indicator && "inline-flex items-center"
+              )}
+            >
+              {value}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deriveEmailAuthStatus: Extract SPF/DKIM/DMARC status from categories
+// ─────────────────────────────────────────────────────────────────────────────
+
+const deriveEmailAuthStatus = (categories: ComplianceCategory[]) => {
+  const allChecks = categories.flatMap(c => c.checks);
+  
+  const spfCheck = allChecks.find(c => c.id === 'SPF-001');
+  const spf = spfCheck?.status === 'pass';
+  
+  const dkimCheck = allChecks.find(c => c.id === 'DKIM-001');
+  const dkim = dkimCheck?.status === 'pass';
+  
+  const dmarcCheck = allChecks.find(c => c.id === 'DMARC-001');
+  const dmarc = dmarcCheck?.status === 'pass';
+  
+  return { spf, dkim, dmarc };
+};
 
 const getIconForCategory = (name: string): string => {
   const icons: Record<string, string> = {
@@ -496,94 +578,91 @@ export default function ExternalDomainAnalysisReportPage() {
             </div>
           </div>
 
-          {/* Score + Info + Stats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div className="lg:col-span-1 glass-card rounded-xl p-6 flex items-center justify-center">
-              <ScoreGauge score={report.overallScore} />
-            </div>
+          {/* COMMAND CENTER HEADER */}
+          {(() => {
+            const emailAuth = deriveEmailAuthStatus(report.categories);
+            return (
+              <div className="max-w-full mb-8">
+                <div 
+                  className="relative overflow-hidden rounded-2xl border border-primary/20"
+                  style={{
+                    background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
+                  }}
+                >
+                  {/* Grid pattern overlay */}
+                  <div 
+                    className="absolute inset-0 opacity-30 pointer-events-none"
+                    style={{
+                      backgroundImage: `
+                        linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)
+                      `,
+                      backgroundSize: "32px 32px"
+                    }}
+                  />
 
-              <div className="lg:col-span-2 glass-card rounded-xl p-5 border border-primary/20 flex flex-col justify-center">
-              {/* Parte superior: Info (match FortiGate card layout) */}
-                <div className="flex items-start gap-4 sm:min-h-[104px]">
-                <div className="hidden sm:flex w-24 h-24 flex-col items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30">
-                  <Globe className="w-10 h-10 text-primary mb-1" />
-                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider">DOMÍNIO</span>
-                </div>
+                  <div className="relative p-8">
+                    {/* Identification Strip */}
+                    <div className="text-center mb-8">
+                      <h2 className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-foreground uppercase">
+                        {domain?.domain}
+                      </h2>
+                      <div className="h-0.5 w-48 mx-auto mt-3 bg-gradient-to-r from-transparent via-primary to-transparent" />
+                    </div>
 
-                <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Globe className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm flex-shrink-0">Domínio:</span>
-                    <TruncatedText
-                      text={domain?.domain || 'N/A'}
-                      className="font-semibold text-foreground"
-                      maxWidthClassName="min-w-0 flex-1"
-                    />
-                  </div>
+                    {/* Two-Column Layout */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+                      
+                      {/* Left Panel: Score + Stats */}
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="relative">
+                          <div 
+                            className="absolute inset-0 blur-3xl opacity-20"
+                            style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
+                          />
+                          <ScoreGauge score={report.overallScore} size={180} />
+                        </div>
 
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm flex-shrink-0">Nameservers (NS):</span>
-                    <TruncatedText
-                      text={nsText}
-                      className="font-semibold text-foreground"
-                      maxWidthClassName="min-w-0 flex-1"
-                    />
-                  </div>
+                        {/* Mini Stats Row */}
+                        <div className="flex gap-3 mt-6">
+                          <MiniStat value={report.totalChecks} label="Total" variant="primary" />
+                          <MiniStat value={report.passed} label="Aprovadas" variant="success" />
+                          <MiniStat value={report.failed} label="Falhas" variant="destructive" />
+                        </div>
+                      </div>
 
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm flex-shrink-0">SOA:</span>
-                    <TruncatedText
-                      text={dnsSummary?.soaMname || 'N/A'}
-                      className="font-medium text-foreground"
-                      maxWidthClassName="min-w-0 flex-1"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 min-w-0">
-                    <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm flex-shrink-0">SOA Contact:</span>
-                    <TruncatedText
-                      text={dnsSummary?.soaContact || 'N/A'}
-                      className="font-medium text-foreground"
-                      maxWidthClassName="min-w-0 flex-1"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ShieldX className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-muted-foreground text-sm flex-shrink-0">DNSSEC Status:</span>
-                    {dnssecNotesTooltip ? (
-                      <TooltipProvider delayDuration={250}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="min-w-0 flex-1 font-medium text-foreground truncate" tabIndex={0}>
-                              {dnssecStatus || 'N/A'}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm break-words">Notes: {dnssecNotesTooltip}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : (
-                      <span className="min-w-0 flex-1 font-medium text-foreground truncate">{dnssecStatus || 'N/A'}</span>
-                    )}
+                      {/* Right Panel: Details */}
+                      <div className="flex flex-col justify-center lg:border-l lg:border-border/30 lg:pl-8">
+                        <DetailRow label="SOA Primary" value={dnsSummary?.soaMname || 'N/A'} />
+                        <DetailRow label="Nameservers" value={dnsSummary?.ns || []} />
+                        <DetailRow label="Contato SOA" value={dnsSummary?.soaContact || 'N/A'} />
+                        <DetailRow 
+                          label="DNSSEC" 
+                          value={dnssecStatus === 'Ativo' ? "Ativo" : "Inativo"} 
+                          indicator={dnssecStatus === 'Ativo' ? "success" : "error"}
+                        />
+                        <DetailRow 
+                          label="SPF" 
+                          value={emailAuth.spf ? "Válido" : "Ausente"} 
+                          indicator={emailAuth.spf ? "success" : "error"}
+                        />
+                        <DetailRow 
+                          label="DKIM" 
+                          value={emailAuth.dkim ? "Válido" : "Ausente"} 
+                          indicator={emailAuth.dkim ? "success" : "error"}
+                        />
+                        <DetailRow 
+                          label="DMARC" 
+                          value={emailAuth.dmarc ? "Válido" : "Ausente"} 
+                          indicator={emailAuth.dmarc ? "success" : "error"}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Separador */}
-              <div className="border-t border-border/50 my-4" />
-
-              {/* Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard title="Total" value={report.totalChecks} icon={ListChecks} variant="default" compact />
-                <StatCard title="Aprovadas" value={report.passed} icon={CheckCircle2} variant="success" compact />
-                <StatCard title="Falhas" value={report.failed} icon={ShieldX} variant="destructive" compact />
-                <StatCard title="Alertas" value={report.warnings} icon={AlertTriangle} variant="warning" compact />
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Critical banner - only shows for critical severity items */}
           {criticalOnlyCount > 0 && (

@@ -18,29 +18,29 @@ interface ExternalDomainCategorySectionProps {
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   'Autenticação de Email - SPF': { 
-    bg: 'bg-sky-500/10', 
-    text: 'text-sky-500', 
-    border: 'border-sky-500/30' 
+    bg: 'bg-[#5A84A0]/10', 
+    text: 'text-[#5A84A0]', 
+    border: 'border-[#5A84A0]/30' 
   },
   'Autenticação de Email - DKIM': { 
-    bg: 'bg-blue-500/10', 
-    text: 'text-blue-500', 
-    border: 'border-blue-500/30' 
+    bg: 'bg-[#8A6FAE]/10', 
+    text: 'text-[#8A6FAE]', 
+    border: 'border-[#8A6FAE]/30' 
   },
   'Autenticação de Email - DMARC': { 
-    bg: 'bg-violet-500/10', 
-    text: 'text-violet-500', 
-    border: 'border-violet-500/30' 
+    bg: 'bg-[#5DAA9A]/10', 
+    text: 'text-[#5DAA9A]', 
+    border: 'border-[#5DAA9A]/30' 
   },
   'Segurança DNS': { 
-    bg: 'bg-teal-500/10', 
-    text: 'text-teal-500', 
-    border: 'border-teal-500/30' 
+    bg: 'bg-[#C58CA7]/10', 
+    text: 'text-[#C58CA7]', 
+    border: 'border-[#C58CA7]/30' 
   },
   'Infraestrutura de Email': { 
-    bg: 'bg-purple-500/10', 
-    text: 'text-purple-500', 
-    border: 'border-purple-500/30' 
+    bg: 'bg-[#6273C3]/10', 
+    text: 'text-[#6273C3]', 
+    border: 'border-[#6273C3]/30' 
   },
 };
 
