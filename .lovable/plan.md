@@ -1,283 +1,161 @@
 
-# Plano: Evidências Específicas por Card (MX, DKIM, DMARC)
+# Plano: Opção 2 - Score Integrado (com Preview Temporário)
 
-## Problema Identificado
+## Estratégia de Segurança
 
-O backend usa `formatExternalDomainEvidence()` que gera as **mesmas evidências** para todos os checks que usam o mesmo step_id:
-
-| Check | step_id | Problema |
-|-------|---------|----------|
-| MX-001 (Registro MX Configurado) | mx_records | Mostra IPs resolvidos (não deveria) |
-| MX-002 (Redundância MX) | mx_records | Deveria mostrar IPs resolvidos |
-| MX-003 (Prioridades MX) | mx_records | Mostra IPs resolvidos (não deveria) |
-| DKIM-001 (DKIM Configurado) | dkim_records | Mostra JSON completo (deveria mostrar só quantidade) |
-| DKIM-003 (Redundância DKIM) | dkim_records | Mostra JSON completo (deveria mostrar só nomes) |
-| DMARC-003 (Relatórios RUA) | dmarc_record | Mostra p, sp, pct (deveria mostrar só rua) |
-| DMARC-005 (Alinhamento SPF) | dmarc_record | Mostra tudo (deveria mostrar só aspf) |
-| DMARC-006 (Alinhamento DKIM) | dmarc_record | Mostra tudo (deveria mostrar só adkim) |
-
-## Solução
-
-Criar evidências específicas **por `rule.code`** no backend, usando a mesma lógica que já existe para regras como `lic-001`, `utm-*`, etc.
+Criaremos uma página de preview temporária em `/preview/domain-report` que usa dados mockados. Isso permite:
+1. Ver o novo layout sem afetar a página funcional
+2. Testar diferentes ajustes sem risco
+3. Aprovar antes de aplicar na página real
 
 ---
 
-## Alterações no Backend
+## Arquivos a Criar
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+### 1. `src/pages/preview/DomainReportPreview.tsx` (NOVO)
 
-Adicionar tratamento específico por rule.code após a linha ~2128 (onde estão os outros formatadores), antes do fallback genérico:
-
-```typescript
-// ========== EVIDÊNCIAS ESPECÍFICAS POR REGRA ==========
-
-// MX-001: Registro MX Configurado (só exchange)
-else if (rule.code === 'MX-001') {
-  const mxData = sourceData as Record<string, unknown>;
-  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
-  if (records.length > 0) {
-    const exchanges = records.map(r => String(r.exchange)).filter(Boolean);
-    evidence = [{ 
-      label: 'Servidores MX', 
-      value: exchanges.join(', '), 
-      type: 'text' 
-    }];
-  }
-}
-
-// MX-002: Redundância MX (exchange + IPs resolvidos + quantidade)
-else if (rule.code === 'MX-002') {
-  const mxData = sourceData as Record<string, unknown>;
-  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
-  if (records.length > 0) {
-    // Manter formato JSON para frontend renderizar com todos os campos
-    evidence = [{ label: 'data.records', value: JSON.stringify(records), type: 'code' }];
-  }
-}
-
-// MX-003: Prioridades MX (só exchange e priority)
-else if (rule.code === 'MX-003') {
-  const mxData = sourceData as Record<string, unknown>;
-  const records = mxData?.data?.records as Array<Record<string, unknown>> || [];
-  if (records.length > 0) {
-    const simplified = records.map(r => ({ exchange: r.exchange, priority: r.priority }));
-    evidence = [{ label: 'data.records.simplified', value: JSON.stringify(simplified), type: 'code' }];
-  }
-}
-
-// DKIM-001: DKIM Configurado (só quantidade de chaves)
-else if (rule.code === 'DKIM-001') {
-  const dkimData = sourceData as Record<string, unknown>;
-  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
-  evidence = [{ 
-    label: 'Chaves DKIM Encontradas', 
-    value: found.length > 0 ? `${found.length} chave(s) configurada(s)` : 'Nenhuma chave DKIM encontrada', 
-    type: 'text' 
-  }];
-}
-
-// DKIM-002: Tamanho da Chave DKIM (mostrar seletor + tamanho)
-else if (rule.code === 'DKIM-002') {
-  const dkimData = sourceData as Record<string, unknown>;
-  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
-  if (found.length > 0) {
-    const keyInfo = found.map(k => `${k.selector || k.name}: ${k.key_size_bits || '?'} bits`).join(', ');
-    evidence = [{ label: 'Tamanho das Chaves', value: keyInfo, type: 'text' }];
-  }
-}
-
-// DKIM-003: Redundância DKIM (só nomes das chaves)
-else if (rule.code === 'DKIM-003') {
-  const dkimData = sourceData as Record<string, unknown>;
-  const found = dkimData?.data?.found as Array<Record<string, unknown>> || [];
-  if (found.length > 0) {
-    const keyNames = found.map(k => String(k.selector || k.name)).filter(Boolean);
-    evidence = [{ label: 'Seletores DKIM', value: keyNames.join(', '), type: 'text' }];
-  } else {
-    evidence = [{ label: 'Seletores DKIM', value: 'Nenhum seletor encontrado', type: 'text' }];
-  }
-}
-
-// DMARC-003: Relatórios RUA (só rua)
-else if (rule.code === 'DMARC-003') {
-  const dmarcData = sourceData as Record<string, unknown>;
-  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
-  const rua = parsed.rua;
-  evidence = [{ 
-    label: 'Relatórios (RUA)', 
-    value: rua ? String(rua) : 'Não configurado', 
-    type: 'text' 
-  }];
-}
-
-// DMARC-005: Alinhamento SPF Estrito (só aspf)
-else if (rule.code === 'DMARC-005') {
-  const dmarcData = sourceData as Record<string, unknown>;
-  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
-  const aspf = parsed.aspf;
-  evidence = [{ 
-    label: 'data.parsed.aspf', 
-    value: aspf ? String(aspf) : 'Não configurado (padrão: relaxado)', 
-    type: 'text' 
-  }];
-}
-
-// DMARC-006: Alinhamento DKIM Estrito (só adkim)
-else if (rule.code === 'DMARC-006') {
-  const dmarcData = sourceData as Record<string, unknown>;
-  const parsed = (dmarcData?.data?.parsed || {}) as Record<string, unknown>;
-  const adkim = parsed.adkim;
-  evidence = [{ 
-    label: 'data.parsed.adkim', 
-    value: adkim ? String(adkim) : 'Não configurado (padrão: relaxado)', 
-    type: 'text' 
-  }];
-}
-```
-
----
-
-## Alterações no Frontend
-
-### Arquivo: `src/components/compliance/EvidenceDisplay.tsx`
-
-#### 1. Adicionar tratamento para MX simplificado (MX-003)
-
-Detectar `data.records.simplified` e renderizar apenas exchange + priority:
-
-```typescript
-// Tratamento MX simplificado (sem IPs)
-const isMxSimplifiedByLabel = item.label === 'data.records.simplified';
-
-if (isMxSimplifiedByLabel && Array.isArray(parsed)) {
-  const records = parsed as Array<Record<string, unknown>>;
-  return (
-    <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
-      {records.map((rec, idx) => (
-        <div key={idx} className="border-l-2 border-primary/30 pl-3 space-y-1">
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Servidor MX</span>
-            <span className="text-sm text-foreground font-mono">{String(rec.exchange)}</span>
-          </div>
-          {rec.priority !== undefined && (
-            <div className="flex flex-col">
-              <span className="text-xs text-muted-foreground">Prioridade</span>
-              <span className="text-sm text-foreground font-mono">{String(rec.priority)}</span>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
-#### 2. Adicionar tradução para novos labels
-
-```typescript
-const LABEL_TRANSLATIONS: Record<string, string> = {
-  // ... existing translations ...
-  'Servidores MX': 'Servidores MX',
-  'Chaves DKIM Encontradas': 'Chaves DKIM Encontradas',
-  'Seletores DKIM': 'Seletores DKIM',
-  'Tamanho das Chaves': 'Tamanho das Chaves',
-};
-```
-
----
-
-## Resultado Visual Esperado
-
-### MX-001: Registro MX Configurado
-```
-EVIDÊNCIAS COLETADAS
-
-│ Servidores MX
-│ precisio-io.mail.protection.outlook.com
-```
-
-### MX-002: Redundância MX
-```
-EVIDÊNCIAS COLETADAS
-
-│ Servidor MX
-│ precisio-io.mail.protection.outlook.com
-
-│ Prioridade
-│ 0
-
-│ IPs Resolvidos
-│ 52.101.11.17, 52.101.42.13, ...
-
-│ Quantidade de IPs
-│ 8
-```
-
-### MX-003: Prioridades MX Configuradas
-```
-EVIDÊNCIAS COLETADAS
-
-│ Servidor MX
-│ precisio-io.mail.protection.outlook.com
-
-│ Prioridade
-│ 0
-```
-
-### DKIM-001: DKIM Configurado
-```
-EVIDÊNCIAS COLETADAS
-
-│ Chaves DKIM Encontradas
-│ 2 chave(s) configurada(s)
-```
-
-### DKIM-003: Redundância DKIM
-```
-EVIDÊNCIAS COLETADAS
-
-│ Seletores DKIM
-│ selector1._domainkey.precisio.io, selector2._domainkey.precisio.io
-```
-
-### DMARC-003: Relatórios RUA
-```
-EVIDÊNCIAS COLETADAS
-
-│ Relatórios (RUA)
-│ mailto:db93c273a8@rua.easydmarc.com
-```
-
-### DMARC-005: Alinhamento SPF Estrito
-```
-EVIDÊNCIAS COLETADAS
-
-│ Alinhamento SPF
-│ Relaxado (r)
-```
-
-### DMARC-006: Alinhamento DKIM Estrito
-```
-EVIDÊNCIAS COLETADAS
-
-│ Alinhamento DKIM
-│ Estrito (s) ✓
-```
+Página de preview com dados mockados e o novo layout da Opção 2.
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Adicionar tratamento específico por rule.code para MX, DKIM e DMARC |
-| `src/components/compliance/EvidenceDisplay.tsx` | Adicionar tratamento para `data.records.simplified` |
+### 2. `src/App.tsx`
+
+Adicionar rota temporária para preview:
+```typescript
+// Adicionar import
+const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
+
+// Adicionar rota (antes do catch-all)
+<Route path="/preview/domain-report" element={<DomainReportPreview />} />
+```
 
 ---
 
-## Considerações Técnicas
+## Novo Layout - Opção 2 (Score Integrado)
 
-1. **Separação de responsabilidades**: Backend gera evidências específicas por regra, frontend só renderiza
-2. **Retrocompatibilidade**: MX-002 continua usando `data.records` com todos os campos
-3. **Nova análise**: Após deploy, uma nova análise de domínio é necessária para gerar as evidências corretas
-4. **Labels existentes**: Aproveitamos as traduções e transformações já definidas no frontend
+O novo design consolida tudo em um único card:
+
+### Estrutura Visual
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  ┌──────────┐                                                                │
+│  │          │                                                                │
+│  │    79    │   🌐 Domínio          brinquedosestrela.com.br                │
+│  │  ──────  │   📡 SOA              e.sec.dns.br                            │
+│  │  de 100  │   🔒 Nameservers      e.sec.dns.br, f.sec.dns.br              │
+│  │   Bom    │   📧 SOA Contact      hostmaster@registro.br                  │
+│  │          │   🛡️ DNSSEC           Ativo                                   │
+│  └──────────┘                                                                │
+│                                                                              │
+│ ─────────────────────────────────────────────────────────────────────────────│
+│                                                                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │   Total     │  │  Aprovadas  │  │   Falhas    │  │   Alertas   │         │
+│  │     23      │  │     18      │  │      5      │  │      0      │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Mudanças Principais
+
+| Antes | Depois |
+|-------|--------|
+| Grid 1x3 (Gauge 1/3 + Info 2/3) | Card único com flex row |
+| ScoreGauge size=200 (default) | ScoreGauge size=140 |
+| Info colada nas bordas | Info com padding e gaps maiores |
+| Badge "DOMÍNIO" grande (w-24 h-24) | Removido (integrado ao score) |
+| Espaço central vazio | Informações alinhadas à direita do score |
+
+### Código do Novo Layout
+
+```tsx
+{/* Score Integrado - Card Único */}
+<div className="glass-card rounded-xl p-6 border border-primary/20 mb-6">
+  <div className="flex flex-col lg:flex-row gap-6">
+    
+    {/* Score compacto à esquerda */}
+    <div className="flex-shrink-0 flex items-center justify-center lg:justify-start">
+      <ScoreGauge score={79} size={140} />
+    </div>
+    
+    {/* Informações centrais */}
+    <div className="flex-1 min-w-0 flex flex-col justify-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+        <InfoRow icon={<Globe />} label="Domínio" value="brinquedosestrela.com.br" />
+        <InfoRow icon={<Server />} label="SOA" value="e.sec.dns.br" />
+        <InfoRow icon={<Network />} label="Nameservers" value="e.sec.dns.br, f.sec.dns.br" />
+        <InfoRow icon={<Mail />} label="SOA Contact" value="hostmaster@registro.br" />
+        <InfoRow icon={<Shield />} label="DNSSEC" value="Ativo" />
+      </div>
+    </div>
+  </div>
+  
+  {/* Separador */}
+  <div className="border-t border-border/50 my-5" />
+  
+  {/* Stats horizontais */}
+  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <StatCard title="Total" value={23} icon={ListChecks} variant="default" compact />
+    <StatCard title="Aprovadas" value={18} icon={CheckCircle2} variant="success" compact />
+    <StatCard title="Falhas" value={5} icon={ShieldX} variant="destructive" compact />
+    <StatCard title="Alertas" value={0} icon={AlertTriangle} variant="warning" compact />
+  </div>
+</div>
+```
+
+---
+
+## Melhorias Específicas
+
+### 1. Score Menor e Integrado
+- Tamanho reduzido de 200px para 140px
+- Alinhado à esquerda no desktop, centralizado no mobile
+- Remove o card separado do gauge
+
+### 2. Informações com Mais Espaço
+- `gap-y-3` ao invés de `gap-y-1.5` (dobro do espaçamento vertical)
+- `gap-x-8` ao invés de `gap-x-6` (mais espaço horizontal)
+- Padding geral `p-6` (era `p-5`)
+
+### 3. Badge "DOMÍNIO" Removido
+- O contexto já é claro pelo título da página
+- Economiza ~100px de largura
+
+### 4. Stats Mantidos Abaixo
+- Aproveitam toda a largura do card
+- Separados por borda sutil
+
+---
+
+## Responsividade
+
+| Viewport | Comportamento |
+|----------|---------------|
+| Desktop (lg+) | Score à esquerda, Info à direita, Stats abaixo |
+| Tablet (sm-lg) | Score centralizado em cima, Info abaixo, Stats 2x2 |
+| Mobile (<sm) | Tudo empilhado verticalmente |
+
+---
+
+## Fluxo de Teste
+
+1. Criar página de preview com dados mockados
+2. Acessar `/preview/domain-report`
+3. Revisar e ajustar conforme feedback
+4. Se aprovado, aplicar na página real
+5. Remover rota e arquivo de preview
+
+---
+
+## Resultado Esperado
+
+Após implementar, você poderá:
+1. Acessar `/preview/domain-report` no browser
+2. Ver o novo layout com dados de exemplo
+3. Comparar lado a lado com a página atual
+4. Solicitar ajustes sem afetar nada funcional
