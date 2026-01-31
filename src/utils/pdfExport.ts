@@ -1228,13 +1228,20 @@ export function exportExternalDomainReportToPDF(
   yPos = cardY + cardHeight + 10;
 
   // ═══════════════════════════════════════════════════════════════
-  // DNS INFRASTRUCTURE CARD
+  // DNS INFRASTRUCTURE CARD - Dynamic height based on nameservers
   // ═══════════════════════════════════════════════════════════════
   
   if (dnsSummary) {
+    const nsServers = dnsSummary.ns || [];
+    // Calculate dynamic card height: base + extra lines for nameservers
+    const nsDisplayCount = Math.min(nsServers.length, 5);
+    const cardBaseHeight = 32;
+    const nsExtraHeight = nsDisplayCount > 1 ? (nsDisplayCount - 1) * 6 : 0;
+    const dnsCardHeight = cardBaseHeight + nsExtraHeight;
+    
     doc.setFillColor(248, 250, 252); // slate-50
     doc.setDrawColor(226, 232, 240); // slate-200
-    doc.roundedRect(marginLeft, yPos, contentWidth, 40, 3, 3, 'FD');
+    doc.roundedRect(marginLeft, yPos, contentWidth, dnsCardHeight, 3, 3, 'FD');
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
@@ -1245,24 +1252,24 @@ export function exportExternalDomainReportToPDF(
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
     
-    // Left column
-    doc.text(`SOA Primary:`, marginLeft + 6, yPos + 18);
+    // Left column - SOA Primary
+    doc.text('SOA Primary:', marginLeft + 6, yPos + 18);
     doc.setFont('helvetica', 'bold');
     doc.text(dnsSummary.soaMname || 'N/A', marginLeft + 35, yPos + 18);
     
-    // Nameservers - one per line to avoid horizontal overflow
+    // Nameservers - ONE PER LINE to avoid horizontal overflow
     doc.setFont('helvetica', 'normal');
     doc.text('Nameservers:', marginLeft + 6, yPos + 26);
-    const nsServers = dnsSummary.ns || [];
     if (nsServers.length > 0) {
       doc.setFont('helvetica', 'bold');
-      // Show max 3 nameservers in the card, each on its own spot
-      const nsDisplay = nsServers.slice(0, 3).join(', ');
-      const nsTruncated = nsDisplay.length > 60 ? nsDisplay.substring(0, 57) + '...' : nsDisplay;
-      doc.text(nsTruncated, marginLeft + 35, yPos + 26);
-      if (nsServers.length > 3) {
+      let nsLineY = yPos + 26;
+      for (let i = 0; i < nsDisplayCount; i++) {
+        doc.text(nsServers[i], marginLeft + 35, nsLineY);
+        nsLineY += 6;
+      }
+      if (nsServers.length > 5) {
         doc.setFont('helvetica', 'normal');
-        doc.text(`(+${nsServers.length - 3} mais)`, marginLeft + 35, yPos + 33);
+        doc.text(`(+${nsServers.length - 5} mais)`, marginLeft + 35, nsLineY);
       }
     }
     
@@ -1286,7 +1293,7 @@ export function exportExternalDomainReportToPDF(
     const contactTrunc = contact.length > 35 ? contact.substring(0, 32) + '...' : contact;
     doc.text(contactTrunc, rightColX + 28, yPos + 26);
     
-    yPos += 48;
+    yPos += dnsCardHeight + 16; // Increased vertical spacing before category summary
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1465,27 +1472,12 @@ export function exportExternalDomainReportToPDF(
         }
       }
       
-      // Humanized evidence
-      const humanizedEvidence = humanizeEvidence(check);
-      if (humanizedEvidence.length > 0) {
-        checkPageBreak(10);
-        yPos += 2;
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        
-        for (const ev of humanizedEvidence.slice(0, 6)) {
-          checkPageBreak(5);
-          const truncatedEv = ev.length > 90 ? ev.substring(0, 87) + '...' : ev;
-          doc.text(`• ${truncatedEv}`, marginLeft + 12, yPos);
-          yPos += 5;
-        }
-      }
+      // Removed evidence section as requested
       
-      yPos += 8; // More space between checks
+      yPos += 10; // More space between checks
     }
     
-    yPos += 8; // Space between categories
+    yPos += 10; // Space between categories
   }
 
   // ═══════════════════════════════════════════════════════════════
