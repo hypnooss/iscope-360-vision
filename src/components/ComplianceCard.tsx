@@ -36,6 +36,14 @@ const severityColorsPass: Record<string, string> = {
   info: 'bg-muted text-muted-foreground',
 };
 
+const severityLabels: Record<string, string> = {
+  critical: 'Crítico',
+  high: 'Alto',
+  medium: 'Médio',
+  low: 'Baixo',
+  info: 'Info',
+};
+
 export function ComplianceCard({ check, onClick, variant = 'default' }: ComplianceCardProps) {
   const { role } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -73,12 +81,12 @@ export function ComplianceCard({ check, onClick, variant = 'default' }: Complian
           <div className="flex items-center gap-2 mb-1">
             <h4 className="font-medium text-foreground truncate">{check.name}</h4>
             <span className={cn(
-              "text-xs px-2 py-0.5 rounded-full font-medium uppercase", 
+              "text-xs px-2 py-0.5 rounded-full font-medium", 
               normalizedStatus === 'pass' 
                 ? (severityColorsPass[check.severity] || 'bg-muted text-muted-foreground')
                 : (severityColorsFail[check.severity] || 'bg-muted text-muted-foreground')
             )}>
-              {check.severity}
+              {severityLabels[check.severity] || check.severity}
             </span>
           </div>
           <p className="text-sm text-muted-foreground line-clamp-2">{check.description}</p>
