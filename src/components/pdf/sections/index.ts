@@ -8,4 +8,6 @@ export { PDFIssuesSummary } from './PDFIssuesSummary';
 export type { Issue } from './PDFIssuesSummary';
 export { PDFCategorySection } from './PDFCategorySection';
 export type { Check } from './PDFCategorySection';
+export { PDFCategorySummaryTable } from './PDFCategorySummaryTable';
+export type { CategorySummary } from './PDFCategorySummaryTable';
 export { PDFFooter } from './PDFFooter';

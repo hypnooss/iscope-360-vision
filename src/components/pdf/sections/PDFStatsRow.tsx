@@ -6,7 +6,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     gap: spacing.cardGap,
-    marginBottom: spacing.sectionGap,
+    marginBottom: spacing.itemGap,
   },
   card: {
     flex: 1,
@@ -16,35 +16,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    minWidth: 80,
-  },
-  cardWithAccent: {
-    borderLeftWidth: 3,
+    borderTopWidth: 3,
   },
   value: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: typography.bold,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   label: {
-    fontSize: typography.tiny,
+    fontSize: typography.caption,
     color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     textAlign: 'center',
-  },
-  iconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  iconText: {
-    fontSize: 12,
-    fontFamily: typography.bold,
-    color: colors.textPrimary,
   },
 });
 
@@ -59,14 +43,7 @@ interface PDFStatsRowProps {
   stats: StatItem[];
 }
 
-const defaultStats: StatItem[] = [
-  { label: 'Total', value: 0, color: colors.info, icon: '∑' },
-  { label: 'Aprovadas', value: 0, color: colors.success, icon: '✓' },
-  { label: 'Falhas', value: 0, color: colors.danger, icon: '✗' },
-  { label: 'Alertas', value: 0, color: colors.warning, icon: '!' },
-];
-
-export const PDFStatsRow: React.FC<PDFStatsRowProps> = ({ stats = defaultStats }) => {
+export const PDFStatsRow: React.FC<PDFStatsRowProps> = ({ stats }) => {
   return (
     <View style={styles.container}>
       {stats.map((stat, index) => {
@@ -77,15 +54,9 @@ export const PDFStatsRow: React.FC<PDFStatsRowProps> = ({ stats = defaultStats }
             key={index}
             style={[
               styles.card,
-              styles.cardWithAccent,
-              { borderLeftColor: accentColor },
+              { borderTopColor: accentColor },
             ]}
           >
-            {/* Icon Circle */}
-            <View style={[styles.iconCircle, { backgroundColor: accentColor }]}>
-              <Text style={styles.iconText}>{stat.icon || '•'}</Text>
-            </View>
-            
             {/* Value */}
             <Text style={[styles.value, { color: accentColor }]}>
               {stat.value}
@@ -115,13 +86,13 @@ export const PDFComplianceStats: React.FC<ComplianceStatsProps> = ({
   warnings = 0,
 }) => {
   const stats: StatItem[] = [
-    { label: 'Total', value: total, color: colors.info, icon: '∑' },
-    { label: 'Aprovadas', value: passed, color: colors.success, icon: '✓' },
-    { label: 'Falhas', value: failed, color: colors.danger, icon: '✗' },
+    { label: 'Total', value: total, color: colors.info },
+    { label: 'Aprovadas', value: passed, color: colors.success },
+    { label: 'Falhas', value: failed, color: colors.danger },
   ];
   
   if (warnings > 0) {
-    stats.push({ label: 'Alertas', value: warnings, color: colors.warning, icon: '!' });
+    stats.push({ label: 'Alertas', value: warnings, color: colors.warning });
   }
   
   return <PDFStatsRow stats={stats} />;

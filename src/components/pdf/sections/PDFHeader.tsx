@@ -2,73 +2,50 @@ import React from 'react';
 import { View, Text, Image, StyleSheet } from '@react-pdf/renderer';
 import { colors, typography, spacing, radius } from '../styles/pdfStyles';
 
-// Import logo as base64 for PDF compatibility
-// Note: @react-pdf/renderer requires either URL or base64 for images
-const logoPath = '/logo-iscope.png';
-
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     marginBottom: spacing.sectionGap,
+    paddingBottom: spacing.sectionGap,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary,
   },
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   logo: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     marginRight: 10,
   },
   brandText: {
-    fontSize: 28,
+    fontSize: typography.title,
     fontFamily: typography.bold,
     color: colors.primary,
     letterSpacing: 2,
   },
-  subtitle: {
-    fontSize: typography.subheading,
+  reportType: {
+    fontSize: typography.body,
     fontFamily: typography.regular,
-    color: colors.textSecondary,
+    color: colors.textMuted,
     marginBottom: 4,
-    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   target: {
-    fontSize: typography.heading,
+    fontSize: 18,
     fontFamily: typography.bold,
     color: colors.textPrimary,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  date: {
-    fontSize: typography.caption,
-    color: colors.textMuted,
     marginBottom: 8,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginTop: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerCenter: {
-    width: 120,
-    height: 2,
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    marginHorizontal: 16,
+    textAlign: 'center',
   },
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 20,
-    marginTop: 12,
+    gap: 24,
+    marginTop: 8,
   },
   metaItem: {
     flexDirection: 'row',
@@ -87,7 +64,7 @@ const styles = StyleSheet.create({
 });
 
 interface PDFHeaderProps {
-  title: string;
+  title?: string;
   subtitle?: string;
   target: string;
   date: string;
@@ -113,25 +90,24 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
         <Text style={styles.brandText}>{title.toUpperCase()}</Text>
       </View>
 
-      {/* Subtitle */}
-      {subtitle && (
-        <Text style={styles.subtitle}>{subtitle}</Text>
-      )}
-
       {/* Report Type */}
-      <Text style={styles.subtitle}>{reportType}</Text>
+      <Text style={styles.reportType}>{reportType}</Text>
 
       {/* Target Name */}
       <Text style={styles.target}>{target}</Text>
 
-      {/* Date */}
-      <Text style={styles.date}>Gerado em {date}</Text>
-
-      {/* Decorative Divider */}
-      <View style={styles.dividerContainer}>
-        <View style={styles.dividerLine} />
-        <View style={styles.dividerCenter} />
-        <View style={styles.dividerLine} />
+      {/* Metadata Row */}
+      <View style={styles.metaRow}>
+        {subtitle && (
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>Cliente:</Text>
+            <Text style={styles.metaValue}>{subtitle}</Text>
+          </View>
+        )}
+        <View style={styles.metaItem}>
+          <Text style={styles.metaLabel}>Gerado em:</Text>
+          <Text style={styles.metaValue}>{date}</Text>
+        </View>
       </View>
     </View>
   );

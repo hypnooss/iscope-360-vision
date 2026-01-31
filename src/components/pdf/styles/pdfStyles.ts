@@ -1,71 +1,74 @@
 import { StyleSheet } from '@react-pdf/renderer';
 
 // ═══════════════════════════════════════════════════════════════
-// COLOR PALETTE - Based on project design system
+// COLOR PALETTE - Light Mode for Professional PDF Reports
 // ═══════════════════════════════════════════════════════════════
 
 export const colors = {
   // Backgrounds
-  pageBg: '#0F172A',        // slate-900
-  cardBg: '#1E293B',        // slate-800
-  cardBgLight: '#334155',   // slate-700
-  cardBgSubtle: '#1E293B',  // slate-800 with transparency effect
+  pageBg: '#FFFFFF',          // white
+  cardBg: '#F8FAFC',          // slate-50
+  cardBgAlt: '#F1F5F9',       // slate-100
+  cardBgSubtle: '#FFFFFF',    // white
   
-  // Primary (Teal - matches project primary)
-  primary: '#14B8A6',       // teal-500
-  primaryLight: '#5EEAD4',  // teal-300
-  primaryDark: '#0D9488',   // teal-600
-  primaryMuted: '#134E4A',  // teal-900
+  // Primary (Teal - brand accent)
+  primary: '#0D9488',         // teal-600
+  primaryLight: '#14B8A6',    // teal-500
+  primaryDark: '#0F766E',     // teal-700
+  primaryMuted: '#CCFBF1',    // teal-100
+  primaryBg: '#F0FDFA',       // teal-50
   
   // Text
-  textPrimary: '#F8FAFC',   // slate-50
-  textSecondary: '#CBD5E1', // slate-300
-  textMuted: '#94A3B8',     // slate-400
-  textDark: '#64748B',      // slate-500
+  textPrimary: '#0F172A',     // slate-900
+  textSecondary: '#475569',   // slate-600
+  textMuted: '#94A3B8',       // slate-400
+  textDark: '#64748B',        // slate-500
   
   // Status Colors
-  success: '#22C55E',       // green-500
-  successLight: '#86EFAC',  // green-300
-  successBg: '#14532D',     // green-900
+  success: '#16A34A',         // green-600
+  successLight: '#22C55E',    // green-500
+  successBg: '#F0FDF4',       // green-50
   
-  warning: '#F59E0B',       // amber-500
-  warningLight: '#FCD34D',  // amber-300
-  warningBg: '#78350F',     // amber-900
+  warning: '#D97706',         // amber-600
+  warningLight: '#F59E0B',    // amber-500
+  warningBg: '#FFFBEB',       // amber-50
   
-  danger: '#EF4444',        // red-500
-  dangerLight: '#FCA5A5',   // red-300
-  dangerBg: '#7F1D1D',      // red-900
+  danger: '#DC2626',          // red-600
+  dangerLight: '#EF4444',     // red-500
+  dangerBg: '#FEF2F2',        // red-50
   
-  info: '#3B82F6',          // blue-500
-  infoLight: '#93C5FD',     // blue-300
-  infoBg: '#1E3A8A',        // blue-900
+  info: '#0284C7',            // sky-600
+  infoLight: '#0EA5E9',       // sky-500
+  infoBg: '#F0F9FF',          // sky-50
   
-  // Severity Colors (warm spectrum for issues)
-  critical: '#DC2626',      // red-600
-  criticalBg: '#450A0A',    // red-950
-  high: '#EA580C',          // orange-600
-  highBg: '#431407',        // orange-950
-  medium: '#CA8A04',        // yellow-600
-  mediumBg: '#422006',      // yellow-950
-  low: '#0284C7',           // sky-600
-  lowBg: '#082F49',         // sky-950
+  // Severity Colors
+  critical: '#DC2626',        // red-600
+  criticalBg: '#FEF2F2',      // red-50
+  high: '#EA580C',            // orange-600
+  highBg: '#FFF7ED',          // orange-50
+  medium: '#CA8A04',          // yellow-600
+  mediumBg: '#FEFCE8',        // yellow-50
+  low: '#0284C7',             // sky-600
+  lowBg: '#F0F9FF',           // sky-50
   
-  // Category Colors (cool spectrum)
-  categoryDns: '#0891B2',      // cyan-600
-  categoryEmail: '#8B5CF6',    // violet-500
-  categorySpf: '#059669',      // emerald-600
-  categoryDkim: '#EC4899',     // pink-500
-  categoryDmarc: '#F59E0B',    // amber-500
-  categoryFirewall: '#6366F1', // indigo-500
+  // Category Colors (saturated for headers)
+  categoryDns: '#0891B2',     // cyan-600
+  categoryEmail: '#7C3AED',   // violet-600
+  categorySpf: '#059669',     // emerald-600
+  categoryDkim: '#DB2777',    // pink-600
+  categoryDmarc: '#D97706',   // amber-600
+  categoryFirewall: '#4F46E5', // indigo-600
   
   // Borders
-  border: '#334155',        // slate-700
-  borderLight: '#475569',   // slate-600
-  borderPrimary: '#0D9488', // teal-600
+  border: '#E2E8F0',          // slate-200
+  borderLight: '#F1F5F9',     // slate-100
+  borderPrimary: '#0D9488',   // teal-600
+  borderDanger: '#FECACA',    // red-200
   
-  // Gradients (start/end for manual gradients in SVG)
-  gradientStart: '#14B8A6', // teal-500
-  gradientEnd: '#06B6D4',   // cyan-500
+  // Table
+  tableHeader: '#F1F5F9',     // slate-100
+  tableRowAlt: '#F8FAFC',     // slate-50
+  tableRowHover: '#F1F5F9',   // slate-100
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -94,10 +97,11 @@ export const typography = {
 // ═══════════════════════════════════════════════════════════════
 
 export const spacing = {
-  page: 30,           // Page margins
-  sectionGap: 16,     // Gap between major sections
-  cardPadding: 12,    // Internal card padding
-  cardGap: 10,        // Gap between cards
+  page: 40,           // Page margins (top/bottom)
+  pageHorizontal: 30, // Page margins (left/right)
+  sectionGap: 20,     // Gap between major sections
+  cardPadding: 16,    // Internal card padding
+  cardGap: 12,        // Gap between cards
   itemGap: 8,         // Gap between list items
   inlineGap: 6,       // Gap between inline elements
   tight: 4,           // Tight spacing
@@ -170,9 +174,15 @@ export const getStatusColors = (status: string) => {
 };
 
 export const getScoreColor = (score: number) => {
-  if (score >= 75) return colors.primary;      // Green-teal for good
-  if (score >= 50) return colors.warning;      // Amber for medium
-  return colors.danger;                         // Red for poor
+  if (score >= 75) return colors.primary;
+  if (score >= 50) return colors.warning;
+  return colors.danger;
+};
+
+export const getScoreLabel = (score: number): { label: string; color: string } => {
+  if (score >= 75) return { label: 'BOM', color: colors.primary };
+  if (score >= 50) return { label: 'REGULAR', color: colors.warning };
+  return { label: 'CRÍTICO', color: colors.danger };
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -183,7 +193,8 @@ export const baseStyles = StyleSheet.create({
   // Page
   page: {
     backgroundColor: colors.pageBg,
-    padding: spacing.page,
+    paddingVertical: spacing.page,
+    paddingHorizontal: spacing.pageHorizontal,
     fontFamily: typography.regular,
     fontSize: typography.body,
     color: colors.textPrimary,
@@ -220,7 +231,7 @@ export const baseStyles = StyleSheet.create({
     borderColor: colors.border,
   },
   cardPrimary: {
-    backgroundColor: colors.cardBg,
+    backgroundColor: colors.primaryBg,
     borderRadius: radius.lg,
     padding: spacing.cardPadding,
     borderWidth: 1,
@@ -231,7 +242,7 @@ export const baseStyles = StyleSheet.create({
   title: {
     fontSize: typography.title,
     fontFamily: typography.bold,
-    color: colors.textPrimary,
+    color: colors.primary,
     marginBottom: spacing.tight,
   },
   heading: {
@@ -299,7 +310,7 @@ export const headerStyles = StyleSheet.create({
     alignItems: 'center',
   },
   brandText: {
-    fontSize: 28,
+    fontSize: typography.title,
     fontFamily: typography.bold,
     color: colors.primary,
     letterSpacing: 2,
@@ -375,7 +386,9 @@ export const issuesStyles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.cardPadding,
     borderWidth: 1,
-    borderColor: colors.danger,
+    borderColor: colors.borderDanger,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.danger,
     marginTop: spacing.sectionGap,
   },
   header: {
@@ -398,14 +411,14 @@ export const issuesStyles = StyleSheet.create({
   },
   itemText: {
     fontSize: typography.bodySmall,
-    color: colors.dangerLight,
+    color: colors.textSecondary,
     flex: 1,
   },
 });
 
 export const categoryStyles = StyleSheet.create({
   container: {
-    marginTop: spacing.sectionGap,
+    marginBottom: spacing.sectionGap,
   },
   header: {
     flexDirection: 'row',
@@ -417,6 +430,7 @@ export const categoryStyles = StyleSheet.create({
     marginBottom: spacing.itemGap,
     borderWidth: 1,
     borderColor: colors.border,
+    borderLeftWidth: 4,
   },
   headerTitle: {
     fontSize: typography.subheading,
@@ -465,8 +479,8 @@ export const footerStyles = StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: spacing.page,
-    left: spacing.page,
-    right: spacing.page,
+    left: spacing.pageHorizontal,
+    right: spacing.pageHorizontal,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -498,51 +512,36 @@ export const badgeStyles = StyleSheet.create({
   },
 });
 
-export const infoStyles = StyleSheet.create({
+export const tableStyles = StyleSheet.create({
   container: {
-    backgroundColor: colors.cardBg,
-    borderRadius: radius.lg,
-    padding: spacing.cardPadding,
     borderWidth: 1,
-    borderColor: colors.borderPrimary,
-    marginTop: spacing.sectionGap,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    overflow: 'hidden',
   },
-  grid: {
+  headerRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    backgroundColor: colors.tableHeader,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  gridItem: {
-    width: '50%',
-    paddingVertical: spacing.tight,
-    paddingRight: spacing.itemGap,
-  },
-  gridItemFull: {
-    width: '100%',
-    paddingVertical: spacing.tight,
-  },
-  label: {
-    fontSize: typography.caption,
-    color: colors.textMuted,
-    marginBottom: 2,
-  },
-  value: {
-    fontSize: typography.bodySmall,
-    color: colors.textPrimary,
+  headerCell: {
+    padding: spacing.itemGap,
     fontFamily: typography.bold,
-  },
-  valueSuccess: {
-    fontSize: typography.bodySmall,
-    color: colors.success,
-    fontFamily: typography.bold,
-  },
-  valueDanger: {
-    fontSize: typography.bodySmall,
-    color: colors.danger,
-    fontFamily: typography.bold,
-  },
-  listItem: {
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
-    marginBottom: 2,
+  },
+  row: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rowAlt: {
+    backgroundColor: colors.tableRowAlt,
+  },
+  cell: {
+    padding: spacing.itemGap,
+    fontSize: typography.bodySmall,
+    color: colors.textPrimary,
   },
 });

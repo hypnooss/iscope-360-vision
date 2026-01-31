@@ -49,7 +49,7 @@ export function PDFBadge({
   bgColor,
   textColor,
 }: PDFBadgeProps) {
-  let bg = bgColor || colors.cardBgLight;
+  let bg = bgColor || colors.cardBgAlt;
   let text = textColor || colors.textMuted;
   let displayLabel = label || '';
 

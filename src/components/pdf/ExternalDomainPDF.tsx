@@ -1,5 +1,5 @@
 import React from 'react';
-import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
   colors,
   typography,
@@ -13,9 +13,10 @@ import {
   PDFDomainInfo,
   PDFIssuesSummary,
   PDFCategorySection,
+  PDFCategorySummaryTable,
   PDFFooter,
 } from './sections';
-import type { Issue, Check } from './sections';
+import type { Issue, Check, CategorySummary } from './sections';
 
 // Page styles
 const pageStyles = StyleSheet.create({
@@ -26,26 +27,35 @@ const pageStyles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  // Page 1: Executive Summary
   heroSection: {
     flexDirection: 'row',
     gap: spacing.cardGap,
     marginBottom: spacing.sectionGap,
   },
   scoreColumn: {
-    width: 140,
+    width: 180,
     alignItems: 'center',
   },
   statsColumn: {
     flex: 1,
   },
-  categoriesSection: {
-    marginTop: spacing.sectionGap,
-  },
+  // Categories Section
   sectionTitle: {
     fontSize: typography.heading,
     fontFamily: typography.bold,
     color: colors.textPrimary,
     marginBottom: spacing.itemGap,
+    marginTop: spacing.sectionGap,
+    paddingBottom: spacing.tight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pageTitle: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: spacing.sectionGap,
   },
 });
 
@@ -123,6 +133,20 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
       category: undefined,
     }));
 
+  // Prepare category summaries for the table
+  const categorySummaries: CategorySummary[] = report.categories.map((cat) => {
+    const passed = cat.checks.filter((c) => c.status === 'pass').length;
+    const failed = cat.checks.filter((c) => c.status === 'fail').length;
+    const total = cat.checks.length;
+    return {
+      name: cat.name,
+      passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
+      passed,
+      failed,
+      total,
+    };
+  });
+
   // Prepare domain info data for PDFDomainInfo
   const domainInfoData = {
     soa: dnsSummary?.soaMname || undefined,
@@ -134,6 +158,11 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
     dmarc: emailAuth ? { valid: emailAuth.dmarc } : undefined,
   };
 
+  // Group categories for multi-column layout on detail pages
+  const categoriesWithFailures = report.categories.filter(
+    (cat) => cat.checks.some((c) => c.status === 'fail')
+  );
+
   return (
     <Document
       title={`iScope 360 - ${domainInfo.name}`}
@@ -141,6 +170,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
       subject="Relatório de Análise de Domínio Externo"
       keywords="compliance, security, domain, dns, email"
     >
+      {/* PAGE 1: Executive Summary */}
       <Page size="A4" style={pageStyles.page}>
         <View style={pageStyles.content}>
           {/* Header */}
@@ -153,7 +183,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             logoBase64={logoBase64}
           />
 
-          {/* Hero Section: Score + Stats */}
+          {/* Hero Section: Score + Stats + Domain Info */}
           <View style={pageStyles.heroSection}>
             <View style={pageStyles.scoreColumn}>
               <PDFScoreGauge score={report.overallScore} />
@@ -171,41 +201,61 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             </View>
           </View>
 
-          {/* Issues Summary */}
-          <PDFIssuesSummary issues={issues} maxItems={10} />
+          {/* Category Summary Table */}
+          <PDFCategorySummaryTable categories={categorySummaries} />
+
+          {/* Issues Summary (if any) */}
+          {issues.length > 0 && (
+            <PDFIssuesSummary issues={issues} maxItems={8} />
+          )}
         </View>
 
         <PDFFooter />
       </Page>
 
-      {/* Categories Pages */}
-      {report.categories.map((category, index) => {
-        const checks: Check[] = category.checks.map((check) => ({
-          name: check.name,
-          status: check.status as Check['status'],
-          severity: check.severity as Check['severity'],
-          description: check.description,
-          recommendation: check.recommendation,
-        }));
+      {/* PAGE 2+: Category Details */}
+      {categoriesWithFailures.length > 0 && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <Text style={pageStyles.pageTitle}>
+              Detalhamento por Categoria
+            </Text>
+            
+            {categoriesWithFailures.map((category, index) => {
+              const checks: Check[] = category.checks.map((check) => ({
+                name: check.name,
+                status: check.status as Check['status'],
+                severity: check.severity as Check['severity'],
+                description: check.description,
+                recommendation: check.recommendation,
+              }));
 
-        return (
-          <Page key={index} size="A4" style={pageStyles.page}>
-            <View style={pageStyles.content}>
-              <Text style={pageStyles.sectionTitle}>
-                Verificações por Categoria
-              </Text>
-              
-              <PDFCategorySection
-                name={category.name}
-                checks={checks}
-                showPassedChecks={false}
-              />
-            </View>
+              // Category colors
+              const categoryColors: Record<string, string> = {
+                'Segurança DNS': colors.categoryDns,
+                'Infraestrutura de Email': colors.categoryEmail,
+                'Autenticação de Email - SPF': colors.categorySpf,
+                'Autenticação de Email - DKIM': colors.categoryDkim,
+                'Autenticação de Email - DMARC': colors.categoryDmarc,
+              };
 
-            <PDFFooter />
-          </Page>
-        );
-      })}
+              const color = categoryColors[category.name] || colors.primary;
+
+              return (
+                <PDFCategorySection
+                  key={index}
+                  name={category.name}
+                  checks={checks}
+                  color={color}
+                  showPassedChecks={true}
+                />
+              );
+            })}
+          </View>
+
+          <PDFFooter />
+        </Page>
+      )}
     </Document>
   );
 };
