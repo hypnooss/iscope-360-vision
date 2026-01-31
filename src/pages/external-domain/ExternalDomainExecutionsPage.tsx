@@ -8,57 +8,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Activity,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Timer,
-  Loader2,
-  RefreshCw,
-  Eye,
-  Ban,
-  Search,
-  Globe,
-} from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Json } from '@/integrations/supabase/types';
-
 interface AgentTask {
   id: string;
   agent_id: string;
@@ -77,7 +36,6 @@ interface AgentTask {
   expires_at: string | null;
   timeout_at: string | null;
 }
-
 interface TaskStepResultRow {
   id: string;
   task_id: string;
@@ -88,16 +46,42 @@ interface TaskStepResultRow {
   data: Json | null;
   created_at: string | null;
 }
-
-const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  pending: { label: 'Pendente', color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30', icon: <Clock className="w-3 h-3" /> },
-  running: { label: 'Executando', color: 'bg-blue-500/20 text-blue-500 border-blue-500/30', icon: <Loader2 className="w-3 h-3 animate-spin" /> },
-  completed: { label: 'Concluída', color: 'bg-green-500/20 text-green-500 border-green-500/30', icon: <CheckCircle2 className="w-3 h-3" /> },
-  failed: { label: 'Falhou', color: 'bg-red-500/20 text-red-500 border-red-500/30', icon: <XCircle className="w-3 h-3" /> },
-  timeout: { label: 'Timeout', color: 'bg-orange-500/20 text-orange-500 border-orange-500/30', icon: <Timer className="w-3 h-3" /> },
-  cancelled: { label: 'Cancelada', color: 'bg-muted text-muted-foreground border-border', icon: <Ban className="w-3 h-3" /> },
+const statusConfig: Record<string, {
+  label: string;
+  color: string;
+  icon: React.ReactNode;
+}> = {
+  pending: {
+    label: 'Pendente',
+    color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30',
+    icon: <Clock className="w-3 h-3" />
+  },
+  running: {
+    label: 'Executando',
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    icon: <Loader2 className="w-3 h-3 animate-spin" />
+  },
+  completed: {
+    label: 'Concluída',
+    color: 'bg-green-500/20 text-green-500 border-green-500/30',
+    icon: <CheckCircle2 className="w-3 h-3" />
+  },
+  failed: {
+    label: 'Falhou',
+    color: 'bg-red-500/20 text-red-500 border-red-500/30',
+    icon: <XCircle className="w-3 h-3" />
+  },
+  timeout: {
+    label: 'Timeout',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+    icon: <Timer className="w-3 h-3" />
+  },
+  cancelled: {
+    label: 'Cancelada',
+    color: 'bg-muted text-muted-foreground border-border',
+    icon: <Ban className="w-3 h-3" />
+  }
 };
-
 export default function ExternalDomainExecutionsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('1h');
@@ -108,9 +92,7 @@ export default function ExternalDomainExecutionsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
-
   const queryClient = useQueryClient();
-
   const getTimeFilterDate = () => {
     const now = new Date();
     switch (timeFilter) {
@@ -126,15 +108,15 @@ export default function ExternalDomainExecutionsPage() {
         return new Date(now.getTime() - 60 * 60 * 1000);
     }
   };
-
-  const { data: tasks = [], isLoading, refetch } = useQuery({
+  const {
+    data: tasks = [],
+    isLoading,
+    refetch
+  } = useQuery({
     queryKey: ['external-domain-agent-tasks', statusFilter, timeFilter],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
-
-      let query = supabase
-        .from('agent_tasks')
-        .select(`
+      let query = supabase.from('agent_tasks').select(`
           id,
           agent_id,
           task_type,
@@ -149,119 +131,114 @@ export default function ExternalDomainExecutionsPage() {
           completed_at,
           expires_at,
           timeout_at
-        `)
-        .eq('target_type', 'external_domain')
-        .gte('created_at', startTime.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(100);
-
+        `).eq('target_type', 'external_domain').gte('created_at', startTime.toISOString()).order('created_at', {
+        ascending: false
+      }).limit(100);
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter as AgentTask['status']);
       }
-
-      const { data, error } = await query;
+      const {
+        data,
+        error
+      } = await query;
       if (error) throw error;
       return (data || []) as AgentTask[];
     },
-    refetchInterval: (query) => {
+    refetchInterval: query => {
       const data = query.state.data as AgentTask[] | undefined;
-      const hasActive = data?.some((t) => t.status === 'running' || t.status === 'pending');
+      const hasActive = data?.some(t => t.status === 'running' || t.status === 'pending');
       return hasActive ? 10000 : false;
-    },
+    }
   });
-
-  const hasActiveTasks = tasks.some((t) => t.status === 'running' || t.status === 'pending');
-
+  const hasActiveTasks = tasks.some(t => t.status === 'running' || t.status === 'pending');
   const cancelMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      const { error } = await supabase
-        .from('agent_tasks')
-        .update({
-          status: 'cancelled',
-          completed_at: new Date().toISOString(),
-          error_message: 'Cancelada pelo usuário',
-        })
-        .eq('id', taskId)
-        .in('status', ['pending', 'running']);
-
+      const {
+        error
+      } = await supabase.from('agent_tasks').update({
+        status: 'cancelled',
+        completed_at: new Date().toISOString(),
+        error_message: 'Cancelada pelo usuário'
+      }).eq('id', taskId).in('status', ['pending', 'running']);
       if (error) throw error;
     },
     onSuccess: async () => {
       toast.success('Tarefa cancelada com sucesso');
-      await queryClient.invalidateQueries({ queryKey: ['external-domain-agent-tasks'] });
+      await queryClient.invalidateQueries({
+        queryKey: ['external-domain-agent-tasks']
+      });
 
       // Atualiza detalhes abertos (se for a mesma task)
-      setSelectedTask((prev) => {
+      setSelectedTask(prev => {
         if (!prev || prev.id !== taskToCancel?.id) return prev;
         return {
           ...prev,
           status: 'cancelled',
           completed_at: new Date().toISOString(),
-          error_message: prev.error_message || 'Cancelada pelo usuário',
+          error_message: prev.error_message || 'Cancelada pelo usuário'
         };
       });
-
       setCancelOpen(false);
       setTaskToCancel(null);
     },
     onError: (e: any) => {
       console.error('Failed to cancel task:', e);
-      toast.error('Erro ao cancelar tarefa', { description: e?.message });
-    },
+      toast.error('Erro ao cancelar tarefa', {
+        description: e?.message
+      });
+    }
   });
-
   const requestCancel = (task: AgentTask) => {
     setTaskToCancel(task);
     setCancelOpen(true);
   };
-
-  const { data: agents = [] } = useQuery({
+  const {
+    data: agents = []
+  } = useQuery({
     queryKey: ['agents-lookup'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('agents').select('id, name');
+      const {
+        data,
+        error
+      } = await supabase.from('agents').select('id, name');
       if (error) throw error;
       return data || [];
-    },
+    }
   });
-
-  const { data: domains = [] } = useQuery({
+  const {
+    data: domains = []
+  } = useQuery({
     queryKey: ['external-domains-lookup'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('external_domains').select('id, domain, name');
+      const {
+        data,
+        error
+      } = await supabase.from('external_domains').select('id, domain, name');
       if (error) throw error;
       return data || [];
-    },
+    }
   });
-
-  const stats = useMemo(
-    () => ({
-      total: tasks.length,
-      pending: tasks.filter((t) => t.status === 'pending').length,
-      running: tasks.filter((t) => t.status === 'running').length,
-      completed: tasks.filter((t) => t.status === 'completed').length,
-      failed: tasks.filter((t) => t.status === 'failed').length,
-      timeout: tasks.filter((t) => t.status === 'timeout').length,
-    }),
-    [tasks]
-  );
-
+  const stats = useMemo(() => ({
+    total: tasks.length,
+    pending: tasks.filter(t => t.status === 'pending').length,
+    running: tasks.filter(t => t.status === 'running').length,
+    completed: tasks.filter(t => t.status === 'completed').length,
+    failed: tasks.filter(t => t.status === 'failed').length,
+    timeout: tasks.filter(t => t.status === 'timeout').length
+  }), [tasks]);
   const getAgentName = (agentId: string) => {
-    const agent = agents.find((a) => a.id === agentId);
+    const agent = agents.find(a => a.id === agentId);
     return agent?.name || 'Desconhecido';
   };
-
   const getDomainLabel = (domainId: string) => {
-    const d = domains.find((x) => x.id === domainId);
+    const d = domains.find(x => x.id === domainId);
     if (!d) return domainId;
-
     const domain = (d.domain || '').trim();
     const name = (d.name || '').trim();
-
     if (!name) return domain;
     if (name.toLowerCase() === domain.toLowerCase()) return domain;
     return `${name} (${domain})`;
   };
-
   const getDisplayTaskType = (task: AgentTask) => {
     // Normalização visual para legado: tasks antigas de external_domain eram marcadas como ssh_command
     if (task.target_type === 'external_domain' && task.task_type === 'ssh_command') {
@@ -269,78 +246,67 @@ export default function ExternalDomainExecutionsPage() {
     }
     return task.task_type;
   };
-
   const formatDuration = (ms: number | null) => {
     if (!ms) return '-';
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
   };
-
-  const filteredTasks = tasks.filter((task) => {
+  const filteredTasks = tasks.filter(task => {
     if (!searchTerm) return true;
-    const domain = domains.find((d) => d.id === task.target_id);
-    const agent = agents.find((a) => a.id === task.agent_id);
+    const domain = domains.find(d => d.id === task.target_id);
+    const agent = agents.find(a => a.id === task.agent_id);
     const s = searchTerm.toLowerCase();
-    return (
-      domain?.name?.toLowerCase().includes(s) ||
-      domain?.domain?.toLowerCase().includes(s) ||
-      agent?.name?.toLowerCase().includes(s) ||
-      task.task_type.toLowerCase().includes(s)
-    );
+    return domain?.name?.toLowerCase().includes(s) || domain?.domain?.toLowerCase().includes(s) || agent?.name?.toLowerCase().includes(s) || task.task_type.toLowerCase().includes(s);
   });
-
   const openDetails = async (task: AgentTask) => {
     setSelectedTask(task);
     setSelectedTaskSteps([]);
     setDetailsOpen(true);
-
     setLoadingDetails(true);
     try {
       // 1) Carregar campos "pesados" sob demanda
-      const { data: taskDetails } = await supabase
-        .from('agent_tasks')
-        .select('payload, result, error_message, execution_time_ms, started_at, completed_at')
-        .eq('id', task.id)
-        .maybeSingle();
-
+      const {
+        data: taskDetails
+      } = await supabase.from('agent_tasks').select('payload, result, error_message, execution_time_ms, started_at, completed_at').eq('id', task.id).maybeSingle();
       if (taskDetails) {
-        setSelectedTask((prev) => (prev ? { ...prev, ...taskDetails } : prev));
+        setSelectedTask(prev => prev ? {
+          ...prev,
+          ...taskDetails
+        } : prev);
       }
 
       // 2) Carregar steps progressivos (fonte real no modo multi-step)
-      const { data: steps, error: stepsError } = await supabase
-        .from('task_step_results')
-        .select('id, task_id, step_id, status, duration_ms, error_message, data, created_at')
-        .eq('task_id', task.id)
-        .order('created_at', { ascending: true });
-
+      const {
+        data: steps,
+        error: stepsError
+      } = await supabase.from('task_step_results').select('id, task_id, step_id, status, duration_ms, error_message, data, created_at').eq('task_id', task.id).order('created_at', {
+        ascending: true
+      });
       if (stepsError) throw stepsError;
       setSelectedTaskSteps((steps || []) as TaskStepResultRow[]);
     } catch (e: any) {
       console.error('Failed to load task details:', e);
-      toast.error('Erro ao carregar detalhes da tarefa', { description: e?.message });
+      toast.error('Erro ao carregar detalhes da tarefa', {
+        description: e?.message
+      });
     } finally {
       setLoadingDetails(false);
     }
   };
-
-  return (
-    <AppLayout>
+  return <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb
-          items={[
-            { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
-            { label: 'Execuções' },
-          ]}
-        />
+        <PageBreadcrumb items={[{
+        label: 'Domínio Externo',
+        href: '/scope-external-domain/domains'
+      }, {
+        label: 'Execuções'
+      }]} />
 
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Execuções de Tarefas</h1>
-            <p className="text-muted-foreground">
-              Monitore e gerencie as verificações de domínios externos
-            </p>
+            <p className="text-muted-foreground">Gerencie as tarefas de verificações de domínios externos</p>
           </div>
           <Button onClick={() => refetch()} variant="outline" size="sm">
             <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
@@ -425,12 +391,7 @@ export default function ExternalDomainExecutionsPage() {
               <div className="flex-1">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por domínio ou tipo..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+                  <Input placeholder="Buscar por domínio ou tipo..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
                 </div>
               </div>
               <Select value={timeFilter} onValueChange={setTimeFilter}>
@@ -465,18 +426,13 @@ export default function ExternalDomainExecutionsPage() {
         {/* Tasks Table */}
         <Card className="glass-card">
           <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
+            {isLoading ? <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              </div> : filteredTasks.length === 0 ? <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Globe className="w-12 h-12 mb-4 opacity-50" />
                 <p>Nenhuma tarefa encontrada</p>
                 <p className="text-sm mt-1">As execuções aparecerão aqui quando forem iniciadas</p>
-              </div>
-            ) : (
-              <Table>
+              </div> : <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Domínio</TableHead>
@@ -489,10 +445,9 @@ export default function ExternalDomainExecutionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTasks.map((task) => {
-                    const config = statusConfig[task.status] || statusConfig.pending;
-                    return (
-                      <TableRow key={task.id}>
+                  {filteredTasks.map(task => {
+                const config = statusConfig[task.status] || statusConfig.pending;
+                return <TableRow key={task.id}>
                         <TableCell className="font-medium">
                           {getDomainLabel(task.target_id)}
                         </TableCell>
@@ -511,40 +466,26 @@ export default function ExternalDomainExecutionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {formatDistanceToNow(new Date(task.created_at), { 
-                            addSuffix: true, 
-                            locale: ptBR 
-                          })}
+                          {formatDistanceToNow(new Date(task.created_at), {
+                      addSuffix: true,
+                      locale: ptBR
+                    })}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDuration(task.execution_time_ms)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {(task.status === 'pending' || task.status === 'running') && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => requestCancel(task)}
-                              disabled={cancelMutation.isPending}
-                              title="Encerrar execução"
-                            >
+                          {(task.status === 'pending' || task.status === 'running') && <Button variant="ghost" size="icon" onClick={() => requestCancel(task)} disabled={cancelMutation.isPending} title="Encerrar execução">
                               <Ban className="w-4 h-4 text-destructive" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openDetails(task)}
-                          >
+                            </Button>}
+                          <Button variant="ghost" size="icon" onClick={() => openDetails(task)}>
                             <Eye className="w-4 h-4" />
                           </Button>
                         </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                      </TableRow>;
+              })}
                 </TableBody>
-              </Table>
-            )}
+              </Table>}
           </CardContent>
         </Card>
 
@@ -554,14 +495,11 @@ export default function ExternalDomainExecutionsPage() {
             <DialogHeader>
               <DialogTitle>Detalhes da Tarefa</DialogTitle>
             </DialogHeader>
-            {selectedTask && (
-              <div className="flex-1 overflow-y-auto space-y-6 pr-4">
-                {loadingDetails && (
-                  <div className="flex items-center justify-center py-4">
+            {selectedTask && <div className="flex-1 overflow-y-auto space-y-6 pr-4">
+                {loadingDetails && <div className="flex items-center justify-center py-4">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     <span className="ml-2 text-muted-foreground">Carregando detalhes...</span>
-                  </div>
-                )}
+                  </div>}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -598,33 +536,32 @@ export default function ExternalDomainExecutionsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Criado em</p>
-                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', {
+                    locale: ptBR
+                  })}</p>
                   </div>
-                  {selectedTask.started_at && (
-                    <div>
+                  {selectedTask.started_at && <div>
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
-                    </div>
-                  )}
-                  {selectedTask.completed_at && (
-                    <div>
+                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', {
+                    locale: ptBR
+                  })}</p>
+                    </div>}
+                  {selectedTask.completed_at && <div>
                       <p className="text-sm text-muted-foreground">Concluído em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
-                    </div>
-                  )}
+                      <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', {
+                    locale: ptBR
+                  })}</p>
+                    </div>}
                 </div>
 
-                {selectedTask.error_message && (
-                  <div>
+                {selectedTask.error_message && <div>
                     <p className="text-sm text-muted-foreground mb-2">Erro</p>
                     <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
                       <p className="text-sm text-destructive">{selectedTask.error_message}</p>
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {selectedTask.payload && (
-                  <div>
+                {selectedTask.payload && <div>
                     <p className="text-sm text-muted-foreground mb-2">Payload (JSON)</p>
                     <div className="bg-muted/50 border rounded-lg p-3">
                       <ScrollArea className="h-[150px]">
@@ -633,27 +570,16 @@ export default function ExternalDomainExecutionsPage() {
                         </pre>
                       </ScrollArea>
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {selectedTaskSteps.length > 0 && (
-                  <div>
+                {selectedTaskSteps.length > 0 && <div>
                     <p className="text-sm text-muted-foreground mb-2">Steps Executados</p>
                     <div className="space-y-2">
-                      {selectedTaskSteps.map((step) => {
-                        const ok = step.status === 'success';
-                        const skipped = step.status === 'skipped';
-                        const failed = !ok && !skipped;
-                        return (
-                          <div
-                            key={step.id}
-                            className={cn(
-                              'rounded-lg border p-2',
-                              ok && 'bg-green-500/10 border-green-500/30',
-                              failed && 'bg-red-500/10 border-red-500/30',
-                              skipped && 'bg-muted/50 border-border'
-                            )}
-                          >
+                      {selectedTaskSteps.map(step => {
+                  const ok = step.status === 'success';
+                  const skipped = step.status === 'skipped';
+                  const failed = !ok && !skipped;
+                  return <div key={step.id} className={cn('rounded-lg border p-2', ok && 'bg-green-500/10 border-green-500/30', failed && 'bg-red-500/10 border-red-500/30', skipped && 'bg-muted/50 border-border')}>
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-2 min-w-0">
                                 {ok && <CheckCircle2 className="w-4 h-4 text-green-500" />}
@@ -662,37 +588,26 @@ export default function ExternalDomainExecutionsPage() {
                                 <span className="font-mono text-sm truncate">{step.step_id}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                {step.duration_ms !== null && (
-                                  <span className="text-xs text-muted-foreground">{formatDuration(step.duration_ms)}</span>
-                                )}
+                                {step.duration_ms !== null && <span className="text-xs text-muted-foreground">{formatDuration(step.duration_ms)}</span>}
                               </div>
                             </div>
 
-                            {(step.error_message || step.data) && (
-                              <div className="mt-2 space-y-2">
-                                {step.error_message && (
-                                  <div className="text-xs text-destructive break-words">{step.error_message}</div>
-                                )}
-                                {step.data && (
-                                  <div className="bg-muted/50 border rounded-md p-2">
+                            {(step.error_message || step.data) && <div className="mt-2 space-y-2">
+                                {step.error_message && <div className="text-xs text-destructive break-words">{step.error_message}</div>}
+                                {step.data && <div className="bg-muted/50 border rounded-md p-2">
                                     <ScrollArea className="h-[160px]">
                                       <pre className="text-xs font-mono whitespace-pre-wrap break-all">
                                         {JSON.stringify(step.data, null, 2)}
                                       </pre>
                                     </ScrollArea>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                                  </div>}
+                              </div>}
+                          </div>;
+                })}
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {selectedTask.result && (
-                  <div>
+                {selectedTask.result && <div>
                     <p className="text-sm text-muted-foreground mb-2">Resultado (JSON)</p>
                     <div className="bg-muted/50 border rounded-lg p-3">
                       <ScrollArea className="h-[200px]">
@@ -701,10 +616,8 @@ export default function ExternalDomainExecutionsPage() {
                         </pre>
                       </ScrollArea>
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  </div>}
+              </div>}
           </DialogContent>
         </Dialog>
 
@@ -719,26 +632,20 @@ export default function ExternalDomainExecutionsPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel
-                onClick={() => {
-                  setTaskToCancel(null);
-                }}
-              >
+              <AlertDialogCancel onClick={() => {
+              setTaskToCancel(null);
+            }}>
                 Voltar
               </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  if (!taskToCancel) return;
-                  cancelMutation.mutate(taskToCancel.id);
-                }}
-                disabled={!taskToCancel || cancelMutation.isPending}
-              >
+              <AlertDialogAction onClick={() => {
+              if (!taskToCancel) return;
+              cancelMutation.mutate(taskToCancel.id);
+            }} disabled={!taskToCancel || cancelMutation.isPending}>
                 {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </AppLayout>
-  );
+    </AppLayout>;
 }
