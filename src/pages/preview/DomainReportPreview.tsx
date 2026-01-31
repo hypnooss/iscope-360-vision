@@ -29,14 +29,32 @@ interface MiniStatProps {
 
 function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
   const variantStyles = {
-    default: "text-foreground",
-    success: "text-emerald-400",
-    destructive: "text-rose-400",
+    default: {
+      text: "text-foreground",
+      border: "border-border/30",
+      bg: "bg-background/50"
+    },
+    success: {
+      text: "text-sky-400",
+      border: "border-sky-500/30",
+      bg: "bg-sky-500/10"
+    },
+    destructive: {
+      text: "text-rose-400",
+      border: "border-rose-500/30",
+      bg: "bg-rose-500/10"
+    }
   };
 
+  const style = variantStyles[variant];
+
   return (
-    <div className="text-center px-4 py-2 rounded-lg bg-background/50 border border-border/30">
-      <span className={cn("text-xl font-bold tabular-nums block", variantStyles[variant])}>
+    <div className={cn(
+      "text-center px-4 py-2 rounded-lg border",
+      style.bg,
+      style.border
+    )}>
+      <span className={cn("text-xl font-bold tabular-nums block", style.text)}>
         {value}
       </span>
       <span className="text-[11px] text-muted-foreground uppercase tracking-wider">
