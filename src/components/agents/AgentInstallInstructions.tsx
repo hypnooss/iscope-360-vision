@@ -39,6 +39,26 @@ export function AgentInstallInstructions({ activationCode, className }: Props) {
     <div className={cn("space-y-4", className)}>
       <div className="space-y-2">
         <Label>Instalar agent (Linux)</Label>
+
+        <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-sm">
+          <p className="text-foreground">
+            <span className="font-medium">Pré-requisito:</span> publique o arquivo{" "}
+            <code className="font-mono text-xs">iscope-agent-latest.tar.gz</code> no Supabase Storage (bucket{" "}
+            <code className="font-mono text-xs">agent-releases</code>).
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Link do Storage:{" "}
+            <a
+              className="underline underline-offset-2"
+              href="https://supabase.com/dashboard/project/akbosdbyheezghieiefz/storage/buckets"
+              target="_blank"
+              rel="noreferrer"
+            >
+              abrir buckets
+            </a>
+          </p>
+        </div>
+
         <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
           <div className="flex items-start gap-2">
             <code className="flex-1 text-xs sm:text-sm font-mono break-all text-foreground">{installCommand}</code>
@@ -52,7 +72,7 @@ export function AgentInstallInstructions({ activationCode, className }: Props) {
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">Passo 1: copie e cole no servidor Linux (como root ou com sudo).</p>
+        <p className="text-sm text-muted-foreground">Passo 1: cole no servidor Linux (requer sudo).</p>
       </div>
 
       <div className="grid gap-2">

@@ -185,11 +185,42 @@ download_release() {
   url="\${RELEASE_BASE_URL}/\${file}"
   echo "Baixando pacote do agent: \${file}"
 
+  # Prefer more explicit curl failures when available.
+  local curl_fail_flag
+  if curl --help all 2>/dev/null | grep -q "fail-with-body"; then
+    curl_fail_flag="--fail-with-body"
+  else
+    curl_fail_flag="--fail"
+  fi
+
+  # Validate existence early (avoid extracting an HTML error page / empty file)
+  if ! curl -fsSI "$url" >/dev/null 2>&1; then
+    echo ""
+    echo "Erro: não encontrei o pacote no Supabase Storage: agent-releases/\${file}"
+    echo "URL: \${url}"
+    echo ""
+    echo "Próximos passos:"
+    echo "1) Faça upload do arquivo \${file} no bucket 'agent-releases' (público)"
+    echo "2) Teste a URL acima com: curl -I \"\${url}\""
+    echo "3) Rode o instalador novamente"
+    echo ""
+    echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
+    exit 1
+  fi
+
   local tmp
   tmp="$(mktemp)"
-  if ! curl -fsSL "$url" -o "$tmp"; then
+  if ! curl -sS "$curl_fail_flag" -L "$url" -o "$tmp"; then
     echo "Erro: falha ao baixar pacote do agent em: \${url}"
-    echo "Verifique se o arquivo existe no bucket agent-releases."
+    echo "Verifique se o arquivo existe no bucket agent-releases e se o bucket está público."
+    echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
+    exit 1
+  fi
+
+  if [[ ! -s "$tmp" ]]; then
+    echo "Erro: download retornou um arquivo vazio."
+    echo "URL: \${url}"
+    echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
     exit 1
   fi
 
