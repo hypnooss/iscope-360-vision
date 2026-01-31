@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { FileText, Download, Eye, Loader2, Filter } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 
 interface AnalysisHistoryItem {
   id: string;
@@ -35,6 +37,7 @@ export default function ReportsPage() {
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
   
   // Filter states
   const [selectedClient, setSelectedClient] = useState<string>('all');
@@ -186,11 +189,22 @@ export default function ReportsPage() {
         reportData = await fetchReportData(item.id);
         if (!reportData) return;
       }
-      const { exportReportToPDF } = await import('@/utils/pdfExport');
-      exportReportToPDF({
-        ...reportData,
-        generatedAt: new Date(item.created_at),
-      });
+      
+      const firewallName = item.firewalls?.name || 'firewall';
+      const filename = `iscope360-${sanitizePDFFilename(firewallName)}-${getPDFDateString()}.pdf`;
+      
+      await downloadPDF(
+        <FirewallPDF
+          report={{
+            ...reportData,
+            generatedAt: new Date(item.created_at),
+          }}
+          deviceInfo={{
+            name: firewallName,
+          }}
+        />,
+        filename
+      );
       toast.success('PDF exportado com sucesso!');
     } catch (error: any) {
       toast.error('Erro ao exportar PDF: ' + error.message);

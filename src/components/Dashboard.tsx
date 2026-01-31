@@ -6,8 +6,9 @@ import { CategorySection } from './CategorySection';
 import { CVESection } from './CVESection';
 import { CheckCircle, XCircle, AlertTriangle, ListChecks, RefreshCw, FileText, Shield, Globe, Cpu, Server, Hash, Clock, ShieldCheck } from 'lucide-react';
 import { Button } from './ui/button';
-import { exportReportToPDF } from '@/utils/pdfExport';
 import { toast } from 'sonner';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 
 interface DashboardProps {
   report: ComplianceReport;
@@ -20,19 +21,27 @@ interface DashboardProps {
 
 export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const handleCVEsLoaded = (cves: CVEInfo[]) => {
     setLoadedCVEs(cves);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     try {
-      const reportWithCVEs = { ...report, cves: loadedCVEs };
-      exportReportToPDF(reportWithCVEs, {
-        name: firewallName,
-        url: firewallUrl,
-        vendor: deviceVendor || undefined
-      });
+      const filename = `iscope360-${sanitizePDFFilename(firewallName || 'firewall')}-${getPDFDateString()}.pdf`;
+      
+      await downloadPDF(
+        <FirewallPDF
+          report={report}
+          deviceInfo={{
+            name: firewallName || 'Firewall',
+            url: firewallUrl,
+            vendor: deviceVendor || undefined,
+          }}
+        />,
+        filename
+      );
       toast.success('PDF exportado com sucesso!');
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -56,9 +65,9 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
             </p>
           </div>
           <div className="flex gap-3 ml-auto">
-            <Button variant="outline" size="lg" onClick={handleExportPDF}>
-              <FileText className="w-4 h-4" />
-              Exportar PDF
+            <Button variant="outline" size="lg" onClick={handleExportPDF} disabled={isExportingPDF}>
+              <FileText className={`w-4 h-4 ${isExportingPDF ? 'animate-pulse' : ''}`} />
+              {isExportingPDF ? 'Gerando...' : 'Exportar PDF'}
             </Button>
             <Button 
               variant="cyber" 
