@@ -5,7 +5,7 @@ import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { StatCard } from '@/components/StatCard';
-import { CategorySection } from '@/components/CategorySection';
+import { ExternalDomainCategorySection } from '@/components/external-domain/ExternalDomainCategorySection';
 import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
 import { toast } from 'sonner';
@@ -598,11 +598,10 @@ export default function ExternalDomainAnalysisReportPage() {
             <h2 className="text-xl font-semibold text-foreground mb-4">Verificações por Categoria</h2>
             {Array.isArray(report.categories) && report.categories.length > 0 ? (
               report.categories.map((category, index) => (
-                <CategorySection
+                <ExternalDomainCategorySection
                   key={`${category.name}-${index}`}
                   category={category}
                   index={index}
-                  variant="external_domain"
                 />
               ))
             ) : (
