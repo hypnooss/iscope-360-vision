@@ -1,240 +1,298 @@
 
-# Plano: Redesign Completo do Layout de PDF
+# Plano: Nova Secao Aplicativos (Entra ID)
 
-## Diagnóstico dos Problemas Atuais
+## Visao Geral
 
-Analisei o PDF gerado e identifiquei os principais problemas:
-
-1. **Fundo escuro no PDF**: O fundo slate-900 (#0F172A) dificulta a leitura e impressao
-2. **Contraste ruim**: Textos em cores claras sobre fundo escuro nao funcionam bem em PDF
-3. **Score Gauge muito simples**: O circulo SVG esta muito basico e sem impacto visual
-4. **Cards muito densos**: As informacoes estao comprimidas demais
-5. **Hierarquia visual fraca**: Falta distincao clara entre secoes
-6. **Paginas de categoria monotomas**: Cada categoria em uma pagina separada cria muito espaco em branco
-7. **Ausencia de tabela resumo**: O "Resumo por Categoria" esta com layout inconsistente
+Criar uma nova secao **Aplicativos** no modulo Entra ID, seguindo **exatamente** o padrao visual e arquitetural da secao **Insights de Seguranca** existente. A secao analisara App Registrations e Enterprise Applications com foco em riscos de seguranca, expiracao de credenciais e governanca.
 
 ---
 
-## Solucao Proposta: Layout Profissional com Fundo Claro
+## Arquitetura da Solucao
 
-### Principios de Design
-
-- **Fundo branco/cinza claro** para impressao e leitura
-- **Acentos em Teal** (cor primaria do projeto) para destaques
-- **Hierarquia tipografica clara** com tamanhos bem definidos
-- **Cards com bordas sutis** em vez de fundos escuros
-- **Tabelas estruturadas** para dados tabulares
-
----
-
-## Arquivos a Modificar
-
-### 1. `src/components/pdf/styles/pdfStyles.ts`
-Nova paleta de cores "light mode" para PDF:
+A implementacao seguira a mesma estrutura da secao Security Insights:
 
 ```text
-+--------------------------------------------------+
-|  NOVA PALETA (Light Mode para PDF)               |
-+--------------------------------------------------+
-| pageBg:        #FFFFFF (branco)                  |
-| cardBg:        #F8FAFC (slate-50)                |
-| border:        #E2E8F0 (slate-200)               |
-| textPrimary:   #0F172A (slate-900)               |
-| textSecondary: #475569 (slate-600)               |
-| textMuted:     #94A3B8 (slate-400)               |
-| primary:       #0D9488 (teal-600 para contraste) |
-| success:       #16A34A (green-600)               |
-| danger:        #DC2626 (red-600)                 |
-| warning:       #D97706 (amber-600)               |
-+--------------------------------------------------+
-```
-
-### 2. `src/components/pdf/sections/PDFHeader.tsx`
-Redesign com:
-- Logo + marca centralizada
-- Linha decorativa teal
-- Metadata em formato estruturado
-
-### 3. `src/components/pdf/sections/PDFScoreGauge.tsx`
-Score mais impactante:
-- Circulo maior com stroke mais grosso
-- Etiqueta de classificacao (BOM/REGULAR/CRITICO)
-- Background sutil para destaque
-
-### 4. NOVO: `src/components/pdf/sections/PDFCategorySummaryTable.tsx`
-Tabela de resumo por categoria:
-
-```text
-+------------------------------------+------+-----------+--------+
-| Categoria                          | Taxa | Aprovados | Falhas |
-+------------------------------------+------+-----------+--------+
-| Seguranca DNS                      | 83%  | 5/6       | 1      |
-| Infraestrutura de Email            | 100% | 5/5       | 0      |
-| Autenticacao de Email - SPF        | 100% | 3/3       | 0      |
-| Autenticacao de Email - DKIM       | 0%   | 0/3       | 3      |
-| Autenticacao de Email - DMARC      | 67%  | 4/6       | 2      |
-+------------------------------------+------+-----------+--------+
-```
-
-### 5. `src/components/pdf/sections/PDFDomainInfo.tsx`
-Layout de grid 2x2 com:
-- Bordas sutis
-- Icones de status mais visiveis
-- Espacamento adequado
-
-### 6. `src/components/pdf/sections/PDFCategorySection.tsx`
-Checks mais compactos:
-- Mostrar todos os checks (pass e fail) de forma concisa
-- Apenas falhas expandidas com recomendacao
-- Headers de categoria com barra colorida lateral
-
-### 7. `src/components/pdf/sections/PDFIssuesSummary.tsx`
-Bloco de alertas mais elegante:
-- Borda vermelha a esquerda
-- Fundo vermelho suave
-- Lista com bullets coloridos por severidade
-
-### 8. `src/components/pdf/ExternalDomainPDF.tsx`
-Reorganizar estrutura do documento:
-- Pagina 1: Header + Score + Stats + DNS Info + Resumo por Categoria
-- Pagina 2: Problemas Encontrados + Primeiras Categorias
-- Paginas seguintes: Categorias restantes (multiplas por pagina)
-
----
-
-## Layout Visual Proposto
-
-```text
-PAGINA 1
++----------------------------------------------------------+
+|                    ARQUITETURA                           |
 +----------------------------------------------------------+
 |                                                          |
-|                      iScope 360                          |
-|              Analise de Dominio Externo                  |
-|                                                          |
-|     Cliente: PRECISIO    Data: 31/01/2026, 17:07:44     |
-|     Dominio: plasutil.com.br                             |
-|                                                          |
-|   ============================================           |
-|                                                          |
-|   +------------+    +------+  +--------+  +-------+     |
-|   |            |    | 23   |  | 17     |  | 6     |     |
-|   |     77     |    | TOTAL|  |APROVADO|  |FALHAS |     |
-|   |    BOM     |    +------+  +--------+  +-------+     |
-|   +------------+                                         |
-|                                                          |
-|   +--------------------------------------------------+  |
-|   | INFRAESTRUTURA DNS                               |  |
-|   +--------------------------------------------------+  |
-|   | SOA Primary: clayton.ns.cloudflare.com           |  |
-|   | Nameservers: clayton.ns.cloudflare.com           |  |
-|   |              oaklyn.ns.cloudflare.com            |  |
-|   | DNSSEC: Ativo    |    Contato: dns@cloudflare    |  |
-|   +--------------------------------------------------+  |
-|                                                          |
-|   +--------------------------------------------------+  |
-|   | EMAIL AUTH                                        |  |
-|   +--------------------------------------------------+  |
-|   | SPF: Valido  |  DKIM: Ausente  |  DMARC: Valido  |  |
-|   +--------------------------------------------------+  |
-|                                                          |
-|   RESUMO POR CATEGORIA                                   |
-|   +--------------------------------------------------+  |
-|   | Categoria                    | Taxa | OK | Falha |  |
-|   +--------------------------------------------------+  |
-|   | Seguranca DNS                | 83%  | 5  | 1     |  |
-|   | Infraestrutura de Email      | 100% | 5  | 0     |  |
-|   | ...                          | ...  | ...| ...   |  |
-|   +--------------------------------------------------+  |
-|                                                          |
-+----------------------------------------------------------+
-|  iScope 360  |  Precisio Analytics  |  Pagina 1 de 5    |
-+----------------------------------------------------------+
-
-
-PAGINA 2
-+----------------------------------------------------------+
-|                                                          |
-|   PROBLEMAS ENCONTRADOS (6)                              |
-|   +--------------------------------------------------+  |
-|   | * Diversidade de Nameservers                      |  |
-|   | * DKIM Configurado                                |  |
-|   | * Redundancia DKIM                                |  |
-|   | * Tamanho da Chave DKIM                           |  |
-|   | * Alinhamento DKIM Estrito                        |  |
-|   | * Alinhamento SPF Estrito                         |  |
-|   +--------------------------------------------------+  |
-|                                                          |
-|   SEGURANCA DNS                                    83%  |
-|   +--------------------------------------------------+  |
-|   | Diversidade de Nameservers            | FALHA    |  |
-|   | > Menos de 3 nameservers...                       |  |
-|   | > Recomendacao: Adicionar terceiro NS             |  |
-|   +--------------------------------------------------+  |
-|   | DNSSEC Habilitado                     | APROVADO |  |
-|   +--------------------------------------------------+  |
-|   | Redundancia de Nameservers            | APROVADO |  |
-|   +--------------------------------------------------+  |
-|   | ...                                               |  |
+|  Frontend                                                |
+|  +----------------------------------------------------+  |
+|  | EntraIdApplicationInsightsPage.tsx                 |  |
+|  |   - Reutiliza InsightSummaryCards                  |  |
+|  |   - Usa AppInsightCategorySection (novo)           |  |
+|  |   - Usa AppInsightCard (novo)                      |  |
+|  +----------------------------------------------------+  |
+|                         |                                |
+|                         v                                |
+|  +----------------------------------------------------+  |
+|  | useEntraIdApplicationInsights.ts (hook)            |  |
+|  |   - Chama edge function                            |  |
+|  |   - Gerencia estado (loading, error, data)         |  |
+|  +----------------------------------------------------+  |
+|                         |                                |
+|                         v                                |
+|  Backend (Edge Function)                                 |
+|  +----------------------------------------------------+  |
+|  | entra-id-application-insights/index.ts             |  |
+|  |   - Busca apps via Microsoft Graph API             |  |
+|  |   - Analisa credenciais e permissoes               |  |
+|  |   - Gera insights de risco                         |  |
+|  +----------------------------------------------------+  |
 |                                                          |
 +----------------------------------------------------------+
 ```
 
 ---
 
-## Sequencia de Implementacao
+## Categorias de Insights
 
-| Fase | Tarefa | Arquivos |
-|------|--------|----------|
-| 1 | Atualizar paleta de cores para light mode | pdfStyles.ts |
-| 2 | Redesenhar PDFHeader com layout limpo | PDFHeader.tsx |
-| 3 | Melhorar PDFScoreGauge com classificacao | PDFScoreGauge.tsx |
-| 4 | Criar tabela de resumo por categoria | PDFCategorySummaryTable.tsx (NOVO) |
-| 5 | Atualizar PDFDomainInfo com grid limpo | PDFDomainInfo.tsx |
-| 6 | Refatorar PDFCategorySection para ser compacto | PDFCategorySection.tsx |
-| 7 | Atualizar PDFIssuesSummary com estilo leve | PDFIssuesSummary.tsx |
-| 8 | Reorganizar ExternalDomainPDF para layout otimizado | ExternalDomainPDF.tsx |
-| 9 | Atualizar exportacoes | sections/index.ts |
+Os insights serao agrupados em 3 categorias (mesmo padrao dos Security Insights):
+
+| Categoria | Codigo | Descricao |
+|-----------|--------|-----------|
+| `credential_expiration` | Expiracao de Credenciais | Secrets/Certificados vencidos ou proximos do vencimento |
+| `privileged_permissions` | Permissoes Privilegiadas | Apps com permissoes criticas ou Admin Consent |
+| `security_hygiene` | Higiene de Seguranca | Apps inativos, sem rotacao, multiplas credenciais |
+
+---
+
+## Insights a Implementar
+
+### Categoria: Expiracao de Credenciais
+
+| Codigo | Titulo | Severidade | Criterio |
+|--------|--------|------------|----------|
+| APP-001 | Credenciais vencidas | Critico | Secrets/Certs com `endDateTime` < hoje |
+| APP-002 | Credenciais a vencer em 30 dias | Alto | Secrets/Certs com `endDateTime` entre hoje e +30d |
+| APP-003 | Credenciais a vencer em 90 dias | Medio | Secrets/Certs com `endDateTime` entre +30d e +90d |
+
+### Categoria: Permissoes Privilegiadas
+
+| Codigo | Titulo | Severidade | Criterio |
+|--------|--------|------------|----------|
+| APP-004 | Apps com permissoes criticas | Critico | Apps com `Directory.ReadWrite.All`, `Application.ReadWrite.All`, `RoleManagement.ReadWrite.Directory` |
+| APP-005 | Apps com Admin Consent | Alto | Apps cujo Service Principal possui `oauth2PermissionGrants` com `consentType: AllPrincipals` |
+| APP-006 | Apps com permissoes de leitura global | Medio | Apps com `Directory.Read.All`, `User.Read.All`, `Group.Read.All` |
+
+### Categoria: Higiene de Seguranca
+
+| Codigo | Titulo | Severidade | Criterio |
+|--------|--------|------------|----------|
+| APP-007 | Apps sem credencial redundante | Medio | Apps com apenas 1 credencial ativa (sem backup) |
+| APP-008 | Credenciais sem rotacao (>1 ano) | Alto | Secrets/Certs criados ha mais de 365 dias e ainda ativos |
+| APP-009 | Apps sem owner definido | Baixo | App Registrations sem proprietario atribuido |
+
+---
+
+## Arquivos a Criar/Modificar
+
+### Novos Arquivos
+
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/types/applicationInsights.ts` | Tipos TypeScript para Application Insights |
+| `src/hooks/useEntraIdApplicationInsights.ts` | Hook para buscar dados da edge function |
+| `src/pages/m365/EntraIdApplicationInsightsPage.tsx` | Pagina principal da secao |
+| `src/components/m365/applications/AppInsightSummaryCards.tsx` | Cards de resumo (reutiliza estrutura existente) |
+| `src/components/m365/applications/AppInsightCategorySection.tsx` | Secao colapsavel por categoria |
+| `src/components/m365/applications/AppInsightCard.tsx` | Card individual de insight de app |
+| `src/components/m365/applications/AppInsightDetailDialog.tsx` | Dialog de detalhes do insight |
+| `supabase/functions/entra-id-application-insights/index.ts` | Edge function para buscar e analisar apps |
+
+### Arquivos a Modificar
+
+| Arquivo | Modificacao |
+|---------|-------------|
+| `src/App.tsx` | Adicionar rota `/scope-m365/entra-id/applications` |
+| `src/pages/m365/EntraIdPage.tsx` | Ativar card "Aplicativos" com link para nova rota |
 
 ---
 
 ## Detalhes Tecnicos
 
-### Tipografia
+### 1. Tipos TypeScript (`src/types/applicationInsights.ts`)
 
-```text
-Titulo do Relatorio:    24pt, Bold, Teal-600
-Subtitulo:              14pt, Regular, Slate-600
-Nome do Dominio:        18pt, Bold, Slate-900
-Titulos de Secao:       14pt, Bold, Slate-800
-Texto do corpo:         10pt, Regular, Slate-700
-Captions/Labels:        8pt, Regular, Slate-500
+```typescript
+export type AppInsightCategory = 
+  | 'credential_expiration' 
+  | 'privileged_permissions' 
+  | 'security_hygiene';
+
+export type AppInsightSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface AffectedApplication {
+  id: string;
+  appId: string;
+  displayName: string;
+  appType: 'AppRegistration' | 'EnterpriseApp';
+  details?: {
+    credentialType?: 'Secret' | 'Certificate';
+    expiresAt?: string;
+    daysUntilExpiration?: number;
+    permissions?: string[];
+    hasAdminConsent?: boolean;
+    ownerCount?: number;
+  };
+}
+
+export interface ApplicationInsight {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  category: AppInsightCategory;
+  severity: AppInsightSeverity;
+  affectedCount: number;
+  affectedApplications: AffectedApplication[];
+  criteria: string;
+  recommendation: string;
+  detectedAt: string;
+}
+
+export interface AppInsightsSummary {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+  total: number;
+  expiredCredentials: number;
+  expiringIn30Days: number;
+  privilegedApps: number;
+}
 ```
 
-### Espacamento
+### 2. Edge Function (`supabase/functions/entra-id-application-insights/index.ts`)
+
+A edge function ira:
+
+1. **Autenticar** com Microsoft Graph usando credenciais do tenant
+2. **Buscar dados** via Graph API:
+   - `GET /applications` - App Registrations
+   - `GET /servicePrincipals` - Enterprise Apps
+   - `GET /servicePrincipals/{id}/oauth2PermissionGrants` - Permissoes delegadas
+   - `GET /servicePrincipals/{id}/appRoleAssignments` - App Roles
+3. **Analisar** credenciais e permissoes
+4. **Gerar insights** categorizados por severidade
+
+Permissoes Graph necessarias:
+- `Application.Read.All`
+- `Directory.Read.All`
+
+### 3. Layout da Pagina (mesmo padrao de Security Insights)
 
 ```text
-Margens da pagina:      40pt (topo/fundo), 30pt (laterais)
-Gap entre secoes:       20pt
-Padding interno cards:  16pt
-Gap entre items:        8pt
++----------------------------------------------------------+
+|                                                          |
+|  [Breadcrumb] Microsoft 365 > Entra ID > Aplicativos     |
+|                                                          |
+|  APLICATIVOS                          [Atualizar]        |
+|  Analise de riscos em App Registrations e Enterprise Apps|
+|                                                          |
+|  +-------------+  +-------------+  +-------------+       |
+|  | Vencidos    |  | A Vencer    |  | Privilegiados|      |
+|  | 3           |  | 7           |  | 12          |       |
+|  | Credenciais |  | em 30 dias  |  | com Admin   |       |
+|  +-------------+  +-------------+  +-------------+       |
+|                                                          |
+|  [TENANT: contoso.onmicrosoft.com]  [Conectado]          |
+|                                                          |
+|  +------------------------------------------------------+|
+|  | EXPIRACAO DE CREDENCIAIS                     4 apps  ||
+|  |   [Critico: 2] [Alto: 2]                             ||
+|  +------------------------------------------------------+|
+|     [Card] Credenciais vencidas                          |
+|     [Card] Credenciais a vencer em 30 dias               |
+|                                                          |
+|  +------------------------------------------------------+|
+|  | PERMISSOES PRIVILEGIADAS                    12 apps  ||
+|  |   [Critico: 3] [Alto: 9]                             ||
+|  +------------------------------------------------------+|
+|     [Card] Apps com permissoes criticas                  |
+|     [Card] Apps com Admin Consent                        |
+|                                                          |
++----------------------------------------------------------+
 ```
 
-### Cores para Status
+### 4. Card de Insight (AppInsightCard)
 
-```text
-Aprovado:  Teal-600 (#0D9488) com fundo Teal-50 (#F0FDFA)
-Falha:     Red-600 (#DC2626) com fundo Red-50 (#FEF2F2)
-Alerta:    Amber-600 (#D97706) com fundo Amber-50 (#FFFBEB)
-Info:      Sky-600 (#0284C7) com fundo Sky-50 (#F0F9FF)
-```
+O card seguira exatamente o mesmo padrao visual de `InsightCard`:
+
+- Borda esquerda colorida por severidade
+- Icone de severidade com background colorido
+- Badge de severidade + codigo
+- Titulo + descricao
+- Contador de apps afetados (icone de cubo/app)
+- Botao "Ver detalhes" que abre dialog
+
+### 5. Dialog de Detalhes (AppInsightDetailDialog)
+
+O dialog seguira o padrao de `InsightDetailDialog`:
+
+- Header com severidade, codigo e categoria
+- Descricao do insight
+- Criterio de deteccao
+- Recomendacao (destacada em amarelo)
+- Lista de aplicativos afetados com:
+  - Nome do app
+  - Tipo (App Registration / Enterprise App)
+  - Detalhes relevantes (data de expiracao, permissoes, etc.)
+
+---
+
+## Sequencia de Implementacao
+
+| Etapa | Tarefa | Arquivos |
+|-------|--------|----------|
+| 1 | Criar tipos TypeScript | `src/types/applicationInsights.ts` |
+| 2 | Criar Edge Function | `supabase/functions/entra-id-application-insights/index.ts` |
+| 3 | Criar hook de dados | `src/hooks/useEntraIdApplicationInsights.ts` |
+| 4 | Criar componentes de UI | `src/components/m365/applications/*.tsx` |
+| 5 | Criar pagina principal | `src/pages/m365/EntraIdApplicationInsightsPage.tsx` |
+| 6 | Adicionar rota e ativar menu | `src/App.tsx`, `src/pages/m365/EntraIdPage.tsx` |
+
+---
+
+## Permissoes Microsoft Graph Necessarias
+
+Para que a edge function funcione, o App Registration do iScope no Entra ID do cliente precisa ter:
+
+| Permissao | Tipo | Necessidade |
+|-----------|------|-------------|
+| `Application.Read.All` | Application | Obrigatoria |
+| `Directory.Read.All` | Application | Obrigatoria |
+
+Essas permissoes ja estao listadas na tabela `m365_required_permissions` do sistema.
+
+---
+
+## Cores e Estilos (Padrao Existente)
+
+As cores de severidade seguem o padrao ja definido em `src/types/securityInsights.ts`:
+
+- **Critico**: Red-500 (#EF4444)
+- **Alto**: Orange-500 (#F97316)
+- **Medio**: Amber-500 (#F59E0B)
+- **Baixo**: Blue-500 (#3B82F6)
+- **Info**: Slate-500 (#64748B)
+
+As cores de categoria serao:
+
+- **Expiracao de Credenciais**: Red/Rose (`bg-rose-500/10`, `text-rose-500`)
+- **Permissoes Privilegiadas**: Purple (`bg-purple-500/10`, `text-purple-500`)
+- **Higiene de Seguranca**: Cyan/Teal (`bg-cyan-500/10`, `text-cyan-500`)
 
 ---
 
 ## Resultado Esperado
 
-- PDF com visual profissional e moderno
-- Facil de ler tanto em tela quanto impresso
-- Hierarquia clara de informacoes
-- Score e resumo imediatamente visiveis na primeira pagina
-- Detalhes por categoria em paginas subsequentes
-- Consistente com a identidade visual do iScope 360
+- Secao "Aplicativos" acessivel em `/scope-m365/entra-id/applications`
+- Card na pagina Entra ID ativo e clicavel
+- Layout identico a secao "Insights de Seguranca"
+- Cards de resumo no topo com metricas principais
+- Insights agrupados por categoria (colapsaveis)
+- Dialog de detalhes com lista de apps afetados
+- Linguagem orientada a risco e decisao
+- Destaques visuais para situacoes criticas
+
