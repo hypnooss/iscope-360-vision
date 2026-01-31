@@ -65,7 +65,7 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
           strokeDashoffset={strokeDashoffset}
           className="transition-all duration-1000 ease-out"
           style={{
-            filter: `drop-shadow(0 0 4px ${getColor()})`,
+            filter: `drop-shadow(0 0 3px ${getColor()})`,
           }}
         />
       </svg>
