@@ -974,6 +974,96 @@ const getDomainCategoryColor = (categoryName: string): [number, number, number] 
   return DOMAIN_CATEGORY_COLORS[categoryName] || [0, 150, 150];
 };
 
+// Humanize evidence for PDF - translate technical data to readable format
+function humanizeEvidence(check: ComplianceCheck): string[] {
+  const result: string[] = [];
+  const ruleId = check.id?.toUpperCase() || '';
+  
+  // Extract data from evidence or rawData
+  const rawData = check.rawData || {};
+  
+  // Nameservers - one per line
+  if (rawData.records && Array.isArray(rawData.records)) {
+    const hosts = rawData.records.map((r: any) => r.host || r.value || String(r)).filter(Boolean);
+    if (hosts.length > 0) {
+      if (ruleId.includes('NS') || ruleId.includes('NAMESERVER')) {
+        result.push(`Nameservers encontrados: ${hosts.length}`);
+        hosts.forEach((h: string) => result.push(`  - ${h}`));
+      } else if (ruleId.includes('MX')) {
+        result.push(`Servidores MX: ${hosts.length}`);
+        hosts.slice(0, 5).forEach((h: string) => result.push(`  - ${h}`));
+      }
+    }
+  }
+  
+  // DNSSEC status
+  if (rawData.has_dnskey !== undefined) {
+    result.push(`DNSKEY presente: ${rawData.has_dnskey ? 'Sim' : 'Nao'}`);
+  }
+  if (rawData.has_ds !== undefined) {
+    result.push(`Registro DS: ${rawData.has_ds ? 'Sim' : 'Nao'}`);
+  }
+  
+  // SOA values
+  if (rawData.refresh) {
+    result.push(`SOA Refresh: ${rawData.refresh} segundos`);
+  }
+  if (rawData.serial) {
+    result.push(`SOA Serial: ${rawData.serial}`);
+  }
+  if (rawData.mname) {
+    result.push(`SOA Primary: ${rawData.mname}`);
+  }
+  
+  // SPF
+  if (rawData.spf_record) {
+    const spf = String(rawData.spf_record);
+    result.push(`Registro SPF: ${spf.length > 80 ? spf.substring(0, 77) + '...' : spf}`);
+  }
+  if (rawData.mechanism_count !== undefined) {
+    result.push(`Mecanismos SPF: ${rawData.mechanism_count}`);
+  }
+  
+  // DKIM
+  if (rawData.selector_count !== undefined) {
+    result.push(`Seletores DKIM encontrados: ${rawData.selector_count}`);
+  }
+  if (rawData.key_count !== undefined) {
+    result.push(`Chaves DKIM validas: ${rawData.key_count}`);
+  }
+  if (rawData.selectors && Array.isArray(rawData.selectors)) {
+    result.push(`Seletores: ${rawData.selectors.slice(0, 5).join(', ')}`);
+  }
+  
+  // DMARC
+  if (rawData.policy) {
+    result.push(`Politica DMARC: ${rawData.policy}`);
+  }
+  if (rawData.rua) {
+    result.push(`Endereco de relatorios (rua): ${rawData.rua}`);
+  }
+  if (rawData.pct !== undefined) {
+    result.push(`Percentual aplicado: ${rawData.pct}%`);
+  }
+  
+  // Generic count
+  if (rawData.count !== undefined && result.length === 0) {
+    result.push(`Quantidade: ${rawData.count}`);
+  }
+  
+  // Fallback to evidence array
+  if (result.length === 0 && check.evidence && check.evidence.length > 0) {
+    for (const ev of check.evidence.slice(0, 3)) {
+      // Skip raw JSON-like data
+      if (ev.value && !ev.value.includes('data.') && !ev.value.startsWith('[') && !ev.value.startsWith('{')) {
+        result.push(`${ev.label}: ${sanitizeTextForPDF(ev.value)}`);
+      }
+    }
+  }
+  
+  return result;
+}
+
 export function exportExternalDomainReportToPDF(
   report: ComplianceReport,
   domainInfo: ExternalDomainInfo,
@@ -1040,117 +1130,174 @@ export function exportExternalDomainReportToPDF(
   yPos = 58;
 
   // ═══════════════════════════════════════════════════════════════
-  // EXECUTIVE SUMMARY - Vertical Layout
+  // CARDS ROW: Score, Verificações, Email Auth
   // ═══════════════════════════════════════════════════════════════
   
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text('Resumo Executivo', marginLeft, yPos);
-  yPos += 8;
+  const cardWidth = (contentWidth - 10) / 3; // 3 cards with gaps
+  const cardHeight = 50;
+  const cardY = yPos;
   
-  // Score and classification row
   const riskClass = getRiskClassification(report.overallScore);
-  doc.setFillColor(241, 245, 249);
-  doc.roundedRect(marginLeft, yPos, contentWidth, 24, 3, 3, 'F');
+  
+  // Card 1: Score Geral
+  doc.setFillColor(30, 41, 59); // slate-800
+  doc.roundedRect(marginLeft, cardY, cardWidth, cardHeight, 3, 3, 'F');
+  
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(148, 163, 184);
+  doc.text('SCORE GERAL', marginLeft + cardWidth/2, cardY + 10, { align: 'center' });
   
   // Score circle
   doc.setFillColor(riskClass.color[0], riskClass.color[1], riskClass.color[2]);
-  doc.circle(marginLeft + 18, yPos + 12, 10, 'F');
+  doc.circle(marginLeft + cardWidth/2, cardY + 28, 12, 'F');
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.text(`${report.overallScore}`, marginLeft + 18, yPos + 15, { align: 'center' });
+  doc.text(`${report.overallScore}`, marginLeft + cardWidth/2, cardY + 31, { align: 'center' });
   
-  // Score label and classification
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text('Score de Compliance:', marginLeft + 35, yPos + 10);
+  // Risk label
+  doc.setFontSize(8);
   doc.setTextColor(riskClass.color[0], riskClass.color[1], riskClass.color[2]);
-  doc.text(riskClass.label, marginLeft + 85, yPos + 10);
+  doc.text(riskClass.label, marginLeft + cardWidth/2, cardY + 45, { align: 'center' });
   
-  // Stats on the right side
+  // Card 2: Verificações
+  const card2X = marginLeft + cardWidth + 5;
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(card2X, cardY, cardWidth, cardHeight, 3, 3, 'F');
+  
   doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  doc.text(`${report.totalChecks} verificacoes  |  ${report.passed} aprovadas  |  ${report.failed} falhas`, marginLeft + 35, yPos + 18);
-  
-  yPos += 32;
-
-  // ═══════════════════════════════════════════════════════════════
-  // EMAIL AUTHENTICATION STATUS - Horizontal compact
-  // ═══════════════════════════════════════════════════════════════
-  
-  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text('Autenticacao de Email:', marginLeft, yPos);
+  doc.setTextColor(148, 163, 184);
+  doc.text('VERIFICACOES', card2X + cardWidth/2, cardY + 10, { align: 'center' });
   
-  let emailX = marginLeft + 55;
+  // Stats with colored dots
+  const statsY = cardY + 20;
+  const statsData = [
+    { label: 'Total', value: report.totalChecks, color: [56, 189, 248] as [number, number, number] },
+    { label: 'Aprovadas', value: report.passed, color: [34, 197, 94] as [number, number, number] },
+    { label: 'Falhas', value: report.failed, color: [248, 113, 113] as [number, number, number] },
+  ];
+  
+  let statLineY = statsY;
+  for (const stat of statsData) {
+    doc.setFillColor(stat.color[0], stat.color[1], stat.color[2]);
+    doc.circle(card2X + 12, statLineY, 3, 'F');
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(stat.color[0], stat.color[1], stat.color[2]);
+    doc.text(String(stat.value), card2X + 20, statLineY + 1);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text(stat.label, card2X + 32, statLineY + 1);
+    statLineY += 10;
+  }
+  
+  // Card 3: Email Auth
+  const card3X = marginLeft + (cardWidth + 5) * 2;
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(card3X, cardY, cardWidth, cardHeight, 3, 3, 'F');
+  
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(148, 163, 184);
+  doc.text('EMAIL AUTH', card3X + cardWidth/2, cardY + 10, { align: 'center' });
+  
   const emailChecks = [
     { label: 'SPF', valid: emailAuth?.spf ?? false },
     { label: 'DKIM', valid: emailAuth?.dkim ?? false },
     { label: 'DMARC', valid: emailAuth?.dmarc ?? false },
   ];
   
+  let emailLineY = cardY + 20;
   for (const item of emailChecks) {
-    const color: [number, number, number] = item.valid ? [34, 197, 94] : [239, 68, 68];
+    const color: [number, number, number] = item.valid ? [34, 197, 94] : [248, 113, 113];
     doc.setFillColor(color[0], color[1], color[2]);
-    doc.circle(emailX, yPos - 1, 2.5, 'F');
-    doc.setFontSize(9);
+    doc.circle(card3X + 12, emailLineY, 3, 'F');
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text(item.label, card3X + 20, emailLineY + 1);
+    doc.setFontSize(9);
     doc.setTextColor(color[0], color[1], color[2]);
-    doc.text(`${item.label}: ${item.valid ? 'OK' : 'Ausente'}`, emailX + 5, yPos);
-    emailX += 45;
+    doc.text(item.valid ? 'Valido' : 'Ausente', card3X + cardWidth - 12, emailLineY + 1, { align: 'right' });
+    emailLineY += 10;
   }
   
-  yPos += 10;
+  yPos = cardY + cardHeight + 10;
 
   // ═══════════════════════════════════════════════════════════════
-  // DNS INFRASTRUCTURE - Vertical list format
+  // DNS INFRASTRUCTURE CARD
   // ═══════════════════════════════════════════════════════════════
   
   if (dnsSummary) {
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.roundedRect(marginLeft, yPos, contentWidth, 40, 3, 3, 'FD');
+    
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 41, 59);
-    doc.text('Infraestrutura DNS:', marginLeft, yPos);
-    yPos += 6;
+    doc.text('INFRAESTRUTURA DNS', marginLeft + 6, yPos + 8);
     
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
     
-    // SOA Primary
-    doc.text(`SOA Primary: ${dnsSummary.soaMname || 'N/A'}`, marginLeft + 4, yPos);
-    yPos += 5;
+    // Left column
+    doc.text(`SOA Primary:`, marginLeft + 6, yPos + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(dnsSummary.soaMname || 'N/A', marginLeft + 35, yPos + 18);
     
-    // Nameservers (can be long, so full line)
-    const nsText = dnsSummary.ns?.join(', ') || 'N/A';
-    doc.text(`Nameservers: ${nsText}`, marginLeft + 4, yPos);
-    yPos += 5;
+    // Nameservers - one per line to avoid horizontal overflow
+    doc.setFont('helvetica', 'normal');
+    doc.text('Nameservers:', marginLeft + 6, yPos + 26);
+    const nsServers = dnsSummary.ns || [];
+    if (nsServers.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      // Show max 3 nameservers in the card, each on its own spot
+      const nsDisplay = nsServers.slice(0, 3).join(', ');
+      const nsTruncated = nsDisplay.length > 60 ? nsDisplay.substring(0, 57) + '...' : nsDisplay;
+      doc.text(nsTruncated, marginLeft + 35, yPos + 26);
+      if (nsServers.length > 3) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`(+${nsServers.length - 3} mais)`, marginLeft + 35, yPos + 33);
+      }
+    }
     
-    // DNSSEC
+    // Right column
+    const rightColX = marginLeft + contentWidth/2 + 10;
+    doc.setFont('helvetica', 'normal');
+    doc.text('DNSSEC:', rightColX, yPos + 18);
     const dnssecActive = dnsSummary.dnssecHasDnskey && dnsSummary.dnssecHasDs;
     const dnssecColor: [number, number, number] = dnssecActive ? [34, 197, 94] : [239, 68, 68];
-    doc.text('DNSSEC: ', marginLeft + 4, yPos);
-    doc.setTextColor(dnssecColor[0], dnssecColor[1], dnssecColor[2]);
+    doc.setFillColor(dnssecColor[0], dnssecColor[1], dnssecColor[2]);
+    doc.circle(rightColX + 20, yPos + 16, 3, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.text(dnssecActive ? 'Ativo' : 'Inativo', marginLeft + 22, yPos);
+    doc.setTextColor(dnssecColor[0], dnssecColor[1], dnssecColor[2]);
+    doc.text(dnssecActive ? 'Ativo' : 'Inativo', rightColX + 26, yPos + 18);
     
-    yPos += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('SOA Contact:', rightColX, yPos + 26);
+    doc.setFont('helvetica', 'bold');
+    const contact = dnsSummary.soaContact || 'N/A';
+    const contactTrunc = contact.length > 35 ? contact.substring(0, 32) + '...' : contact;
+    doc.text(contactTrunc, rightColX + 28, yPos + 26);
+    
+    yPos += 48;
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // CATEGORY SUMMARY - Simple table
+  // CATEGORY SUMMARY TABLE - Full Width
   // ═══════════════════════════════════════════════════════════════
   
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
   doc.text('Resumo por Categoria', marginLeft, yPos);
-  yPos += 5;
+  yPos += 6;
 
   const categoryData = report.categories.map(cat => {
     const failCount = cat.checks.filter(c => c.status === 'fail').length;
@@ -1158,7 +1305,7 @@ export function exportExternalDomainReportToPDF(
       cat.name,
       `${cat.passRate}%`,
       `${cat.checks.filter(c => c.status === 'pass').length}/${cat.checks.length}`,
-      failCount > 0 ? `${failCount} ${failCount === 1 ? 'falha' : 'falhas'}` : '-'
+      failCount > 0 ? `${failCount} ${failCount === 1 ? 'falha' : 'falhas'}` : '0 falhas'
     ];
   });
 
@@ -1173,14 +1320,15 @@ export function exportExternalDomainReportToPDF(
       fontStyle: 'bold',
       fontSize: 9
     },
-    styles: { fontSize: 8, cellPadding: 2.5 },
+    styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: {
-      0: { cellWidth: 80 },
-      1: { cellWidth: 25, halign: 'center' },
+      0: { cellWidth: 90 },
+      1: { cellWidth: 30, halign: 'center' },
       2: { cellWidth: 30, halign: 'center' },
-      3: { cellWidth: 35, halign: 'center' },
+      3: { cellWidth: 32, halign: 'center' },
     },
     margin: { left: marginLeft, right: marginRight },
+    tableWidth: contentWidth,
     didParseCell: (data) => {
       if (data.section === 'body' && data.column.index === 0) {
         const catName = report.categories[data.row.index]?.name;
@@ -1193,123 +1341,151 @@ export function exportExternalDomainReportToPDF(
     },
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 10;
+  yPos = (doc as any).lastAutoTable.finalY + 12;
 
   // ═══════════════════════════════════════════════════════════════
-  // DETAILED CHECKS - Vertical Block Format (not table!)
-  // Each check gets its own block with full text
+  // CRITICAL/HIGH ISSUES FOUND
+  // ═══════════════════════════════════════════════════════════════
+  
+  const criticalHighIssues = report.categories
+    .flatMap(c => c.checks)
+    .filter(c => c.status === 'fail' && (c.severity === 'critical' || c.severity === 'high'));
+  
+  if (criticalHighIssues.length > 0) {
+    checkPageBreak(30);
+    
+    doc.setFillColor(254, 242, 242); // red-50
+    doc.setDrawColor(252, 165, 165); // red-300
+    doc.roundedRect(marginLeft, yPos, contentWidth, 10 + criticalHighIssues.length * 8, 3, 3, 'FD');
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(185, 28, 28);
+    doc.text(`Problemas Encontrados (${criticalHighIssues.length})`, marginLeft + 6, yPos + 7);
+    
+    let issueY = yPos + 14;
+    for (const issue of criticalHighIssues.slice(0, 8)) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(127, 29, 29);
+      const issueName = issue.name.length > 70 ? issue.name.substring(0, 67) + '...' : issue.name;
+      doc.text(`• ${issueName}`, marginLeft + 8, issueY);
+      issueY += 7;
+    }
+    if (criticalHighIssues.length > 8) {
+      doc.text(`  ... e mais ${criticalHighIssues.length - 8} problemas`, marginLeft + 8, issueY);
+    }
+    
+    yPos += 18 + Math.min(criticalHighIssues.length, 8) * 8;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // DETAILED CHECKS BY CATEGORY - Vertical Block Format
   // ═══════════════════════════════════════════════════════════════
   
   for (const category of report.categories) {
-    checkPageBreak(30);
+    checkPageBreak(35);
 
     const catColor = getDomainCategoryColor(category.name);
     
     // Category header bar
     doc.setFillColor(catColor[0], catColor[1], catColor[2]);
-    doc.roundedRect(marginLeft, yPos, contentWidth, 8, 2, 2, 'F');
+    doc.roundedRect(marginLeft, yPos, contentWidth, 10, 2, 2, 'F');
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text(category.name, marginLeft + 4, yPos + 5.5);
+    doc.text(category.name, marginLeft + 6, yPos + 7);
     
     // Pass rate on the right
     doc.setFontSize(9);
-    doc.text(`${category.passRate}%`, pageWidth - marginRight - 12, yPos + 5.5);
+    doc.text(`${category.passRate}%`, pageWidth - marginRight - 8, yPos + 7, { align: 'right' });
     
-    yPos += 12;
+    yPos += 16;
 
-    // Each check as a block
+    // Each check as a block with more vertical spacing
     for (const check of category.checks) {
-      checkPageBreak(25);
+      checkPageBreak(35);
       
       const statusColor = getStatusColor(check.status);
-      const severityColor = getSeverityColor(check.severity);
       
       // Status indicator circle
       doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
-      doc.circle(marginLeft + 4, yPos + 2, 2.5, 'F');
+      doc.circle(marginLeft + 5, yPos + 2, 3, 'F');
       
       // Check name
-      doc.setFontSize(9);
+      doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(30, 41, 59);
-      doc.text(check.name, marginLeft + 10, yPos + 3);
+      doc.text(check.name, marginLeft + 12, yPos + 4);
       
-      // Severity badge on the right
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(severityColor[0], severityColor[1], severityColor[2]);
-      doc.text(`[${getSeverityText(check.severity)}]`, pageWidth - marginRight - 20, yPos + 3);
-      
-      // Status text
+      // Status text on the right (no severity - as requested)
+      doc.setFontSize(9);
       doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
-      doc.text(getStatusText(check.status), pageWidth - marginRight - 2, yPos + 3, { align: 'right' });
+      doc.text(getStatusText(check.status), pageWidth - marginRight - 4, yPos + 4, { align: 'right' });
       
-      yPos += 6;
+      yPos += 10;
       
       // Description/Details - full width, can wrap
       const detailText = sanitizeTextForPDF(check.details || check.description || '');
       if (detailText && detailText !== '-') {
-        doc.setFontSize(8);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(71, 85, 105);
         
         // Split text to wrap within content width
-        const splitText = doc.splitTextToSize(detailText, contentWidth - 10);
-        for (const line of splitText.slice(0, 3)) { // Max 3 lines
-          checkPageBreak(5);
-          doc.text(line, marginLeft + 10, yPos);
-          yPos += 4;
+        const splitText = doc.splitTextToSize(detailText, contentWidth - 16);
+        for (const line of splitText.slice(0, 4)) { // Max 4 lines
+          checkPageBreak(6);
+          doc.text(line, marginLeft + 12, yPos);
+          yPos += 5;
         }
-        if (splitText.length > 3) {
-          doc.text('...', marginLeft + 10, yPos);
-          yPos += 4;
+        if (splitText.length > 4) {
+          doc.text('...', marginLeft + 12, yPos);
+          yPos += 5;
         }
       }
       
       // Recommendation if it's a failure
       if (check.status === 'fail' && check.recommendation) {
-        checkPageBreak(8);
-        doc.setFontSize(8);
+        checkPageBreak(12);
+        yPos += 2;
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(185, 28, 28);
-        doc.text('Recomendacao:', marginLeft + 10, yPos);
-        yPos += 4;
+        doc.text('Recomendacao:', marginLeft + 12, yPos);
+        yPos += 5;
         
         const recText = sanitizeTextForPDF(check.recommendation);
-        const splitRec = doc.splitTextToSize(recText, contentWidth - 15);
-        for (const line of splitRec.slice(0, 2)) { // Max 2 lines
-          checkPageBreak(5);
-          doc.text(line, marginLeft + 12, yPos);
-          yPos += 4;
+        const splitRec = doc.splitTextToSize(recText, contentWidth - 20);
+        for (const line of splitRec.slice(0, 3)) { // Max 3 lines
+          checkPageBreak(6);
+          doc.text(`  ${line}`, marginLeft + 12, yPos);
+          yPos += 5;
         }
       }
       
-      // Evidence summary (if available)
-      if (check.evidence && check.evidence.length > 0) {
-        checkPageBreak(8);
+      // Humanized evidence
+      const humanizedEvidence = humanizeEvidence(check);
+      if (humanizedEvidence.length > 0) {
+        checkPageBreak(10);
+        yPos += 2;
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(100, 116, 139);
         
-        const evidenceItems = check.evidence.slice(0, 3).map(e => 
-          `${e.label}: ${sanitizeTextForPDF(e.value)}`
-        );
-        
-        for (const ev of evidenceItems) {
+        for (const ev of humanizedEvidence.slice(0, 6)) {
           checkPageBreak(5);
-          const truncatedEv = ev.length > 100 ? ev.substring(0, 100) + '...' : ev;
-          doc.text(`• ${truncatedEv}`, marginLeft + 10, yPos);
-          yPos += 4;
+          const truncatedEv = ev.length > 90 ? ev.substring(0, 87) + '...' : ev;
+          doc.text(`• ${truncatedEv}`, marginLeft + 12, yPos);
+          yPos += 5;
         }
       }
       
-      yPos += 3; // Space between checks
+      yPos += 8; // More space between checks
     }
     
-    yPos += 5; // Space between categories
+    yPos += 8; // Space between categories
   }
 
   // ═══════════════════════════════════════════════════════════════
