@@ -59,7 +59,7 @@ function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
 
   return (
     <div className={cn(
-      "text-center px-4 py-2 rounded-lg border",
+      "text-center px-4 py-2 rounded-lg border min-w-[100px]",
       style.bg,
       style.border
     )}>
