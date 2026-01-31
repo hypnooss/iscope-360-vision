@@ -1,93 +1,95 @@
 
-## Diagnóstico (o que aconteceu e por quê)
-- O instalador chegou até a etapa **“Baixando pacote do agent: iscope-agent-latest.tar.gz”** e falhou com:
-  - `curl: (22) The requested URL returned error: 400`
-- Conferi o Supabase Storage e:
-  - o bucket `agent-releases` **existe e está público**
-  - porém a lista de objetos em `storage.objects` para `agent-releases` está **vazia** (nenhum arquivo foi enviado ainda)
-- Ou seja: **o instalador está correto**, mas **não há o arquivo** `iscope-agent-latest.tar.gz` no bucket; por isso o download falha.
+## Diagnóstico (o que está acontecendo agora)
+- O download/extract do tar.gz passou, e o instalador chegou em **“Configurando ambiente Python (venv)…”**.
+- Ele falhou ao instalar dependências porque o servidor está usando **Python 3.6** (Oracle Linux 8 costuma vir com python36).
+- As libs do `python-agent/requirements.txt` (ex.: `requests>=2.31.0`, `urllib3>=2.0.0`, `paramiko>=3.4.0`, `pysnmp>=6.0.0`) **não suportam Python 3.6** (requerem Python mais novo). Por isso o pip diz:
+  - `ERROR: No matching distribution found for requests>=2.31.0`
 
-## Objetivo do ajuste
-1) Tornar a falha mais “autoexplicativa” (mensagem clara e guiando o operador ao próximo passo).
-2) Exibir no painel (/agents) uma observação explícita: “antes de instalar, publique o pacote no bucket”.
-3) (Opcional, mas recomendado) Melhorar o fluxo de download para ser mais seguro e facilitar troubleshooting.
+## Decisão técnica recomendada (min version)
+- Recomendo padronizar **Python >= 3.9** para o agent em ambientes RHEL-like (Oracle Linux/RHEL/Rocky/Alma).
+  - Motivo: compatibilidade com libs atuais, menos dor com “No matching distribution”, mais segurança (Python 3.6 está EOL há anos).
+  - Python 3.8 também é possível, mas 3.9 tende a ser mais disponível/estável no OL8 e reduz atrito.
 
----
+## Ações imediatas (workaround para você destravar agora)
+1) No servidor OL8, instalar Python 3.9 e venv:
+   - Exemplo (pode variar conforme repos habilitados):
+     - `sudo dnf install -y python39 python39-pip`
+     - e/ou `sudo dnf install -y python39 python39-devel`
+2) Re-rodar o instalador com `--update` (para recriar o venv):
+   - `curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --update --activation-code "...."`
 
-## O que vamos implementar (mudanças no código)
-### A) Melhorar o instalador (Edge Function `agent-install`)
+Observação: hoje o script usa `python3 -m venv ...`, então mesmo com python39 instalado, pode continuar pegando o python antigo se `python3` ainda apontar para 3.6. A correção “de verdade” abaixo resolve isso.
+
+## Implementação (mudanças no código) — para corrigir de forma definitiva
+### 1) Melhorar o instalador para garantir Python suportado (RHEL-like)
 **Arquivo:** `supabase/functions/agent-install/index.ts`
 
-1. **Validar existência do pacote antes de tentar extrair**
-   - Fazer um `curl -fsSI` (HEAD) na URL do tar.gz e checar o status.
-   - Se não existir / falhar:
-     - imprimir uma mensagem curta e direta, por exemplo:
-       - “Não encontrei o pacote no Storage: agent-releases/iscope-agent-latest.tar.gz”
-       - “Faça upload do tar.gz no bucket agent-releases e rode novamente”
-       - “Link do Storage no Supabase: <URL>”
-     - sair com código != 0 (fail fast).
+**Mudanças planejadas:**
+- No caminho `dnf/yum`, instalar explicitamente Python novo e ferramentas de venv:
+  - Tentar instalar `python39` (fallback para `python38` se necessário).
+- Detectar versão efetiva antes de criar venv:
+  - Ex.: escolher automaticamente o executável disponível na ordem:
+    1. `python3.11` (se existir)
+    2. `python3.10`
+    3. `python3.9`
+    4. `python3.8`
+    5. `python3`
+  - Rodar `"$PYTHON_BIN" -c 'import sys; print(sys.version_info[:2])'` e validar `>= (3, 9)` (ou >= 3.8 se você preferir).
+- Fazer o `setup_venv()` usar o binário escolhido:
+  - `"$PYTHON_BIN" -m venv "$INSTALL_DIR/venv"`
+- Se não conseguir cumprir a versão mínima:
+  - Falhar com mensagem clara: “Python >= 3.9 é obrigatório” + comandos sugeridos para OL8.
 
-2. **Melhorar a forma de download (evitar ‘tar’ em arquivo incompleto)**
-   - Baixar para arquivo temporário e validar:
-     - `curl -fsSL "$url" -o "$tmp"`
-     - opcional: validar que não está vazio (`test -s "$tmp"`).
-   - Só então rodar `tar -xzf`.
+**Resultado esperado:**
+- Elimina o erro de “No matching distribution” causado por Python 3.6.
 
-3. **Melhorar mensagem de erro do curl**
-   - Usar `--fail-with-body` quando disponível, para facilitar debug em caso de erro HTTP.
+### 2) Ajustar a estratégia de empacotamento para reduzir dependência de internet/PyPI (venv “pré-empacotado”, do jeito certo)
+Você selecionou “Venv pré-empacotado”. Na prática, embutir um venv pronto no tar.gz pode ser frágil (depende de arquitetura, glibc, paths, etc.). A alternativa robusta (e muito usada) é:
 
-4. **(Opcional) Mensagens de “próximos passos”**
-   - Se baixar ok, seguir com o fluxo atual.
-   - Se falhar, orientar: “verifique se o arquivo existe e se o bucket é público”.
+**“Offline wheels bundle”**:
+- No processo de build do release, gerar uma pasta com **wheels** das dependências para Linux x86_64 e Python alvo (ex.: cp39):
+  - `wheels/` com `*.whl`
+- No tar.gz do agent, incluir:
+  - `main.py`, `agent/**`, `requirements.txt` (ou `requirements.lock`)
+  - `wheels/` (os wheels baixados)
+- No instalador:
+  - criar venv
+  - instalar dependências sem acessar a internet:
+    - `pip install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"`
 
-### B) Tornar o painel mais claro (UI em /agents)
-**Arquivo:** `src/components/agents/AgentInstallInstructions.tsx`
+**Benefícios:**
+- Instalação mais previsível e rápida
+- Funciona em servidores sem acesso ao PyPI (ou com proxy restrito)
+- Reduz variação de builds (“works on my machine”)
 
-1. Adicionar um bloco pequeno (bem visível) antes do comando:
-   - “Pré-requisito: publique o arquivo `iscope-agent-latest.tar.gz` no Supabase Storage (bucket `agent-releases`).”
-2. Adicionar link clicável para o Storage do Supabase (bucket):
-   - `https://supabase.com/dashboard/project/akbosdbyheezghieiefz/storage/buckets`
-3. Manter os botões de cópia como estão.
+**O que isso exige operacionalmente:**
+- Um “pipeline” de geração do tar.gz (na sua máquina ou CI) para:
+  - baixar/buildar wheels compatíveis
+  - empacotar tudo no `iscope-agent-latest.tar.gz`
+- Não precisamos mexer em Supabase para isso; é só produzir o artefato e subir no bucket.
 
-### C) (Opcional) Verificação automática no painel
-Se você quiser ir além (melhor UX), podemos:
-- Criar uma Edge Function leve tipo `agent-release-status` que:
-  - lista/checa se existe `iscope-agent-latest.tar.gz` no bucket usando **service role** (sem expor).
-  - retorna `{ exists: true/false }`.
-- A UI usa isso para mostrar:
-  - “Release publicada: OK” ou “Release não publicada: faça upload”.
+### 3) (Opcional) Ajustar `python-agent/requirements.txt` para compatibilidade (não recomendado como solução principal)
+Alternativa seria “travar” versões antigas compatíveis com Python 3.6.
+- Eu não recomendo, porque:
+  - aumenta risco de segurança
+  - aumenta o trabalho de manutenção
+  - é um caminho de regressão
 
-Isso evita que o usuário descubra o problema só depois de executar o comando no servidor.
-
----
-
-## O que você (operacional) precisa fazer agora, antes de retestar
-1) Gerar `iscope-agent-latest.tar.gz` com:
-   - `python-agent/main.py`
-   - `python-agent/agent/**`
-   - `python-agent/requirements.txt`
-2) Fazer upload para o bucket:
-   - bucket: `agent-releases`
-   - path/nome do arquivo: `iscope-agent-latest.tar.gz`
-3) Retestar o comando:
-   - `curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "...."`
-
----
-
-## Plano de teste (end-to-end)
-1) Confirmar que o arquivo existe via URL pública (do seu computador/servidor):
-   - `curl -I https://akbosdbyheezghieiefz.supabase.co/storage/v1/object/public/agent-releases/iscope-agent-latest.tar.gz`
-2) Rodar o instalador novamente no Oracle Linux.
-3) Verificar:
+## Plano de testes (end-to-end)
+1) No OL8, rodar:
+   - `python3 --version`
+   - `python3.9 --version` (se existir)
+2) Executar o instalador:
+   - `curl -fsSL .../agent-install | sudo bash -s -- --update --activation-code "..."`
+3) Validar serviço:
    - `systemctl status iscope-agent --no-pager`
-   - `journalctl -u iscope-agent -n 100 --no-pager`
-4) Confirmar no painel que o Agent ficou “Online” (last_seen atualizando).
+   - `journalctl -u iscope-agent -n 200 --no-pager`
+4) Confirmar no painel que o agent fica **Online** (last_seen atualizando).
 
----
+## Entregáveis (o que você verá mudar)
+- Instalação não quebra mais por Python 3.6.
+- Erros passam a ser explicativos (“instale python39”).
+- Opção de instalação “sem internet” (se adotarmos o bundle de wheels).
 
-## Riscos / Observações
-- O erro de SSSD (`DB version too old...`) apareceu no log do servidor, mas **não parece relacionado** ao instalador em si; o instalador falhou especificamente por falta do tar.gz no Storage.
-- Depois que o tar.gz existir, o próximo ponto de atenção costuma ser:
-  - Python/venv/requirements (compilação de deps) e permissões do systemd/service user.
-  - Vamos monitorar pelo `journalctl` se acontecer.
-
+## Observações importantes
+- O erro de SSSD/sss_cache que apareceu anteriormente é um ruído do sistema, não está ligado ao pip/requests. Vamos manter o foco no Python/deps.
