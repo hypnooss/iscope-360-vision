@@ -122,9 +122,27 @@ async function testPermission(accessToken: string, permission: string): Promise<
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
-      case 'MailboxSettings.Read':
-        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings';
+      case 'MailboxSettings.Read': {
+        // Primeiro buscar um usuário (mailboxSettings não funciona em queries de coleção)
+        const usersResp = await fetch(
+          'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        if (!usersResp.ok) {
+          await usersResp.text(); // consume body
+          console.log(`Permission ${permission} test failed: could not fetch users`);
+          return false;
+        }
+        const usersData = await usersResp.json();
+        const userId = usersData.value?.[0]?.id;
+        if (!userId) {
+          console.log(`Permission ${permission} test failed: no users found`);
+          return false;
+        }
+        // Agora testar mailboxSettings no usuário específico
+        url = `https://graph.microsoft.com/v1.0/users/${userId}/mailboxSettings`;
         break;
+      }
       case 'Mail.Read':
         // Test by fetching inbox rules from first user
         url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
