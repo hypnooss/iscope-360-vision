@@ -3,7 +3,7 @@ import { colors, radius, typography } from '../styles/pdfStyles';
 
 interface PDFStatusIconProps {
   status: 'pass' | 'fail' | 'warning' | 'pending';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | number;
 }
 
 const sizeMap = {
@@ -25,7 +25,14 @@ const styles = StyleSheet.create({
 });
 
 export function PDFStatusIcon({ status, size = 'md' }: PDFStatusIconProps) {
-  const dimensions = sizeMap[size];
+  // Handle both preset sizes and numeric sizes
+  let dimensions: { container: number; icon: number };
+  
+  if (typeof size === 'number') {
+    dimensions = { container: size, icon: Math.round(size * 0.6) };
+  } else {
+    dimensions = sizeMap[size];
+  }
   
   let bgColor: string;
   let textColor: string;

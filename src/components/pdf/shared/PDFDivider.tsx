@@ -1,14 +1,16 @@
 import { View, StyleSheet } from '@react-pdf/renderer';
 import { colors, spacing } from '../styles/pdfStyles';
+import type { Style } from '@react-pdf/types';
 
-interface PDFDividerProps {
+export interface PDFDividerProps {
   color?: string;
   thickness?: number;
   marginVertical?: number;
   width?: string | number;
+  style?: Style;
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   divider: {
     alignSelf: 'center',
   },
@@ -19,17 +21,19 @@ export function PDFDivider({
   thickness = 1,
   marginVertical = spacing.itemGap,
   width = '100%',
+  style,
 }: PDFDividerProps) {
   return (
     <View 
       style={[
-        styles.divider, 
+        baseStyles.divider, 
         { 
           backgroundColor: color,
           height: thickness,
           width,
           marginVertical,
-        }
+        },
+        style,
       ]} 
     />
   );
@@ -39,18 +43,20 @@ export function PDFDivider({
 export function PDFPrimaryDivider({ 
   marginVertical = spacing.itemGap,
   width = 120,
+  style,
 }: Omit<PDFDividerProps, 'color' | 'thickness'>) {
   return (
     <View 
       style={[
-        styles.divider, 
+        baseStyles.divider, 
         { 
           backgroundColor: colors.primary,
           height: 2,
           width,
           marginVertical,
           borderRadius: 1,
-        }
+        },
+        style,
       ]} 
     />
   );
