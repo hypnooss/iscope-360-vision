@@ -303,7 +303,7 @@ export function ParsesManagement({ deviceTypeId }: Props) {
           <p className="text-xs mt-1">Parses são usados para traduzir campos técnicos para labels legíveis.</p>
         </div>
       ) : (
-        <div className="border rounded-lg border-border/50 overflow-hidden">
+        <div className="border rounded-lg border-border/50 overflow-hidden bg-card">
           <Table>
             <TableHeader>
               <TableRow className="border-border/50">
