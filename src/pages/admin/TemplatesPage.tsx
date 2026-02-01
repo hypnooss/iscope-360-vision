@@ -94,7 +94,7 @@ export default function TemplatesPage() {
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="rounded-md border">
+          <div className="rounded-md border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>

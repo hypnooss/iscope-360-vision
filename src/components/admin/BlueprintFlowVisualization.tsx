@@ -53,6 +53,7 @@ interface ComplianceRule {
 interface BlueprintFlowVisualizationProps {
   blueprint: Blueprint;
   rules: ComplianceRule[];
+  hideSummary?: boolean;
 }
 
 // Category colors matching the compliance report
@@ -472,7 +473,7 @@ function CategorySection({ category, rules, steps }: CategorySectionProps) {
   );
 }
 
-export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVisualizationProps) {
+export function BlueprintFlowVisualization({ blueprint, rules, hideSummary }: BlueprintFlowVisualizationProps) {
   const steps = blueprint.collection_steps?.steps || [];
   
   // Group rules by category
@@ -521,24 +522,26 @@ export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVi
   return (
     <div className="space-y-4">
       {/* Summary Header */}
-      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pb-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4" />
-          <span><strong className="text-foreground">{rules.length}</strong> regras de compliance</span>
+      {!hideSummary && (
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pb-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            <span><strong className="text-foreground">{rules.length}</strong> regras de compliance</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-primary" />
+            <span><strong className="text-foreground">{activeRulesCount}</strong> ativas</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            <span><strong className="text-foreground">{sortedCategories.length}</strong> categorias</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Terminal className="w-4 h-4" />
+            <span><strong className="text-foreground">{steps.length}</strong> steps de coleta</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-primary" />
-          <span><strong className="text-foreground">{activeRulesCount}</strong> ativas</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Layers className="w-4 h-4" />
-          <span><strong className="text-foreground">{sortedCategories.length}</strong> categorias</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4" />
-          <span><strong className="text-foreground">{steps.length}</strong> steps de coleta</span>
-        </div>
-      </div>
+      )}
       
       {/* Description */}
       <p className="text-sm text-muted-foreground">
