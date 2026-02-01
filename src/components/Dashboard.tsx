@@ -102,6 +102,18 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
 
   const handleExportPDF = async () => {
     try {
+      // Load logo as base64 (same approach as ExternalDomainAnalysisReportPage)
+      const { default: logoIscope } = await import('@/assets/logo-iscope.png');
+      
+      const logoResponse = await fetch(logoIscope);
+      const logoBlob = await logoResponse.blob();
+      
+      const logoBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(logoBlob);
+      });
+      
       const filename = `iscope360-${sanitizePDFFilename(firewallName || 'firewall')}-${getPDFDateString()}.pdf`;
       
       await downloadPDF(
@@ -113,6 +125,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
             vendor: deviceVendor || undefined,
             clientName: clientName || undefined,
           }}
+          logoBase64={logoBase64}
           categoryConfigs={categoryConfigs}
         />,
         filename
