@@ -208,7 +208,7 @@ export default function CollectionsPage() {
         });
 
       if (error) throw error;
-      toast.success('Tipo de dispositivo criado');
+      toast.success('Tarefa criada');
       setCreateDialogOpen(false);
       resetForm();
       fetchData();
@@ -276,7 +276,7 @@ export default function CollectionsPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Coletas</h1>
           <p className="text-muted-foreground mt-1">
-            Gerencie tipos de dispositivos, blueprints de coleta e regras de compliance
+            Gerencie as tarefas, blueprints de coleta e regras de compliance
           </p>
         </div>
 
@@ -296,7 +296,7 @@ export default function CollectionsPage() {
                 <p className="text-sm text-muted-foreground">{config.description}</p>
                 <Button onClick={() => setCreateDialogOpen(true)} size="sm">
                   <Plus className="w-4 h-4 mr-2" />
-                  Novo Tipo de Dispositivo
+                  Nova Tarefa
                 </Button>
               </div>
               
@@ -307,14 +307,14 @@ export default function CollectionsPage() {
               ) : deviceTypes.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground border border-dashed border-border/50 rounded-lg">
                   <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Nenhum tipo de dispositivo cadastrado para esta categoria.</p>
+                  <p>Nenhuma tarefa cadastrada para esta categoria.</p>
                   <Button 
                     variant="outline" 
                     className="mt-4"
                     onClick={() => setCreateDialogOpen(true)}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Criar primeiro tipo
+                    Criar primeira tarefa
                   </Button>
                 </div>
               ) : (
@@ -334,11 +334,11 @@ export default function CollectionsPage() {
           ))}
         </Tabs>
 
-        {/* Create Device Type Dialog */}
+        {/* Create Task Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogContent className="border-border">
             <DialogHeader>
-              <DialogTitle>Novo Tipo de Dispositivo</DialogTitle>
+              <DialogTitle>Nova Tarefa</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4 px-6">
               <div className="space-y-2">
@@ -351,7 +351,7 @@ export default function CollectionsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Nome do Dispositivo *</Label>
+                <Label htmlFor="name">Nome da Tarefa *</Label>
                 <Input
                   id="name"
                   value={formData.name}

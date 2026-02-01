@@ -324,7 +324,7 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Configure as regras de compliance para este tipo de dispositivo.
+          Configure as regras de compliance para esta tarefa.
         </p>
         <Button onClick={openCreateDialog} size="sm" variant="outline">
           <Plus className="w-4 h-4 mr-2" />

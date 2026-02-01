@@ -159,7 +159,7 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
         .eq('id', deviceType.id);
 
       if (error) throw error;
-      toast.success('Tipo de dispositivo atualizado');
+      toast.success('Tarefa atualizada');
       setEditDeviceDialogOpen(false);
       onRefresh();
     } catch (error: unknown) {
@@ -179,7 +179,7 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
         .eq('id', deviceType.id);
 
       if (error) throw error;
-      toast.success('Tipo de dispositivo excluído');
+      toast.success('Tarefa excluída');
       setDeleteDeviceDialogOpen(false);
       onRefresh();
     } catch (error: unknown) {
@@ -304,11 +304,11 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
         </CardContent>
       </Card>
 
-      {/* Edit Device Type Dialog */}
+      {/* Edit Task Dialog */}
       <Dialog open={editDeviceDialogOpen} onOpenChange={setEditDeviceDialogOpen}>
         <DialogContent className="border-border">
           <DialogHeader>
-            <DialogTitle>Editar Tipo de Dispositivo</DialogTitle>
+            <DialogTitle>Editar Tarefa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -321,7 +321,7 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Nome do Dispositivo *</Label>
+              <Label htmlFor="name">Nome da Tarefa *</Label>
               <Input
                 id="name"
                 value={deviceFormData.name}
@@ -380,14 +380,14 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
         </DialogContent>
       </Dialog>
 
-      {/* Delete Device Type Dialog */}
+      {/* Delete Task Dialog */}
       <Dialog open={deleteDeviceDialogOpen} onOpenChange={setDeleteDeviceDialogOpen}>
         <DialogContent className="border-border">
           <DialogHeader>
             <DialogTitle>Confirmar Exclusão</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-4">
-            Tem certeza que deseja excluir <strong>{deviceType.vendor} - {deviceType.name}</strong>?
+            Tem certeza que deseja excluir a tarefa <strong>{deviceType.vendor} - {deviceType.name}</strong>?
             <br /><br />
             Isso também excluirá todos os blueprints, regras e parses associados.
             Esta ação não pode ser desfeita.
