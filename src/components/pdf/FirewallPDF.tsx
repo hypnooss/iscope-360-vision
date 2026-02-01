@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
   colors,
@@ -16,6 +16,7 @@ import {
   PDFFooter,
 } from './sections';
 import type { Issue, Check } from './sections';
+import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
 
 // Page styles
 const pageStyles = StyleSheet.create({
@@ -122,18 +123,34 @@ interface FirewallPDFProps {
     vendor?: string;
   };
   logoBase64?: string;
+  categoryConfigs?: CategoryConfig[];
 }
 
 export const FirewallPDF: React.FC<FirewallPDFProps> = ({
   report,
   deviceInfo,
   logoBase64,
+  categoryConfigs,
 }) => {
   const generatedDate = report.generatedAt instanceof Date
     ? report.generatedAt
     : new Date(report.generatedAt);
 
   const dateString = generatedDate.toLocaleString('pt-BR');
+
+  // Helper to get color for a category (from configs or fallback)
+  const getColorForCategory = (categoryName: string): string => {
+    const config = categoryConfigs?.find(c => c.name === categoryName);
+    if (config) {
+      return getColorHexByName(config.color);
+    }
+    // Fallback to default configs
+    const defaultConfig = DEFAULT_CATEGORY_CONFIGS[categoryName];
+    if (defaultConfig) {
+      return getColorHexByName(defaultConfig.color);
+    }
+    return colors.primary;
+  };
 
   // Extract all failed checks as issues
   const issues: Issue[] = report.categories
@@ -203,6 +220,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
 
       {/* Categories Pages */}
       {report.categories.map((category, index) => {
+        const config = getCategoryConfig(categoryConfigs, category.name);
         const checks: Check[] = category.checks.map((check) => ({
           name: check.name,
           status: check.status as Check['status'],
@@ -211,11 +229,14 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
           recommendation: check.recommendation,
         }));
 
+        // Get color from config or fallback
+        const color = getColorForCategory(category.name);
+
         return (
           <Page key={index} size="A4" style={pageStyles.page}>
             <View style={pageStyles.content}>
               <Text style={pageStyles.sectionTitle}>
-                {category.name}
+                {config.displayName}
               </Text>
               
               {/* Aviso de Segurança - apenas na primeira categoria */}
@@ -231,8 +252,9 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
               )}
               
               <PDFCategorySection
-                name={category.name}
+                name={config.displayName}
                 checks={checks}
+                color={color}
                 showPassedChecks={false}
               />
             </View>

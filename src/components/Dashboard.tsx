@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ComplianceReport, CVEInfo } from '@/types/compliance';
 import { ScoreGauge } from './ScoreGauge';
 import { StatCard } from './StatCard';
@@ -9,6 +9,7 @@ import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { FirewallPDF } from '@/components/pdf/FirewallPDF';
+import { CategoryConfig } from '@/hooks/useCategoryConfig';
 
 interface DashboardProps {
   report: ComplianceReport;
@@ -17,11 +18,22 @@ interface DashboardProps {
   firewallName?: string;
   firewallUrl?: string;
   deviceVendor?: string | null;
+  categoryConfigs?: CategoryConfig[];
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, categoryConfigs }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
+
+  // Sort categories by display_order from configs
+  const sortedCategories = useMemo(() => {
+    if (!report.categories) return [];
+    return [...report.categories].sort((a, b) => {
+      const configA = categoryConfigs?.find(c => c.name === a.name);
+      const configB = categoryConfigs?.find(c => c.name === b.name);
+      return (configA?.display_order ?? 999) - (configB?.display_order ?? 999);
+    });
+  }, [report.categories, categoryConfigs]);
 
   const handleCVEsLoaded = (cves: CVEInfo[]) => {
     setLoadedCVEs(cves);
@@ -33,12 +45,13 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
       
       await downloadPDF(
         <FirewallPDF
-          report={report}
+          report={{ ...report, categories: sortedCategories }}
           deviceInfo={{
             name: firewallName || 'Firewall',
             url: firewallUrl,
             vendor: deviceVendor || undefined,
           }}
+          categoryConfigs={categoryConfigs}
         />,
         filename
       );
@@ -217,9 +230,9 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           <h2 className="text-xl font-semibold text-foreground mb-4">
             Verificações por Categoria
           </h2>
-          {Array.isArray(report.categories) && report.categories.length > 0 ? (
-            report.categories.map((category, index) => (
-              <CategorySection key={category.name} category={category} index={index} />
+          {Array.isArray(sortedCategories) && sortedCategories.length > 0 ? (
+            sortedCategories.map((category, index) => (
+              <CategorySection key={category.name} category={category} index={index} categoryConfigs={categoryConfigs} />
             ))
           ) : (
             <div className="text-center py-8 text-muted-foreground">
