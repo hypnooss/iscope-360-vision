@@ -22,6 +22,7 @@ const AdministratorsPage = lazy(() => import("./pages/AdministratorsPage"));
 const SettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
 const CollectionsPage = lazy(() => import("./pages/admin/CollectionsPage"));
 const TemplatesPage = lazy(() => import("./pages/admin/TemplatesPage"));
+const TemplateDetailPage = lazy(() => import("./pages/admin/TemplateDetailPage"));
 
 // Firewall Module Pages - lazy loaded
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
@@ -117,6 +118,7 @@ const App = () => (
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/collections" element={<CollectionsPage />} />
                 <Route path="/templates" element={<TemplatesPage />} />
+                <Route path="/templates/:id" element={<TemplateDetailPage />} />
 
                 {/* Preview routes (temporary) */}
                 <Route path="/preview/domain-report" element={<DomainReportPreview />} />

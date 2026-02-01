@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,7 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Loader2 } from 'lucide-react';
 
 // Map device codes to icons
 const deviceIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -66,18 +66,15 @@ export default function TemplatesPage() {
 
   if (authLoading) {
     return (
-      <AppLayout>
-        <div className="p-6 space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      </AppLayout>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
     );
   }
 
   return (
     <AppLayout>
-      <div className="p-6 space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb
           items={[
             { label: 'Administração' },
@@ -85,15 +82,17 @@ export default function TemplatesPage() {
           ]}
         />
 
-        <div>
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Templates</h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1">
             Gerencie os templates de dispositivos disponíveis no sistema
           </p>
         </div>
 
         {isLoading ? (
-          <Skeleton className="h-64 w-full" />
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+          </div>
         ) : (
           <div className="rounded-md border">
             <Table>
@@ -113,13 +112,20 @@ export default function TemplatesPage() {
                   const categoryDisplay = categoryDisplayMap[template.category] || template.category;
 
                   return (
-                    <TableRow key={template.id}>
+                    <TableRow key={template.id} className="cursor-pointer hover:bg-muted/50">
                       <TableCell>
                         <div className="p-1.5 rounded bg-primary/10 w-fit">
                           <IconComponent className="w-4 h-4 text-primary" />
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium">{template.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link 
+                          to={`/templates/${template.id}`}
+                          className="hover:text-primary hover:underline"
+                        >
+                          {template.name}
+                        </Link>
+                      </TableCell>
                       <TableCell>{template.vendor}</TableCell>
                       <TableCell>
                         <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
