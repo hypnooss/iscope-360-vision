@@ -77,18 +77,18 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
     ? CATEGORY_HOVER_CLASSES[categoryColorKey] 
     : null;
   
-  // Apenas super_admin e super_suporte podem ver evidências
-  const canViewEvidence = role === 'super_admin' || role === 'super_suporte';
+  // Apenas super_admin e super_suporte podem ver endpoint e dados brutos
+  const canViewAdminDetails = role === 'super_admin' || role === 'super_suporte';
   
   // Normalize status: 'warn' -> 'warning', ensure valid status
   const rawStatus = check.status as string;
   const normalizedStatus = (rawStatus === 'warn' ? 'warning' : rawStatus) as ComplianceStatus;
   const config = statusConfig[normalizedStatus] || statusConfig.pending;
   const StatusIcon = config.icon;
-  const hasEvidence = canViewEvidence && !!check.evidence && check.evidence.length > 0;
-  const hasAdminDetails = canViewEvidence && (!!check.apiEndpoint || !!check.rawData || hasEvidence);
-  const hasUserDetails = !!check.details || !!check.description || !!check.recommendation;
-  const canExpand = hasAdminDetails || hasUserDetails;
+  const hasEvidence = !!check.evidence && check.evidence.length > 0;
+  const hasDetails = !!check.details || !!check.description;
+  const hasAdminDetails = canViewAdminDetails && (!!check.apiEndpoint || !!check.rawData);
+  const canExpand = hasDetails || hasEvidence || hasAdminDetails || !!check.recommendation;
 
   return (
     <div 
@@ -142,18 +142,19 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
         )}
       </div>
 
-      {/* Evidências expandidas */}
+      {/* Conteúdo expandido - estrutura unificada para todos os variants */}
       {isExpanded && canExpand && (
         <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
-          {canViewEvidence && check.apiEndpoint && (
+          {/* Endpoint consultado - apenas para Super Admin */}
+          {canViewAdminDetails && check.apiEndpoint && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <ExternalLink className="w-3 h-3" />
               <span>Endpoint consultado: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{check.apiEndpoint}</code></span>
             </div>
           )}
 
-          {/* Domínios Externos: "ANÁLISE EFETUADA" visível para todos; sem lista de evidências */}
-          {variant === 'external_domain' && (check.details || check.description) && (
+          {/* ANÁLISE EFETUADA - visível para todos */}
+          {(check.details || check.description) && (
             <div className="space-y-2">
               <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <FileText className="w-3 h-3" />
@@ -165,8 +166,8 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
             </div>
           )}
 
-          {/* Domínios Externos: "EVIDÊNCIAS COLETADAS" visível para todos */}
-          {variant === 'external_domain' && check.evidence && check.evidence.length > 0 && (
+          {/* EVIDÊNCIAS COLETADAS - visível para todos */}
+          {check.evidence && check.evidence.length > 0 && (
             <div className="space-y-2">
               <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <FileText className="w-3 h-3" />
@@ -180,43 +181,8 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
             </div>
           )}
 
-          {/* Default: mantém box de detalhes + evidências restritas */}
-          {variant !== 'external_domain' && (check.details || check.description) && (
-            <div className="bg-muted/30 rounded-md p-3 border border-border/30">
-              <span className="text-xs font-medium text-muted-foreground block mb-1">Detalhes</span>
-              <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
-            </div>
-          )}
-          
-          {variant !== 'external_domain' && canViewEvidence && (
-            <div className="space-y-2">
-              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <FileText className="w-3 h-3" />
-                Evidências Coletadas
-              </h5>
-              
-              {check.evidence && check.evidence.length > 0 ? (
-                check.evidence?.map((item, index) => (
-                  <div key={index} className="bg-muted/30 rounded-md p-3 border border-border/30">
-                    <span className="text-xs font-medium text-muted-foreground block mb-1">{item.label}</span>
-                    {item.type === 'code' ? (
-                      <code className="text-xs text-primary bg-background/50 px-2 py-1 rounded block overflow-x-auto">
-                        {item.value}
-                      </code>
-                    ) : (
-                      <p className="text-sm text-foreground">{item.value}</p>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-3 border border-border/30">
-                  Nenhuma evidência disponível para este item.
-                </div>
-              )}
-            </div>
-          )}
-
-          {canViewEvidence && check.rawData && Object.keys(check.rawData).length > 0 && (
+          {/* Ver dados brutos (JSON) - apenas para Super Admin */}
+          {canViewAdminDetails && check.rawData && Object.keys(check.rawData).length > 0 && (
             <details className="text-xs">
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1">
                 <Code className="w-3 h-3" />
