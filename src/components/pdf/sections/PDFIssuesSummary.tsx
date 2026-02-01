@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   issueItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: spacing.tight,
+    marginBottom: 12,
     paddingLeft: 4,
   },
   bullet: {

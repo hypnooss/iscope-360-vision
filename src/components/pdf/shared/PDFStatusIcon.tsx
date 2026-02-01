@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet } from '@react-pdf/renderer';
-import { colors, radius, typography } from '../styles/pdfStyles';
+import { View, StyleSheet } from '@react-pdf/renderer';
+import { colors, radius } from '../styles/pdfStyles';
 
 interface PDFStatusIconProps {
   status: 'pass' | 'fail' | 'warning' | 'pending';
@@ -7,83 +7,49 @@ interface PDFStatusIconProps {
 }
 
 const sizeMap = {
-  sm: { container: 12, icon: 8 },
-  md: { container: 16, icon: 10 },
-  lg: { container: 20, icon: 12 },
+  sm: 8,
+  md: 12,
+  lg: 16,
 };
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  circle: {
     borderRadius: radius.full,
-  },
-  icon: {
-    fontFamily: typography.bold,
-    textAlign: 'center',
   },
 });
 
 export function PDFStatusIcon({ status, size = 'md' }: PDFStatusIconProps) {
   // Handle both preset sizes and numeric sizes
-  let dimensions: { container: number; icon: number };
-  
-  if (typeof size === 'number') {
-    dimensions = { container: size, icon: Math.round(size * 0.6) };
-  } else {
-    dimensions = sizeMap[size];
-  }
+  const dimension = typeof size === 'number' ? size : sizeMap[size];
   
   let bgColor: string;
-  let textColor: string;
-  let icon: string;
 
   switch (status) {
     case 'pass':
-      bgColor = colors.successBg;
-      textColor = colors.success;
-      icon = '✓';
+      bgColor = colors.success;
       break;
     case 'fail':
-      bgColor = colors.dangerBg;
-      textColor = colors.danger;
-      icon = '✗';
+      bgColor = colors.danger;
       break;
     case 'warning':
-      bgColor = colors.warningBg;
-      textColor = colors.warning;
-      icon = '!';
+      bgColor = colors.warning;
       break;
     case 'pending':
     default:
-      bgColor = colors.infoBg;
-      textColor = colors.info;
-      icon = '?';
+      bgColor = colors.info;
       break;
   }
 
   return (
     <View 
       style={[
-        styles.container, 
+        styles.circle, 
         { 
           backgroundColor: bgColor,
-          width: dimensions.container,
-          height: dimensions.container,
+          width: dimension,
+          height: dimension,
         }
       ]}
-    >
-      <Text 
-        style={[
-          styles.icon, 
-          { 
-            color: textColor,
-            fontSize: dimensions.icon,
-          }
-        ]}
-      >
-        {icon}
-      </Text>
-    </View>
+    />
   );
 }

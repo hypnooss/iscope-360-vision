@@ -16,7 +16,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.cardPadding,
     marginBottom: spacing.itemGap,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: colors.border,
     borderLeftWidth: 4,
   },
@@ -46,34 +46,31 @@ const styles = StyleSheet.create({
   checksList: {
     paddingLeft: 8,
   },
-  // Compact check row for passed checks
-  checkRowCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.tight,
-    paddingHorizontal: spacing.itemGap,
-    gap: 8,
-  },
-  checkNameCompact: {
-    fontSize: typography.bodySmall,
-    color: colors.textSecondary,
-    flex: 1,
-  },
   // Expanded check item for failed checks
-  checkItemExpanded: {
+  checkItemFailed: {
     backgroundColor: colors.dangerBg,
     borderRadius: radius.md,
     padding: spacing.cardPadding,
     marginBottom: spacing.itemGap,
-    borderWidth: 1,
-    borderColor: colors.borderDanger,
+    borderWidth: 2,
+    borderColor: colors.danger,
     borderLeftWidth: 3,
     borderLeftColor: colors.danger,
+  },
+  // Individual check item for passed checks
+  checkItemPassed: {
+    backgroundColor: colors.successBg,
+    borderRadius: radius.md,
+    padding: spacing.cardPadding,
+    marginBottom: spacing.itemGap,
+    borderWidth: 2,
+    borderColor: colors.success,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.success,
   },
   checkHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.tight,
   },
   checkName: {
     fontSize: typography.body,
@@ -87,7 +84,7 @@ const styles = StyleSheet.create({
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
     lineHeight: 1.4,
-    marginBottom: spacing.tight,
+    marginTop: spacing.tight,
     marginLeft: 22,
   },
   recommendation: {
@@ -102,39 +99,6 @@ const styles = StyleSheet.create({
   recommendationLabel: {
     fontFamily: typography.bold,
     color: colors.warning,
-  },
-  passedSection: {
-    backgroundColor: colors.successBg,
-    borderRadius: radius.md,
-    padding: spacing.itemGap,
-    marginTop: spacing.itemGap,
-    borderWidth: 1,
-    borderColor: colors.success,
-    borderLeftWidth: 3,
-  },
-  passedTitle: {
-    fontSize: typography.bodySmall,
-    fontFamily: typography.bold,
-    color: colors.success,
-    marginBottom: spacing.tight,
-  },
-  passedList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  passedItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    backgroundColor: colors.pageBg,
-    borderRadius: radius.sm,
-  },
-  passedItemText: {
-    fontSize: typography.caption,
-    color: colors.textSecondary,
   },
 });
 
@@ -169,9 +133,9 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
   const rateColor = getScoreColor(passRate);
 
   return (
-    <View style={styles.container} wrap={false}>
+    <View style={styles.container}>
       {/* Category Header */}
-      <View style={[styles.header, { borderLeftColor: color }]}>
+      <View style={[styles.header, { borderLeftColor: color }]} wrap={false}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>{name}</Text>
         </View>
@@ -188,7 +152,7 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
       {/* Failed Checks (expanded with details) */}
       <View style={styles.checksList}>
         {failedChecks.map((check, index) => (
-          <View key={index} style={styles.checkItemExpanded} wrap={false}>
+          <View key={`fail-${index}`} style={styles.checkItemFailed} wrap={false}>
             <View style={styles.checkHeader}>
               <PDFStatusIcon status={check.status} size={14} />
               <Text style={styles.checkName}>{check.name}</Text>
@@ -203,7 +167,7 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
 
             {check.recommendation && (
               <Text style={styles.recommendation}>
-                <Text style={styles.recommendationLabel}>Recomendação: </Text>
+                <Text style={styles.recommendationLabel}>Recomendacao: </Text>
                 {check.recommendation}
               </Text>
             )}
@@ -211,20 +175,22 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
         ))}
       </View>
 
-      {/* Passed Checks (compact list) */}
+      {/* Passed Checks (individual cards) */}
       {showPassedChecks && passedChecks.length > 0 && (
-        <View style={styles.passedSection}>
-          <Text style={styles.passedTitle}>
-            Verificações Aprovadas ({passedChecks.length})
-          </Text>
-          <View style={styles.passedList}>
-            {passedChecks.map((check, index) => (
-              <View key={index} style={styles.passedItem}>
-                <PDFStatusIcon status="pass" size={8} />
-                <Text style={styles.passedItemText}>{check.name}</Text>
+        <View style={styles.checksList}>
+          {passedChecks.map((check, index) => (
+            <View key={`pass-${index}`} style={styles.checkItemPassed} wrap={false}>
+              <View style={styles.checkHeader}>
+                <PDFStatusIcon status="pass" size={14} />
+                <Text style={styles.checkName}>{check.name}</Text>
               </View>
-            ))}
-          </View>
+              {check.description && (
+                <Text style={styles.checkDescription}>
+                  {check.description}
+                </Text>
+              )}
+            </View>
+          ))}
         </View>
       )}
     </View>
