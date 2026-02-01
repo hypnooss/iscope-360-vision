@@ -1,157 +1,199 @@
 
 
-## Reformulação do Blueprint Flow Visualization
+## Reestruturação da Tela de Coletas (Administração)
 
-### Problemas Identificados
+### Objetivo
 
-1. **Excesso de aninhamento**: Cards dentro de cards dentro de tabelas dentro de accordions
-2. **Cores inadequadas para dark mode**: O card do step (print 2) usa `bg-cyan-50` com texto escuro, que em dark mode fica praticamente invisível
-3. **Layout horizontal confuso**: Step → Seta → Regras lado a lado consome muito espaço horizontal e fica apertado
-4. **Informação densa demais**: Cada regra mostra código, badge, nome, categoria E lógica de avaliação tudo ao mesmo tempo
+Reorganizar a interface da tela "Administração > Coletas" para eliminar aninhamentos excessivos e criar uma estrutura clara com 4 painéis distintos:
+
+1. **Fluxo de Análise** - Visualização unificada do fluxo completo
+2. **Blueprints** - CRUD de blueprints
+3. **Regras de Compliance** - CRUD de regras
+4. **Parses** - CRUD de traduções/humanizações (novo!)
+
+---
+
+### Problema Atual
+
+A estrutura atual tem muitos níveis de aninhamento:
+
+```text
+Aba (Domínios Externos)
+  └── DeviceType Card (iScope - Domínio Externo)
+        └── Accordion (Blueprints) ← Nível 1
+              └── Tabela
+                    └── Expandir Blueprint ← Nível 2
+                          └── Fluxo de Coleta → Regras ← Nível 3
+        └── Accordion (Regras) ← Separado
+```
+
+---
 
 ### Nova Estrutura Proposta
 
-Substituir o layout horizontal por um **layout vertical em timeline**, mais limpo e legível:
-
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│  📊 7 steps de coleta  •  23 regras de compliance  •  23 ativas         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─ COLETA ──────────────────────────────────────────────────────────┐ │
-│  │                                                                     │ │
-│  │  ● ns_records                                                       │ │
-│  │    DNS Query • Consulta NS                                          │ │
-│  │                                                                     │ │
-│  │    Regras: DNS-003 (Médio) • DNS-004 (Médio)                       │ │
-│  │                                                                     │ │
-│  ├─────────────────────────────────────────────────────────────────────│ │
-│  │                                                                     │ │
-│  │  ● mx_records                                                       │ │
-│  │    DNS Query • Consulta MX                                          │ │
-│  │                                                                     │ │
-│  │    Regras: MX-001 (Alto) • MX-002 (Médio) • MX-003 (Baixo) • +1    │ │
-│  │                                                                     │ │
-│  ├─────────────────────────────────────────────────────────────────────│ │
-│  │                                                                     │ │
-│  │  ● spf_record                                                       │ │
-│  │    DNS Query • Consulta TXT (SPF)                                   │ │
-│  │                                                                     │ │
-│  │    Regras: SPF-001 (Alto) • SPF-002 (Médio) • SPF-003 (Médio)      │ │
-│  │                                                                     │ │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Administração > Coletas                                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  [Firewalls] [Microsoft 365] [Domínios Externos]                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  iScope - Domínio Externo  external_domain  [Ativo]        [Editar][X] │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│  ┌─ Tabs horizontais dentro do Device Type ─────────────────────────────────┐
+│  │  [Fluxo de Análise] [Blueprints] [Regras de Compliance] [Parses]        │
+│  └──────────────────────────────────────────────────────────────────────────┘
+│                                                                              │
+│  ╔══════════════════════════════════════════════════════════════════════════╗
+│  ║  TAB 1: FLUXO DE ANÁLISE                                                 ║
+│  ║  ────────────────────────────────────────────────────────────────────────║
+│  ║                                                                          ║
+│  ║  ┌─ Step: ns_records (DNS Query) ────────────────────────────────────┐  ║
+│  ║  │  Consulta NS                                                       │  ║
+│  ║  │  ┌─ Regras vinculadas ─────────────────────────────────────────┐  │  ║
+│  ║  │  │  DNS-003 (Médio) • DNS-004 (Médio)                         │  │  ║
+│  ║  │  └─────────────────────────────────────────────────────────────┘  │  ║
+│  ║  │  ┌─ Parses vinculados ─────────────────────────────────────────┐  │  ║
+│  ║  │  │  ns_records.host → "Nameserver"                            │  │  ║
+│  ║  │  │  ns_records.data.records → Lista de NS                     │  │  ║
+│  ║  │  └─────────────────────────────────────────────────────────────┘  │  ║
+│  ║  └────────────────────────────────────────────────────────────────────┘  ║
+│  ║                                                                          ║
+│  ║  ┌─ Step: mx_records (DNS Query) ────────────────────────────────────┐  ║
+│  ║  │  ...                                                               │  ║
+│  ║  └────────────────────────────────────────────────────────────────────┘  ║
+│  ║                                                                          ║
+│  ╚══════════════════════════════════════════════════════════════════════════╝
+│                                                                              │
+│  ╔══════════════════════════════════════════════════════════════════════════╗
+│  ║  TAB 2: BLUEPRINTS                                                       ║
+│  ║  ────────────────────────────────────────────────────────────────────────║
+│  ║  [+ Novo Blueprint]                                                       ║
+│  ║  ┌────────────────────────────────────────────────────────────────────┐  ║
+│  ║  │  Nome           │ Versão │ Steps │ Status │ Ações                 │  ║
+│  ║  │  External DNS   │ any    │ 7     │ Ativo  │ [👁] [📋] [✏] [🗑]     │  ║
+│  ║  └────────────────────────────────────────────────────────────────────┘  ║
+│  ╚══════════════════════════════════════════════════════════════════════════╝
+│                                                                              │
+│  ╔══════════════════════════════════════════════════════════════════════════╗
+│  ║  TAB 3: REGRAS DE COMPLIANCE                                             ║
+│  ║  ────────────────────────────────────────────────────────────────────────║
+│  ║  [+ Nova Regra]                                                           ║
+│  ║  ┌────────────────────────────────────────────────────────────────────┐  ║
+│  ║  │  Código  │ Nome                    │ Categoria │ Sev.  │ Ações    │  ║
+│  ║  │  DNS-001 │ DNSSEC Habilitado       │ DNS       │ Alto  │ [👁][✏]  │  ║
+│  ║  │  SPF-001 │ SPF Configurado         │ SPF       │ Alto  │ [👁][✏]  │  ║
+│  ║  └────────────────────────────────────────────────────────────────────┘  ║
+│  ╚══════════════════════════════════════════════════════════════════════════╝
+│                                                                              │
+│  ╔══════════════════════════════════════════════════════════════════════════╗
+│  ║  TAB 4: PARSES (NOVO!)                                                   ║
+│  ║  ────────────────────────────────────────────────────────────────────────║
+│  ║  Traduções e formatações para humanizar dados técnicos                    ║
+│  ║  [+ Novo Parse]                                                           ║
+│  ║  ┌────────────────────────────────────────────────────────────────────┐  ║
+│  ║  │  Campo Origem      │ Label Exibido    │ Tipo  │ Ações              │  ║
+│  ║  │  data.has_dnskey   │ Status DNSSEC    │ bool  │ [✏] [🗑]            │  ║
+│  ║  │  data.mname        │ Servidor Primário│ text  │ [✏] [🗑]            │  ║
+│  ║  │  data.refresh      │ Tempo de Refresh │ time  │ [✏] [🗑]            │  ║
+│  ║  └────────────────────────────────────────────────────────────────────┘  ║
+│  ╚══════════════════════════════════════════════════════════════════════════╝
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Características do Novo Design
+---
 
-1. **Layout Vertical em Lista**
-   - Cada step é uma linha/item na lista
-   - Menos aninhamento visual
-   - Mais espaço para respirar
+### Nova Tabela: `evidence_parses`
 
-2. **Cores Adaptadas ao Dark Mode**
-   - Usar variáveis CSS do tema (`bg-card`, `border-border`, `text-foreground`)
-   - Badges de severidade com cores já padronizadas no projeto
-   - Indicadores de tipo de executor com cores sutis (borda esquerda colorida apenas)
+Para mover os parses (traduções) do código para o banco de dados:
 
-3. **Regras Compactas Inline**
-   - Exibir regras como badges/chips em linha única
-   - Mostrar código + severidade em formato compacto
-   - Expandir detalhes apenas ao clicar
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `id` | uuid | PK |
+| `device_type_id` | uuid | FK para device_types |
+| `source_field` | text | Campo de origem (ex: `data.has_dnskey`) |
+| `display_label` | text | Label humanizado (ex: "Status DNSSEC") |
+| `parse_type` | enum | Tipo de parse: `text`, `boolean`, `time`, `list`, `json` |
+| `value_transformations` | jsonb | Mapeamento de valores (ex: `{true: "Ativado", false: "Desativado"}`) |
+| `format_options` | jsonb | Opções de formatação (ex: time_unit: "seconds") |
+| `is_hidden` | boolean | Se deve ocultar este campo na UI |
+| `display_order` | integer | Ordem de exibição |
+| `is_active` | boolean | Se está ativo |
+| `created_at` | timestamptz | Data de criação |
+| `updated_at` | timestamptz | Data de atualização |
 
-4. **Interação Opcional**
-   - Hover para ver mais detalhes do step
-   - Clique opcional para expandir e ver todas as regras
-
-### Implementação Técnica
-
-**Arquivo a modificar:** `src/components/admin/BlueprintFlowVisualization.tsx`
-
-```typescript
-// Novo design: lista vertical simples
-<div className="space-y-2">
-  {steps.map((step) => (
-    <div 
-      key={step.id}
-      className="flex items-start gap-4 p-4 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors"
-    >
-      {/* Indicador visual do tipo de executor */}
-      <div className={cn(
-        "w-1 self-stretch rounded-full",
-        executorColors[step.executor] // Apenas borda colorida
-      )} />
-      
-      <div className="flex-1 min-w-0">
-        {/* Nome do Step + Tipo */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-sm font-medium text-foreground">
-            {step.id}
-          </span>
-          <Badge variant="outline" className="text-xs">
-            {executorLabel[step.executor]}
-          </Badge>
-        </div>
-        
-        {/* Descrição/Config */}
-        <p className="text-xs text-muted-foreground mb-2">
-          {getStepDescription(step)}
-        </p>
-        
-        {/* Regras em linha */}
-        <div className="flex flex-wrap gap-1.5">
-          {linkedRules.map((rule) => (
-            <Badge 
-              key={rule.id}
-              className={cn(
-                "text-xs cursor-default",
-                severityColors[rule.severity]
-              )}
-              title={rule.name}
-            >
-              {rule.code}
-            </Badge>
-          ))}
-        </div>
-      </div>
-    </div>
-  ))}
-</div>
+**Exemplo de dados:**
+```json
+{
+  "source_field": "data.has_dnskey",
+  "display_label": "Status DNSSEC",
+  "parse_type": "boolean",
+  "value_transformations": {
+    "true": "DNSSEC Ativado",
+    "false": "DNSSEC Desativado"
+  }
+}
 ```
 
-### Paleta de Cores (Dark Mode Friendly)
+---
 
-| Elemento | Cor Atual (Problema) | Nova Cor |
-|----------|---------------------|----------|
-| Card do Step | `bg-cyan-50` (invisível em dark) | `bg-card` (tema) |
-| Texto do Step | `text-foreground` | `text-foreground` (ok) |
-| Borda esquerda DNS | `border-cyan-300` | `bg-cyan-500` |
-| Borda esquerda HTTP | `border-blue-300` | `bg-blue-500` |
-| Borda esquerda SSH | `border-emerald-300` | `bg-emerald-500` |
-| Badge Crítico | `bg-red-100 text-red-600` | `bg-red-500/20 text-red-400` |
-| Badge Alto | `bg-orange-100 text-orange-600` | `bg-orange-500/20 text-orange-400` |
-| Badge Médio | `bg-yellow-100 text-yellow-600` | `bg-yellow-500/20 text-yellow-400` |
-| Badge Baixo | `bg-blue-100 text-blue-600` | `bg-blue-500/20 text-blue-400` |
+### Componentes a Criar/Modificar
 
-### Opcional: Modo Expandido
+#### 1. Nova Migração SQL
+**Criar:** `supabase/migrations/xxx_create_evidence_parses.sql`
+- Criar tabela `evidence_parses`
+- Migrar dados hardcoded do `EvidenceDisplay.tsx` para a tabela
+- Criar RLS policies
 
-Adicionar um toggle para alternar entre:
-- **Modo Compacto** (padrão): Lista vertical com regras inline
-- **Modo Detalhado**: Expande para mostrar lógica de avaliação de cada regra
+#### 2. Refatorar `DeviceTypeCard.tsx`
+**Modificar:** `src/components/admin/DeviceTypeCard.tsx`
+- Substituir Accordion por Tabs horizontais
+- Reorganizar para 4 abas:
+  - Tab 1: Fluxo de Análise (visualização)
+  - Tab 2: Blueprints (CRUD)
+  - Tab 3: Regras de Compliance (CRUD)
+  - Tab 4: Parses (CRUD - novo!)
+- Remover aninhamentos excessivos
 
-### Resumo das Alterações
+#### 3. Atualizar `BlueprintFlowVisualization.tsx`
+**Modificar:** `src/components/admin/BlueprintFlowVisualization.tsx`
+- Adicionar visualização de parses vinculados a cada step
+- Mostrar relação step → regras → parses
 
-1. **`src/components/admin/BlueprintFlowVisualization.tsx`**
-   - Reescrever layout de horizontal para vertical
-   - Atualizar cores para funcionar em dark mode
-   - Simplificar exibição de regras (badges inline)
-   - Remover cards aninhados
-   - Adicionar tooltip com detalhes das regras
+#### 4. Criar componente de CRUD para Parses
+**Criar:** `src/components/admin/ParsesManagement.tsx`
+- Tabela de parses
+- Diálogos de criar/editar/excluir
+- Formulário para configurar traduções
 
-2. **Benefícios**
-   - Menos aninhamento = mais clareza visual
-   - Cores visíveis em dark mode
-   - Informação hierárquica e escaneável
-   - Mais espaço para respirar entre elementos
+#### 5. Atualizar `EvidenceDisplay.tsx`
+**Modificar:** `src/components/compliance/EvidenceDisplay.tsx`
+- Buscar parses do banco de dados em vez de usar mapeamento hardcoded
+- Manter fallback para parses não encontrados
+- Criar hook `useEvidenceParses()` para cache
+
+---
+
+### Benefícios
+
+1. **Menos aninhamento** - Interface mais limpa e navegável
+2. **Separação de responsabilidades** - Cada aba tem um propósito claro
+3. **Parses no banco** - Administradores podem editar traduções sem código
+4. **Visão unificada** - Tab "Fluxo de Análise" mostra todo o pipeline
+5. **Escalável** - Mesma estrutura para Firewall, M365, etc.
+
+---
+
+### Ordem de Implementação
+
+1. Criar migração SQL para tabela `evidence_parses`
+2. Popular tabela com dados do `EvidenceDisplay.tsx`
+3. Criar componente `ParsesManagement.tsx`
+4. Refatorar `DeviceTypeCard.tsx` para usar Tabs
+5. Atualizar `BlueprintFlowVisualization.tsx` para incluir parses
+6. Atualizar `EvidenceDisplay.tsx` para buscar do banco
+7. Testar o fluxo completo
 
