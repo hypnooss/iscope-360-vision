@@ -1,87 +1,121 @@
 
 
-## Linha Decorativa Degradê no Header do PDF
+## Alinhamento dos Elementos do Header + Background Cyber-Grid
 
-### Objetivo
-Adicionar uma linha horizontal branca com efeito degradê (transparente nas pontas → branco no centro → transparente nas pontas) entre a linha do título "iScope 360" e a linha de informações do relatório.
+### Problema Atual
+1. O logo está posicionado com `right: 0` no container, mas o container tem padding, então ele fica desalinhado com onde a linha degradê termina
+2. Os textos da segunda linha também não estão alinhados com os limites da linha
+3. Falta o background cyber-grid que aparece na web
 
-### Viabilidade Técnica
-O `@react-pdf/renderer` suporta gradientes SVG nativamente através dos componentes:
-- `Svg` - Container SVG
-- `Defs` - Definições de gradientes
-- `LinearGradient` - Gradiente linear
-- `Stop` - Pontos de cor do gradiente
-- `Rect` - Retângulo para aplicar o gradiente
-
-### Implementação
+### Solução
 
 **Arquivo:** `src/components/pdf/sections/PDFHeader.tsx`
 
-1. **Importar componentes SVG:**
-```typescript
-import { View, Text, Image, Svg, Defs, LinearGradient, Stop, Rect, StyleSheet } from '@react-pdf/renderer';
+#### 1. Remover o padding interno do container e usar uma View interna para o conteúdo
+
+Atualmente o container aplica padding horizontal, mas a linha degradê ignora isso (usa `width: 100%`). Vamos criar uma estrutura onde a linha ocupe toda a largura e o conteúdo respeite os limites:
+
+```
+Container (fundo azul escuro + grid, sem padding horizontal interno)
+├── TopRow (com paddingHorizontal próprio)
+│   ├── Título "iScope 360" centralizado
+│   └── Logo alinhado à direita COM limite do padding
+├── Linha Degradê (largura 100%, SEM padding - pega toda largura)
+└── InfoRow (com paddingHorizontal próprio)
+    ├── Esquerda: Tipo + Domínio (alinhado com início da linha)
+    └── Direita: Data + Workspace (alinhado com fim da linha)
 ```
 
-2. **Criar componente de linha degradê:**
+#### 2. Adicionar Background Cyber-Grid via SVG
+
+Como o `@react-pdf/renderer` não suporta CSS `background-image`, vamos criar um grid SVG sobreposto:
+
 ```tsx
-const GradientLine = () => (
-  <View style={styles.gradientLineContainer}>
-    <Svg width="100%" height={1} viewBox="0 0 500 1">
-      <Defs>
-        <LinearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
-          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.1} />
-          <Stop offset="50%" stopColor="#FFFFFF" stopOpacity={1} />
-          <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0.1} />
-        </LinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="500" height="1" fill="url(#headerGradient)" />
-    </Svg>
-  </View>
-);
+// Grid pattern - linhas teal com 3% opacidade, 40px spacing
+<Svg style={styles.gridOverlay} viewBox="0 0 500 150">
+  {/* Linhas verticais */}
+  {[0, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480].map(x => (
+    <Rect key={`v${x}`} x={x} y={0} width={1} height={150} fill="#14B8A6" fillOpacity={0.03} />
+  ))}
+  {/* Linhas horizontais */}
+  {[0, 40, 80, 120].map(y => (
+    <Rect key={`h${y}`} x={0} y={y} width={500} height={1} fill="#14B8A6" fillOpacity={0.03} />
+  ))}
+</Svg>
 ```
 
-3. **Adicionar estilo do container:**
+#### 3. Alterações nos Estilos
+
 ```typescript
-gradientLineContainer: {
+// Container sem padding horizontal interno
+container: {
+  backgroundColor: headerBg,
+  marginLeft: -(spacing.pageHorizontal + 1),
+  marginRight: -(spacing.pageHorizontal + 1),
+  marginTop: -spacing.page,
+  paddingTop: spacing.sectionGap,
+  paddingBottom: spacing.sectionGap,
+  marginBottom: spacing.sectionGap,
+  position: 'relative', // Para posicionar o grid como overlay
+},
+
+// Conteúdo interno com padding
+contentRow: {
+  paddingHorizontal: spacing.pageHorizontal + 1,
+},
+
+// Grid overlay
+gridOverlay: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
   width: '100%',
-  height: 1,
-  marginBottom: 16,
+  height: '100%',
+},
+
+// TopRow agora com padding próprio
+topRow: {
+  flexDirection: 'row',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginBottom: 12,
+  position: 'relative',
+  minHeight: 60,
+  paddingHorizontal: spacing.pageHorizontal + 1, // Alinha com limites da linha
+},
+
+// Logo container agora respeita o padding
+logoContainer: {
+  position: 'absolute',
+  right: spacing.pageHorizontal + 1, // Alinhado com fim da linha
+},
+
+// InfoRow com padding próprio
+infoRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  marginTop: 0,
+  paddingHorizontal: spacing.pageHorizontal + 1, // Alinha com limites da linha
 },
 ```
 
-4. **Inserir no JSX entre topRow e infoRow:**
-```tsx
-<View style={styles.container}>
-  {/* Linha 1: Título + Logo */}
-  <View style={styles.topRow}>
-    <Text style={styles.brandText}>{title}</Text>
-    {logoBase64 && (
-      <View style={styles.logoContainer}>
-        <Image style={styles.logo} src={logoBase64} />
-      </View>
-    )}
-  </View>
+### Resultado Visual Esperado
 
-  {/* Linha decorativa degradê */}
-  <GradientLine />
-
-  {/* Linha 2: Info + Metadata */}
-  <View style={styles.infoRow}>
-    ...
-  </View>
-</View>
 ```
-
-### Estrutura do Gradiente
+┌─────────────────────────────────────────────────────────────────┐
+│ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ (cyber-grid) │
+│     │                                            │    LOGO    │
+│     │              iScope 360                    │      ↑     │
+│     │                                            │   alinhado │
+│═════════════════════════════════════════════════════════════════│ ← linha degradê
+│     │                                            │      ↓     │
+│     │ Análise de Domínio           Data: xxx     │   alinhado │
+│     │ **dominio.com**              Workspace: xxx│             │
+│     ↑                                            ↑             │
+│   início alinhado                           fim alinhado       │
+└─────────────────────────────────────────────────────────────────┘
 ```
-Esquerda          Centro          Direita
-   |                |                |
-   ▼                ▼                ▼
-10% opaco  →  100% opaco  →  10% opaco
-(quase transparente) (branco sólido) (quase transparente)
-```
-
-### Ajustes de Espaçamento
-- Reduzir `marginBottom` do `topRow` de 24 para 12 (a linha ocupará parte do espaço)
-- Adicionar `marginBottom: 16` no container da linha para espaço antes do infoRow
 
