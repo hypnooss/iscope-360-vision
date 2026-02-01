@@ -77,11 +77,12 @@ interface DashboardProps {
   firewallName?: string;
   firewallUrl?: string;
   deviceVendor?: string | null;
+  clientName?: string | null;
   categoryConfigs?: CategoryConfig[];
   skipGaugeAnimation?: boolean;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, categoryConfigs, skipGaugeAnimation = false }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, clientName, categoryConfigs, skipGaugeAnimation = false }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
@@ -110,6 +111,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
             name: firewallName || 'Firewall',
             url: firewallUrl,
             vendor: deviceVendor || undefined,
+            clientName: clientName || undefined,
           }}
           categoryConfigs={categoryConfigs}
         />,

@@ -5,12 +5,11 @@ import {
   typography,
   spacing,
   baseStyles,
+  radius,
 } from './styles/pdfStyles';
 import {
   PDFHeader,
   PDFScoreGauge,
-  PDFComplianceStats,
-  PDFFirewallInfo,
   PDFIssuesSummary,
   PDFCategorySection,
   PDFCategorySummaryTable,
@@ -40,6 +39,69 @@ const pageStyles = StyleSheet.create({
   },
   statsColumn: {
     flex: 1,
+  },
+  // Stats row - matching ExternalDomainPDF style
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.cardGap,
+    marginBottom: 6,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.md,
+    padding: spacing.cardPadding,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderTopWidth: 4,
+  },
+  statValue: {
+    fontSize: 24,
+    fontFamily: typography.bold,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  // Device Info Section - matching PDFDomainInfo style
+  infoSection: {
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.md,
+    padding: spacing.cardPadding,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 6,
+  },
+  infoTitle: {
+    fontSize: typography.bodySmall,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: spacing.itemGap,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  infoItem: {
+    width: '50%',
+    paddingVertical: spacing.tight,
+    paddingRight: spacing.itemGap,
+  },
+  infoLabel: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: typography.bodySmall,
+    color: colors.textPrimary,
+    fontFamily: typography.bold,
   },
   // Categories Section
   sectionTitle: {
@@ -131,6 +193,7 @@ interface FirewallPDFProps {
     name: string;
     url?: string;
     vendor?: string;
+    clientName?: string;
   };
   logoBase64?: string;
   categoryConfigs?: CategoryConfig[];
@@ -197,25 +260,23 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
     };
   });
 
-  // Prepare firewall info data
-  const firewallInfoData = {
-    vendor: deviceInfo.vendor || report.systemInfo?.vendor,
-    model: report.systemInfo?.model,
-    serialNumber: report.systemInfo?.serial,
-    firmware: report.firmwareVersion,
-    hostname: report.systemInfo?.hostname,
-    uptime: report.systemInfo?.uptime,
-    url: deviceInfo.url,
-  };
-
   // All categories for detail pages (sorted by display_order)
   const allCategories = sortedCategories;
+
+  // Device info values
+  const vendor = deviceInfo.vendor || report.systemInfo?.vendor;
+  const model = report.systemInfo?.model;
+  const serialNumber = report.systemInfo?.serial;
+  const firmware = report.firmwareVersion;
+  const hostname = report.systemInfo?.hostname;
+  const uptime = report.systemInfo?.uptime;
+  const url = deviceInfo.url;
 
   return (
     <Document
       title={`iScope 360 - ${deviceInfo.name}`}
       author="Precisio Analytics"
-      subject="Relatório de Compliance de Firewall"
+      subject="Relatório de Análise de Fortigate"
       keywords="compliance, security, firewall, fortigate"
     >
       {/* PAGE 1: Executive Summary */}
@@ -224,48 +285,113 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
           {/* Header */}
           <PDFHeader
             title="iScope 360"
-            subtitle={deviceInfo.vendor || 'FortiGate'}
+            subtitle={deviceInfo.clientName}
             target={deviceInfo.name}
             date={dateString}
-            reportType="Relatório de Compliance"
+            reportType="Análise de Fortigate"
             logoBase64={logoBase64}
           />
 
-          {/* Hero Section: Score + Stats + Firewall Info */}
+          {/* Hero Section: Score + Stats + Device Info */}
           <View style={pageStyles.heroSection}>
             <View style={pageStyles.scoreColumn}>
               <PDFScoreGauge score={report.overallScore} />
             </View>
             <View style={pageStyles.statsColumn}>
-              <PDFComplianceStats
-                total={report.totalChecks}
-                passed={report.passed}
-                failed={report.failed}
-                warnings={report.warnings}
-              />
+              {/* Stats Row - 3 cards like ExternalDomainPDF */}
+              <View style={pageStyles.statsRow}>
+                <View style={[pageStyles.statCard, { borderTopColor: colors.info, borderColor: colors.info }]}>
+                  <Text style={[pageStyles.statValue, { color: colors.info }]}>{report.totalChecks}</Text>
+                  <Text style={pageStyles.statLabel}>Total</Text>
+                </View>
+                <View style={[pageStyles.statCard, { borderTopColor: colors.success, borderColor: colors.success }]}>
+                  <Text style={[pageStyles.statValue, { color: colors.success }]}>{report.passed}</Text>
+                  <Text style={pageStyles.statLabel}>Aprovadas</Text>
+                </View>
+                <View style={[pageStyles.statCard, { borderTopColor: colors.danger, borderColor: colors.danger }]}>
+                  <Text style={[pageStyles.statValue, { color: colors.danger }]}>{report.failed}</Text>
+                  <Text style={pageStyles.statLabel}>Falhas</Text>
+                </View>
+              </View>
               
-              {/* Firewall Info Panel */}
-              <PDFFirewallInfo data={firewallInfoData} />
+              {/* Device Info Panel - matching PDFDomainInfo style */}
+              <View style={pageStyles.infoSection}>
+                <Text style={pageStyles.infoTitle}>Informações do Dispositivo</Text>
+                
+                <View style={pageStyles.infoGrid}>
+                  {vendor && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Fabricante</Text>
+                      <Text style={pageStyles.infoValue}>{vendor}</Text>
+                    </View>
+                  )}
+                  
+                  {model && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Modelo</Text>
+                      <Text style={pageStyles.infoValue}>{model}</Text>
+                    </View>
+                  )}
+                  
+                  {serialNumber && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Número de Série</Text>
+                      <Text style={pageStyles.infoValue}>{serialNumber}</Text>
+                    </View>
+                  )}
+                  
+                  {firmware && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Firmware</Text>
+                      <Text style={pageStyles.infoValue}>{firmware}</Text>
+                    </View>
+                  )}
+                  
+                  {hostname && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Hostname</Text>
+                      <Text style={pageStyles.infoValue}>{hostname}</Text>
+                    </View>
+                  )}
+                  
+                  {uptime && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>Uptime</Text>
+                      <Text style={pageStyles.infoValue}>{uptime}</Text>
+                    </View>
+                  )}
+                  
+                  {url && (
+                    <View style={pageStyles.infoItem}>
+                      <Text style={pageStyles.infoLabel}>URL de Acesso</Text>
+                      <Text style={pageStyles.infoValue}>{url}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
             </View>
           </View>
-
-          {/* Category Summary Table */}
-          <PDFCategorySummaryTable categories={categorySummaries} />
         </View>
 
         <PDFFooter />
       </Page>
 
-      {/* PAGE 2: Issues Summary */}
-      {issues.length > 0 && (
-        <Page size="A4" style={pageStyles.page}>
-          <View style={pageStyles.content}>
-            <PDFIssuesSummary issues={issues} maxItems={20} />
-          </View>
+      {/* PAGE 2: Category Summary Table + Issues */}
+      <Page size="A4" style={pageStyles.page}>
+        <View style={pageStyles.content}>
+          {/* Category Summary Table */}
+          <PDFCategorySummaryTable categories={categorySummaries} />
+          
+          {/* Issues Summary */}
+          {issues.length > 0 && (
+            <View style={{ marginTop: spacing.sectionGap }}>
+              <PDFIssuesSummary issues={issues} maxItems={20} />
+            </View>
+          )}
+        </View>
 
-          <PDFFooter />
-        </Page>
-      )}
+        <PDFFooter />
+      </Page>
 
       {/* PAGE 3+: Category Details */}
       {allCategories.length > 0 && (

@@ -118,9 +118,10 @@ export default function FirewallAnalysis() {
   
   const [report, setReport] = useState<ComplianceReport | null>(initialReport);
   const hasFetchedRef = useRef(false);
-  const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string; device_type_id: string | null } | null>(null);
+  const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string; device_type_id: string | null; client_id: string | null } | null>(null);
   const [deviceVendor, setDeviceVendor] = useState<string | null>(null);
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null);
+  const [clientName, setClientName] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialReport);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNewAnalysis, setIsNewAnalysis] = useState(false);
@@ -163,7 +164,7 @@ export default function FirewallAnalysis() {
   const fetchFirewall = async () => {
     const { data } = await supabase
       .from('firewalls')
-      .select('name, fortigate_url, api_key, device_type_id')
+      .select('name, fortigate_url, api_key, device_type_id, client_id')
       .eq('id', id)
       .single();
 
@@ -181,6 +182,19 @@ export default function FirewallAnalysis() {
         
         if (deviceType) {
           setDeviceVendor(deviceType.vendor);
+        }
+      }
+      
+      // Fetch client name
+      if (data.client_id) {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('name')
+          .eq('id', data.client_id)
+          .single();
+        
+        if (client) {
+          setClientName(client.name);
         }
       }
     }
@@ -298,6 +312,7 @@ export default function FirewallAnalysis() {
           firewallName={firewall?.name}
           firewallUrl={firewall?.fortigate_url}
           deviceVendor={deviceVendor}
+          clientName={clientName}
           categoryConfigs={categoryConfigs}
           skipGaugeAnimation={!isNewAnalysis}
         />
