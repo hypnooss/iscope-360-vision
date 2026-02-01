@@ -103,7 +103,7 @@ export function CategorySection({ category, index, variant = 'default', category
               style={{ color: colorHex }}
             />
           </div>
-          <span className="text-sm font-semibold text-foreground">{config.displayName}</span>
+          <span className="text-base font-semibold text-foreground">{config.displayName}</span>
           <Badge variant="secondary" className="text-xs">
             {category.checks.length} verificaç{category.checks.length !== 1 ? 'ões' : 'ão'}
           </Badge>
