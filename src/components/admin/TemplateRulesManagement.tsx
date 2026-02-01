@@ -331,7 +331,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
           <p className="text-muted-foreground">Nenhuma regra encontrada</p>
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border bg-card">
           <Table>
             <TableHeader>
               <TableRow>

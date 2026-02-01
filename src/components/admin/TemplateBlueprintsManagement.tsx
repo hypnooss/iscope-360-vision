@@ -290,7 +290,7 @@ export function TemplateBlueprintsManagement({ deviceTypeId, deviceTypeName, onR
                 <div className="text-xs text-muted-foreground mb-2">
                   {blueprint.collection_steps.steps.length} steps de coleta
                 </div>
-                <ScrollArea className="h-32 w-full rounded border bg-muted/30">
+                <ScrollArea className="h-64 w-full rounded border bg-muted/30">
                   <pre className="p-3 text-xs font-mono">
                     {JSON.stringify(blueprint.collection_steps, null, 2)}
                   </pre>
