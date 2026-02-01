@@ -1,67 +1,73 @@
 
 
-## Correção do Header do PDF
+## Correção do Alinhamento Vertical da Recomendação
 
-### Problemas Identificados
-1. O logo e o texto "iScope 360" não estão alinhados horizontalmente (logo aparece deslocado)
-2. Espaçamento vertical entre as linhas do header está muito pequeno
+### Problema Atual
+A linha cinza (`borderTopWidth: 1`) está aplicada diretamente no elemento `<Text>`, fazendo com que a borda e o texto fiquem "colados" verticalmente. O `marginTop` move o bloco inteiro (borda + texto), não criando espaço entre a borda e o texto.
 
-### Layout Desejado (conforme print 3)
+### Estrutura Atual
 ```
-Linha 1: [           iScope 360           ] [Logo à direita]
-                     ↕ (espaçamento maior)
-Linha 2: [Análise de Domínio Externo]       [Data executada]
-         [agudos.sp.gov.br]                 [Workspace]
+<Text style={recommendation}>  ← borderTop aplicado aqui
+  <Text>Recomendação:</Text>   ← texto colado na borda
+  {check.recommendation}
+</Text>
+```
+
+### Solução Proposta
+Envolver a recomendação em uma `<View>` container, separando a borda do texto:
+
+```
+<View style={recommendationContainer}>  ← borderTop aplicado aqui
+  <Text style={recommendationText}>     ← texto com paddingTop para espaçamento
+    <Text>Recomendação:</Text>
+    {check.recommendation}
+  </Text>
+</View>
 ```
 
 ### Alterações Técnicas
 
-**Arquivo:** `src/components/pdf/sections/PDFHeader.tsx`
+**Arquivo:** `src/components/pdf/sections/PDFCategorySection.tsx`
 
-1. **Alinhar logo com texto "iScope 360":**
-   - Ajustar o posicionamento absoluto do logo para usar `top: '50%'` com offset negativo para centralizar verticalmente
-   - Ou melhor: calcular a posição baseada na altura da linha
-
-2. **Aumentar espaçamento vertical:**
-   - Aumentar `marginBottom` na `topRow` de 12 para 20-24px
-   - Remover ou reduzir o `marginTop: 4` na `infoRow`
-
-### Código Resultante
-
+1. **Criar novo estilo `recommendationContainer`:**
 ```typescript
-const styles = StyleSheet.create({
-  // ... container sem alterações
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24, // Aumentado de 12 para 24
-    position: 'relative',
-    minHeight: 60, // Garantir altura mínima para o logo
-  },
-  logoContainer: {
-    position: 'absolute',
-    right: 0,
-    top: '50%', // Centralizar verticalmente
-    transform: 'translateY(-50%)', // Ajuste para centralização
-    // Nota: react-pdf não suporta transform, usar cálculo manual
-  },
-  // ...
-});
+recommendationContainer: {
+  marginLeft: 22,
+  marginTop: 8,            // Espaço entre descrição e linha cinza
+  paddingTop: 8,           // Espaço entre linha cinza e texto
+  borderTopWidth: 1,
+  borderTopColor: colors.border,
+},
 ```
 
-**Nota técnica:** Como `@react-pdf/renderer` não suporta `transform`, usaremos uma abordagem alternativa - definir `minHeight` na topRow e usar `alignItems: 'center'` junto com ajuste manual do `top` do logoContainer.
+2. **Simplificar estilo `recommendation`:**
+```typescript
+recommendation: {
+  fontSize: typography.bodySmall,
+  color: colors.textSecondary,
+  lineHeight: 1.4,
+},
+```
 
-### Ajustes Finais
+3. **Atualizar JSX:**
+```tsx
+{check.recommendation && (
+  <View style={styles.recommendationContainer}>
+    <Text style={styles.recommendation}>
+      <Text style={styles.recommendationLabel}>Recomendação: </Text>
+      {check.recommendation}
+    </Text>
+  </View>
+)}
+```
 
-1. **topRow:**
-   - `marginBottom`: 12 → 24 (dobrar espaçamento)
-   - `minHeight`: adicionar 60 (altura do logo)
+### Resultado Visual Esperado
 
-2. **logoContainer:**
-   - Remover `top: 0`
-   - O posicionamento absoluto com `alignItems: 'center'` no pai deve centralizar
-
-3. **infoRow:**
-   - `marginTop`: 4 → 0 (remover, já tem espaço suficiente do marginBottom acima)
+```
+Descrição do problema...
+                              ← marginTop: 8px (espaço acima da linha)
+────────────────────────────  ← borderTop (linha cinza)
+                              ← paddingTop: 8px (espaço abaixo da linha)
+Recomendação: texto...
+```
 
