@@ -471,7 +471,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 : 'text-warning/80 hover:bg-warning/10'
             )}
           >
-            <Layers className="w-4 h-4" />
+            <ClipboardList className="w-4 h-4" />
             Templates
           </Link>
         </CollapsibleContent>
