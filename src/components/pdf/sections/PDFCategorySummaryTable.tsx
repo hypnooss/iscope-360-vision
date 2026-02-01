@@ -4,7 +4,7 @@ import { colors, typography, spacing, radius, getScoreColor } from '../styles/pd
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: spacing.sectionGap,
+    marginTop: 12,
   },
   title: {
     fontSize: typography.subheading,
