@@ -1132,6 +1132,53 @@ export type Database = {
         }
         Relationships: []
       }
+      rule_categories: {
+        Row: {
+          color: string
+          created_at: string
+          device_type_id: string
+          display_name: string | null
+          display_order: number
+          icon: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          device_type_id: string
+          display_name?: string | null
+          display_order?: number
+          icon?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          device_type_id?: string
+          display_name?: string | null
+          display_order?: number
+          icon?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rule_categories_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_alerts: {
         Row: {
           alert_type: string

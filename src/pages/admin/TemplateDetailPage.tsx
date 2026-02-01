@@ -273,6 +273,7 @@ export default function TemplateDetailPage() {
                 blueprint={activeBlueprint}
                 rules={rules}
                 hideSummary
+                deviceTypeId={id}
               />
             ) : (
               <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">

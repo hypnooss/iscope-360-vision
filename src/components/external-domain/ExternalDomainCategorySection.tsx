@@ -6,68 +6,52 @@ import {
 } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, ShieldCheck, KeyRound, ShieldAlert, Globe, Mail, Shield } from 'lucide-react';
+import { ChevronDown, ChevronRight, Shield } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from '@/components/ComplianceCard';
+import { 
+  getCategoryConfig, 
+  AVAILABLE_COLORS,
+  type CategoryConfig,
+  DEFAULT_CATEGORY_CONFIGS,
+} from '@/hooks/useCategoryConfig';
 
 interface ExternalDomainCategorySectionProps {
   category: ComplianceCategory;
   index: number;
   defaultOpen?: boolean;
+  categoryConfigs?: CategoryConfig[];
 }
 
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Segurança DNS': { 
-    bg: 'bg-cyan-600/5', 
-    text: 'text-cyan-600', 
-    border: 'border-cyan-600/30' 
-  },
-  'Infraestrutura de Email': { 
-    bg: 'bg-violet-500/5', 
-    text: 'text-violet-500', 
-    border: 'border-violet-500/30' 
-  },
-  'Autenticação de Email - SPF': { 
-    bg: 'bg-emerald-600/5', 
-    text: 'text-emerald-600', 
-    border: 'border-emerald-600/30' 
-  },
-  'Autenticação de Email - DKIM': { 
-    bg: 'bg-pink-500/5', 
-    text: 'text-pink-500', 
-    border: 'border-pink-500/30' 
-  },
-  'Autenticação de Email - DMARC': { 
-    bg: 'bg-amber-500/5', 
-    text: 'text-amber-500', 
-    border: 'border-amber-500/30' 
-  },
-};
-
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  'Autenticação de Email - SPF': ShieldCheck,
-  'Autenticação de Email - DKIM': KeyRound,
-  'Autenticação de Email - DMARC': ShieldAlert,
-  'Segurança DNS': Globe,
-  'Infraestrutura de Email': Mail,
-};
-
-// Fallback colors for categories not in the map
-const DEFAULT_COLORS = { 
-  bg: 'bg-slate-500/10', 
-  text: 'text-slate-500', 
-  border: 'border-slate-500/30' 
-};
+// Dynamic icon component
+function DynamicIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
+  const iconName = name
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('') as keyof typeof LucideIcons;
+  
+  const IconComponent = LucideIcons[iconName] as React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  
+  if (!IconComponent) {
+    return <Shield className={className} style={style} />;
+  }
+  
+  return <IconComponent className={className} style={style} />;
+}
 
 export function ExternalDomainCategorySection({ 
   category, 
   index,
-  defaultOpen = true 
+  defaultOpen = true,
+  categoryConfigs
 }: ExternalDomainCategorySectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
-  const colors = CATEGORY_COLORS[category.name] || DEFAULT_COLORS;
-  const Icon = CATEGORY_ICONS[category.name] || Shield;
+  // Get config from database or use defaults
+  const config = getCategoryConfig(categoryConfigs, category.name);
+  const colorOption = AVAILABLE_COLORS.find(c => c.name === config.color);
+  const colorHex = colorOption?.hex || '#64748b';
 
   // Count failures by severity (only active/failing items)
   const criticalCount = category.checks.filter(
@@ -104,13 +88,25 @@ export function ExternalDomainCategorySection({
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
-            className={`w-full justify-between h-auto py-4 px-4 ${colors.bg} hover:${colors.bg} border ${colors.border} rounded-lg`}
+            className="w-full justify-between h-auto py-4 px-4 rounded-lg"
+            style={{
+              backgroundColor: `${colorHex}10`,
+              borderColor: `${colorHex}30`,
+              borderWidth: '1px',
+            }}
           >
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${colors.bg}`}>
-                <Icon className={`w-5 h-5 ${colors.text}`} />
+              <div 
+                className="p-2 rounded-lg"
+                style={{ backgroundColor: `${colorHex}15` }}
+              >
+                <DynamicIcon 
+                  name={config.icon} 
+                  className="w-5 h-5" 
+                  style={{ color: colorHex }}
+                />
               </div>
-              <span className="font-semibold text-foreground">{category.name}</span>
+              <span className="font-semibold text-foreground">{config.displayName}</span>
               <Badge variant="secondary" className="text-xs">
                 {category.checks.length} verificaç{category.checks.length !== 1 ? 'ões' : 'ão'}
               </Badge>
@@ -148,13 +144,19 @@ export function ExternalDomainCategorySection({
             </div>
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent className={`pt-4 space-y-3 pl-4 border-l-2 ml-6 mb-6 ${colors.border}`}>
+        <CollapsibleContent 
+          className="pt-4 space-y-3 pl-4 ml-6 mb-6"
+          style={{ 
+            borderLeftWidth: '2px',
+            borderLeftColor: `${colorHex}30`,
+          }}
+        >
           {category.checks.map((check) => (
             <ComplianceCard 
               key={check.id} 
               check={check} 
               variant="external_domain" 
-              categoryColorKey={colors.text.replace('text-', '')}
+              categoryColorKey={config.color}
             />
           ))}
         </CollapsibleContent>
