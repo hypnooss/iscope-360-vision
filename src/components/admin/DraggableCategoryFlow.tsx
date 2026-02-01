@@ -162,13 +162,15 @@ interface DroppableCategorySectionProps {
   rules: ComplianceRule[];
   deviceTypeId?: string;
   categoryConfigs?: CategoryConfig[];
+  onCategoryDeleted?: () => void;
 }
 
 function DroppableCategorySection({ 
   category, 
   rules, 
   deviceTypeId, 
-  categoryConfigs 
+  categoryConfigs,
+  onCategoryDeleted
 }: DroppableCategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -208,6 +210,8 @@ function DroppableCategorySection({
                     categoryName={category}
                     deviceTypeId={deviceTypeId}
                     configs={categoryConfigs}
+                    rulesCount={rules.length}
+                    onDeleted={onCategoryDeleted}
                   />
                 )}
               </div>
@@ -446,6 +450,7 @@ export function DraggableCategoryFlow({
               rules={rulesByCategory[category]}
               deviceTypeId={deviceTypeId}
               categoryConfigs={categoryConfigs}
+              onCategoryDeleted={refetchConfigs}
             />
           ))}
         </div>
