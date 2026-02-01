@@ -96,7 +96,9 @@ const normalizeReportData = (rawData: Record<string, unknown>): ComplianceReport
     failed: allChecks.filter(c => c.status === 'fail').length,
     warnings: allChecks.filter(c => c.status === 'warn' || c.status === 'warning').length,
     categories: categories as ComplianceCategory[],
-    generatedAt: new Date(rawData.generatedAt as string || Date.now()),
+    generatedAt: rawData.generatedAt 
+      ? new Date(rawData.generatedAt as string) 
+      : undefined,
     firmwareVersion,
     systemInfo,
   };
@@ -119,6 +121,7 @@ export default function FirewallAnalysis() {
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialReport);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isNewAnalysis, setIsNewAnalysis] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -131,9 +134,26 @@ export default function FirewallAnalysis() {
       fetchFirewall();
       if (!initialReport) {
         fetchLastAnalysis();
+      } else {
+        // Se veio do state, buscar apenas a data real do histórico
+        fetchAnalysisDate();
       }
     }
   }, [id, user]);
+
+  const fetchAnalysisDate = async () => {
+    const { data } = await supabase
+      .from('analysis_history')
+      .select('created_at')
+      .eq('firewall_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.created_at) {
+      setReport(prev => prev ? { ...prev, generatedAt: new Date(data.created_at) } : null);
+    }
+  };
 
   const fetchFirewall = async () => {
     const { data } = await supabase
@@ -219,8 +239,13 @@ export default function FirewallAnalysis() {
         serial_number: data.serialNumber,
       }).eq('id', id);
 
-      // Normalize the data before setting to state
-      setReport(normalizeReportData(data));
+      // Normalize the data before setting to state - mark as new analysis for animation
+      const normalizedReport = normalizeReportData({
+        ...data,
+        generatedAt: new Date().toISOString(),
+      });
+      setIsNewAnalysis(true);
+      setReport(normalizedReport);
 
       toast.success('Análise atualizada com sucesso!');
     } catch (error: any) {
@@ -286,6 +311,7 @@ export default function FirewallAnalysis() {
           firewallUrl={firewall?.fortigate_url}
           deviceVendor={deviceVendor}
           categoryConfigs={categoryConfigs}
+          skipGaugeAnimation={!isNewAnalysis}
         />
       </div>
     </AppLayout>
