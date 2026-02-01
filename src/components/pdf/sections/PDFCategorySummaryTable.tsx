@@ -99,7 +99,7 @@ export const PDFCategorySummaryTable: React.FC<PDFCategorySummaryTableProps> = (
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
       
-      <View style={styles.table}>
+      <View style={styles.table} wrap={false}>
         {/* Header Row */}
         <View style={styles.headerRow}>
           <Text style={[styles.headerCell, styles.headerCellCategory]}>Categoria</Text>

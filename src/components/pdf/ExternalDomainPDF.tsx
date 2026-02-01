@@ -191,10 +191,8 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
     dmarc: emailAuth ? { valid: emailAuth.dmarc } : undefined,
   };
 
-  // Group categories for multi-column layout on detail pages
-  const categoriesWithFailures = report.categories.filter(
-    (cat) => cat.checks.some((c) => c.status === 'fail')
-  );
+  // All categories for detail pages (not just those with failures)
+  const allCategories = report.categories;
 
   return (
     <Document
@@ -253,7 +251,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
       )}
 
       {/* PAGE 2+: Category Details */}
-      {categoriesWithFailures.length > 0 && (
+      {allCategories.length > 0 && (
         <Page size="A4" style={pageStyles.page} wrap>
           <View style={pageStyles.content}>
             <Text style={pageStyles.pageTitle}>
@@ -270,7 +268,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
               </Text>
             </View>
             
-            {categoriesWithFailures.map((category, index) => {
+            {allCategories.map((category, index) => {
               const checks: Check[] = category.checks.map((check) => ({
                 name: check.name,
                 status: check.status as Check['status'],
