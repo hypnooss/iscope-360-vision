@@ -1,197 +1,97 @@
 
-## Plano: Adicionar Botão "Novo Template" e Seleção de Ícone
+## Plano: Menu Accordion Exclusivo (Estilo Zabbix)
 
-### Contexto
+### Objetivo
 
-A página `TemplatesPage.tsx` precisa de duas funcionalidades que existem em `CollectionsPage.tsx`:
-
-1. **Botão para criar novo template** - com modal similar ao de "Nova Tarefa"
-2. **Seleção de ícone** - no modal de edição e criação
+Implementar comportamento onde apenas um menu (módulo ou administração) fica expandido por vez. Ao clicar em outro, os demais fecham automaticamente.
 
 ---
 
-### Alterações em `src/pages/admin/TemplatesPage.tsx`
+### Alterações em `src/components/layout/AppLayout.tsx`
 
-#### 1. Adicionar Lista de Ícones Disponíveis
+#### 1. Modificar `toggleModule` para Fechar os Demais
 
+**Antes:**
 ```typescript
-import * as LucideIcons from 'lucide-react';
-
-const ICON_OPTIONS = [
-  'Shield', 'Server', 'Cloud', 'Network', 'Lock', 'Cpu', 
-  'HardDrive', 'Wifi', 'Globe', 'Database', 'Monitor', 'Activity',
-  'Router', 'Layers', 'Box', 'Package'
-];
-```
-
-#### 2. Adicionar Helper para Renderizar Ícone Dinâmico
-
-```typescript
-const getIconComponent = (iconName: string | null) => {
-  if (!iconName) return <Layers className="w-4 h-4" />;
-  const Icon = (LucideIcons as any)[iconName];
-  return Icon ? <Icon className="w-4 h-4" /> : <Layers className="w-4 h-4" />;
+const toggleModule = (moduleCode: string) => {
+  setExpandedModules(prev => ({
+    ...prev,
+    [moduleCode]: !prev[moduleCode],
+  }));
 };
 ```
 
-#### 3. Estado para Modal de Criação
-
+**Depois:**
 ```typescript
-const [createDialogOpen, setCreateDialogOpen] = useState(false);
-const [createForm, setCreateForm] = useState({
-  name: '',
-  vendor: '',
-  code: '',
-  category: 'firewall' as DeviceCategory,
-  icon: 'Shield',
-  is_active: true,
-});
-```
-
-#### 4. Mutation para Criar Template
-
-```typescript
-const createMutation = useMutation({
-  mutationFn: async (data: typeof createForm) => {
-    const { error } = await supabase
-      .from('device_types')
-      .insert({
-        name: data.name,
-        vendor: data.vendor,
-        code: data.code,
-        category: data.category,
-        icon: data.icon,
-        is_active: data.is_active,
-      });
-    if (error) throw error;
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['device-types-templates'] });
-    setCreateDialogOpen(false);
-    resetCreateForm();
-    toast.success('Template criado com sucesso!');
-  },
-  onError: (error) => {
-    toast.error('Erro ao criar template: ' + error.message);
-  },
-});
-```
-
-#### 5. Botão "Novo Template" no Header
-
-```tsx
-<div className="flex items-center justify-between mb-6">
-  <div>
-    <h1 className="text-2xl font-bold text-foreground">Templates</h1>
-    <p className="text-muted-foreground mt-1">
-      Gerencie os templates de dispositivos disponíveis no sistema
-    </p>
-  </div>
-  <Button onClick={() => setCreateDialogOpen(true)}>
-    <Plus className="w-4 h-4 mr-2" />
-    Novo Template
-  </Button>
-</div>
-```
-
-#### 6. Modal de Criação
-
-Adicionar Dialog com campos:
-- Fabricante (vendor) *
-- Nome *
-- Código único * (com transformação para snake_case)
-- Categoria (Select)
-- Ícone (Select com preview)
-- Ativo (Switch)
-
-#### 7. Seleção de Ícone no Modal de Edição
-
-Adicionar campo de seleção de ícone no modal de edição existente:
-
-```tsx
-<div className="space-y-2">
-  <Label htmlFor="edit-icon">Ícone</Label>
-  <Select
-    value={editForm.icon || 'Layers'}
-    onValueChange={(value) => setEditForm({ ...editForm, icon: value })}
-  >
-    <SelectTrigger>
-      <SelectValue />
-    </SelectTrigger>
-    <SelectContent>
-      {ICON_OPTIONS.map((icon) => (
-        <SelectItem key={icon} value={icon}>
-          <div className="flex items-center gap-2">
-            {getIconComponent(icon)}
-            <span>{icon}</span>
-          </div>
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
-</div>
-```
-
-#### 8. Atualizar handleOpenEdit para Incluir Ícone
-
-```typescript
-const handleOpenEdit = (template: DeviceType) => {
-  setEditingTemplate(template);
-  setEditForm({
-    name: template.name,
-    vendor: template.vendor,
-    category: template.category,
-    icon: template.icon || 'Layers',
-    is_active: template.is_active,
+const toggleModule = (moduleCode: string) => {
+  setExpandedModules(prev => {
+    const isCurrentlyOpen = prev[moduleCode];
+    // Fecha todos e abre apenas o clicado (se estava fechado)
+    return {
+      [moduleCode]: !isCurrentlyOpen,
+    };
   });
+  // Fecha o menu de administração quando um módulo é aberto
+  if (!expandedModules[moduleCode]) {
+    setAdminMenuOpen(false);
+  }
 };
 ```
 
-#### 9. Atualizar handleSaveEdit para Salvar Ícone
+#### 2. Modificar Comportamento do Menu de Administração
 
+Atualizar o `onOpenChange` do `Collapsible` de administração para fechar os módulos quando administração é aberta:
+
+**No `AdminButton` (linha 388-390):**
 ```typescript
-updateMutation.mutate({
-  id: editingTemplate.id,
-  updates: {
-    name: editForm.name,
-    vendor: editForm.vendor,
-    category: editForm.category as DeviceType['category'],
-    icon: editForm.icon,
-    is_active: editForm.is_active,
-  },
-});
+<Collapsible
+  open={adminMenuOpen}
+  onOpenChange={(open) => {
+    setAdminMenuOpen(open);
+    // Se estiver abrindo, fecha todos os módulos
+    if (open) {
+      setExpandedModules({});
+    }
+  }}
+>
 ```
 
-#### 10. Usar Ícone Dinâmico na Tabela
+#### 3. Atualizar `useEffect` de Detecção de Rota
 
-Substituir a lógica atual de mapeamento de ícones para usar o ícone salvo no banco:
+Garantir que ao navegar, apenas o módulo correspondente fique aberto:
 
-```tsx
-<TableCell>
-  <div className="p-1.5 rounded bg-primary/10 w-fit">
-    {getIconComponent(template.icon)}
-  </div>
-</TableCell>
+**Antes (linhas 166-189):**
+```typescript
+if (path.startsWith('/scope-firewall')) {
+  setActiveModule('scope_firewall');
+  setExpandedModules(prev => ({ ...prev, scope_firewall: true }));
+}
+```
+
+**Depois:**
+```typescript
+if (path.startsWith('/scope-firewall')) {
+  setActiveModule('scope_firewall');
+  setExpandedModules({ scope_firewall: true }); // Substitui tudo
+  setAdminMenuOpen(false);
+}
 ```
 
 ---
 
-### Resumo das Alterações
+### Resumo do Comportamento
 
-| Item | Descrição |
-|------|-----------|
-| Import | Adicionar `lucide-react` wildcard e `Plus` |
-| Estados | `createDialogOpen`, `createForm` |
-| Mutations | `createMutation` |
-| Funções | `getIconComponent`, `resetCreateForm` |
-| UI | Botão "Novo Template", Modal de criação, Select de ícone no edit |
+| Ação do Usuário | Resultado |
+|-----------------|-----------|
+| Clica em "Firewall" | Abre Firewall, fecha todos os outros |
+| Clica em "Domínio Externo" | Abre Domínio Externo, fecha Firewall |
+| Clica em "Administração" | Abre Administração, fecha todos os módulos |
+| Navega para rota `/scope-firewall/*` | Apenas Firewall fica aberto |
 
 ---
 
-### Resultado Final
+### Arquivos Modificados
 
-A página de Templates terá:
-- Botão "Novo Template" no canto superior direito
-- Modal de criação com todos os campos incluindo seleção de ícone
-- Seleção de ícone no modal de edição
-- Ícones dinâmicos na tabela baseados no valor salvo no banco
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/layout/AppLayout.tsx` | Lógica de accordion exclusivo |
