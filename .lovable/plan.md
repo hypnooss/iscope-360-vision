@@ -1,152 +1,126 @@
 
-## Plano: Corrigir Badge de Severidade Cinza para Status Unknown e Exibir Dados Brutos
 
-### Resumo dos Problemas
+## Plano: Lógica Condicional de Alta Disponibilidade (HA)
 
-| # | Item | Problema | Localização |
-|---|------|----------|-------------|
-| 1 | **2FA (sec-002)** | Badge de severidade com cor ativa em vez de cinza quando status = `unknown` | Frontend |
-| 2 | **Criptografia Forte (sec-001)** | "Ver dados brutos (JSON)" não aparece quando status = `pass` | Backend |
-| 3 | **Timeout de Sessão (sec-003)** | "Ver dados brutos (JSON)" não aparece | Backend |
+### Objetivo
+Ajustar a lógica de avaliação da categoria "Alta Disponibilidade" para que os itens **Heartbeat HA Redundante (ha-003)** e **Sincronização de Sessões HA (ha-002)** sejam desativados quando o modo HA for "standalone", e melhorar a exibição das evidências para usuários leigos.
 
 ---
 
-### Problema 1: Badge com cor ativa para status `unknown`
+### Regras de Negócio
 
-**Análise Técnica:**
-- O tipo `ComplianceStatus` em `src/types/compliance.ts` não inclui `unknown` (apenas `pass`, `fail`, `warning`, `pending`)
-- O backend envia `status: 'unknown'`, mas o frontend não reconhece esse status
-- A lógica de cor da badge verifica apenas `normalizedStatus === 'pass'`:
-
-```tsx
-normalizedStatus === 'pass' 
-  ? severityColorsPass[check.severity]  // cores neutras (cinza)
-  : severityColorsFail[check.severity]  // cores alarmantes (vermelho, laranja, etc.)
-```
-
-Como `unknown` não é `pass`, usa as cores de falha.
-
-**Solução:**
-1. Adicionar `unknown` ao tipo `ComplianceStatus`
-2. Adicionar `unknown` ao `statusConfig` com ícone e estilo neutro
-3. Atualizar a lógica da badge para incluir `unknown` junto com `pass` nas cores neutras
+| Regra | Modo Standalone | Modo HA Ativo |
+|-------|-----------------|---------------|
+| **ha-001** (Modo HA) | Status: **fail** (standalone não é HA) | Status: **pass** |
+| **ha-002** (Sincronização) | Status: **unknown** (N/A) | Avaliar session-pickup |
+| **ha-003** (Heartbeat) | Status: **unknown** (N/A) | Avaliar quantidade de links |
 
 ---
 
-### Problemas 2 e 3: Dados brutos não exibidos
+### Alterações Técnicas
 
-**Análise Técnica:**
-No `agent-task-result/index.ts`, as funções `formatSecurityPolicyEvidence` retornam `skipRawData: true` para todos os cenários de sucesso:
+#### 1. Arquivo: `supabase/functions/agent-task-result/index.ts`
 
-```typescript
-// sec-001 (Criptografia Forte) - linha 1199
-if (strongCrypto === 'enable') {
-  return { ..., skipRawData: true };  // ← nunca inclui rawData quando passa
-}
+**1.1 Atualizar `formatHAEvidence` (ha-001)**
+- Retornar objeto com `evidence` + `status` (ao invés de só array)
+- Quando `mode === 'standalone'`: retornar `status: 'fail'`
+- Quando `mode !== 'standalone'`: retornar `status: 'pass'` com info de grupo/prioridade
 
-// sec-003 (Timeout) - linha 1263  
-return { ..., skipRawData: true };  // ← sempre suprime rawData
+**1.2 Criar nova função `formatHASessionSyncEvidence` (ha-002)**
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Se mode === 'standalone':                                   │
+│   → Status: unknown                                         │
+│   → Evidência: "N/A - HA não configurado"                   │
+│   → skipRawData: true                                       │
+├─────────────────────────────────────────────────────────────┤
+│ Se mode !== 'standalone':                                   │
+│   → Verificar campo "session-pickup"                        │
+│   → Se "enable": Status pass                                │
+│   → Se "disable": Status fail/warn                          │
+│                                                             │
+│ Evidências (formato amigável):                              │
+│   - Status: ✅ Ativada / ❌ Desativada                       │
+│   - Modo: Descrição humanizada do comportamento             │
+│   - Tipos: Sessões regulares, NAT, Expectation, etc.        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Solução:**
-Alterar `skipRawData: true` para `skipRawData: false` em todos os casos das regras `sec-001`, `sec-002` e `sec-003`, para que os dados brutos sejam sempre incluídos e disponíveis para Super Admins visualizarem.
+**1.3 Atualizar `formatHAHeartbeatEvidence` (ha-003)**
+- Melhorar formato das evidências quando ativo:
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Quando HA ativo e heartbeat configurado:                    │
+│                                                             │
+│ Evidências:                                                 │
+│   - Status: "✅ X links de heartbeat configurados"          │
+│   - Interface: Nome de cada interface (uma por linha)       │
+│                                                             │
+│ Exemplo:                                                    │
+│   Status      | ✅ 2 links de heartbeat configurados        │
+│   Interface   | port1                                       │
+│   Interface   | port2                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**1.4 Adicionar tratamento no loop principal**
+- Adicionar bloco `else if (rule.code === 'ha-002')` para chamar `formatHASessionSyncEvidence`
+- Definir `status` e `details` baseado no resultado
 
 ---
 
-### Alterações Necessárias
+### Mapeamento de Campos do FortiGate
 
-#### 1. Frontend: `src/types/compliance.ts`
+| Campo API | Significado | Exibição Amigável |
+|-----------|-------------|-------------------|
+| `session-pickup` | Sincronização de sessões principais | "Sincronização de Sessões" |
+| `session-pickup-nat` | Sincronização de sessões NAT | "Sessões NAT" |
+| `session-pickup-connectionless` | Sincronização UDP/ICMP | "Sessões sem Conexão (UDP/ICMP)" |
+| `session-pickup-expectation` | Sincronização de expectativas FTP/SIP | "Expectativas de Protocolo" |
+| `session-sync-dev` | Dispositivo/interface de sincronização | "Interface de Sincronização" |
+| `hbdev` | Interfaces de heartbeat | "Interfaces de Heartbeat" |
 
-**Adicionar `unknown` ao tipo:**
-```typescript
-export type ComplianceStatus = 'pass' | 'fail' | 'warning' | 'pending' | 'unknown';
+---
+
+### Exemplo de Evidências Humanizadas
+
+**ha-002 (Sincronização de Sessões) - Quando Ativo:**
+```
+┌────────────────────────────────────────────────────────────┐
+│ EVIDÊNCIAS COLETADAS                                       │
+├────────────────────────────────────────────────────────────┤
+│ Status                  │ ✅ Sincronização ativa           │
+│ Sessões TCP/UDP         │ Habilitado                       │
+│ Sessões NAT             │ Desabilitado                     │
+│ Sessões sem Conexão     │ Desabilitado                     │
+│ Expectativas            │ Desabilitado                     │
+└────────────────────────────────────────────────────────────┘
 ```
 
-#### 2. Frontend: `src/components/ComplianceCard.tsx`
-
-**Adicionar configuração para status `unknown`:**
-```typescript
-const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; className: string; label: string }> = {
-  pass: { icon: CheckCircle, className: 'status-pass', label: 'Aprovado' },
-  fail: { icon: XCircle, className: 'status-fail', label: 'Falha' },
-  warning: { icon: AlertTriangle, className: 'status-warning', label: 'Atenção' },
-  pending: { icon: AlertTriangle, className: 'text-muted-foreground bg-muted/50 border-muted', label: 'Pendente' },
-  unknown: { icon: AlertTriangle, className: 'text-muted-foreground bg-muted/50 border-muted', label: 'Indisponível' },
-};
+**ha-003 (Heartbeat) - Quando Ativo:**
 ```
-
-**Atualizar lógica da badge de severidade (linha 112-117):**
-```typescript
-<span className={cn(
-  "text-xs px-2 py-0.5 rounded-full font-medium", 
-  (normalizedStatus === 'pass' || normalizedStatus === 'unknown' || normalizedStatus === 'pending')
-    ? (severityColorsPass[check.severity] || 'bg-muted text-muted-foreground')
-    : (severityColorsFail[check.severity] || 'bg-muted text-muted-foreground')
-)}>
-```
-
-#### 3. Backend: `supabase/functions/agent-task-result/index.ts`
-
-**sec-001 (Criptografia Forte) - linhas 1196-1206:**
-```typescript
-if (strongCrypto === 'enable') {
-  return {
-    evidence: [{ label: 'Criptografia Forte', value: 'Habilitada', type: 'text' }],
-    status: 'pass',
-    skipRawData: false  // ← Alterado de true
-  };
-} else {
-  return {
-    evidence: [{ label: 'Criptografia Forte', value: 'Desabilitada', type: 'text' }],
-    status: 'fail',
-    skipRawData: false
-  };
-}
-```
-
-**sec-002 (2FA) - linhas 1216-1245:**
-```typescript
-// Quando dados não disponíveis
-return {
-  evidence: [...],
-  status: 'unknown',
-  skipRawData: false  // ← Alterado de true (não tem dados mesmo, mas mantém consistência)
-};
-
-// Quando todos com 2FA
-return {
-  evidence: [{ label: 'Status', value: 'Todos os administradores com 2FA', type: 'text' }],
-  status: 'pass',
-  skipRawData: false  // ← Alterado de true
-};
-```
-
-**sec-003 (Timeout) - linhas 1257-1264:**
-```typescript
-return {
-  evidence: [
-    { label: 'Timeout de Sessão', value: `${timeout} minutos`, type: 'text' },
-    { label: 'Status', value: isCompliant ? 'Configuração adequada' : 'Timeout muito longo (recomendado ≤30min)', type: 'text' }
-  ],
-  status: isCompliant ? 'pass' : 'warn',
-  skipRawData: false  // ← Alterado de true
-};
+┌────────────────────────────────────────────────────────────┐
+│ EVIDÊNCIAS COLETADAS                                       │
+├────────────────────────────────────────────────────────────┤
+│ Status                  │ ✅ 2 links de heartbeat          │
+│ Interface               │ port1                            │
+│ Interface               │ port2                            │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ### Resultado Esperado
 
-| Item | Antes | Depois |
-|------|-------|--------|
-| **2FA (unknown)** | Badge laranja "Alto" | Badge cinza "Alto" + label "Indisponível" |
-| **Criptografia Forte** | Sem "Ver dados brutos (JSON)" | Exibe link para Super Admin |
-| **Timeout de Sessão** | Sem "Ver dados brutos (JSON)" | Exibe link para Super Admin |
+1. **Modo Standalone**: 
+   - ha-001: Falha (standalone = sem HA)
+   - ha-002: Indisponível (ícone cinza)
+   - ha-003: Indisponível (ícone cinza)
+   - Categoria mostra apenas ha-001 como métrica
 
----
+2. **Modo HA Ativo**:
+   - ha-001: Pass (HA configurado)
+   - ha-002: Avaliado normalmente
+   - ha-003: Avaliado normalmente
+   - Todas as regras contam para o percentual
 
-### Observação Importante
-
-As alterações no **frontend** (badge cinza) serão aplicadas **imediatamente** a todos os relatórios existentes, pois é uma transformação visual.
-
-As alterações no **backend** (exibir dados brutos) só aparecerão em **novas análises**, pois os dados são gerados durante a execução e salvos no `report_data`.
