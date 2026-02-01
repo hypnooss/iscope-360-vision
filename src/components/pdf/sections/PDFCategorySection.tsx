@@ -87,7 +87,6 @@ const styles = StyleSheet.create({
   recommendation: {
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
-    marginLeft: 22,
     marginTop: spacing.tight,
     paddingTop: spacing.tight,
     borderTopWidth: 1,
