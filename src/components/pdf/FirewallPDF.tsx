@@ -47,6 +47,39 @@ const pageStyles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.itemGap,
   },
+  // Security Notice
+  securityNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+  },
+  noticeIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#3B82F6',
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeIconText: {
+    fontSize: 12,
+    fontFamily: typography.bold,
+    color: '#FFFFFF',
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: typography.bodySmall,
+    color: '#1E40AF',
+    lineHeight: 1.4,
+  },
 });
 
 // Types
@@ -184,6 +217,18 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
               <Text style={pageStyles.sectionTitle}>
                 {category.name}
               </Text>
+              
+              {/* Aviso de Segurança - apenas na primeira categoria */}
+              {index === 0 && (
+                <View style={pageStyles.securityNotice}>
+                  <View style={pageStyles.noticeIcon}>
+                    <Text style={pageStyles.noticeIconText}>i</Text>
+                  </View>
+                  <Text style={pageStyles.noticeText}>
+                    Por questões de segurança, as evidências coletadas não são exibidas em relatórios exportados para PDF.
+                  </Text>
+                </View>
+              )}
               
               <PDFCategorySection
                 name={category.name}
