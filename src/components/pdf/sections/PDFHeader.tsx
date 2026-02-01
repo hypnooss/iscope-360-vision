@@ -11,9 +11,11 @@ const accentTeal = '#14B8A6'; // teal-500
 const styles = StyleSheet.create({
   container: {
     backgroundColor: headerBg,
-    marginHorizontal: -spacing.pageHorizontal,
+    marginLeft: -spacing.pageHorizontal,
+    marginRight: -spacing.pageHorizontal,
     marginTop: -spacing.page,
-    paddingHorizontal: spacing.pageHorizontal,
+    paddingLeft: spacing.pageHorizontal,
+    paddingRight: spacing.pageHorizontal,
     paddingVertical: spacing.sectionGap,
     marginBottom: spacing.sectionGap,
   },
@@ -29,8 +31,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   logo: {
-    width: 32,
-    height: 32,
+    width: 48,
+    height: 48,
     objectFit: 'contain',
   },
   brandText: {
