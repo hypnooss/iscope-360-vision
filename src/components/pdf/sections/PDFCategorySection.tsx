@@ -87,7 +87,8 @@ const styles = StyleSheet.create({
   recommendation: {
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
-    marginTop: spacing.tight,
+    marginLeft: 22,
+    marginTop: 5,
     paddingTop: spacing.tight,
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -163,7 +164,7 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
 
             {check.recommendation && (
               <Text style={styles.recommendation}>
-                <Text style={styles.recommendationLabel}>Recomendacao: </Text>
+                <Text style={styles.recommendationLabel}>Recomendação: </Text>
                 {check.recommendation}
               </Text>
             )}
