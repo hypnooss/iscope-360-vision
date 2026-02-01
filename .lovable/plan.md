@@ -1,193 +1,121 @@
 
 
-## Plano: Atualizar CategorySection para Padrão de Domínios Externos
+## Plano: Corrigir Ícone de Reload e Cores de Fundo das Categorias
 
-### Objetivo
+### Problema 1: Ícone de Reload ao Alternar Abas
 
-Atualizar o componente `CategorySection.tsx` (usado no relatório de Firewall) para seguir o mesmo padrão visual do `ExternalDomainCategorySection.tsx`:
-- Remover textos "X verificações" e "aprovação"
-- Adicionar badge com contagem de verificações
-- Adicionar badges de severidades ativas (crítico, alto, médio, baixo)
+**Causa Raiz Identificada:**
+Em `FirewallAnalysis.tsx`, o `useEffect` (linhas 132-142) é executado sempre que o componente é montado/remontado, chamando `fetchAnalysisDate()` repetidamente. Isso causa:
+- Requisições duplicadas ao Supabase (visível nos logs de rede)
+- Re-renderização do componente `Dashboard`
+- Animação do ícone de refresh aparecendo brevemente
+
+**Diferença com External Domain:**
+O `ExternalDomainAnalysisReportPage.tsx` usa `useMemo` para manter o `initialReport` estável (linha 379-382) e só busca dados se não houver relatório inicial (linha 445-450).
+
+**Solução:**
+
+#### Alteração 1.1 - `FirewallAnalysis.tsx` - Estabilizar efeito
+
+Usar `useRef` para controlar se já buscou os dados, evitando re-execução:
+
+```typescript
+const hasFetchedRef = useRef(false);
+
+useEffect(() => {
+  if (!id || !user) return;
+  if (hasFetchedRef.current) return;
+  
+  hasFetchedRef.current = true;
+  fetchFirewall();
+  
+  if (!initialReport) {
+    fetchLastAnalysis();
+  } else {
+    fetchAnalysisDate();
+  }
+}, [id, user]);
+```
+
+#### Alteração 1.2 - Usar useMemo para initialReport
+
+Memoizar a normalização do relatório inicial para evitar recálculo:
+
+```typescript
+const initialReport = useMemo(() => {
+  if (!location.state?.report) return null;
+  return normalizeReportData(location.state.report as Record<string, unknown>);
+}, [location.state?.report]);
+```
 
 ---
 
-### Comparação Visual
+### Problema 2: Cores de Fundo das Categorias
 
-**Antes (CategorySection atual):**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ [Icon] Nome da Categoria                           85%         │
-│        12 verificações                          aprovação      │
-│        Descrição longa da categoria...                         │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Causa Raiz Identificada:**
+Em `CategorySection.tsx`, o botão usa a classe `glass-card` (linha 88), que aplica um fundo genérico. Não há estilos inline para aplicar a cor da categoria ao fundo.
 
-**Depois (Novo padrão):**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ [Icon] Nome da Categoria [12 verificações] [2 críticos] [1 alto]    85% │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### Alterações em `src/components/CategorySection.tsx`
-
-#### 1. Adicionar Import do Badge
-
-```typescript
-import { Badge } from '@/components/ui/badge';
-```
-
-#### 2. Adicionar Contadores de Severidade
-
-Após a linha 55 (antes de `getPassRateColor`):
-
-```typescript
-// Count failures by severity (only active/failing items)
-const criticalCount = category.checks.filter(
-  c => c.status === 'fail' && c.severity === 'critical'
-).length;
-
-const highCount = category.checks.filter(
-  c => c.status === 'fail' && c.severity === 'high'
-).length;
-
-const mediumCount = category.checks.filter(
-  c => c.status === 'fail' && c.severity === 'medium'
-).length;
-
-const lowCount = category.checks.filter(
-  c => c.status === 'fail' && c.severity === 'low'
-).length;
-```
-
-#### 3. Substituir Bloco de Conteúdo Esquerdo
-
-**Antes (linhas 72-93):**
+**Diferença com External Domain:**
+Em `ExternalDomainCategorySection.tsx`, o `Button` usa estilos inline (linhas 92-96):
 ```tsx
-<div className="flex items-center gap-3">
-  <div className="p-2 rounded-lg" style={{ backgroundColor: `${colorHex}15` }}>
-    <DynamicIcon name={config.icon} className="w-5 h-5" style={{ color: colorHex }}/>
-  </div>
-  <div className="text-left">
-    <h3 className="font-semibold text-foreground">{config.displayName}</h3>
-    <p className="text-sm text-muted-foreground">
-      {category.checks.length} verificações
-    </p>
-    {categoryDescriptions[category.name] && (
-      <p className="text-xs text-muted-foreground/80 mt-1 max-w-xl">
-        {categoryDescriptions[category.name]}
-      </p>
-    )}
-  </div>
-</div>
+style={{
+  backgroundColor: `${colorHex}10`,
+  borderColor: `${colorHex}30`,
+  borderWidth: '1px',
+}}
 ```
 
-**Depois:**
+**Solução:**
+
+#### Alteração 2.1 - `CategorySection.tsx` - Aplicar cores dinâmicas
+
+Substituir o uso de `glass-card` por estilos inline com a cor da categoria:
+
 ```tsx
-<div className="flex items-center gap-3 flex-wrap">
-  <div className="p-2 rounded-lg" style={{ backgroundColor: `${colorHex}15` }}>
-    <DynamicIcon name={config.icon} className="w-5 h-5" style={{ color: colorHex }}/>
-  </div>
-  <span className="font-semibold text-foreground">{config.displayName}</span>
-  <Badge variant="secondary" className="text-xs">
-    {category.checks.length} verificaç{category.checks.length !== 1 ? 'ões' : 'ão'}
-  </Badge>
-  {criticalCount > 0 && (
-    <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">
-      {criticalCount} crítico{criticalCount !== 1 ? 's' : ''}
-    </Badge>
-  )}
-  {highCount > 0 && (
-    <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
-      {highCount} alto{highCount !== 1 ? 's' : ''}
-    </Badge>
-  )}
-  {mediumCount > 0 && (
-    <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs">
-      {mediumCount} médio{mediumCount !== 1 ? 's' : ''}
-    </Badge>
-  )}
-  {lowCount > 0 && (
-    <Badge className="bg-blue-400/10 text-blue-400 border-blue-400/20 text-xs">
-      {lowCount} baixo{lowCount !== 1 ? 's' : ''}
-    </Badge>
-  )}
-</div>
+<button
+  onClick={() => setIsExpanded(!isExpanded)}
+  className="w-full flex items-center justify-between p-4 rounded-lg mb-3 hover:border-primary/30 transition-colors"
+  style={{
+    backgroundColor: `${colorHex}10`,
+    borderColor: `${colorHex}30`,
+    borderWidth: '1px',
+  }}
+>
 ```
-
-#### 4. Simplificar Bloco de Percentual
-
-**Antes (linhas 96-118):**
-```tsx
-<div className="flex items-center gap-4">
-  {category.name !== 'Recomendações' && (
-    <div className="text-right">
-      <span className={cn("text-2xl font-bold tabular-nums", getPassRateColor())}>
-        {category.passRate}%
-      </span>
-      <p className="text-xs text-muted-foreground">aprovação</p>
-    </div>
-  )}
-  {category.name === 'Recomendações' && (
-    <div className="text-right">
-      <span className="text-sm text-muted-foreground font-medium">
-        Sugestões de melhoria
-      </span>
-    </div>
-  )}
-  {isExpanded ? (
-    <ChevronUp className="w-5 h-5 text-muted-foreground" />
-  ) : (
-    <ChevronDown className="w-5 h-5 text-muted-foreground" />
-  )}
-</div>
-```
-
-**Depois:**
-```tsx
-<div className="flex items-center gap-4">
-  {category.name !== 'Recomendações' && (
-    <span className={cn("text-lg font-semibold tabular-nums", getPassRateColor())}>
-      {category.passRate}%
-    </span>
-  )}
-  {category.name === 'Recomendações' && (
-    <span className="text-sm text-muted-foreground font-medium">
-      Sugestões
-    </span>
-  )}
-  {isExpanded ? (
-    <ChevronUp className="w-5 h-5 text-muted-foreground" />
-  ) : (
-    <ChevronDown className="w-5 h-5 text-muted-foreground" />
-  )}
-</div>
-```
-
-#### 5. Remover categoryDescriptions (Opcional)
-
-O objeto `categoryDescriptions` pode ser mantido para uso futuro em tooltips, mas não será mais exibido inline.
 
 ---
 
 ### Resumo das Alterações
 
-| Item | Antes | Depois |
-|------|-------|--------|
-| Texto "X verificações" | Inline abaixo do nome | Badge compacta |
-| Texto "aprovação" | Abaixo do percentual | Removido |
-| Descrição da categoria | Exibida inline | Removida (mantida no código para tooltips) |
-| Severidades | Não exibidas | Badges coloridas (crítico, alto, médio, baixo) |
-| Tamanho do percentual | `text-2xl` | `text-lg` (mais compacto) |
+| Arquivo | Problema | Solução |
+|---------|----------|---------|
+| `FirewallAnalysis.tsx` | Efeito re-executando | Adicionar `useRef` para controle + `useMemo` para relatório |
+| `CategorySection.tsx` | Fundo genérico (glass-card) | Aplicar cor da categoria via `style` inline |
 
 ---
 
-### Resultado Final
+### Comparação Visual dos Cards de Categoria
 
-O cabeçalho de categoria do Firewall terá paridade visual completa com o de Domínios Externos:
-- Layout horizontal compacto
-- Nome + Badge de contagem + Badges de severidade + Percentual
-- Cores padronizadas por severidade (Red/Orange/Yellow/Blue)
+**Antes (Firewall):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Glass-card genérico sem cor da categoria]                      │
+│ [Icon] Nome da Categoria [badges...]                       85%  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Depois (Padrão Domínio Externo):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Fundo colorido tênue (${colorHex}10) + borda colorida]         │
+│ [Icon] Nome da Categoria [badges...]                       85%  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Resultado Esperado
+
+1. **Sem ícone de reload**: Ao alternar abas do navegador, a página não refaz requisições
+2. **Cores consistentes**: Os cards de categoria do Firewall terão fundo e borda coloridos conforme configurado no Template do Fortigate
 
