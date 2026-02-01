@@ -1182,7 +1182,7 @@ function formatInterfaceSecurityEvidence(
 function formatSecurityPolicyEvidence(
   rawData: Record<string, unknown>,
   ruleCode: string
-): { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } {
+): { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean, rawDataOverride?: Record<string, unknown> } {
   const evidence: EvidenceItem[] = [];
   
   try {
@@ -1192,17 +1192,25 @@ function formatSecurityPolicyEvidence(
       const results = globalData?.results as Record<string, unknown> || globalData || {};
       const strongCrypto = results['strong-crypto'];
       
+      // Extract only the relevant field for raw data
+      const relevantData = {
+        'strong-crypto': strongCrypto,
+        'ssl-min-proto-version': results['ssl-min-proto-version'],
+      };
+      
       if (strongCrypto === 'enable') {
         return {
           evidence: [{ label: 'Criptografia Forte', value: '✅ Habilitada', type: 'text' }],
           status: 'pass',
-          skipRawData: false
+          skipRawData: false,
+          rawDataOverride: relevantData
         };
       } else {
         return {
           evidence: [{ label: 'Criptografia Forte', value: '❌ Desabilitada', type: 'text' }],
           status: 'fail',
-          skipRawData: false
+          skipRawData: false,
+          rawDataOverride: relevantData
         };
       }
     }
@@ -1220,9 +1228,16 @@ function formatSecurityPolicyEvidence(
             { label: 'Ação Recomendada', value: 'Verifique manualmente no painel FortiGate', type: 'text' }
           ],
           status: 'unknown',
-          skipRawData: false
+          skipRawData: true // No useful data to show
         };
       }
+      
+      // Extract only relevant fields from each admin
+      const relevantAdmins = results.map(admin => ({
+        name: admin.name,
+        'two-factor': admin['two-factor'],
+        'two-factor-authentication': admin['two-factor-authentication'],
+      }));
       
       // Check 2FA in each admin
       const adminsWithout2FA = results.filter(admin => 
@@ -1233,7 +1248,8 @@ function formatSecurityPolicyEvidence(
         return {
           evidence: [{ label: 'Status', value: '✅ Todos os administradores com 2FA', type: 'text' }],
           status: 'pass',
-          skipRawData: false
+          skipRawData: false,
+          rawDataOverride: { administrators: relevantAdmins }
         };
       } else {
         const ev: EvidenceItem[] = [
@@ -1242,7 +1258,12 @@ function formatSecurityPolicyEvidence(
         for (const admin of adminsWithout2FA.slice(0, 5)) {
           ev.push({ label: 'Admin', value: String(admin.name || 'N/A'), type: 'text' });
         }
-        return { evidence: ev, status: 'fail', skipRawData: false };
+        return { 
+          evidence: ev, 
+          status: 'fail', 
+          skipRawData: false,
+          rawDataOverride: { administrators: relevantAdmins }
+        };
       }
     }
     
@@ -1252,6 +1273,12 @@ function formatSecurityPolicyEvidence(
       const results = globalData?.results as Record<string, unknown> || globalData || {};
       const timeout = results.admintimeout as number | undefined;
       
+      // Extract only the relevant field for raw data
+      const relevantData = {
+        admintimeout: timeout,
+        'device-idle-timeout': results['device-idle-timeout'],
+      };
+      
       if (timeout !== undefined) {
         const isCompliant = timeout <= 30;
         return {
@@ -1260,7 +1287,8 @@ function formatSecurityPolicyEvidence(
             { label: 'Status', value: isCompliant ? '✅ Configuração adequada' : '⚠️ Timeout muito longo (recomendado ≤30min)', type: 'text' }
           ],
           status: isCompliant ? 'pass' : 'warn',
-          skipRawData: false
+          skipRawData: false,
+          rawDataOverride: relevantData
         };
       }
     }
@@ -1961,7 +1989,7 @@ function processComplianceRules(
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
-    let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean } | null = null;
+    let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean, rawDataOverride?: Record<string, unknown> } | null = null;
     let intResult: { evidence: EvidenceItem[], vulnerableInterfaces: Array<Record<string, unknown>>, status: 'pass' | 'fail' | 'warn' } | null = null;
     let fwResult: { evidence: EvidenceItem[], firmwareInfo: Record<string, unknown>, status: 'pass' | 'fail' | 'warn' } | null = null;
     
@@ -2372,11 +2400,16 @@ function processComplianceRules(
         }))
       };
     } else if (rule.code.startsWith('sec-') && secResult && !secResult.skipRawData) {
-      // Para regras sec-*, só incluir rawData se não foi suprimido
-      const sourceKey = logic.source_key || '';
-      const data = rawData[sourceKey];
-      if (data) {
-        checkRawData[sourceKey] = data;
+      // Para regras sec-*, usar rawDataOverride se disponível (campos relevantes apenas)
+      if (secResult.rawDataOverride) {
+        checkRawData = secResult.rawDataOverride;
+      } else {
+        // Fallback para dados completos (não deve acontecer com as novas regras)
+        const sourceKey = logic.source_key || '';
+        const data = rawData[sourceKey];
+        if (data) {
+          checkRawData[sourceKey] = data;
+        }
       }
     } else if (rule.code.startsWith('int-') && intResult && intResult.vulnerableInterfaces.length > 0) {
       // Para regras de interface, só incluir rawData quando há interfaces vulneráveis
