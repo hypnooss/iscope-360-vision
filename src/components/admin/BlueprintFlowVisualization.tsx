@@ -8,18 +8,14 @@ import {
   Wifi,
   Shield,
   CheckCircle,
-  AlertTriangle,
-  Info,
+  FileText,
+  Settings,
+  ArrowRight,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Layers
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   Collapsible,
   CollapsibleContent,
@@ -59,40 +55,55 @@ interface BlueprintFlowVisualizationProps {
   rules: ComplianceRule[];
 }
 
-// Executor configurations with dark-mode friendly colors
-const EXECUTOR_CONFIG: Record<string, { 
-  icon: React.ElementType; 
-  label: string; 
-  barColor: string;
-}> = {
-  dns_query: { 
-    icon: Globe, 
-    label: 'DNS Query', 
-    barColor: 'bg-cyan-500',
+// Category colors matching the compliance report
+const CATEGORY_COLORS: Record<string, { border: string; bg: string; text: string }> = {
+  'Segurança DNS': { 
+    border: 'border-cyan-600', 
+    bg: 'bg-cyan-600/5', 
+    text: 'text-cyan-600' 
   },
-  http_request: { 
-    icon: Server, 
-    label: 'HTTP Request', 
-    barColor: 'bg-blue-500',
+  'Infraestrutura de Email': { 
+    border: 'border-violet-500', 
+    bg: 'bg-violet-500/5', 
+    text: 'text-violet-500' 
   },
-  http_session: { 
-    icon: Wifi, 
-    label: 'HTTP Session', 
-    barColor: 'bg-indigo-500',
+  'Autenticação de Email - SPF': { 
+    border: 'border-emerald-600', 
+    bg: 'bg-emerald-600/5', 
+    text: 'text-emerald-600' 
   },
-  ssh: { 
-    icon: Terminal, 
-    label: 'SSH Command', 
-    barColor: 'bg-emerald-500',
+  'Autenticação de Email - DKIM': { 
+    border: 'border-pink-500', 
+    bg: 'bg-pink-500/5', 
+    text: 'text-pink-500' 
   },
-  snmp: { 
-    icon: Database, 
-    label: 'SNMP Query', 
-    barColor: 'bg-amber-500',
+  'Autenticação de Email - DMARC': { 
+    border: 'border-amber-500', 
+    bg: 'bg-amber-500/5', 
+    text: 'text-amber-500' 
   },
 };
 
-// Severity colors - dark mode friendly
+// Default category color
+const DEFAULT_CATEGORY_COLOR = { 
+  border: 'border-muted-foreground', 
+  bg: 'bg-muted/5', 
+  text: 'text-muted-foreground' 
+};
+
+// Executor configurations
+const EXECUTOR_CONFIG: Record<string, { 
+  icon: React.ElementType; 
+  label: string; 
+}> = {
+  dns_query: { icon: Globe, label: 'DNS Query' },
+  http_request: { icon: Server, label: 'HTTP Request' },
+  http_session: { icon: Wifi, label: 'HTTP Session' },
+  ssh: { icon: Terminal, label: 'SSH Command' },
+  snmp: { icon: Database, label: 'SNMP Query' },
+};
+
+// Severity colors
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-500/20 text-red-400 border-red-500/30',
   high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
@@ -107,6 +118,72 @@ const SEVERITY_LABELS: Record<string, string> = {
   medium: 'Médio',
   low: 'Baixo',
   info: 'Info',
+};
+
+// Category order for display
+const CATEGORY_ORDER = [
+  'Segurança DNS',
+  'Infraestrutura de Email',
+  'Autenticação de Email - SPF',
+  'Autenticação de Email - DKIM',
+  'Autenticação de Email - DMARC',
+];
+
+// Mapping of step_id to the fields it generates (for showing parses)
+const STEP_FIELDS: Record<string, string[]> = {
+  'dnssec_status': ['data.has_dnskey', 'data.has_ds', 'data.validated'],
+  'ns_records': ['data.records', 'data.records[].host'],
+  'soa_record': ['data.mname', 'data.rname', 'data.contact_email', 'data.refresh', 'data.retry', 'data.expire', 'data.minimum', 'data.serial', 'data.ttl'],
+  'mx_records': ['data.records', 'data.records[].exchange', 'data.records[].priority', 'data.records[].resolved_ips'],
+  'spf_record': ['data.raw', 'data.parsed.all', 'data.parsed.includes'],
+  'dkim_records': ['data.found', 'data.found[].selector', 'data.found[].key_size_bits', 'data.found[].key_type'],
+  'dmarc_record': ['data.raw', 'data.parsed.p', 'data.parsed.sp', 'data.parsed.rua', 'data.parsed.ruf', 'data.parsed.pct', 'data.parsed.aspf', 'data.parsed.adkim'],
+};
+
+// Label translations from EvidenceDisplay (temporary - will come from DB later)
+const LABEL_TRANSLATIONS: Record<string, string> = {
+  'data.has_dnskey': 'Status DNSSEC',
+  'data.has_ds': 'Registro DS',
+  'data.validated': 'Validação DNSSEC',
+  'data.mname': 'Servidor Primário',
+  'data.rname': 'Email do Responsável',
+  'data.contact_email': 'Contato do Administrador',
+  'data.refresh': 'Tempo de Refresh',
+  'data.serial': 'Número Serial',
+  'data.expire': 'Tempo de Expiração',
+  'data.minimum': 'TTL Mínimo',
+  'data.retry': 'Tempo de Retry',
+  'data.ttl': 'TTL',
+  'data.records': 'Registros',
+  'data.records[].host': 'Nameserver',
+  'data.records[].exchange': 'Servidor MX',
+  'data.records[].priority': 'Prioridade',
+  'data.records[].resolved_ips': 'IPs Resolvidos',
+  'data.parsed.includes': 'Mecanismos Include',
+  'data.parsed.all': 'Política ALL',
+  'data.raw': 'Registro Bruto',
+  'data.found': 'Registros DKIM',
+  'data.found[].selector': 'Seletor DKIM',
+  'data.found[].key_size_bits': 'Tamanho da Chave',
+  'data.found[].key_type': 'Tipo de Chave',
+  'data.parsed.aspf': 'Alinhamento SPF',
+  'data.parsed.adkim': 'Alinhamento DKIM',
+  'data.parsed.pct': 'Cobertura',
+  'data.parsed.p': 'Política DMARC',
+  'data.parsed.sp': 'Política de Subdomínio',
+  'data.parsed.rua': 'Relatórios (RUA)',
+  'data.parsed.ruf': 'Relatórios Forenses (RUF)',
+};
+
+// Value transformations (temporary - will come from DB later)
+const VALUE_TRANSFORMATIONS: Record<string, Record<string, string>> = {
+  'data.has_dnskey': { 'true': 'DNSSEC Ativado', 'false': 'DNSSEC Desativado' },
+  'data.has_ds': { 'true': 'Presente', 'false': 'Ausente' },
+  'data.validated': { 'true': 'Validação OK', 'false': 'Não validado' },
+  'data.parsed.aspf': { 'r': 'Relaxado (r)', 's': 'Estrito (s)' },
+  'data.parsed.adkim': { 'r': 'Relaxado (r)', 's': 'Estrito (s)' },
+  'data.parsed.p': { 'reject': 'Rejeitar', 'quarantine': 'Quarentena', 'none': 'Nenhuma' },
+  'data.parsed.sp': { 'reject': 'Rejeitar', 'quarantine': 'Quarentena', 'none': 'Nenhuma' },
 };
 
 // Get a human-readable description of the step configuration
@@ -137,7 +214,7 @@ function getStepDescription(step: CollectionStep): string {
   return JSON.stringify(config).slice(0, 50);
 }
 
-// Get evaluation logic description
+// Get evaluation logic as readable string
 function getEvaluationDescription(logic: Record<string, any>): string {
   if (!logic) return 'N/A';
   
@@ -172,273 +249,314 @@ function getEvaluationDescription(logic: Record<string, any>): string {
   return `${field} ${opLabel} ${value}`;
 }
 
+// Get parses for a step
+function getParsesForStep(stepId: string): { field: string; label: string; transformations?: Record<string, string> }[] {
+  const fields = STEP_FIELDS[stepId] || [];
+  return fields.map(field => ({
+    field,
+    label: LABEL_TRANSLATIONS[field] || field,
+    transformations: VALUE_TRANSFORMATIONS[field],
+  }));
+}
+
+// Rule Flow Card Component
+interface RuleFlowCardProps {
+  rule: ComplianceRule;
+  step?: CollectionStep;
+}
+
+function RuleFlowCard({ rule, step }: RuleFlowCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const stepId = rule.evaluation_logic?.step_id;
+  const parses = stepId ? getParsesForStep(stepId) : [];
+  const executorConfig = step ? EXECUTOR_CONFIG[step.executor] : null;
+  const ExecutorIcon = executorConfig?.icon || Database;
+  
+  return (
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+      <div className={cn(
+        "border rounded-lg bg-card transition-colors",
+        "hover:border-primary/30"
+      )}>
+        {/* Rule Header */}
+        <CollapsibleTrigger asChild>
+          <button className="w-full p-4 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <code className="text-sm font-mono font-semibold text-foreground">
+                    {rule.code}
+                  </code>
+                  <span className="text-muted-foreground">•</span>
+                  <span className="text-sm font-medium text-foreground">
+                    {rule.name}
+                  </span>
+                  <Badge 
+                    className={cn(
+                      "text-xs border ml-auto",
+                      SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info
+                    )}
+                  >
+                    {SEVERITY_LABELS[rule.severity] || rule.severity}
+                  </Badge>
+                </div>
+                {!isExpanded && rule.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
+                    {rule.description}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-muted-foreground">
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+              </div>
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        
+        {/* Expanded Content */}
+        <CollapsibleContent>
+          <div className="px-4 pb-4 space-y-4 border-t border-border/50 pt-4">
+            {/* Description */}
+            {rule.description && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <FileText className="w-3.5 h-3.5" />
+                  Descrição da Regra
+                </div>
+                <p className="text-sm text-foreground pl-5">
+                  {rule.description}
+                </p>
+              </div>
+            )}
+            
+            {/* Evaluation Logic */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <Settings className="w-3.5 h-3.5" />
+                Análise Efetuada
+              </div>
+              <div className="pl-5">
+                <code className="text-xs font-mono bg-muted px-2 py-1 rounded text-primary">
+                  {getEvaluationDescription(rule.evaluation_logic)}
+                </code>
+              </div>
+            </div>
+            
+            {/* Collection Step */}
+            {step && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <Layers className="w-3.5 h-3.5" />
+                  Step de Coleta
+                </div>
+                <div className="pl-5 flex items-center gap-2">
+                  <ExecutorIcon className="w-4 h-4 text-muted-foreground" />
+                  <code className="text-xs font-mono text-foreground">{stepId}</code>
+                  <Badge variant="outline" className="text-xs">
+                    {executorConfig?.label || step.executor}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {getStepDescription(step)}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {/* Parses */}
+            {parses.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  Parses (Traduções)
+                </div>
+                <div className="pl-5 space-y-1.5">
+                  {parses.slice(0, 5).map((parse) => (
+                    <div key={parse.field} className="flex items-start gap-2 text-xs">
+                      <code className="font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        {parse.field}
+                      </code>
+                      <ArrowRight className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      <span className="text-foreground">"{parse.label}"</span>
+                    </div>
+                  ))}
+                  {parses.length > 5 && (
+                    <div className="text-xs text-muted-foreground italic">
+                      +{parses.length - 5} campos adicionais
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+// Category Section Component
+interface CategorySectionProps {
+  category: string;
+  rules: ComplianceRule[];
+  steps: CollectionStep[];
+}
+
+function CategorySection({ category, rules, steps }: CategorySectionProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const colors = CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLOR;
+  
+  // Create a map of step_id to step for quick lookup
+  const stepsMap = useMemo(() => {
+    const map: Record<string, CollectionStep> = {};
+    steps.forEach(step => {
+      map[step.id] = step;
+    });
+    return map;
+  }, [steps]);
+  
+  const activeRules = rules.filter(r => r.is_active).length;
+  
+  return (
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+      <div className={cn(
+        "border-l-4 rounded-lg",
+        colors.border,
+        colors.bg
+      )}>
+        {/* Category Header */}
+        <CollapsibleTrigger asChild>
+          <button className="w-full p-4 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Shield className={cn("w-5 h-5", colors.text)} />
+                <span className={cn("font-semibold", colors.text)}>
+                  {category}
+                </span>
+                <Badge variant="outline" className="text-xs">
+                  {activeRules}/{rules.length} regras
+                </Badge>
+              </div>
+              {isExpanded ? (
+                <ChevronDown className="w-5 h-5 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              )}
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        
+        {/* Rules List */}
+        <CollapsibleContent>
+          <div className="px-4 pb-4 space-y-2">
+            {rules
+              .sort((a, b) => a.code.localeCompare(b.code))
+              .map((rule) => {
+                const stepId = rule.evaluation_logic?.step_id;
+                const step = stepId ? stepsMap[stepId] : undefined;
+                return (
+                  <RuleFlowCard 
+                    key={rule.id} 
+                    rule={rule} 
+                    step={step}
+                  />
+                );
+              })}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
 export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVisualizationProps) {
   const steps = blueprint.collection_steps?.steps || [];
-  const [expandedStep, setExpandedStep] = useState<string | null>(null);
   
-  // Group rules by step_id from evaluation_logic
-  const rulesByStep = useMemo(() => {
+  // Group rules by category
+  const rulesByCategory = useMemo(() => {
     const map: Record<string, ComplianceRule[]> = {};
     
     rules.forEach((rule) => {
-      const stepId = rule.evaluation_logic?.step_id;
-      if (stepId) {
-        if (!map[stepId]) {
-          map[stepId] = [];
-        }
-        map[stepId].push(rule);
+      const category = rule.category;
+      if (!map[category]) {
+        map[category] = [];
       }
+      map[category].push(rule);
     });
     
     return map;
   }, [rules]);
   
-  // Group rules without step_id (orphan rules)
-  const orphanRules = useMemo(() => {
-    return rules.filter((rule) => !rule.evaluation_logic?.step_id);
-  }, [rules]);
+  // Get sorted categories (predefined order first, then alphabetically)
+  const sortedCategories = useMemo(() => {
+    const categories = Object.keys(rulesByCategory);
+    return categories.sort((a, b) => {
+      const indexA = CATEGORY_ORDER.indexOf(a);
+      const indexB = CATEGORY_ORDER.indexOf(b);
+      
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [rulesByCategory]);
   
   // Count active rules
   const activeRulesCount = useMemo(() => {
     return rules.filter(r => r.is_active).length;
   }, [rules]);
   
-  if (steps.length === 0) {
+  if (rules.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
-        <p>Nenhum step de coleta configurado neste blueprint.</p>
+        <Shield className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p>Nenhuma regra de compliance configurada para este dispositivo.</p>
       </div>
     );
   }
 
   return (
-    <TooltipProvider>
-      <div className="space-y-4">
-        {/* Summary Header */}
-        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pb-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4" />
-            <span><strong className="text-foreground">{steps.length}</strong> steps de coleta</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            <span><strong className="text-foreground">{rules.length}</strong> regras de compliance</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-primary" />
-            <span><strong className="text-foreground">{activeRulesCount}</strong> ativas</span>
-          </div>
+    <div className="space-y-4">
+      {/* Summary Header */}
+      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pb-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4" />
+          <span><strong className="text-foreground">{rules.length}</strong> regras de compliance</span>
         </div>
-
-        {/* Vertical Step List */}
-        <div className="space-y-2">
-          {steps.map((step) => {
-            const linkedRules = rulesByStep[step.id] || [];
-            const executorConfig = EXECUTOR_CONFIG[step.executor] || {
-              icon: Database,
-              label: step.executor,
-              barColor: 'bg-muted-foreground',
-            };
-            const ExecutorIcon = executorConfig.icon;
-            const isExpanded = expandedStep === step.id;
-            
-            return (
-              <Collapsible
-                key={step.id}
-                open={isExpanded}
-                onOpenChange={(open) => setExpandedStep(open ? step.id : null)}
-              >
-                <div 
-                  className={cn(
-                    "flex items-stretch rounded-lg bg-card border border-border transition-colors",
-                    "hover:border-primary/50"
-                  )}
-                >
-                  {/* Colored bar indicator */}
-                  <div className={cn(
-                    "w-1.5 rounded-l-lg flex-shrink-0",
-                    executorConfig.barColor
-                  )} />
-                  
-                  <div className="flex-1 p-4 min-w-0">
-                    {/* Step Header */}
-                    <div className="flex items-center gap-3 mb-2">
-                      <ExecutorIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                      <span className="font-mono text-sm font-medium text-foreground">
-                        {step.id}
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {executorConfig.label}
-                      </Badge>
-                      {linkedRules.length === 0 && (
-                        <Badge variant="outline" className="text-xs text-amber-500 border-amber-500/50">
-                          <AlertTriangle className="w-3 h-3 mr-1" />
-                          Sem regras
-                        </Badge>
-                      )}
-                    </div>
-                    
-                    {/* Step Description */}
-                    <p className="text-xs text-muted-foreground mb-3 font-mono">
-                      {getStepDescription(step)}
-                    </p>
-                    
-                    {/* Rules Inline Badges */}
-                    {linkedRules.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground mr-1">Regras:</span>
-                        {linkedRules.slice(0, 6).map((rule) => (
-                          <Tooltip key={rule.id}>
-                            <TooltipTrigger asChild>
-                              <Badge 
-                                className={cn(
-                                  "text-xs cursor-default border",
-                                  SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info,
-                                  !rule.is_active && "opacity-50"
-                                )}
-                              >
-                                {rule.code}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs">
-                              <div className="space-y-1">
-                                <div className="font-medium">{rule.name}</div>
-                                <div className="text-xs text-muted-foreground">{rule.category}</div>
-                                <div className="text-xs">
-                                  Severidade: <strong>{SEVERITY_LABELS[rule.severity] || rule.severity}</strong>
-                                </div>
-                                {!rule.is_active && (
-                                  <div className="text-xs text-amber-500">⚠ Regra inativa</div>
-                                )}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-                        {linkedRules.length > 6 && (
-                          <CollapsibleTrigger asChild>
-                            <Badge 
-                              variant="outline" 
-                              className="text-xs cursor-pointer hover:bg-accent"
-                            >
-                              +{linkedRules.length - 6}
-                            </Badge>
-                          </CollapsibleTrigger>
-                        )}
-                        {linkedRules.length > 0 && (
-                          <CollapsibleTrigger asChild>
-                            <button className="ml-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                              {isExpanded ? (
-                                <>
-                                  <ChevronDown className="w-3 h-3" />
-                                  Ocultar detalhes
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronRight className="w-3 h-3" />
-                                  Ver detalhes
-                                </>
-                              )}
-                            </button>
-                          </CollapsibleTrigger>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Expanded Rules Details */}
-                    <CollapsibleContent>
-                      {linkedRules.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
-                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                            Detalhes das Regras
-                          </div>
-                          {linkedRules.map((rule) => (
-                            <div 
-                              key={rule.id}
-                              className={cn(
-                                "p-3 rounded-md bg-muted/30 border border-border/50",
-                                !rule.is_active && "opacity-60"
-                              )}
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-                                    {rule.code}
-                                  </code>
-                                  <Badge 
-                                    className={cn(
-                                      "text-xs border",
-                                      SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info
-                                    )}
-                                  >
-                                    {SEVERITY_LABELS[rule.severity] || rule.severity}
-                                  </Badge>
-                                  {!rule.is_active && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      Inativo
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="text-sm font-medium text-foreground mb-1">
-                                {rule.name}
-                              </div>
-                              <div className="text-xs text-muted-foreground mb-2">
-                                {rule.category}
-                              </div>
-                              <div className="text-xs bg-muted/50 px-2 py-1.5 rounded font-mono text-muted-foreground">
-                                {getEvaluationDescription(rule.evaluation_logic)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CollapsibleContent>
-                  </div>
-                </div>
-              </Collapsible>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-primary" />
+          <span><strong className="text-foreground">{activeRulesCount}</strong> ativas</span>
         </div>
-        
-        {/* Orphan Rules Section */}
-        {orphanRules.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-border">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span>
-                <strong className="text-foreground">{orphanRules.length}</strong> regra{orphanRules.length !== 1 ? 's' : ''} sem step vinculado
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {orphanRules.map((rule) => (
-                <Tooltip key={rule.id}>
-                  <TooltipTrigger asChild>
-                    <Badge 
-                      className={cn(
-                        "text-xs cursor-default border",
-                        SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info,
-                        !rule.is_active && "opacity-50"
-                      )}
-                    >
-                      {rule.code}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-xs">
-                    <div className="space-y-1">
-                      <div className="font-medium">{rule.name}</div>
-                      <div className="text-xs text-muted-foreground">{rule.category}</div>
-                      <div className="text-xs">
-                        Severidade: <strong>{SEVERITY_LABELS[rule.severity] || rule.severity}</strong>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4" />
+          <span><strong className="text-foreground">{sortedCategories.length}</strong> categorias</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Terminal className="w-4 h-4" />
+          <span><strong className="text-foreground">{steps.length}</strong> steps de coleta</span>
+        </div>
       </div>
-    </TooltipProvider>
+      
+      {/* Description */}
+      <p className="text-sm text-muted-foreground">
+        Visualização organizada por regras de compliance, espelhando o relatório exibido ao cliente. 
+        Cada regra mostra os steps de coleta que a alimentam e os parses usados para traduzir os dados técnicos.
+      </p>
+
+      {/* Categories List */}
+      <div className="space-y-4">
+        {sortedCategories.map((category) => (
+          <CategorySection
+            key={category}
+            category={category}
+            rules={rulesByCategory[category]}
+            steps={steps}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

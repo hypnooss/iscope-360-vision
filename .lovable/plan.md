@@ -179,4 +179,3 @@ A tabela `evidence_parses` já foi criada mas está vazia. Após essa implementa
 2. **Visão completa por regra** - Steps, análise e parses em um só lugar
 3. **Facilita auditoria** - Admin entende exatamente como cada regra funciona
 4. **Preparado para parses dinâmicos** - Quando populados no banco, já estarão visíveis
-
