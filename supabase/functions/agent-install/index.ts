@@ -163,20 +163,20 @@ install_deps() {
 
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y
-    apt-get install -y python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
+    apt-get install -y tar curl python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
     return
   fi
 
   if command -v dnf >/dev/null 2>&1; then
     # OL/RHEL-like: prefer python39+ to avoid EOL Python 3.6 issues
-    dnf install -y gcc openssl-devel libffi-devel || true
+    dnf install -y tar curl gcc openssl-devel libffi-devel || true
     dnf install -y python39 python39-pip python39-devel || true
     dnf install -y python3 python3-pip python3-devel || true
     return
   fi
 
   if command -v yum >/dev/null 2>&1; then
-    yum install -y gcc openssl-devel libffi-devel || true
+    yum install -y tar curl gcc openssl-devel libffi-devel || true
     yum install -y python39 python39-pip python39-devel || true
     yum install -y python3 python3-pip python3-devel || true
     return
