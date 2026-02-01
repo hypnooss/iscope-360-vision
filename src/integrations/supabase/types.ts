@@ -428,6 +428,59 @@ export type Database = {
         }
         Relationships: []
       }
+      evidence_parses: {
+        Row: {
+          created_at: string
+          device_type_id: string
+          display_label: string
+          display_order: number
+          format_options: Json | null
+          id: string
+          is_active: boolean
+          is_hidden: boolean
+          parse_type: Database["public"]["Enums"]["parse_type"]
+          source_field: string
+          updated_at: string
+          value_transformations: Json | null
+        }
+        Insert: {
+          created_at?: string
+          device_type_id: string
+          display_label: string
+          display_order?: number
+          format_options?: Json | null
+          id?: string
+          is_active?: boolean
+          is_hidden?: boolean
+          parse_type?: Database["public"]["Enums"]["parse_type"]
+          source_field: string
+          updated_at?: string
+          value_transformations?: Json | null
+        }
+        Update: {
+          created_at?: string
+          device_type_id?: string
+          display_label?: string
+          display_order?: number
+          format_options?: Json | null
+          id?: string
+          is_active?: boolean
+          is_hidden?: boolean
+          parse_type?: Database["public"]["Enums"]["parse_type"]
+          source_field?: string
+          updated_at?: string
+          value_transformations?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evidence_parses_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       external_domain_analysis_history: {
         Row: {
           analyzed_by: string | null
@@ -1384,6 +1437,7 @@ export type Database = {
         | "defender"
         | "intune"
       module_permission: "view" | "edit" | "full"
+      parse_type: "text" | "boolean" | "time" | "list" | "json" | "number"
       permission_status: "granted" | "pending" | "denied" | "missing"
       rule_severity: "critical" | "high" | "medium" | "low" | "info"
       schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
@@ -1558,6 +1612,7 @@ export const Constants = {
         "intune",
       ],
       module_permission: ["view", "edit", "full"],
+      parse_type: ["text", "boolean", "time", "list", "json", "number"],
       permission_status: ["granted", "pending", "denied", "missing"],
       rule_severity: ["critical", "high", "medium", "low", "info"],
       schedule_frequency: ["daily", "weekly", "monthly", "manual"],
