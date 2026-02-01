@@ -54,7 +54,7 @@ export const PDFStatsRow: React.FC<PDFStatsRowProps> = ({ stats }) => {
             key={index}
             style={[
               styles.card,
-              { borderTopColor: accentColor },
+              { borderTopColor: accentColor, borderColor: accentColor },
             ]}
           >
             {/* Value */}
