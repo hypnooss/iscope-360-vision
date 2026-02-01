@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Loader2, Eye, Pencil, X, Check } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Loader2, Eye, Pencil } from 'lucide-react';
 
 // Map device codes to icons
 const deviceIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -81,12 +81,10 @@ export default function TemplatesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // States for inline editing
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<DeviceType>>({});
-  
-  // States for view dialog
+  // States for dialogs
   const [viewingTemplate, setViewingTemplate] = useState<DeviceType | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<DeviceType | null>(null);
+  const [editForm, setEditForm] = useState<Partial<DeviceType>>({});
 
   // Access control - only super_admin and super_suporte
   useEffect(() => {
@@ -125,7 +123,7 @@ export default function TemplatesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['device-types-templates'] });
-      setEditingId(null);
+      setEditingTemplate(null);
       setEditForm({});
       toast.success('Template atualizado com sucesso!');
     },
@@ -135,8 +133,8 @@ export default function TemplatesPage() {
     },
   });
 
-  const handleStartEdit = (template: DeviceType) => {
-    setEditingId(template.id);
+  const handleOpenEdit = (template: DeviceType) => {
+    setEditingTemplate(template);
     setEditForm({
       name: template.name,
       vendor: template.vendor,
@@ -145,15 +143,10 @@ export default function TemplatesPage() {
     });
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
-
   const handleSaveEdit = () => {
-    if (!editingId) return;
+    if (!editingTemplate) return;
     updateMutation.mutate({
-      id: editingId,
+      id: editingTemplate.id,
       updates: {
         name: editForm.name,
         vendor: editForm.vendor,
@@ -203,93 +196,12 @@ export default function TemplatesPage() {
                   <TableHead>Código</TableHead>
                   <TableHead>Categoria</TableHead>
                   <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right w-32">Ações</TableHead>
+                  <TableHead className="text-right w-24">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {templates?.map((template) => {
                   const IconComponent = deviceIconMap[template.code] || Layers;
-                  const isEditing = editingId === template.id;
-
-                  if (isEditing) {
-                    return (
-                      <TableRow key={template.id} className="bg-muted/30">
-                        <TableCell>
-                          <div className="p-1.5 rounded bg-primary/10 w-fit">
-                            <IconComponent className="w-4 h-4 text-primary" />
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={editForm.name || ''}
-                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                            className="h-8 w-full"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={editForm.vendor || ''}
-                            onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })}
-                            className="h-8 w-full"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
-                            {template.code}
-                          </code>
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={editForm.category}
-                            onValueChange={(value) => setEditForm({ ...editForm, category: value as DeviceCategory })}
-                          >
-                            <SelectTrigger className="h-8 w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categoryOptions.map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Switch
-                            checked={editForm.is_active}
-                            onCheckedChange={(checked) => setEditForm({ ...editForm, is_active: checked })}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={handleCancelEdit}
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-primary hover:text-primary"
-                              onClick={handleSaveEdit}
-                              disabled={updateMutation.isPending}
-                            >
-                              {updateMutation.isPending ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Check className="w-4 h-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }
-
                   const categoryDisplay = categoryDisplayMap[template.category] || template.category;
 
                   return (
@@ -334,7 +246,7 @@ export default function TemplatesPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => handleStartEdit(template)}
+                            onClick={() => handleOpenEdit(template)}
                             title="Editar"
                           >
                             <Pencil className="w-4 h-4" />
@@ -430,6 +342,97 @@ export default function TemplatesPage() {
                 Abrir Configurações
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Template</DialogTitle>
+            <DialogDescription>
+              Altere as informações do template
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingTemplate && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Nome</Label>
+                <Input
+                  id="edit-name"
+                  value={editForm.name || ''}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-vendor">Vendor</Label>
+                <Input
+                  id="edit-vendor"
+                  value={editForm.vendor || ''}
+                  onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-code">Código</Label>
+                <Input
+                  id="edit-code"
+                  value={editingTemplate.code}
+                  disabled
+                  className="bg-muted"
+                />
+                <p className="text-xs text-muted-foreground">
+                  O código não pode ser alterado
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-category">Categoria</Label>
+                <Select
+                  value={editForm.category}
+                  onValueChange={(value) => setEditForm({ ...editForm, category: value as DeviceCategory })}
+                >
+                  <SelectTrigger id="edit-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoryOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-active">Ativo</Label>
+                <Switch
+                  id="edit-active"
+                  checked={editForm.is_active}
+                  onCheckedChange={(checked) => setEditForm({ ...editForm, is_active: checked })}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTemplate(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
