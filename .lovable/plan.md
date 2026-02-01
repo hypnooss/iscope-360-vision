@@ -1,141 +1,77 @@
 
 
-## Reformulação da Visualização de Blueprints
+## Correção do PDF - Resumo por Categoria e Categorias
 
-### Situação Atual
+### Problemas Identificados
 
-- Blueprints exibidos em tabela compacta (Nome | Versão | Steps | Status | Ações)
-- Botão "Visualizar" (Eye) abre um dialog modal para ver o JSON
-- Usuário precisa de 2 cliques para ver o conteúdo
-
-### Nova Estrutura Proposta
-
-Substituir a tabela por **cards expandidos** que mostram todas as informações diretamente:
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  BLUEPRINTS                                                                │
-│  Configure os blueprints de coleta de dados para esta tarefa.  [+ Novo]   │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │  External DNS Collection                                            │  │
-│  │  ─────────────────────────────────────────────────────────────────  │  │
-│  │  Coleta informações DNS para análise de compliance                  │  │
-│  │                                                                      │  │
-│  │  Versão: any     Steps: 7     [Ativo]                               │  │
-│  │                                                                      │  │
-│  │  ┌─ Collection Steps ───────────────────────────────────────────┐   │  │
-│  │  │  {                                                            │   │  │
-│  │  │    "steps": [                                                 │   │  │
-│  │  │      { "id": "ns_records", "executor": "dns_query", ... },   │   │  │
-│  │  │      { "id": "mx_records", "executor": "dns_query", ... },   │   │  │
-│  │  │      ...                                                      │   │  │
-│  │  │    ]                                                          │   │  │
-│  │  │  }                                                            │   │  │
-│  │  └───────────────────────────────────────────────────────────────┘   │  │
-│  │                                                                      │  │
-│  │                                    [Duplicar] [Editar] [Excluir]    │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │  Backup Blueprint                                          [Inativo] │  │
-│  │  ...                                                                 │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
+| Problema | Causa | Impacto |
+|----------|-------|---------|
+| **Tabela cortada** | `PDFCategorySummaryTable` não tem `wrap={false}` | Última linha da tabela fica sobreposta ao rodapé |
+| **Categorias faltando** | Filtro exibe apenas categorias com falhas | Categorias 100% aprovadas não aparecem no detalhamento |
 
 ---
 
-### Alterações no Código
+### Correção 1: Tabela "Resumo por Categoria"
 
-**Arquivo:** `src/components/admin/BlueprintsTable.tsx`
+O componente `PDFCategorySummaryTable` precisa impedir que a tabela seja quebrada entre páginas.
 
-#### 1. Remover o Dialog de Visualização
-- Remover estado `viewDialogOpen`
-- Remover função `openViewDialog`
-- Remover o componente `Dialog` de visualização (linhas 366-395)
-- Remover botão de "Visualizar" (Eye) da tabela
+**Arquivo:** `src/components/pdf/sections/PDFCategorySummaryTable.tsx`
 
-#### 2. Substituir Tabela por Cards
-- Trocar `<Table>` por uma lista de cards
-- Cada card mostra:
-  - Header: Nome + Badge de status (Ativo/Inativo)
-  - Descrição (se houver)
-  - Metadados: Versão e contagem de steps
-  - ScrollArea com JSON formatado
-  - Footer: Botões de ação (Duplicar, Editar, Excluir)
+```typescript
+// Adicionar wrap={false} no container da tabela
+<View style={styles.table} wrap={false}>
+```
 
-#### 3. Estrutura do Card
+Isso garante que a tabela inteira (com todas as 5 linhas) fique em uma única página, movendo para a próxima se não couber.
 
-```tsx
-{blueprints.map((blueprint) => (
-  <div key={blueprint.id} className="border rounded-lg border-border/50 p-4 space-y-4">
-    {/* Header */}
-    <div className="flex items-start justify-between">
-      <div>
-        <h4 className="font-medium">{blueprint.name}</h4>
-        {blueprint.description && (
-          <p className="text-sm text-muted-foreground mt-1">{blueprint.description}</p>
-        )}
-      </div>
-      <Badge variant={blueprint.is_active ? 'default' : 'secondary'}>
-        {blueprint.is_active ? 'Ativo' : 'Inativo'}
-      </Badge>
-    </div>
-    
-    {/* Metadados */}
-    <div className="flex items-center gap-4 text-sm">
-      <span>Versão: <code className="bg-muted px-2 py-0.5 rounded">{blueprint.version}</code></span>
-      <Badge variant="outline">{getStepsCount(blueprint)} steps</Badge>
-    </div>
-    
-    {/* JSON Content */}
-    <ScrollArea className="h-[200px] rounded-md border border-border/50 bg-muted/30 p-3">
-      <pre className="text-xs font-mono">
-        {JSON.stringify(blueprint.collection_steps, null, 2)}
-      </pre>
-    </ScrollArea>
-    
-    {/* Actions */}
-    <div className="flex justify-end gap-2">
-      <Button variant="outline" size="sm" onClick={() => handleDuplicate(blueprint)}>
-        <Copy className="w-4 h-4 mr-2" />
-        Duplicar
-      </Button>
-      <Button variant="outline" size="sm" onClick={() => openEditDialog(blueprint)}>
-        <Pencil className="w-4 h-4 mr-2" />
-        Editar
-      </Button>
-      <Button variant="outline" size="sm" onClick={() => openDeleteDialog(blueprint)} className="text-destructive">
-        <Trash2 className="w-4 h-4 mr-2" />
-        Excluir
-      </Button>
-    </div>
-  </div>
-))}
+---
+
+### Correção 2: Exibir Todas as Categorias
+
+Atualmente o código filtra apenas categorias com falhas:
+```typescript
+const categoriesWithFailures = report.categories.filter(
+  (cat) => cat.checks.some((c) => c.status === 'fail')
+);
+```
+
+**Alterar para exibir todas as categorias:**
+
+**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
+
+```typescript
+// ANTES: Apenas categorias com falhas
+const categoriesWithFailures = report.categories.filter(
+  (cat) => cat.checks.some((c) => c.status === 'fail')
+);
+
+// DEPOIS: Todas as categorias
+// Remover o filtro e usar report.categories diretamente
+```
+
+E ajustar a condição de renderização:
+```typescript
+// ANTES
+{categoriesWithFailures.length > 0 && (
+
+// DEPOIS
+{report.categories.length > 0 && (
 ```
 
 ---
 
 ### Resumo das Alterações
 
-| Ação | Descrição |
-|------|-----------|
-| Remover | Dialog de visualização e botão Eye |
-| Remover | Componente Table |
-| Adicionar | Cards com conteúdo JSON inline |
-| Manter | Dialog de criação/edição |
-| Manter | Dialog de confirmação de exclusão |
-| Manter | Toda lógica de CRUD existente |
+| Arquivo | Alteração |
+|---------|-----------|
+| `PDFCategorySummaryTable.tsx` | Adicionar `wrap={false}` na tabela |
+| `ExternalDomainPDF.tsx` | Remover filtro de `categoriesWithFailures`, usar todas as categorias |
 
 ---
 
-### Benefícios
+### Resultado Esperado
 
-1. **Visualização imediata** - JSON visível sem cliques extras
-2. **Menos modais** - Interface mais limpa
-3. **Contexto completo** - Todas as informações do blueprint em um só lugar
-4. **Consistência** - Similar ao estilo do Fluxo de Análise
+1. **Tabela completa** - "Resumo por Categoria" exibe todas as 5 linhas sem corte
+2. **Detalhamento completo** - Seção "Detalhamento por Categoria" exibe todas as 5 categorias (DNS, Email, SPF, DKIM, DMARC)
+3. **Consistência** - Número de categorias no resumo = número de categorias no detalhamento
 
