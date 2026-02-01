@@ -103,8 +103,9 @@ const styles = StyleSheet.create({
 });
 
 export interface Check {
+  id?: string;
   name: string;
-  status: 'pass' | 'fail' | 'warning' | 'pending';
+  status: 'pass' | 'fail' | 'warning' | 'pending' | 'unknown';
   severity?: 'critical' | 'high' | 'medium' | 'low' | 'info';
   description?: string;
   recommendation?: string;
