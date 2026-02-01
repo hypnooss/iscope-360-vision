@@ -1,48 +1,57 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from '@react-pdf/renderer';
-import { colors, typography, spacing } from '../styles/pdfStyles';
+import { typography, spacing } from '../styles/pdfStyles';
+
+// Dark blue header background (matching system background)
+const headerBg = '#0F172A'; // slate-900 (dark blue)
+const textWhite = '#FFFFFF';
+const textMuted = '#94A3B8'; // slate-400
+const accentTeal = '#14B8A6'; // teal-500
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: headerBg,
+    marginHorizontal: -spacing.pageHorizontal,
+    marginTop: -spacing.page,
+    paddingHorizontal: spacing.pageHorizontal,
+    paddingVertical: spacing.sectionGap,
     marginBottom: spacing.sectionGap,
-    paddingBottom: spacing.sectionGap,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary,
   },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 12,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   logo: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
+    objectFit: 'contain',
   },
   brandText: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: typography.bold,
-    color: colors.primary,
+    color: accentTeal,
     letterSpacing: 0.5,
   },
   dateText: {
     fontSize: typography.bodySmall,
-    color: colors.textMuted,
+    color: textMuted,
     textAlign: 'right',
   },
   infoSection: {
-    marginTop: 8,
-    paddingLeft: 52, // Align with text after logo
+    marginTop: 4,
+    paddingLeft: 42, // Align with text after logo
   },
   reportType: {
     fontSize: typography.body,
     fontFamily: typography.regular,
-    color: colors.textMuted,
+    color: textMuted,
     marginBottom: 4,
   },
   targetRow: {
@@ -53,15 +62,15 @@ const styles = StyleSheet.create({
   target: {
     fontSize: typography.heading,
     fontFamily: typography.bold,
-    color: colors.textPrimary,
+    color: textWhite,
   },
   separator: {
     fontSize: typography.body,
-    color: colors.textMuted,
+    color: textMuted,
   },
-  clientName: {
+  workspaceName: {
     fontSize: typography.body,
-    color: colors.textSecondary,
+    color: textMuted,
   },
 });
 
@@ -103,7 +112,7 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
           {subtitle && (
             <>
               <Text style={styles.separator}>•</Text>
-              <Text style={styles.clientName}>Cliente: {subtitle}</Text>
+              <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>
             </>
           )}
         </View>

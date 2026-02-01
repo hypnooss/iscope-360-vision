@@ -68,7 +68,7 @@ export const PDFFooter: React.FC<PDFFooterProps> = ({
       <View style={styles.left}>
         <Text style={styles.brand}>iScope 360</Text>
         <Text style={styles.separator}>•</Text>
-        <Text style={styles.tagline}>Powered by Precisio Analytics</Text>
+        <Text style={styles.tagline}>Powered by Precisio</Text>
       </View>
 
       {/* Right: Page Number */}
