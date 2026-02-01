@@ -84,14 +84,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.tight,
     marginLeft: 22,
   },
+  recommendationContainer: {
+    marginLeft: 22,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   recommendation: {
     fontSize: typography.bodySmall,
     color: colors.textSecondary,
-    marginLeft: 22,
-    marginTop: 5,
-    paddingTop: spacing.tight,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    lineHeight: 1.4,
   },
   recommendationLabel: {
     fontFamily: typography.bold,
@@ -163,10 +166,12 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
             )}
 
             {check.recommendation && (
-              <Text style={styles.recommendation}>
-                <Text style={styles.recommendationLabel}>Recomendação: </Text>
-                {check.recommendation}
-              </Text>
+              <View style={styles.recommendationContainer}>
+                <Text style={styles.recommendation}>
+                  <Text style={styles.recommendationLabel}>Recomendação: </Text>
+                  {check.recommendation}
+                </Text>
+              </View>
             )}
           </View>
         ))}
