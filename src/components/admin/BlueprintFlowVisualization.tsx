@@ -22,7 +22,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { CategoryConfigPopover } from './CategoryConfigPopover';
 import { 
   useCategoryConfigs, 
   getCategoryConfig, 
@@ -442,14 +441,6 @@ function AdminCategorySection({ category, rules, steps, deviceTypeId, categoryCo
                 <Badge variant="outline" className="text-xs">
                   {activeRules}/{rules.length} regras
                 </Badge>
-                {/* Edit button for super admins */}
-                {deviceTypeId && (
-                  <CategoryConfigPopover
-                    categoryName={category}
-                    deviceTypeId={deviceTypeId}
-                    configs={categoryConfigs}
-                  />
-                )}
               </div>
               {isExpanded ? (
                 <ChevronDown className="w-5 h-5 text-muted-foreground" />
