@@ -203,9 +203,6 @@ export default function TemplateDetailPage() {
                   {template.is_active ? 'Ativo' : 'Inativo'}
                 </Badge>
               </div>
-              <p className="text-muted-foreground mt-1">
-                Gerencie blueprints de coleta e regras de compliance
-              </p>
             </div>
           </div>
         </div>
