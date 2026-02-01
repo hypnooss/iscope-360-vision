@@ -8,16 +8,28 @@ const textWhite = '#FFFFFF';
 const textMuted = '#94A3B8'; // slate-400
 const accentTeal = '#14B8A6'; // teal-500
 
+// Grid configuration
+const GRID_SPACING = 40;
+const GRID_WIDTH = 600;
+const GRID_HEIGHT = 150;
+
 const styles = StyleSheet.create({
   container: {
     backgroundColor: headerBg,
     marginLeft: -(spacing.pageHorizontal + 1),
     marginRight: -(spacing.pageHorizontal + 1),
     marginTop: -spacing.page,
-    paddingLeft: spacing.pageHorizontal + 1,
-    paddingRight: spacing.pageHorizontal + 1,
     paddingVertical: spacing.sectionGap,
     marginBottom: spacing.sectionGap,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  gridOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
   },
   topRow: {
     flexDirection: 'row',
@@ -26,6 +38,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     position: 'relative',
     minHeight: 60,
+    paddingHorizontal: spacing.pageHorizontal + 1,
   },
   gradientLineContainer: {
     width: '100%',
@@ -34,7 +47,7 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     position: 'absolute',
-    right: 0,
+    right: spacing.pageHorizontal + 1,
   },
   logo: {
     width: 60,
@@ -52,6 +65,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginTop: 0,
+    paddingHorizontal: spacing.pageHorizontal + 1,
   },
   leftColumn: {
     flex: 1,
@@ -83,6 +97,31 @@ const styles = StyleSheet.create({
   },
 });
 
+// Generate grid lines for cyber-grid effect
+const GridOverlay: React.FC = () => {
+  const verticalLines = [];
+  const horizontalLines = [];
+  
+  for (let x = 0; x <= GRID_WIDTH; x += GRID_SPACING) {
+    verticalLines.push(
+      <Rect key={`v${x}`} x={x} y={0} width={1} height={GRID_HEIGHT} fill={accentTeal} fillOpacity={0.05} />
+    );
+  }
+  
+  for (let y = 0; y <= GRID_HEIGHT; y += GRID_SPACING) {
+    horizontalLines.push(
+      <Rect key={`h${y}`} x={0} y={y} width={GRID_WIDTH} height={1} fill={accentTeal} fillOpacity={0.05} />
+    );
+  }
+  
+  return (
+    <Svg style={styles.gridOverlay} viewBox={`0 0 ${GRID_WIDTH} ${GRID_HEIGHT}`}>
+      {verticalLines}
+      {horizontalLines}
+    </Svg>
+  );
+};
+
 interface PDFHeaderProps {
   title?: string;
   subtitle?: string;
@@ -102,6 +141,9 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
 }) => {
   return (
     <View style={styles.container}>
+      {/* Cyber-grid background overlay */}
+      <GridOverlay />
+
       {/* Linha 1: Título + Logo */}
       <View style={styles.topRow}>
         <Text style={styles.brandText}>{title}</Text>
