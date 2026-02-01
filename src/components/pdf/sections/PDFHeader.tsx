@@ -20,7 +20,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   brandRow: {
@@ -39,10 +39,19 @@ const styles = StyleSheet.create({
     color: accentTeal,
     letterSpacing: 0.5,
   },
+  rightColumn: {
+    alignItems: 'flex-end',
+  },
   dateText: {
     fontSize: typography.bodySmall,
     color: textMuted,
     textAlign: 'right',
+  },
+  workspaceName: {
+    fontSize: typography.bodySmall,
+    color: textMuted,
+    textAlign: 'right',
+    marginTop: 2,
   },
   infoSection: {
     marginTop: 4,
@@ -57,20 +66,11 @@ const styles = StyleSheet.create({
   targetRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   target: {
     fontSize: typography.heading,
     fontFamily: typography.bold,
     color: textWhite,
-  },
-  separator: {
-    fontSize: typography.body,
-    color: textMuted,
-  },
-  workspaceName: {
-    fontSize: typography.body,
-    color: textMuted,
   },
 });
 
@@ -93,7 +93,7 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
 }) => {
   return (
     <View style={styles.container}>
-      {/* Top Row: Brand + Date */}
+      {/* Top Row: Brand + Date/Workspace */}
       <View style={styles.topRow}>
         <View style={styles.brandRow}>
           {logoBase64 && (
@@ -101,7 +101,12 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
           )}
           <Text style={styles.brandText}>{title}</Text>
         </View>
-        <Text style={styles.dateText}>{date}</Text>
+        <View style={styles.rightColumn}>
+          <Text style={styles.dateText}>{date}</Text>
+          {subtitle && (
+            <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>
+          )}
+        </View>
       </View>
 
       {/* Info Section: Report Type + Target */}
@@ -109,12 +114,6 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
         <Text style={styles.reportType}>{reportType}</Text>
         <View style={styles.targetRow}>
           <Text style={styles.target}>{target}</Text>
-          {subtitle && (
-            <>
-              <Text style={styles.separator}>•</Text>
-              <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>
-            </>
-          )}
         </View>
       </View>
     </View>
