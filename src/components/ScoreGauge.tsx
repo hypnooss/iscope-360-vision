@@ -1,14 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 interface ScoreGaugeProps {
   score: number;
   size?: number;
+  skipAnimation?: boolean;
 }
 
-export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
-  const [animatedScore, setAnimatedScore] = useState(0);
+export function ScoreGauge({ score, size = 200, skipAnimation = false }: ScoreGaugeProps) {
+  const hasAnimatedRef = useRef(false);
+  const [animatedScore, setAnimatedScore] = useState(skipAnimation ? score : 0);
 
   useEffect(() => {
+    // Se skipAnimation ou já animou antes, mostrar direto
+    if (skipAnimation || hasAnimatedRef.current) {
+      setAnimatedScore(score);
+      return;
+    }
+
     const duration = 1500;
     const steps = 60;
     const increment = score / steps;
@@ -18,6 +26,7 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
       current += increment;
       if (current >= score) {
         setAnimatedScore(score);
+        hasAnimatedRef.current = true;
         clearInterval(timer);
       } else {
         setAnimatedScore(Math.round(current));
@@ -25,7 +34,7 @@ export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
     }, duration / steps);
 
     return () => clearInterval(timer);
-  }, [score]);
+  }, [score, skipAnimation]);
 
   const shadowBlur = 16; // Extra space for the glow effect
   const svgSize = size + shadowBlur * 2;

@@ -78,9 +78,10 @@ interface DashboardProps {
   firewallUrl?: string;
   deviceVendor?: string | null;
   categoryConfigs?: CategoryConfig[];
+  skipGaugeAnimation?: boolean;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, categoryConfigs }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, categoryConfigs, skipGaugeAnimation = false }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
@@ -197,7 +198,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                       className="absolute inset-0 blur-3xl opacity-20"
                       style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
                     />
-                    <ScoreGauge score={report.overallScore} size={180} />
+                    <ScoreGauge score={report.overallScore} size={180} skipAnimation={skipGaugeAnimation} />
                   </div>
 
                   {/* Mini Stats Row */}
