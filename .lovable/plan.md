@@ -1,200 +1,116 @@
 
-## Configuração Inline de Categorias na aba "Fluxo de Análise"
 
-### Objetivo
-Permitir que o Super Admin configure, de forma inline, o **nome**, **ícone** e **cor** de cada categoria de compliance. Essas configurações serão salvas no banco de dados e refletidas dinamicamente nos relatórios de Análise de Compliance.
+## Separação: Fluxo de Análise (Visualização) vs Organização (Configuração)
 
----
+### Problema Identificado
+Ao substituir o componente `BlueprintFlowVisualization` pelo `DraggableCategoryFlow`, perdemos a capacidade de visualizar detalhes importantes dos itens:
+- Descrição da regra
+- Lógica de avaliação
+- Step de coleta vinculado
+- Parses/traduções utilizados
 
-### Análise Atual
+### Solução Proposta
+Separar as funcionalidades em duas abas distintas:
 
-Atualmente, as cores e ícones de categoria estão **hardcoded** em vários arquivos:
-
-| Arquivo | Uso |
-|---------|-----|
-| `BlueprintFlowVisualization.tsx` | Aba "Fluxo de Análise" (admin) |
-| `ExternalDomainCategorySection.tsx` | Relatório web de Domínio Externo |
-| `PDFCategorySection.tsx` | Relatório PDF |
-| `CategorySection.tsx` | Relatório de Firewall |
-
-As categorias são extraídas do campo `category` (text) da tabela `compliance_rules`.
+| Aba | Propósito | Componente |
+|-----|-----------|------------|
+| **Fluxo de Análise** | Visualização detalhada (original) | `BlueprintFlowVisualization` |
+| **Organização** (nova) | Configuração visual e reorganização | `DraggableCategoryFlow` + configs |
 
 ---
 
-### Proposta de Solução
+### Arquivos a Modificar
 
-#### 1. Nova Tabela: `rule_categories`
-
-Criamos uma tabela para armazenar as configurações visuais das categorias por template (device_type):
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | uuid | Chave primária |
-| `device_type_id` | uuid | FK para device_types |
-| `name` | text | Nome da categoria (ex: "Segurança DNS") |
-| `display_name` | text | Nome de exibição (opcional, para renomear) |
-| `icon` | text | Nome do ícone Lucide (ex: "globe", "shield", "mail") |
-| `color` | text | Cor Tailwind (ex: "cyan-600", "violet-500", "emerald-600") |
-| `display_order` | integer | Ordem de exibição |
-| `is_active` | boolean | Se está ativo |
-| `created_at` | timestamp | Data de criação |
-| `updated_at` | timestamp | Data de atualização |
-
-#### 2. Edição Inline na Aba "Fluxo de Análise"
-
-Na visualização de categorias existente, adicionamos um botão de edição que abre um popover/dialog com:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  🌐  Segurança DNS                          [3/5 regras]  [⚙️]     │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Nome: [Segurança DNS____________]                           │    │
-│  │  Ícone: [🌐 Globe ▾]                                        │    │
-│  │  Cor:   [● Cyan-600 ▾]                                      │    │
-│  │                                              [Salvar]        │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Elementos de UI:**
-- **Nome**: Input de texto simples
-- **Ícone**: Select com os ícones Lucide mais comuns (preview visual)
-- **Cor**: Select com paleta de cores (preview visual com círculo colorido)
-
-#### 3. Consumo Dinâmico nos Relatórios
-
-Os componentes de relatório (`ExternalDomainCategorySection`, `CategorySection`, `PDFCategorySection`) serão atualizados para:
-
-1. Buscar as configurações de categoria do banco de dados via hook
-2. Usar fallback para os valores hardcoded caso não exista configuração
+| Arquivo | Ação |
+|---------|------|
+| `src/pages/admin/TemplateDetailPage.tsx` | Adicionar nova aba "Organização" |
+| `src/components/admin/BlueprintFlowVisualization.tsx` | Remover CategoryConfigPopover (voltar ao original) |
+| `src/components/admin/DraggableCategoryFlow.tsx` | Manter como está (para aba Organização) |
 
 ---
 
-### Arquivos a Criar/Modificar
+### Nova Estrutura de Abas
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/migrations/` | Criar | Migration para tabela `rule_categories` |
-| `src/components/admin/CategoryConfigPopover.tsx` | Criar | Componente de edição inline |
-| `src/components/admin/BlueprintFlowVisualization.tsx` | Modificar | Adicionar botão de edição por categoria |
-| `src/hooks/useCategoryConfig.ts` | Criar | Hook para buscar/atualizar configs |
-| `src/components/external-domain/ExternalDomainCategorySection.tsx` | Modificar | Consumir configs do banco |
-| `src/components/CategorySection.tsx` | Modificar | Consumir configs do banco |
-| `src/components/pdf/sections/PDFCategorySection.tsx` | Modificar | Receber configs como props |
+```
+Tabs:
+├── Fluxo de Análise    ← Visualização detalhada (RuleFlowCard expansível)
+├── Organização         ← NOVA: Drag-and-drop + configuração de cores/ícones/ordem
+├── Blueprints
+├── Regras
+└── Parses
+```
 
 ---
 
-### Detalhes Técnicos
+### Detalhes da Implementação
 
-#### Migration SQL
+#### 1. Reverter Aba "Fluxo de Análise"
 
-```sql
-CREATE TABLE rule_categories (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_type_id uuid NOT NULL REFERENCES device_types(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  display_name text,
-  icon text NOT NULL DEFAULT 'shield',
-  color text NOT NULL DEFAULT 'slate-500',
-  display_order integer NOT NULL DEFAULT 0,
-  is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(device_type_id, name)
-);
+Usar o componente `BlueprintFlowVisualization` original, removendo o `CategoryConfigPopover` do cabeçalho das categorias. Esta aba volta a ser **somente visualização**.
 
--- RLS Policies
-ALTER TABLE rule_categories ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Super admins can manage categories"
-  ON rule_categories FOR ALL
-  USING (has_role(auth.uid(), 'super_admin'::app_role));
-
-CREATE POLICY "Users can view active categories"
-  ON rule_categories FOR SELECT
-  USING (is_active = true);
+**Antes (atual):**
+```tsx
+<TabsContent value="flow">
+  <DraggableCategoryFlow ... />  // ❌ Perdeu detalhes
+</TabsContent>
 ```
 
-#### Ícones Disponíveis (Subset Curado)
-
-```typescript
-const AVAILABLE_ICONS = [
-  { name: 'shield', label: 'Escudo' },
-  { name: 'globe', label: 'Globo' },
-  { name: 'mail', label: 'Email' },
-  { name: 'lock', label: 'Cadeado' },
-  { name: 'key', label: 'Chave' },
-  { name: 'server', label: 'Servidor' },
-  { name: 'network', label: 'Rede' },
-  { name: 'activity', label: 'Atividade' },
-  { name: 'alert-triangle', label: 'Alerta' },
-  { name: 'check-circle', label: 'Verificado' },
-  { name: 'database', label: 'Banco de Dados' },
-  { name: 'hard-drive', label: 'Armazenamento' },
-  { name: 'cpu', label: 'Processador' },
-  { name: 'settings', label: 'Configurações' },
-  { name: 'user', label: 'Usuário' },
-];
+**Depois:**
+```tsx
+<TabsContent value="flow">
+  <BlueprintFlowVisualization ... />  // ✅ Visualização completa
+</TabsContent>
 ```
 
-#### Cores Disponíveis (Paleta Curada)
+#### 2. Nova Aba "Organização"
 
-```typescript
-const AVAILABLE_COLORS = [
-  { name: 'cyan-600', label: 'Ciano', hex: '#0891b2' },
-  { name: 'violet-500', label: 'Violeta', hex: '#8b5cf6' },
-  { name: 'emerald-600', label: 'Esmeralda', hex: '#059669' },
-  { name: 'pink-500', label: 'Rosa', hex: '#ec4899' },
-  { name: 'amber-500', label: 'Âmbar', hex: '#f59e0b' },
-  { name: 'blue-500', label: 'Azul', hex: '#3b82f6' },
-  { name: 'red-500', label: 'Vermelho', hex: '#ef4444' },
-  { name: 'green-500', label: 'Verde', hex: '#22c55e' },
-  { name: 'orange-500', label: 'Laranja', hex: '#f97316' },
-  { name: 'purple-500', label: 'Roxo', hex: '#a855f7' },
-  { name: 'slate-500', label: 'Cinza', hex: '#64748b' },
-];
-```
-
-#### Componente CategoryConfigPopover
+Adicionar uma nova aba que concentra todas as funcionalidades de configuração:
 
 ```tsx
-interface CategoryConfigPopoverProps {
-  category: string;
-  deviceTypeId: string;
-  currentConfig?: {
-    display_name?: string;
-    icon: string;
-    color: string;
-  };
-  onSave: () => void;
-}
+<TabsTrigger value="organize" className="gap-2">
+  <Settings className="w-4 h-4" />
+  Organização
+</TabsTrigger>
 
-// Renderiza um Popover com:
-// - Input para nome de exibição
-// - Select visual para ícone
-// - Select visual para cor (com preview colorido)
-// - Botão salvar
+<TabsContent value="organize">
+  <DraggableCategoryFlow
+    blueprint={activeBlueprint}
+    rules={rules}
+    deviceTypeId={id}
+    onRulesChange={refetchRules}
+  />
+</TabsContent>
+```
+
+#### 3. Limpar BlueprintFlowVisualization
+
+Remover a referência ao `CategoryConfigPopover` do componente de visualização, já que a configuração agora fica em outra aba:
+
+```tsx
+// AdminCategorySection - remover:
+{deviceTypeId && (
+  <CategoryConfigPopover ... />  // ❌ Remover
+)}
 ```
 
 ---
 
-### Fluxo de Funcionamento
+### Resultado Final
 
-1. **Primeira vez**: Ao acessar a aba "Fluxo de Análise", o sistema verifica se existem configurações para as categorias do template
-2. **Sem configuração**: Usa os valores hardcoded como fallback (compatibilidade retroativa)
-3. **Com configuração**: Aplica as cores/ícones do banco de dados
-4. **Edição inline**: Clique no ícone de engrenagem abre o popover de edição
-5. **Salva**: Insere/atualiza a configuração na tabela `rule_categories`
-6. **Propagação**: Todas as páginas de relatório que usam esse template refletirão as mudanças
+| Aba | Funcionalidade |
+|-----|----------------|
+| **Fluxo de Análise** | Ver regras expandidas com descrição, lógica, steps e parses |
+| **Organização** | Arrastar regras entre categorias, criar categorias, configurar cores/ícones/ordem, excluir categorias vazias |
+| Blueprints | Gerenciar blueprints de coleta |
+| Regras | CRUD de regras de compliance |
+| Parses | CRUD de traduções de evidências |
 
 ---
 
-### Resultado Esperado
+### Vantagens
 
-1. **Edição visual simples**: Configurar categorias sem sair da aba "Fluxo de Análise"
-2. **Feedback imediato**: Ver preview do ícone e cor selecionados
-3. **Persistência**: Configurações salvas no banco de dados
-4. **Reflexo nos relatórios**: Web e PDF exibem as cores/ícones configurados
-5. **Compatibilidade**: Fallback para hardcoded quando não há configuração
+1. **Separação de responsabilidades**: Visualizar vs Configurar
+2. **Restaura funcionalidade perdida**: Detalhes completos dos itens voltam a aparecer
+3. **Interface mais clara**: Usuário sabe onde fazer cada ação
+4. **Menor risco de erros**: Drag-and-drop isolado evita cliques acidentais
 
