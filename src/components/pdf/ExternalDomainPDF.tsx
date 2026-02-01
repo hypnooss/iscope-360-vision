@@ -203,15 +203,21 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
 
           {/* Category Summary Table */}
           <PDFCategorySummaryTable categories={categorySummaries} />
-
-          {/* Issues Summary (if any) */}
-          {issues.length > 0 && (
-            <PDFIssuesSummary issues={issues} maxItems={8} />
-          )}
         </View>
 
         <PDFFooter />
       </Page>
+
+      {/* PAGE 2: Issues Summary */}
+      {issues.length > 0 && (
+        <Page size="A4" style={pageStyles.page}>
+          <View style={pageStyles.content}>
+            <PDFIssuesSummary issues={issues} maxItems={20} />
+          </View>
+
+          <PDFFooter />
+        </Page>
+      )}
 
       {/* PAGE 2+: Category Details */}
       {categoriesWithFailures.length > 0 && (

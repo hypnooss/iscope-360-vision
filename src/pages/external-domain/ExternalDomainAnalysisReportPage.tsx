@@ -580,6 +580,23 @@ export default function ExternalDomainAnalysisReportPage() {
                     const emailAuth = deriveEmailAuthStatus(report.categories);
                     const filename = `iscope360-${sanitizePDFFilename(domain?.domain || 'domain')}-${getPDFDateString()}.pdf`;
                     
+                    // Load logo as base64
+                    let logoBase64: string | undefined;
+                    try {
+                      const logoModule = await import('@/assets/logo-iscope.png');
+                      const logoUrl = logoModule.default;
+                      const response = await fetch(logoUrl);
+                      const blob = await response.blob();
+                      logoBase64 = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                      });
+                    } catch (logoErr) {
+                      console.warn('Could not load logo for PDF:', logoErr);
+                    }
+                    
                     await downloadPDF(
                       <ExternalDomainPDF
                         report={report}
@@ -590,6 +607,7 @@ export default function ExternalDomainAnalysisReportPage() {
                         }}
                         dnsSummary={dnsSummary || undefined}
                         emailAuth={emailAuth}
+                        logoBase64={logoBase64}
                       />,
                       filename
                     );
