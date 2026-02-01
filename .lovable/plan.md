@@ -1,121 +1,130 @@
 
+## Correção da Evidência para SPF-003 (Limite de DNS Lookups SPF)
 
-## Alinhamento dos Elementos do Header + Background Cyber-Grid
+### Problema Identificado
+A regra SPF-003 verifica se o SPF não excede 10 mecanismos que causam DNS lookups. No entanto, quando o domínio não possui nenhum mecanismo `include` (como `v=spf1 a mx ip4:200.150.200.46 -all`), a evidência exibe "Mecanismos Include []" (array vazio), que é confuso e não representa a análise real.
 
-### Problema Atual
-1. O logo está posicionado com `right: 0` no container, mas o container tem padding, então ele fica desalinhado com onde a linha degradê termina
-2. Os textos da segunda linha também não estão alinhados com os limites da linha
-3. Falta o background cyber-grid que aparece na web
+### Análise Técnica do SPF
+O limite de 10 lookups DNS do SPF afeta os seguintes mecanismos:
+- **include:** - cada include causa 1+ lookups (recursivo)
+- **a** - causa 1 lookup
+- **mx** - causa 1 lookup
+- **ptr** - causa 1 lookup (deprecated)
+- **exists:** - causa 1 lookup
+- **redirect=** - causa 1+ lookups (recursivo)
 
-### Solução
+Mecanismos que **NÃO** causam lookups:
+- **ip4:** - IP direto, sem lookup
+- **ip6:** - IP direto, sem lookup
+- **all** - final qualifier, sem lookup
 
-**Arquivo:** `src/components/pdf/sections/PDFHeader.tsx`
-
-#### 1. Remover o padding interno do container e usar uma View interna para o conteúdo
-
-Atualmente o container aplica padding horizontal, mas a linha degradê ignora isso (usa `width: 100%`). Vamos criar uma estrutura onde a linha ocupe toda a largura e o conteúdo respeite os limites:
-
-```
-Container (fundo azul escuro + grid, sem padding horizontal interno)
-├── TopRow (com paddingHorizontal próprio)
-│   ├── Título "iScope 360" centralizado
-│   └── Logo alinhado à direita COM limite do padding
-├── Linha Degradê (largura 100%, SEM padding - pega toda largura)
-└── InfoRow (com paddingHorizontal próprio)
-    ├── Esquerda: Tipo + Domínio (alinhado com início da linha)
-    └── Direita: Data + Workspace (alinhado com fim da linha)
-```
-
-#### 2. Adicionar Background Cyber-Grid via SVG
-
-Como o `@react-pdf/renderer` não suporta CSS `background-image`, vamos criar um grid SVG sobreposto:
-
-```tsx
-// Grid pattern - linhas teal com 3% opacidade, 40px spacing
-<Svg style={styles.gridOverlay} viewBox="0 0 500 150">
-  {/* Linhas verticais */}
-  {[0, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480].map(x => (
-    <Rect key={`v${x}`} x={x} y={0} width={1} height={150} fill="#14B8A6" fillOpacity={0.03} />
-  ))}
-  {/* Linhas horizontais */}
-  {[0, 40, 80, 120].map(y => (
-    <Rect key={`h${y}`} x={0} y={y} width={500} height={1} fill="#14B8A6" fillOpacity={0.03} />
-  ))}
-</Svg>
+### Dados Disponíveis do Python Agent
+O agent já retorna todos os mecanismos parseados:
+```json
+{
+  "includes": [],
+  "ip4": ["200.150.200.46"],
+  "ip6": [],
+  "a": ["a"],
+  "mx": ["mx"],
+  "exists": [],
+  "redirect": null,
+  "all": "-all"
+}
 ```
 
-#### 3. Alterações nos Estilos
+### Solução Proposta
+
+Criar um case específico para a regra **SPF-003** no backend que:
+1. Contabilize todos os mecanismos que causam DNS lookups
+2. Exiba uma evidência humanizada com a contagem
+3. Liste quais mecanismos estão causando lookups
+
+**Arquivo:** `supabase/functions/agent-task-result/index.ts`
+
+Adicionar após o case `DMARC-006` (linha ~2226):
 
 ```typescript
-// Container sem padding horizontal interno
-container: {
-  backgroundColor: headerBg,
-  marginLeft: -(spacing.pageHorizontal + 1),
-  marginRight: -(spacing.pageHorizontal + 1),
-  marginTop: -spacing.page,
-  paddingTop: spacing.sectionGap,
-  paddingBottom: spacing.sectionGap,
-  marginBottom: spacing.sectionGap,
-  position: 'relative', // Para posicionar o grid como overlay
-},
-
-// Conteúdo interno com padding
-contentRow: {
-  paddingHorizontal: spacing.pageHorizontal + 1,
-},
-
-// Grid overlay
-gridOverlay: {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  width: '100%',
-  height: '100%',
-},
-
-// TopRow agora com padding próprio
-topRow: {
-  flexDirection: 'row',
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginBottom: 12,
-  position: 'relative',
-  minHeight: 60,
-  paddingHorizontal: spacing.pageHorizontal + 1, // Alinha com limites da linha
-},
-
-// Logo container agora respeita o padding
-logoContainer: {
-  position: 'absolute',
-  right: spacing.pageHorizontal + 1, // Alinhado com fim da linha
-},
-
-// InfoRow com padding próprio
-infoRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'flex-start',
-  marginTop: 0,
-  paddingHorizontal: spacing.pageHorizontal + 1, // Alinha com limites da linha
-},
+// SPF-003: Limite de DNS Lookups SPF
+else if (rule.code === 'SPF-003') {
+  const spfData = sourceData as Record<string, unknown>;
+  const parsed = ((spfData?.data as Record<string, unknown>)?.parsed || {}) as Record<string, unknown>;
+  
+  // Mecanismos que causam DNS lookups
+  const includes = Array.isArray(parsed.includes) ? parsed.includes as string[] : [];
+  const aMechanisms = Array.isArray(parsed.a) ? parsed.a as string[] : [];
+  const mxMechanisms = Array.isArray(parsed.mx) ? parsed.mx as string[] : [];
+  const existsMechanisms = Array.isArray(parsed.exists) ? parsed.exists as string[] : [];
+  const redirect = parsed.redirect ? 1 : 0;
+  
+  // Contar total de lookups
+  const totalLookups = includes.length + aMechanisms.length + mxMechanisms.length + existsMechanisms.length + redirect;
+  
+  // Montar lista de mecanismos que causam lookups
+  const lookupMechanisms: string[] = [];
+  if (includes.length > 0) {
+    lookupMechanisms.push(`${includes.length} include(s)`);
+  }
+  if (aMechanisms.length > 0) {
+    lookupMechanisms.push(`${aMechanisms.length} a`);
+  }
+  if (mxMechanisms.length > 0) {
+    lookupMechanisms.push(`${mxMechanisms.length} mx`);
+  }
+  if (existsMechanisms.length > 0) {
+    lookupMechanisms.push(`${existsMechanisms.length} exists`);
+  }
+  if (redirect) {
+    lookupMechanisms.push(`1 redirect`);
+  }
+  
+  if (totalLookups === 0) {
+    evidence = [{
+      label: 'Lookups DNS',
+      value: 'Nenhum mecanismo que causa lookup DNS (apenas ip4/ip6)',
+      type: 'text'
+    }];
+  } else {
+    evidence = [{
+      label: 'Lookups DNS',
+      value: `${totalLookups} de 10 permitidos`,
+      type: 'text'
+    }, {
+      label: 'Mecanismos',
+      value: lookupMechanisms.join(', '),
+      type: 'text'
+    }];
+  }
+}
 ```
 
 ### Resultado Visual Esperado
 
+**Caso: Domínio sem includes (agudos.sp.gov.br)**
+Registro SPF: `v=spf1 a mx ip4:200.150.200.46 -all`
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ (cyber-grid) │
-│     │                                            │    LOGO    │
-│     │              iScope 360                    │      ↑     │
-│     │                                            │   alinhado │
-│═════════════════════════════════════════════════════════════════│ ← linha degradê
-│     │                                            │      ↓     │
-│     │ Análise de Domínio           Data: xxx     │   alinhado │
-│     │ **dominio.com**              Workspace: xxx│             │
-│     ↑                                            ↑             │
-│   início alinhado                           fim alinhado       │
-└─────────────────────────────────────────────────────────────────┘
+EVIDÊNCIAS COLETADAS
+├── Lookups DNS: 2 de 10 permitidos
+└── Mecanismos: 1 a, 1 mx
 ```
 
+**Caso: Domínio com múltiplos includes**
+Registro SPF: `v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all`
+
+```
+EVIDÊNCIAS COLETADAS
+├── Lookups DNS: 2 de 10 permitidos
+└── Mecanismos: 2 include(s)
+```
+
+**Caso: Domínio só com IPs**
+Registro SPF: `v=spf1 ip4:192.168.1.1 ip4:10.0.0.1 -all`
+
+```
+EVIDÊNCIAS COLETADAS
+└── Lookups DNS: Nenhum mecanismo que causa lookup DNS (apenas ip4/ip6)
+```
+
+### Arquivos a Modificar
+1. `supabase/functions/agent-task-result/index.ts` - Adicionar case específico para SPF-003
