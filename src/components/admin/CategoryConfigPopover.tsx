@@ -10,13 +10,23 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Settings, Loader2 } from 'lucide-react';
+import { Settings, Loader2, Trash2 } from 'lucide-react';
 import { 
   AVAILABLE_ICONS, 
   AVAILABLE_COLORS, 
@@ -26,12 +36,17 @@ import {
 } from '@/hooks/useCategoryConfig';
 import { cn } from '@/lib/utils';
 import * as LucideIcons from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface CategoryConfigPopoverProps {
   categoryName: string;
   deviceTypeId: string;
   configs: CategoryConfig[] | undefined;
+  rulesCount?: number;
   onSaved?: () => void;
+  onDeleted?: () => void;
 }
 
 // Dynamic icon component
@@ -54,9 +69,14 @@ export function CategoryConfigPopover({
   categoryName, 
   deviceTypeId,
   configs,
-  onSaved 
+  rulesCount = 0,
+  onSaved,
+  onDeleted
 }: CategoryConfigPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const queryClient = useQueryClient();
+  
   const currentConfig = getCategoryConfig(configs, categoryName);
   const existingConfig = configs?.find(c => c.name === categoryName);
   
@@ -66,6 +86,32 @@ export function CategoryConfigPopover({
   const [displayOrder, setDisplayOrder] = useState(existingConfig?.display_order ?? 0);
 
   const upsertMutation = useUpsertCategoryConfig();
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!existingConfig?.id) {
+        throw new Error('Categoria não existe no banco de dados');
+      }
+      
+      const { error } = await supabase
+        .from('rule_categories')
+        .delete()
+        .eq('id', existingConfig.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Categoria excluída com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['category-configs', deviceTypeId] });
+      setShowDeleteConfirm(false);
+      setIsOpen(false);
+      onDeleted?.();
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao excluir categoria: ' + error.message);
+    },
+  });
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -92,6 +138,11 @@ export function CategoryConfigPopover({
     onSaved?.();
   };
 
+  const handleDelete = () => {
+    deleteMutation.mutate();
+  };
+
+  const canDelete = rulesCount === 0 && existingConfig?.id;
   const selectedColor = AVAILABLE_COLORS.find(c => c.name === color);
 
   return (
@@ -232,6 +283,29 @@ export function CategoryConfigPopover({
                 </span>
               </div>
             </div>
+
+            {/* Delete Section - only for empty categories */}
+            {canDelete && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-destructive">Excluir Categoria</p>
+                    <p className="text-xs text-muted-foreground">
+                      Esta categoria está vazia e pode ser excluída
+                    </p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Excluir
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -254,6 +328,35 @@ export function CategoryConfigPopover({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir categoria?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. A categoria "{currentConfig.displayName}" será removida permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                'Excluir'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
