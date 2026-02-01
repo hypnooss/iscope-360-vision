@@ -85,7 +85,12 @@ export function CategorySection({ category, index, variant = 'default', category
     >
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-4 glass-card rounded-lg mb-3 hover:border-primary/30 transition-colors"
+        className="w-full flex items-center justify-between p-4 rounded-lg mb-3 transition-colors"
+        style={{
+          backgroundColor: `${colorHex}10`,
+          borderColor: `${colorHex}30`,
+          borderWidth: '1px',
+        }}
       >
         <div className="flex items-center gap-3 flex-wrap">
           <div 
