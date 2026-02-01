@@ -16,7 +16,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    borderTopWidth: 3,
+    borderTopWidth: 4,
   },
   value: {
     fontSize: 24,
