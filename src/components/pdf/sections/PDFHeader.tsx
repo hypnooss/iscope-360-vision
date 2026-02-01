@@ -21,9 +21,15 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    position: 'relative',
+  },
+  logoContainer: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   logo: {
     width: 60,
@@ -94,7 +100,11 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
       {/* Linha 1: Título + Logo */}
       <View style={styles.topRow}>
         <Text style={styles.brandText}>{title}</Text>
-        {logoBase64 && <Image style={styles.logo} src={logoBase64} />}
+        {logoBase64 && (
+          <View style={styles.logoContainer}>
+            <Image style={styles.logo} src={logoBase64} />
+          </View>
+        )}
       </View>
 
       {/* Linha 2: Info + Metadata */}
