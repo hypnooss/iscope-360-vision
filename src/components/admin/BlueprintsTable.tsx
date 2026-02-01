@@ -14,16 +14,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Copy, Eye, FileCode } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Copy, FileCode } from 'lucide-react';
 
 interface CollectionSteps {
   steps: Array<{
@@ -56,7 +48,6 @@ export function BlueprintsTable({ deviceTypeId, blueprints, onRefresh }: Props) 
   // Dialog states
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(null);
   
   // Form data
@@ -98,11 +89,6 @@ export function BlueprintsTable({ deviceTypeId, blueprints, onRefresh }: Props) 
       is_active: blueprint.is_active,
     });
     setDialogOpen(true);
-  };
-
-  const openViewDialog = (blueprint: Blueprint) => {
-    setSelectedBlueprint(blueprint);
-    setViewDialogOpen(true);
   };
 
   const openDeleteDialog = (blueprint: Blueprint) => {
@@ -241,52 +227,52 @@ export function BlueprintsTable({ deviceTypeId, blueprints, onRefresh }: Props) 
           <p>Nenhum blueprint cadastrado.</p>
         </div>
       ) : (
-        <div className="border rounded-lg border-border/50 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border/50">
-                <TableHead>Nome</TableHead>
-                <TableHead>Versão</TableHead>
-                <TableHead>Steps</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {blueprints.map((blueprint) => (
-                <TableRow key={blueprint.id} className="border-border/50">
-                  <TableCell className="font-medium">{blueprint.name}</TableCell>
-                  <TableCell>
-                    <code className="text-xs bg-muted px-2 py-1 rounded">{blueprint.version}</code>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{getStepsCount(blueprint)} steps</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={blueprint.is_active ? 'default' : 'secondary'}>
-                      {blueprint.is_active ? 'Ativo' : 'Inativo'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openViewDialog(blueprint)} title="Visualizar">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(blueprint)} title="Duplicar" disabled={saving}>
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(blueprint)} title="Editar">
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openDeleteDialog(blueprint)} className="text-destructive hover:text-destructive" title="Excluir">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-4">
+          {blueprints.map((blueprint) => (
+            <div key={blueprint.id} className="border rounded-lg border-border/50 p-4 space-y-4">
+              {/* Header */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="font-medium">{blueprint.name}</h4>
+                  {blueprint.description && (
+                    <p className="text-sm text-muted-foreground mt-1">{blueprint.description}</p>
+                  )}
+                </div>
+                <Badge variant={blueprint.is_active ? 'default' : 'secondary'}>
+                  {blueprint.is_active ? 'Ativo' : 'Inativo'}
+                </Badge>
+              </div>
+              
+              {/* Metadados */}
+              <div className="flex items-center gap-4 text-sm">
+                <span>Versão: <code className="bg-muted px-2 py-0.5 rounded">{blueprint.version}</code></span>
+                <Badge variant="outline">{getStepsCount(blueprint)} steps</Badge>
+              </div>
+              
+              {/* JSON Content */}
+              <ScrollArea className="h-[200px] rounded-md border border-border/50 bg-muted/30 p-3">
+                <pre className="text-xs font-mono">
+                  {JSON.stringify(blueprint.collection_steps, null, 2)}
+                </pre>
+              </ScrollArea>
+              
+              {/* Actions */}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => handleDuplicate(blueprint)} disabled={saving}>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicar
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openEditDialog(blueprint)}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Editar
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openDeleteDialog(blueprint)} className="text-destructive hover:text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -358,37 +344,6 @@ export function BlueprintsTable({ deviceTypeId, blueprints, onRefresh }: Props) 
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {selectedBlueprint ? 'Salvar' : 'Criar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View Dialog */}
-      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="border-border max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{selectedBlueprint?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {selectedBlueprint?.description && (
-              <p className="text-sm text-muted-foreground">{selectedBlueprint.description}</p>
-            )}
-            <div className="flex items-center gap-4 text-sm">
-              <span>Versão: <code className="bg-muted px-2 py-0.5 rounded">{selectedBlueprint?.version}</code></span>
-              <span>Steps: <Badge variant="outline">{selectedBlueprint && getStepsCount(selectedBlueprint)}</Badge></span>
-              <Badge variant={selectedBlueprint?.is_active ? 'default' : 'secondary'}>
-                {selectedBlueprint?.is_active ? 'Ativo' : 'Inativo'}
-              </Badge>
-            </div>
-            <ScrollArea className="h-[300px] rounded-md border border-border/50 p-4">
-              <pre className="text-xs font-mono">
-                {JSON.stringify(selectedBlueprint?.collection_steps, null, 2)}
-              </pre>
-            </ScrollArea>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
