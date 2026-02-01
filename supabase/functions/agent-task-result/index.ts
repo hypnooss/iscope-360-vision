@@ -363,6 +363,11 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'system_automation_stitch': '/api/v2/cmdb/system/automation-stitch',
   'system_automation_trigger': '/api/v2/cmdb/system/automation-trigger',
   'system_automation_action': '/api/v2/cmdb/system/automation-action',
+  // Authentication endpoints
+  'user_ldap': '/api/v2/cmdb/user/ldap',
+  'user_radius': '/api/v2/cmdb/user/radius',
+  'user_fsso': '/api/v2/cmdb/user/fsso',
+  'user_saml': '/api/v2/cmdb/user/saml',
   // SonicWall endpoints
   'version': '/api/sonicos/version',
   'interfaces': '/api/sonicos/interfaces/ipv4',
@@ -1892,6 +1897,286 @@ function formatAnyToAnyEvidence(rawData: Record<string, unknown>): {
 }
 
 /**
+ * Format LDAP evidence (auth-001)
+ * - Status pass: todos os servidores têm secure === 'ldaps'
+ * - Status fail: algum servidor não tem ldaps ou não há servidores
+ */
+function formatLDAPEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  status: 'pass' | 'fail' | 'warn' | 'unknown',
+  hasServers: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const ldapData = rawData['user_ldap'] as Record<string, unknown> | undefined;
+    if (!ldapData) {
+      return {
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown',
+        hasServers: false
+      };
+    }
+
+    const results = (ldapData.results || []) as Array<Record<string, unknown>>;
+
+    if (results.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: 'Nenhum servidor LDAP configurado',
+        type: 'text'
+      });
+      return { evidence, status: 'fail', hasServers: false };
+    }
+
+    // Contar servidores com e sem criptografia
+    const secureServers = results.filter(s => s.secure === 'ldaps');
+    const insecureServers = results.filter(s => s.secure !== 'ldaps');
+
+    const allSecure = insecureServers.length === 0;
+
+    // Status principal
+    if (allSecure) {
+      evidence.push({
+        label: 'Status',
+        value: `✅ ${results.length} servidor(es) com criptografia`,
+        type: 'text'
+      });
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: `❌ ${insecureServers.length} servidor(es) sem criptografia`,
+        type: 'text'
+      });
+    }
+
+    // Listar cada servidor
+    for (const server of results) {
+      const name = server.name as string || 'N/A';
+      const serverAddr = server.server as string || 'N/A';
+      const port = server.port || 389;
+      const secure = server.secure as string;
+      const isSecure = secure === 'ldaps';
+
+      evidence.push({
+        label: 'Servidor',
+        value: `${name} (${serverAddr}:${port})`,
+        type: 'text'
+      });
+      evidence.push({
+        label: 'Criptografia',
+        value: isSecure ? 'LDAPS' : 'Desabilitada',
+        type: 'text'
+      });
+    }
+
+    return {
+      evidence,
+      status: allSecure ? 'pass' : 'fail',
+      hasServers: true
+    };
+  } catch (e) {
+    console.error('Error formatting LDAP evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown',
+      hasServers: false
+    };
+  }
+}
+
+/**
+ * Format RADIUS evidence (auth-002)
+ * Exibe lista de servidores RADIUS configurados
+ */
+function formatRADIUSEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  hasServers: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const radiusData = rawData['user_radius'] as Record<string, unknown> | undefined;
+    if (!radiusData) {
+      return {
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        hasServers: false
+      };
+    }
+
+    const results = (radiusData.results || []) as Array<Record<string, unknown>>;
+
+    if (results.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: 'Nenhum servidor RADIUS configurado',
+        type: 'text'
+      });
+      return { evidence, hasServers: false };
+    }
+
+    // Status principal
+    evidence.push({
+      label: 'Status',
+      value: `✅ ${results.length} servidor(es) RADIUS configurado(s)`,
+      type: 'text'
+    });
+
+    // Listar cada servidor
+    for (const server of results) {
+      const name = server.name as string || 'N/A';
+      const serverAddr = server.server as string || 'N/A';
+      const port = server['radius-port'] || 1812;
+
+      evidence.push({
+        label: 'Servidor',
+        value: `${name} (${serverAddr}:${port})`,
+        type: 'text'
+      });
+    }
+
+    return { evidence, hasServers: true };
+  } catch (e) {
+    console.error('Error formatting RADIUS evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      hasServers: false
+    };
+  }
+}
+
+/**
+ * Format FSSO evidence (auth-003)
+ * Exibe lista de agentes FSSO configurados
+ */
+function formatFSSOEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  hasAgents: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const fssoData = rawData['user_fsso'] as Record<string, unknown> | undefined;
+    if (!fssoData) {
+      return {
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        hasAgents: false
+      };
+    }
+
+    const results = (fssoData.results || []) as Array<Record<string, unknown>>;
+
+    if (results.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: 'Nenhum agente FSSO configurado',
+        type: 'text'
+      });
+      return { evidence, hasAgents: false };
+    }
+
+    // Status principal
+    const plural = results.length === 1 ? '' : 's';
+    evidence.push({
+      label: 'Status',
+      value: `✅ ${results.length} agente${plural} FSSO configurado${plural}`,
+      type: 'text'
+    });
+
+    // Listar cada agente
+    for (const agent of results) {
+      const name = agent.name as string || 'N/A';
+      const serverAddr = agent.server as string || 'N/A';
+      const port = agent.port || 8000;
+
+      evidence.push({
+        label: 'Servidor',
+        value: `${name} (${serverAddr}:${port})`,
+        type: 'text'
+      });
+    }
+
+    return { evidence, hasAgents: true };
+  } catch (e) {
+    console.error('Error formatting FSSO evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      hasAgents: false
+    };
+  }
+}
+
+/**
+ * Format SAML evidence (auth-004)
+ * Exibe lista de provedores SAML configurados
+ */
+function formatSAMLEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  hasProviders: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const samlData = rawData['user_saml'] as Record<string, unknown> | undefined;
+    if (!samlData) {
+      return {
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        hasProviders: false
+      };
+    }
+
+    const results = (samlData.results || []) as Array<Record<string, unknown>>;
+
+    if (results.length === 0) {
+      evidence.push({
+        label: 'Status',
+        value: 'Nenhum provedor SAML configurado',
+        type: 'text'
+      });
+      return { evidence, hasProviders: false };
+    }
+
+    // Status principal
+    const plural = results.length === 1 ? '' : 'es';
+    evidence.push({
+      label: 'Status',
+      value: `✅ ${results.length} provedor${plural} SAML configurado${plural}`,
+      type: 'text'
+    });
+
+    // Listar cada provedor
+    for (const provider of results) {
+      const name = provider.name as string || 'N/A';
+      const ssoUrl = provider['idp-single-sign-on-url'] as string || '';
+
+      evidence.push({
+        label: 'Provedor',
+        value: name,
+        type: 'text'
+      });
+
+      if (ssoUrl) {
+        // Truncar URL se muito longa
+        const displayUrl = ssoUrl.length > 60 ? ssoUrl.substring(0, 57) + '...' : ssoUrl;
+        evidence.push({
+          label: 'URL SSO',
+          value: displayUrl,
+          type: 'text'
+        });
+      }
+    }
+
+    return { evidence, hasProviders: true };
+  } catch (e) {
+    console.error('Error formatting SAML evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      hasProviders: false
+    };
+  }
+}
+
+/**
  * Format generic evidence with truncation for large objects
  */
 function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[] {
@@ -1919,7 +2204,7 @@ function formatGenericEvidence(value: unknown, fieldPath: string): EvidenceItem[
     value: displayValue,
     type: isComplex ? 'code' : 'text'
   }];
-};
+}
 
 function formatExternalDomainEvidence(stepId: string, sourceData: unknown): EvidenceItem[] {
   const srcObj = (sourceData && typeof sourceData === 'object') ? (sourceData as Record<string, unknown>) : undefined;
@@ -2348,6 +2633,50 @@ function processComplianceRules(
       } else {
         details = rule.fail_description || `${intResult.vulnerableInterfaces.length} interface(s) vulnerável(is)`;
       }
+    } else if (rule.code === 'auth-001') {
+      // LDAP com criptografia
+      const ldapResult = formatLDAPEvidence(rawData);
+      evidence = ldapResult.evidence;
+      status = ldapResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Todos os servidores LDAP com criptografia LDAPS';
+      } else if (status === 'fail') {
+        details = ldapResult.hasServers 
+          ? (rule.fail_description || 'Servidores LDAP sem criptografia')
+          : 'Nenhum servidor LDAP configurado';
+      } else {
+        details = 'Não foi possível verificar - dados indisponíveis';
+      }
+    } else if (rule.code === 'auth-002') {
+      // RADIUS
+      const radiusResult = formatRADIUSEvidence(rawData);
+      evidence = radiusResult.evidence;
+      // Para RADIUS, manter status original da regra (informativo)
+      if (!radiusResult.hasServers) {
+        details = 'Nenhum servidor RADIUS configurado';
+      } else {
+        details = rule.pass_description || `${(rawData['user_radius'] as Record<string, unknown>)?.results ? ((rawData['user_radius'] as Record<string, unknown>).results as Array<unknown>).length : 0} servidor(es) RADIUS configurado(s)`;
+      }
+    } else if (rule.code === 'auth-003') {
+      // FSSO
+      const fssoResult = formatFSSOEvidence(rawData);
+      evidence = fssoResult.evidence;
+      // Para FSSO, manter status original da regra (informativo)
+      if (!fssoResult.hasAgents) {
+        details = 'Nenhum agente FSSO configurado';
+      } else {
+        details = rule.pass_description || 'Agente(s) FSSO configurado(s)';
+      }
+    } else if (rule.code === 'auth-004') {
+      // SAML
+      const samlResult = formatSAMLEvidence(rawData);
+      evidence = samlResult.evidence;
+      // Para SAML, manter status original da regra (informativo)
+      if (!samlResult.hasProviders) {
+        details = 'Nenhum provedor SAML configurado';
+      } else {
+        details = rule.pass_description || 'Provedor(es) SAML configurado(s)';
+      }
     }
     // ========== EVIDÊNCIAS ESPECÍFICAS POR REGRA (External Domain) ==========
     
@@ -2694,6 +3023,33 @@ function processComplianceRules(
           allowaccess: i.allowaccess
         }))
       };
+    } else if (rule.code.startsWith('auth-')) {
+      // Para regras de autenticação, incluir apenas dados relevantes
+      const authSourceMap: Record<string, string> = {
+        'auth-001': 'user_ldap',
+        'auth-002': 'user_radius',
+        'auth-003': 'user_fsso',
+        'auth-004': 'user_saml'
+      };
+      const sourceKey = authSourceMap[rule.code];
+      if (sourceKey) {
+        const sourceData = rawData[sourceKey] as Record<string, unknown> | undefined;
+        if (sourceData) {
+          const results = (sourceData.results || []) as Array<Record<string, unknown>>;
+          checkRawData = {
+            [sourceKey]: {
+              count: results.length,
+              servers: results.map(s => ({
+                name: s.name,
+                server: s.server,
+                port: s.port || s['radius-port'],
+                ...(rule.code === 'auth-001' ? { secure: s.secure } : {}),
+                ...(rule.code === 'auth-004' ? { 'idp-single-sign-on-url': s['idp-single-sign-on-url'] } : {})
+              }))
+            }
+          };
+        }
+      }
     } else if (rule.code === 'fw-001' && fwResult) {
       // Para regra de firmware, incluir dados do sistema
       checkRawData = {
@@ -2708,11 +3064,11 @@ function processComplianceRules(
         field_path: logic.field_path,
         data: stepData ?? sourceData,
       };
-    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && !rule.code.startsWith('fw-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
-      // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, fw-*, net-003, ha-003), incluir dados brutos genéricos
+    } else if (!rule.code.startsWith('inb-') && !rule.code.startsWith('vpn-') && !rule.code.startsWith('utm-') && !rule.code.startsWith('sec-') && !rule.code.startsWith('int-') && !rule.code.startsWith('fw-') && !rule.code.startsWith('auth-') && rule.code !== 'net-003' && rule.code !== 'ha-003' && logic.field_path && value !== undefined) {
+      // Para outras regras (exceto inbound, VPN, UTM, sec-*, int-*, fw-*, auth-*, net-003, ha-003), incluir dados brutos genéricos
       checkRawData[logic.field_path] = value;
     }
-    // Nota: regras inb-*, utm-*, sec-*, int-*, fw-*, net-003 e ha-003 só têm rawData quando há políticas/interfaces vulneráveis ou dados relevantes (tratado acima)
+    // Nota: regras inb-*, utm-*, sec-*, int-*, fw-*, auth-*, net-003 e ha-003 só têm rawData quando há políticas/interfaces vulneráveis ou dados relevantes (tratado acima)
     
     checks.push({
       id: rule.code,
