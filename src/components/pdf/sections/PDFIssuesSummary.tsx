@@ -8,7 +8,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.cardPadding,
     borderWidth: 1,
-    borderColor: colors.borderDanger,
+    borderColor: colors.danger,
     borderLeftWidth: 4,
     borderLeftColor: colors.danger,
     marginTop: spacing.sectionGap,
