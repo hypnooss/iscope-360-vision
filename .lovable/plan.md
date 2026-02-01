@@ -1,73 +1,87 @@
 
 
-## Correção do Alinhamento Vertical da Recomendação
+## Linha Decorativa Degradê no Header do PDF
 
-### Problema Atual
-A linha cinza (`borderTopWidth: 1`) está aplicada diretamente no elemento `<Text>`, fazendo com que a borda e o texto fiquem "colados" verticalmente. O `marginTop` move o bloco inteiro (borda + texto), não criando espaço entre a borda e o texto.
+### Objetivo
+Adicionar uma linha horizontal branca com efeito degradê (transparente nas pontas → branco no centro → transparente nas pontas) entre a linha do título "iScope 360" e a linha de informações do relatório.
 
-### Estrutura Atual
+### Viabilidade Técnica
+O `@react-pdf/renderer` suporta gradientes SVG nativamente através dos componentes:
+- `Svg` - Container SVG
+- `Defs` - Definições de gradientes
+- `LinearGradient` - Gradiente linear
+- `Stop` - Pontos de cor do gradiente
+- `Rect` - Retângulo para aplicar o gradiente
+
+### Implementação
+
+**Arquivo:** `src/components/pdf/sections/PDFHeader.tsx`
+
+1. **Importar componentes SVG:**
+```typescript
+import { View, Text, Image, Svg, Defs, LinearGradient, Stop, Rect, StyleSheet } from '@react-pdf/renderer';
 ```
-<Text style={recommendation}>  ← borderTop aplicado aqui
-  <Text>Recomendação:</Text>   ← texto colado na borda
-  {check.recommendation}
-</Text>
+
+2. **Criar componente de linha degradê:**
+```tsx
+const GradientLine = () => (
+  <View style={styles.gradientLineContainer}>
+    <Svg width="100%" height={1} viewBox="0 0 500 1">
+      <Defs>
+        <LinearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.1} />
+          <Stop offset="50%" stopColor="#FFFFFF" stopOpacity={1} />
+          <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0.1} />
+        </LinearGradient>
+      </Defs>
+      <Rect x="0" y="0" width="500" height="1" fill="url(#headerGradient)" />
+    </Svg>
+  </View>
+);
 ```
 
-### Solução Proposta
-Envolver a recomendação em uma `<View>` container, separando a borda do texto:
-
+3. **Adicionar estilo do container:**
+```typescript
+gradientLineContainer: {
+  width: '100%',
+  height: 1,
+  marginBottom: 16,
+},
 ```
-<View style={recommendationContainer}>  ← borderTop aplicado aqui
-  <Text style={recommendationText}>     ← texto com paddingTop para espaçamento
-    <Text>Recomendação:</Text>
-    {check.recommendation}
-  </Text>
+
+4. **Inserir no JSX entre topRow e infoRow:**
+```tsx
+<View style={styles.container}>
+  {/* Linha 1: Título + Logo */}
+  <View style={styles.topRow}>
+    <Text style={styles.brandText}>{title}</Text>
+    {logoBase64 && (
+      <View style={styles.logoContainer}>
+        <Image style={styles.logo} src={logoBase64} />
+      </View>
+    )}
+  </View>
+
+  {/* Linha decorativa degradê */}
+  <GradientLine />
+
+  {/* Linha 2: Info + Metadata */}
+  <View style={styles.infoRow}>
+    ...
+  </View>
 </View>
 ```
 
-### Alterações Técnicas
-
-**Arquivo:** `src/components/pdf/sections/PDFCategorySection.tsx`
-
-1. **Criar novo estilo `recommendationContainer`:**
-```typescript
-recommendationContainer: {
-  marginLeft: 22,
-  marginTop: 8,            // Espaço entre descrição e linha cinza
-  paddingTop: 8,           // Espaço entre linha cinza e texto
-  borderTopWidth: 1,
-  borderTopColor: colors.border,
-},
+### Estrutura do Gradiente
+```
+Esquerda          Centro          Direita
+   |                |                |
+   ▼                ▼                ▼
+10% opaco  →  100% opaco  →  10% opaco
+(quase transparente) (branco sólido) (quase transparente)
 ```
 
-2. **Simplificar estilo `recommendation`:**
-```typescript
-recommendation: {
-  fontSize: typography.bodySmall,
-  color: colors.textSecondary,
-  lineHeight: 1.4,
-},
-```
-
-3. **Atualizar JSX:**
-```tsx
-{check.recommendation && (
-  <View style={styles.recommendationContainer}>
-    <Text style={styles.recommendation}>
-      <Text style={styles.recommendationLabel}>Recomendação: </Text>
-      {check.recommendation}
-    </Text>
-  </View>
-)}
-```
-
-### Resultado Visual Esperado
-
-```
-Descrição do problema...
-                              ← marginTop: 8px (espaço acima da linha)
-────────────────────────────  ← borderTop (linha cinza)
-                              ← paddingTop: 8px (espaço abaixo da linha)
-Recomendação: texto...
-```
+### Ajustes de Espaçamento
+- Reduzir `marginBottom` do `topRow` de 24 para 12 (a linha ocupará parte do espaço)
+- Adicionar `marginBottom: 16` no container da linha para espaço antes do infoRow
 
