@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   reportType: {
-    fontSize: typography.body,
+    fontSize: typography.subheading,
     fontFamily: typography.regular,
     color: textMuted,
     marginBottom: 4,
@@ -60,15 +60,15 @@ const styles = StyleSheet.create({
     color: textWhite,
   },
   dateText: {
-    fontSize: typography.bodySmall,
+    fontSize: typography.body,
     color: textMuted,
     textAlign: 'right',
   },
   workspaceName: {
-    fontSize: typography.bodySmall,
+    fontSize: typography.body,
     color: textMuted,
     textAlign: 'right',
-    marginTop: 2,
+    marginTop: 6,
   },
 });
 
@@ -104,7 +104,7 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
           <Text style={styles.target}>{target}</Text>
         </View>
         <View style={styles.rightColumn}>
-          <Text style={styles.dateText}>{date}</Text>
+          <Text style={styles.dateText}>Análise executada em: {date}</Text>
           {subtitle && <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>}
         </View>
       </View>
