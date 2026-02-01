@@ -1,121 +1,105 @@
 
+## Plano: Corrigir Efeitos de Hover e Padronizar Fontes nos Cards de Compliance
 
-## Plano: Corrigir Ícone de Reload e Cores de Fundo das Categorias
+### Contexto
 
-### Problema 1: Ícone de Reload ao Alternar Abas
+Três problemas identificados:
 
-**Causa Raiz Identificada:**
-Em `FirewallAnalysis.tsx`, o `useEffect` (linhas 132-142) é executado sempre que o componente é montado/remontado, chamando `fetchAnalysisDate()` repetidamente. Isso causa:
-- Requisições duplicadas ao Supabase (visível nos logs de rede)
-- Re-renderização do componente `Dashboard`
-- Animação do ícone de refresh aparecendo brevemente
+1. **Hover não funciona em todas as categorias** - O mapa `CATEGORY_HOVER_CLASSES` em `ComplianceCard.tsx` só contém 6 cores, mas o sistema usa 14 cores diferentes
+2. **CategorySection não passa a cor da categoria** - O componente não envia `categoryColorKey` para `ComplianceCard`
+3. **Tamanhos de fonte inconsistentes** - Precisam ser padronizados
 
-**Diferença com External Domain:**
-O `ExternalDomainAnalysisReportPage.tsx` usa `useMemo` para manter o `initialReport` estável (linha 379-382) e só busca dados se não houver relatório inicial (linha 445-450).
+---
 
-**Solução:**
+### Problema 1: Mapa de Cores de Hover Incompleto
 
-#### Alteração 1.1 - `FirewallAnalysis.tsx` - Estabilizar efeito
+**Arquivo:** `src/components/ComplianceCard.tsx`
 
-Usar `useRef` para controlar se já buscou os dados, evitando re-execução:
-
+**Situação Atual (linhas 18-25):**
 ```typescript
-const hasFetchedRef = useRef(false);
-
-useEffect(() => {
-  if (!id || !user) return;
-  if (hasFetchedRef.current) return;
-  
-  hasFetchedRef.current = true;
-  fetchFirewall();
-  
-  if (!initialReport) {
-    fetchLastAnalysis();
-  } else {
-    fetchAnalysisDate();
-  }
-}, [id, user]);
+const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> = {
+  'sky-500': { border: 'hover:border-sky-500/50', text: 'group-hover:text-sky-500' },
+  'blue-500': { border: 'hover:border-blue-500/50', text: 'group-hover:text-blue-500' },
+  'violet-500': { border: 'hover:border-violet-500/50', text: 'group-hover:text-violet-500' },
+  'teal-500': { border: 'hover:border-teal-500/50', text: 'group-hover:text-teal-500' },
+  'purple-500': { border: 'hover:border-purple-500/50', text: 'group-hover:text-purple-500' },
+  'slate-500': { border: 'hover:border-slate-500/50', text: 'group-hover:text-slate-500' },
+};
 ```
 
-#### Alteração 1.2 - Usar useMemo para initialReport
-
-Memoizar a normalização do relatório inicial para evitar recálculo:
+**Solução:** Adicionar TODAS as cores definidas em `AVAILABLE_COLORS`:
 
 ```typescript
-const initialReport = useMemo(() => {
-  if (!location.state?.report) return null;
-  return normalizeReportData(location.state.report as Record<string, unknown>);
-}, [location.state?.report]);
+const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> = {
+  // Cores originais
+  'sky-500': { border: 'hover:border-sky-500/50', text: 'group-hover:text-sky-500' },
+  'blue-500': { border: 'hover:border-blue-500/50', text: 'group-hover:text-blue-500' },
+  'violet-500': { border: 'hover:border-violet-500/50', text: 'group-hover:text-violet-500' },
+  'teal-500': { border: 'hover:border-teal-500/50', text: 'group-hover:text-teal-500' },
+  'purple-500': { border: 'hover:border-purple-500/50', text: 'group-hover:text-purple-500' },
+  'slate-500': { border: 'hover:border-slate-500/50', text: 'group-hover:text-slate-500' },
+  // Cores adicionais do AVAILABLE_COLORS
+  'cyan-600': { border: 'hover:border-cyan-600/50', text: 'group-hover:text-cyan-600' },
+  'emerald-600': { border: 'hover:border-emerald-600/50', text: 'group-hover:text-emerald-600' },
+  'pink-500': { border: 'hover:border-pink-500/50', text: 'group-hover:text-pink-500' },
+  'amber-500': { border: 'hover:border-amber-500/50', text: 'group-hover:text-amber-500' },
+  'red-500': { border: 'hover:border-red-500/50', text: 'group-hover:text-red-500' },
+  'green-500': { border: 'hover:border-green-500/50', text: 'group-hover:text-green-500' },
+  'orange-500': { border: 'hover:border-orange-500/50', text: 'group-hover:text-orange-500' },
+  'indigo-500': { border: 'hover:border-indigo-500/50', text: 'group-hover:text-indigo-500' },
+  'rose-500': { border: 'hover:border-rose-500/50', text: 'group-hover:text-rose-500' },
+};
 ```
 
 ---
 
-### Problema 2: Cores de Fundo das Categorias
+### Problema 2: CategorySection Não Passa Cor
 
-**Causa Raiz Identificada:**
-Em `CategorySection.tsx`, o botão usa a classe `glass-card` (linha 88), que aplica um fundo genérico. Não há estilos inline para aplicar a cor da categoria ao fundo.
+**Arquivo:** `src/components/CategorySection.tsx`
 
-**Diferença com External Domain:**
-Em `ExternalDomainCategorySection.tsx`, o `Button` usa estilos inline (linhas 92-96):
+**Situação Atual (linha 160):**
 ```tsx
-style={{
-  backgroundColor: `${colorHex}10`,
-  borderColor: `${colorHex}30`,
-  borderWidth: '1px',
-}}
+<ComplianceCard key={check.id} check={check} variant={variant} />
 ```
 
-**Solução:**
-
-#### Alteração 2.1 - `CategorySection.tsx` - Aplicar cores dinâmicas
-
-Substituir o uso de `glass-card` por estilos inline com a cor da categoria:
+**Solução:** Passar `categoryColorKey`:
 
 ```tsx
-<button
-  onClick={() => setIsExpanded(!isExpanded)}
-  className="w-full flex items-center justify-between p-4 rounded-lg mb-3 hover:border-primary/30 transition-colors"
-  style={{
-    backgroundColor: `${colorHex}10`,
-    borderColor: `${colorHex}30`,
-    borderWidth: '1px',
-  }}
->
+<ComplianceCard 
+  key={check.id} 
+  check={check} 
+  variant={variant} 
+  categoryColorKey={config.color}
+/>
 ```
+
+---
+
+### Problema 3: Padronização de Tamanho de Fonte
+
+**Comparação dos Componentes:**
+
+| Elemento | CategorySection | ExternalDomainCategorySection |
+|----------|-----------------|-------------------------------|
+| Nome categoria | `font-semibold text-foreground` | `font-semibold text-foreground` |
+| Percentual | `text-lg font-semibold` | `text-lg font-semibold` |
+| Badges | `text-xs` | `text-xs` |
+
+Os tamanhos de fonte já estão padronizados entre os componentes. Nenhuma alteração necessária.
 
 ---
 
 ### Resumo das Alterações
 
-| Arquivo | Problema | Solução |
-|---------|----------|---------|
-| `FirewallAnalysis.tsx` | Efeito re-executando | Adicionar `useRef` para controle + `useMemo` para relatório |
-| `CategorySection.tsx` | Fundo genérico (glass-card) | Aplicar cor da categoria via `style` inline |
-
----
-
-### Comparação Visual dos Cards de Categoria
-
-**Antes (Firewall):**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ [Glass-card genérico sem cor da categoria]                      │
-│ [Icon] Nome da Categoria [badges...]                       85%  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Depois (Padrão Domínio Externo):**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ [Fundo colorido tênue (${colorHex}10) + borda colorida]         │
-│ [Icon] Nome da Categoria [badges...]                       85%  │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/ComplianceCard.tsx` | Adicionar 9 cores faltantes ao mapa `CATEGORY_HOVER_CLASSES` |
+| `src/components/CategorySection.tsx` | Passar `categoryColorKey={config.color}` para `ComplianceCard` |
 
 ---
 
 ### Resultado Esperado
 
-1. **Sem ícone de reload**: Ao alternar abas do navegador, a página não refaz requisições
-2. **Cores consistentes**: Os cards de categoria do Firewall terão fundo e borda coloridos conforme configurado no Template do Fortigate
-
+1. **Hover funcionando em todas as categorias**: Ao passar o mouse sobre qualquer card de item, a borda e a seta mudarão para a cor da categoria pai
+2. **Consistência visual**: Tanto Firewall quanto Domínio Externo terão o mesmo comportamento de hover
+3. **Cores suportadas**: Todas as 14 cores do sistema terão efeitos de hover definidos
