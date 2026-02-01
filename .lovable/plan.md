@@ -1,62 +1,61 @@
 
 
-## Correção do PDF - Resumo por Categoria e Categorias
+## Correção do Layout da Página 1 do PDF
 
-### Problemas Identificados
+### Problema Identificado
 
-| Problema | Causa | Impacto |
-|----------|-------|---------|
-| **Tabela cortada** | `PDFCategorySummaryTable` não tem `wrap={false}` | Última linha da tabela fica sobreposta ao rodapé |
-| **Categorias faltando** | Filtro exibe apenas categorias com falhas | Categorias 100% aprovadas não aparecem no detalhamento |
+A tabela "Resumo por Categoria" está sendo empurrada para a Página 2 quando o domínio possui 4 ou mais nameservers, pois:
+1. O componente `PDFDomainInfo` lista **todos** os nameservers
+2. O espaçamento entre seções (`sectionGap`) é 20px
 
 ---
 
-### Correção 1: Tabela "Resumo por Categoria"
+### Solução em Duas Partes
 
-O componente `PDFCategorySummaryTable` precisa impedir que a tabela seja quebrada entre páginas.
+#### Parte 1: Limitar Exibição de Nameservers
+
+**Arquivo:** `src/components/pdf/sections/PDFDomainInfo.tsx`
+
+Limitar a exibição a **3 nameservers** e adicionar indicador "+ X nameservers" quando houver mais:
+
+```
+┌─ ANTES ────────────────────────┐    ┌─ DEPOIS ───────────────────────┐
+│ Nameservers                    │    │ Nameservers                    │
+│   • ns1.example.com            │    │   • ns1.example.com            │
+│   • ns2.example.com            │    │   • ns2.example.com            │
+│   • ns3.example.com            │    │   • ns3.example.com            │
+│   • ns4.example.com            │    │   + 1 nameserver               │
+└────────────────────────────────┘    └────────────────────────────────┘
+```
+
+**Lógica:**
+```typescript
+const MAX_NAMESERVERS = 3;
+const visibleNameservers = nameservers.slice(0, MAX_NAMESERVERS);
+const remainingCount = nameservers.length - MAX_NAMESERVERS;
+
+// Render visibleNameservers...
+{remainingCount > 0 && (
+  <Text style={styles.moreItems}>
+    + {remainingCount} nameserver{remainingCount > 1 ? 's' : ''}
+  </Text>
+)}
+```
+
+---
+
+#### Parte 2: Reduzir Espaçamentos
+
+**Arquivo:** `src/components/pdf/sections/PDFDomainInfo.tsx`
+
+Reduzir o espaçamento entre:
+- Container (`marginTop`: 8 → 6)
+- Seções internas (`marginBottom`: 8 → 6)
 
 **Arquivo:** `src/components/pdf/sections/PDFCategorySummaryTable.tsx`
 
-```typescript
-// Adicionar wrap={false} no container da tabela
-<View style={styles.table} wrap={false}>
-```
-
-Isso garante que a tabela inteira (com todas as 5 linhas) fique em uma única página, movendo para a próxima se não couber.
-
----
-
-### Correção 2: Exibir Todas as Categorias
-
-Atualmente o código filtra apenas categorias com falhas:
-```typescript
-const categoriesWithFailures = report.categories.filter(
-  (cat) => cat.checks.some((c) => c.status === 'fail')
-);
-```
-
-**Alterar para exibir todas as categorias:**
-
-**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
-
-```typescript
-// ANTES: Apenas categorias com falhas
-const categoriesWithFailures = report.categories.filter(
-  (cat) => cat.checks.some((c) => c.status === 'fail')
-);
-
-// DEPOIS: Todas as categorias
-// Remover o filtro e usar report.categories diretamente
-```
-
-E ajustar a condição de renderização:
-```typescript
-// ANTES
-{categoriesWithFailures.length > 0 && (
-
-// DEPOIS
-{report.categories.length > 0 && (
-```
+Reduzir o espaçamento superior da tabela:
+- Container (`marginTop`: `sectionGap` 20 → 12)
 
 ---
 
@@ -64,14 +63,14 @@ E ajustar a condição de renderização:
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `PDFCategorySummaryTable.tsx` | Adicionar `wrap={false}` na tabela |
-| `ExternalDomainPDF.tsx` | Remover filtro de `categoriesWithFailures`, usar todas as categorias |
+| `PDFDomainInfo.tsx` | Limitar nameservers a 3 + indicador; reduzir margens internas |
+| `PDFCategorySummaryTable.tsx` | Reduzir `marginTop` do container de 20 para 12 |
 
 ---
 
 ### Resultado Esperado
 
-1. **Tabela completa** - "Resumo por Categoria" exibe todas as 5 linhas sem corte
-2. **Detalhamento completo** - Seção "Detalhamento por Categoria" exibe todas as 5 categorias (DNS, Email, SPF, DKIM, DMARC)
-3. **Consistência** - Número de categorias no resumo = número de categorias no detalhamento
+1. **Consistência de altura** - Seção de Domain Info sempre ocupa ~4 linhas de nameservers
+2. **Tabela na Página 1** - "Resumo por Categoria" volta a caber na primeira página
+3. **Informação preservada** - Usuário sabe que existem mais nameservers via "+ X"
 
