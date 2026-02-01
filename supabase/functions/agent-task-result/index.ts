@@ -2224,6 +2224,57 @@ function processComplianceRules(
         type: 'text' 
       }];
     }
+    // SPF-003: Limite de DNS Lookups SPF
+    else if (rule.code === 'SPF-003') {
+      const spfData = sourceData as Record<string, unknown>;
+      const parsed = ((spfData?.data as Record<string, unknown>)?.parsed || {}) as Record<string, unknown>;
+      
+      // Mecanismos que causam DNS lookups
+      const includes = Array.isArray(parsed.includes) ? parsed.includes as string[] : [];
+      const aMechanisms = Array.isArray(parsed.a) ? parsed.a as string[] : [];
+      const mxMechanisms = Array.isArray(parsed.mx) ? parsed.mx as string[] : [];
+      const existsMechanisms = Array.isArray(parsed.exists) ? parsed.exists as string[] : [];
+      const redirect = parsed.redirect ? 1 : 0;
+      
+      // Contar total de lookups
+      const totalLookups = includes.length + aMechanisms.length + mxMechanisms.length + existsMechanisms.length + redirect;
+      
+      // Montar lista de mecanismos que causam lookups
+      const lookupMechanisms: string[] = [];
+      if (includes.length > 0) {
+        lookupMechanisms.push(`${includes.length} include(s)`);
+      }
+      if (aMechanisms.length > 0) {
+        lookupMechanisms.push(`${aMechanisms.length} a`);
+      }
+      if (mxMechanisms.length > 0) {
+        lookupMechanisms.push(`${mxMechanisms.length} mx`);
+      }
+      if (existsMechanisms.length > 0) {
+        lookupMechanisms.push(`${existsMechanisms.length} exists`);
+      }
+      if (redirect) {
+        lookupMechanisms.push(`1 redirect`);
+      }
+      
+      if (totalLookups === 0) {
+        evidence = [{
+          label: 'Lookups DNS',
+          value: 'Nenhum mecanismo que causa lookup DNS (apenas ip4/ip6)',
+          type: 'text'
+        }];
+      } else {
+        evidence = [{
+          label: 'Lookups DNS',
+          value: `${totalLookups} de 10 permitidos`,
+          type: 'text'
+        }, {
+          label: 'Mecanismos',
+          value: lookupMechanisms.join(', '),
+          type: 'text'
+        }];
+      }
+    }
     else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
