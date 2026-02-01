@@ -789,14 +789,23 @@ function formatLoggingEvidence(rawData: Record<string, unknown>, ruleCode: strin
 
 /**
  * Format HA (High Availability) evidence (ha-001)
+ * Returns evidence AND calculated status
+ * - standalone = fail (não há HA configurado)
+ * - qualquer outro modo = pass (HA ativo)
  */
-function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+function formatHAEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  status: 'pass' | 'fail' | 'warn' | 'unknown'
+} {
   const evidence: EvidenceItem[] = [];
   
   try {
     const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
     if (!haData) {
-      return [{ label: 'HA', value: 'Dados não disponíveis', type: 'text' }];
+      return {
+        evidence: [{ label: 'HA', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown'
+      };
     }
     
     const results = haData.results as Record<string, unknown> || haData;
@@ -804,22 +813,120 @@ function formatHAEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
     const groupName = results['group-name'] as string || 'N/A';
     const priority = results.priority || 'N/A';
     
-    evidence.push({ label: 'Modo', value: mode, type: 'text' });
-    if (mode !== 'standalone') {
-      evidence.push({ label: 'Grupo', value: String(groupName), type: 'text' });
-      evidence.push({ label: 'Prioridade', value: String(priority), type: 'text' });
+    if (mode === 'standalone') {
+      evidence.push({ label: 'Status', value: '❌ HA não configurado (standalone)', type: 'text' });
+      evidence.push({ label: 'Modo', value: mode, type: 'text' });
+      return { evidence, status: 'fail' };
     }
+    
+    // HA está configurado (a-p ou a-a)
+    const modeLabel = mode === 'a-p' ? 'Ativo-Passivo' : mode === 'a-a' ? 'Ativo-Ativo' : mode;
+    evidence.push({ label: 'Status', value: `✅ HA configurado (${modeLabel})`, type: 'text' });
+    evidence.push({ label: 'Grupo', value: String(groupName), type: 'text' });
+    evidence.push({ label: 'Prioridade', value: String(priority), type: 'text' });
+    
+    return { evidence, status: 'pass' };
   } catch (e) {
     console.error('Error formatting HA evidence:', e);
-    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown'
+    };
   }
-  
-  return evidence;
+}
+
+/**
+ * Format HA Session Sync evidence (ha-002)
+ * - standalone = unknown (N/A - não faz sentido avaliar)
+ * - session-pickup enabled = pass
+ * - session-pickup disabled = fail/warn
+ */
+function formatHASessionSyncEvidence(rawData: Record<string, unknown>): {
+  evidence: EvidenceItem[],
+  status: 'pass' | 'fail' | 'warn' | 'unknown',
+  skipRawData: boolean
+} {
+  const evidence: EvidenceItem[] = [];
+
+  try {
+    const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
+    if (!haData) {
+      return {
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown',
+        skipRawData: true
+      };
+    }
+
+    const results = haData.results as Record<string, unknown> || haData;
+    const mode = results.mode as string || 'standalone';
+
+    // Se HA não está configurado, não faz sentido verificar sincronização
+    if (mode === 'standalone') {
+      evidence.push({
+        label: 'Status',
+        value: 'N/A - HA não configurado',
+        type: 'text'
+      });
+      return { evidence, status: 'unknown', skipRawData: true };
+    }
+
+    // HA está ativo - verificar sincronização de sessões
+    const sessionPickup = results['session-pickup'] as string || 'disable';
+    const sessionPickupNat = results['session-pickup-nat'] as string || 'disable';
+    const sessionPickupConnectionless = results['session-pickup-connectionless'] as string || 'disable';
+    const sessionPickupExpectation = results['session-pickup-expectation'] as string || 'disable';
+
+    const isEnabled = sessionPickup === 'enable';
+
+    // Status principal
+    evidence.push({
+      label: 'Status',
+      value: isEnabled ? '✅ Sincronização ativa' : '❌ Sincronização desativada',
+      type: 'text'
+    });
+
+    // Detalhes dos tipos de sessão
+    evidence.push({
+      label: 'Sessões TCP/UDP',
+      value: sessionPickup === 'enable' ? 'Habilitado' : 'Desabilitado',
+      type: 'text'
+    });
+    evidence.push({
+      label: 'Sessões NAT',
+      value: sessionPickupNat === 'enable' ? 'Habilitado' : 'Desabilitado',
+      type: 'text'
+    });
+    evidence.push({
+      label: 'Sessões sem Conexão',
+      value: sessionPickupConnectionless === 'enable' ? 'Habilitado' : 'Desabilitado',
+      type: 'text'
+    });
+    evidence.push({
+      label: 'Expectativas de Protocolo',
+      value: sessionPickupExpectation === 'enable' ? 'Habilitado' : 'Desabilitado',
+      type: 'text'
+    });
+
+    return { 
+      evidence, 
+      status: isEnabled ? 'pass' : 'fail',
+      skipRawData: false 
+    };
+  } catch (e) {
+    console.error('Error formatting HA Session Sync evidence:', e);
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown',
+      skipRawData: true
+    };
+  }
 }
 
 /**
  * Format HA Heartbeat evidence (ha-003)
  * Only shows data when HA is actually configured (not standalone)
+ * Evidências humanizadas: Status + lista de interfaces individuais
  */
 function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
   evidence: EvidenceItem[],
@@ -832,7 +939,7 @@ function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
     const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
     if (!haData) {
       return {
-        evidence: [{ label: 'HA', value: 'Dados não disponíveis', type: 'text' }],
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
         status: 'unknown',
         skipRawData: true
       };
@@ -863,8 +970,20 @@ function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
       return { evidence, status: 'fail', skipRawData: false };
     }
 
-    // Contar interfaces de heartbeat (separadas por espaço ou vírgula)
-    const interfaces = hbdev.split(/[\s,]+/).filter(Boolean);
+    // Extrair interfaces de heartbeat
+    // Formato pode ser: "port1 0 port2 0" (interface + prioridade alternando)
+    // ou simplesmente: "port1 port2" ou "port1,port2"
+    const parts = hbdev.split(/[\s,]+/).filter(Boolean);
+    const interfaces: string[] = [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      // Se não é um número puro, é um nome de interface
+      if (!/^\d+$/.test(part)) {
+        interfaces.push(part);
+      }
+    }
+
     const count = interfaces.length;
 
     if (count >= 2) {
@@ -873,24 +992,34 @@ function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
         value: `✅ ${count} links de heartbeat configurados`,
         type: 'text'
       });
-      evidence.push({
-        label: 'Interfaces',
-        value: interfaces.join(', '),
-        type: 'code'
-      });
+      // Listar cada interface individualmente
+      for (const iface of interfaces) {
+        evidence.push({
+          label: 'Interface',
+          value: iface,
+          type: 'text'
+        });
+      }
       return { evidence, status: 'pass', skipRawData: false };
-    } else {
+    } else if (count === 1) {
       evidence.push({
         label: 'Status',
-        value: `⚠️ Apenas 1 link de heartbeat (ponto de falha)`,
+        value: '⚠️ Apenas 1 link de heartbeat (ponto de falha)',
         type: 'text'
       });
       evidence.push({
         label: 'Interface',
-        value: interfaces[0] || hbdev,
-        type: 'code'
+        value: interfaces[0],
+        type: 'text'
       });
       return { evidence, status: 'warn', skipRawData: false };
+    } else {
+      evidence.push({
+        label: 'Status',
+        value: '❌ Nenhum link de heartbeat configurado',
+        type: 'text'
+      });
+      return { evidence, status: 'fail', skipRawData: false };
     }
   } catch (e) {
     console.error('Error formatting HA Heartbeat evidence:', e);
@@ -2053,6 +2182,8 @@ function processComplianceRules(
     let evidence: EvidenceItem[] = [];
     let inboundResult: { evidence: EvidenceItem[], relevantPolicies: Array<Record<string, unknown>> } | null = null;
     let haHeartbeatResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
+    let haSyncResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData: boolean } | null = null;
+    let haResult: { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown' } | null = null;
     let anyToAnyResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let utmResult: { evidence: EvidenceItem[], vulnerablePolicies: Array<Record<string, unknown>> } | null = null;
     let secResult: { evidence: EvidenceItem[], status?: 'pass' | 'fail' | 'warn' | 'unknown', skipRawData?: boolean, rawDataOverride?: Record<string, unknown> } | null = null;
@@ -2130,8 +2261,29 @@ function processComplianceRules(
       // Logging rules
       evidence = formatLoggingEvidence(rawData, rule.code);
     } else if (rule.code === 'ha-001') {
-      // High Availability
-      evidence = formatHAEvidence(rawData);
+      // High Availability - Modo HA
+      haResult = formatHAEvidence(rawData);
+      evidence = haResult.evidence;
+      status = haResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'HA configurado corretamente';
+      } else if (status === 'fail') {
+        details = rule.fail_description || 'HA não configurado (standalone)';
+      } else {
+        details = 'Dados de HA não disponíveis';
+      }
+    } else if (rule.code === 'ha-002') {
+      // HA Session Sync - Sincronização de Sessões
+      haSyncResult = formatHASessionSyncEvidence(rawData);
+      evidence = haSyncResult.evidence;
+      status = haSyncResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Sincronização de sessões habilitada';
+      } else if (status === 'fail') {
+        details = rule.fail_description || 'Sincronização de sessões desabilitada';
+      } else {
+        details = 'HA não configurado';
+      }
     } else if (rule.code === 'ha-003') {
       // HA Heartbeat - verificar apenas se HA está configurado
       haHeartbeatResult = formatHAHeartbeatEvidence(rawData);
@@ -2400,11 +2552,45 @@ function processComplianceRules(
           status: p.status
         }))
       };
+    } else if (rule.code === 'ha-001' && haResult && haResult.status !== 'unknown') {
+      // Para ha-001, incluir dados de HA quando disponíveis
+      const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
+      if (haData) {
+        const results = haData.results as Record<string, unknown> || haData;
+        checkRawData = {
+          system_ha: {
+            mode: results.mode,
+            'group-name': results['group-name'],
+            priority: results.priority
+          }
+        };
+      }
+    } else if (rule.code === 'ha-002' && haSyncResult && !haSyncResult.skipRawData) {
+      // Para ha-002, incluir dados de sincronização de sessão quando HA está ativo
+      const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
+      if (haData) {
+        const results = haData.results as Record<string, unknown> || haData;
+        checkRawData = {
+          system_ha: {
+            mode: results.mode,
+            'session-pickup': results['session-pickup'],
+            'session-pickup-nat': results['session-pickup-nat'],
+            'session-pickup-connectionless': results['session-pickup-connectionless'],
+            'session-pickup-expectation': results['session-pickup-expectation']
+          }
+        };
+      }
     } else if (rule.code === 'ha-003' && haHeartbeatResult && !haHeartbeatResult.skipRawData) {
       // Para ha-003, incluir dados de HA apenas quando HA está configurado
-      const haData = rawData['system_ha'];
+      const haData = rawData['system_ha'] as Record<string, unknown> | undefined;
       if (haData) {
-        checkRawData = { system_ha: haData };
+        const results = haData.results as Record<string, unknown> || haData;
+        checkRawData = {
+          system_ha: {
+            mode: results.mode,
+            hbdev: results.hbdev
+          }
+        };
       }
     } else if (rule.code === 'log-001') {
       // Para log-001, incluir configurações de log relevantes
