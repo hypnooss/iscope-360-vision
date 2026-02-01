@@ -13,54 +13,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   logo: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
   },
   brandText: {
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: typography.bold,
     color: colors.primary,
     letterSpacing: 0.5,
   },
   dateText: {
-    fontSize: typography.caption,
+    fontSize: typography.bodySmall,
     color: colors.textMuted,
     textAlign: 'right',
   },
   infoSection: {
-    marginTop: 4,
-    paddingLeft: 42, // Align with text after logo
+    marginTop: 8,
+    paddingLeft: 52, // Align with text after logo
   },
   reportType: {
-    fontSize: typography.bodySmall,
+    fontSize: typography.body,
     fontFamily: typography.regular,
     color: colors.textMuted,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   targetRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   target: {
-    fontSize: typography.subheading,
+    fontSize: typography.heading,
     fontFamily: typography.bold,
     color: colors.textPrimary,
   },
   separator: {
-    fontSize: typography.bodySmall,
+    fontSize: typography.body,
     color: colors.textMuted,
   },
   clientName: {
-    fontSize: typography.bodySmall,
+    fontSize: typography.body,
     color: colors.textSecondary,
   },
 });
