@@ -371,27 +371,23 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
               </View>
             </View>
           </View>
-        </View>
 
-        <PDFFooter />
-      </Page>
-
-      {/* PAGE 2: Category Summary Table + Issues */}
-      <Page size="A4" style={pageStyles.page}>
-        <View style={pageStyles.content}>
-          {/* Category Summary Table */}
+          {/* Category Summary Table - on Page 1 */}
           <PDFCategorySummaryTable categories={categorySummaries} />
-          
-          {/* Issues Summary */}
-          {issues.length > 0 && (
-            <View style={{ marginTop: spacing.sectionGap }}>
-              <PDFIssuesSummary issues={issues} maxItems={20} />
-            </View>
-          )}
         </View>
 
         <PDFFooter />
       </Page>
+
+      {/* PAGE 2: Issues Summary */}
+      {issues.length > 0 && (
+        <Page size="A4" style={pageStyles.page}>
+          <View style={pageStyles.content}>
+            <PDFIssuesSummary issues={issues} maxItems={20} />
+          </View>
+          <PDFFooter />
+        </Page>
+      )}
 
       {/* PAGE 3+: Category Details */}
       {allCategories.length > 0 && (
