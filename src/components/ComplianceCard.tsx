@@ -16,12 +16,23 @@ interface ComplianceCardProps {
 
 // Mapa de classes de hover para cada cor de categoria (Tailwind purge-safe)
 const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> = {
+  // Cores originais
   'sky-500': { border: 'hover:border-sky-500/50', text: 'group-hover:text-sky-500' },
   'blue-500': { border: 'hover:border-blue-500/50', text: 'group-hover:text-blue-500' },
   'violet-500': { border: 'hover:border-violet-500/50', text: 'group-hover:text-violet-500' },
   'teal-500': { border: 'hover:border-teal-500/50', text: 'group-hover:text-teal-500' },
   'purple-500': { border: 'hover:border-purple-500/50', text: 'group-hover:text-purple-500' },
   'slate-500': { border: 'hover:border-slate-500/50', text: 'group-hover:text-slate-500' },
+  // Cores adicionais do AVAILABLE_COLORS
+  'cyan-600': { border: 'hover:border-cyan-600/50', text: 'group-hover:text-cyan-600' },
+  'emerald-600': { border: 'hover:border-emerald-600/50', text: 'group-hover:text-emerald-600' },
+  'pink-500': { border: 'hover:border-pink-500/50', text: 'group-hover:text-pink-500' },
+  'amber-500': { border: 'hover:border-amber-500/50', text: 'group-hover:text-amber-500' },
+  'red-500': { border: 'hover:border-red-500/50', text: 'group-hover:text-red-500' },
+  'green-500': { border: 'hover:border-green-500/50', text: 'group-hover:text-green-500' },
+  'orange-500': { border: 'hover:border-orange-500/50', text: 'group-hover:text-orange-500' },
+  'indigo-500': { border: 'hover:border-indigo-500/50', text: 'group-hover:text-indigo-500' },
+  'rose-500': { border: 'hover:border-rose-500/50', text: 'group-hover:text-rose-500' },
 };
 
 const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; className: string; label: string }> = {

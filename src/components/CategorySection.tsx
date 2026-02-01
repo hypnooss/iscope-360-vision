@@ -157,7 +157,12 @@ export function CategorySection({ category, index, variant = 'default', category
           }}
         >
           {category.checks.map((check) => (
-            <ComplianceCard key={check.id} check={check} variant={variant} />
+            <ComplianceCard 
+              key={check.id} 
+              check={check} 
+              variant={variant} 
+              categoryColorKey={config.color}
+            />
           ))}
         </div>
       )}
