@@ -5,9 +5,16 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { toast } from 'sonner';
 import { Shield, Globe, Server, Layers } from 'lucide-react';
 
@@ -60,13 +67,9 @@ export default function TemplatesPage() {
   if (authLoading) {
     return (
       <AppLayout>
-        <div className="p-6">
-          <Skeleton className="h-8 w-48 mb-6" />
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-40" />
-            ))}
-          </div>
+        <div className="p-6 space-y-6">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-64 w-full" />
         </div>
       </AppLayout>
     );
@@ -74,7 +77,7 @@ export default function TemplatesPage() {
 
   return (
     <AppLayout>
-      <div className="p-6">
+      <div className="p-6 space-y-6">
         <PageBreadcrumb
           items={[
             { label: 'Administração' },
@@ -82,74 +85,66 @@ export default function TemplatesPage() {
           ]}
         />
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Layers className="w-6 h-6 text-warning" />
-            Templates
-          </h1>
-          <p className="text-muted-foreground mt-1">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Templates</h1>
+          <p className="text-muted-foreground">
             Gerencie os templates de dispositivos disponíveis no sistema
           </p>
         </div>
 
         {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-40" />
-            ))}
-          </div>
+          <Skeleton className="h-64 w-full" />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {templates?.map((template) => {
-              const IconComponent = deviceIconMap[template.code] || Layers;
-              const categoryDisplay = categoryDisplayMap[template.category] || template.category;
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Categoria</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {templates?.map((template) => {
+                  const IconComponent = deviceIconMap[template.code] || Layers;
+                  const categoryDisplay = categoryDisplayMap[template.category] || template.category;
 
-              return (
-                <Card key={template.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-primary/10">
-                          <IconComponent className="w-5 h-5 text-primary" />
+                  return (
+                    <TableRow key={template.id}>
+                      <TableCell>
+                        <div className="p-1.5 rounded bg-primary/10 w-fit">
+                          <IconComponent className="w-4 h-4 text-primary" />
                         </div>
-                        <div>
-                          <CardTitle className="text-lg">{template.name}</CardTitle>
-                          <CardDescription>{template.vendor}</CardDescription>
-                        </div>
-                      </div>
-                      <Badge variant={template.is_active ? 'default' : 'secondary'}>
-                        {template.is_active ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Código:</span>
+                      </TableCell>
+                      <TableCell className="font-medium">{template.name}</TableCell>
+                      <TableCell>{template.vendor}</TableCell>
+                      <TableCell>
                         <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
                           {template.code}
                         </code>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Categoria:</span>
-                        <span className="font-medium">{categoryDisplay}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                      </TableCell>
+                      <TableCell>{categoryDisplay}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={template.is_active ? 'default' : 'secondary'}>
+                          {template.is_active ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {templates?.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      Nenhum template encontrado
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
-        )}
-
-        {templates?.length === 0 && (
-          <Card className="p-8 text-center">
-            <Layers className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">Nenhum template encontrado</h3>
-            <p className="text-muted-foreground">
-              Não há templates de dispositivos cadastrados no sistema.
-            </p>
-          </Card>
         )}
       </div>
     </AppLayout>
