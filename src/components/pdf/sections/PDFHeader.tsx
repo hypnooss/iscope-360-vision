@@ -22,13 +22,8 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  brandRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    marginBottom: 12,
   },
   logo: {
     width: 48,
@@ -41,8 +36,28 @@ const styles = StyleSheet.create({
     color: accentTeal,
     letterSpacing: 0.5,
   },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginTop: 4,
+  },
+  leftColumn: {
+    flex: 1,
+  },
   rightColumn: {
     alignItems: 'flex-end',
+  },
+  reportType: {
+    fontSize: typography.body,
+    fontFamily: typography.regular,
+    color: textMuted,
+    marginBottom: 4,
+  },
+  target: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: textWhite,
   },
   dateText: {
     fontSize: typography.bodySmall,
@@ -54,25 +69,6 @@ const styles = StyleSheet.create({
     color: textMuted,
     textAlign: 'right',
     marginTop: 2,
-  },
-  infoSection: {
-    marginTop: 4,
-    paddingLeft: 42, // Align with text after logo
-  },
-  reportType: {
-    fontSize: typography.body,
-    fontFamily: typography.regular,
-    color: textMuted,
-    marginBottom: 4,
-  },
-  targetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  target: {
-    fontSize: typography.heading,
-    fontFamily: typography.bold,
-    color: textWhite,
   },
 });
 
@@ -95,27 +91,21 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
 }) => {
   return (
     <View style={styles.container}>
-      {/* Top Row: Brand + Date/Workspace */}
+      {/* Linha 1: Título + Logo */}
       <View style={styles.topRow}>
-        <View style={styles.brandRow}>
-          {logoBase64 && (
-            <Image style={styles.logo} src={logoBase64} />
-          )}
-          <Text style={styles.brandText}>{title}</Text>
+        <Text style={styles.brandText}>{title}</Text>
+        {logoBase64 && <Image style={styles.logo} src={logoBase64} />}
+      </View>
+
+      {/* Linha 2: Info + Metadata */}
+      <View style={styles.infoRow}>
+        <View style={styles.leftColumn}>
+          <Text style={styles.reportType}>{reportType}</Text>
+          <Text style={styles.target}>{target}</Text>
         </View>
         <View style={styles.rightColumn}>
           <Text style={styles.dateText}>{date}</Text>
-          {subtitle && (
-            <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>
-          )}
-        </View>
-      </View>
-
-      {/* Info Section: Report Type + Target */}
-      <View style={styles.infoSection}>
-        <Text style={styles.reportType}>{reportType}</Text>
-        <View style={styles.targetRow}>
-          <Text style={styles.target}>{target}</Text>
+          {subtitle && <Text style={styles.workspaceName}>Workspace: {subtitle}</Text>}
         </View>
       </View>
     </View>
