@@ -224,6 +224,27 @@ export function ParsesManagement({ deviceTypeId }: Props) {
 
     setSaving(true);
     try {
+      // Verificar se alguma regra usa este campo no evaluation_logic
+      const { data: rules } = await supabase
+        .from('compliance_rules')
+        .select('code, name, evaluation_logic')
+        .eq('device_type_id', deviceTypeId)
+        .eq('is_active', true);
+
+      const rulesUsingParse = rules?.filter(rule => {
+        const logic = rule.evaluation_logic as Record<string, unknown>;
+        const logicStr = JSON.stringify(logic);
+        return logicStr.includes(selectedParse.source_field);
+      });
+
+      if (rulesUsingParse && rulesUsingParse.length > 0) {
+        const rulesCodes = rulesUsingParse.map(r => r.code).join(', ');
+        toast.error(`Parse em uso por ${rulesUsingParse.length} regra(s): ${rulesCodes}`);
+        setSaving(false);
+        setDeleteDialogOpen(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('evidence_parses')
         .delete()

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,6 +95,19 @@ interface Props {
 export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Props) {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('flow');
+  const [parsesCount, setParsesCount] = useState(0);
+
+  // Fetch parses count for badge
+  useEffect(() => {
+    const fetchParsesCount = async () => {
+      const { count } = await supabase
+        .from('evidence_parses')
+        .select('*', { count: 'exact', head: true })
+        .eq('device_type_id', deviceType.id);
+      setParsesCount(count || 0);
+    };
+    fetchParsesCount();
+  }, [deviceType.id]);
   
   // Device Type dialogs
   const [editDeviceDialogOpen, setEditDeviceDialogOpen] = useState(false);
@@ -239,6 +252,7 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
               <TabsTrigger value="parses" className="gap-2">
                 <Languages className="w-4 h-4" />
                 Parses
+                <Badge variant="outline" className="ml-1 text-xs">{parsesCount}</Badge>
               </TabsTrigger>
             </TabsList>
 
