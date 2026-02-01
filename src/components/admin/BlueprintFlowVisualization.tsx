@@ -1,8 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { 
-  ArrowRight, 
   Database, 
   Globe, 
   Server, 
@@ -11,9 +9,22 @@ import {
   Shield,
   CheckCircle,
   AlertTriangle,
-  Info
+  Info,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 // Types
 interface CollectionStep {
@@ -48,61 +59,54 @@ interface BlueprintFlowVisualizationProps {
   rules: ComplianceRule[];
 }
 
-// Executor type configurations
+// Executor configurations with dark-mode friendly colors
 const EXECUTOR_CONFIG: Record<string, { 
   icon: React.ElementType; 
   label: string; 
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  barColor: string;
 }> = {
   dns_query: { 
     icon: Globe, 
     label: 'DNS Query', 
-    color: 'text-cyan-600',
-    bgColor: 'bg-cyan-50',
-    borderColor: 'border-cyan-300'
+    barColor: 'bg-cyan-500',
   },
   http_request: { 
     icon: Server, 
     label: 'HTTP Request', 
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-300'
+    barColor: 'bg-blue-500',
   },
   http_session: { 
     icon: Wifi, 
     label: 'HTTP Session', 
-    color: 'text-indigo-600',
-    bgColor: 'bg-indigo-50',
-    borderColor: 'border-indigo-300'
+    barColor: 'bg-indigo-500',
   },
   ssh: { 
     icon: Terminal, 
     label: 'SSH Command', 
-    color: 'text-emerald-600',
-    bgColor: 'bg-emerald-50',
-    borderColor: 'border-emerald-300'
+    barColor: 'bg-emerald-500',
   },
   snmp: { 
     icon: Database, 
     label: 'SNMP Query', 
-    color: 'text-amber-600',
-    bgColor: 'bg-amber-50',
-    borderColor: 'border-amber-300'
+    barColor: 'bg-amber-500',
   },
 };
 
-const SEVERITY_CONFIG: Record<string, { 
-  color: string; 
-  bgColor: string;
-  label: string;
-}> = {
-  critical: { color: 'text-red-600', bgColor: 'bg-red-100', label: 'Crítico' },
-  high: { color: 'text-orange-600', bgColor: 'bg-orange-100', label: 'Alto' },
-  medium: { color: 'text-yellow-600', bgColor: 'bg-yellow-100', label: 'Médio' },
-  low: { color: 'text-blue-600', bgColor: 'bg-blue-100', label: 'Baixo' },
-  info: { color: 'text-gray-600', bgColor: 'bg-gray-100', label: 'Info' },
+// Severity colors - dark mode friendly
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'bg-red-500/20 text-red-400 border-red-500/30',
+  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  info: 'bg-muted text-muted-foreground border-border',
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  critical: 'Crítico',
+  high: 'Alto',
+  medium: 'Médio',
+  low: 'Baixo',
+  info: 'Info',
 };
 
 // Get a human-readable description of the step configuration
@@ -117,20 +121,20 @@ function getStepDescription(step: CollectionStep): string {
   if (executor === 'http_request') {
     const method = config.method || 'GET';
     const endpoint = config.endpoint || config.path || '';
-    return `${method} ${endpoint}`.slice(0, 40);
+    return `${method} ${endpoint}`.slice(0, 50);
   }
   
   if (executor === 'ssh') {
     const cmd = config.command || '';
-    return cmd.slice(0, 30) + (cmd.length > 30 ? '...' : '');
+    return cmd.slice(0, 40) + (cmd.length > 40 ? '...' : '');
   }
   
   if (executor === 'snmp') {
     const oid = config.oid || '';
-    return `OID: ${oid}`.slice(0, 30);
+    return `OID: ${oid}`.slice(0, 40);
   }
   
-  return JSON.stringify(config).slice(0, 40);
+  return JSON.stringify(config).slice(0, 50);
 }
 
 // Get evaluation logic description
@@ -165,11 +169,12 @@ function getEvaluationDescription(logic: Record<string, any>): string {
     return `${field} ${opLabel}`;
   }
   
-  return `${field} ${opLabel} ${value}`.slice(0, 50);
+  return `${field} ${opLabel} ${value}`;
 }
 
 export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVisualizationProps) {
   const steps = blueprint.collection_steps?.steps || [];
+  const [expandedStep, setExpandedStep] = useState<string | null>(null);
   
   // Group rules by step_id from evaluation_logic
   const rulesByStep = useMemo(() => {
@@ -193,16 +198,9 @@ export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVi
     return rules.filter((rule) => !rule.evaluation_logic?.step_id);
   }, [rules]);
   
-  // Group rules by category
-  const rulesByCategory = useMemo(() => {
-    const map: Record<string, ComplianceRule[]> = {};
-    rules.forEach((rule) => {
-      if (!map[rule.category]) {
-        map[rule.category] = [];
-      }
-      map[rule.category].push(rule);
-    });
-    return map;
+  // Count active rules
+  const activeRulesCount = useMemo(() => {
+    return rules.filter(r => r.is_active).length;
   }, [rules]);
   
   if (steps.length === 0) {
@@ -215,243 +213,232 @@ export function BlueprintFlowVisualization({ blueprint, rules }: BlueprintFlowVi
   }
 
   return (
-    <div className="space-y-6">
-      {/* Summary */}
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4" />
-          <span>{steps.length} steps de coleta</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4" />
-          <span>{rules.length} regras de compliance</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-primary" />
-          <span>{rules.filter(r => r.is_active).length} ativas</span>
-        </div>
-      </div>
-
-      {/* Flow Diagram */}
+    <TooltipProvider>
       <div className="space-y-4">
-        {steps.map((step, index) => {
-          const linkedRules = rulesByStep[step.id] || [];
-          const executorConfig = EXECUTOR_CONFIG[step.executor] || {
-            icon: Database,
-            label: step.executor,
-            color: 'text-gray-600',
-            bgColor: 'bg-gray-50',
-            borderColor: 'border-gray-300'
-          };
-          const ExecutorIcon = executorConfig.icon;
-          
-          return (
-            <div key={step.id} className="relative">
-              {/* Connection line to next step */}
-              {index < steps.length - 1 && (
-                <div className="absolute left-[140px] top-full w-0.5 h-4 bg-gradient-to-b from-border to-transparent z-0" />
-              )}
-              
-              <div className="flex items-start gap-4">
-                {/* Step Card */}
-                <Card className={cn(
-                  "w-[280px] flex-shrink-0 border-2",
-                  executorConfig.borderColor,
-                  executorConfig.bgColor
-                )}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={cn(
-                        "p-2 rounded-lg",
-                        executorConfig.bgColor
-                      )}>
-                        <ExecutorIcon className={cn("w-5 h-5", executorConfig.color)} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-foreground truncate">
-                          {step.id}
-                        </div>
-                        <div className={cn("text-xs", executorConfig.color)}>
-                          {executorConfig.label}
-                        </div>
-                      </div>
+        {/* Summary Header */}
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pb-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-4 h-4" />
+            <span><strong className="text-foreground">{steps.length}</strong> steps de coleta</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            <span><strong className="text-foreground">{rules.length}</strong> regras de compliance</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-primary" />
+            <span><strong className="text-foreground">{activeRulesCount}</strong> ativas</span>
+          </div>
+        </div>
+
+        {/* Vertical Step List */}
+        <div className="space-y-2">
+          {steps.map((step) => {
+            const linkedRules = rulesByStep[step.id] || [];
+            const executorConfig = EXECUTOR_CONFIG[step.executor] || {
+              icon: Database,
+              label: step.executor,
+              barColor: 'bg-muted-foreground',
+            };
+            const ExecutorIcon = executorConfig.icon;
+            const isExpanded = expandedStep === step.id;
+            
+            return (
+              <Collapsible
+                key={step.id}
+                open={isExpanded}
+                onOpenChange={(open) => setExpandedStep(open ? step.id : null)}
+              >
+                <div 
+                  className={cn(
+                    "flex items-stretch rounded-lg bg-card border border-border transition-colors",
+                    "hover:border-primary/50"
+                  )}
+                >
+                  {/* Colored bar indicator */}
+                  <div className={cn(
+                    "w-1.5 rounded-l-lg flex-shrink-0",
+                    executorConfig.barColor
+                  )} />
+                  
+                  <div className="flex-1 p-4 min-w-0">
+                    {/* Step Header */}
+                    <div className="flex items-center gap-3 mb-2">
+                      <ExecutorIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="font-mono text-sm font-medium text-foreground">
+                        {step.id}
+                      </span>
+                      <Badge variant="outline" className="text-xs">
+                        {executorConfig.label}
+                      </Badge>
+                      {linkedRules.length === 0 && (
+                        <Badge variant="outline" className="text-xs text-amber-500 border-amber-500/50">
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          Sem regras
+                        </Badge>
+                      )}
                     </div>
                     
-                    <div className="text-xs text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
-                      <code className="break-all">{getStepDescription(step)}</code>
-                    </div>
+                    {/* Step Description */}
+                    <p className="text-xs text-muted-foreground mb-3 font-mono">
+                      {getStepDescription(step)}
+                    </p>
                     
+                    {/* Rules Inline Badges */}
                     {linkedRules.length > 0 && (
-                      <div className="mt-3 text-xs text-muted-foreground">
-                        <span className="font-medium">{linkedRules.length}</span> regra{linkedRules.length !== 1 ? 's' : ''} vinculada{linkedRules.length !== 1 ? 's' : ''}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground mr-1">Regras:</span>
+                        {linkedRules.slice(0, 6).map((rule) => (
+                          <Tooltip key={rule.id}>
+                            <TooltipTrigger asChild>
+                              <Badge 
+                                className={cn(
+                                  "text-xs cursor-default border",
+                                  SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info,
+                                  !rule.is_active && "opacity-50"
+                                )}
+                              >
+                                {rule.code}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                              <div className="space-y-1">
+                                <div className="font-medium">{rule.name}</div>
+                                <div className="text-xs text-muted-foreground">{rule.category}</div>
+                                <div className="text-xs">
+                                  Severidade: <strong>{SEVERITY_LABELS[rule.severity] || rule.severity}</strong>
+                                </div>
+                                {!rule.is_active && (
+                                  <div className="text-xs text-amber-500">⚠ Regra inativa</div>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                        {linkedRules.length > 6 && (
+                          <CollapsibleTrigger asChild>
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs cursor-pointer hover:bg-accent"
+                            >
+                              +{linkedRules.length - 6}
+                            </Badge>
+                          </CollapsibleTrigger>
+                        )}
+                        {linkedRules.length > 0 && (
+                          <CollapsibleTrigger asChild>
+                            <button className="ml-2 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                              {isExpanded ? (
+                                <>
+                                  <ChevronDown className="w-3 h-3" />
+                                  Ocultar detalhes
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronRight className="w-3 h-3" />
+                                  Ver detalhes
+                                </>
+                              )}
+                            </button>
+                          </CollapsibleTrigger>
+                        )}
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-                
-                {/* Arrow */}
-                {linkedRules.length > 0 && (
-                  <div className="flex items-center pt-6">
-                    <ArrowRight className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                )}
-                
-                {/* Rules Card */}
-                {linkedRules.length > 0 && (
-                  <Card className="flex-1 border-border/50">
-                    <CardContent className="p-4">
-                      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                        Regras de Compliance
-                      </div>
-                      <div className="space-y-2">
-                        {linkedRules.map((rule) => {
-                          const severityConfig = SEVERITY_CONFIG[rule.severity] || SEVERITY_CONFIG.info;
-                          
-                          return (
+                    
+                    {/* Expanded Rules Details */}
+                    <CollapsibleContent>
+                      {linkedRules.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                            Detalhes das Regras
+                          </div>
+                          {linkedRules.map((rule) => (
                             <div 
                               key={rule.id}
                               className={cn(
-                                "p-3 rounded-lg border",
-                                rule.is_active ? 'bg-background' : 'bg-muted/30 opacity-60',
-                                "border-border/50"
+                                "p-3 rounded-md bg-muted/30 border border-border/50",
+                                !rule.is_active && "opacity-60"
                               )}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-                                      {rule.code}
-                                    </code>
-                                    <Badge 
-                                      className={cn(
-                                        "text-[10px] px-1.5 py-0",
-                                        severityConfig.bgColor,
-                                        severityConfig.color
-                                      )}
-                                    >
-                                      {severityConfig.label}
-                                    </Badge>
-                                    {!rule.is_active && (
-                                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                        Inativo
-                                      </Badge>
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
+                                    {rule.code}
+                                  </code>
+                                  <Badge 
+                                    className={cn(
+                                      "text-xs border",
+                                      SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info
                                     )}
-                                  </div>
-                                  <div className="text-sm font-medium text-foreground truncate">
-                                    {rule.name}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground mt-1">
-                                    {rule.category}
-                                  </div>
+                                  >
+                                    {SEVERITY_LABELS[rule.severity] || rule.severity}
+                                  </Badge>
+                                  {!rule.is_active && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      Inativo
+                                    </Badge>
+                                  )}
                                 </div>
                               </div>
-                              
-                              {/* Evaluation Logic */}
-                              <div className="mt-2 pt-2 border-t border-border/30">
-                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
-                                  Lógica de Avaliação
-                                </div>
-                                <code className="text-xs bg-muted/50 px-2 py-1 rounded block text-muted-foreground">
-                                  {getEvaluationDescription(rule.evaluation_logic)}
-                                </code>
+                              <div className="text-sm font-medium text-foreground mb-1">
+                                {rule.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground mb-2">
+                                {rule.category}
+                              </div>
+                              <div className="text-xs bg-muted/50 px-2 py-1.5 rounded font-mono text-muted-foreground">
+                                {getEvaluationDescription(rule.evaluation_logic)}
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-                
-                {/* Empty rules placeholder */}
-                {linkedRules.length === 0 && (
-                  <div className="flex items-center pt-6 text-sm text-muted-foreground">
-                    <AlertTriangle className="w-4 h-4 mr-2 text-amber-500" />
-                    Nenhuma regra vinculada a este step
+                          ))}
+                        </div>
+                      )}
+                    </CollapsibleContent>
                   </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      
-      {/* Orphan Rules Section */}
-      {orphanRules.length > 0 && (
-        <div className="mt-8 pt-6 border-t border-border">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <span>{orphanRules.length} regra{orphanRules.length !== 1 ? 's' : ''} sem step vinculado</span>
-          </div>
-          <div className="grid gap-2">
-            {orphanRules.map((rule) => {
-              const severityConfig = SEVERITY_CONFIG[rule.severity] || SEVERITY_CONFIG.info;
-              
-              return (
-                <div 
-                  key={rule.id}
-                  className="flex items-center gap-3 p-2 rounded bg-amber-50 border border-amber-200"
-                >
-                  <code className="text-xs font-mono bg-white px-1.5 py-0.5 rounded border border-amber-200">
-                    {rule.code}
-                  </code>
-                  <span className="text-sm text-foreground">{rule.name}</span>
-                  <Badge 
-                    className={cn(
-                      "text-[10px] px-1.5 py-0",
-                      severityConfig.bgColor,
-                      severityConfig.color
-                    )}
-                  >
-                    {severityConfig.label}
-                  </Badge>
                 </div>
-              );
-            })}
-          </div>
+              </Collapsible>
+            );
+          })}
         </div>
-      )}
-      
-      {/* Categories Summary */}
-      <div className="mt-8 pt-6 border-t border-border">
-        <div className="text-sm font-medium text-foreground mb-4">
-          Resumo por Categoria
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Object.entries(rulesByCategory).map(([category, categoryRules]) => (
-            <div 
-              key={category}
-              className="p-3 rounded-lg bg-muted/30 border border-border/50"
-            >
-              <div className="text-sm font-medium text-foreground truncate" title={category}>
-                {category}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {categoryRules.length} regra{categoryRules.length !== 1 ? 's' : ''}
-              </div>
-              <div className="flex flex-wrap gap-1 mt-2">
-                {['critical', 'high', 'medium', 'low'].map((severity) => {
-                  const count = categoryRules.filter(r => r.severity === severity).length;
-                  if (count === 0) return null;
-                  const config = SEVERITY_CONFIG[severity];
-                  return (
+        
+        {/* Orphan Rules Section */}
+        {orphanRules.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-border">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <span>
+                <strong className="text-foreground">{orphanRules.length}</strong> regra{orphanRules.length !== 1 ? 's' : ''} sem step vinculado
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {orphanRules.map((rule) => (
+                <Tooltip key={rule.id}>
+                  <TooltipTrigger asChild>
                     <Badge 
-                      key={severity}
                       className={cn(
-                        "text-[10px] px-1.5 py-0",
-                        config.bgColor,
-                        config.color
+                        "text-xs cursor-default border",
+                        SEVERITY_COLORS[rule.severity] || SEVERITY_COLORS.info,
+                        !rule.is_active && "opacity-50"
                       )}
                     >
-                      {count}
+                      {rule.code}
                     </Badge>
-                  );
-                })}
-              </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <div className="space-y-1">
+                      <div className="font-medium">{rule.name}</div>
+                      <div className="text-xs text-muted-foreground">{rule.category}</div>
+                      <div className="text-xs">
+                        Severidade: <strong>{SEVERITY_LABELS[rule.severity] || rule.severity}</strong>
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
