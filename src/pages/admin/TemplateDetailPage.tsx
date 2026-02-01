@@ -272,6 +272,7 @@ export default function TemplateDetailPage() {
               <BlueprintFlowVisualization
                 blueprint={activeBlueprint}
                 rules={rules}
+                hideSummary
               />
             ) : (
               <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">
