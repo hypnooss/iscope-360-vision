@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import { View, Text, Image, Svg, Defs, LinearGradient, Stop, Rect, StyleSheet } from '@react-pdf/renderer';
 import { typography, spacing } from '../styles/pdfStyles';
 
 // Dark blue header background (matching system background)
@@ -23,9 +23,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
     position: 'relative',
     minHeight: 60,
+  },
+  gradientLineContainer: {
+    width: '100%',
+    height: 1,
+    marginBottom: 16,
   },
   logoContainer: {
     position: 'absolute',
@@ -105,6 +110,20 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
             <Image style={styles.logo} src={logoBase64} />
           </View>
         )}
+      </View>
+
+      {/* Linha decorativa degradê */}
+      <View style={styles.gradientLineContainer}>
+        <Svg width="100%" height={1} viewBox="0 0 500 1">
+          <Defs>
+            <LinearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.1} />
+              <Stop offset="50%" stopColor="#FFFFFF" stopOpacity={1} />
+              <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0.1} />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="500" height="1" fill="url(#headerGradient)" />
+        </Svg>
       </View>
 
       {/* Linha 2: Info + Metadata */}
