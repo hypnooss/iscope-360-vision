@@ -206,11 +206,69 @@ function getStepDescription(step: CollectionStep): string {
 
 // Get evaluation logic as readable string
 function getEvaluationDescription(logic: Record<string, any>): string {
-  if (!logic) return 'N/A';
+  if (!logic || Object.keys(logic).length === 0) return 'N/A';
   
+  // Estrutura complexa do Fortigate (com conditions)
+  if (logic.source_key && logic.conditions) {
+    const sourceKey = logic.source_key.replace(/_/g, ' ');
+    const conditions = logic.conditions as Array<Record<string, any>>;
+    
+    if (conditions.length > 0) {
+      const cond = conditions[0];
+      const parts: string[] = [];
+      
+      // Campo principal
+      if (cond.field) parts.push(`Campo: ${cond.field}`);
+      
+      // Operador
+      if (cond.operator) {
+        const opLabels: Record<string, string> = {
+          'any_match': 'qualquer correspondência',
+          'all_match': 'todas correspondências',
+          'not_empty': 'não vazio',
+          'is_empty': 'vazio',
+          'equals': 'igual a',
+          'not_equals': 'diferente de',
+          'count_greater_than': 'quantidade maior que',
+          'count_less_than': 'quantidade menor que',
+          'version_compare': 'comparação de versão',
+          'contains': 'contém',
+          'not_contains': 'não contém',
+        };
+        parts.push(`Operador: ${opLabels[cond.operator] || cond.operator}`);
+      }
+      
+      // Condição where
+      if (cond.where) {
+        const whereStr = Object.entries(cond.where)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ');
+        parts.push(`Onde: ${whereStr}`);
+      }
+      
+      // Valor buscado
+      if (cond.contains) parts.push(`Contém: "${cond.contains}"`);
+      if (cond.value !== undefined) parts.push(`Valor: ${cond.value}`);
+      if (cond.matches) parts.push(`Matches: ${Array.isArray(cond.matches) ? cond.matches.join(', ') : cond.matches}`);
+      
+      // Resultado esperado
+      const resultLabel = {
+        pass: 'aprovado',
+        fail: 'reprovado', 
+        warn: 'alerta'
+      }[cond.result as string] || cond.result;
+      if (cond.result) parts.push(`Resultado: ${resultLabel}`);
+      
+      return `[${sourceKey}] ${parts.join(' | ')}`;
+    }
+    
+    return `Fonte: ${sourceKey}`;
+  }
+  
+  // Estrutura simples original (domínio externo)
   const field = logic.field || logic.path || '';
   const operator = logic.operator || logic.op || 'eq';
-  const value = logic.value !== undefined ? JSON.stringify(logic.value) : 'N/A';
+  const value = logic.value !== undefined ? JSON.stringify(logic.value) : '';
   
   const operatorLabels: Record<string, string> = {
     eq: '=',
