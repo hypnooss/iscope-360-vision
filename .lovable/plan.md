@@ -1,226 +1,177 @@
 
-## Plano: Implantar Command Center Header no Relatório de Firewall
+
+## Plano: Corrigir Data do Relatório e Redesenho do Gauge
 
 ### Contexto
 
-O relatório de **Domínios Externos** (`ExternalDomainAnalysisReportPage.tsx`) possui um header estilizado chamado "Command Center Header" que oferece uma apresentação visual superior. Este padrão deve ser replicado no relatório de **Análise de Compliance do Firewall** (`Dashboard.tsx` usado em `FirewallAnalysis.tsx`).
+Dois problemas identificados na página de Análise de Compliance do Firewall:
+
+1. **Data incorreta**: O campo "Relatório gerado em" mostra a data/hora de abertura, não de geração
+2. **Gauge redesenhando**: A cada navegação, o gauge anima novamente do zero
 
 ---
 
-### Estrutura Atual do Firewall (Dashboard.tsx)
+### Problema 1: Data do Relatório
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  Título "Análise de Compliance" + Botões                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐   ┌──────────────────────────────────────┐ │
-│  │  Score Gauge    │   │  Info Grid + Stats Cards              │ │
-│  │  (glass-card)   │   │  (glass-card separado)               │ │
-│  └─────────────────┘   └──────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+**Causa Raiz:**
+- Em `normalizeReportData` (linha 99): `generatedAt: new Date(rawData.generatedAt || Date.now())`
+- O fallback `Date.now()` é chamado quando não há data, gerando timestamp atual
+- Quando vem do `location.state`, a data de criação do banco não é incluída
+
+**Solução:**
+
+#### Alteração 1.1 - `FirewallAnalysis.tsx` - Melhorar `normalizeReportData`
+
+Não usar `Date.now()` como fallback. Se não houver data, manter `undefined` ou usar uma data que indique que é desconhecida.
+
+```typescript
+// Linha 99 - Antes:
+generatedAt: new Date(rawData.generatedAt as string || Date.now()),
+
+// Depois:
+generatedAt: rawData.generatedAt 
+  ? new Date(rawData.generatedAt as string) 
+  : new Date(),
 ```
 
-### Estrutura Alvo (Command Center Header)
+Mas o problema real é que quando vem do `location.state`, o `generatedAt` pode não estar populado. Precisamos garantir que ao navegar para a página, a data correta seja passada.
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  Título + Botões                                                │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  COMMAND CENTER (dark gradient + grid pattern)              ││
-│  │  ┌───────────────────────────────────────────────────────┐  ││
-│  │  │           NOME DO FIREWALL (identification strip)     │  ││
-│  │  │           ────────────────────────────────             │  ││
-│  │  └───────────────────────────────────────────────────────┘  ││
-│  │  ┌──────────────────────┬─────────────────────────────────┐ ││
-│  │  │  Score Gauge         │  Info Details (DetailRow)       │ ││
-│  │  │  + MiniStats         │  - Modelo, Serial, Uptime       │ ││
-│  │  │  (Total/Pass/Fail)   │  - Firmware, URL, Hostname      │ ││
-│  │  └──────────────────────┴─────────────────────────────────┘ ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+#### Alteração 1.2 - Buscar `created_at` quando usando `location.state`
+
+Quando há `initialReport` do `location.state`, ainda precisamos buscar a data real do banco. Modificar o `useEffect`:
+
+```typescript
+// Se veio do state, ainda buscar a data real do histórico
+useEffect(() => {
+  if (id && user) {
+    fetchFirewall();
+    // Sempre buscar a análise para ter a data correta
+    if (!initialReport) {
+      fetchLastAnalysis();
+    } else {
+      // Se veio do state, buscar apenas para atualizar a data
+      fetchAnalysisDate();
+    }
+  }
+}, [id, user]);
+
+const fetchAnalysisDate = async () => {
+  const { data } = await supabase
+    .from('analysis_history')
+    .select('created_at')
+    .eq('firewall_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (data?.created_at && report) {
+    setReport(prev => prev ? { ...prev, generatedAt: new Date(data.created_at) } : null);
+  }
+};
 ```
 
 ---
 
-### Alterações em `src/components/Dashboard.tsx`
+### Problema 2: Gauge Redesenhando
 
-#### 1. Adicionar Componente MiniStat
+**Causa Raiz:**
+- `ScoreGauge.tsx` inicializa `animatedScore` como `0` sempre
+- O `useEffect` anima de 0 até o score a cada montagem
+- Não há mecanismo para "lembrar" que já animou
 
-Copiar o componente `MiniStat` do relatório de Domínios Externos:
+**Solução:**
+
+Usar `useRef` para rastrear se já animou uma vez. Após a primeira animação, iniciar direto no valor final.
+
+#### Alteração 2.1 - `ScoreGauge.tsx` - Evitar re-animação
 
 ```typescript
-interface MiniStatProps {
-  value: number;
-  label: string;
-  variant?: "default" | "primary" | "success" | "destructive";
-}
+import { useEffect, useState, useRef } from "react";
 
-function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
-  const variantStyles = {
-    default: { text: "text-foreground", border: "border-border/30", bg: "bg-background/50" },
-    primary: { text: "text-sky-400", border: "border-sky-500/30", bg: "bg-sky-500/10" },
-    success: { text: "text-primary", border: "border-primary/30", bg: "bg-primary/10" },
-    destructive: { text: "text-rose-400", border: "border-rose-500/30", bg: "bg-rose-500/10" }
-  };
-  const style = variantStyles[variant];
-
-  return (
-    <div className={cn("text-center px-4 py-2 rounded-lg border min-w-[100px]", style.bg, style.border)}>
-      <span className={cn("text-xl font-bold tabular-nums block", style.text)}>{value}</span>
-      <span className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</span>
-    </div>
+export function ScoreGauge({ score, size = 200 }: ScoreGaugeProps) {
+  const hasAnimated = useRef(false);
+  const [animatedScore, setAnimatedScore] = useState(() => 
+    hasAnimated.current ? score : 0
   );
+
+  useEffect(() => {
+    // Se já animou antes, apenas atualiza direto
+    if (hasAnimated.current) {
+      setAnimatedScore(score);
+      return;
+    }
+
+    const duration = 1500;
+    const steps = 60;
+    const increment = score / steps;
+    let current = 0;
+
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= score) {
+        setAnimatedScore(score);
+        hasAnimated.current = true;
+        clearInterval(timer);
+      } else {
+        setAnimatedScore(Math.round(current));
+      }
+    }, duration / steps);
+
+    return () => clearInterval(timer);
+  }, [score]);
+
+  // ... resto do componente
 }
 ```
 
-#### 2. Adicionar Componente DetailRow
+**Nota:** O `useRef` não persiste entre desmontagens. Para resolver completamente, podemos usar uma abordagem diferente - animar apenas na primeira montagem e usar CSS transitions para mudanças subsequentes.
 
-Copiar o componente `DetailRow` para exibir informações estruturadas:
+#### Alteração 2.2 - Abordagem Alternativa (Mais Robusta)
+
+Usar `sessionStorage` ou um contexto para persistir se o gauge já foi visto. Ou simplesmente **não animar** quando o score já foi carregado anteriormente.
+
+A abordagem mais simples é verificar se o componente está sendo montado com dados que já existiam:
 
 ```typescript
-interface DetailRowProps {
-  label: string;
-  value: string | string[];
-  indicator?: "success" | "error";
-  highlight?: boolean;
+interface ScoreGaugeProps {
+  score: number;
+  size?: number;
+  skipAnimation?: boolean; // Nova prop
 }
 
-function DetailRow({ label, value, indicator, highlight }: DetailRowProps) {
-  const isMultiline = Array.isArray(value);
-  
-  return (
-    <div className="group">
-      <div className="flex items-start gap-3 py-2">
-        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
-          {label}
-        </span>
-        <div className="flex-1 min-w-0">
-          {indicator && (
-            <span className={cn(
-              "inline-block w-2 h-2 rounded-full mr-2 mt-1.5",
-              indicator === "success" 
-                ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
-                : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
-            )} />
-          )}
-          {isMultiline ? (
-            <div className="space-y-0.5">
-              {value.map((v, i) => (
-                <div key={i} className={cn("text-sm font-medium", highlight ? "text-primary" : "text-foreground")}>
-                  {v}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <span className={cn("text-sm font-medium", highlight ? "text-primary" : "text-foreground")}>
-              {value}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
-    </div>
-  );
+export function ScoreGauge({ score, size = 200, skipAnimation = false }: ScoreGaugeProps) {
+  const [animatedScore, setAnimatedScore] = useState(skipAnimation ? score : 0);
+
+  useEffect(() => {
+    if (skipAnimation) {
+      setAnimatedScore(score);
+      return;
+    }
+    // ... animação normal
+  }, [score, skipAnimation]);
 }
 ```
 
-#### 3. Substituir Grid de Score + Info pelo Command Center Header
-
-Substituir o bloco atual (linhas 97-196) pelo novo layout:
+E no `Dashboard.tsx`:
 
 ```tsx
-{/* COMMAND CENTER HEADER */}
-<div className="max-w-full mb-8">
-  <div 
-    className="relative overflow-hidden rounded-2xl border border-primary/20"
-    style={{
-      background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
-    }}
-  >
-    {/* Grid pattern overlay */}
-    <div 
-      className="absolute inset-0 opacity-30 pointer-events-none"
-      style={{
-        backgroundImage: `
-          linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px),
-          linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)
-        `,
-        backgroundSize: "32px 32px"
-      }}
-    />
-
-    <div className="relative p-8">
-      {/* Identification Strip */}
-      <div className="text-center mb-8">
-        <h2 className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-foreground uppercase">
-          {firewallName || 'Firewall'}
-        </h2>
-        <div className="h-0.5 w-48 mx-auto mt-3 bg-gradient-to-r from-transparent via-primary to-transparent" />
-      </div>
-
-      {/* Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-        
-        {/* Left Panel: Score + Stats */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="relative">
-            <div 
-              className="absolute inset-0 blur-3xl opacity-20"
-              style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
-            />
-            <ScoreGauge score={report.overallScore} size={180} />
-          </div>
-
-          {/* Mini Stats Row */}
-          <div className="flex gap-3 mt-6">
-            <MiniStat value={report.totalChecks} label="Total" variant="primary" />
-            <MiniStat value={report.passed} label="Aprovadas" variant="success" />
-            <MiniStat value={report.failed} label="Falhas" variant="destructive" />
-          </div>
-        </div>
-
-        {/* Right Panel: Firewall Details */}
-        <div className="flex flex-col justify-center lg:border-l lg:border-border/30 lg:pl-8">
-          <DetailRow label="Modelo" value={report.systemInfo?.model || 'N/A'} />
-          <DetailRow label="Serial" value={report.systemInfo?.serial || 'N/A'} />
-          <DetailRow label="Firmware" value={report.firmwareVersion ? `v${report.firmwareVersion}` : 'N/A'} />
-          <DetailRow label="Hostname" value={report.systemInfo?.hostname || firewallName || 'N/A'} />
-          <DetailRow label="Uptime" value={report.systemInfo?.uptime || 'N/A'} />
-          <DetailRow label="URL" value={firewallUrl || 'N/A'} />
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<ScoreGauge score={report.overallScore} size={180} skipAnimation={!isFirstLoad} />
 ```
-
-#### 4. Remover StatCards Antigos e Info Grid
-
-Remover completamente o bloco de `glass-card` com `StatCard` compactos, pois os `MiniStat` dentro do Command Center substituem essa funcionalidade.
-
-#### 5. Adicionar Import do `cn`
-
-Garantir que `cn` esteja importado de `@/lib/utils`.
 
 ---
 
 ### Resumo das Alterações
 
-| Item | Descrição |
-|------|-----------|
-| Componentes | Adicionar `MiniStat` e `DetailRow` |
-| Layout | Substituir grid de cards por Command Center Header |
-| Visual | Fundo gradiente escuro + grid pattern + glow no gauge |
-| Dados | Mostrar Modelo, Serial, Firmware, Hostname, Uptime, URL |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/FirewallAnalysis.tsx` | Buscar data real do `created_at` do banco |
+| `src/components/ScoreGauge.tsx` | Adicionar `skipAnimation` prop para evitar re-animação |
+| `src/components/Dashboard.tsx` | Passar `skipAnimation` quando apropriado |
 
 ---
 
-### Resultado Final
+### Resultado Esperado
 
-O relatório de Firewall terá:
-- Faixa de identificação centralizada com nome do firewall em caixa alta
-- Score Gauge com brilho radial (glow)
-- MiniStats compactos (Total/Aprovadas/Falhas) abaixo do gauge
-- Painel de detalhes à direita com linhas estruturadas e divisores gradiente
-- Paridade visual completa com o relatório de Domínios Externos
+1. **Data correta**: "Relatório gerado em" mostrará a data/hora real de quando a análise foi executada
+2. **Gauge estável**: O gauge não redesenhará ao trocar de tela, mostrando o valor diretamente
+
