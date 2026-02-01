@@ -12,13 +12,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.cardBg,
     borderRadius: radius.md,
     padding: spacing.cardPadding,
     marginBottom: spacing.itemGap,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 4,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -28,7 +24,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: typography.subheading,
     fontFamily: typography.bold,
-    color: colors.textPrimary,
+    color: '#FFFFFF',
   },
   headerStats: {
     flexDirection: 'row',
@@ -38,10 +34,11 @@ const styles = StyleSheet.create({
   headerRate: {
     fontSize: typography.subheading,
     fontFamily: typography.bold,
+    color: '#FFFFFF',
   },
   headerCount: {
     fontSize: typography.bodySmall,
-    color: colors.textMuted,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   checksList: {
     paddingLeft: 8,
@@ -135,7 +132,7 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
   return (
     <View style={styles.container}>
       {/* Category Header */}
-      <View style={[styles.header, { borderLeftColor: color }]} wrap={false}>
+      <View style={[styles.header, { backgroundColor: color }]} wrap={false}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>{name}</Text>
         </View>
@@ -143,7 +140,7 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
           <Text style={styles.headerCount}>
             {passedCount}/{totalCount}
           </Text>
-          <Text style={[styles.headerRate, { color: rateColor }]}>
+          <Text style={styles.headerRate}>
             {passRate}%
           </Text>
         </View>
