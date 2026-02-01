@@ -1196,7 +1196,7 @@ function formatSecurityPolicyEvidence(
         return {
           evidence: [{ label: 'Criptografia Forte', value: '✅ Habilitada', type: 'text' }],
           status: 'pass',
-          skipRawData: true
+          skipRawData: false
         };
       } else {
         return {
@@ -1220,7 +1220,7 @@ function formatSecurityPolicyEvidence(
             { label: 'Ação Recomendada', value: 'Verifique manualmente no painel FortiGate', type: 'text' }
           ],
           status: 'unknown',
-          skipRawData: true
+          skipRawData: false
         };
       }
       
@@ -1233,7 +1233,7 @@ function formatSecurityPolicyEvidence(
         return {
           evidence: [{ label: 'Status', value: '✅ Todos os administradores com 2FA', type: 'text' }],
           status: 'pass',
-          skipRawData: true
+          skipRawData: false
         };
       } else {
         const ev: EvidenceItem[] = [
@@ -1260,7 +1260,7 @@ function formatSecurityPolicyEvidence(
             { label: 'Status', value: isCompliant ? '✅ Configuração adequada' : '⚠️ Timeout muito longo (recomendado ≤30min)', type: 'text' }
           ],
           status: isCompliant ? 'pass' : 'warn',
-          skipRawData: true
+          skipRawData: false
         };
       }
     }

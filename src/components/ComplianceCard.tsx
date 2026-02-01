@@ -40,6 +40,7 @@ const statusConfig: Record<ComplianceStatus, { icon: typeof CheckCircle; classNa
   fail: { icon: XCircle, className: 'status-fail', label: 'Falha' },
   warning: { icon: AlertTriangle, className: 'status-warning', label: 'Atenção' },
   pending: { icon: AlertTriangle, className: 'text-muted-foreground bg-muted/50 border-muted', label: 'Pendente' },
+  unknown: { icon: AlertTriangle, className: 'text-muted-foreground bg-muted/50 border-muted', label: 'Indisponível' },
 };
 
 // Cores para checks que FALHARAM ou tem WARNING (cores alarmantes)
@@ -111,7 +112,7 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
             <h4 className="font-medium text-foreground truncate">{check.name}</h4>
             <span className={cn(
               "text-xs px-2 py-0.5 rounded-full font-medium", 
-              normalizedStatus === 'pass' 
+              (normalizedStatus === 'pass' || normalizedStatus === 'unknown' || normalizedStatus === 'pending')
                 ? (severityColorsPass[check.severity] || 'bg-muted text-muted-foreground')
                 : (severityColorsFail[check.severity] || 'bg-muted text-muted-foreground')
             )}>

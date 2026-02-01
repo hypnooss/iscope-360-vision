@@ -2,7 +2,7 @@ import { View, StyleSheet } from '@react-pdf/renderer';
 import { colors, radius } from '../styles/pdfStyles';
 
 interface PDFStatusIconProps {
-  status: 'pass' | 'fail' | 'warning' | 'pending';
+  status: 'pass' | 'fail' | 'warning' | 'pending' | 'unknown';
   size?: 'sm' | 'md' | 'lg' | number;
 }
 
@@ -35,6 +35,7 @@ export function PDFStatusIcon({ status, size = 'md' }: PDFStatusIconProps) {
       bgColor = colors.warning;
       break;
     case 'pending':
+    case 'unknown':
     default:
       bgColor = colors.info;
       break;

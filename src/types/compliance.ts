@@ -1,4 +1,4 @@
-export type ComplianceStatus = 'pass' | 'fail' | 'warning' | 'pending';
+export type ComplianceStatus = 'pass' | 'fail' | 'warning' | 'pending' | 'unknown';
 
 export interface EvidenceItem {
   label: string;

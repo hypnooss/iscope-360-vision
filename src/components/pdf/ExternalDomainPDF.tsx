@@ -116,7 +116,7 @@ interface ComplianceCategory {
   checks: Array<{
     id: string;
     name: string;
-    status: 'pass' | 'fail' | 'warning' | 'pending';
+    status: 'pass' | 'fail' | 'warning' | 'pending' | 'unknown';
     severity?: 'critical' | 'high' | 'medium' | 'low' | 'info';
     description?: string;
     recommendation?: string;
