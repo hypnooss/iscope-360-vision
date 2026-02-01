@@ -64,7 +64,7 @@ export default function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, role, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('flow');
+  const [activeTab, setActiveTab] = useState('organize');
 
   // Access control - only super_admin and super_suporte
   useEffect(() => {
@@ -241,13 +241,13 @@ export default function TemplateDetailPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
+            <TabsTrigger value="organize" className="gap-2">
+              <Settings className="w-4 h-4" />
+              Visualização
+            </TabsTrigger>
             <TabsTrigger value="flow" className="gap-2">
               <Workflow className="w-4 h-4" />
               Fluxo de Análise
-            </TabsTrigger>
-            <TabsTrigger value="organize" className="gap-2">
-              <Settings className="w-4 h-4" />
-              Organização
             </TabsTrigger>
             <TabsTrigger value="blueprints" className="gap-2">
               <FileCode className="w-4 h-4" />
