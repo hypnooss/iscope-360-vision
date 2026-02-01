@@ -167,24 +167,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const path = location.pathname;
     if (path.startsWith('/scope-firewall')) {
       setActiveModule('scope_firewall');
-      setExpandedModules(prev => ({ ...prev, scope_firewall: true }));
+      setExpandedModules({ scope_firewall: true });
+      setAdminMenuOpen(false);
     } else if (path.startsWith('/scope-external-domain')) {
       setActiveModule('scope_external_domain');
-      setExpandedModules(prev => ({ ...prev, scope_external_domain: true }));
+      setExpandedModules({ scope_external_domain: true });
+      setAdminMenuOpen(false);
     } else if (path.startsWith('/scope-m365')) {
       setActiveModule('scope_m365');
-      setExpandedModules(prev => ({ ...prev, scope_m365: true }));
+      setExpandedModules({ scope_m365: true });
+      setAdminMenuOpen(false);
     } else if (path.startsWith('/scope-network')) {
       setActiveModule('scope_network');
-      setExpandedModules(prev => ({ ...prev, scope_network: true }));
+      setExpandedModules({ scope_network: true });
+      setAdminMenuOpen(false);
     } else if (path.startsWith('/scope-cloud')) {
       setActiveModule('scope_cloud');
-      setExpandedModules(prev => ({ ...prev, scope_cloud: true }));
-    }
-    
-    // Expand admin menu if on admin routes
-    if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates') {
+      setExpandedModules({ scope_cloud: true });
+      setAdminMenuOpen(false);
+    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates') {
+      // Admin routes: expand admin menu, close all modules
       setAdminMenuOpen(true);
+      setExpandedModules({});
     }
   }, [location.pathname, setActiveModule]);
 
@@ -217,10 +221,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const toggleModule = (moduleCode: string) => {
-    setExpandedModules(prev => ({
-      ...prev,
-      [moduleCode]: !prev[moduleCode],
-    }));
+    setExpandedModules(prev => {
+      const isCurrentlyOpen = prev[moduleCode];
+      // Close all and open only the clicked one (if it was closed)
+      return {
+        [moduleCode]: !isCurrentlyOpen,
+      };
+    });
+    // Close admin menu when a module is opened
+    if (!expandedModules[moduleCode]) {
+      setAdminMenuOpen(false);
+    }
   };
 
   const isActiveRoute = (href: string) => location.pathname === href;
@@ -388,7 +399,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <Collapsible
         open={adminMenuOpen}
-        onOpenChange={() => setAdminMenuOpen(!adminMenuOpen)}
+        onOpenChange={(open) => {
+          setAdminMenuOpen(open);
+          // Close all modules when opening admin
+          if (open) {
+            setExpandedModules({});
+          }
+        }}
       >
         <CollapsibleTrigger asChild>
           <button
