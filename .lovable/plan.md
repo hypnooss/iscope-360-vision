@@ -1,134 +1,200 @@
 
-
-## Nova Página: Administração > Templates
+## Configuração Inline de Categorias na aba "Fluxo de Análise"
 
 ### Objetivo
-Criar uma nova página "Templates" no menu de Administração que lista os device_types (agora chamados de "Templates") existentes no sistema. Acesso restrito a **Super Admins** e **Super Suportes**.
+Permitir que o Super Admin configure, de forma inline, o **nome**, **ícone** e **cor** de cada categoria de compliance. Essas configurações serão salvas no banco de dados e refletidas dinamicamente nos relatórios de Análise de Compliance.
 
 ---
 
-### Dados Existentes
+### Análise Atual
 
-A tabela `device_types` já contém os templates:
+Atualmente, as cores e ícones de categoria estão **hardcoded** em vários arquivos:
 
-| Vendor | Name | Code |
-|--------|------|------|
-| Fortinet | FortiGate | fortigate |
-| SonicWall | SonicWall | sonicwall |
-| iScope | Domínio Externo | external_domain |
+| Arquivo | Uso |
+|---------|-----|
+| `BlueprintFlowVisualization.tsx` | Aba "Fluxo de Análise" (admin) |
+| `ExternalDomainCategorySection.tsx` | Relatório web de Domínio Externo |
+| `PDFCategorySection.tsx` | Relatório PDF |
+| `CategorySection.tsx` | Relatório de Firewall |
+
+As categorias são extraídas do campo `category` (text) da tabela `compliance_rules`.
+
+---
+
+### Proposta de Solução
+
+#### 1. Nova Tabela: `rule_categories`
+
+Criamos uma tabela para armazenar as configurações visuais das categorias por template (device_type):
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `id` | uuid | Chave primária |
+| `device_type_id` | uuid | FK para device_types |
+| `name` | text | Nome da categoria (ex: "Segurança DNS") |
+| `display_name` | text | Nome de exibição (opcional, para renomear) |
+| `icon` | text | Nome do ícone Lucide (ex: "globe", "shield", "mail") |
+| `color` | text | Cor Tailwind (ex: "cyan-600", "violet-500", "emerald-600") |
+| `display_order` | integer | Ordem de exibição |
+| `is_active` | boolean | Se está ativo |
+| `created_at` | timestamp | Data de criação |
+| `updated_at` | timestamp | Data de atualização |
+
+#### 2. Edição Inline na Aba "Fluxo de Análise"
+
+Na visualização de categorias existente, adicionamos um botão de edição que abre um popover/dialog com:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  🌐  Segurança DNS                          [3/5 regras]  [⚙️]     │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  Nome: [Segurança DNS____________]                           │    │
+│  │  Ícone: [🌐 Globe ▾]                                        │    │
+│  │  Cor:   [● Cyan-600 ▾]                                      │    │
+│  │                                              [Salvar]        │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Elementos de UI:**
+- **Nome**: Input de texto simples
+- **Ícone**: Select com os ícones Lucide mais comuns (preview visual)
+- **Cor**: Select com paleta de cores (preview visual com círculo colorido)
+
+#### 3. Consumo Dinâmico nos Relatórios
+
+Os componentes de relatório (`ExternalDomainCategorySection`, `CategorySection`, `PDFCategorySection`) serão atualizados para:
+
+1. Buscar as configurações de categoria do banco de dados via hook
+2. Usar fallback para os valores hardcoded caso não exista configuração
 
 ---
 
 ### Arquivos a Criar/Modificar
 
-#### 1. Criar nova página: `src/pages/admin/TemplatesPage.tsx`
-
-Página simples que:
-- Lista todos os templates da tabela `device_types`
-- Exibe em formato de cards ou tabela (cards recomendado)
-- Mostra: Vendor, Nome, Código, Categoria, Status (ativo/inativo)
-- Apenas visualização (sem CRUD por enquanto)
-
-Estrutura visual:
-```
-┌────────────────────────────────────────────────────────────────┐
-│  TEMPLATES                                                      │
-│  Gerencie os templates de dispositivos disponíveis no sistema  │
-├────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
-│  │  🔶 FortiGate           │  │  🔶 SonicWall               │  │
-│  │  Fortinet               │  │  SonicWall                  │  │
-│  │  Código: fortigate      │  │  Código: sonicwall          │  │
-│  │  Categoria: Firewall    │  │  Categoria: Firewall        │  │
-│  │  [Ativo]                │  │  [Ativo]                    │  │
-│  └─────────────────────────┘  └─────────────────────────────┘  │
-│                                                                 │
-│  ┌─────────────────────────┐                                   │
-│  │  🌐 Domínio Externo     │                                   │
-│  │  iScope                 │                                   │
-│  │  Código: external_domain│                                   │
-│  │  Categoria: Outros      │                                   │
-│  │  [Ativo]                │                                   │
-│  └─────────────────────────┘                                   │
-└────────────────────────────────────────────────────────────────┘
-```
-
-#### 2. Modificar: `src/components/layout/AppLayout.tsx`
-
-**Linha 186**: Adicionar rota `/templates` à condição de expand do admin menu
-```typescript
-if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates') {
-```
-
-**Linha 363**: Adicionar rota `/templates` à verificação de rota ativa
-```typescript
-const isAdminRoute = location.pathname === '/workspaces' || ... || location.pathname === '/templates';
-```
-
-**Linhas 410-465**: Adicionar link "Templates" no menu de Administração (após Coletas):
-```typescript
-<Link
-  to="/templates"
-  onClick={() => setMobileMenuOpen(false)}
-  className={cn(
-    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-    location.pathname === '/templates'
-      ? 'bg-warning/20 text-warning font-medium'
-      : 'text-warning/80 hover:bg-warning/10'
-  )}
->
-  <Layers className="w-4 h-4" />
-  Templates
-</Link>
-```
-
-**Linha 511**: Modificar condição para incluir `super_suporte`:
-```typescript
-{(role === 'super_admin' || role === 'super_suporte') && <AdminButton />}
-```
-
-#### 3. Modificar: `src/App.tsx`
-
-Adicionar a rota para a nova página:
-```typescript
-const TemplatesPage = lazy(() => import("./pages/admin/TemplatesPage"));
-
-// Na seção de rotas Admin:
-<Route path="/templates" element={<TemplatesPage />} />
-```
-
----
-
-### Controle de Acesso
-
-A página verificará se o usuário tem role `super_admin` ou `super_suporte`:
-```typescript
-useEffect(() => {
-  if (!authLoading && !user) {
-    navigate('/auth');
-  } else if (!authLoading && role !== 'super_admin' && role !== 'super_suporte') {
-    navigate('/dashboard');
-    toast.error('Acesso restrito a Super Administradores');
-  }
-}, [user, role, authLoading, navigate]);
-```
-
----
-
-### Resumo das Alterações
-
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `src/pages/admin/TemplatesPage.tsx` | Criar | Nova página listando templates |
-| `src/components/layout/AppLayout.tsx` | Modificar | Adicionar link "Templates" no menu e permitir super_suporte |
-| `src/App.tsx` | Modificar | Adicionar rota `/templates` |
+| `supabase/migrations/` | Criar | Migration para tabela `rule_categories` |
+| `src/components/admin/CategoryConfigPopover.tsx` | Criar | Componente de edição inline |
+| `src/components/admin/BlueprintFlowVisualization.tsx` | Modificar | Adicionar botão de edição por categoria |
+| `src/hooks/useCategoryConfig.ts` | Criar | Hook para buscar/atualizar configs |
+| `src/components/external-domain/ExternalDomainCategorySection.tsx` | Modificar | Consumir configs do banco |
+| `src/components/CategorySection.tsx` | Modificar | Consumir configs do banco |
+| `src/components/pdf/sections/PDFCategorySection.tsx` | Modificar | Receber configs como props |
+
+---
+
+### Detalhes Técnicos
+
+#### Migration SQL
+
+```sql
+CREATE TABLE rule_categories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_type_id uuid NOT NULL REFERENCES device_types(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  display_name text,
+  icon text NOT NULL DEFAULT 'shield',
+  color text NOT NULL DEFAULT 'slate-500',
+  display_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(device_type_id, name)
+);
+
+-- RLS Policies
+ALTER TABLE rule_categories ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Super admins can manage categories"
+  ON rule_categories FOR ALL
+  USING (has_role(auth.uid(), 'super_admin'::app_role));
+
+CREATE POLICY "Users can view active categories"
+  ON rule_categories FOR SELECT
+  USING (is_active = true);
+```
+
+#### Ícones Disponíveis (Subset Curado)
+
+```typescript
+const AVAILABLE_ICONS = [
+  { name: 'shield', label: 'Escudo' },
+  { name: 'globe', label: 'Globo' },
+  { name: 'mail', label: 'Email' },
+  { name: 'lock', label: 'Cadeado' },
+  { name: 'key', label: 'Chave' },
+  { name: 'server', label: 'Servidor' },
+  { name: 'network', label: 'Rede' },
+  { name: 'activity', label: 'Atividade' },
+  { name: 'alert-triangle', label: 'Alerta' },
+  { name: 'check-circle', label: 'Verificado' },
+  { name: 'database', label: 'Banco de Dados' },
+  { name: 'hard-drive', label: 'Armazenamento' },
+  { name: 'cpu', label: 'Processador' },
+  { name: 'settings', label: 'Configurações' },
+  { name: 'user', label: 'Usuário' },
+];
+```
+
+#### Cores Disponíveis (Paleta Curada)
+
+```typescript
+const AVAILABLE_COLORS = [
+  { name: 'cyan-600', label: 'Ciano', hex: '#0891b2' },
+  { name: 'violet-500', label: 'Violeta', hex: '#8b5cf6' },
+  { name: 'emerald-600', label: 'Esmeralda', hex: '#059669' },
+  { name: 'pink-500', label: 'Rosa', hex: '#ec4899' },
+  { name: 'amber-500', label: 'Âmbar', hex: '#f59e0b' },
+  { name: 'blue-500', label: 'Azul', hex: '#3b82f6' },
+  { name: 'red-500', label: 'Vermelho', hex: '#ef4444' },
+  { name: 'green-500', label: 'Verde', hex: '#22c55e' },
+  { name: 'orange-500', label: 'Laranja', hex: '#f97316' },
+  { name: 'purple-500', label: 'Roxo', hex: '#a855f7' },
+  { name: 'slate-500', label: 'Cinza', hex: '#64748b' },
+];
+```
+
+#### Componente CategoryConfigPopover
+
+```tsx
+interface CategoryConfigPopoverProps {
+  category: string;
+  deviceTypeId: string;
+  currentConfig?: {
+    display_name?: string;
+    icon: string;
+    color: string;
+  };
+  onSave: () => void;
+}
+
+// Renderiza um Popover com:
+// - Input para nome de exibição
+// - Select visual para ícone
+// - Select visual para cor (com preview colorido)
+// - Botão salvar
+```
+
+---
+
+### Fluxo de Funcionamento
+
+1. **Primeira vez**: Ao acessar a aba "Fluxo de Análise", o sistema verifica se existem configurações para as categorias do template
+2. **Sem configuração**: Usa os valores hardcoded como fallback (compatibilidade retroativa)
+3. **Com configuração**: Aplica as cores/ícones do banco de dados
+4. **Edição inline**: Clique no ícone de engrenagem abre o popover de edição
+5. **Salva**: Insere/atualiza a configuração na tabela `rule_categories`
+6. **Propagação**: Todas as páginas de relatório que usam esse template refletirão as mudanças
 
 ---
 
 ### Resultado Esperado
 
-1. **Menu atualizado**: "Administração > Templates" visível para Super Admins e Super Suportes
-2. **Página funcional**: Lista os 3 templates existentes em cards visuais
-3. **Consistência visual**: Segue o mesmo padrão das outras páginas admin
+1. **Edição visual simples**: Configurar categorias sem sair da aba "Fluxo de Análise"
+2. **Feedback imediato**: Ver preview do ícone e cor selecionados
+3. **Persistência**: Configurações salvas no banco de dados
+4. **Reflexo nos relatórios**: Web e PDF exibem as cores/ícones configurados
+5. **Compatibilidade**: Fallback para hardcoded quando não há configuração
 
