@@ -1,169 +1,171 @@
 
+## Ajustes nas Abas Blueprints, Regras e Parses
 
-## Reformulação do Fluxo de Análise: Regras como Base
+### Resumo das Necessidades
 
-### Entendimento do Problema
+1. **Parses não exibe nada** - A tabela `evidence_parses` está vazia e precisa ser populada com os dados do `EvidenceDisplay.tsx`
+2. **Proteção de exclusão** - Impedir exclusão de itens que possuem vínculos ativos
+3. **Melhorias visuais** - Adicionar contagem de parses na aba
 
-Atualmente o "Fluxo de Análise" mostra:
-```
-Step (ns_records) → Regras vinculadas (DNS-003, DNS-004)
-```
+---
 
-Mas você quer espelhar o relatório de compliance que o cliente vê:
-```
-Regra (DNS-004 - Diversidade de Nameservers) 
-  → Steps que a alimentam (ns_records)
-  → Análise efetuada (lógica de avaliação)
-  → Parses usados (traduções de campos)
+### Parte 1: Popular Tabela `evidence_parses`
+
+A tabela está criada mas vazia. Preciso migrar os dados hardcoded do `EvidenceDisplay.tsx`:
+
+**SQL Migration para popular dados:**
+
+```sql
+-- Obter o device_type_id de external_domain
+WITH ext_domain AS (
+  SELECT id FROM device_types WHERE code = 'external_domain' LIMIT 1
+)
+INSERT INTO evidence_parses (device_type_id, source_field, display_label, parse_type, value_transformations, is_active, display_order)
+SELECT 
+  ext_domain.id,
+  source_field,
+  display_label,
+  parse_type::parse_type,
+  value_transformations::jsonb,
+  true,
+  display_order
+FROM ext_domain, (VALUES
+  -- DNSSEC Status
+  ('data.has_dnskey', 'Status DNSSEC', 'boolean', '{"true": "DNSSEC Ativado", "false": "DNSSEC Desativado"}', 0),
+  ('data.has_ds', 'Registro DS', 'boolean', '{"true": "Presente", "false": "Ausente"}', 1),
+  ('data.validated', 'Validação DNSSEC', 'boolean', '{"true": "Validação OK", "false": "Não validado"}', 2),
+  -- SOA
+  ('data.mname', 'Servidor Primário', 'text', '{}', 3),
+  ('data.rname', 'Email do Responsável', 'text', '{}', 4),
+  ('data.contact_email', 'Contato do Administrador', 'text', '{}', 5),
+  ('data.refresh', 'Tempo de Refresh', 'time', '{}', 6),
+  ('data.retry', 'Tempo de Retry', 'time', '{}', 7),
+  ('data.expire', 'Tempo de Expiração', 'time', '{}', 8),
+  ('data.minimum', 'TTL Mínimo', 'time', '{}', 9),
+  ('data.serial', 'Número Serial', 'number', '{}', 10),
+  -- SPF
+  ('data.raw', 'Registro SPF/DMARC', 'text', '{}', 11),
+  ('data.parsed.includes', 'Mecanismos Include', 'list', '{}', 12),
+  ('data.parsed.all', 'Política ALL', 'text', '{}', 13),
+  -- DKIM
+  ('data.found', 'Registros DKIM', 'list', '{}', 14),
+  -- DMARC
+  ('data.parsed.p', 'Política DMARC', 'text', '{"reject": "Rejeitar", "quarantine": "Quarentena", "none": "Nenhuma"}', 15),
+  ('data.parsed.sp', 'Política de Subdomínio', 'text', '{"reject": "Rejeitar", "quarantine": "Quarentena", "none": "Nenhuma"}', 16),
+  ('data.parsed.aspf', 'Alinhamento SPF', 'text', '{"r": "Relaxado", "s": "Estrito"}', 17),
+  ('data.parsed.adkim', 'Alinhamento DKIM', 'text', '{"r": "Relaxado", "s": "Estrito"}', 18),
+  ('data.parsed.pct', 'Cobertura', 'number', '{"100": "100% (total)"}', 19),
+  ('data.parsed.rua', 'Relatórios (RUA)', 'text', '{}', 20),
+  ('data.parsed.ruf', 'Relatórios Forenses (RUF)', 'text', '{}', 21),
+  -- Nameservers/MX
+  ('data.records', 'Registros', 'list', '{}', 22)
+) AS v(source_field, display_label, parse_type, value_transformations, display_order);
 ```
 
 ---
 
-### Nova Estrutura Visual
+### Parte 2: Proteção de Exclusão (Vínculos)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  FLUXO DE ANÁLISE                                                           │
-│  Visualização baseada nas regras de compliance (como aparece no relatório)  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌─ SEGURANÇA DNS ──────────────────────────────────────────────────────────┐
-│  │                                                                          │
-│  │  ┌─ DNS-001 • DNSSEC Habilitado ──────────────────────── [Alto] ────────┐│
-│  │  │                                                                       ││
-│  │  │  📝 Descrição da Regra                                               ││
-│  │  │  Verifica se o DNSSEC está habilitado através da presença do DNSKEY. ││
-│  │  │                                                                       ││
-│  │  │  ⚙️ Análise Efetuada                                                 ││
-│  │  │  data.has_dnskey = true                                              ││
-│  │  │                                                                       ││
-│  │  │  📡 Steps de Coleta                                                   ││
-│  │  │  └── dnssec_status (DNS Query • Consulta DNSKEY)                     ││
-│  │  │                                                                       ││
-│  │  │  🔄 Parses (Traduções)                                               ││
-│  │  │  └── data.has_dnskey → "Status DNSSEC"                               ││
-│  │  │      true → "DNSSEC Ativado"                                         ││
-│  │  │      false → "DNSSEC Desativado"                                     ││
-│  │  │                                                                       ││
-│  │  └───────────────────────────────────────────────────────────────────────┘│
-│  │                                                                          │
-│  │  ┌─ DNS-004 • Diversidade de Nameservers ────────────── [Médio] ────────┐│
-│  │  │                                                                       ││
-│  │  │  📝 Descrição da Regra                                               ││
-│  │  │  Verifica se existem pelo menos 3 nameservers configurados.          ││
-│  │  │                                                                       ││
-│  │  │  ⚙️ Análise Efetuada                                                 ││
-│  │  │  data.records.length >= 3                                            ││
-│  │  │                                                                       ││
-│  │  │  📡 Steps de Coleta                                                   ││
-│  │  │  └── ns_records (DNS Query • Consulta NS)                            ││
-│  │  │                                                                       ││
-│  │  │  🔄 Parses (Traduções)                                               ││
-│  │  │  └── data.records[].host → "Nameserver"                              ││
-│  │  │                                                                       ││
-│  │  └───────────────────────────────────────────────────────────────────────┘│
-│  │                                                                          │
-│  └──────────────────────────────────────────────────────────────────────────┘│
-│                                                                              │
-│  ┌─ INFRAESTRUTURA DE EMAIL ────────────────────────────────────────────────┐
-│  │                                                                          │
-│  │  ┌─ MX-001 • Registro MX Configurado ───────────────── [Crítico] ───────┐│
-│  │  │  ...                                                                  ││
-│  │  └───────────────────────────────────────────────────────────────────────┘│
-│  │                                                                          │
-│  └──────────────────────────────────────────────────────────────────────────┘│
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+Implementar verificação antes de permitir exclusão para evitar quebrar fluxos de análise ativos.
+
+#### Lógica de Vínculos
+
+| Item a Excluir | Verificar Vínculo |
+|----------------|-------------------|
+| **Blueprint** | Se é o único blueprint ativo do device_type |
+| **Regra** | Se está referenciada em relatórios (`analysis_history`, `external_domain_analysis_history`) |
+| **Parse** | Se está vinculada a alguma regra ativa (via `source_field` no `evaluation_logic`) |
+
+#### Modificações nos Componentes
+
+**1. `BlueprintsTable.tsx`**
+```typescript
+const handleDelete = async () => {
+  if (!selectedBlueprint) return;
+  
+  // Verificar se é o único blueprint ativo
+  const activeBlueprintsCount = blueprints.filter(bp => bp.is_active).length;
+  if (selectedBlueprint.is_active && activeBlueprintsCount === 1) {
+    toast.error('Não é possível excluir o único blueprint ativo. Crie outro blueprint ativo primeiro.');
+    return;
+  }
+  
+  // Prosseguir com exclusão...
+};
 ```
 
----
+**2. `ComplianceRulesTable.tsx`**
+```typescript
+const handleDelete = async () => {
+  if (!selectedRule) return;
+  
+  // Verificar se há análises usando esta regra
+  const { count } = await supabase
+    .from('external_domain_analysis_history')
+    .select('id', { count: 'exact', head: true })
+    .filter('report_data->results', 'cs', `[{"code":"${selectedRule.code}"}]`);
+  
+  if (count && count > 0) {
+    toast.error(`Não é possível excluir: ${count} análise(s) usam esta regra.`);
+    return;
+  }
+  
+  // Prosseguir com exclusão...
+};
+```
 
-### Lógica de Organização
-
-1. **Agrupar regras por categoria** (igual ao relatório)
-   - Segurança DNS
-   - Infraestrutura de Email
-   - Autenticação de Email - SPF
-   - Autenticação de Email - DKIM
-   - Autenticação de Email - DMARC
-
-2. **Para cada regra, mostrar:**
-   - Código + Nome + Severidade (como no relatório)
-   - Descrição da regra
-   - Análise efetuada (derivada de `evaluation_logic`)
-   - Steps de coleta que alimentam (via `evaluation_logic.step_id`)
-   - Parses vinculados (futuramente do banco, hoje do hardcode)
-
----
-
-### Modificações Necessárias
-
-**Arquivo:** `src/components/admin/BlueprintFlowVisualization.tsx`
-
-#### Mudanças Principais:
-
-1. **Inverter a estrutura de dados:**
-   ```typescript
-   // ANTES: agrupar regras por step
-   const rulesByStep = { ns_records: [DNS-003, DNS-004], ... }
-   
-   // DEPOIS: agrupar regras por categoria
-   const rulesByCategory = { 
-     "Segurança DNS": [DNS-001, DNS-002, DNS-003, DNS-004, DNS-005, DNS-006],
-     "Infraestrutura de Email": [MX-001, MX-002, ...],
-     ...
-   }
-   ```
-
-2. **Criar componente `RuleFlowCard`:**
-   - Mostra uma regra individual com todas as informações
-   - Busca o step vinculado pelo `evaluation_logic.step_id`
-   - Lista os parses associados (por enquanto do hardcode, depois do banco)
-
-3. **Criar componente `CategoryFlowSection`:**
-   - Agrupa regras por categoria
-   - Colapsável com contagem de regras
-   - Cores por categoria (igual ao relatório)
-
-4. **Mapear parses relevantes por step_id:**
-   ```typescript
-   // Mapear campos que cada step pode gerar
-   const STEP_FIELDS: Record<string, string[]> = {
-     'dnssec_status': ['data.has_dnskey', 'data.has_ds', 'data.validated'],
-     'ns_records': ['data.records', 'data.records[].host'],
-     'soa_record': ['data.mname', 'data.contact_email', 'data.refresh', ...],
-     'mx_records': ['data.records', 'data.records[].exchange', 'data.records[].priority'],
-     'spf_record': ['data.raw', 'data.parsed.all', 'data.parsed.includes'],
-     'dkim_records': ['data.found', 'data.found[].selector', 'data.found[].key_size_bits'],
-     'dmarc_record': ['data.raw', 'data.parsed.p', 'data.parsed.rua', ...],
-   };
-   ```
-
-5. **Utilizar os parses do `EvidenceDisplay.tsx`:**
-   - Por enquanto, reutilizar as constantes `LABEL_TRANSLATIONS` e `VALUE_TRANSFORMATIONS`
-   - Futuramente, buscar da tabela `evidence_parses`
+**3. `ParsesManagement.tsx`**
+```typescript
+const handleDelete = async () => {
+  if (!selectedParse) return;
+  
+  // Verificar se alguma regra usa este campo no evaluation_logic
+  const { data: rulesUsingParse } = await supabase
+    .from('compliance_rules')
+    .select('code, name')
+    .eq('device_type_id', deviceTypeId)
+    .filter('evaluation_logic', 'cs', `{"field":"${selectedParse.source_field}"}`);
+  
+  if (rulesUsingParse && rulesUsingParse.length > 0) {
+    toast.error(`Parse em uso por ${rulesUsingParse.length} regra(s): ${rulesUsingParse.map(r => r.code).join(', ')}`);
+    return;
+  }
+  
+  // Prosseguir com exclusão...
+};
+```
 
 ---
 
-### Cores por Categoria (Consistência com Relatório)
+### Parte 3: Adicionar Contagem de Parses na Aba
 
-| Categoria | Cor | CSS Class |
-|-----------|-----|-----------|
-| Segurança DNS | Cyan | `border-cyan-500 bg-cyan-500/10` |
-| Infraestrutura de Email | Violet | `border-violet-500 bg-violet-500/10` |
-| Autenticação de Email - SPF | Emerald | `border-emerald-500 bg-emerald-500/10` |
-| Autenticação de Email - DKIM | Pink | `border-pink-500 bg-pink-500/10` |
-| Autenticação de Email - DMARC | Amber | `border-amber-500 bg-amber-500/10` |
+Atualmente a aba Parses não mostra contagem. Adicionar badge como nas outras abas.
 
----
+**Modificação em `DeviceTypeCard.tsx`:**
 
-### Integração com Parses (Próximo Passo)
+```typescript
+// Estado para contar parses
+const [parsesCount, setParsesCount] = useState(0);
 
-A tabela `evidence_parses` já foi criada mas está vazia. Após essa implementação:
+// Buscar contagem de parses
+useEffect(() => {
+  const fetchParsesCount = async () => {
+    const { count } = await supabase
+      .from('evidence_parses')
+      .select('*', { count: 'exact', head: true })
+      .eq('device_type_id', deviceType.id);
+    setParsesCount(count || 0);
+  };
+  fetchParsesCount();
+}, [deviceType.id]);
 
-1. **Popular a tabela** com os dados de `EvidenceDisplay.tsx`
-2. **Criar vinculo `step_id`** na tabela de parses
-3. **Buscar dinamicamente** os parses vinculados a cada step/regra
+// Na TabsTrigger de Parses:
+<TabsTrigger value="parses" className="gap-2">
+  <Languages className="w-4 h-4" />
+  Parses
+  <Badge variant="outline" className="ml-1 text-xs">{parsesCount}</Badge>
+</TabsTrigger>
+```
 
 ---
 
@@ -171,11 +173,17 @@ A tabela `evidence_parses` já foi criada mas está vazia. Após essa implementa
 
 | Arquivo | Ação |
 |---------|------|
-| `src/components/admin/BlueprintFlowVisualization.tsx` | Reescrever: organizar por regras/categorias em vez de steps |
+| **Migration SQL** | Popular `evidence_parses` com dados do EvidenceDisplay.tsx |
+| `src/components/admin/DeviceTypeCard.tsx` | Adicionar contagem de parses na aba |
+| `src/components/admin/BlueprintsTable.tsx` | Impedir exclusão do único blueprint ativo |
+| `src/components/admin/ComplianceRulesTable.tsx` | Verificar uso em análises antes de excluir |
+| `src/components/admin/ParsesManagement.tsx` | Verificar uso em regras antes de excluir |
+
+---
 
 ### Benefícios
 
-1. **Espelha o relatório** - Mesma organização que o cliente vê
-2. **Visão completa por regra** - Steps, análise e parses em um só lugar
-3. **Facilita auditoria** - Admin entende exatamente como cada regra funciona
-4. **Preparado para parses dinâmicos** - Quando populados no banco, já estarão visíveis
+1. **Parses funcionando** - Dados reais no banco para visualização e gestão
+2. **Proteção de integridade** - Impede exclusão acidental de itens em uso
+3. **Feedback claro** - Mensagens explicando por que não pode excluir
+4. **Contagem visível** - Parses mostra quantidade como outras abas
