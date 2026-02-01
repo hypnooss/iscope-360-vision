@@ -446,6 +446,35 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
   // Aplicar formatação de tempo SOA se aplicável
   transformedValue = formatSOAValue(item.label, transformedValue);
 
+  // ========== TRATAMENTO ESPECIAL PARA STATUS DE INTERFACE ==========
+  // Remover ícones ❌/✅ do valor de Status e apenas exibir o texto
+  if (item.label === "Status" || translatedLabel === "Status") {
+    // Remove emojis de status (❌, ✅, ⚠️, etc.) do início do valor
+    const cleanValue = transformedValue.replace(/^[❌✅⚠️🔴🟢🟡⛔✔️]\s*/u, "");
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+        <div className="border-l-2 border-primary/30 pl-3">
+          <span className="text-xs font-medium text-muted-foreground block mb-1">Status</span>
+          <p className="text-sm text-foreground">{cleanValue}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ========== TRATAMENTO ESPECIAL PARA INTERFACES DE FIREWALL ==========
+  // Detectar evidências de interface (nome da interface com allowaccess)
+  const isInterfaceEvidence = item.value && item.value.includes("allowaccess:");
+  if (isInterfaceEvidence) {
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+        <div className="border-l-2 border-primary/30 pl-3">
+          <span className="text-xs font-medium text-muted-foreground block mb-1">Interface</span>
+          <p className="text-sm text-foreground font-mono">{item.label}</p>
+        </div>
+      </div>
+    );
+  }
+
   // Criar item transformado para uso nos componentes
   const transformedItem = { ...item, label: translatedLabel, value: transformedValue };
 
