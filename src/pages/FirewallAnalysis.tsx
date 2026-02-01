@@ -212,49 +212,32 @@ export default function FirewallAnalysis() {
 
 
   const handleRefresh = async () => {
-    if (!firewall) return;
+    if (!id) return;
 
     setIsRefreshing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
-        body: { url: firewall.fortigate_url, apiKey: firewall.api_key },
+      const { data, error } = await supabase.functions.invoke('trigger-firewall-analysis', {
+        body: { firewall_id: id },
       });
 
       if (error) throw error;
-      if (data.error) throw new Error(data.details || data.error);
-
-      // Save to history - use overallScore from edge function
-      const score = data.overallScore ?? data.score ?? 0;
-
-      const { error: historyError } = await supabase.from('analysis_history').insert({
-        firewall_id: id,
-        score: score,
-        report_data: data,
-        analyzed_by: user?.id,
-      });
-
-      if (historyError) {
-        console.error('Error saving analysis history:', historyError);
+      
+      if (!data.success) {
+        // Handle specific error cases
+        if (data.task_id) {
+          // Task already exists
+          toast.info(data.message || 'Já existe uma análise em andamento para este firewall.');
+        } else {
+          throw new Error(data.error || 'Erro ao criar tarefa de análise');
+        }
+        return;
       }
 
-      // Update firewall
-      await supabase.from('firewalls').update({
-        last_analysis_at: new Date().toISOString(),
-        last_score: score,
-        serial_number: data.serialNumber,
-      }).eq('id', id);
-
-      // Normalize the data before setting to state - mark as new analysis for animation
-      const normalizedReport = normalizeReportData({
-        ...data,
-        generatedAt: new Date().toISOString(),
+      toast.success('Análise agendada! O agent irá processar em breve.', {
+        description: `Task ID: ${data.task_id?.slice(0, 8)}...`,
       });
-      setIsNewAnalysis(true);
-      setReport(normalizedReport);
-
-      toast.success('Análise atualizada com sucesso!');
     } catch (error: any) {
-      toast.error('Erro ao atualizar: ' + error.message);
+      toast.error('Erro ao agendar análise: ' + error.message);
     } finally {
       setIsRefreshing(false);
     }
