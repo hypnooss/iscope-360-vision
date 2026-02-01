@@ -23,13 +23,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 24,
     position: 'relative',
+    minHeight: 60,
   },
   logoContainer: {
     position: 'absolute',
     right: 0,
-    top: 0,
   },
   logo: {
     width: 60,
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginTop: 4,
+    marginTop: 0,
   },
   leftColumn: {
     flex: 1,
