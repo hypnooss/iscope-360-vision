@@ -40,8 +40,9 @@ import { toast } from 'sonner';
 import { 
   Plus, Pencil, Trash2, Loader2, Copy, Eye, 
   FileCode, CheckCircle, ChevronDown, ChevronRight,
-  Package
+  Package, GitBranch
 } from 'lucide-react';
+import { BlueprintFlowVisualization } from './BlueprintFlowVisualization';
 import * as LucideIcons from 'lucide-react';
 
 // Types
@@ -700,14 +701,36 @@ export function DeviceTypeCard({ deviceType, blueprints, rules, onRefresh }: Pro
                               </TableRow>
                               {expandedBlueprints[blueprint.id] && (
                                 <TableRow className="border-border/50">
-                                  <TableCell colSpan={6} className="bg-muted/30">
-                                    <div className="p-3">
-                                      <p className="text-sm text-muted-foreground mb-2">
+                                  <TableCell colSpan={6} className="bg-muted/30 p-0">
+                                    <div className="p-4">
+                                      <p className="text-sm text-muted-foreground mb-4">
                                         {blueprint.description || 'Sem descrição'}
                                       </p>
-                                      <div className="text-xs font-mono bg-background p-2 rounded border border-border/50 max-h-40 overflow-auto">
-                                        <pre>{JSON.stringify(blueprint.collection_steps, null, 2)}</pre>
+                                      
+                                      {/* Visual Flow Visualization */}
+                                      <div className="mb-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <GitBranch className="w-4 h-4 text-primary" />
+                                          <span className="text-sm font-medium">Fluxo de Coleta → Regras</span>
+                                        </div>
+                                        <div className="bg-background rounded-lg border border-border/50 p-4 max-h-[500px] overflow-auto">
+                                          <BlueprintFlowVisualization
+                                            blueprint={blueprint}
+                                            rules={rules}
+                                          />
+                                        </div>
                                       </div>
+                                      
+                                      {/* Raw JSON (collapsed by default) */}
+                                      <details className="group">
+                                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
+                                          <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                                          Ver JSON bruto
+                                        </summary>
+                                        <div className="text-xs font-mono bg-background p-2 rounded border border-border/50 max-h-40 overflow-auto mt-2">
+                                          <pre>{JSON.stringify(blueprint.collection_steps, null, 2)}</pre>
+                                        </div>
+                                      </details>
                                     </div>
                                   </TableCell>
                                 </TableRow>
