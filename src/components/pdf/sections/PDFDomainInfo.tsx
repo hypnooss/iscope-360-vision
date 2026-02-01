@@ -3,9 +3,11 @@ import { View, Text, StyleSheet } from '@react-pdf/renderer';
 import { colors, typography, spacing, radius } from '../styles/pdfStyles';
 import { PDFStatusIcon } from '../shared/PDFStatusIcon';
 
+const MAX_NAMESERVERS = 3;
+
 const styles = StyleSheet.create({
   container: {
-    marginTop: spacing.itemGap,
+    marginTop: 6,
   },
   section: {
     backgroundColor: colors.cardBg,
@@ -13,7 +15,7 @@ const styles = StyleSheet.create({
     padding: spacing.cardPadding,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: spacing.itemGap,
+    marginBottom: 6,
   },
   sectionTitle: {
     fontSize: typography.bodySmall,
@@ -60,6 +62,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 2,
     paddingLeft: 8,
+  },
+  moreItems: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    paddingLeft: 8,
+    marginTop: 2,
   },
   emailAuthGrid: {
     flexDirection: 'row',
@@ -160,11 +169,16 @@ export const PDFDomainInfo: React.FC<PDFDomainInfoProps> = ({ data }) => {
         {nameservers.length > 0 && (
           <View style={styles.gridItemFull}>
             <Text style={styles.label}>Nameservers</Text>
-            {nameservers.map((ns, index) => (
+            {nameservers.slice(0, MAX_NAMESERVERS).map((ns, index) => (
               <Text key={index} style={styles.listItem}>
                 • {ns}
               </Text>
             ))}
+            {nameservers.length > MAX_NAMESERVERS && (
+              <Text style={styles.moreItems}>
+                + {nameservers.length - MAX_NAMESERVERS} nameserver{nameservers.length - MAX_NAMESERVERS > 1 ? 's' : ''}
+              </Text>
+            )}
           </View>
         )}
       </View>
