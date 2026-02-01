@@ -245,6 +245,31 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
 
     setSaving(true);
     try {
+      // Verificar se há análises usando esta regra
+      const { count: historyCount } = await supabase
+        .from('external_domain_analysis_history')
+        .select('id', { count: 'exact', head: true });
+
+      if (historyCount && historyCount > 0) {
+        // Verificar se esta regra específica está em algum relatório
+        const { data: histories } = await supabase
+          .from('external_domain_analysis_history')
+          .select('report_data')
+          .limit(100);
+
+        const usedInReports = histories?.some(h => {
+          const reportData = h.report_data as { results?: Array<{ code?: string }> };
+          return reportData?.results?.some(r => r.code === selectedRule.code);
+        });
+
+        if (usedInReports) {
+          toast.error(`Não é possível excluir: esta regra está sendo usada em relatórios de análise existentes.`);
+          setSaving(false);
+          setDeleteDialogOpen(false);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('compliance_rules')
         .delete()

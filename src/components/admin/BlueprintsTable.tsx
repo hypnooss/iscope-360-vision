@@ -170,6 +170,14 @@ export function BlueprintsTable({ deviceTypeId, blueprints, onRefresh }: Props) 
   const handleDelete = async () => {
     if (!selectedBlueprint) return;
 
+    // Verificar se é o único blueprint ativo
+    const activeBlueprintsCount = blueprints.filter(bp => bp.is_active).length;
+    if (selectedBlueprint.is_active && activeBlueprintsCount === 1) {
+      toast.error('Não é possível excluir o único blueprint ativo. Desative-o ou crie outro blueprint ativo primeiro.');
+      setDeleteDialogOpen(false);
+      return;
+    }
+
     setSaving(true);
     try {
       const { error } = await supabase
