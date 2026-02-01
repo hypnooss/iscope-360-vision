@@ -34,13 +34,56 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Loader2, Eye, Pencil } from 'lucide-react';
+import {
+  Shield,
+  Globe,
+  Server,
+  Layers,
+  Loader2,
+  Eye,
+  Pencil,
+  Plus,
+  Cloud,
+  Network,
+  Lock,
+  Cpu,
+  HardDrive,
+  Wifi,
+  Database,
+  Monitor,
+  Activity,
+  Router,
+  Box,
+  Package,
+  type LucideIcon,
+} from 'lucide-react';
 
-// Map device codes to icons
-const deviceIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  fortigate: Shield,
-  sonicwall: Server,
-  external_domain: Globe,
+// Map icon names to components
+const iconComponents: Record<string, LucideIcon> = {
+  Shield,
+  Server,
+  Cloud,
+  Network,
+  Lock,
+  Cpu,
+  HardDrive,
+  Wifi,
+  Globe,
+  Database,
+  Monitor,
+  Activity,
+  Router,
+  Layers,
+  Box,
+  Package,
+};
+
+const ICON_OPTIONS = Object.keys(iconComponents);
+
+// Helper to get icon component by name
+const getIconComponent = (iconName: string | null, className = 'w-4 h-4') => {
+  const Icon = iconComponents[iconName || 'Layers'] || Layers;
+  return <Icon className={className} />;
 };
 
 // Map categories to display names
@@ -76,6 +119,24 @@ interface DeviceType {
   updated_at: string;
 }
 
+interface CreateTemplateForm {
+  name: string;
+  vendor: string;
+  code: string;
+  category: DeviceCategory;
+  icon: string;
+  is_active: boolean;
+}
+
+const initialCreateForm: CreateTemplateForm = {
+  name: '',
+  vendor: '',
+  code: '',
+  category: 'firewall',
+  icon: 'Shield',
+  is_active: true,
+};
+
 export default function TemplatesPage() {
   const { user, role, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -84,7 +145,9 @@ export default function TemplatesPage() {
   // States for dialogs
   const [viewingTemplate, setViewingTemplate] = useState<DeviceType | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<DeviceType | null>(null);
-  const [editForm, setEditForm] = useState<Partial<DeviceType>>({});
+  const [editForm, setEditForm] = useState<Partial<DeviceType & { icon: string }>>({});
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateTemplateForm>(initialCreateForm);
 
   // Access control - only super_admin and super_suporte
   useEffect(() => {
@@ -109,6 +172,34 @@ export default function TemplatesPage() {
       return data as DeviceType[];
     },
     enabled: !!user && (role === 'super_admin' || role === 'super_suporte'),
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: CreateTemplateForm) => {
+      const { error } = await supabase
+        .from('device_types')
+        .insert({
+          name: data.name,
+          vendor: data.vendor,
+          code: data.code,
+          category: data.category,
+          icon: data.icon,
+          is_active: data.is_active,
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-types-templates'] });
+      setCreateDialogOpen(false);
+      setCreateForm(initialCreateForm);
+      toast.success('Template criado com sucesso!');
+    },
+    onError: (error: Error) => {
+      console.error('Error creating template:', error);
+      toast.error('Erro ao criar template: ' + error.message);
+    },
   });
 
   // Update mutation
@@ -139,6 +230,7 @@ export default function TemplatesPage() {
       name: template.name,
       vendor: template.vendor,
       category: template.category,
+      icon: template.icon || 'Layers',
       is_active: template.is_active,
     });
   };
@@ -151,9 +243,26 @@ export default function TemplatesPage() {
         name: editForm.name,
         vendor: editForm.vendor,
         category: editForm.category as DeviceType['category'],
+        icon: editForm.icon,
         is_active: editForm.is_active,
       },
     });
+  };
+
+  const handleCreateTemplate = () => {
+    if (!createForm.name || !createForm.vendor || !createForm.code) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+    createMutation.mutate(createForm);
+  };
+
+  // Generate code from vendor + name
+  const generateCode = (vendor: string, name: string) => {
+    return `${vendor}_${name}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
   };
 
   if (authLoading) {
@@ -174,11 +283,17 @@ export default function TemplatesPage() {
           ]}
         />
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Templates</h1>
-          <p className="text-muted-foreground mt-1">
-            Gerencie os templates de dispositivos disponíveis no sistema
-          </p>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Templates</h1>
+            <p className="text-muted-foreground mt-1">
+              Gerencie os templates de dispositivos disponíveis no sistema
+            </p>
+          </div>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Template
+          </Button>
         </div>
 
         {isLoading ? (
@@ -201,14 +316,13 @@ export default function TemplatesPage() {
               </TableHeader>
               <TableBody>
                 {templates?.map((template) => {
-                  const IconComponent = deviceIconMap[template.code] || Layers;
                   const categoryDisplay = categoryDisplayMap[template.category] || template.category;
 
                   return (
                     <TableRow key={template.id} className="group">
                       <TableCell>
                         <div className="p-1.5 rounded bg-primary/10 w-fit">
-                          <IconComponent className="w-4 h-4 text-primary" />
+                          {getIconComponent(template.icon)}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
@@ -276,10 +390,9 @@ export default function TemplatesPage() {
             <DialogTitle className="flex items-center gap-2">
               {viewingTemplate && (
                 <>
-                  {(() => {
-                    const Icon = deviceIconMap[viewingTemplate.code] || Layers;
-                    return <Icon className="w-5 h-5 text-primary" />;
-                  })()}
+                  <div className="p-1 rounded bg-primary/10">
+                    {getIconComponent(viewingTemplate.icon, 'w-5 h-5 text-primary')}
+                  </div>
                   {viewingTemplate.name}
                 </>
               )}
@@ -408,6 +521,33 @@ export default function TemplatesPage() {
                 </Select>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="edit-icon">Ícone</Label>
+                <Select
+                  value={editForm.icon || 'Layers'}
+                  onValueChange={(value) => setEditForm({ ...editForm, icon: value })}
+                >
+                  <SelectTrigger id="edit-icon">
+                    <SelectValue>
+                      <div className="flex items-center gap-2">
+                        {getIconComponent(editForm.icon || 'Layers')}
+                        <span>{editForm.icon || 'Layers'}</span>
+                      </div>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ICON_OPTIONS.map((icon) => (
+                      <SelectItem key={icon} value={icon}>
+                        <div className="flex items-center gap-2">
+                          {getIconComponent(icon)}
+                          <span>{icon}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex items-center justify-between">
                 <Label htmlFor="edit-active">Ativo</Label>
                 <Switch
@@ -431,6 +571,139 @@ export default function TemplatesPage() {
                 </>
               ) : (
                 'Salvar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Template</DialogTitle>
+            <DialogDescription>
+              Crie um novo template de dispositivo
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-vendor">Fabricante *</Label>
+              <Input
+                id="create-vendor"
+                placeholder="Ex: Fortinet, Cisco, Palo Alto"
+                value={createForm.vendor}
+                onChange={(e) => {
+                  const vendor = e.target.value;
+                  setCreateForm({ 
+                    ...createForm, 
+                    vendor,
+                    code: generateCode(vendor, createForm.name),
+                  });
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Nome *</Label>
+              <Input
+                id="create-name"
+                placeholder="Ex: FortiGate, Meraki MX"
+                value={createForm.name}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setCreateForm({ 
+                    ...createForm, 
+                    name,
+                    code: generateCode(createForm.vendor, name),
+                  });
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-code">Código (gerado automaticamente)</Label>
+              <Input
+                id="create-code"
+                value={createForm.code}
+                onChange={(e) => setCreateForm({ ...createForm, code: e.target.value })}
+                placeholder="fortinet_fortigate"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Identificador único. Pode ser editado manualmente.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-category">Categoria</Label>
+              <Select
+                value={createForm.category}
+                onValueChange={(value) => setCreateForm({ ...createForm, category: value as DeviceCategory })}
+              >
+                <SelectTrigger id="create-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoryOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-icon">Ícone</Label>
+              <Select
+                value={createForm.icon}
+                onValueChange={(value) => setCreateForm({ ...createForm, icon: value })}
+              >
+                <SelectTrigger id="create-icon">
+                  <SelectValue>
+                    <div className="flex items-center gap-2">
+                      {getIconComponent(createForm.icon)}
+                      <span>{createForm.icon}</span>
+                    </div>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {ICON_OPTIONS.map((icon) => (
+                    <SelectItem key={icon} value={icon}>
+                      <div className="flex items-center gap-2">
+                        {getIconComponent(icon)}
+                        <span>{icon}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="create-active">Ativo</Label>
+              <Switch
+                id="create-active"
+                checked={createForm.is_active}
+                onCheckedChange={(checked) => setCreateForm({ ...createForm, is_active: checked })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateTemplate} disabled={createMutation.isPending}>
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Criando...
+                </>
+              ) : (
+                'Criar Template'
               )}
             </Button>
           </DialogFooter>
