@@ -1,65 +1,67 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from '@react-pdf/renderer';
-import { colors, typography, spacing, radius } from '../styles/pdfStyles';
+import { colors, typography, spacing } from '../styles/pdfStyles';
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
     marginBottom: spacing.sectionGap,
     paddingBottom: spacing.sectionGap,
     borderBottomWidth: 2,
     borderBottomColor: colors.primary,
   },
-  logoContainer: {
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 10,
   },
   logo: {
-    width: 36,
-    height: 36,
-    marginRight: 10,
+    width: 32,
+    height: 32,
   },
   brandText: {
-    fontSize: typography.title,
+    fontSize: 22,
     fontFamily: typography.bold,
     color: colors.primary,
-    letterSpacing: 2,
+    letterSpacing: 0.5,
+  },
+  dateText: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
+    textAlign: 'right',
+  },
+  infoSection: {
+    marginTop: 4,
+    paddingLeft: 42, // Align with text after logo
   },
   reportType: {
-    fontSize: typography.body,
+    fontSize: typography.bodySmall,
     fontFamily: typography.regular,
     color: colors.textMuted,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    marginBottom: 2,
   },
-  target: {
-    fontSize: 18,
-    fontFamily: typography.bold,
-    color: colors.textPrimary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-    marginTop: 8,
-  },
-  metaItem: {
+  targetRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
-  metaLabel: {
-    fontSize: typography.caption,
-    color: colors.textMuted,
-    marginRight: 4,
-  },
-  metaValue: {
-    fontSize: typography.caption,
-    color: colors.textSecondary,
+  target: {
+    fontSize: typography.subheading,
     fontFamily: typography.bold,
+    color: colors.textPrimary,
+  },
+  separator: {
+    fontSize: typography.bodySmall,
+    color: colors.textMuted,
+  },
+  clientName: {
+    fontSize: typography.bodySmall,
+    color: colors.textSecondary,
   },
 });
 
@@ -77,36 +79,33 @@ export const PDFHeader: React.FC<PDFHeaderProps> = ({
   subtitle,
   target,
   date,
-  reportType = 'Relatório de Análise',
+  reportType = 'Análise de Domínio Externo',
   logoBase64,
 }) => {
   return (
     <View style={styles.container}>
-      {/* Brand Row */}
-      <View style={styles.logoContainer}>
-        {logoBase64 && (
-          <Image style={styles.logo} src={logoBase64} />
-        )}
-        <Text style={styles.brandText}>{title.toUpperCase()}</Text>
+      {/* Top Row: Brand + Date */}
+      <View style={styles.topRow}>
+        <View style={styles.brandRow}>
+          {logoBase64 && (
+            <Image style={styles.logo} src={logoBase64} />
+          )}
+          <Text style={styles.brandText}>{title}</Text>
+        </View>
+        <Text style={styles.dateText}>{date}</Text>
       </View>
 
-      {/* Report Type */}
-      <Text style={styles.reportType}>{reportType}</Text>
-
-      {/* Target Name */}
-      <Text style={styles.target}>{target}</Text>
-
-      {/* Metadata Row */}
-      <View style={styles.metaRow}>
-        {subtitle && (
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Cliente:</Text>
-            <Text style={styles.metaValue}>{subtitle}</Text>
-          </View>
-        )}
-        <View style={styles.metaItem}>
-          <Text style={styles.metaLabel}>Gerado em:</Text>
-          <Text style={styles.metaValue}>{date}</Text>
+      {/* Info Section: Report Type + Target */}
+      <View style={styles.infoSection}>
+        <Text style={styles.reportType}>{reportType}</Text>
+        <View style={styles.targetRow}>
+          <Text style={styles.target}>{target}</Text>
+          {subtitle && (
+            <>
+              <Text style={styles.separator}>•</Text>
+              <Text style={styles.clientName}>Cliente: {subtitle}</Text>
+            </>
+          )}
         </View>
       </View>
     </View>
