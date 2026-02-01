@@ -399,14 +399,18 @@ const sourceKeyToEndpoint: Record<string, string> = {
 
 /**
  * Format FortiCare support evidence (lic-001)
+ * Returns evidence AND calculated status for proper icon display
  */
-function formatFortiCareEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+function formatFortiCareEvidence(rawData: Record<string, unknown>): { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown' } {
   const evidence: EvidenceItem[] = [];
   
   try {
     const licenseData = rawData['license_status'] as Record<string, unknown> | undefined;
     if (!licenseData) {
-      return [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }];
+      return { 
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown'
+      };
     }
     
     // Extract forticare info from multiple possible paths
@@ -419,15 +423,12 @@ function formatFortiCareEvidence(rawData: Record<string, unknown>): EvidenceItem
     const supportStatus = support?.status || forticareInfo.status || 'unknown';
     const isActive = ['licensed', 'registered', 'valid', 'active'].includes(String(supportStatus).toLowerCase());
     
-    evidence.push({
-      label: 'Status',
-      value: isActive ? '✅ Ativo' : '❌ Expirado/Inativo',
-      type: 'text'
-    });
-    
     // Get expiry date
     const expiresRaw = support?.expires || forticareInfo.expires || 
                        support?.expiry_date || forticareInfo.expiry_date || 0;
+    
+    let daysRemaining = 0;
+    let hasValidExpiry = false;
     
     if (expiresRaw) {
       let expiryDate: Date;
@@ -438,8 +439,9 @@ function formatFortiCareEvidence(rawData: Record<string, unknown>): EvidenceItem
       }
       
       if (!isNaN(expiryDate.getTime())) {
+        hasValidExpiry = true;
         const expiryDateStr = expiryDate.toLocaleDateString('pt-BR');
-        const daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
         
         evidence.push({
           label: 'Data de Expiração',
@@ -454,24 +456,64 @@ function formatFortiCareEvidence(rawData: Record<string, unknown>): EvidenceItem
         });
       }
     }
+    
+    // Determine status based on expiry and active status
+    // FortiCare is valid if: status is active AND (no expiry OR expiry > 0 days)
+    const isValid = isActive && (!hasValidExpiry || daysRemaining > 0);
+    const isExpiringSoon = isValid && hasValidExpiry && daysRemaining > 0 && daysRemaining <= 30;
+    
+    let status: 'pass' | 'fail' | 'warn' | 'unknown' = 'unknown';
+    if (isExpiringSoon) {
+      status = 'warn';
+      evidence.unshift({
+        label: 'Status',
+        value: `⚠️ Expira em ${daysRemaining} dias`,
+        type: 'text'
+      });
+    } else if (isValid) {
+      status = 'pass';
+      evidence.unshift({
+        label: 'Status',
+        value: '✅ Ativo',
+        type: 'text'
+      });
+    } else {
+      status = 'fail';
+      evidence.unshift({
+        label: 'Status',
+        value: '❌ Expirado/Inativo',
+        type: 'text'
+      });
+    }
+    
+    return { evidence, status };
   } catch (e) {
     console.error('Error formatting FortiCare evidence:', e);
-    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown'
+    };
   }
-  
-  return evidence;
 }
 
 /**
  * Format FortiGuard licenses evidence (lic-002)
+ * Returns evidence AND calculated status based on all security services
  */
-function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceItem[] {
+function formatFortiGuardEvidence(rawData: Record<string, unknown>): { evidence: EvidenceItem[], status: 'pass' | 'fail' | 'warn' | 'unknown' } {
   const evidence: EvidenceItem[] = [];
+  let allActive = true;
+  let anyExpiringSoon = false;
+  let anyExpiredOrInactive = false;
+  let foundAnyService = false;
   
   try {
     const licenseData = rawData['license_status'] as Record<string, unknown> | undefined;
     if (!licenseData) {
-      return [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }];
+      return { 
+        evidence: [{ label: 'Status', value: 'Dados não disponíveis', type: 'text' }],
+        status: 'unknown'
+      };
     }
     
     const results = licenseData.results as Record<string, unknown> | undefined;
@@ -503,7 +545,7 @@ function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceIte
       serviceInfo = serviceInfo || {};
       
       // Get status and expiry
-      const status = serviceInfo.status || serviceInfo.entitlement || serviceInfo.license_status || 'unknown';
+      const serviceStatus = serviceInfo.status || serviceInfo.entitlement || serviceInfo.license_status || 'unknown';
       const expiry = serviceInfo.expires || serviceInfo.expiry_date || serviceInfo.expire_time || serviceInfo.expiration || 0;
       
       let isActive = false;
@@ -519,6 +561,7 @@ function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceIte
         }
         
         if (!isNaN(expiryDate.getTime())) {
+          foundAnyService = true;
           expiryDateStr = expiryDate.toLocaleDateString('pt-BR');
           daysRemaining = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
           isActive = daysRemaining > 0;
@@ -528,7 +571,16 @@ function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceIte
       // Check status if date check failed
       if (!isActive && !expiry) {
         const activeStatuses = ['licensed', 'valid', 'active', 'enabled', 'enable', 'registered', '1'];
-        isActive = activeStatuses.includes(String(status).toLowerCase());
+        isActive = activeStatuses.includes(String(serviceStatus).toLowerCase());
+        if (isActive) foundAnyService = true;
+      }
+      
+      // Track overall status
+      if (!isActive) {
+        anyExpiredOrInactive = true;
+        allActive = false;
+      } else if (daysRemaining > 0 && daysRemaining <= 30) {
+        anyExpiringSoon = true;
       }
       
       // Format output
@@ -549,12 +601,27 @@ function formatFortiGuardEvidence(rawData: Record<string, unknown>): EvidenceIte
         type: 'text'
       });
     }
+    
+    // Determine overall status
+    let status: 'pass' | 'fail' | 'warn' | 'unknown' = 'unknown';
+    if (!foundAnyService) {
+      status = 'unknown';
+    } else if (anyExpiredOrInactive) {
+      status = 'fail';
+    } else if (anyExpiringSoon) {
+      status = 'warn';
+    } else if (allActive) {
+      status = 'pass';
+    }
+    
+    return { evidence, status };
   } catch (e) {
     console.error('Error formatting FortiGuard evidence:', e);
-    evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
+    return {
+      evidence: [{ label: 'Erro', value: 'Falha ao processar dados', type: 'text' }],
+      status: 'unknown'
+    };
   }
-  
-  return evidence;
 }
 
 /**
@@ -1283,8 +1350,7 @@ function formatSecurityPolicyEvidence(
         const isCompliant = timeout <= 30;
         return {
           evidence: [
-            { label: 'Timeout de Sessão', value: `${timeout} minutos`, type: 'text' },
-            { label: 'Status', value: isCompliant ? '✅ Configuração adequada' : '⚠️ Timeout muito longo (recomendado ≤30min)', type: 'text' }
+            { label: 'Timeout de Sessão', value: isCompliant ? `✅ ${timeout} minutos` : `⚠️ ${timeout} minutos (recomendado ≤30min)`, type: 'text' }
           ],
           status: isCompliant ? 'pass' : 'warn',
           skipRawData: false,
@@ -1402,7 +1468,7 @@ function formatUTMSecurityProfileEvidence(
         const policyName = policy.name || `Policy ${policyId}`;
         
         evidence.push({
-          label: `Regra ${policyId}`,
+          label: `Regra ID - ${policyId}`,
           value: String(policyName),
           type: 'text'
         });
@@ -2008,10 +2074,32 @@ function processComplianceRules(
       }
     } else if (rule.code === 'lic-001') {
       // FortiCare Support
-      evidence = formatFortiCareEvidence(rawData);
+      const forticareResult = formatFortiCareEvidence(rawData);
+      evidence = forticareResult.evidence;
+      status = forticareResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Suporte FortiCare ativo';
+      } else if (status === 'warn') {
+        details = rule.fail_description || 'Suporte FortiCare expirando em breve';
+      } else if (status === 'fail') {
+        details = rule.fail_description || 'Suporte FortiCare expirado ou inativo';
+      } else {
+        details = 'Não foi possível verificar - dados indisponíveis';
+      }
     } else if (rule.code === 'lic-002') {
       // FortiGuard Licenses
-      evidence = formatFortiGuardEvidence(rawData);
+      const fortiguardResult = formatFortiGuardEvidence(rawData);
+      evidence = fortiguardResult.evidence;
+      status = fortiguardResult.status;
+      if (status === 'pass') {
+        details = rule.pass_description || 'Todas as licenças FortiGuard ativas';
+      } else if (status === 'warn') {
+        details = rule.fail_description || 'Uma ou mais licenças FortiGuard expiram em breve';
+      } else if (status === 'fail') {
+        details = rule.fail_description || 'Uma ou mais licenças FortiGuard expiradas ou inativas';
+      } else {
+        details = 'Não foi possível verificar - dados indisponíveis';
+      }
     } else if (rule.code.startsWith('inb-')) {
       // Inbound Rules (inb-001, inb-002, inb-003)
       inboundResult = formatInboundRuleEvidence(rawData, rule.code);
