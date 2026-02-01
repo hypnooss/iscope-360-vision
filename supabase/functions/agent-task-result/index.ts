@@ -1544,84 +1544,39 @@ function formatInboundRuleEvidence(
       }
     }
     
-    // Generate evidence
+    // Generate evidence - simplified format
     if (relevantPolicies.length === 0) {
       evidence.push({
         label: 'Status',
-        value: '✅ Nenhuma regra vulnerável encontrada',
+        value: 'Nenhuma regra vulnerável encontrada',
         type: 'text'
       });
     } else {
       evidence.push({
         label: 'Status',
-        value: `❌ ${relevantPolicies.length} regra(s) vulnerável(is) encontrada(s)`,
+        value: `${relevantPolicies.length} regra(s) vulnerável(is) encontrada(s)`,
         type: 'text'
       });
       
-      // Show details of problematic policies (max 5)
-      for (const policy of relevantPolicies.slice(0, 5)) {
+      // Show only ID and name of problematic policies (max 10)
+      for (const policy of relevantPolicies.slice(0, 10)) {
         const policyId = policy.policyid || policy.id || 'N/A';
         const policyName = policy.name || `Policy ${policyId}`;
-        const srcintf = (policy.srcintf as Array<Record<string, unknown>> || [])
-          .map(i => i.name || i.q_origin_key).join(', ');
-        const dstintf = (policy.dstintf as Array<Record<string, unknown>> || [])
-          .map(i => i.name || i.q_origin_key).join(', ');
-        const srcaddr = (policy.srcaddr as Array<Record<string, unknown>> || [])
-          .map(a => a.name || a.q_origin_key).join(', ');
-        const dstaddr = (policy.dstaddr as Array<Record<string, unknown>> || [])
-          .map(a => a.name || a.q_origin_key).join(', ');
-        const service = (policy.service as Array<Record<string, unknown>> || [])
-          .map(s => s.name || s.q_origin_key).join(', ');
-        const action = policy.action || 'N/A';
-        const status = policy.status === 'enable' ? '🟢' : '🔴';
         
         evidence.push({
-          label: `Regra ${policyId}`,
-          value: `${status} ${policyName}`,
-          type: 'text'
-        });
-        
-        evidence.push({
-          label: `  Origem`,
-          value: `${srcintf} → ${srcaddr}`,
-          type: 'code'
-        });
-        
-        evidence.push({
-          label: `  Destino`,
-          value: `${dstintf} → ${dstaddr}`,
-          type: 'code'
-        });
-        
-        evidence.push({
-          label: `  Serviço`,
-          value: service || 'ALL',
-          type: 'code'
-        });
-        
-        evidence.push({
-          label: `  Ação`,
-          value: String(action).toUpperCase(),
+          label: `Regra - ID ${policyId}`,
+          value: String(policyName),
           type: 'text'
         });
       }
       
-      if (relevantPolicies.length > 5) {
+      if (relevantPolicies.length > 10) {
         evidence.push({
           label: 'Aviso',
-          value: `... e mais ${relevantPolicies.length - 5} regra(s)`,
+          value: `... e mais ${relevantPolicies.length - 10} regra(s)`,
           type: 'text'
         });
       }
-    }
-    
-    // Show analyzed interfaces for context
-    if (wanInterfaces.length > 0) {
-      evidence.push({
-        label: 'Interfaces analisadas',
-        value: wanInterfaces.join(', '),
-        type: 'code'
-      });
     }
     
   } catch (e) {
