@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, CheckCircle, Loader2, Search, Copy, Eye } from 'lucide-react';
+import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 
 interface ComplianceRule {
   id: string;
@@ -63,7 +64,8 @@ const SEVERITY_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'info', label: 'Info', color: 'bg-gray-500' },
 ];
 
-const CATEGORY_OPTIONS = [
+// Fallback categories when none exist in DB
+const DEFAULT_CATEGORY_OPTIONS = [
   'Segurança',
   'Autenticação',
   'Rede',
@@ -90,6 +92,27 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
   const [selectedRule, setSelectedRule] = useState<ComplianceRule | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  
+  // Fetch category configs from database
+  const { data: categoryConfigs } = useCategoryConfigs(deviceTypeId);
+  
+  // Build category options from DB configs + rules + defaults
+  const categoryOptions = useMemo(() => {
+    const categoriesSet = new Set<string>();
+    
+    // Add categories from DB configs
+    categoryConfigs?.forEach(c => categoriesSet.add(c.name));
+    
+    // Add categories from existing rules
+    rules.forEach(r => categoriesSet.add(r.category));
+    
+    // Add defaults if no categories exist
+    if (categoriesSet.size === 0) {
+      DEFAULT_CATEGORY_OPTIONS.forEach(c => categoriesSet.add(c));
+    }
+    
+    return Array.from(categoriesSet).sort();
+  }, [categoryConfigs, rules]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -433,7 +456,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORY_OPTIONS.map(cat => (
+                    {categoryOptions.map(cat => (
                       <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                     ))}
                   </SelectContent>

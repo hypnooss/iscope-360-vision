@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2 } from 'lucide-react';
 import { BlueprintFlowVisualization } from '@/components/admin/BlueprintFlowVisualization';
+import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow';
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
 import { TemplateRulesManagement } from '@/components/admin/TemplateRulesManagement';
 import { TemplateBlueprintsManagement } from '@/components/admin/TemplateBlueprintsManagement';
@@ -269,11 +270,12 @@ export default function TemplateDetailPage() {
 
           <TabsContent value="flow" className="mt-6">
             {activeBlueprint ? (
-              <BlueprintFlowVisualization
+              <DraggableCategoryFlow
                 blueprint={activeBlueprint}
                 rules={rules}
                 hideSummary
                 deviceTypeId={id}
+                onRulesChange={refetchRules}
               />
             ) : (
               <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">
