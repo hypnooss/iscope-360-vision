@@ -1,5 +1,5 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -110,12 +110,14 @@ export default function FirewallAnalysis() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   
-  // Normalize the report from location state if it exists
-  const initialReport = location.state?.report 
-    ? normalizeReportData(location.state.report as Record<string, unknown>)
-    : null;
+  // Normalize the report from location state if it exists - memoize to avoid recalculation
+  const initialReport = useMemo(() => {
+    if (!location.state?.report) return null;
+    return normalizeReportData(location.state.report as Record<string, unknown>);
+  }, [location.state?.report]);
   
   const [report, setReport] = useState<ComplianceReport | null>(initialReport);
+  const hasFetchedRef = useRef(false);
   const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string; device_type_id: string | null } | null>(null);
   const [deviceVendor, setDeviceVendor] = useState<string | null>(null);
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null);
@@ -130,14 +132,17 @@ export default function FirewallAnalysis() {
   }, [user, authLoading, navigate]);
 
   useEffect(() => {
-    if (id && user) {
-      fetchFirewall();
-      if (!initialReport) {
-        fetchLastAnalysis();
-      } else {
-        // Se veio do state, buscar apenas a data real do histórico
-        fetchAnalysisDate();
-      }
+    if (!id || !user) return;
+    if (hasFetchedRef.current) return;
+    
+    hasFetchedRef.current = true;
+    fetchFirewall();
+    
+    if (!initialReport) {
+      fetchLastAnalysis();
+    } else {
+      // Se veio do state, buscar apenas a data real do histórico
+      fetchAnalysisDate();
     }
   }, [id, user]);
 
