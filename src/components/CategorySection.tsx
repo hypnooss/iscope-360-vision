@@ -1,28 +1,21 @@
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from './ComplianceCard';
-import { Shield, Network, Lock, Activity, Download, ChevronDown, ChevronUp, Monitor, ArrowDownToLine, ShieldCheck, ServerCog, HardDrive, Award } from 'lucide-react';
+import { Shield, ChevronDown, ChevronUp } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { 
+  getCategoryConfig, 
+  AVAILABLE_COLORS,
+  type CategoryConfig,
+} from '@/hooks/useCategoryConfig';
 
 interface CategorySectionProps {
   category: ComplianceCategory;
   index: number;
   variant?: 'default' | 'external_domain';
+  categoryConfigs?: CategoryConfig[];
 }
-
-const iconMap: Record<string, typeof Shield> = {
-  shield: Shield,
-  network: Network,
-  lock: Lock,
-  activity: Activity,
-  download: Download,
-  monitor: Monitor,
-  arrowDownToLine: ArrowDownToLine,
-  shieldCheck: ShieldCheck,
-  serverCog: ServerCog,
-  hardDrive: HardDrive,
-  award: Award,
-};
 
 // Descritivos de cada categoria de análise
 const categoryDescriptions: Record<string, string> = {
@@ -37,9 +30,29 @@ const categoryDescriptions: Record<string, string> = {
   'Licenciamento': 'Verifica o status do contrato FortiCare e licenças de segurança FortiGuard (AV, IPS, WebFilter, AppControl), incluindo datas de expiração.',
 };
 
-export function CategorySection({ category, index, variant = 'default' }: CategorySectionProps) {
+// Dynamic icon component
+function DynamicIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
+  const iconName = name
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('') as keyof typeof LucideIcons;
+  
+  const IconComponent = LucideIcons[iconName] as React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  
+  if (!IconComponent) {
+    return <Shield className={className} style={style} />;
+  }
+  
+  return <IconComponent className={className} style={style} />;
+}
+
+export function CategorySection({ category, index, variant = 'default', categoryConfigs }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const Icon = iconMap[category.icon] || Shield;
+  
+  // Get config from database or use defaults
+  const config = getCategoryConfig(categoryConfigs, category.name);
+  const colorOption = AVAILABLE_COLORS.find(c => c.name === config.color);
+  const colorHex = colorOption?.hex || '#64748b';
 
   const getPassRateColor = () => {
     if (category.passRate >= 80) return 'text-success';
@@ -57,11 +70,18 @@ export function CategorySection({ category, index, variant = 'default' }: Catego
         className="w-full flex items-center justify-between p-4 glass-card rounded-lg mb-3 hover:border-primary/30 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Icon className="w-5 h-5 text-primary" />
+          <div 
+            className="p-2 rounded-lg"
+            style={{ backgroundColor: `${colorHex}15` }}
+          >
+            <DynamicIcon 
+              name={config.icon} 
+              className="w-5 h-5" 
+              style={{ color: colorHex }}
+            />
           </div>
           <div className="text-left">
-            <h3 className="font-semibold text-foreground">{category.name}</h3>
+            <h3 className="font-semibold text-foreground">{config.displayName}</h3>
             <p className="text-sm text-muted-foreground">
               {category.checks.length} verificações
             </p>
@@ -99,7 +119,13 @@ export function CategorySection({ category, index, variant = 'default' }: Catego
       </button>
 
       {isExpanded && (
-        <div className="space-y-3 pl-4 border-l-2 border-primary/20 ml-6 mb-6">
+        <div 
+          className="space-y-3 pl-4 ml-6 mb-6"
+          style={{ 
+            borderLeftWidth: '2px',
+            borderLeftColor: `${colorHex}30`,
+          }}
+        >
           {category.checks.map((check) => (
             <ComplianceCard key={check.id} check={check} variant={variant} />
           ))}

@@ -15,12 +15,20 @@ import {
   ChevronRight,
   Layers
 } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { CategoryConfigPopover } from './CategoryConfigPopover';
+import { 
+  useCategoryConfigs, 
+  getCategoryConfig, 
+  AVAILABLE_COLORS,
+  type CategoryConfig 
+} from '@/hooks/useCategoryConfig';
 
 // Types
 interface CollectionStep {
@@ -54,43 +62,25 @@ interface BlueprintFlowVisualizationProps {
   blueprint: Blueprint;
   rules: ComplianceRule[];
   hideSummary?: boolean;
+  deviceTypeId?: string;
 }
 
-// Category colors matching the compliance report
-const CATEGORY_COLORS: Record<string, { border: string; bg: string; text: string }> = {
-  'Segurança DNS': { 
-    border: 'border-cyan-600', 
-    bg: 'bg-cyan-600/5', 
-    text: 'text-cyan-600' 
-  },
-  'Infraestrutura de Email': { 
-    border: 'border-violet-500', 
-    bg: 'bg-violet-500/5', 
-    text: 'text-violet-500' 
-  },
-  'Autenticação de Email - SPF': { 
-    border: 'border-emerald-600', 
-    bg: 'bg-emerald-600/5', 
-    text: 'text-emerald-600' 
-  },
-  'Autenticação de Email - DKIM': { 
-    border: 'border-pink-500', 
-    bg: 'bg-pink-500/5', 
-    text: 'text-pink-500' 
-  },
-  'Autenticação de Email - DMARC': { 
-    border: 'border-amber-500', 
-    bg: 'bg-amber-500/5', 
-    text: 'text-amber-500' 
-  },
-};
-
-// Default category color
-const DEFAULT_CATEGORY_COLOR = { 
-  border: 'border-muted-foreground', 
-  bg: 'bg-muted/5', 
-  text: 'text-muted-foreground' 
-};
+// Dynamic icon component for categories
+function DynamicCategoryIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
+  const iconName = name
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('') as keyof typeof LucideIcons;
+  
+  const IconComponent = LucideIcons[iconName] as React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  
+  if (!IconComponent) {
+    return <Shield className={className} style={style} />;
+  }
+  
+  return <IconComponent className={className} style={style} />;
+}
+// Executor configurations
 
 // Executor configurations
 const EXECUTOR_CONFIG: Record<string, { 
@@ -400,15 +390,21 @@ function RuleFlowCard({ rule, step }: RuleFlowCardProps) {
 }
 
 // Category Section Component
-interface CategorySectionProps {
+interface AdminCategorySectionProps {
   category: string;
   rules: ComplianceRule[];
   steps: CollectionStep[];
+  deviceTypeId?: string;
+  categoryConfigs?: CategoryConfig[];
 }
 
-function CategorySection({ category, rules, steps }: CategorySectionProps) {
+function AdminCategorySection({ category, rules, steps, deviceTypeId, categoryConfigs }: AdminCategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const colors = CATEGORY_COLORS[category] || DEFAULT_CATEGORY_COLOR;
+  
+  // Get config from database or use defaults
+  const config = getCategoryConfig(categoryConfigs, category);
+  const colorOption = AVAILABLE_COLORS.find(c => c.name === config.color);
+  const colorHex = colorOption?.hex || '#64748b';
   
   // Create a map of step_id to step for quick lookup
   const stepsMap = useMemo(() => {
@@ -423,23 +419,37 @@ function CategorySection({ category, rules, steps }: CategorySectionProps) {
   
   return (
     <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-      <div className={cn(
-        "border-l-4 rounded-lg",
-        colors.border,
-        colors.bg
-      )}>
+      <div 
+        className="border-l-4 rounded-lg"
+        style={{ 
+          borderLeftColor: colorHex,
+          backgroundColor: `${colorHex}10`
+        }}
+      >
         {/* Category Header */}
         <CollapsibleTrigger asChild>
           <button className="w-full p-4 text-left">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Shield className={cn("w-5 h-5", colors.text)} />
-                <span className={cn("font-semibold", colors.text)}>
-                  {category}
+                <DynamicCategoryIcon 
+                  name={config.icon} 
+                  className="w-5 h-5" 
+                  style={{ color: colorHex }}
+                />
+                <span className="font-semibold" style={{ color: colorHex }}>
+                  {config.displayName}
                 </span>
                 <Badge variant="outline" className="text-xs">
                   {activeRules}/{rules.length} regras
                 </Badge>
+                {/* Edit button for super admins */}
+                {deviceTypeId && (
+                  <CategoryConfigPopover
+                    categoryName={category}
+                    deviceTypeId={deviceTypeId}
+                    configs={categoryConfigs}
+                  />
+                )}
               </div>
               {isExpanded ? (
                 <ChevronDown className="w-5 h-5 text-muted-foreground" />
@@ -473,8 +483,11 @@ function CategorySection({ category, rules, steps }: CategorySectionProps) {
   );
 }
 
-export function BlueprintFlowVisualization({ blueprint, rules, hideSummary }: BlueprintFlowVisualizationProps) {
+export function BlueprintFlowVisualization({ blueprint, rules, hideSummary, deviceTypeId }: BlueprintFlowVisualizationProps) {
   const steps = blueprint.collection_steps?.steps || [];
+  
+  // Fetch category configs from database
+  const { data: categoryConfigs } = useCategoryConfigs(deviceTypeId);
   
   // Group rules by category
   const rulesByCategory = useMemo(() => {
@@ -552,11 +565,13 @@ export function BlueprintFlowVisualization({ blueprint, rules, hideSummary }: Bl
       {/* Categories List */}
       <div className="space-y-4">
         {sortedCategories.map((category) => (
-          <CategorySection
+          <AdminCategorySection
             key={category}
             category={category}
             rules={rulesByCategory[category]}
             steps={steps}
+            deviceTypeId={deviceTypeId}
+            categoryConfigs={categoryConfigs}
           />
         ))}
       </div>

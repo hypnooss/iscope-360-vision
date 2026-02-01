@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
+import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -400,7 +401,11 @@ export default function ExternalDomainAnalysisReportPage() {
   const [clientName, setClientName] = useState<string | null>(state.domainMeta?.client_name || null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(state.analysisCreatedAt || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [deviceTypeId, setDeviceTypeId] = useState<string | undefined>(undefined);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
+  
+  // Fetch category configs for external_domain device type
+  const { data: categoryConfigs } = useCategoryConfigs(deviceTypeId);
 
   const dnsSummary = report?.dnsSummary;
   const nsText = Array.isArray(dnsSummary?.ns) && dnsSummary?.ns.length > 0
@@ -437,6 +442,18 @@ export default function ExternalDomainAnalysisReportPage() {
   const fetchData = async (dId: string, aId?: string) => {
     setLoading(true);
     try {
+      // Fetch device type for external_domain
+      const { data: deviceType } = await supabase
+        .from('device_types')
+        .select('id')
+        .eq('code', 'external_domain')
+        .eq('is_active', true)
+        .maybeSingle();
+      
+      if (deviceType) {
+        setDeviceTypeId(deviceType.id);
+      }
+
       const { data: domainData } = await supabase
         .from('external_domains')
         .select('id, name, domain, client_id, agent_id')
@@ -740,6 +757,7 @@ export default function ExternalDomainAnalysisReportPage() {
                   key={`${category.name}-${index}`}
                   category={category}
                   index={index}
+                  categoryConfigs={categoryConfigs}
                 />
               ))
             ) : (
