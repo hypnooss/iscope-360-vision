@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2 } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings } from 'lucide-react';
 import { BlueprintFlowVisualization } from '@/components/admin/BlueprintFlowVisualization';
 import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow';
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
@@ -245,6 +245,10 @@ export default function TemplateDetailPage() {
               <Workflow className="w-4 h-4" />
               Fluxo de Análise
             </TabsTrigger>
+            <TabsTrigger value="organize" className="gap-2">
+              <Settings className="w-4 h-4" />
+              Organização
+            </TabsTrigger>
             <TabsTrigger value="blueprints" className="gap-2">
               <FileCode className="w-4 h-4" />
               Blueprints
@@ -270,6 +274,30 @@ export default function TemplateDetailPage() {
 
           <TabsContent value="flow" className="mt-6">
             {activeBlueprint ? (
+              <BlueprintFlowVisualization
+                blueprint={activeBlueprint}
+                rules={rules}
+                hideSummary
+                deviceTypeId={id}
+              />
+            ) : (
+              <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">
+                <FileCode className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <p className="text-muted-foreground">Nenhum blueprint ativo encontrado</p>
+                <Button 
+                  variant="outline" 
+                  className="mt-4"
+                  onClick={() => setActiveTab('blueprints')}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Criar Blueprint
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="organize" className="mt-6">
+            {activeBlueprint ? (
               <DraggableCategoryFlow
                 blueprint={activeBlueprint}
                 rules={rules}
@@ -279,8 +307,8 @@ export default function TemplateDetailPage() {
               />
             ) : (
               <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">
-                <FileCode className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground">Nenhum blueprint ativo encontrado</p>
+                <Settings className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <p className="text-muted-foreground">Configure um blueprint ativo para organizar categorias</p>
                 <Button 
                   variant="outline" 
                   className="mt-4"
