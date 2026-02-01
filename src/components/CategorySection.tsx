@@ -1,6 +1,7 @@
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from './ComplianceCard';
 import { Shield, ChevronDown, ChevronUp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import * as LucideIcons from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,23 @@ export function CategorySection({ category, index, variant = 'default', category
   const colorOption = AVAILABLE_COLORS.find(c => c.name === config.color);
   const colorHex = colorOption?.hex || '#64748b';
 
+  // Count failures by severity (only active/failing items)
+  const criticalCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'critical'
+  ).length;
+
+  const highCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'high'
+  ).length;
+
+  const mediumCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'medium'
+  ).length;
+
+  const lowCount = category.checks.filter(
+    c => c.status === 'fail' && c.severity === 'low'
+  ).length;
+
   const getPassRateColor = () => {
     if (category.passRate >= 80) return 'text-success';
     if (category.passRate >= 60) return 'text-warning';
@@ -69,7 +87,7 @@ export function CategorySection({ category, index, variant = 'default', category
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between p-4 glass-card rounded-lg mb-3 hover:border-primary/30 transition-colors"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div 
             className="p-2 rounded-lg"
             style={{ backgroundColor: `${colorHex}15` }}
@@ -80,35 +98,42 @@ export function CategorySection({ category, index, variant = 'default', category
               style={{ color: colorHex }}
             />
           </div>
-          <div className="text-left">
-            <h3 className="font-semibold text-foreground">{config.displayName}</h3>
-            <p className="text-sm text-muted-foreground">
-              {category.checks.length} verificações
-            </p>
-            {categoryDescriptions[category.name] && (
-              <p className="text-xs text-muted-foreground/80 mt-1 max-w-xl">
-                {categoryDescriptions[category.name]}
-              </p>
-            )}
-          </div>
+          <span className="font-semibold text-foreground">{config.displayName}</span>
+          <Badge variant="secondary" className="text-xs">
+            {category.checks.length} verificaç{category.checks.length !== 1 ? 'ões' : 'ão'}
+          </Badge>
+          {criticalCount > 0 && (
+            <Badge className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">
+              {criticalCount} crítico{criticalCount !== 1 ? 's' : ''}
+            </Badge>
+          )}
+          {highCount > 0 && (
+            <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
+              {highCount} alto{highCount !== 1 ? 's' : ''}
+            </Badge>
+          )}
+          {mediumCount > 0 && (
+            <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs">
+              {mediumCount} médio{mediumCount !== 1 ? 's' : ''}
+            </Badge>
+          )}
+          {lowCount > 0 && (
+            <Badge className="bg-blue-400/10 text-blue-400 border-blue-400/20 text-xs">
+              {lowCount} baixo{lowCount !== 1 ? 's' : ''}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Não mostrar percentual para categoria Recomendações - é apenas informativo */}
           {category.name !== 'Recomendações' && (
-            <div className="text-right">
-              <span className={cn("text-2xl font-bold tabular-nums", getPassRateColor())}>
-                {category.passRate}%
-              </span>
-              <p className="text-xs text-muted-foreground">aprovação</p>
-            </div>
+            <span className={cn("text-lg font-semibold tabular-nums", getPassRateColor())}>
+              {category.passRate}%
+            </span>
           )}
           {category.name === 'Recomendações' && (
-            <div className="text-right">
-              <span className="text-sm text-muted-foreground font-medium">
-                Sugestões de melhoria
-              </span>
-            </div>
+            <span className="text-sm text-muted-foreground font-medium">
+              Sugestões
+            </span>
           )}
           {isExpanded ? (
             <ChevronUp className="w-5 h-5 text-muted-foreground" />
