@@ -1,232 +1,157 @@
 
 
-## Documentação de Layouts e Visualização de Blueprints/Regras
+## Reformulação do Blueprint Flow Visualization
 
-### Objetivo
+### Problemas Identificados
 
-Criar dois entregáveis:
+1. **Excesso de aninhamento**: Cards dentro de cards dentro de tabelas dentro de accordions
+2. **Cores inadequadas para dark mode**: O card do step (print 2) usa `bg-cyan-50` com texto escuro, que em dark mode fica praticamente invisível
+3. **Layout horizontal confuso**: Step → Seta → Regras lado a lado consome muito espaço horizontal e fica apertado
+4. **Informação densa demais**: Cada regra mostra código, badge, nome, categoria E lógica de avaliação tudo ao mesmo tempo
 
-1. **Documentação de layouts reutilizáveis** (web e PDF) para replicar em outros módulos
-2. **Nova visualização na tela Administração > Coletas** que mostra a relação entre blueprints, steps e regras de forma visual e humanizada
+### Nova Estrutura Proposta
 
----
-
-## Parte 1: Documentação de Layouts Reutilizáveis
-
-### Estrutura de Componentes Web (Relatório de Compliance)
+Substituir o layout horizontal por um **layout vertical em timeline**, mais limpo e legível:
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│  ExternalDomainAnalysisReportPage.tsx                           │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  COMMAND CENTER HEADER                                       ││
-│  │  ├── ScoreGauge (circular, 180px)                           ││
-│  │  ├── MiniStat[] (Total, Aprovadas, Falhas)                  ││
-│  │  │   ├── variant: primary (Sky-400)                         ││
-│  │  │   ├── variant: success (Primary/Teal)                    ││
-│  │  │   └── variant: destructive (Rose-400)                    ││
-│  │  └── DetailRow[] (informações contextuais)                  ││
-│  │      ├── Nameservers                                        ││
-│  │      ├── DNSSEC Status                                      ││
-│  │      ├── SPF/DKIM/DMARC indicators                         ││
-│  │      └── divider gradiente entre linhas                     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  CATEGORY SECTIONS (Collapsible)                            ││
-│  │  ExternalDomainCategorySection.tsx                          ││
-│  │  ├── Header com ícone + nome + badges de severidade         ││
-│  │  │   ├── criticalCount → Badge vermelho                    ││
-│  │  │   ├── highCount → Badge laranja                         ││
-│  │  │   ├── mediumCount → Badge amarelo                       ││
-│  │  │   └── lowCount → Badge azul                             ││
-│  │  ├── Pass rate no lado direito                              ││
-│  │  └── Lista de ComplianceCard[]                              ││
-│  │      ├── Estado contraído: nome + descrição + recomendação ││
-│  │      └── Estado expandido: + análise + evidências           ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  📊 7 steps de coleta  •  23 regras de compliance  •  23 ativas         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─ COLETA ──────────────────────────────────────────────────────────┐ │
+│  │                                                                     │ │
+│  │  ● ns_records                                                       │ │
+│  │    DNS Query • Consulta NS                                          │ │
+│  │                                                                     │ │
+│  │    Regras: DNS-003 (Médio) • DNS-004 (Médio)                       │ │
+│  │                                                                     │ │
+│  ├─────────────────────────────────────────────────────────────────────│ │
+│  │                                                                     │ │
+│  │  ● mx_records                                                       │ │
+│  │    DNS Query • Consulta MX                                          │ │
+│  │                                                                     │ │
+│  │    Regras: MX-001 (Alto) • MX-002 (Médio) • MX-003 (Baixo) • +1    │ │
+│  │                                                                     │ │
+│  ├─────────────────────────────────────────────────────────────────────│ │
+│  │                                                                     │ │
+│  │  ● spf_record                                                       │ │
+│  │    DNS Query • Consulta TXT (SPF)                                   │ │
+│  │                                                                     │ │
+│  │    Regras: SPF-001 (Alto) • SPF-002 (Médio) • SPF-003 (Médio)      │ │
+│  │                                                                     │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Estrutura de Componentes PDF
+### Características do Novo Design
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  ExternalDomainPDF.tsx / FirewallPDF.tsx                        │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  PÁGINA 1: RESUMO EXECUTIVO                                  ││
-│  │  ├── PDFHeader (cyber-grid + logo + título)                 ││
-│  │  ├── PDFScoreGauge (gauge circular)                         ││
-│  │  ├── PDFComplianceStats (cards de estatísticas)             ││
-│  │  ├── PDFDomainInfo / PDFFirewallInfo (painel de detalhes)   ││
-│  │  └── PDFCategorySummaryTable (tabela resumo por categoria)  ││
-│  └─────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  PÁGINA 2: PROBLEMAS ENCONTRADOS                            ││
-│  │  └── PDFIssuesSummary (lista de até 20 issues)              ││
-│  └─────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  PÁGINAS 3+: DETALHAMENTO POR CATEGORIA                     ││
-│  │  ├── securityNotice (aviso sobre evidências)                ││
-│  │  └── PDFCategorySection[] (cards individuais)               ││
-│  │      ├── Header com cor da categoria                        ││
-│  │      ├── Checks com falha (expandidos)                      ││
-│  │      └── Checks aprovados (compactos)                       ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+1. **Layout Vertical em Lista**
+   - Cada step é uma linha/item na lista
+   - Menos aninhamento visual
+   - Mais espaço para respirar
+
+2. **Cores Adaptadas ao Dark Mode**
+   - Usar variáveis CSS do tema (`bg-card`, `border-border`, `text-foreground`)
+   - Badges de severidade com cores já padronizadas no projeto
+   - Indicadores de tipo de executor com cores sutis (borda esquerda colorida apenas)
+
+3. **Regras Compactas Inline**
+   - Exibir regras como badges/chips em linha única
+   - Mostrar código + severidade em formato compacto
+   - Expandir detalhes apenas ao clicar
+
+4. **Interação Opcional**
+   - Hover para ver mais detalhes do step
+   - Clique opcional para expandir e ver todas as regras
+
+### Implementação Técnica
+
+**Arquivo a modificar:** `src/components/admin/BlueprintFlowVisualization.tsx`
+
+```typescript
+// Novo design: lista vertical simples
+<div className="space-y-2">
+  {steps.map((step) => (
+    <div 
+      key={step.id}
+      className="flex items-start gap-4 p-4 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors"
+    >
+      {/* Indicador visual do tipo de executor */}
+      <div className={cn(
+        "w-1 self-stretch rounded-full",
+        executorColors[step.executor] // Apenas borda colorida
+      )} />
+      
+      <div className="flex-1 min-w-0">
+        {/* Nome do Step + Tipo */}
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-mono text-sm font-medium text-foreground">
+            {step.id}
+          </span>
+          <Badge variant="outline" className="text-xs">
+            {executorLabel[step.executor]}
+          </Badge>
+        </div>
+        
+        {/* Descrição/Config */}
+        <p className="text-xs text-muted-foreground mb-2">
+          {getStepDescription(step)}
+        </p>
+        
+        {/* Regras em linha */}
+        <div className="flex flex-wrap gap-1.5">
+          {linkedRules.map((rule) => (
+            <Badge 
+              key={rule.id}
+              className={cn(
+                "text-xs cursor-default",
+                severityColors[rule.severity]
+              )}
+              title={rule.name}
+            >
+              {rule.code}
+            </Badge>
+          ))}
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
 ```
 
-### Paleta de Cores por Categoria (Domínios Externos)
+### Paleta de Cores (Dark Mode Friendly)
 
-| Categoria | Cor Tailwind | Hex | Uso |
-|-----------|--------------|-----|-----|
-| Segurança DNS | Cyan-600 | #0891B2 | Bordas, ícones, texto |
-| Infraestrutura de Email | Violet-500 | #8B5CF6 | Bordas, ícones, texto |
-| SPF | Emerald-600 | #059669 | Bordas, ícones, texto |
-| DKIM | Pink-500 | #EC4899 | Bordas, ícones, texto |
-| DMARC | Amber-500 | #F59E0B | Bordas, ícones, texto |
+| Elemento | Cor Atual (Problema) | Nova Cor |
+|----------|---------------------|----------|
+| Card do Step | `bg-cyan-50` (invisível em dark) | `bg-card` (tema) |
+| Texto do Step | `text-foreground` | `text-foreground` (ok) |
+| Borda esquerda DNS | `border-cyan-300` | `bg-cyan-500` |
+| Borda esquerda HTTP | `border-blue-300` | `bg-blue-500` |
+| Borda esquerda SSH | `border-emerald-300` | `bg-emerald-500` |
+| Badge Crítico | `bg-red-100 text-red-600` | `bg-red-500/20 text-red-400` |
+| Badge Alto | `bg-orange-100 text-orange-600` | `bg-orange-500/20 text-orange-400` |
+| Badge Médio | `bg-yellow-100 text-yellow-600` | `bg-yellow-500/20 text-yellow-400` |
+| Badge Baixo | `bg-blue-100 text-blue-600` | `bg-blue-500/20 text-blue-400` |
 
-### Componentes Reutilizáveis para Novos Módulos
+### Opcional: Modo Expandido
 
-| Componente | Localização | Propósito |
-|------------|-------------|-----------|
-| `ScoreGauge` | `src/components/ScoreGauge.tsx` | Gauge circular de score |
-| `ComplianceCard` | `src/components/ComplianceCard.tsx` | Card de verificação individual |
-| `CategorySection` | `src/components/CategorySection.tsx` | Seção colapsável de categoria |
-| `StatCard` | `src/components/StatCard.tsx` | Cards de estatísticas |
-| `EvidenceDisplay` | `src/components/compliance/EvidenceDisplay.tsx` | Exibição humanizada de evidências |
+Adicionar um toggle para alternar entre:
+- **Modo Compacto** (padrão): Lista vertical com regras inline
+- **Modo Detalhado**: Expande para mostrar lógica de avaliação de cada regra
 
----
-
-## Parte 2: Nova Visualização na Tela de Coletas
-
-### Conceito
-
-Transformar a visualização técnica atual (JSON bruto) em um diagrama visual que mostra:
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  BLUEPRINT: External Domain DNS Scan                            │
-│  ├── 7 steps de coleta                                          │
-│  └── 23 regras de compliance                                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────────┐       ┌──────────────────────────────────┐│
-│  │  STEP: ns_records│──────▶│  REGRAS:                         ││
-│  │  Tipo: dns_query │       │  ├── DNS-003: Redundância NS     ││
-│  │  Query: NS       │       │  └── DNS-004: Diversidade NS     ││
-│  └──────────────────┘       └──────────────────────────────────┘│
-│                                                                 │
-│  ┌──────────────────┐       ┌──────────────────────────────────┐│
-│  │  STEP: mx_records│──────▶│  REGRAS:                         ││
-│  │  Tipo: dns_query │       │  ├── MX-001: MX Configurado      ││
-│  │  Query: MX       │       │  ├── MX-002: Redundância MX      ││
-│  │                  │       │  ├── MX-003: Prioridades MX      ││
-│  │                  │       │  └── MX-004: MX Hostname         ││
-│  └──────────────────┘       └──────────────────────────────────┘│
-│                                                                 │
-│  ┌──────────────────┐       ┌──────────────────────────────────┐│
-│  │  STEP: spf_record│──────▶│  REGRAS:                         ││
-│  │  Tipo: dns_query │       │  ├── SPF-001: SPF Configurado    ││
-│  │  Query: SPF      │       │  ├── SPF-002: Política Restritiva││
-│  │                  │       │  └── SPF-003: Limite DNS Lookups ││
-│  └──────────────────┘       └──────────────────────────────────┘│
-│                                                                 │
-│  ... (demais steps)                                             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Arquivos a Criar
+### Resumo das Alterações
 
 1. **`src/components/admin/BlueprintFlowVisualization.tsx`**
-   - Componente que renderiza o diagrama visual
-   - Conecta steps do blueprint às regras de compliance
-   - Mostra o fluxo de dados
+   - Reescrever layout de horizontal para vertical
+   - Atualizar cores para funcionar em dark mode
+   - Simplificar exibição de regras (badges inline)
+   - Remover cards aninhados
+   - Adicionar tooltip com detalhes das regras
 
-2. **Modificar `src/components/admin/DeviceTypeCard.tsx`**
-   - Adicionar aba/seção "Visualização do Fluxo"
-   - Integrar o novo componente
-
-### Lógica de Conexão Step → Regras
-
-Para cada step do blueprint, buscar regras onde:
-```typescript
-rule.evaluation_logic.step_id === step.id
-```
-
-Exemplo de mapeamento:
-```typescript
-const stepToRulesMap = {
-  'ns_records': ['DNS-003', 'DNS-004'],
-  'mx_records': ['MX-001', 'MX-002', 'MX-003', 'MX-004'],
-  'soa_record': ['MX-005', 'DNS-005', 'DNS-006'],
-  'spf_record': ['SPF-001', 'SPF-002', 'SPF-003'],
-  'dmarc_record': ['DMARC-001', 'DMARC-002', 'DMARC-003', 'DMARC-004', 'DMARC-005', 'DMARC-006'],
-  'dkim_records': ['DKIM-001', 'DKIM-002', 'DKIM-003'],
-  'dnssec_status': ['DNS-001', 'DNS-002'],
-};
-```
-
-### Informações a Exibir por Step
-
-| Campo | Origem | Exibição |
-|-------|--------|----------|
-| ID do Step | `step.id` | Nome identificador |
-| Tipo | `step.type` | `dns_query`, `http_request`, etc. |
-| Configuração | `step.config` | Query type, parâmetros |
-| Regras Dependentes | `rules.filter(r => r.evaluation_logic.step_id === step.id)` | Lista de códigos |
-
-### Informações a Exibir por Regra (Tooltip/Expandido)
-
-| Campo | Exibição |
-|-------|----------|
-| Código | `SPF-001` |
-| Nome | Nome humanizado |
-| Categoria | Categoria no relatório |
-| Severidade | Badge colorido |
-| Campo Avaliado | `evaluation_logic.field` |
-| Operador | `eq`, `not_null`, `in`, etc. |
-| Valor Esperado | `evaluation_logic.value` |
-
-### Interface do Componente
-
-```typescript
-interface BlueprintFlowVisualizationProps {
-  blueprint: Blueprint;
-  rules: ComplianceRule[];
-}
-
-// Cada step terá um card visual
-interface StepCard {
-  id: string;
-  type: string;
-  config: Record<string, any>;
-  linkedRules: ComplianceRule[];
-}
-```
-
-### Estilos Visuais
-
-- Steps: Cards com borda esquerda colorida (por tipo de executor)
-- Conexões: Linhas ou setas visuais (CSS)
-- Regras: Lista com badges de severidade
-- Agrupamento por categoria no lado das regras
-
----
-
-## Resumo da Implementação
-
-### Fase 1: Documentação
-- Criar arquivo markdown em `docs/layouts/compliance-report-structure.md`
-- Documentar todos os componentes, props e estilos
-- Incluir exemplos de uso para novos módulos
-
-### Fase 2: Visualização de Fluxo
-- Criar `BlueprintFlowVisualization.tsx`
-- Integrar na tela de Coletas
-- Adicionar toggle para alternar entre visualização JSON e visual
-
-### Estimativa de Complexidade
-- Documentação: Baixa
-- Visualização de Fluxo: Média (novo componente + lógica de mapeamento)
+2. **Benefícios**
+   - Menos aninhamento = mais clareza visual
+   - Cores visíveis em dark mode
+   - Informação hierárquica e escaneável
+   - Mais espaço para respirar entre elementos
 
