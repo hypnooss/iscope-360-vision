@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
-import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
+import { useCategoryConfigs, getCategoryConfig } from '@/hooks/useCategoryConfig';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -412,6 +412,16 @@ export default function ExternalDomainAnalysisReportPage() {
     ? dnsSummary.ns.join(', ')
     : 'N/A';
 
+  // Sort categories by display_order from configs
+  const sortedCategories = useMemo(() => {
+    if (!report?.categories || !categoryConfigs) return report?.categories || [];
+    return [...report.categories].sort((a, b) => {
+      const configA = categoryConfigs.find(c => c.name === a.name);
+      const configB = categoryConfigs.find(c => c.name === b.name);
+      return (configA?.display_order ?? 999) - (configB?.display_order ?? 999);
+    });
+  }, [report?.categories, categoryConfigs]);
+
   // Count only critical severity failures for the banner
   const criticalOnlyCount = useMemo(() => {
     if (!report?.categories) return 0;
@@ -616,7 +626,7 @@ export default function ExternalDomainAnalysisReportPage() {
                     
                     await downloadPDF(
                       <ExternalDomainPDF
-                        report={report}
+                        report={{ ...report, categories: sortedCategories }}
                         domainInfo={{
                           name: domain?.name || 'Domínio',
                           domain: domain?.domain || '',
@@ -625,6 +635,7 @@ export default function ExternalDomainAnalysisReportPage() {
                         dnsSummary={dnsSummary || undefined}
                         emailAuth={emailAuth}
                         logoBase64={logoBase64}
+                        categoryConfigs={categoryConfigs}
                       />,
                       filename
                     );
@@ -751,8 +762,8 @@ export default function ExternalDomainAnalysisReportPage() {
           {/* Categories */}
           <div className="space-y-4">
             <h2 className="text-xl font-semibold text-foreground mb-4">Verificações por Categoria</h2>
-            {Array.isArray(report.categories) && report.categories.length > 0 ? (
-              report.categories.map((category, index) => (
+            {Array.isArray(sortedCategories) && sortedCategories.length > 0 ? (
+              sortedCategories.map((category, index) => (
                 <ExternalDomainCategorySection
                   key={`${category.name}-${index}`}
                   category={category}

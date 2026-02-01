@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
   colors,
@@ -17,6 +17,7 @@ import {
   PDFFooter,
 } from './sections';
 import type { Issue, Check, CategorySummary } from './sections';
+import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
 
 // Page styles
 const pageStyles = StyleSheet.create({
@@ -140,6 +141,7 @@ interface ExternalDomainPDFProps {
   dnsSummary?: DnsSummary;
   emailAuth?: EmailAuthStatus;
   logoBase64?: string;
+  categoryConfigs?: CategoryConfig[];
 }
 
 export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
@@ -148,6 +150,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
   dnsSummary,
   emailAuth,
   logoBase64,
+  categoryConfigs,
 }) => {
   const generatedDate = report.generatedAt instanceof Date
     ? report.generatedAt
@@ -155,8 +158,31 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
 
   const dateString = generatedDate.toLocaleString('pt-BR');
 
+  // Sort categories by display_order from configs
+  const sortedCategories = useMemo(() => {
+    return [...report.categories].sort((a, b) => {
+      const configA = categoryConfigs?.find(c => c.name === a.name);
+      const configB = categoryConfigs?.find(c => c.name === b.name);
+      return (configA?.display_order ?? 999) - (configB?.display_order ?? 999);
+    });
+  }, [report.categories, categoryConfigs]);
+
+  // Helper to get color for a category (from configs or fallback)
+  const getColorForCategory = (categoryName: string): string => {
+    const config = categoryConfigs?.find(c => c.name === categoryName);
+    if (config) {
+      return getColorHexByName(config.color);
+    }
+    // Fallback to default configs
+    const defaultConfig = DEFAULT_CATEGORY_CONFIGS[categoryName];
+    if (defaultConfig) {
+      return getColorHexByName(defaultConfig.color);
+    }
+    return colors.primary;
+  };
+
   // Extract all failed checks as issues
-  const issues: Issue[] = report.categories
+  const issues: Issue[] = sortedCategories
     .flatMap((cat) => cat.checks)
     .filter((check) => check.status === 'fail')
     .map((check) => ({
@@ -166,13 +192,14 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
       category: undefined,
     }));
 
-  // Prepare category summaries for the table
-  const categorySummaries: CategorySummary[] = report.categories.map((cat) => {
+  // Prepare category summaries for the table (using displayName from configs)
+  const categorySummaries: CategorySummary[] = sortedCategories.map((cat) => {
+    const config = getCategoryConfig(categoryConfigs, cat.name);
     const passed = cat.checks.filter((c) => c.status === 'pass').length;
     const failed = cat.checks.filter((c) => c.status === 'fail').length;
     const total = cat.checks.length;
     return {
-      name: cat.name,
+      name: config.displayName, // Use displayName from config
       passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
       passed,
       failed,
@@ -191,8 +218,8 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
     dmarc: emailAuth ? { valid: emailAuth.dmarc } : undefined,
   };
 
-  // All categories for detail pages (not just those with failures)
-  const allCategories = report.categories;
+  // All categories for detail pages (sorted by display_order)
+  const allCategories = sortedCategories;
 
   return (
     <Document
@@ -269,6 +296,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             </View>
             
             {allCategories.map((category, index) => {
+              const config = getCategoryConfig(categoryConfigs, category.name);
               const checks: Check[] = category.checks.map((check) => ({
                 name: check.name,
                 status: check.status as Check['status'],
@@ -277,21 +305,13 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
                 recommendation: check.recommendation,
               }));
 
-              // Category colors
-              const categoryColors: Record<string, string> = {
-                'Segurança DNS': colors.categoryDns,
-                'Infraestrutura de Email': colors.categoryEmail,
-                'Autenticação de Email - SPF': colors.categorySpf,
-                'Autenticação de Email - DKIM': colors.categoryDkim,
-                'Autenticação de Email - DMARC': colors.categoryDmarc,
-              };
-
-              const color = categoryColors[category.name] || colors.primary;
+              // Get color from config or fallback
+              const color = getColorForCategory(category.name);
 
               return (
                 <PDFCategorySection
                   key={index}
-                  name={category.name}
+                  name={config.displayName} // Use displayName from config
                   checks={checks}
                   color={color}
                   showPassedChecks={true}

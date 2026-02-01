@@ -187,3 +187,9 @@ export function getColorClasses(colorName: string) {
     borderLight: `border-${colorName}/30`,
   };
 }
+
+// Helper to get hex color value by color name (for PDF generation)
+export function getColorHexByName(colorName: string): string {
+  const colorOption = AVAILABLE_COLORS.find(c => c.name === colorName);
+  return colorOption?.hex || '#64748b'; // slate-500 fallback
+}

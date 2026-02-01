@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 
 const getIconForCategory = (name: string): string => {
   const icons: Record<string, string> = {
@@ -115,6 +116,7 @@ export default function FirewallAnalysis() {
   const [report, setReport] = useState<ComplianceReport | null>(initialReport);
   const [firewall, setFirewall] = useState<{ name: string; fortigate_url: string; api_key: string; device_type_id: string | null } | null>(null);
   const [deviceVendor, setDeviceVendor] = useState<string | null>(null);
+  const [deviceTypeId, setDeviceTypeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialReport);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -142,8 +144,10 @@ export default function FirewallAnalysis() {
 
     if (data) {
       setFirewall(data);
-      // Fetch device type vendor if device_type_id exists
+      // Store device_type_id for category configs
       if (data.device_type_id) {
+        setDeviceTypeId(data.device_type_id);
+        // Fetch device type vendor
         const { data: deviceType } = await supabase
           .from('device_types')
           .select('vendor')
@@ -156,6 +160,9 @@ export default function FirewallAnalysis() {
       }
     }
   };
+
+  // Fetch category configs for the device type
+  const { data: categoryConfigs } = useCategoryConfigs(deviceTypeId || undefined);
 
   const fetchLastAnalysis = async () => {
     setLoading(true);
@@ -278,6 +285,7 @@ export default function FirewallAnalysis() {
           firewallName={firewall?.name}
           firewallUrl={firewall?.fortigate_url}
           deviceVendor={deviceVendor}
+          categoryConfigs={categoryConfigs}
         />
       </div>
     </AppLayout>
