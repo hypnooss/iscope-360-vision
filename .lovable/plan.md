@@ -1,76 +1,134 @@
 
 
-## Correção do Layout da Página 1 do PDF
+## Nova Página: Administração > Templates
 
-### Problema Identificado
-
-A tabela "Resumo por Categoria" está sendo empurrada para a Página 2 quando o domínio possui 4 ou mais nameservers, pois:
-1. O componente `PDFDomainInfo` lista **todos** os nameservers
-2. O espaçamento entre seções (`sectionGap`) é 20px
+### Objetivo
+Criar uma nova página "Templates" no menu de Administração que lista os device_types (agora chamados de "Templates") existentes no sistema. Acesso restrito a **Super Admins** e **Super Suportes**.
 
 ---
 
-### Solução em Duas Partes
+### Dados Existentes
 
-#### Parte 1: Limitar Exibição de Nameservers
+A tabela `device_types` já contém os templates:
 
-**Arquivo:** `src/components/pdf/sections/PDFDomainInfo.tsx`
+| Vendor | Name | Code |
+|--------|------|------|
+| Fortinet | FortiGate | fortigate |
+| SonicWall | SonicWall | sonicwall |
+| iScope | Domínio Externo | external_domain |
 
-Limitar a exibição a **3 nameservers** e adicionar indicador "+ X nameservers" quando houver mais:
+---
 
+### Arquivos a Criar/Modificar
+
+#### 1. Criar nova página: `src/pages/admin/TemplatesPage.tsx`
+
+Página simples que:
+- Lista todos os templates da tabela `device_types`
+- Exibe em formato de cards ou tabela (cards recomendado)
+- Mostra: Vendor, Nome, Código, Categoria, Status (ativo/inativo)
+- Apenas visualização (sem CRUD por enquanto)
+
+Estrutura visual:
 ```
-┌─ ANTES ────────────────────────┐    ┌─ DEPOIS ───────────────────────┐
-│ Nameservers                    │    │ Nameservers                    │
-│   • ns1.example.com            │    │   • ns1.example.com            │
-│   • ns2.example.com            │    │   • ns2.example.com            │
-│   • ns3.example.com            │    │   • ns3.example.com            │
-│   • ns4.example.com            │    │   + 1 nameserver               │
-└────────────────────────────────┘    └────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  TEMPLATES                                                      │
+│  Gerencie os templates de dispositivos disponíveis no sistema  │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
+│  │  🔶 FortiGate           │  │  🔶 SonicWall               │  │
+│  │  Fortinet               │  │  SonicWall                  │  │
+│  │  Código: fortigate      │  │  Código: sonicwall          │  │
+│  │  Categoria: Firewall    │  │  Categoria: Firewall        │  │
+│  │  [Ativo]                │  │  [Ativo]                    │  │
+│  └─────────────────────────┘  └─────────────────────────────┘  │
+│                                                                 │
+│  ┌─────────────────────────┐                                   │
+│  │  🌐 Domínio Externo     │                                   │
+│  │  iScope                 │                                   │
+│  │  Código: external_domain│                                   │
+│  │  Categoria: Outros      │                                   │
+│  │  [Ativo]                │                                   │
+│  └─────────────────────────┘                                   │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-**Lógica:**
+#### 2. Modificar: `src/components/layout/AppLayout.tsx`
+
+**Linha 186**: Adicionar rota `/templates` à condição de expand do admin menu
 ```typescript
-const MAX_NAMESERVERS = 3;
-const visibleNameservers = nameservers.slice(0, MAX_NAMESERVERS);
-const remainingCount = nameservers.length - MAX_NAMESERVERS;
+if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates') {
+```
 
-// Render visibleNameservers...
-{remainingCount > 0 && (
-  <Text style={styles.moreItems}>
-    + {remainingCount} nameserver{remainingCount > 1 ? 's' : ''}
-  </Text>
-)}
+**Linha 363**: Adicionar rota `/templates` à verificação de rota ativa
+```typescript
+const isAdminRoute = location.pathname === '/workspaces' || ... || location.pathname === '/templates';
+```
+
+**Linhas 410-465**: Adicionar link "Templates" no menu de Administração (após Coletas):
+```typescript
+<Link
+  to="/templates"
+  onClick={() => setMobileMenuOpen(false)}
+  className={cn(
+    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+    location.pathname === '/templates'
+      ? 'bg-warning/20 text-warning font-medium'
+      : 'text-warning/80 hover:bg-warning/10'
+  )}
+>
+  <Layers className="w-4 h-4" />
+  Templates
+</Link>
+```
+
+**Linha 511**: Modificar condição para incluir `super_suporte`:
+```typescript
+{(role === 'super_admin' || role === 'super_suporte') && <AdminButton />}
+```
+
+#### 3. Modificar: `src/App.tsx`
+
+Adicionar a rota para a nova página:
+```typescript
+const TemplatesPage = lazy(() => import("./pages/admin/TemplatesPage"));
+
+// Na seção de rotas Admin:
+<Route path="/templates" element={<TemplatesPage />} />
 ```
 
 ---
 
-#### Parte 2: Reduzir Espaçamentos
+### Controle de Acesso
 
-**Arquivo:** `src/components/pdf/sections/PDFDomainInfo.tsx`
-
-Reduzir o espaçamento entre:
-- Container (`marginTop`: 8 → 6)
-- Seções internas (`marginBottom`: 8 → 6)
-
-**Arquivo:** `src/components/pdf/sections/PDFCategorySummaryTable.tsx`
-
-Reduzir o espaçamento superior da tabela:
-- Container (`marginTop`: `sectionGap` 20 → 12)
+A página verificará se o usuário tem role `super_admin` ou `super_suporte`:
+```typescript
+useEffect(() => {
+  if (!authLoading && !user) {
+    navigate('/auth');
+  } else if (!authLoading && role !== 'super_admin' && role !== 'super_suporte') {
+    navigate('/dashboard');
+    toast.error('Acesso restrito a Super Administradores');
+  }
+}, [user, role, authLoading, navigate]);
+```
 
 ---
 
 ### Resumo das Alterações
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `PDFDomainInfo.tsx` | Limitar nameservers a 3 + indicador; reduzir margens internas |
-| `PDFCategorySummaryTable.tsx` | Reduzir `marginTop` do container de 20 para 12 |
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/pages/admin/TemplatesPage.tsx` | Criar | Nova página listando templates |
+| `src/components/layout/AppLayout.tsx` | Modificar | Adicionar link "Templates" no menu e permitir super_suporte |
+| `src/App.tsx` | Modificar | Adicionar rota `/templates` |
 
 ---
 
 ### Resultado Esperado
 
-1. **Consistência de altura** - Seção de Domain Info sempre ocupa ~4 linhas de nameservers
-2. **Tabela na Página 1** - "Resumo por Categoria" volta a caber na primeira página
-3. **Informação preservada** - Usuário sabe que existem mais nameservers via "+ X"
+1. **Menu atualizado**: "Administração > Templates" visível para Super Admins e Super Suportes
+2. **Página funcional**: Lista os 3 templates existentes em cards visuais
+3. **Consistência visual**: Segue o mesmo padrão das outras páginas admin
 
