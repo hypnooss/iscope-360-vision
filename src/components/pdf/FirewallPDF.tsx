@@ -13,9 +13,10 @@ import {
   PDFFirewallInfo,
   PDFIssuesSummary,
   PDFCategorySection,
+  PDFCategorySummaryTable,
   PDFFooter,
 } from './sections';
-import type { Issue, Check } from './sections';
+import type { Issue, Check, CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
 
 // Page styles
@@ -27,26 +28,35 @@ const pageStyles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  // Page 1: Executive Summary
   heroSection: {
     flexDirection: 'row',
     gap: spacing.cardGap,
     marginBottom: spacing.sectionGap,
   },
   scoreColumn: {
-    width: 140,
+    width: 180,
     alignItems: 'center',
   },
   statsColumn: {
     flex: 1,
   },
-  categoriesSection: {
-    marginTop: spacing.sectionGap,
-  },
+  // Categories Section
   sectionTitle: {
     fontSize: typography.heading,
     fontFamily: typography.bold,
     color: colors.textPrimary,
     marginBottom: spacing.itemGap,
+    marginTop: spacing.sectionGap,
+    paddingBottom: spacing.tight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pageTitle: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: spacing.sectionGap,
   },
   // Security Notice
   securityNotice: {
@@ -138,6 +148,15 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
 
   const dateString = generatedDate.toLocaleString('pt-BR');
 
+  // Sort categories by display_order from configs
+  const sortedCategories = useMemo(() => {
+    return [...report.categories].sort((a, b) => {
+      const configA = categoryConfigs?.find(c => c.name === a.name);
+      const configB = categoryConfigs?.find(c => c.name === b.name);
+      return (configA?.display_order ?? 999) - (configB?.display_order ?? 999);
+    });
+  }, [report.categories, categoryConfigs]);
+
   // Helper to get color for a category (from configs or fallback)
   const getColorForCategory = (categoryName: string): string => {
     const config = categoryConfigs?.find(c => c.name === categoryName);
@@ -153,7 +172,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
   };
 
   // Extract all failed checks as issues
-  const issues: Issue[] = report.categories
+  const issues: Issue[] = sortedCategories
     .flatMap((cat) => cat.checks)
     .filter((check) => check.status === 'fail')
     .map((check) => ({
@@ -162,6 +181,21 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
       severity: (check.severity || 'medium') as Issue['severity'],
       category: undefined,
     }));
+
+  // Prepare category summaries for the table (using displayName from configs)
+  const categorySummaries: CategorySummary[] = sortedCategories.map((cat) => {
+    const config = getCategoryConfig(categoryConfigs, cat.name);
+    const passed = cat.checks.filter((c) => c.status === 'pass').length;
+    const failed = cat.checks.filter((c) => c.status === 'fail').length;
+    const total = cat.checks.length;
+    return {
+      name: config.displayName, // Use displayName from config
+      passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
+      passed,
+      failed,
+      total,
+    };
+  });
 
   // Prepare firewall info data
   const firewallInfoData = {
@@ -174,6 +208,9 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
     url: deviceInfo.url,
   };
 
+  // All categories for detail pages (sorted by display_order)
+  const allCategories = sortedCategories;
+
   return (
     <Document
       title={`iScope 360 - ${deviceInfo.name}`}
@@ -181,6 +218,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
       subject="Relatório de Compliance de Firewall"
       keywords="compliance, security, firewall, fortigate"
     >
+      {/* PAGE 1: Executive Summary */}
       <Page size="A4" style={pageStyles.page}>
         <View style={pageStyles.content}>
           {/* Header */}
@@ -193,7 +231,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
             logoBase64={logoBase64}
           />
 
-          {/* Hero Section: Score + Stats */}
+          {/* Hero Section: Score + Stats + Firewall Info */}
           <View style={pageStyles.heroSection}>
             <View style={pageStyles.scoreColumn}>
               <PDFScoreGauge score={report.overallScore} />
@@ -211,58 +249,70 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
             </View>
           </View>
 
-          {/* Issues Summary */}
-          <PDFIssuesSummary issues={issues} maxItems={10} />
+          {/* Category Summary Table */}
+          <PDFCategorySummaryTable categories={categorySummaries} />
         </View>
 
         <PDFFooter />
       </Page>
 
-      {/* Categories Pages */}
-      {report.categories.map((category, index) => {
-        const config = getCategoryConfig(categoryConfigs, category.name);
-        const checks: Check[] = category.checks.map((check) => ({
-          name: check.name,
-          status: check.status as Check['status'],
-          severity: check.severity as Check['severity'],
-          description: check.description,
-          recommendation: check.recommendation,
-        }));
+      {/* PAGE 2: Issues Summary */}
+      {issues.length > 0 && (
+        <Page size="A4" style={pageStyles.page}>
+          <View style={pageStyles.content}>
+            <PDFIssuesSummary issues={issues} maxItems={20} />
+          </View>
 
-        // Get color from config or fallback
-        const color = getColorForCategory(category.name);
+          <PDFFooter />
+        </Page>
+      )}
 
-        return (
-          <Page key={index} size="A4" style={pageStyles.page}>
-            <View style={pageStyles.content}>
-              <Text style={pageStyles.sectionTitle}>
-                {config.displayName}
+      {/* PAGE 3+: Category Details */}
+      {allCategories.length > 0 && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <Text style={pageStyles.pageTitle}>
+              Detalhamento por Categoria
+            </Text>
+            
+            {/* Aviso de Segurança */}
+            <View style={pageStyles.securityNotice}>
+              <View style={pageStyles.noticeIcon}>
+                <Text style={pageStyles.noticeIconText}>i</Text>
+              </View>
+              <Text style={pageStyles.noticeText}>
+                Por questões de segurança, as evidências coletadas não são exibidas em relatórios exportados para PDF.
               </Text>
-              
-              {/* Aviso de Segurança - apenas na primeira categoria */}
-              {index === 0 && (
-                <View style={pageStyles.securityNotice}>
-                  <View style={pageStyles.noticeIcon}>
-                    <Text style={pageStyles.noticeIconText}>i</Text>
-                  </View>
-                  <Text style={pageStyles.noticeText}>
-                    Por questões de segurança, as evidências coletadas não são exibidas em relatórios exportados para PDF.
-                  </Text>
-                </View>
-              )}
-              
-              <PDFCategorySection
-                name={config.displayName}
-                checks={checks}
-                color={color}
-                showPassedChecks={false}
-              />
             </View>
+            
+            {allCategories.map((category, index) => {
+              const config = getCategoryConfig(categoryConfigs, category.name);
+              const checks: Check[] = category.checks.map((check) => ({
+                name: check.name,
+                status: check.status as Check['status'],
+                severity: check.severity as Check['severity'],
+                description: check.description,
+                recommendation: check.recommendation,
+              }));
 
-            <PDFFooter />
-          </Page>
-        );
-      })}
+              // Get color from config or fallback
+              const color = getColorForCategory(category.name);
+
+              return (
+                <PDFCategorySection
+                  key={index}
+                  name={config.displayName} // Use displayName from config
+                  checks={checks}
+                  color={color}
+                  showPassedChecks={true}
+                />
+              );
+            })}
+          </View>
+
+          <PDFFooter />
+        </Page>
+      )}
     </Document>
   );
 };
