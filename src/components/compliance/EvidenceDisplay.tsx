@@ -461,6 +461,23 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
     );
   }
 
+  // ========== TRATAMENTO ESPECIAL PARA VERSÃO DE FIRMWARE ==========
+  // Detectar evidências de versão de firmware e usar formatação padrão (não código)
+  const isFirmwareVersion = 
+    item.label.toLowerCase().includes("versão") && 
+    (item.label.toLowerCase().includes("firmware") || item.label.toLowerCase().includes("version"));
+  
+  if (isFirmwareVersion) {
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30">
+        <div className="border-l-2 border-primary/30 pl-3">
+          <span className="text-xs font-medium text-muted-foreground block mb-1">{translatedLabel}</span>
+          <p className="text-sm text-foreground">{transformedValue}</p>
+        </div>
+      </div>
+    );
+  }
+
   // ========== TRATAMENTO ESPECIAL PARA INTERFACES DE FIREWALL ==========
   // Detectar evidências de interface (nome da interface com allowaccess)
   const isInterfaceEvidence = item.value && item.value.includes("allowaccess:");
