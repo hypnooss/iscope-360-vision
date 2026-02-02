@@ -256,10 +256,13 @@ function identifyInboundWANPolicies(policies: any[], wanInterfaceNames: Set<stri
 
 // ==================== VERIFICAÇÃO DE BACKUP AUTOMÁTICO ====================
 // Verifica automation-stitch/trigger/action para backup configurado
+// IMPORTANTE: Backup válido requer Stitch ativo + Trigger agendado + Action de backup externo
 
 interface BackupConfig {
   isConfigured: boolean;
-  status: "active" | "inactive" | "not_configured";
+  status: "active" | "inactive" | "local_only" | "not_configured";
+  backupType: "external" | "local" | "none";
+  destination?: string;
   frequency: string;
   detail: string;
   stitchName: string;
@@ -267,10 +270,96 @@ interface BackupConfig {
   actionName: string;
 }
 
+// Analisa se uma action é de backup e qual o tipo (externo/local)
+function analyzeBackupAction(action: any): {
+  isBackup: boolean;
+  type: "external" | "local" | "none";
+  destination?: string;
+} {
+  if (!action) return { isBackup: false, type: "none" };
+  
+  const actionType = action["action-type"] || action.type || "";
+  const script = action.script || action.command || "";
+  const systemAction = action["system-action"] || "";
+  const actionName = action.name || "";
+  
+  // CLI-script com execute backup
+  if (actionType === "cli-script" || script) {
+    const scriptLower = script.toLowerCase();
+    
+    // Backup para área externa (FTP/SFTP/TFTP)
+    if (scriptLower.includes("execute backup") && 
+        (scriptLower.includes("ftp") || scriptLower.includes("sftp") || scriptLower.includes("tftp"))) {
+      // Tentar extrair destino
+      const match = script.match(/execute backup (?:full-config|config)\s+(ftp|sftp|tftp)\s+["']?(\S+)["']?/i);
+      const destination = match ? `${match[1]}://${match[2]}` : "FTP/SFTP/TFTP";
+      return {
+        isBackup: true,
+        type: "external",
+        destination,
+      };
+    }
+    
+    // Backup local (apenas disco, sem destino externo)
+    if (scriptLower.includes("execute backup")) {
+      return { isBackup: true, type: "local" };
+    }
+  }
+  
+  // system-action: backup-config (backup local no disco - padrão FortiOS)
+  if (systemAction === "backup-config") {
+    return { isBackup: true, type: "local" };
+  }
+  
+  // Tipo específico de backup (alguns FortiOS)
+  if (actionType === "backup" || actionType === "config-backup") {
+    return { isBackup: true, type: "local" };
+  }
+  
+  // Nome indica backup mas não é explícito - tratar como local
+  if (actionName.toLowerCase().includes("backup")) {
+    return { isBackup: true, type: "local" };
+  }
+  
+  return { isBackup: false, type: "none" };
+}
+
+// Verifica se um trigger é do tipo agendado
+function isScheduledTrigger(trigger: any): boolean {
+  if (!trigger) return false;
+  
+  const triggerType = trigger["trigger-type"] || trigger["event-type"] || trigger.type || "";
+  const hasScheduledFrequency = trigger["trigger-frequency"] || trigger.frequency;
+  
+  return triggerType === "scheduled" || triggerType === "schedule" || !!hasScheduledFrequency;
+}
+
+// Extrai informações de frequência de um trigger
+function extractTriggerFrequency(trigger: any): { frequency: string; detail: string } {
+  const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
+  const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
+  const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
+  const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
+  
+  const timeStr = `${String(triggerHour).padStart(2, "0")}:${String(triggerMinute).padStart(2, "0")}`;
+  
+  let detail = "";
+  if (frequency === "weekly" && triggerDay) {
+    detail = `${frequency} on ${triggerDay} at ${timeStr}`;
+  } else if (frequency === "monthly") {
+    detail = `${frequency} at ${timeStr}`;
+  } else {
+    detail = `${frequency} at ${timeStr}`;
+  }
+  
+  return { frequency, detail };
+}
+
 async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConfig> {
   const result: BackupConfig = {
     isConfigured: false,
     status: "not_configured",
+    backupType: "none",
     frequency: "",
     detail: "Backup automático não configurado",
     stitchName: "",
@@ -279,7 +368,7 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
   };
 
   try {
-    // Buscar automation stitches
+    // Buscar automation stitches, triggers e actions
     const stitchesResponse = await fortigateRequest(config, "/cmdb/system/automation-stitch").catch(() => ({
       results: [],
     }));
@@ -295,15 +384,6 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
     const actions = actionsResponse.results || [];
 
     console.log(`[BACKUP] Found ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
-    console.log(
-      `[BACKUP] Stitches: ${JSON.stringify(stitches.map((s: any) => ({ name: s.name, status: s.status, trigger: s.trigger, actions: s.actions || s.action })))}`,
-    );
-    console.log(
-      `[BACKUP] Triggers: ${JSON.stringify(triggers.map((t: any) => ({ name: t.name, type: t["trigger-type"] || t["event-type"], frequency: t["trigger-frequency"] })))}`,
-    );
-    console.log(
-      `[BACKUP] Actions: ${JSON.stringify(actions.map((a: any) => ({ name: a.name, type: a["action-type"], hasScript: !!a.script })))}`,
-    );
 
     // Mapear triggers por nome
     const triggerMap = new Map<string, any>();
@@ -317,186 +397,142 @@ async function checkAutomatedBackup(config: FortiGateConfig): Promise<BackupConf
       actionMap.set(action.name, action);
     }
 
-    // Procurar stitch de backup
+    // Variáveis para tracking do melhor backup encontrado
+    let bestBackup: BackupConfig | null = null;
+
+    // PASSO 1: Procurar backup válido através de Stitches ATIVOS com Trigger AGENDADO
     for (const stitch of stitches) {
-      // Aceitar tanto "enable" quanto sem status explícito (alguns FortiGates não retornam)
+      // Verificar se stitch está ativo
       if (stitch.status && stitch.status !== "enable") continue;
 
-      // Verificar trigger associado - pode ser array ou objeto direto
+      // Extrair referências de triggers
       let triggerRefs = stitch.trigger || stitch.triggers || [];
       if (!Array.isArray(triggerRefs)) {
         triggerRefs = [triggerRefs];
       }
 
-      // Verificar actions - pode ser "actions" ou "action", array ou objeto
+      // Extrair referências de actions
       let actionRefs = stitch.actions || stitch.action || [];
       if (!Array.isArray(actionRefs)) {
         actionRefs = [actionRefs];
       }
 
-      console.log(
-        `[BACKUP] Checking stitch: ${stitch.name}, triggers: ${JSON.stringify(triggerRefs)}, actions: ${JSON.stringify(actionRefs)}`,
-      );
-
+      // Para cada trigger do stitch
       for (const triggerRef of triggerRefs) {
         const triggerName = typeof triggerRef === "string" ? triggerRef : triggerRef?.name;
         if (!triggerName) continue;
 
         const trigger = triggerMap.get(triggerName);
+        if (!trigger) continue;
 
-        if (!trigger) {
-          console.log(`[BACKUP] Trigger not found in map: ${triggerName}`);
+        // CRITÉRIO: Trigger deve ser AGENDADO
+        if (!isScheduledTrigger(trigger)) {
+          console.log(`[BACKUP] Stitch ${stitch.name}: Trigger ${triggerName} não é agendado`);
           continue;
         }
 
-        // Verificar se é trigger agendado - aceitar variações
-        const triggerType = trigger["trigger-type"] || trigger["event-type"] || trigger.type || "";
-        console.log(`[BACKUP] Trigger ${triggerName} type: ${triggerType}`);
-
-        // Aceitar "scheduled", "schedule", ou trigger com frequência definida
-        const hasScheduledFrequency = trigger["trigger-frequency"] || trigger.frequency;
-        const isScheduled = triggerType === "scheduled" || triggerType === "schedule" || hasScheduledFrequency;
-
-        if (!isScheduled) {
-          console.log(`[BACKUP] Trigger ${triggerName} is not scheduled`);
-          continue;
-        }
-
-        // Verificar ações de backup
+        // Para cada action do stitch
         for (const actionRef of actionRefs) {
-          // O actionRef pode ser:
-          // - string: nome da action diretamente
-          // - objeto com "name": { name: "Backup" }
-          // - objeto com "action": { action: "Backup", id: 1, ... } (formato real do FortiGate!)
+          // Extrair nome da action (pode ser string, {name:...} ou {action:...})
           let actionName = "";
           if (typeof actionRef === "string") {
             actionName = actionRef;
           } else if (actionRef?.action) {
-            // Formato real: { id: 1, action: "Backup", ... }
             actionName = actionRef.action;
           } else if (actionRef?.name) {
             actionName = actionRef.name;
           }
 
-          console.log(`[BACKUP] Extracted action name: "${actionName}" from ref: ${JSON.stringify(actionRef)}`);
-
           if (!actionName) continue;
 
           const action = actionMap.get(actionName);
+          
+          // Analisar se é action de backup
+          const backupInfo = analyzeBackupAction(action || { name: actionName });
+          
+          if (!backupInfo.isBackup) continue;
 
-          if (!action) {
-            console.log(`[BACKUP] Action not found in map: ${actionName}`);
-            // Mesmo sem action no map, verificar se nome indica backup
-            if (actionName.toLowerCase().includes("backup")) {
-              result.isConfigured = true;
-              result.status = "active";
-              result.stitchName = stitch.name;
-              result.triggerName = triggerName;
-              result.actionName = actionName;
+          // BACKUP ENCONTRADO! Extrair frequência
+          const { frequency, detail } = extractTriggerFrequency(trigger);
 
-              const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
-              const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
-              const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
-              const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
+          const candidate: BackupConfig = {
+            isConfigured: true,
+            status: backupInfo.type === "external" ? "active" : "local_only",
+            backupType: backupInfo.type,
+            destination: backupInfo.destination,
+            frequency,
+            detail,
+            stitchName: stitch.name,
+            triggerName,
+            actionName,
+          };
 
-              result.frequency = frequency;
-              const timeStr = `${String(triggerHour).padStart(2, "0")}:${String(triggerMinute).padStart(2, "0")}`;
-
-              if (frequency === "weekly" && triggerDay) {
-                result.detail = `${frequency} on ${triggerDay} at ${timeStr}`;
-              } else {
-                result.detail = `${frequency} at ${timeStr}`;
-              }
-
-              console.log(`[BACKUP] Found backup by action name: ${result.stitchName} -> ${result.detail}`);
-              return result;
-            }
-            continue;
+          // Priorizar backup externo sobre local
+          if (backupInfo.type === "external") {
+            console.log(`[BACKUP] ✅ Backup EXTERNO encontrado: ${stitch.name} -> ${backupInfo.destination}`);
+            return candidate; // Retornar imediatamente se for externo
+          } else if (!bestBackup || bestBackup.backupType !== "external") {
+            bestBackup = candidate;
+            console.log(`[BACKUP] ⚠️ Backup LOCAL encontrado: ${stitch.name}`);
           }
-
-          // Verificar se é ação de backup
-          const actionType = action["action-type"] || action.type || "";
-          const script = action.script || action.command || "";
-
-          console.log(
-            `[BACKUP] Checking action: ${actionName}, type: ${actionType}, script contains backup: ${script.toLowerCase().includes("backup")}`,
-          );
-
-          // Verificar se é ação de backup por múltiplos critérios
-          const isBackupAction =
-            // cli-script com execute backup config
-            (actionType === "cli-script" && script.toLowerCase().includes("execute backup")) ||
-            (actionType === "cli-script" && script.toLowerCase().includes("backup config")) ||
-            // Nome indica backup
-            actionName.toLowerCase().includes("backup") ||
-            // Script contém backup
-            script.toLowerCase().includes("backup") ||
-            // Tipo específico de backup (alguns FortiOS)
-            actionType === "backup" ||
-            actionType === "config-backup";
-
-          if (!isBackupAction) {
-            console.log(`[BACKUP] Action ${actionName} is not a backup action`);
-            continue;
-          }
-
-          // Encontramos um backup automático válido!
-          result.isConfigured = true;
-          result.status = "active";
-          result.stitchName = stitch.name;
-          result.triggerName = triggerName;
-          result.actionName = actionName;
-
-          // Extrair frequência do trigger
-          const frequency = trigger["trigger-frequency"] || trigger.frequency || "daily";
-          const triggerDay = trigger["trigger-day"] || trigger["trigger-weekday"] || trigger.weekday || "";
-          const triggerHour = trigger["trigger-hour"] ?? trigger.hour ?? 0;
-          const triggerMinute = trigger["trigger-minute"] ?? trigger.minute ?? 0;
-
-          result.frequency = frequency;
-
-          // Formatar detalhe legível
-          const timeStr = `${String(triggerHour).padStart(2, "0")}:${String(triggerMinute).padStart(2, "0")}`;
-          if (frequency === "weekly" && triggerDay) {
-            result.detail = `${frequency} on ${triggerDay} at ${timeStr}`;
-          } else if (frequency === "monthly") {
-            result.detail = `${frequency} at ${timeStr}`;
-          } else {
-            result.detail = `${frequency} at ${timeStr}`;
-          }
-
-          console.log(`[BACKUP] Found backup automation: ${result.stitchName} -> ${result.detail}`);
-          return result;
         }
       }
     }
 
-    // Fallback: verificar auto-script (método antigo)
+    // Se encontramos um backup local, retornar
+    if (bestBackup) {
+      return bestBackup;
+    }
+
+    // PASSO 2: Fallback - verificar auto-script (método antigo)
     try {
       const autoScripts = await fortigateRequest(config, "/cmdb/system/auto-script");
       const scripts = autoScripts.results || [];
       console.log(`[BACKUP] Fallback: Found ${scripts.length} auto-scripts`);
 
-      const backupScripts = scripts.filter(
-        (s: any) => s.script?.toLowerCase().includes("backup") || s.name?.toLowerCase().includes("backup"),
-      );
-
-      if (backupScripts.length > 0) {
-        const script = backupScripts[0];
-        result.isConfigured = true;
-        result.status = "active";
-        result.stitchName = "auto-script";
-        result.triggerName = script.name;
-        result.actionName = script.name;
-        result.frequency = "scheduled";
-        result.detail = `Auto-script: ${script.name} (interval: ${script.interval || "N/A"})`;
-        console.log(`[BACKUP] Found backup via auto-script: ${script.name}`);
+      for (const script of scripts) {
+        const scriptContent = script.script || "";
+        const scriptName = script.name || "";
+        
+        const backupInfo = analyzeBackupAction({ 
+          "action-type": "cli-script", 
+          script: scriptContent,
+          name: scriptName 
+        });
+        
+        if (backupInfo.isBackup) {
+          return {
+            isConfigured: true,
+            status: backupInfo.type === "external" ? "active" : "local_only",
+            backupType: backupInfo.type,
+            destination: backupInfo.destination,
+            frequency: "scheduled",
+            detail: `Auto-script: ${scriptName} (interval: ${script.interval || "N/A"})`,
+            stitchName: "auto-script",
+            triggerName: scriptName,
+            actionName: scriptName,
+          };
+        }
       }
     } catch {
       // Endpoint não disponível
     }
 
-    console.log(`[BACKUP] Final result: isConfigured=${result.isConfigured}, status=${result.status}`);
+    // PASSO 3: Verificar se existem actions de backup órfãs (não amarradas a stitch agendado)
+    const orphanBackupActions: string[] = [];
+    for (const action of actions) {
+      const backupInfo = analyzeBackupAction(action);
+      if (backupInfo.isBackup) {
+        orphanBackupActions.push(action.name);
+      }
+    }
+
+    if (orphanBackupActions.length > 0) {
+      console.log(`[BACKUP] ❌ Actions de backup órfãs (sem stitch agendado): ${orphanBackupActions.join(", ")}`);
+      result.detail = `Actions de backup encontradas (${orphanBackupActions.join(", ")}), mas não estão associadas a nenhum agendamento`;
+    }
+
+    console.log(`[BACKUP] Final: isConfigured=${result.isConfigured}, backupType=${result.backupType}`);
   } catch (error) {
     console.error("[BACKUP] Error checking automated backup:", error);
   }
@@ -1313,43 +1349,59 @@ async function checkHAAndBackup(config: FortiGateConfig): Promise<ComplianceChec
     const backupConfig = await checkAutomatedBackup(config);
 
     let backupStatus: "pass" | "fail" | "warning" = "fail";
-    let backupDetails = "Backup automático não configurado";
-    let backupRecommendation = "Configurar backup automático usando automation stitch com trigger agendado";
+    let backupDetails = "";
+    let backupRecommendation = "Criar automation stitch com trigger agendado + action cli-script com 'execute backup full-config ftp/sftp <server>'";
 
-    if (backupConfig.isConfigured && backupConfig.status === "active") {
+    // Determinar status baseado no tipo de backup
+    if (backupConfig.backupType === "external") {
+      // Backup para área externa = PASS
       backupStatus = "pass";
-      backupDetails = `Backup Automático Ativo | Frequência: ${backupConfig.frequency} | ${backupConfig.detail}`;
+      backupDetails = `Backup Externo Ativo | Destino: ${backupConfig.destination || "N/A"} | Frequência: ${backupConfig.frequency} | ${backupConfig.detail}`;
       backupRecommendation = "Manter configuração atual";
+    } else if (backupConfig.backupType === "local") {
+      // Backup apenas local = WARNING
+      backupStatus = "warning";
+      backupDetails = `Backup Local (disco) | Frequência: ${backupConfig.frequency} | ${backupConfig.detail}`;
+      backupRecommendation = "Configurar backup para servidor externo (FTP/SFTP/TFTP) para proteção contra perda do equipamento";
+    } else {
+      // Sem backup = FAIL
+      backupStatus = "fail";
+      backupDetails = backupConfig.detail || "Nenhum backup automático configurado";
     }
 
-    const backupEvidence: EvidenceItem[] = [
-      {
-        label: "Status",
-        value: backupConfig.status === "active" ? "✅ Ativo" : "❌ Não configurado",
-        type: "text" as const,
-      },
-    ];
+    // Construir evidências baseadas no tipo de backup
+    const backupEvidence: EvidenceItem[] = [];
 
-    if (backupConfig.isConfigured) {
+    if (backupConfig.backupType === "external") {
       backupEvidence.push(
+        { label: "Status", value: "✅ Backup externo configurado", type: "text" as const },
+        { label: "Destino", value: backupConfig.destination || "FTP/SFTP/TFTP", type: "code" as const },
         { label: "Frequência", value: backupConfig.frequency, type: "text" as const },
         { label: "Detalhe", value: backupConfig.detail, type: "text" as const },
         { label: "Stitch", value: backupConfig.stitchName, type: "code" as const },
         { label: "Trigger", value: backupConfig.triggerName, type: "code" as const },
         { label: "Action", value: backupConfig.actionName, type: "code" as const },
       );
+    } else if (backupConfig.backupType === "local") {
+      backupEvidence.push(
+        { label: "Status", value: "⚠️ Backup apenas local (disco)", type: "text" as const },
+        { label: "Risco", value: "Não protege contra perda do equipamento", type: "text" as const },
+        { label: "Frequência", value: backupConfig.frequency, type: "text" as const },
+        { label: "Stitch", value: backupConfig.stitchName, type: "code" as const },
+        { label: "Trigger", value: backupConfig.triggerName, type: "code" as const },
+        { label: "Action", value: backupConfig.actionName, type: "code" as const },
+      );
     } else {
-      backupEvidence.push({
-        label: "Verificação",
-        value: "Nenhum automation-stitch de backup encontrado",
-        type: "text" as const,
-      });
+      backupEvidence.push(
+        { label: "Status", value: "❌ Backup automático não configurado", type: "text" as const },
+        { label: "Verificação", value: backupConfig.detail || "Nenhum stitch de backup com trigger agendado encontrado", type: "text" as const },
+      );
     }
 
     checks.push({
       id: "bkp-001",
       name: "Backup Automático Configurado",
-      description: "Verifica se backup automático de configuração está habilitado via automation stitch",
+      description: "Verifica se backup automático de configuração está habilitado via automation stitch para área externa (FTP/SFTP/TFTP)",
       category: "Backup e Recovery",
       status: backupStatus,
       severity: "high",
