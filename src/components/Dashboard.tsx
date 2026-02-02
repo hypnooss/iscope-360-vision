@@ -311,25 +311,35 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                   <DetailRow label="Uptime" value={report.systemInfo?.uptime || 'N/A'} />
                   <DetailRow label="URL" value={firewallUrl || 'N/A'} />
                   
+                  {/* Firmware Version Evidence Style */}
+                  {report.firmwareVersion && (
+                    <div className="border-l-2 border-primary/30 pl-3 py-1.5 mt-2">
+                      <p className="text-xs text-muted-foreground">Versão do Firmware</p>
+                      <p className="text-sm font-mono text-primary">v{report.firmwareVersion}</p>
+                    </div>
+                  )}
+                  
                   {/* Status Indicators */}
-                  <StatusRow 
-                    label="Firmware" 
-                    isActive={statusInfo.firmwareUpToDate} 
-                    activeLabel="Atualizado" 
-                    inactiveLabel="Desatualizado" 
-                  />
-                  <StatusRow 
-                    label="Licenciamento" 
-                    isActive={statusInfo.licensingActive} 
-                    activeLabel="Ativo" 
-                    inactiveLabel="Expirado" 
-                  />
-                  <StatusRow 
-                    label="MFA" 
-                    isActive={statusInfo.mfaEnabled} 
-                    activeLabel="Ativo" 
-                    inactiveLabel="Inativo" 
-                  />
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
+                    <StatusRow 
+                      label="Firmware" 
+                      isActive={statusInfo.firmwareUpToDate} 
+                      activeLabel="Atualizado" 
+                      inactiveLabel="Desatualizado" 
+                    />
+                    <StatusRow 
+                      label="Licenciamento" 
+                      isActive={statusInfo.licensingActive} 
+                      activeLabel="Ativo" 
+                      inactiveLabel="Expirado" 
+                    />
+                    <StatusRow 
+                      label="MFA" 
+                      isActive={statusInfo.mfaEnabled} 
+                      activeLabel="Ativo" 
+                      inactiveLabel="Inativo" 
+                    />
+                  </div>
                 </div>
               </div>
             </div>
