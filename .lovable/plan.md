@@ -1,40 +1,54 @@
 
-# Plano: Ajustar Layout de Status no Dashboard de Firewall
+# Plano: Corrigir Verificação de Backup Automático em Firewalls Fortinet
 
-## Problema
+## Problema Identificado
 
-No Dashboard de Firewall (`src/components/Dashboard.tsx`), os indicadores de status (Firmware, Licenciamento, MFA) estão sendo exibidos em uma **única linha horizontal** usando `flex flex-wrap`, enquanto no Dashboard de Domínio Externo cada indicador aparece em sua **própria linha** usando o componente `DetailRow`.
+A lógica atual de verificação de backup em `fortigate-compliance/index.ts` está gerando **falsos positivos**. No firewall "BAU-FW":
 
-**Atual (Firewall):**
+1. **Existe** a action "Backup Config Disk" (action-type: system-actions, system-action: backup-config)
+2. **Porém** essa action é apenas uma **template padrão do FortiOS** - não está associada a nenhum stitch/trigger
+3. A análise incorretamente marca como "✅ Backup automático configurado"
+
+### Dados Reais Coletados (BAU-FW)
+
+**Stitches (9):** Nenhum relacionado a backup
 ```
-MODELO        FG120G
-SERIAL        FG120GTK24005216
-FORTIOS       v7.4.10
-HOSTNAME      AAX-FW-01
-UPTIME        3d 19h 3m
-URL           https://10.25.11.250:40443
-FIRMWARE ● Atualizado    LICENCIAMENTO ● Ativo    MFA ● Inativo  ← 3 em 1 linha
+- Compromised Host Quarantine (trigger: Compromised Host - High)
+- Firmware upgrade notification (trigger: Auto Firmware upgrade)
+- FortiAnalyzer Connection Down (trigger: FortiAnalyzer Connection Down)
+- HA Failover (trigger: HA Failover)
+- ... outros relacionados a eventos
 ```
 
-**Esperado (igual Domínio Externo):**
+**Actions (13):** Apenas templates padrão
 ```
-MODELO        FG120G
-SERIAL        FG120GTK24005216
-FORTIOS       v7.4.10
-HOSTNAME      AAX-FW-01
-UPTIME        3d 19h 3m
-URL           https://10.25.11.250:40443
-FIRMWARE      ● Atualizado    ← linha individual
-LICENCIAMENTO ● Ativo         ← linha individual
-MFA           ● Inativo       ← linha individual
+- Backup Config Disk (action-type: system-actions, system-action: backup-config)
+  → É uma action PADRÃO que faz backup local no disco
+  → NÃO está associada a nenhum stitch com trigger agendado
+  → NÃO exporta para área externa (FTP/SFTP/TFTP)
 ```
 
 ---
 
-## Solução
+## Critérios Corretos para Backup Válido
 
-1. **Remover o bloco duplicado** de "Versão do Firmware" (linhas 314-320)
-2. **Substituir o container flex horizontal** por `DetailRow` individuais com `indicator`
+Um backup automático é considerado **válido** apenas se:
+
+1. **Existe um Stitch ativo** que amarra:
+   - Um **Trigger agendado** (scheduled) 
+   - Uma **Action de backup real** (cli-script com `execute backup`)
+
+2. **O comando de backup exporta para área externa:**
+   ```
+   execute backup full-config ftp <server> <path> <user> <password>
+   execute backup full-config sftp <server> <path> <user>
+   execute backup full-config tftp <server> <path>
+   execute backup config ftp|sftp|tftp ...
+   ```
+
+3. **Backup apenas local (disco)** deve gerar **warning**, não pass:
+   - `system-action: backup-config` apenas salva no disco local
+   - Não protege contra perda total do equipamento
 
 ---
 
@@ -42,124 +56,209 @@ MFA           ● Inativo       ← linha individual
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/Dashboard.tsx` | Refatorar exibição de status para usar `DetailRow` com indicators |
+| `supabase/functions/fortigate-compliance/index.ts` | Refatorar `checkAutomatedBackup()` com lógica correta |
 
 ---
 
-## Alterações Detalhadas
+## Alterações Técnicas
 
-### 1. Atualizar o componente `DetailRow` para suportar indicator (linhas ~58-75)
-
-O `DetailRow` no Dashboard não possui suporte a `indicator` como no Domínio Externo. Precisa ser atualizado:
+### 1. Atualizar Interface `BackupConfig`
 
 ```typescript
-interface DetailRowProps {
-  label: string;
-  value: string | string[];
-  indicator?: "success" | "error";  // Adicionar
+interface BackupConfig {
+  isConfigured: boolean;
+  status: "active" | "inactive" | "local_only" | "not_configured";
+  backupType: "external" | "local" | "none";  // NOVO
+  destination?: string;  // NOVO: ftp/sftp/tftp + server
+  frequency: string;
+  detail: string;
+  stitchName: string;
+  triggerName: string;
+  actionName: string;
+}
+```
+
+### 2. Refatorar Lógica de Detecção
+
+**Passo 1:** Verificar se existe Stitch ativo → Trigger agendado → Action
+
+```typescript
+// Para cada stitch ATIVO com trigger AGENDADO
+for (const stitch of stitches) {
+  if (stitch.status !== "enable") continue;
+  
+  // Verificar se o trigger é agendado
+  const trigger = triggerMap.get(stitch.trigger);
+  if (!isScheduledTrigger(trigger)) continue;
+  
+  // Verificar se alguma action é de backup
+  for (const actionRef of stitch.actions) {
+    const action = actionMap.get(actionRef.action);
+    const backupInfo = analyzeBackupAction(action);
+    
+    if (backupInfo.isBackup) {
+      // Backup encontrado!
+    }
+  }
+}
+```
+
+**Passo 2:** Analisar tipo de backup na Action
+
+```typescript
+function analyzeBackupAction(action: any): {
+  isBackup: boolean;
+  type: "external" | "local" | "none";
+  destination?: string;
+} {
+  const actionType = action["action-type"] || "";
+  const script = action.script || "";
+  const systemAction = action["system-action"] || "";
+  
+  // CLI-script com execute backup para área externa
+  if (actionType === "cli-script") {
+    const scriptLower = script.toLowerCase();
+    
+    // Backup para FTP
+    if (scriptLower.includes("execute backup") && scriptLower.includes("ftp")) {
+      const match = script.match(/execute backup (?:full-config|config) (ftp|sftp|tftp)\s+(\S+)/i);
+      return {
+        isBackup: true,
+        type: "external",
+        destination: match ? `${match[1]}://${match[2]}` : "FTP/SFTP/TFTP"
+      };
+    }
+    
+    // Backup local (apenas disco)
+    if (scriptLower.includes("execute backup")) {
+      return { isBackup: true, type: "local" };
+    }
+  }
+  
+  // system-action: backup-config (backup local no disco)
+  if (systemAction === "backup-config") {
+    return { isBackup: true, type: "local" };
+  }
+  
+  return { isBackup: false, type: "none" };
+}
+```
+
+**Passo 3:** Definir Status Baseado no Tipo
+
+```typescript
+// Backup para área externa = PASS
+if (backupInfo.type === "external") {
+  result.status = "active";
+  result.backupType = "external";
+  result.destination = backupInfo.destination;
 }
 
-function DetailRow({ label, value, indicator }: DetailRowProps) {
-  const isMultiline = Array.isArray(value);
+// Backup apenas local = WARNING
+else if (backupInfo.type === "local") {
+  result.status = "local_only";
+  result.backupType = "local";
+}
+```
+
+### 3. Atualizar Evidências e Recomendações
+
+```typescript
+// Na função checkHAAndBackup():
+
+let backupStatus: "pass" | "fail" | "warning" = "fail";
+let backupDetails = "";
+let backupRecommendation = "";
+
+if (backupConfig.backupType === "external") {
+  backupStatus = "pass";
+  backupDetails = `Backup Externo Ativo | Destino: ${backupConfig.destination} | ${backupConfig.frequency}`;
+  backupRecommendation = "Manter configuração atual";
+}
+else if (backupConfig.backupType === "local") {
+  backupStatus = "warning";
+  backupDetails = `Backup Local (disco) | ${backupConfig.frequency}`;
+  backupRecommendation = "Configurar backup para servidor externo (FTP/SFTP) para proteção contra perda do equipamento";
+}
+else {
+  // Verificar se existe action de backup órfã (não amarrada a stitch)
+  const hasOrphanBackupAction = actions.some(a => 
+    a.name?.toLowerCase().includes("backup") || 
+    a["system-action"] === "backup-config"
+  );
   
-  return (
-    <div className="group">
-      <div className="flex items-start gap-3 py-2">
-        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
-          {label}
-        </span>
-        <div className="flex-1 min-w-0">
-          {indicator && (
-            <span 
-              className={cn(
-                "inline-block w-2 h-2 rounded-full mr-2",
-                indicator === "success" 
-                  ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
-                  : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
-              )} 
-            />
-          )}
-          {isMultiline ? (
-            <div className="space-y-0.5">
-              {value.map((v, i) => (
-                <div key={i} className="text-sm font-medium text-foreground">{v}</div>
-              ))}
-            </div>
-          ) : (
-            <span className={cn("text-sm font-medium text-foreground", indicator && "inline-flex items-center")}>
-              {value}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
-    </div>
+  if (hasOrphanBackupAction) {
+    backupDetails = "Action de backup encontrada, mas não está associada a nenhum agendamento";
+  } else {
+    backupDetails = "Nenhum backup automático configurado";
+  }
+  backupRecommendation = "Criar automation stitch com trigger agendado + action cli-script com 'execute backup full-config ftp/sftp <server>'";
+}
+```
+
+### 4. Atualizar Evidências Exibidas
+
+```typescript
+const backupEvidence: EvidenceItem[] = [];
+
+if (backupConfig.backupType === "external") {
+  backupEvidence.push(
+    { label: "Status", value: "✅ Backup externo configurado", type: "text" },
+    { label: "Destino", value: backupConfig.destination || "N/A", type: "code" },
+    { label: "Frequência", value: backupConfig.frequency, type: "text" },
+    { label: "Stitch", value: backupConfig.stitchName, type: "code" },
+    { label: "Trigger", value: backupConfig.triggerName, type: "code" },
+    { label: "Action", value: backupConfig.actionName, type: "code" }
+  );
+}
+else if (backupConfig.backupType === "local") {
+  backupEvidence.push(
+    { label: "Status", value: "⚠️ Backup apenas local (disco)", type: "text" },
+    { label: "Risco", value: "Não protege contra perda do equipamento", type: "text" },
+    { label: "Frequência", value: backupConfig.frequency, type: "text" },
+    { label: "Stitch", value: backupConfig.stitchName, type: "code" }
+  );
+}
+else {
+  backupEvidence.push(
+    { label: "Status", value: "❌ Backup automático não configurado", type: "text" },
+    { label: "Verificação", value: "Nenhum stitch de backup com trigger agendado encontrado", type: "text" }
   );
 }
 ```
 
-### 2. Remover o bloco duplicado de Firmware Version (linhas 314-320)
-
-```diff
-- {/* Firmware Version Evidence Style */}
-- {report.firmwareVersion && (
--   <div className="border-l-2 border-primary/30 pl-3 py-1.5 mt-2">
--     <p className="text-xs text-muted-foreground">Versão do Firmware</p>
--     <p className="text-sm font-mono text-foreground">v{report.firmwareVersion}</p>
--   </div>
-- )}
-```
-
-### 3. Substituir o bloco flex de StatusRows (linhas 322-342)
-
-**Antes:**
-```tsx
-{/* Status Indicators */}
-<div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
-  <StatusRow label="Firmware" isActive={statusInfo.firmwareUpToDate} ... />
-  <StatusRow label="Licenciamento" isActive={statusInfo.licensingActive} ... />
-  <StatusRow label="MFA" isActive={statusInfo.mfaEnabled} ... />
-</div>
-```
-
-**Depois:**
-```tsx
-{/* Status Indicators - cada um em linha separada */}
-<DetailRow 
-  label="Firmware" 
-  value={statusInfo.firmwareUpToDate ? "Atualizado" : "Desatualizado"}
-  indicator={statusInfo.firmwareUpToDate ? "success" : "error"}
-/>
-<DetailRow 
-  label="Licenciamento" 
-  value={statusInfo.licensingActive ? "Ativo" : "Expirado"}
-  indicator={statusInfo.licensingActive ? "success" : "error"}
-/>
-<DetailRow 
-  label="MFA" 
-  value={statusInfo.mfaEnabled ? "Ativo" : "Inativo"}
-  indicator={statusInfo.mfaEnabled ? "success" : "error"}
-/>
-```
-
-### 4. Remover o componente `StatusRow` (linhas ~77-102)
-
-O componente `StatusRow` não será mais necessário e pode ser removido.
-
 ---
 
-## Resultado Visual Esperado
+## Resultado Esperado
 
+### Antes (incorreto):
 ```
-MODELO        FG120G
-SERIAL        FG120GTK24005216
-FORTIOS       v7.4.10
-HOSTNAME      AAX-FW-01
-UPTIME        3d 19h 3m
-URL           https://10.25.11.250:40443
-FIRMWARE      ● Atualizado
-LICENCIAMENTO ● Ativo
-MFA           ● Inativo
+Configuração de Backup Automático: ✅ PASS
+Status: ✅ Backup automático configurado
+Ação: Backup Config Disk
 ```
 
-Cada indicador de status em sua própria linha, com o glow verde (ativo) ou rosa (inativo), igual ao Dashboard de Domínio Externo.
+### Depois (correto - caso BAU-FW):
+```
+Configuração de Backup Automático: ❌ FAIL
+Status: ❌ Backup automático não configurado
+Verificação: Nenhum stitch de backup com trigger agendado encontrado
+Recomendação: Criar automation stitch com trigger agendado + action cli-script com 'execute backup full-config ftp/sftp <server>'
+```
+
+### Caso com backup local:
+```
+Configuração de Backup Automático: ⚠️ WARNING
+Status: ⚠️ Backup apenas local (disco)
+Risco: Não protege contra perda do equipamento
+Recomendação: Configurar backup para servidor externo (FTP/SFTP)
+```
+
+### Caso com backup externo correto:
+```
+Configuração de Backup Automático: ✅ PASS
+Status: ✅ Backup externo configurado
+Destino: sftp://192.168.1.100/backups
+Frequência: daily at 02:00
+Stitch: Backup-Diario
+```
