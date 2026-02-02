@@ -38,9 +38,10 @@ interface DetailRowProps {
   label: string;
   value: string | string[];
   highlight?: boolean;
+  indicator?: "success" | "error";
 }
 
-function DetailRow({ label, value, highlight }: DetailRowProps) {
+function DetailRow({ label, value, highlight, indicator }: DetailRowProps) {
   const isMultiline = Array.isArray(value);
   
   return (
@@ -49,7 +50,17 @@ function DetailRow({ label, value, highlight }: DetailRowProps) {
         <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
           {label}
         </span>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center">
+          {indicator && (
+            <span 
+              className={cn(
+                "inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0",
+                indicator === "success" 
+                  ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
+                  : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+              )} 
+            />
+          )}
           {isMultiline ? (
             <div className="space-y-0.5">
               {value.map((v, i) => (
@@ -59,7 +70,7 @@ function DetailRow({ label, value, highlight }: DetailRowProps) {
               ))}
             </div>
           ) : (
-            <span className={cn("text-sm font-medium truncate block", highlight ? "text-primary" : "text-foreground")}>
+            <span className={cn("text-sm font-medium truncate", highlight ? "text-primary" : "text-foreground")}>
               {value}
             </span>
           )}
@@ -70,38 +81,6 @@ function DetailRow({ label, value, highlight }: DetailRowProps) {
   );
 }
 
-interface StatusRowProps {
-  label: string;
-  isActive: boolean;
-  activeLabel: string;
-  inactiveLabel: string;
-}
-
-function StatusRow({ label, isActive, activeLabel, inactiveLabel }: StatusRowProps) {
-  return (
-    <div className="group">
-      <div className="flex items-center gap-3 py-2">
-        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide">
-          {label}
-        </span>
-        <div className="flex items-center gap-2">
-          <span 
-            className={cn(
-              "w-2 h-2 rounded-full",
-              isActive 
-                ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
-                : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
-            )} 
-          />
-          <span className="text-sm font-medium text-foreground">
-            {isActive ? activeLabel : inactiveLabel}
-          </span>
-        </div>
-      </div>
-      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
-    </div>
-  );
-}
 
 interface DashboardProps {
   report: ComplianceReport;
@@ -311,35 +290,22 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                   <DetailRow label="Uptime" value={report.systemInfo?.uptime || 'N/A'} />
                   <DetailRow label="URL" value={firewallUrl || 'N/A'} />
                   
-                  {/* Firmware Version Evidence Style */}
-                  {report.firmwareVersion && (
-                    <div className="border-l-2 border-primary/30 pl-3 py-1.5 mt-2">
-                      <p className="text-xs text-muted-foreground">Versão do Firmware</p>
-                      <p className="text-sm font-mono text-foreground">v{report.firmwareVersion}</p>
-                    </div>
-                  )}
-                  
-                  {/* Status Indicators */}
-                  <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
-                    <StatusRow 
-                      label="Firmware" 
-                      isActive={statusInfo.firmwareUpToDate} 
-                      activeLabel="Atualizado" 
-                      inactiveLabel="Desatualizado" 
-                    />
-                    <StatusRow 
-                      label="Licenciamento" 
-                      isActive={statusInfo.licensingActive} 
-                      activeLabel="Ativo" 
-                      inactiveLabel="Expirado" 
-                    />
-                    <StatusRow 
-                      label="MFA" 
-                      isActive={statusInfo.mfaEnabled} 
-                      activeLabel="Ativo" 
-                      inactiveLabel="Inativo" 
-                    />
-                  </div>
+                  {/* Status Indicators - cada um em linha separada */}
+                  <DetailRow 
+                    label="Firmware" 
+                    value={statusInfo.firmwareUpToDate ? "Atualizado" : "Desatualizado"}
+                    indicator={statusInfo.firmwareUpToDate ? "success" : "error"}
+                  />
+                  <DetailRow 
+                    label="Licenciamento" 
+                    value={statusInfo.licensingActive ? "Ativo" : "Expirado"}
+                    indicator={statusInfo.licensingActive ? "success" : "error"}
+                  />
+                  <DetailRow 
+                    label="MFA" 
+                    value={statusInfo.mfaEnabled ? "Ativo" : "Inativo"}
+                    indicator={statusInfo.mfaEnabled ? "success" : "error"}
+                  />
                 </div>
               </div>
             </div>
