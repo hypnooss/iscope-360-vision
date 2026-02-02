@@ -49,7 +49,32 @@ class DNSQueryExecutor(BaseExecutor):
         try:
             if query_type == 'NS':
                 answers = resolver.resolve(domain, 'NS')
-                records = [{'host': str(r.target).rstrip('.')} for r in answers]
+                records: List[Dict[str, Any]] = []
+
+                for r in answers:
+                    host = str(r.target).rstrip('.')
+                    resolved: List[str] = []
+
+                    # Best-effort: resolve A/AAAA behind NS hostname (similar to MX)
+                    try:
+                        ips: set[str] = set()
+                        for rrtype in ['A', 'AAAA']:
+                            try:
+                                ip_answers = resolver.resolve(host, rrtype)
+                                for ip in ip_answers:
+                                    ips.add(str(ip))
+                            except Exception:
+                                # ignore A/AAAA lookup failures (timeout/NXDOMAIN/etc)
+                                pass
+                        resolved = sorted(list(ips))
+                    except Exception:
+                        resolved = []
+
+                    records.append({
+                        'host': host,
+                        'resolved_ips': resolved,
+                        'resolved_ip_count': len(resolved),
+                    })
                 return {
                     'status_code': 0,
                     'data': {'query_type': 'NS', 'domain': domain, 'records': records},

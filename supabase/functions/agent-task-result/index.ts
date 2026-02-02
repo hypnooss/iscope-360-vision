@@ -2213,7 +2213,7 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
   try {
     if (stepId === 'ns_records') {
       // Accept multiple shapes:
-      // - { data: { records: [{host}] } }
+      // - { data: { records: [{host, resolved_ips, resolved_ip_count}] } }
       // - { data: { records: ["ns1"] } }
       // - { data: { records: [{name}] } }
       // - { data: { records: [{value}] } }
@@ -2221,23 +2221,44 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
       const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
       const records = d?.records ?? d?.answers;
 
-      const hosts = Array.isArray(records)
-        ? records
-            .map((r) => {
-              if (typeof r === 'string') return r;
-              if (r && typeof r === 'object') {
-                const o = r as Record<string, unknown>;
-                const host = o.host ?? o.name ?? o.value;
-                return typeof host === 'string' ? host : undefined;
-              }
-              return undefined;
-            })
-            .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
-            .slice(0, 50)
-        : [];
+      const evidence: EvidenceItem[] = [];
+      const hosts: string[] = [];
+      let totalUniqueIps = 0;
 
-      return hosts.length
-        ? [{ label: 'Nameservers encontrados', value: hosts.join(', '), type: 'text' }]
+      if (Array.isArray(records)) {
+        const allIps = new Set<string>();
+        
+        for (const r of records) {
+          if (typeof r === 'string') {
+            hosts.push(r);
+          } else if (r && typeof r === 'object') {
+            const o = r as Record<string, unknown>;
+            const host = o.host ?? o.name ?? o.value;
+            if (typeof host === 'string' && host.trim().length > 0) {
+              hosts.push(host);
+            }
+            // Collect resolved IPs for total count
+            const resolvedIps = o.resolved_ips;
+            if (Array.isArray(resolvedIps)) {
+              for (const ip of resolvedIps) {
+                if (typeof ip === 'string') allIps.add(ip);
+              }
+            }
+          }
+        }
+        
+        totalUniqueIps = allIps.size;
+      }
+
+      if (hosts.length > 0) {
+        evidence.push({ label: 'Nameservers encontrados', value: hosts.slice(0, 50).join(', '), type: 'text' });
+      }
+      if (totalUniqueIps > 0) {
+        evidence.push({ label: 'Total de IPs únicos resolvidos', value: String(totalUniqueIps), type: 'text' });
+      }
+
+      return evidence.length > 0
+        ? evidence
         : [{ label: 'Nameservers', value: 'Nenhum NS retornado', type: 'text' }];
     }
 
@@ -2459,6 +2480,53 @@ function processComplianceRules(
         if (hasAliasRedundancy) {
           status = 'pass';
           details = `MX único (hostname gerenciado) resolve para ${resolvedIpCount} IP(s). Prioridade/failover é gerenciado pelo provedor.`;
+        }
+      }
+    }
+
+    // =====================================================
+    // External Domain - NS IP resolution handling
+    // Para diversidade de nameservers, considerar não apenas
+    // a quantidade de hostnames, mas também a quantidade
+    // total de IPs únicos resolvidos.
+    // =====================================================
+    if (logic.source_key === 'ns_records' && (rule.code === 'DNS-003' || rule.code === 'DNS-004')) {
+      const records = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+      
+      // Coletar todos os IPs únicos de todos os nameservers
+      const allIps = new Set<string>();
+      for (const ns of records) {
+        const ips = ns.resolved_ips;
+        if (Array.isArray(ips)) {
+          for (const ip of ips) {
+            if (typeof ip === 'string') allIps.add(ip);
+          }
+        }
+      }
+      const totalUniqueIps = allIps.size;
+      const nsCount = records.length;
+
+      if (rule.code === 'DNS-003') {
+        // Redundância de Nameservers (mínimo 2)
+        // Passar se: 2+ NS hostnames OU 2+ IPs únicos atrás dos NS
+        const hasMultipleNs = nsCount >= 2;
+        const hasIpRedundancy = totalUniqueIps >= 2;
+        status = (hasMultipleNs || hasIpRedundancy) ? 'pass' : 'fail';
+        
+        if (status === 'pass' && !hasMultipleNs && hasIpRedundancy) {
+          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Redundância via IPs.`;
+        }
+      }
+
+      if (rule.code === 'DNS-004') {
+        // Diversidade de Nameservers (mínimo 3)
+        // Passar se: 3+ NS hostnames OU 3+ IPs únicos atrás dos NS
+        const hasMultipleNs = nsCount >= 3;
+        const hasIpDiversity = totalUniqueIps >= 3;
+        status = (hasMultipleNs || hasIpDiversity) ? 'pass' : 'fail';
+        
+        if (status === 'pass' && !hasMultipleNs && hasIpDiversity) {
+          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Diversidade via IPs.`;
         }
       }
     }
