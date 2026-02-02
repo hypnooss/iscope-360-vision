@@ -177,6 +177,11 @@ export function CVESection({ firmwareVersion, onCVEsLoaded }: CVESectionProps) {
                             {cve.severity} ({cve.score})
                           </Badge>
                         </div>
+                        {cve.affectedVersions && (
+                          <div className="text-xs text-amber-400 mb-1">
+                            Versões FortiOS afetadas: {cve.affectedVersions}
+                          </div>
+                        )}
                         <p className="text-sm text-muted-foreground line-clamp-2">
                           {cve.description}
                         </p>

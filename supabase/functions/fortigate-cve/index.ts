@@ -6,11 +6,91 @@ const corsHeaders = {
 interface CVEItem {
   id: string;
   description: string;
+  affectedVersions?: string;
   severity: string;
   score: number;
   publishedDate: string;
   lastModifiedDate: string;
   references: string[];
+}
+
+// Extrai apenas a parte da descrição relacionada ao FortiOS
+function extractFortiOSInfo(fullDescription: string): {
+  fortiOSDescription: string;
+  affectedVersions: string;
+  technicalDescription: string;
+} {
+  const descLower = fullDescription.toLowerCase();
+  
+  // Se não menciona FortiOS, retornar descrição original
+  if (!descLower.includes('fortios')) {
+    return {
+      fortiOSDescription: fullDescription,
+      affectedVersions: '',
+      technicalDescription: fullDescription
+    };
+  }
+  
+  // Padrões comuns de versão FortiOS na descrição
+  const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
+  const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
+  
+  // Encontrar versões FortiOS afetadas
+  let affectedVersions = '';
+  const matches = fullDescription.match(fortiOSPattern);
+  if (matches && matches.length > 0) {
+    affectedVersions = matches.join(', ');
+  } else {
+    const singleMatches = fullDescription.match(fortiOSSinglePattern);
+    if (singleMatches) {
+      affectedVersions = singleMatches.join(', ');
+    }
+  }
+  
+  // Extrair a parte técnica da descrição
+  const technicalPatterns = [
+    /\b(allows?\s+.+)/i,
+    /\b(may\s+allow\s+.+)/i,
+    /\b(enables?\s+.+)/i,
+    /\b(could\s+allow\s+.+)/i,
+    /\b(permits?\s+.+)/i,
+    /\b(makes?\s+it\s+possible\s+.+)/i,
+  ];
+  
+  let technicalDescription = '';
+  for (const pattern of technicalPatterns) {
+    const techMatch = fullDescription.match(pattern);
+    if (techMatch) {
+      technicalDescription = techMatch[1];
+      break;
+    }
+  }
+  
+  // Construir descrição focada no FortiOS
+  let fortiOSDescription = '';
+  if (affectedVersions) {
+    fortiOSDescription = affectedVersions;
+    if (technicalDescription) {
+      fortiOSDescription += ' - ' + technicalDescription;
+    }
+  } else {
+    const sentences = fullDescription.split(/[.;]/);
+    for (const sentence of sentences) {
+      if (sentence.toLowerCase().includes('fortios')) {
+        fortiOSDescription = sentence.trim();
+        break;
+      }
+    }
+    if (!fortiOSDescription) {
+      fortiOSDescription = fullDescription;
+    }
+  }
+  
+  return {
+    fortiOSDescription: fortiOSDescription.substring(0, 400) + (fortiOSDescription.length > 400 ? '...' : ''),
+    affectedVersions,
+    technicalDescription: technicalDescription || fullDescription
+  };
 }
 
 Deno.serve(async (req) => {
@@ -59,45 +139,54 @@ Deno.serve(async (req) => {
         console.log(`NVD returned ${nvdData.totalResults || 0} results`);
 
         if (nvdData.vulnerabilities && nvdData.vulnerabilities.length > 0) {
-          cves = nvdData.vulnerabilities.map((vuln: any) => {
-            const cve = vuln.cve;
+          cves = nvdData.vulnerabilities
+            .filter((vuln: any) => {
+              // Garantir que o CVE realmente afeta FortiOS
+              const desc = vuln.cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
+              return desc.toLowerCase().includes('fortios');
+            })
+            .map((vuln: any) => {
+              const cve = vuln.cve;
             
-            // Get CVSS score and severity
-            let score = 0;
-            let severity = 'UNKNOWN';
+              // Get CVSS score and severity
+              let score = 0;
+              let severity = 'UNKNOWN';
             
-            if (cve.metrics?.cvssMetricV31?.[0]) {
-              score = cve.metrics.cvssMetricV31[0].cvssData.baseScore;
-              severity = cve.metrics.cvssMetricV31[0].cvssData.baseSeverity;
-            } else if (cve.metrics?.cvssMetricV30?.[0]) {
-              score = cve.metrics.cvssMetricV30[0].cvssData.baseScore;
-              severity = cve.metrics.cvssMetricV30[0].cvssData.baseSeverity;
-            } else if (cve.metrics?.cvssMetricV2?.[0]) {
-              score = cve.metrics.cvssMetricV2[0].cvssData.baseScore;
-              // Convert V2 score to severity
-              if (score >= 9.0) severity = 'CRITICAL';
-              else if (score >= 7.0) severity = 'HIGH';
-              else if (score >= 4.0) severity = 'MEDIUM';
-              else severity = 'LOW';
-            }
+              if (cve.metrics?.cvssMetricV31?.[0]) {
+                score = cve.metrics.cvssMetricV31[0].cvssData.baseScore;
+                severity = cve.metrics.cvssMetricV31[0].cvssData.baseSeverity;
+              } else if (cve.metrics?.cvssMetricV30?.[0]) {
+                score = cve.metrics.cvssMetricV30[0].cvssData.baseScore;
+                severity = cve.metrics.cvssMetricV30[0].cvssData.baseSeverity;
+              } else if (cve.metrics?.cvssMetricV2?.[0]) {
+                score = cve.metrics.cvssMetricV2[0].cvssData.baseScore;
+                if (score >= 9.0) severity = 'CRITICAL';
+                else if (score >= 7.0) severity = 'HIGH';
+                else if (score >= 4.0) severity = 'MEDIUM';
+                else severity = 'LOW';
+              }
 
-            // Get description in English
-            const description = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
-                              cve.descriptions?.[0]?.value || 'No description available';
+              // Get description in English
+              const fullDescription = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
+                                cve.descriptions?.[0]?.value || 'No description available';
 
-            // Get references
-            const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
+              // Extrair apenas informações do FortiOS
+              const fortiOSInfo = extractFortiOSInfo(fullDescription);
 
-            return {
-              id: cve.id,
-              description: description.substring(0, 500) + (description.length > 500 ? '...' : ''),
-              severity,
-              score,
-              publishedDate: cve.published,
-              lastModifiedDate: cve.lastModified,
-              references,
-            };
-          });
+              // Get references
+              const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
+
+              return {
+                id: cve.id,
+                description: fortiOSInfo.fortiOSDescription,
+                affectedVersions: fortiOSInfo.affectedVersions,
+                severity,
+                score,
+                publishedDate: cve.published,
+                lastModifiedDate: cve.lastModified,
+                references,
+              };
+            });
         }
       } else {
         console.log(`NVD API returned status ${nvdResponse.status}, trying keyword search`);
@@ -128,9 +217,9 @@ Deno.serve(async (req) => {
           if (keywordData.vulnerabilities && keywordData.vulnerabilities.length > 0) {
             cves = keywordData.vulnerabilities
               .filter((vuln: any) => {
-                // Filter to only include CVEs that mention this version or are generic FortiOS
+                // Filtrar apenas CVEs que mencionam FortiOS
                 const desc = vuln.cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
-                return desc.toLowerCase().includes('fortios') || desc.toLowerCase().includes('fortigate');
+                return desc.toLowerCase().includes('fortios');
               })
               .slice(0, 15)
               .map((vuln: any) => {
@@ -153,14 +242,18 @@ Deno.serve(async (req) => {
                   else severity = 'LOW';
                 }
 
-                const description = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
+                const fullDescription = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
                                   cve.descriptions?.[0]?.value || 'No description available';
+
+                // Extrair apenas informações do FortiOS
+                const fortiOSInfo = extractFortiOSInfo(fullDescription);
 
                 const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
 
                 return {
                   id: cve.id,
-                  description: description.substring(0, 500) + (description.length > 500 ? '...' : ''),
+                  description: fortiOSInfo.fortiOSDescription,
+                  affectedVersions: fortiOSInfo.affectedVersions,
                   severity,
                   score,
                   publishedDate: cve.published,
