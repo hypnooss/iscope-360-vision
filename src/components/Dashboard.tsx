@@ -70,6 +70,38 @@ function DetailRow({ label, value, highlight }: DetailRowProps) {
   );
 }
 
+interface StatusRowProps {
+  label: string;
+  isActive: boolean;
+  activeLabel: string;
+  inactiveLabel: string;
+}
+
+function StatusRow({ label, isActive, activeLabel, inactiveLabel }: StatusRowProps) {
+  return (
+    <div className="group">
+      <div className="flex items-center gap-3 py-2">
+        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide">
+          {label}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "w-2 h-2 rounded-full",
+            isActive ? "bg-primary" : "bg-destructive"
+          )} />
+          <span className={cn(
+            "text-sm font-medium",
+            isActive ? "text-primary" : "text-destructive"
+          )}>
+            {isActive ? activeLabel : inactiveLabel}
+          </span>
+        </div>
+      </div>
+      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
+    </div>
+  );
+}
+
 interface DashboardProps {
   report: ComplianceReport;
   onRefresh: () => void;
@@ -277,6 +309,26 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                   <DetailRow label="Hostname" value={report.systemInfo?.hostname || firewallName || 'N/A'} />
                   <DetailRow label="Uptime" value={report.systemInfo?.uptime || 'N/A'} />
                   <DetailRow label="URL" value={firewallUrl || 'N/A'} />
+                  
+                  {/* Status Indicators */}
+                  <StatusRow 
+                    label="Firmware" 
+                    isActive={statusInfo.firmwareUpToDate} 
+                    activeLabel="Atualizado" 
+                    inactiveLabel="Desatualizado" 
+                  />
+                  <StatusRow 
+                    label="Licenciamento" 
+                    isActive={statusInfo.licensingActive} 
+                    activeLabel="Ativo" 
+                    inactiveLabel="Expirado" 
+                  />
+                  <StatusRow 
+                    label="MFA" 
+                    isActive={statusInfo.mfaEnabled} 
+                    activeLabel="Ativo" 
+                    inactiveLabel="Inativo" 
+                  />
                 </div>
               </div>
             </div>
