@@ -315,7 +315,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
                   {report.firmwareVersion && (
                     <div className="border-l-2 border-primary/30 pl-3 py-1.5 mt-2">
                       <p className="text-xs text-muted-foreground">Versão do Firmware</p>
-                      <p className="text-sm font-mono text-primary">v{report.firmwareVersion}</p>
+                      <p className="text-sm font-mono text-foreground">v{report.firmwareVersion}</p>
                     </div>
                   )}
                   
