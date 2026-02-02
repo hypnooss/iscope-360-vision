@@ -1,45 +1,111 @@
 
 
-# Plano: Filtrar Exibição de CVEs para Mostrar Apenas Informações do FortiOS
+# Plano: Adicionar Suporte a "all versions" na Extração de CVEs
 
 ## Problema Identificado
 
-A busca na NVD retorna CVEs que podem afetar **múltiplos produtos Fortinet**. A descrição do CVE contém todos os produtos:
-
+A CVE-2025-31514 menciona:
 ```
-"A vulnerability in FortiOS 7.4.0 through 7.4.10, FortiAnalyzer 7.4.0 through 7.4.5, 
-FortiManager 7.4.0 through 7.4.3..."
+FortiOS 7.4 all versions → Migrate to a fixed release
 ```
 
-Atualmente, a UI exibe a descrição **completa**, o que confunde porque mostra produtos irrelevantes para a análise de firewall.
+O regex atual na função `extractFortiOSInfo()` não captura esse padrão:
+
+```typescript
+// Linha 35 - Só captura versões específicas com range
+const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
+```
+
+**Resultado**: CVEs que afetam "all versions" ficam sem a informação de versões afetadas exibida corretamente.
 
 ---
 
-## Solução
-
-Processar a descrição do CVE para:
-
-1. **Extrair apenas a parte relacionada ao FortiOS**
-2. **Mostrar apenas versões do FortiOS afetadas**
-3. **Manter a descrição técnica do problema**
-
----
-
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/fortigate-cve/index.ts` | Processar descrição para extrair apenas info do FortiOS |
-| `src/types/compliance.ts` | Adicionar campo `fortiOSVersions` ao CVEInfo (opcional) |
+| `supabase/functions/fortigate-cve/index.ts` | Adicionar regex para capturar padrão "all versions" |
 
 ---
 
-## Alterações Técnicas
+## Alteração Técnica
 
-### 1. Adicionar Função para Extrair Info FortiOS da Descrição
+### Adicionar Novo Padrão Regex (após linha 36)
 
 ```typescript
-// Extrai apenas a parte da descrição relacionada ao FortiOS
+// Padrões comuns de versão FortiOS na descrição
+const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
+const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
+
+// NOVO: Padrão para "all versions"
+const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
+```
+
+### Modificar Lógica de Extração (linhas 38-48)
+
+```typescript
+// Encontrar versões FortiOS afetadas
+let affectedVersions = '';
+
+// Primeiro: verificar padrão "all versions"
+const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
+if (allVersionsMatches && allVersionsMatches.length > 0) {
+  affectedVersions = allVersionsMatches.join(', ');
+}
+
+// Segundo: verificar range de versões (through/to/before)
+if (!affectedVersions) {
+  const matches = fullDescription.match(fortiOSPattern);
+  if (matches && matches.length > 0) {
+    affectedVersions = matches.join(', ');
+  }
+}
+
+// Terceiro: verificar versão única
+if (!affectedVersions) {
+  const singleMatches = fullDescription.match(fortiOSSinglePattern);
+  if (singleMatches) {
+    affectedVersions = singleMatches.join(', ');
+  }
+}
+```
+
+---
+
+## Padrões Capturados Após Correção
+
+| Padrão na Descrição | Resultado |
+|---------------------|-----------|
+| `FortiOS 7.4.0 through 7.4.10` | `FortiOS 7.4.0 through 7.4.10` ✅ |
+| `FortiOS 7.4 all versions` | `FortiOS 7.4 all versions` ✅ **NOVO** |
+| `FortiOS version 7.2 all versions` | `FortiOS version 7.2 all versions` ✅ **NOVO** |
+| `FortiOS 7.6.0 before 7.6.4` | `FortiOS 7.6.0 before 7.6.4` ✅ |
+
+---
+
+## Resultado Esperado na UI
+
+### CVE-2025-31514
+
+**Antes**:
+```
+CVE-2025-31514 | HIGH (7.1)
+(sem versões afetadas mostradas)
+"An Insertion of Sensitive Information into Log File vulnerability..."
+```
+
+**Depois**:
+```
+CVE-2025-31514 | HIGH (7.1)
+Versões FortiOS afetadas: FortiOS 7.4 all versions
+"FortiOS 7.4 all versions - allows an attacker with at least read-only privileges to retrieve sensitive 2FA-related information..."
+```
+
+---
+
+## Código Completo da Função Atualizada
+
+```typescript
 function extractFortiOSInfo(fullDescription: string): {
   fortiOSDescription: string;
   affectedVersions: string;
@@ -57,26 +123,37 @@ function extractFortiOSInfo(fullDescription: string): {
   }
   
   // Padrões comuns de versão FortiOS na descrição
-  // Ex: "FortiOS 7.4.0 through 7.4.10"
-  // Ex: "FortiOS version 7.4.0 to 7.4.10"
-  // Ex: "FortiOS 7.4.x before 7.4.10"
   const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
   const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
+  // NOVO: Padrão para "all versions"
+  const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
   
   // Encontrar versões FortiOS afetadas
   let affectedVersions = '';
-  const matches = fullDescription.match(fortiOSPattern);
-  if (matches && matches.length > 0) {
-    affectedVersions = matches.join(', ');
-  } else {
+  
+  // Primeiro: verificar padrão "all versions"
+  const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
+  if (allVersionsMatches && allVersionsMatches.length > 0) {
+    affectedVersions = allVersionsMatches.join(', ');
+  }
+  
+  // Segundo: verificar range de versões (through/to/before)
+  if (!affectedVersions) {
+    const matches = fullDescription.match(fortiOSPattern);
+    if (matches && matches.length > 0) {
+      affectedVersions = matches.join(', ');
+    }
+  }
+  
+  // Terceiro: verificar versão única
+  if (!affectedVersions) {
     const singleMatches = fullDescription.match(fortiOSSinglePattern);
     if (singleMatches) {
       affectedVersions = singleMatches.join(', ');
     }
   }
   
-  // Extrair a parte técnica da descrição (após listar produtos)
-  // Geralmente começa com "allows", "may allow", "enables", etc.
+  // Extrair a parte técnica da descrição
   const technicalPatterns = [
     /\b(allows?\s+.+)/i,
     /\b(may\s+allow\s+.+)/i,
@@ -103,7 +180,6 @@ function extractFortiOSInfo(fullDescription: string): {
       fortiOSDescription += ' - ' + technicalDescription;
     }
   } else {
-    // Fallback: pegar a primeira frase que menciona FortiOS
     const sentences = fullDescription.split(/[.;]/);
     for (const sentence of sentences) {
       if (sentence.toLowerCase().includes('fortios')) {
@@ -123,100 +199,4 @@ function extractFortiOSInfo(fullDescription: string): {
   };
 }
 ```
-
-### 2. Modificar Processamento dos CVEs
-
-Na função que mapeia as vulnerabilidades, aplicar o filtro:
-
-```typescript
-cves = nvdData.vulnerabilities
-  .filter((vuln: any) => {
-    // Garantir que o CVE realmente afeta FortiOS
-    const desc = vuln.cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
-    return desc.toLowerCase().includes('fortios');
-  })
-  .map((vuln: any) => {
-    const cve = vuln.cve;
-    
-    // Obter descrição original
-    const fullDescription = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
-                          cve.descriptions?.[0]?.value || 'No description available';
-    
-    // Extrair apenas informações do FortiOS
-    const fortiOSInfo = extractFortiOSInfo(fullDescription);
-    
-    // ... resto do mapeamento ...
-    
-    return {
-      id: cve.id,
-      description: fortiOSInfo.fortiOSDescription,  // ← Usar descrição filtrada
-      affectedVersions: fortiOSInfo.affectedVersions,  // ← NOVO campo
-      severity,
-      score,
-      publishedDate: cve.published,
-      lastModifiedDate: cve.lastModified,
-      references,
-    };
-  });
-```
-
-### 3. Atualizar Interface CVEItem (opcional)
-
-```typescript
-interface CVEItem {
-  id: string;
-  description: string;
-  affectedVersions?: string;  // NOVO: versões FortiOS afetadas
-  severity: string;
-  score: number;
-  publishedDate: string;
-  lastModifiedDate: string;
-  references: string[];
-}
-```
-
-### 4. Atualizar Componente CVESection (opcional)
-
-Para exibir as versões afetadas de forma destacada:
-
-```typescript
-{cve.affectedVersions && (
-  <div className="text-xs text-amber-400 mb-1">
-    Versões afetadas: {cve.affectedVersions}
-  </div>
-)}
-<p className="text-sm text-muted-foreground line-clamp-2">
-  {cve.description}
-</p>
-```
-
----
-
-## Resultado Esperado
-
-### Antes:
-```
-CVE-2026-12345
-"A vulnerability in FortiOS 7.4.0 through 7.4.10, FortiAnalyzer 7.4.0 through 7.4.5, 
-FortiManager 7.4.0 through 7.4.3, FortiSwitchManager before 7.2.4 allows an 
-authenticated attacker to execute arbitrary code..."
-```
-
-### Depois:
-```
-CVE-2026-12345
-Versões afetadas: FortiOS 7.4.0 through 7.4.10
-"FortiOS 7.4.0 through 7.4.10 - allows an authenticated attacker to execute 
-arbitrary code..."
-```
-
----
-
-## Casos de Borda Tratados
-
-1. **CVE sem menção ao FortiOS**: Filtrado da lista (não exibido)
-2. **CVE com múltiplas versões FortiOS**: Todas extraídas e listadas
-3. **Descrição técnica longa**: Truncada em 400 caracteres
-4. **Formato de versão variado**: Regex cobre "through", "to", "before", "-"
-5. **Descrição sem padrão claro**: Fallback para primeira frase com FortiOS
 
