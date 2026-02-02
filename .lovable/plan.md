@@ -1,59 +1,40 @@
 
-# Plano: Corrigir Formatador de Evidências para DNS-003 e DNS-004
+# Plano: Ajustar Layout de Status no Dashboard de Firewall
 
-## Diagnóstico
+## Problema
 
-O problema identificado está na Edge Function `agent-task-result`. As regras **DNS-003** e **DNS-004** não possuem um formatador de evidências específico como as outras regras de domínio externo (MX-001, MX-002, DKIM-001, etc.).
+No Dashboard de Firewall (`src/components/Dashboard.tsx`), os indicadores de status (Firmware, Licenciamento, MFA) estão sendo exibidos em uma **única linha horizontal** usando `flex flex-wrap`, enquanto no Dashboard de Domínio Externo cada indicador aparece em sua **própria linha** usando o componente `DetailRow`.
 
-Por isso, elas caem no **fallback genérico** (linha 2897) que simplesmente serializa o `value` completo (incluindo `resolved_ips` e `resolved_ip_count`) como JSON.
-
-## Problema no Código Atual
-
-```typescript
-// Linha 2897-2900: Fallback genérico
-else if (value !== undefined && value !== null) {
-  evidence = formatGenericEvidence(value, logic.field_path || rule.name);
-}
+**Atual (Firewall):**
+```
+MODELO        FG120G
+SERIAL        FG120GTK24005216
+FORTIOS       v7.4.10
+HOSTNAME      AAX-FW-01
+UPTIME        3d 19h 3m
+URL           https://10.25.11.250:40443
+FIRMWARE ● Atualizado    LICENCIAMENTO ● Ativo    MFA ● Inativo  ← 3 em 1 linha
 ```
 
-Como DNS-003/DNS-004 não têm um `else if` específico, eles usam o fallback que mostra o JSON completo.
+**Esperado (igual Domínio Externo):**
+```
+MODELO        FG120G
+SERIAL        FG120GTK24005216
+FORTIOS       v7.4.10
+HOSTNAME      AAX-FW-01
+UPTIME        3d 19h 3m
+URL           https://10.25.11.250:40443
+FIRMWARE      ● Atualizado    ← linha individual
+LICENCIAMENTO ● Ativo         ← linha individual
+MFA           ● Inativo       ← linha individual
+```
+
+---
 
 ## Solução
 
-Adicionar casos específicos para **DNS-003** e **DNS-004** que extraem apenas os nomes dos nameservers, similar ao que já existe para MX-001:
-
-```typescript
-// DNS-003: Redundância de Nameservers (só hostnames)
-else if (rule.code === 'DNS-003') {
-  const nsData = sourceData as Record<string, unknown>;
-  const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
-  if (records.length > 0) {
-    const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
-    evidence = [{ 
-      label: 'Nameservers encontrados', 
-      value: hosts.join(', '), 
-      type: 'text' 
-    }];
-  } else {
-    evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
-  }
-}
-// DNS-004: Diversidade de Nameservers (só hostnames)
-else if (rule.code === 'DNS-004') {
-  const nsData = sourceData as Record<string, unknown>;
-  const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
-  if (records.length > 0) {
-    const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
-    evidence = [{ 
-      label: 'Nameservers encontrados', 
-      value: hosts.join(', '), 
-      type: 'text' 
-    }];
-  } else {
-    evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
-  }
-}
-```
+1. **Remover o bloco duplicado** de "Versão do Firmware" (linhas 314-320)
+2. **Substituir o container flex horizontal** por `DetailRow` individuais com `indicator`
 
 ---
 
@@ -61,34 +42,124 @@ else if (rule.code === 'DNS-004') {
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Adicionar cases específicos para DNS-003 e DNS-004 (~linhas 2845-2847) |
+| `src/components/Dashboard.tsx` | Refatorar exibição de status para usar `DetailRow` com indicators |
 
 ---
 
-## Resultado Esperado
+## Alterações Detalhadas
 
-Após a alteração, as evidências de DNS-003 e DNS-004 serão exibidas como:
+### 1. Atualizar o componente `DetailRow` para suportar indicator (linhas ~58-75)
 
-```text
-┌───────────────────────────────────────────────────┐
-│  EVIDÊNCIAS COLETADAS                             │
-│  ────────────────────                             │
-│  Nameserver                                       │
-│  earl.ns.cloudflare.com                           │
-│                                                   │
-│  Nameserver                                       │
-│  leah.ns.cloudflare.com                           │
-└───────────────────────────────────────────────────┘
+O `DetailRow` no Dashboard não possui suporte a `indicator` como no Domínio Externo. Precisa ser atualizado:
+
+```typescript
+interface DetailRowProps {
+  label: string;
+  value: string | string[];
+  indicator?: "success" | "error";  // Adicionar
+}
+
+function DetailRow({ label, value, indicator }: DetailRowProps) {
+  const isMultiline = Array.isArray(value);
+  
+  return (
+    <div className="group">
+      <div className="flex items-start gap-3 py-2">
+        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
+          {label}
+        </span>
+        <div className="flex-1 min-w-0">
+          {indicator && (
+            <span 
+              className={cn(
+                "inline-block w-2 h-2 rounded-full mr-2",
+                indicator === "success" 
+                  ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
+                  : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+              )} 
+            />
+          )}
+          {isMultiline ? (
+            <div className="space-y-0.5">
+              {value.map((v, i) => (
+                <div key={i} className="text-sm font-medium text-foreground">{v}</div>
+              ))}
+            </div>
+          ) : (
+            <span className={cn("text-sm font-medium text-foreground", indicator && "inline-flex items-center")}>
+              {value}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
+    </div>
+  );
+}
 ```
 
-Isso porque:
-1. A Edge Function agora retornará `{ label: 'Nameservers encontrados', value: 'earl.ns.cloudflare.com, leah.ns.cloudflare.com', type: 'text' }`.
-2. O frontend (`EvidenceDisplay.tsx`, linhas 486-493) já possui lógica para separar valores com vírgula e exibir cada um em um bloco individual.
+### 2. Remover o bloco duplicado de Firmware Version (linhas 314-320)
+
+```diff
+- {/* Firmware Version Evidence Style */}
+- {report.firmwareVersion && (
+-   <div className="border-l-2 border-primary/30 pl-3 py-1.5 mt-2">
+-     <p className="text-xs text-muted-foreground">Versão do Firmware</p>
+-     <p className="text-sm font-mono text-foreground">v{report.firmwareVersion}</p>
+-   </div>
+- )}
+```
+
+### 3. Substituir o bloco flex de StatusRows (linhas 322-342)
+
+**Antes:**
+```tsx
+{/* Status Indicators */}
+<div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
+  <StatusRow label="Firmware" isActive={statusInfo.firmwareUpToDate} ... />
+  <StatusRow label="Licenciamento" isActive={statusInfo.licensingActive} ... />
+  <StatusRow label="MFA" isActive={statusInfo.mfaEnabled} ... />
+</div>
+```
+
+**Depois:**
+```tsx
+{/* Status Indicators - cada um em linha separada */}
+<DetailRow 
+  label="Firmware" 
+  value={statusInfo.firmwareUpToDate ? "Atualizado" : "Desatualizado"}
+  indicator={statusInfo.firmwareUpToDate ? "success" : "error"}
+/>
+<DetailRow 
+  label="Licenciamento" 
+  value={statusInfo.licensingActive ? "Ativo" : "Expirado"}
+  indicator={statusInfo.licensingActive ? "success" : "error"}
+/>
+<DetailRow 
+  label="MFA" 
+  value={statusInfo.mfaEnabled ? "Ativo" : "Inativo"}
+  indicator={statusInfo.mfaEnabled ? "success" : "error"}
+/>
+```
+
+### 4. Remover o componente `StatusRow` (linhas ~77-102)
+
+O componente `StatusRow` não será mais necessário e pode ser removido.
 
 ---
 
-## Observações
+## Resultado Visual Esperado
 
-- A lógica de avaliação (pass/fail) para DNS-003/DNS-004 usando IPs resolvidos permanece inalterada (linhas 2492-2530).
-- Apenas a **formatação das evidências** será ajustada para esconder os dados técnicos de IPs.
-- Os IPs resolvidos continuam disponíveis no `rawData` para usuários com acesso técnico (super_admin/super_suporte).
+```
+MODELO        FG120G
+SERIAL        FG120GTK24005216
+FORTIOS       v7.4.10
+HOSTNAME      AAX-FW-01
+UPTIME        3d 19h 3m
+URL           https://10.25.11.250:40443
+FIRMWARE      ● Atualizado
+LICENCIAMENTO ● Ativo
+MFA           ● Inativo
+```
+
+Cada indicador de status em sua própria linha, com o glow verde (ativo) ou rosa (inativo), igual ao Dashboard de Domínio Externo.
