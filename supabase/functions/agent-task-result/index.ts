@@ -2894,6 +2894,36 @@ function processComplianceRules(
         }];
       }
     }
+    // DNS-003: Redundância de Nameservers (só hostnames, sem IPs resolvidos)
+    else if (rule.code === 'DNS-003') {
+      const nsData = sourceData as Record<string, unknown>;
+      const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+      if (records.length > 0) {
+        const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
+        evidence = [{ 
+          label: 'Nameservers encontrados', 
+          value: hosts.join(', '), 
+          type: 'text' 
+        }];
+      } else {
+        evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
+      }
+    }
+    // DNS-004: Diversidade de Nameservers (só hostnames, sem IPs resolvidos)
+    else if (rule.code === 'DNS-004') {
+      const nsData = sourceData as Record<string, unknown>;
+      const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+      if (records.length > 0) {
+        const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
+        evidence = [{ 
+          label: 'Nameservers encontrados', 
+          value: hosts.join(', '), 
+          type: 'text' 
+        }];
+      } else {
+        evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
+      }
+    }
     else if (value !== undefined && value !== null) {
       // Fallback genérico com truncamento
       evidence = formatGenericEvidence(value, logic.field_path || rule.name);
