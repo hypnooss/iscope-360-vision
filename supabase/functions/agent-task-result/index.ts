@@ -1225,9 +1225,9 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
       }
       
       evidence.push({ label: 'Frequência', value: bestBackup.frequency, type: 'text' });
-      evidence.push({ label: 'Stitch', value: bestBackup.stitchName, type: 'code' });
-      evidence.push({ label: 'Trigger', value: bestBackup.triggerName, type: 'code' });
-      evidence.push({ label: 'Action', value: bestBackup.actionName, type: 'code' });
+      evidence.push({ label: 'Stitch Name', value: bestBackup.stitchName, type: 'code' });
+      evidence.push({ label: 'Trigger Name', value: bestBackup.triggerName, type: 'code' });
+      evidence.push({ label: 'Action Name', value: bestBackup.actionName, type: 'code' });
     } else {
       // Check for orphan backup actions (not linked to scheduled stitch)
       const orphanBackupActions = actions.filter(a => {
