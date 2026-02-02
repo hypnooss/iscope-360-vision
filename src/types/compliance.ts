@@ -66,6 +66,7 @@ export interface ComplianceReport {
 export interface CVEInfo {
   id: string;
   description: string;
+  affectedVersions?: string;
   severity: string;
   score: number;
   publishedDate: string;
