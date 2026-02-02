@@ -2253,9 +2253,8 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
       if (hosts.length > 0) {
         evidence.push({ label: 'Nameservers encontrados', value: hosts.slice(0, 50).join(', '), type: 'text' });
       }
-      if (totalUniqueIps > 0) {
-        evidence.push({ label: 'Total de IPs únicos resolvidos', value: String(totalUniqueIps), type: 'text' });
-      }
+      // Nota: IPs resolvidos são usados internamente para cálculo de diversidade,
+      // mas não são exibidos nas evidências pois a análise já indica isso.
 
       return evidence.length > 0
         ? evidence
@@ -2514,7 +2513,7 @@ function processComplianceRules(
         status = (hasMultipleNs || hasIpRedundancy) ? 'pass' : 'fail';
         
         if (status === 'pass' && !hasMultipleNs && hasIpRedundancy) {
-          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Redundância via IPs.`;
+          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos.`;
         }
       }
 
@@ -2526,7 +2525,7 @@ function processComplianceRules(
         status = (hasMultipleNs || hasIpDiversity) ? 'pass' : 'fail';
         
         if (status === 'pass' && !hasMultipleNs && hasIpDiversity) {
-          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Diversidade via IPs.`;
+          details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos.`;
         }
       }
     }
