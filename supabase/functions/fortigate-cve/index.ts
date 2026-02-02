@@ -34,13 +34,28 @@ function extractFortiOSInfo(fullDescription: string): {
   // Padrões comuns de versão FortiOS na descrição
   const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
   const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
+  // Padrão para "all versions"
+  const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
   
   // Encontrar versões FortiOS afetadas
   let affectedVersions = '';
-  const matches = fullDescription.match(fortiOSPattern);
-  if (matches && matches.length > 0) {
-    affectedVersions = matches.join(', ');
-  } else {
+  
+  // Primeiro: verificar padrão "all versions"
+  const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
+  if (allVersionsMatches && allVersionsMatches.length > 0) {
+    affectedVersions = allVersionsMatches.join(', ');
+  }
+  
+  // Segundo: verificar range de versões (through/to/before)
+  if (!affectedVersions) {
+    const matches = fullDescription.match(fortiOSPattern);
+    if (matches && matches.length > 0) {
+      affectedVersions = matches.join(', ');
+    }
+  }
+  
+  // Terceiro: verificar versão única
+  if (!affectedVersions) {
     const singleMatches = fullDescription.match(fortiOSSinglePattern);
     if (singleMatches) {
       affectedVersions = singleMatches.join(', ');
