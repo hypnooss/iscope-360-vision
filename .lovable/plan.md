@@ -1,183 +1,203 @@
 
+# Plano: Adicionar Resolução de IPs para Cálculo de Diversidade de Nameservers
 
-## Plano: Ajustes no PDF de Análise de Firewall - Fortigate
+## Contexto
 
-### Alterações Solicitadas
+Atualmente, a regra **DNS-004 (Diversidade de Nameservers)** apenas conta a quantidade de hostnames NS retornados, sem considerar quantos IPs existem por trás de cada nameserver.
 
-1. **Alterar título do relatório**
-   - De: "Análise de Fortigate"
-   - Para: "Análise de Firewall - Fortigate"
+A regra **MX-002 (Redundância MX)** já implementa essa lógica: quando há apenas 1 MX, o sistema verifica quantos IPs (A/AAAA) estão por trás do hostname e considera isso como redundância.
 
-2. **Alterar recomendação da regra utm-007**
-   - De: "Aplicar perfil Application Control"
-   - Para: "Aplicar perfil Application Control em regras de saída"
+## Objetivo
 
-3. **Adicionar card "Licenciamento e Firmware"**
-   - Similar ao card "Autenticação de Email" do PDF de Domínios Externos
-   - 3 indicadores: Firmware, Licenciamento, MFA
-
-4. **Ajustar espaçamento e posição do card "Problemas Encontrados"**
-   - Exibir abaixo na mesma página (Página 1)
+Aplicar a mesma lógica de resolução de IPs que já existe para MX ao cálculo de diversidade de Nameservers (DNS-003 e DNS-004).
 
 ---
 
-### Alterações Técnicas
+## Alterações Necessárias
 
-#### 1. Arquivo: `src/components/pdf/FirewallPDF.tsx`
+### 1. Modificar o Python Agent - DNS Query Executor
 
-**1.1 Alterar reportType no PDFHeader:**
+**Arquivo:** `python-agent/agent/executors/dns_query.py`
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│ Linha 291:                                                  │
-│                                                            │
-│ De:   reportType="Análise de Fortigate"                    │
-│ Para: reportType="Análise de Firewall - Fortigate"         │
-└────────────────────────────────────────────────────────────┘
-```
-
-**1.2 Criar componente PDFFirewallStatusCards (inline):**
-
-Estilo igual ao "Autenticação de Email" do PDFDomainInfo:
+Atualizar a consulta NS para resolver IPs A/AAAA de cada nameserver (similar ao que já é feito para MX):
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│ LICENCIAMENTO E FIRMWARE                                   │
-├────────────────────────────────────────────────────────────┤
-│ ● Firmware        │ ● Licenciamento    │ ● MFA            │
-│   Atualizado      │   Ativo            │   Ativo          │
-└────────────────────────────────────────────────────────────┘
+Antes (linha 50-57):
+if query_type == 'NS':
+    answers = resolver.resolve(domain, 'NS')
+    records = [{'host': str(r.target).rstrip('.')} for r in answers]
+    return {...}
+
+Depois:
+if query_type == 'NS':
+    answers = resolver.resolve(domain, 'NS')
+    records = []
+    for r in answers:
+        host = str(r.target).rstrip('.')
+        # Resolver IPs A/AAAA do nameserver
+        resolved_ips = []
+        try:
+            for rrtype in ['A', 'AAAA']:
+                try:
+                    ip_answers = resolver.resolve(host, rrtype)
+                    for ip in ip_answers:
+                        resolved_ips.append(str(ip))
+                except Exception:
+                    pass
+            resolved_ips = sorted(list(set(resolved_ips)))
+        except Exception:
+            resolved_ips = []
+        
+        records.append({
+            'host': host,
+            'resolved_ips': resolved_ips,
+            'resolved_ip_count': len(resolved_ips),
+        })
+    return {...}
 ```
 
-**1.3 Atualizar props do FirewallPDF:**
+### 2. Modificar a Edge Function - Avaliação de Regras
 
-Adicionar novos campos à interface para suportar os dados:
+**Arquivo:** `supabase/functions/agent-task-result/index.ts`
 
-```typescript
-interface FirewallPDFProps {
-  // ... campos existentes
-  statusInfo?: {
-    firmwareUpToDate?: boolean;
-    licensingActive?: boolean;
-    mfaEnabled?: boolean;
-  };
+Adicionar lógica especial para DNS-003 e DNS-004, similar à que existe para MX-002/MX-003 (linhas 2431-2464):
+
+```text
+Adicionar após a lógica de MX (linha ~2464):
+
+// =====================================================
+// External Domain - NS IP resolution handling
+// Para diversidade de nameservers, considerar não apenas
+// a quantidade de hostnames, mas também a quantidade
+// total de IPs únicos resolvidos.
+// =====================================================
+if (logic.source_key === 'ns_records' && (rule.code === 'DNS-003' || rule.code === 'DNS-004')) {
+  const records = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+  
+  // Coletar todos os IPs únicos de todos os nameservers
+  const allIps = new Set<string>();
+  for (const ns of records) {
+    const ips = ns.resolved_ips;
+    if (Array.isArray(ips)) {
+      for (const ip of ips) {
+        if (typeof ip === 'string') allIps.add(ip);
+      }
+    }
+  }
+  const totalUniqueIps = allIps.size;
+  const nsCount = records.length;
+
+  if (rule.code === 'DNS-003') {
+    // Redundância de Nameservers (mínimo 2)
+    // Passar se: 2+ NS hostnames OU 2+ IPs únicos atrás dos NS
+    const hasMultipleNs = nsCount >= 2;
+    const hasIpRedundancy = totalUniqueIps >= 2;
+    status = (hasMultipleNs || hasIpRedundancy) ? 'pass' : 'fail';
+    
+    if (status === 'pass' && !hasMultipleNs && hasIpRedundancy) {
+      details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Redundância via IPs.`;
+    }
+  }
+
+  if (rule.code === 'DNS-004') {
+    // Diversidade de Nameservers (mínimo 3)
+    // Passar se: 3+ NS hostnames OU 3+ IPs únicos atrás dos NS
+    const hasMultipleNs = nsCount >= 3;
+    const hasIpDiversity = totalUniqueIps >= 3;
+    status = (hasMultipleNs || hasIpDiversity) ? 'pass' : 'fail';
+    
+    if (status === 'pass' && !hasMultipleNs && hasIpDiversity) {
+      details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Diversidade via IPs.`;
+    }
+  }
 }
 ```
 
-**1.4 Layout da Página 1:**
+### 3. Atualizar Formatador de Evidências para NS
+
+**Arquivo:** `supabase/functions/agent-task-result/index.ts`
+
+Modificar a função que formata evidências de `ns_records` (linhas ~2214-2241) para incluir os IPs resolvidos:
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│ PAGE 1 - Sumário Executivo                                 │
-├────────────────────────────────────────────────────────────┤
-│ PDFHeader (Análise de Firewall - Fortigate)               │
-│                                                            │
-│ ┌───────────────────────────────────────────────────────┐ │
-│ │ Score Gauge  │  Stats (Total/Aprovadas/Falhas)        │ │
-│ │              │  Informações do Dispositivo            │ │
-│ │              │  ┌─────────────────────────────────────┐│ │
-│ │              │  │ LICENCIAMENTO E FIRMWARE            ││ │
-│ │              │  │ ● Firmware ● Licenciamento ● MFA    ││ │
-│ │              │  └─────────────────────────────────────┘│ │
-│ └───────────────────────────────────────────────────────┘ │
-│                                                            │
-│ PDFCategorySummaryTable                                    │
-│                                                            │
-│ PDFIssuesSummary (movido para Página 1)                   │
-│                                                            │
-│ PDFFooter                                                  │
-└────────────────────────────────────────────────────────────┘
+Atualizar formatação de evidências NS:
+
+if (stepId === 'ns_records') {
+  const d = (data && typeof data === 'object') ? (data as Record<string, unknown>) : undefined;
+  const records = d?.records ?? d?.answers;
+  
+  const evidence: EvidenceItem[] = [];
+  
+  if (Array.isArray(records)) {
+    const hosts: string[] = [];
+    let totalIps = 0;
+    
+    for (const r of records) {
+      if (r && typeof r === 'object') {
+        const o = r as Record<string, unknown>;
+        const host = o.host ?? o.name ?? o.value;
+        if (typeof host === 'string') hosts.push(host);
+        
+        const ipCount = typeof o.resolved_ip_count === 'number' ? o.resolved_ip_count : 0;
+        totalIps += ipCount;
+      }
+    }
+    
+    if (hosts.length > 0) {
+      evidence.push({ label: 'Nameservers encontrados', value: hosts.join(', '), type: 'text' });
+    }
+    if (totalIps > 0) {
+      evidence.push({ label: 'Total de IPs resolvidos', value: String(totalIps), type: 'text' });
+    }
+  }
+  
+  return evidence.length > 0 ? evidence : [{ label: 'Nameservers', value: 'Nenhum NS retornado', type: 'text' }];
+}
 ```
 
 ---
 
-#### 2. Arquivo: `src/components/Dashboard.tsx`
-
-**2.1 Passar statusInfo para FirewallPDF:**
-
-Calcular os valores com base nos dados do relatório:
-
-```typescript
-// Determinar status do Firmware
-// Lógica: verificar se categoria "Firmware e Atualizações" existe
-// e se tem checks passando
-
-// Determinar status de Licenciamento
-// Lógica: verificar categoria "Licenciamento" ou checks específicos
-
-// Determinar status de MFA
-// Lógica: verificar checks de autenticação multifator
-```
-
----
-
-#### 3. Banco de Dados: Atualizar recomendação da regra utm-007
-
-**Query SQL:**
-
-```sql
-UPDATE compliance_rules 
-SET recommendation = 'Aplicar perfil Application Control em regras de saída'
-WHERE code = 'utm-007';
-```
-
----
-
-### Detalhes do Card "Licenciamento e Firmware"
-
-| Indicador | Lógica de Avaliação | Status Positivo | Status Negativo |
-|-----------|---------------------|-----------------|-----------------|
-| Firmware | Verificar se versão está atualizada (check específico) | Atualizado | Desatualizado |
-| Licenciamento | Verificar checks de licença FortiCare/FortiGuard | Ativo | Expirado |
-| MFA | Verificar se admin-lockout ou 2FA está configurado | Ativo | Inativo |
-
-**Regras para determinar status:**
-- **Firmware**: Usar check `firmware_up_to_date` ou similar na categoria de Firmware
-- **Licenciamento**: Verificar categoria "Licenciamento" - se pass rate > 50% = Ativo
-- **MFA**: Verificar check específico de MFA. Se não existir = Inativo (dados indisponíveis)
-
----
-
-### Estrutura Visual do Card (PDF)
+## Resumo Visual do Fluxo
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│ LICENCIAMENTO E FIRMWARE                                   │
-│                                                            │
-│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
-│ │ ●            │ │ ●            │ │ ●            │        │
-│ │ Firmware     │ │ Licenciamento│ │ MFA          │        │
-│ │ Atualizado   │ │ Ativo        │ │ Inativo      │        │
-│ └──────────────┘ └──────────────┘ └──────────────┘        │
-└────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        ANTES (Atual)                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  Agent coleta NS:                                                   │
+│    ns1.example.com                                                  │
+│    ns2.example.com                                                  │
+│                                                                     │
+│  Edge Function avalia:                                              │
+│    DNS-004: records.length >= 3 ?                                   │
+│    Resultado: FAIL (apenas 2 nameservers)                           │
+└─────────────────────────────────────────────────────────────────────┘
 
-● Verde = Status positivo
-● Vermelho = Status negativo
+┌─────────────────────────────────────────────────────────────────────┐
+│                        DEPOIS (Proposto)                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Agent coleta NS + resolve IPs:                                     │
+│    ns1.example.com → [1.1.1.1, 1.1.1.2]                             │
+│    ns2.example.com → [2.2.2.1, 2.2.2.2]                             │
+│                                                                     │
+│  Edge Function avalia:                                              │
+│    DNS-004: records.length >= 3 OU totalUniqueIps >= 3 ?            │
+│    Resultado: PASS (4 IPs únicos = diversidade via IPs)             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-
-Cores:
-- Indicador verde: `colors.success` (#10B981)
-- Indicador vermelho: `colors.danger` (#EF4444)
 
 ---
 
-### Resumo das Alterações por Arquivo
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `FirewallPDF.tsx` | Alterar reportType; Adicionar seção "Licenciamento e Firmware"; Mover Issues para Página 1 |
-| `Dashboard.tsx` | Passar statusInfo calculado para FirewallPDF |
-| **Banco de Dados** | Atualizar recommendation da regra utm-007 |
+| `python-agent/agent/executors/dns_query.py` | Adicionar resolução A/AAAA para cada NS |
+| `supabase/functions/agent-task-result/index.ts` | Adicionar lógica especial para DNS-003/004 + atualizar evidências NS |
 
 ---
 
-### Resultado Esperado
+## Considerações
 
-1. **Header do PDF**: "Análise de Firewall - Fortigate"
-
-2. **Recomendação correta**: "Recomendação: Aplicar perfil Application Control em regras de saída"
-
-3. **Card de status** com 3 indicadores visuais (igual ao email auth do Domain PDF)
-
-4. **Layout otimizado**: Página 1 contém todo o sumário executivo incluindo problemas encontrados
-
+- A resolução de IPs no agent pode aumentar ligeiramente o tempo de coleta de dados (1-2 segundos adicionais por consulta NS)
+- A lógica é conservadora: se houver 3+ nameservers hostnames OU 3+ IPs únicos, a verificação passa
+- As evidências coletadas exibirão tanto os hostnames quanto a contagem total de IPs
