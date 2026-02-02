@@ -15,6 +15,7 @@ import {
   PDFCategorySummaryTable,
   PDFFooter,
 } from './sections';
+import { PDFStatusIcon } from './shared/PDFStatusIcon';
 import type { Issue, Check, CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
 
@@ -103,6 +104,47 @@ const pageStyles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: typography.bold,
   },
+  // Status Cards Section (Licensing & Firmware)
+  statusSection: {
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.md,
+    padding: spacing.cardPadding,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 6,
+  },
+  statusTitle: {
+    fontSize: typography.bodySmall,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: spacing.itemGap,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusGrid: {
+    flexDirection: 'row',
+    gap: spacing.itemGap,
+  },
+  statusItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: spacing.itemGap,
+    backgroundColor: colors.pageBg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusItemLabel: {
+    fontSize: typography.bodySmall,
+    fontFamily: typography.bold,
+    color: colors.textPrimary,
+  },
+  statusItemValue: {
+    fontSize: typography.caption,
+    color: colors.textMuted,
+  },
   // Categories Section
   sectionTitle: {
     fontSize: typography.heading,
@@ -177,6 +219,12 @@ interface ComplianceCategory {
   }>;
 }
 
+interface StatusInfo {
+  firmwareUpToDate?: boolean;
+  licensingActive?: boolean;
+  mfaEnabled?: boolean;
+}
+
 interface FirewallPDFProps {
   report: {
     overallScore: number;
@@ -197,6 +245,7 @@ interface FirewallPDFProps {
   };
   logoBase64?: string;
   categoryConfigs?: CategoryConfig[];
+  statusInfo?: StatusInfo;
 }
 
 export const FirewallPDF: React.FC<FirewallPDFProps> = ({
@@ -204,6 +253,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
   deviceInfo,
   logoBase64,
   categoryConfigs,
+  statusInfo,
 }) => {
   const generatedDate = report.generatedAt instanceof Date
     ? report.generatedAt
@@ -276,7 +326,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
     <Document
       title={`iScope 360 - ${deviceInfo.name}`}
       author="Precisio Analytics"
-      subject="Relatório de Análise de Fortigate"
+      subject="Relatório de Análise de Firewall - Fortigate"
       keywords="compliance, security, firewall, fortigate"
     >
       {/* PAGE 1: Executive Summary */}
@@ -288,7 +338,7 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
             subtitle={deviceInfo.clientName}
             target={deviceInfo.name}
             date={dateString}
-            reportType="Análise de Fortigate"
+            reportType="Análise de Firewall - Fortigate"
             logoBase64={logoBase64}
           />
 
@@ -369,27 +419,62 @@ export const FirewallPDF: React.FC<FirewallPDFProps> = ({
                   )}
                 </View>
               </View>
+
+              {/* Status Cards Section - Licensing & Firmware */}
+              <View style={pageStyles.statusSection}>
+                <Text style={pageStyles.statusTitle}>Licenciamento e Firmware</Text>
+                
+                <View style={pageStyles.statusGrid}>
+                  {/* Firmware */}
+                  <View style={pageStyles.statusItem}>
+                    <PDFStatusIcon status={statusInfo?.firmwareUpToDate ? 'pass' : 'fail'} size={12} />
+                    <View>
+                      <Text style={pageStyles.statusItemLabel}>Firmware</Text>
+                      <Text style={pageStyles.statusItemValue}>
+                        {statusInfo?.firmwareUpToDate ? 'Atualizado' : 'Desatualizado'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Licensing */}
+                  <View style={pageStyles.statusItem}>
+                    <PDFStatusIcon status={statusInfo?.licensingActive ? 'pass' : 'fail'} size={12} />
+                    <View>
+                      <Text style={pageStyles.statusItemLabel}>Licenciamento</Text>
+                      <Text style={pageStyles.statusItemValue}>
+                        {statusInfo?.licensingActive ? 'Ativo' : 'Expirado'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* MFA */}
+                  <View style={pageStyles.statusItem}>
+                    <PDFStatusIcon status={statusInfo?.mfaEnabled ? 'pass' : 'fail'} size={12} />
+                    <View>
+                      <Text style={pageStyles.statusItemLabel}>MFA</Text>
+                      <Text style={pageStyles.statusItemValue}>
+                        {statusInfo?.mfaEnabled ? 'Ativo' : 'Inativo'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
             </View>
           </View>
 
           {/* Category Summary Table - on Page 1 */}
           <PDFCategorySummaryTable categories={categorySummaries} />
+
+          {/* Issues Summary - on Page 1 */}
+          {issues.length > 0 && (
+            <PDFIssuesSummary issues={issues} maxItems={20} />
+          )}
         </View>
 
         <PDFFooter />
       </Page>
 
-      {/* PAGE 2: Issues Summary */}
-      {issues.length > 0 && (
-        <Page size="A4" style={pageStyles.page}>
-          <View style={pageStyles.content}>
-            <PDFIssuesSummary issues={issues} maxItems={20} />
-          </View>
-          <PDFFooter />
-        </Page>
-      )}
-
-      {/* PAGE 3+: Category Details */}
+      {/* PAGE 2+: Category Details */}
       {allCategories.length > 0 && (
         <Page size="A4" style={pageStyles.page} wrap>
           <View style={pageStyles.content}>
