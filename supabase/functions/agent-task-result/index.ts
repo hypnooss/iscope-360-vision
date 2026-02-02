@@ -1036,89 +1036,228 @@ function formatHAHeartbeatEvidence(rawData: Record<string, unknown>): {
   }
 }
 
+// ========== BACKUP ANALYSIS HELPERS ==========
+
 /**
- * Format Backup evidence (bkp-001)
- * Uses automation stitch/trigger/action data to detect backup configuration
+ * Analyzes if an action is a backup action and what type (external/local)
  */
+function analyzeBackupActionForEvidence(action: Record<string, unknown>): {
+  isBackup: boolean;
+  type: "external" | "local" | "none";
+  destination?: string;
+} {
+  if (!action) return { isBackup: false, type: "none" };
+  
+  const actionType = String(action["action-type"] || action.type || "");
+  const script = String(action.script || action.command || "");
+  const systemAction = String(action["system-action"] || "");
+  
+  // CLI-script with execute backup
+  if (actionType === "cli-script" || script) {
+    const scriptLower = script.toLowerCase();
+    
+    // Backup to external area (FTP/SFTP/TFTP)
+    if (scriptLower.includes("execute backup") && 
+        (scriptLower.includes("ftp") || scriptLower.includes("sftp") || scriptLower.includes("tftp"))) {
+      const match = script.match(/execute backup (?:full-config|config)\s+(ftp|sftp|tftp)\s+["']?(\S+)["']?/i);
+      const destination = match ? `${match[1]}://${match[2]}` : "FTP/SFTP/TFTP";
+      return { isBackup: true, type: "external", destination };
+    }
+    
+    // Local backup (disk only)
+    if (scriptLower.includes("execute backup")) {
+      return { isBackup: true, type: "local" };
+    }
+  }
+  
+  // system-action: backup-config (local disk backup - FortiOS default)
+  // IMPORTANT: Only counts if inside an active Stitch!
+  if (systemAction === "backup-config") {
+    return { isBackup: true, type: "local" };
+  }
+  
+  return { isBackup: false, type: "none" };
+}
+
+/**
+ * Checks if a trigger is scheduled type
+ */
+function isScheduledTriggerForEvidence(trigger: Record<string, unknown>): boolean {
+  if (!trigger) return false;
+  const triggerType = String(trigger["trigger-type"] || trigger.type || "");
+  // IMPORTANT: event-based is NOT scheduled!
+  return triggerType === "scheduled" || triggerType === "schedule";
+}
+
+/**
+ * Extracts frequency from a trigger
+ */
+function extractTriggerFrequencyForEvidence(trigger: Record<string, unknown>): string {
+  const frequency = String(trigger["trigger-frequency"] || trigger.frequency || "daily");
+  const hour = Number(trigger["trigger-hour"] ?? trigger.hour ?? 0);
+  const minute = Number(trigger["trigger-minute"] ?? trigger.minute ?? 0);
+  const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  return `${frequency} às ${timeStr}`;
+}
+
 /**
  * Format Backup evidence (bkp-001)
  * Uses automation stitch/trigger/action data to detect backup configuration
- * Returns evidence AND calculated status for proper icon display
+ * CRITICAL: Only considers backup valid if there's an active Stitch linking a scheduled trigger to a backup action
  */
 function formatBackupEvidence(rawData: Record<string, unknown>): { 
   evidence: EvidenceItem[], 
-  isConfigured: boolean 
+  isConfigured: boolean,
+  backupType: "external" | "local" | "none"
 } {
   const evidence: EvidenceItem[] = [];
   let isConfigured = false;
+  let backupType: "external" | "local" | "none" = "none";
   
   try {
-    // Verificar automações de backup
     const stitchData = rawData['system_automation_stitch'] as Record<string, unknown> | undefined;
     const triggerData = rawData['system_automation_trigger'] as Record<string, unknown> | undefined;
     const actionData = rawData['system_automation_action'] as Record<string, unknown> | undefined;
     
-    // Verificar se há ações de backup configuradas
-    const actions = (actionData?.results || []) as Array<Record<string, unknown>>;
-    const backupActions = actions.filter(a => 
-      a['action-type'] === 'backup' || 
-      a['action-type'] === 'config-backup' ||
-      String(a.name || '').toLowerCase().includes('backup')
-    );
-    
-    // Verificar triggers agendados
-    const triggers = (triggerData?.results || []) as Array<Record<string, unknown>>;
-    const scheduledTriggers = triggers.filter(t => 
-      t['trigger-type'] === 'scheduled' || 
-      t['trigger-type'] === 'event-based'
-    );
-    
-    // Verificar stitches que combinam trigger + action de backup
     const stitches = (stitchData?.results || []) as Array<Record<string, unknown>>;
+    const triggers = (triggerData?.results || []) as Array<Record<string, unknown>>;
+    const actions = (actionData?.results || []) as Array<Record<string, unknown>>;
     
-    if (backupActions.length > 0 && scheduledTriggers.length > 0) {
-      isConfigured = true;
-      evidence.push({
-        label: 'Status',
-        value: '✅ Backup automático configurado',
-        type: 'text'
-      });
+    console.log(`[BKP] Processing ${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} actions`);
+    
+    // Map triggers and actions by name
+    const triggerMap = new Map<string, Record<string, unknown>>();
+    for (const t of triggers) triggerMap.set(String(t.name), t);
+    
+    const actionMap = new Map<string, Record<string, unknown>>();
+    for (const a of actions) actionMap.set(String(a.name), a);
+    
+    // Variables for best backup found
+    let bestBackup: {
+      type: "external" | "local";
+      destination?: string;
+      frequency: string;
+      stitchName: string;
+      triggerName: string;
+      actionName: string;
+    } | null = null;
+    
+    // STEP 1: Look for VALID backup through ACTIVE Stitches + SCHEDULED Trigger
+    for (const stitch of stitches) {
+      // Check if stitch is active
+      if (stitch.status && stitch.status !== "enable") continue;
       
-      // Listar ações de backup encontradas
-      for (const action of backupActions.slice(0, 3)) {
-        evidence.push({
-          label: 'Ação',
-          value: String(action.name || 'backup'),
-          type: 'code'
-        });
+      // Extract trigger(s) from stitch - ensure it's an array
+      const rawTriggerRefs = stitch.trigger || stitch.triggers || [];
+      const triggerRefs: unknown[] = Array.isArray(rawTriggerRefs) ? rawTriggerRefs : [rawTriggerRefs];
+      
+      // Extract action(s) from stitch - ensure it's an array
+      const rawActionRefs = stitch.actions || stitch.action || [];
+      const actionRefs: unknown[] = Array.isArray(rawActionRefs) ? rawActionRefs : [rawActionRefs];
+      
+      for (const triggerRef of triggerRefs) {
+        const triggerRefObj = triggerRef as Record<string, unknown> | string;
+        const triggerName = typeof triggerRefObj === "string" ? triggerRefObj : String((triggerRefObj as Record<string, unknown>)?.name || "");
+        if (!triggerName) continue;
+        
+        const trigger = triggerMap.get(triggerName);
+        if (!trigger) continue;
+        
+        // CRITERIA: Trigger must be SCHEDULED (not event-based)
+        if (!isScheduledTriggerForEvidence(trigger)) {
+          console.log(`[BKP] Stitch ${stitch.name}: Trigger ${triggerName} is not scheduled`);
+          continue;
+        }
+        
+        for (const actionRef of actionRefs) {
+          const actionRefObj = actionRef as Record<string, unknown> | string;
+          let actionName = "";
+          if (typeof actionRefObj === "string") actionName = actionRefObj;
+          else if ((actionRefObj as Record<string, unknown>)?.action) actionName = String((actionRefObj as Record<string, unknown>).action);
+          else if ((actionRefObj as Record<string, unknown>)?.name) actionName = String((actionRefObj as Record<string, unknown>).name);
+          if (!actionName) continue;
+          
+          const action = actionMap.get(actionName);
+          const backupInfo = analyzeBackupActionForEvidence(action || { name: actionName });
+          
+          if (!backupInfo.isBackup) continue;
+          
+          // BACKUP FOUND!
+          const frequency = extractTriggerFrequencyForEvidence(trigger);
+          
+          const candidate = {
+            type: backupInfo.type as "external" | "local",
+            destination: backupInfo.destination,
+            frequency,
+            stitchName: String(stitch.name),
+            triggerName,
+            actionName
+          };
+          
+          // Prioritize external over local
+          if (backupInfo.type === "external") {
+            bestBackup = candidate;
+            console.log(`[BKP] ✅ EXTERNAL Backup: ${stitch.name} -> ${backupInfo.destination}`);
+            break; // Found external, stop
+          } else if (!bestBackup) {
+            bestBackup = candidate;
+            console.log(`[BKP] ⚠️ LOCAL Backup: ${stitch.name}`);
+          }
+        }
+        if (bestBackup?.type === "external") break;
+      }
+      if (bestBackup?.type === "external") break;
+    }
+    
+    // Generate evidence based on result
+    if (bestBackup) {
+      isConfigured = bestBackup.type === "external";
+      backupType = bestBackup.type;
+      
+      if (bestBackup.type === "external") {
+        evidence.push({ label: 'Status', value: '✅ Backup externo configurado', type: 'text' });
+        if (bestBackup.destination) {
+          evidence.push({ label: 'Destino', value: bestBackup.destination, type: 'code' });
+        }
+      } else {
+        evidence.push({ label: 'Status', value: '⚠️ Backup apenas local (disco)', type: 'text' });
+        evidence.push({ label: 'Risco', value: 'Não protege contra perda do equipamento', type: 'text' });
       }
       
-      // Listar triggers agendados
-      for (const trigger of scheduledTriggers.slice(0, 3)) {
-        evidence.push({
-          label: 'Agendamento',
-          value: String(trigger.name || trigger['trigger-type']),
-          type: 'text'
-        });
-      }
-    } else if (backupActions.length > 0) {
-      // Partial: action exists but no schedule
-      isConfigured = false;
-      evidence.push({
-        label: 'Status',
-        value: '⚠️ Ação de backup existe, mas sem agendamento',
-        type: 'text'
-      });
+      evidence.push({ label: 'Frequência', value: bestBackup.frequency, type: 'text' });
+      evidence.push({ label: 'Stitch', value: bestBackup.stitchName, type: 'code' });
+      evidence.push({ label: 'Trigger', value: bestBackup.triggerName, type: 'code' });
+      evidence.push({ label: 'Action', value: bestBackup.actionName, type: 'code' });
     } else {
-      isConfigured = false;
-      evidence.push({
-        label: 'Status',
-        value: '❌ Nenhum backup automático configurado',
-        type: 'text'
+      // Check for orphan backup actions (not linked to scheduled stitch)
+      const orphanBackupActions = actions.filter(a => {
+        const info = analyzeBackupActionForEvidence(a);
+        return info.isBackup;
+      });
+      
+      if (orphanBackupActions.length > 0) {
+        evidence.push({ 
+          label: 'Status', 
+          value: '❌ Actions de backup encontradas, mas sem agendamento ativo', 
+          type: 'text' 
+        });
+        evidence.push({ 
+          label: 'Verificação', 
+          value: 'Nenhum Stitch ativo conecta um Trigger agendado a uma Action de backup', 
+          type: 'text' 
+        });
+      } else {
+        evidence.push({ label: 'Status', value: '❌ Backup automático não configurado', type: 'text' });
+      }
+      
+      evidence.push({ 
+        label: 'Recomendação', 
+        value: 'Criar automation stitch com trigger agendado + action cli-script: execute backup full-config ftp/sftp <server>', 
+        type: 'text' 
       });
     }
     
-    // Mostrar totais encontrados
+    // Totals for debug
     evidence.push({
       label: 'Automações',
       value: `${stitches.length} stitches, ${triggers.length} triggers, ${actions.length} ações`,
@@ -1126,11 +1265,11 @@ function formatBackupEvidence(rawData: Record<string, unknown>): {
     });
     
   } catch (e) {
-    console.error('Error formatting Backup evidence:', e);
+    console.error('[BKP] Error formatting Backup evidence:', e);
     evidence.push({ label: 'Erro', value: 'Falha ao processar dados', type: 'text' });
   }
   
-  return { evidence, isConfigured };
+  return { evidence, isConfigured, backupType };
 }
 
 /**
@@ -2651,13 +2790,17 @@ function processComplianceRules(
         details = 'HA não configurado';
       }
     } else if (rule.code === 'bkp-001') {
-      // Backup - uses specialized formatter that returns status
+      // Backup - uses specialized formatter that returns status and backup type
       const backupResult = formatBackupEvidence(rawData);
       evidence = backupResult.evidence;
-      // Override status based on actual backup configuration analysis
-      if (backupResult.isConfigured) {
+      
+      // Determine status based on backup type
+      if (backupResult.backupType === 'external') {
         status = 'pass';
-        details = rule.pass_description || 'Backup automático configurado via automation stitch';
+        details = rule.pass_description || 'Backup automático externo configurado';
+      } else if (backupResult.backupType === 'local') {
+        status = 'warn';
+        details = 'Backup apenas local configurado - não protege contra perda do equipamento';
       } else {
         status = 'fail';
         details = rule.fail_description || 'Nenhum backup automático configurado';
