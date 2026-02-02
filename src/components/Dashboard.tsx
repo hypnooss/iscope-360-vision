@@ -100,6 +100,50 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
     setLoadedCVEs(cves);
   };
 
+  // Calculate status info for PDF export
+  const statusInfo = useMemo(() => {
+    // Firmware: Check if there's a "Firmware" or similar category, and check pass rate
+    const firmwareCategory = report.categories.find(
+      cat => cat.name.toLowerCase().includes('firmware') || 
+             cat.name.toLowerCase().includes('atualização') ||
+             cat.name.toLowerCase().includes('atualizações')
+    );
+    const firmwareUpToDate = firmwareCategory ? firmwareCategory.passRate > 50 : false;
+
+    // Licensing: Check "Licenciamento" category
+    const licensingCategory = report.categories.find(
+      cat => cat.name.toLowerCase().includes('licenciamento') || 
+             cat.name.toLowerCase().includes('license')
+    );
+    const licensingActive = licensingCategory ? licensingCategory.passRate > 50 : false;
+
+    // MFA: Check authentication-related checks
+    const authCategory = report.categories.find(
+      cat => cat.name.toLowerCase().includes('autenticação') || 
+             cat.name.toLowerCase().includes('auth') ||
+             cat.name.toLowerCase().includes('acesso')
+    );
+    // Look for MFA-specific checks in any category
+    const mfaCheck = report.categories
+      .flatMap(cat => cat.checks)
+      .find(check => 
+        check.name.toLowerCase().includes('mfa') || 
+        check.name.toLowerCase().includes('dois fatores') ||
+        check.name.toLowerCase().includes('two-factor') ||
+        check.name.toLowerCase().includes('2fa')
+      );
+    // If we found an MFA check, use its status. Otherwise, check if auth category has MFA passing
+    const mfaEnabled = mfaCheck 
+      ? mfaCheck.status === 'pass' 
+      : (authCategory ? authCategory.checks.some(c => c.status === 'pass' && c.name.toLowerCase().includes('mfa')) : false);
+
+    return {
+      firmwareUpToDate,
+      licensingActive,
+      mfaEnabled,
+    };
+  }, [report.categories]);
+
   const handleExportPDF = async () => {
     try {
       // Load logo as base64 (same approach as ExternalDomainAnalysisReportPage)
@@ -127,6 +171,7 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           }}
           logoBase64={logoBase64}
           categoryConfigs={categoryConfigs}
+          statusInfo={statusInfo}
         />,
         filename
       );
