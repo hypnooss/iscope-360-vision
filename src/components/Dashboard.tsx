@@ -85,14 +85,15 @@ function StatusRow({ label, isActive, activeLabel, inactiveLabel }: StatusRowPro
           {label}
         </span>
         <div className="flex items-center gap-2">
-          <span className={cn(
-            "w-2 h-2 rounded-full",
-            isActive ? "bg-primary" : "bg-destructive"
-          )} />
-          <span className={cn(
-            "text-sm font-medium",
-            isActive ? "text-primary" : "text-destructive"
-          )}>
+          <span 
+            className={cn(
+              "w-2 h-2 rounded-full",
+              isActive 
+                ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
+                : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+            )} 
+          />
+          <span className="text-sm font-medium text-foreground">
             {isActive ? activeLabel : inactiveLabel}
           </span>
         </div>
