@@ -1,69 +1,73 @@
 
-# Plano: Ajustar Visualização de Evidências de Nameservers
+# Plano: Corrigir Formatador de Evidências para DNS-003 e DNS-004
 
-## Problema
+## Diagnóstico
 
-Atualmente, as evidências de Nameservers estão sendo exibidas como JSON bruto na tela, mostrando `resolved_ips` e `resolved_ip_count` para cada nameserver. Isso não é amigável para usuários leigos.
+O problema identificado está na Edge Function `agent-task-result`. As regras **DNS-003** e **DNS-004** não possuem um formatador de evidências específico como as outras regras de domínio externo (MX-001, MX-002, DKIM-001, etc.).
 
-Além disso, o texto "Diversidade via IPs" aparece na análise efetuada e deve ser removido.
+Por isso, elas caem no **fallback genérico** (linha 2897) que simplesmente serializa o `value` completo (incluindo `resolved_ips` e `resolved_ip_count`) como JSON.
 
-## Objetivo
+## Problema no Código Atual
 
-1. Exibir apenas os nomes dos nameservers nas evidências (sem os IPs resolvidos)
-2. Remover o texto "Diversidade via IPs" / "Redundância via IPs" da mensagem de análise
+```typescript
+// Linha 2897-2900: Fallback genérico
+else if (value !== undefined && value !== null) {
+  evidence = formatGenericEvidence(value, logic.field_path || rule.name);
+}
+```
+
+Como DNS-003/DNS-004 não têm um `else if` específico, eles usam o fallback que mostra o JSON completo.
+
+## Solução
+
+Adicionar casos específicos para **DNS-003** e **DNS-004** que extraem apenas os nomes dos nameservers, similar ao que já existe para MX-001:
+
+```typescript
+// DNS-003: Redundância de Nameservers (só hostnames)
+else if (rule.code === 'DNS-003') {
+  const nsData = sourceData as Record<string, unknown>;
+  const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+  if (records.length > 0) {
+    const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
+    evidence = [{ 
+      label: 'Nameservers encontrados', 
+      value: hosts.join(', '), 
+      type: 'text' 
+    }];
+  } else {
+    evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
+  }
+}
+// DNS-004: Diversidade de Nameservers (só hostnames)
+else if (rule.code === 'DNS-004') {
+  const nsData = sourceData as Record<string, unknown>;
+  const records = (nsData?.data as Record<string, unknown>)?.records as Array<Record<string, unknown>> || [];
+  if (records.length > 0) {
+    const hosts = records.map(r => String(r.host || r.name || r.value)).filter(Boolean);
+    evidence = [{ 
+      label: 'Nameservers encontrados', 
+      value: hosts.join(', '), 
+      type: 'text' 
+    }];
+  } else {
+    evidence = [{ label: 'Nameservers', value: 'Nenhum NS encontrado', type: 'text' }];
+  }
+}
+```
 
 ---
 
-## Alterações Necessárias
+## Arquivo a Modificar
 
-### 1. Edge Function - Formatador de Evidências NS
-
-**Arquivo:** `supabase/functions/agent-task-result/index.ts`
-
-Modificar o formatador de evidências `ns_records` (linhas 2214-2262) para retornar apenas os nomes dos nameservers, sem os IPs:
-
-```text
-Antes (linhas 2253-2258):
-if (hosts.length > 0) {
-  evidence.push({ label: 'Nameservers encontrados', value: hosts.slice(0, 50).join(', '), type: 'text' });
-}
-if (totalUniqueIps > 0) {
-  evidence.push({ label: 'Total de IPs únicos resolvidos', value: String(totalUniqueIps), type: 'text' });
-}
-
-Depois:
-if (hosts.length > 0) {
-  evidence.push({ label: 'Nameservers encontrados', value: hosts.slice(0, 50).join(', '), type: 'text' });
-}
-// Nota: IPs resolvidos são usados internamente para cálculo de diversidade,
-// mas não são exibidos nas evidências pois a análise já indica isso.
-```
-
-### 2. Edge Function - Remover Texto "via IPs"
-
-**Arquivo:** `supabase/functions/agent-task-result/index.ts`
-
-Modificar as mensagens de details para DNS-003 e DNS-004 (linhas 2516-2530):
-
-```text
-Antes (linha 2517):
-details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Redundância via IPs.`;
-
-Depois:
-details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos.`;
-
-Antes (linha 2529):
-details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos. Diversidade via IPs.`;
-
-Depois:
-details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) únicos.`;
-```
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/agent-task-result/index.ts` | Adicionar cases específicos para DNS-003 e DNS-004 (~linhas 2845-2847) |
 
 ---
 
 ## Resultado Esperado
 
-### Evidências Coletadas (Após Alteração)
+Após a alteração, as evidências de DNS-003 e DNS-004 serão exibidas como:
 
 ```text
 ┌───────────────────────────────────────────────────┐
@@ -77,27 +81,14 @@ details = `${nsCount} nameserver(s) resolvendo para ${totalUniqueIps} IP(s) úni
 └───────────────────────────────────────────────────┘
 ```
 
-### Análise Efetuada (Após Alteração)
-
-```text
-2 nameserver(s) resolvendo para 12 IP(s) únicos.
-```
-
-*(Sem o texto "Diversidade via IPs" no final)*
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Remover evidência de IPs e ajustar texto de details |
+Isso porque:
+1. A Edge Function agora retornará `{ label: 'Nameservers encontrados', value: 'earl.ns.cloudflare.com, leah.ns.cloudflare.com', type: 'text' }`.
+2. O frontend (`EvidenceDisplay.tsx`, linhas 486-493) já possui lógica para separar valores com vírgula e exibir cada um em um bloco individual.
 
 ---
 
 ## Observações
 
-- Os IPs resolvidos continuam sendo coletados pelo agent e usados internamente para o cálculo de diversidade/redundância
-- A análise efetuada já informa ao usuário que existem X IPs únicos por trás dos nameservers
-- Não é necessário mostrar os IPs individualmente nas evidências, pois isso só confunde o usuário leigo
-- O frontend já tem lógica para exibir nameservers de forma limpa (linhas 329-364 do EvidenceDisplay.tsx)
+- A lógica de avaliação (pass/fail) para DNS-003/DNS-004 usando IPs resolvidos permanece inalterada (linhas 2492-2530).
+- Apenas a **formatação das evidências** será ajustada para esconder os dados técnicos de IPs.
+- Os IPs resolvidos continuam disponíveis no `rawData` para usuários com acesso técnico (super_admin/super_suporte).
