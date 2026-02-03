@@ -22,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot } from "lucide-react";
+import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -57,10 +57,19 @@ interface Agent {
   revoked: boolean;
 }
 
+interface ExternalDomain {
+  id: string;
+  name: string;
+  domain: string;
+  last_score: number | null;
+  status: string;
+}
+
 interface WorkspaceDetails {
   firewalls: Firewall[];
   tenants: M365Tenant[];
   agents: Agent[];
+  externalDomains: ExternalDomain[];
 }
 
 export default function ClientsPage() {
@@ -119,15 +128,16 @@ export default function ClientsPage() {
 
       const clientsWithCounts = await Promise.all(
         (clientsData || []).map(async (client) => {
-          const [firewallsResult, tenantsResult, agentsResult] = await Promise.all([
+          const [firewallsResult, tenantsResult, agentsResult, domainsResult] = await Promise.all([
             supabase.from("firewalls").select("id", { count: "exact", head: true }).eq("client_id", client.id),
             supabase.from("m365_tenants").select("id", { count: "exact", head: true }).eq("client_id", client.id),
             supabase.from("agents").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+            supabase.from("external_domains").select("id", { count: "exact", head: true }).eq("client_id", client.id),
           ]);
 
           return {
             ...client,
-            scopes_count: (firewallsResult.count || 0) + (tenantsResult.count || 0),
+            scopes_count: (firewallsResult.count || 0) + (tenantsResult.count || 0) + (domainsResult.count || 0),
             agents_count: agentsResult.count || 0,
           };
         }),
@@ -246,7 +256,7 @@ export default function ClientsPage() {
     setLoadingDetails(true);
 
     try {
-      const [firewallsRes, tenantsRes, agentsRes] = await Promise.all([
+      const [firewallsRes, tenantsRes, agentsRes, domainsRes] = await Promise.all([
         supabase
           .from("firewalls")
           .select("id, name, description, last_score")
@@ -262,12 +272,18 @@ export default function ClientsPage() {
           .select("id, name, last_seen, revoked")
           .eq("client_id", client.id)
           .order("name"),
+        supabase
+          .from("external_domains")
+          .select("id, name, domain, last_score, status")
+          .eq("client_id", client.id)
+          .order("name"),
       ]);
 
       setWorkspaceDetails({
         firewalls: firewallsRes.data || [],
         tenants: tenantsRes.data || [],
         agents: agentsRes.data || [],
+        externalDomains: domainsRes.data || [],
       });
     } catch (error) {
       console.error("Erro ao buscar detalhes:", error);
@@ -531,6 +547,37 @@ export default function ClientsPage() {
                                   )}
                                 </div>
                                 {getStatusBadge(tenant.connection_status)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* External Domains */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-primary" />
+                        <h4 className="font-medium">Domínios Externos ({workspaceDetails?.externalDomains.length || 0})</h4>
+                      </div>
+                      {workspaceDetails?.externalDomains.length === 0 ? (
+                        <p className="text-sm text-muted-foreground pl-6">Nenhum domínio externo vinculado</p>
+                      ) : (
+                        <div className="space-y-2 pl-6">
+                          {workspaceDetails?.externalDomains.map((domain) => (
+                            <div key={domain.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-sm">{domain.name}</p>
+                                  <p className="text-xs text-muted-foreground">{domain.domain}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {domain.last_score !== null && (
+                                    <Badge variant={domain.last_score >= 70 ? "default" : domain.last_score >= 40 ? "secondary" : "destructive"}>
+                                      Score: {domain.last_score}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           ))}
