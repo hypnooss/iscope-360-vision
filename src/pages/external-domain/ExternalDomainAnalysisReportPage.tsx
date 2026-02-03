@@ -5,8 +5,9 @@ import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { ExternalDomainCategorySection } from '@/components/external-domain/ExternalDomainCategorySection';
+import { SubdomainSection } from '@/components/external-domain/SubdomainSection';
 import { supabase } from '@/integrations/supabase/client';
-import { ComplianceCategory, ComplianceReport } from '@/types/compliance';
+import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/compliance';
 import { toast } from 'sonner';
 import {
   Loader2,
@@ -356,6 +357,20 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
     ? deriveDnsSummaryFromCategories(categories as ComplianceCategory[])
     : undefined;
 
+  // Parse subdomain_summary from backend
+  const subdomainSummaryFromBackend: SubdomainSummary | undefined = (raw.subdomain_summary as any)
+    ? {
+        total_found: (raw.subdomain_summary as any).total_found ?? 0,
+        subdomains: Array.isArray((raw.subdomain_summary as any).subdomains) 
+          ? (raw.subdomain_summary as any).subdomains 
+          : [],
+        sources: Array.isArray((raw.subdomain_summary as any).sources) 
+          ? (raw.subdomain_summary as any).sources 
+          : [],
+        mode: (raw.subdomain_summary as any).mode ?? 'passive',
+      }
+    : undefined;
+
   return {
     overallScore: (raw.overallScore as number) ?? (raw.score as number) ?? 0,
     totalChecks: allChecks.length,
@@ -366,6 +381,7 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
     generatedAt: new Date(createdAt || (raw.generatedAt as string) || Date.now()),
     firmwareVersion: (raw.firmwareVersion as string) ?? undefined,
     dnsSummary: dnsSummaryFromBackend ?? dnsSummaryDerived,
+    subdomainSummary: subdomainSummaryFromBackend,
     systemInfo: undefined,
   };
 };
@@ -634,6 +650,7 @@ export default function ExternalDomainAnalysisReportPage() {
                         }}
                         dnsSummary={dnsSummary || undefined}
                         emailAuth={emailAuth}
+                        subdomainSummary={report.subdomainSummary || undefined}
                         logoBase64={logoBase64}
                         categoryConfigs={categoryConfigs}
                       />,
@@ -757,6 +774,11 @@ export default function ExternalDomainAnalysisReportPage() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Subdomain Enumeration Section */}
+          {report.subdomainSummary && report.subdomainSummary.total_found > 0 && (
+            <SubdomainSection summary={report.subdomainSummary} className="mb-8" />
           )}
 
           {/* Categories */}

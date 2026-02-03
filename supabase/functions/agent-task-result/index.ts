@@ -87,6 +87,19 @@ interface ComplianceCheck {
   apiEndpoint?: string;
 }
 
+interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+}
+
+interface SubdomainSummary {
+  total_found: number;
+  subdomains: SubdomainEntry[];
+  sources: string[];
+  mode: string;
+}
+
 interface ComplianceResult {
   score: number;
   checks: ComplianceCheck[];
@@ -103,6 +116,7 @@ interface ComplianceResult {
     dnssec_validated?: boolean;
     dnssec_notes?: string[];
   };
+  subdomain_summary?: SubdomainSummary;
 }
 
 // ============================================
@@ -393,6 +407,7 @@ const sourceKeyToEndpoint: Record<string, string> = {
   'dmarc_record': 'DNS Query (DMARC/TXT)',
   'dkim_records': 'DNS Query (DKIM/TXT)',
   'mx_records': 'DNS Query (MX)',
+  'subdomain_enum': 'Amass (Subdomain Enumeration)',
 
   // Fallback
   'default': 'API do dispositivo'
@@ -3517,6 +3532,45 @@ function processComplianceRules(
       dnssec_notes: dnssecNotes,
     };
   })();
+
+  // External Domain: subdomain enumeration summary (Amass)
+  const subdomainSummary: SubdomainSummary | undefined = (() => {
+    const amassStep = getStepPayload(rawData, 'subdomain_enum');
+    if (!amassStep?.data) return undefined;
+
+    const data = amassStep.data as Record<string, unknown>;
+    const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
+    const totalFound = typeof data.total_found === 'number' ? data.total_found : subdomains.length;
+    const sources = Array.isArray(data.sources) ? data.sources.filter((s: unknown) => typeof s === 'string') : [];
+    const mode = typeof data.mode === 'string' ? data.mode : 'passive';
+
+    if (totalFound === 0 && subdomains.length === 0) return undefined;
+
+    // Normalize subdomain entries
+    const normalizedSubdomains: SubdomainEntry[] = subdomains
+      .filter((s: unknown) => s && typeof s === 'object')
+      .map((s: unknown) => {
+        const sub = s as Record<string, unknown>;
+        return {
+          subdomain: typeof sub.subdomain === 'string' ? sub.subdomain : (typeof sub.name === 'string' ? sub.name : ''),
+          sources: Array.isArray(sub.sources) ? sub.sources.filter((src: unknown) => typeof src === 'string') : [],
+          addresses: Array.isArray(sub.addresses)
+            ? (sub.addresses as Array<Record<string, unknown>>).map((addr) => ({
+                ip: typeof addr.ip === 'string' ? addr.ip : (typeof addr.address === 'string' ? addr.address : ''),
+                type: typeof addr.type === 'string' ? addr.type : undefined,
+              }))
+            : [],
+        };
+      })
+      .filter((s: SubdomainEntry) => s.subdomain.length > 0);
+
+    return {
+      total_found: totalFound,
+      subdomains: normalizedSubdomains,
+      sources: sources as string[],
+      mode,
+    };
+  })();
   
   return {
     score,
@@ -3525,6 +3579,7 @@ function processComplianceRules(
     system_info: Object.keys(systemInfo).length > 0 ? systemInfo : undefined,
     firmwareVersion: firmwareVersion || undefined,
     ...(dnsSummary ? { dns_summary: dnsSummary } : {}),
+    ...(subdomainSummary ? { subdomain_summary: subdomainSummary } : {}),
   };
 }
 
@@ -3849,6 +3904,7 @@ serve(async (req: Request) => {
         system_info: complianceResult.system_info,
         firmwareVersion: complianceResult.firmwareVersion,
         ...(complianceResult.dns_summary ? { dns_summary: complianceResult.dns_summary } : {}),
+        ...(complianceResult.subdomain_summary ? { subdomain_summary: complianceResult.subdomain_summary } : {}),
         // raw_data is intentionally excluded - it's stored in agent_tasks.result
       };
 

@@ -33,6 +33,19 @@ export interface ConnectionConfig {
   verified: boolean;
 }
 
+export interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+}
+
+export interface SubdomainSummary {
+  total_found: number;
+  subdomains: SubdomainEntry[];
+  sources: string[];
+  mode: 'passive' | 'active' | string;
+}
+
 export interface ComplianceReport {
   overallScore: number;
   totalChecks: number;
@@ -53,6 +66,8 @@ export interface ComplianceReport {
     dnssecValidated?: boolean;
     dnssecNotes?: string[];
   };
+  // Optional subdomain enumeration summary (Amass)
+  subdomainSummary?: SubdomainSummary;
   // System info from report
   systemInfo?: {
     hostname?: string;
