@@ -15,6 +15,7 @@ import {
   PDFCategorySection,
   PDFCategorySummaryTable,
   PDFFooter,
+  PDFDNSMap,
 } from './sections';
 import type { Issue, Check, CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
@@ -382,6 +383,19 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
           <PDFFooter />
         </Page>
       )}
+
+      {/* PAGE 3: DNS Infrastructure Map */}
+      <Page size="A4" style={pageStyles.page}>
+        <View style={pageStyles.content}>
+          <PDFDNSMap
+            dnsSummary={dnsSummary}
+            emailAuth={emailAuth}
+            subdomainSummary={subdomainSummary}
+            categories={report.categories}
+          />
+        </View>
+        <PDFFooter />
+      </Page>
 
       {/* PAGE: Subdomain Enumeration */}
       {subdomainSummary && subdomainSummary.total_found > 0 && (

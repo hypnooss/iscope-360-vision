@@ -11,3 +11,4 @@ export type { Check } from './PDFCategorySection';
 export { PDFCategorySummaryTable } from './PDFCategorySummaryTable';
 export type { CategorySummary } from './PDFCategorySummaryTable';
 export { PDFFooter } from './PDFFooter';
+export { PDFDNSMap } from './PDFDNSMap';
