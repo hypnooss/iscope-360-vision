@@ -168,10 +168,18 @@ install_deps() {
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    # OL/RHEL-like: prefer python39+ to avoid EOL Python 3.6 issues
+    # OL/RHEL/CentOS 8+: habilitar módulo Python 3.9 antes de instalar
     dnf install -y tar curl gcc openssl-devel libffi-devel || true
-    dnf install -y python39 python39-pip python39-devel || true
+    
+    # Tentar habilitar módulo python39 (CentOS/RHEL 8)
+    dnf module reset python39 -y 2>/dev/null || true
+    dnf module enable python39 -y 2>/dev/null || true
+    
+    # Instalar Python (com fallback)
+    dnf install -y python39 python39-pip python39-devel 2>/dev/null || \\
+    dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \\
     dnf install -y python3 python3-pip python3-devel || true
+    
     return
   fi
 
