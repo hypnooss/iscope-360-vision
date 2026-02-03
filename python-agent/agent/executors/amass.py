@@ -36,6 +36,8 @@ class AmassExecutor(BaseExecutor):
                 - sources: List of data sources used
                 - mode: Enumeration mode used
         """
+        import time as _time
+        
         config = step.get('config', {}) or {}
         step_id = step.get('id', 'unknown')
 
@@ -60,11 +62,14 @@ class AmassExecutor(BaseExecutor):
 
         try:
             # Build command (Amass v4.x - no JSON flag)
+            # Ensure timeout in minutes is at least 1
+            timeout_minutes = max(1, int(timeout / 60))
+            
             cmd = [
                 amass_path,
                 'enum',
                 '-d', domain,
-                '-timeout', str(int(timeout / 60)),  # Amass uses minutes
+                '-timeout', str(timeout_minutes),
             ]
 
             if mode == 'passive':
@@ -74,7 +79,11 @@ class AmassExecutor(BaseExecutor):
                 if max_depth > 1:
                     cmd.extend(['-max-depth', str(max_depth)])
 
-            self.logger.debug(f"Step {step_id}: Executing: {' '.join(cmd)}")
+            # Detailed logging before execution
+            self.logger.info(f"Step {step_id}: Command: {' '.join(cmd)}")
+            self.logger.info(f"Step {step_id}: Timeout: {timeout}s ({timeout_minutes}min), CWD: /tmp")
+            
+            exec_start = _time.time()
 
             result = subprocess.run(
                 cmd,
@@ -83,6 +92,23 @@ class AmassExecutor(BaseExecutor):
                 timeout=timeout + 30,  # Extra buffer
                 cwd='/tmp'
             )
+            
+            exec_ms = int((_time.time() - exec_start) * 1000)
+
+            # Detailed logging after execution
+            self.logger.info(
+                f"Step {step_id}: Amass finished in {exec_ms}ms | "
+                f"RC={result.returncode} | "
+                f"stdout={len(result.stdout or '')} chars | "
+                f"stderr={len(result.stderr or '')} chars"
+            )
+            
+            # Log first lines of stdout/stderr for debug
+            if result.stdout:
+                first_lines = '\n'.join(result.stdout.strip().split('\n')[:5])
+                self.logger.info(f"Step {step_id}: STDOUT preview:\n{first_lines}")
+            if result.stderr:
+                self.logger.info(f"Step {step_id}: STDERR: {result.stderr.strip()[:200]}")
 
             # Parse text output (Amass v4.x format)
             combined_output = (result.stdout or '') + '\n' + (result.stderr or '')
