@@ -36,6 +36,11 @@ interface DNSMapSectionProps {
   className?: string;
 }
 
+interface NsRecord {
+  host: string;
+  resolvedIps: string[];
+}
+
 interface MxRecord {
   exchange: string;
   priority: number;
@@ -57,6 +62,17 @@ type SubdomainFilter = 'all' | 'active' | 'inactive';
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+const extractNsRecords = (categories: ComplianceCategory[]): NsRecord[] => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const nsCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'ns_records');
+  const records = (nsCheck?.rawData as any)?.data?.records || [];
+  
+  return records.map((r: any) => ({
+    host: r.host || r.name || r.value || 'Unknown',
+    resolvedIps: Array.isArray(r.resolved_ips) ? r.resolved_ips : [],
+  })).filter((ns: NsRecord) => ns.host && ns.host !== 'Unknown');
+};
 
 const extractMxRecords = (categories: ComplianceCategory[]): MxRecord[] => {
   const allChecks = categories.flatMap(c => c.checks);
@@ -131,8 +147,8 @@ function DNSNode({ label, value, sublabel, isActive, showCopy, showExternalLink,
 
   return (
     <div className={cn(
-      "group relative flex items-center gap-2 px-3 py-2 rounded-lg border transition-all",
-      "bg-background/50 hover:bg-muted/30 border-border/50",
+      "group relative flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-all",
+      "bg-[hsl(220_18%_8%)] border-border/40 hover:border-border/60",
       className
     )}>
       {isActive !== undefined && (
@@ -162,7 +178,7 @@ function DNSNode({ label, value, sublabel, isActive, showCopy, showExternalLink,
           </Tooltip>
         </TooltipProvider>
         {sublabel && (
-          <span className="text-xs text-muted-foreground truncate block">{sublabel}</span>
+          <span className="text-[13px] text-muted-foreground truncate block">{sublabel}</span>
         )}
       </div>
       
@@ -268,6 +284,7 @@ export function DNSMapSection({
 }: DNSMapSectionProps) {
   const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('active');
   
+  const nsRecords = useMemo(() => extractNsRecords(categories), [categories]);
   const mxRecords = useMemo(() => extractMxRecords(categories), [categories]);
   const spfRecord = useMemo(() => extractSpfRecord(categories), [categories]);
   const dkimKeys = useMemo(() => extractDkimKeys(categories), [categories]);
@@ -290,7 +307,11 @@ export function DNSMapSection({
   const activeCount = subdomainSummary?.subdomains.filter(s => s.is_alive).length ?? 0;
   const inactiveCount = subdomainSummary?.subdomains.filter(s => s.is_alive === false).length ?? 0;
 
-  const nsRecords = dnsSummary?.ns || [];
+  // Fallback to dnsSummary.ns if rawData extraction returned empty
+  const nsRecordsFromRawData = nsRecords;
+  const nsRecordsFallback = (dnsSummary?.ns || []).map(host => ({ host, resolvedIps: [] as string[] }));
+  const finalNsRecords = nsRecordsFromRawData.length > 0 ? nsRecordsFromRawData : nsRecordsFallback;
+  
   const dnssecActive = dnsSummary?.dnssecHasDnskey || dnsSummary?.dnssecHasDs;
 
   return (
@@ -334,8 +355,8 @@ export function DNSMapSection({
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <Globe className="w-24 h-24 text-primary/10" />
             </div>
-            {/* Domain name overlay - transparent to show globe */}
-            <div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-transparent backdrop-blur-[2px] shadow-lg shadow-primary/10">
+            {/* Domain name overlay - transparent border only to show globe */}
+            <div className="relative px-8 py-4 rounded-xl border border-primary/30">
               <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
             </div>
           </div>
@@ -359,25 +380,26 @@ export function DNSMapSection({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           
           {/* Column 1: NS + MX */}
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* NS Records */}
             <DNSGroup
               title="NS"
-              count={nsRecords.length}
+              count={finalNsRecords.length}
               icon={<Server className="w-4 h-4 text-sky-400" />}
               color="border-sky-500/30 bg-sky-500/5"
               defaultExpanded={true}
             >
-              {nsRecords.length > 0 ? (
-                nsRecords.map((ns, idx) => (
+              {finalNsRecords.length > 0 ? (
+                finalNsRecords.map((ns, idx) => (
                   <DNSNode 
                     key={idx} 
-                    label={ns} 
+                    label={ns.host}
+                    sublabel={ns.resolvedIps.length > 0 ? ns.resolvedIps.join(', ') : undefined}
                     showCopy 
                   />
                 ))
               ) : (
-                <div className="text-xs text-muted-foreground text-center py-2">
+                <div className="text-[13px] text-muted-foreground text-center py-2">
                   Nenhum NS encontrado
                 </div>
               )}
@@ -401,7 +423,7 @@ export function DNSMapSection({
                   />
                 ))
               ) : (
-                <div className="text-xs text-muted-foreground text-center py-2">
+                <div className="text-[13px] text-muted-foreground text-center py-2">
                   Nenhum MX encontrado
                 </div>
               )}
@@ -409,7 +431,7 @@ export function DNSMapSection({
           </div>
 
           {/* Column 2: SOA + TXT */}
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* SOA / DNSSEC */}
             <DNSGroup
               title="SOA"
@@ -418,20 +440,20 @@ export function DNSMapSection({
               color="border-amber-500/30 bg-amber-500/5"
               defaultExpanded={true}
             >
-              <div className="space-y-2 px-1">
-                <div className="text-xs">
+              <div className="space-y-2.5 px-1 py-1">
+                <div className="text-sm">
                   <span className="text-muted-foreground">Primary:</span>
-                  <span className="ml-2 font-mono text-foreground truncate block">
+                  <span className="ml-2 font-mono text-foreground text-[13px] truncate block">
                     {dnsSummary?.soaMname || 'N/A'}
                   </span>
                 </div>
-                <div className="text-xs">
+                <div className="text-sm">
                   <span className="text-muted-foreground">Contact:</span>
-                  <span className="ml-2 font-mono text-foreground truncate block">
+                  <span className="ml-2 font-mono text-foreground text-[13px] truncate block">
                     {dnsSummary?.soaContact || 'N/A'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-xs pt-1 border-t border-border/30">
+                <div className="flex items-center gap-2 text-sm pt-2 border-t border-border/30">
                   <span 
                     className={cn(
                       "w-2 h-2 rounded-full",
@@ -442,7 +464,7 @@ export function DNSMapSection({
                   />
                   <span className="text-muted-foreground">DNSSEC:</span>
                   <span className={cn(
-                    "font-medium",
+                    "font-medium text-[13px]",
                     dnssecActive ? "text-primary" : "text-muted-foreground"
                   )}>
                     {dnssecActive ? 'Ativo' : 'Inativo'}
@@ -459,9 +481,9 @@ export function DNSMapSection({
               color="border-emerald-500/30 bg-emerald-500/5"
               defaultExpanded={true}
             >
-              <div className="space-y-3 px-1">
+              <div className="space-y-3.5 px-1 py-1">
                 {/* SPF */}
-                <div className="text-xs">
+                <div className="text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span 
                       className={cn(
@@ -477,7 +499,7 @@ export function DNSMapSection({
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-xs text-muted-foreground font-mono block pl-4 truncate cursor-default">
+                          <span className="text-[13px] text-muted-foreground font-mono block pl-4 truncate cursor-default">
                             {spfRecord}
                           </span>
                         </TooltipTrigger>
@@ -487,14 +509,14 @@ export function DNSMapSection({
                       </Tooltip>
                     </TooltipProvider>
                   ) : (
-                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
+                    <span className="text-[13px] text-muted-foreground/60 italic block pl-4">
                       Registro não encontrado
                     </span>
                   )}
                 </div>
                 
                 {/* DKIM */}
-                <div className="text-xs">
+                <div className="text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span 
                       className={cn(
@@ -508,19 +530,19 @@ export function DNSMapSection({
                   </div>
                   {dkimKeys.length > 0 ? (
                     dkimKeys.map((key, i) => (
-                      <span key={i} className="text-xs text-muted-foreground font-mono block pl-4">
+                      <span key={i} className="text-[13px] text-muted-foreground font-mono block pl-4">
                         {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
+                    <span className="text-[13px] text-muted-foreground/60 italic block pl-4">
                       Nenhum seletor encontrado
                     </span>
                   )}
                 </div>
                 
                 {/* DMARC */}
-                <div className="text-xs">
+                <div className="text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span 
                       className={cn(
@@ -535,18 +557,18 @@ export function DNSMapSection({
                   {dmarcPolicy.p || dmarcPolicy.sp ? (
                     <>
                       {dmarcPolicy.p && (
-                        <span className="text-xs text-muted-foreground font-mono block pl-4">
+                        <span className="text-[13px] text-muted-foreground font-mono block pl-4">
                           Política: {dmarcPolicy.p}
                         </span>
                       )}
                       {dmarcPolicy.sp && (
-                        <span className="text-xs text-muted-foreground font-mono block pl-4">
+                        <span className="text-[13px] text-muted-foreground font-mono block pl-4">
                           Política Subdomínios: {dmarcPolicy.sp}
                         </span>
                       )}
                     </>
                   ) : (
-                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
+                    <span className="text-[13px] text-muted-foreground/60 italic block pl-4">
                       Registro não encontrado
                     </span>
                   )}
@@ -565,11 +587,11 @@ export function DNSMapSection({
           >
             {/* Filter Buttons */}
             {subdomainSummary && subdomainSummary.total_found > 0 && (
-              <div className="flex gap-1 mb-2 px-1">
+              <div className="flex gap-1.5 mb-2 px-1">
                 <button
                   onClick={() => setSubdomainFilter(f => f === 'active' ? 'all' : 'active')}
                   className={cn(
-                    "text-xs px-2 py-1 rounded-md border transition-all",
+                    "text-[13px] px-2.5 py-1 rounded-md border transition-all",
                     subdomainFilter === 'active' 
                       ? "bg-primary/20 text-primary border-primary/40" 
                       : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
@@ -580,7 +602,7 @@ export function DNSMapSection({
                 <button
                   onClick={() => setSubdomainFilter(f => f === 'inactive' ? 'all' : 'inactive')}
                   className={cn(
-                    "text-xs px-2 py-1 rounded-md border transition-all",
+                    "text-[13px] px-2.5 py-1 rounded-md border transition-all",
                     subdomainFilter === 'inactive' 
                       ? "bg-muted text-muted-foreground border-muted-foreground/40" 
                       : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
@@ -606,7 +628,7 @@ export function DNSMapSection({
                 />
               ))
             ) : (
-              <div className="text-xs text-muted-foreground text-center py-2">
+              <div className="text-[13px] text-muted-foreground text-center py-2">
                 Nenhum subdomínio encontrado
               </div>
             )}
