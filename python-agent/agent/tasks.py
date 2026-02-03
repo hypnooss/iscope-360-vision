@@ -45,6 +45,7 @@ class TaskExecutor:
             'snmp_query': SNMPExecutor(logger),
             'dns_query': DNSQueryExecutor(logger),
             'amass': AmassExecutor(logger),
+            'subdomain_enum': AmassExecutor(logger),  # Alias para blueprints
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
