@@ -1,18 +1,20 @@
 
-# Plano: Criar diretório de log durante instalação
+
+# Plano: Corrigir permissões do arquivo agent.env
 
 ## Problema Identificado
 
-O agent está falhando ao iniciar porque:
-1. O arquivo de ambiente define `AGENT_LOG_FILE=/var/log/iscope/agent.log`
-2. O diretório `/var/log/iscope/` não existe
-3. O agent (rodando como usuário `iscope`) não tem permissão para criar diretórios em `/var/log/`
+O agent falha ao iniciar porque:
+1. O arquivo `/etc/iscope/agent.env` é criado com permissões `600` (apenas root pode ler)
+2. O agent roda como usuário `iscope`
+3. O usuário `iscope` não tem permissão para ler o arquivo de configuração
 
-## Solução Imediata (execute no servidor agora)
+**Evidência**: Executando manualmente como root funciona, mas via systemd (como usuário iscope) falha.
+
+## Solução Imediata (execute no servidor)
 
 ```bash
-sudo mkdir -p /var/log/iscope
-sudo chown iscope:iscope /var/log/iscope
+sudo chown iscope:iscope /etc/iscope/agent.env
 sudo systemctl restart iscope-agent
 systemctl status iscope-agent --no-pager
 ```
@@ -21,63 +23,51 @@ systemctl status iscope-agent --no-pager
 
 ## Solução Permanente
 
-Modificar o script de instalação para criar o diretório de log com as permissões corretas.
+Modificar o script de instalação para definir o proprietário correto do arquivo `agent.env`.
 
 ### Arquivo: `supabase/functions/agent-install/index.ts`
 
-**Alteração na função `ensure_dirs()` (linha ~339):**
+**Alteração na função `write_env_file()` (aproximadamente linhas 305-320):**
 
 De:
 ```bash
-ensure_dirs() {
-  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
+write_env_file() {
+  local env_file
+  env_file="$CONFIG_DIR/agent.env"
+
+  # Do not echo activation code to stdout
+  cat > "$env_file" <<EOF
+AGENT_API_BASE_URL=\${API_BASE_URL}
+AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
+AGENT_STATE_FILE=\${STATE_DIR}/state.json
+AGENT_LOG_FILE=/var/log/iscope/agent.log
+AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
+EOF
+
+  chmod 600 "$env_file"
 }
 ```
 
 Para:
 ```bash
-ensure_dirs() {
-  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope"
-}
-```
+write_env_file() {
+  local env_file
+  env_file="$CONFIG_DIR/agent.env"
 
----
-
-**Alteração na função `ensure_state_file()` (linhas ~392-400):**
-
-De:
-```bash
-ensure_state_file() {
-  local state_file
-  state_file="$STATE_DIR/state.json"
-  if [[ ! -f "$state_file" ]]; then
-    cat > "$state_file" <<EOF
-{}
+  # Do not echo activation code to stdout
+  cat > "$env_file" <<EOF
+AGENT_API_BASE_URL=\${API_BASE_URL}
+AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
+AGENT_STATE_FILE=\${STATE_DIR}/state.json
+AGENT_LOG_FILE=/var/log/iscope/agent.log
+AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
 EOF
-  fi
 
+  chmod 600 "$env_file"
+  
+  # Ensure the service user can read the config file
   if id "$SERVICE_USER" >/dev/null 2>&1; then
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
-  fi
-}
-```
-
-Para:
-```bash
-ensure_state_file() {
-  local state_file
-  state_file="$STATE_DIR/state.json"
-  if [[ ! -f "$state_file" ]]; then
-    cat > "$state_file" <<EOF
-{}
-EOF
-  fi
-
-  if id "$SERVICE_USER" >/dev/null 2>&1; then
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope" || true
+    chown "$SERVICE_USER":"$SERVICE_USER" "$env_file"
   fi
 }
 ```
@@ -88,17 +78,16 @@ EOF
 
 | Local | Alteração |
 |-------|-----------|
-| Função `ensure_dirs()` | Adicionar criação de `/var/log/iscope` |
-| Função `ensure_state_file()` | Adicionar `chown` para `/var/log/iscope` |
+| Função `write_env_file()` | Adicionar `chown` para o usuário do serviço após criar o arquivo |
 
 ---
 
 ## Resultado Esperado
 
 Após a correção:
-1. Novas instalações criarão automaticamente o diretório `/var/log/iscope`
-2. O diretório terá as permissões corretas para o usuário `iscope`
-3. O agent conseguirá escrever logs em `/var/log/iscope/agent.log`
+1. O arquivo `agent.env` será criado com owner `iscope:iscope`
+2. O agent conseguirá ler as configurações ao iniciar
+3. As permissões `600` são mantidas (apenas o dono pode ler/escrever) - seguro para o activation code
 
 ---
 
@@ -106,3 +95,4 @@ Após a correção:
 
 1. Execute a **solução imediata** no servidor para resolver o problema agora
 2. Aprove este plano para aplicar a **correção permanente** no script de instalação
+
