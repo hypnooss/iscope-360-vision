@@ -1,17 +1,42 @@
 """
 Subdomain Enumeration Executor - Multi-source subdomain discovery.
 Uses free APIs: crt.sh, HackerTarget, AlienVault OTX.
+Forces IPv4 to avoid IPv6 connectivity issues.
 """
 
+import socket
 import requests
+from requests.adapters import HTTPAdapter
 from typing import Any, Dict, List, Set
 from .base import BaseExecutor
+
+
+class IPv4HTTPAdapter(HTTPAdapter):
+    """Force IPv4 connections only."""
+
+    def init_poolmanager(self, *args, **kwargs):
+        import urllib3.util.connection as urllib3_conn
+
+        original_gai_family = urllib3_conn.allowed_gai_family
+        urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+        try:
+            super().init_poolmanager(*args, **kwargs)
+        finally:
+            urllib3_conn.allowed_gai_family = original_gai_family
 
 
 class SubdomainEnumExecutor(BaseExecutor):
     """Executor for subdomain enumeration using multiple free APIs."""
 
     DEFAULT_TIMEOUT = 30
+
+    def _get_session(self) -> requests.Session:
+        """Create a requests session that forces IPv4."""
+        session = requests.Session()
+        adapter = IPv4HTTPAdapter()
+        session.mount('https://', adapter)
+        session.mount('http://', adapter)
+        return session
 
     def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         config = step.get('config', {}) or {}
@@ -95,7 +120,8 @@ class SubdomainEnumExecutor(BaseExecutor):
         url = f"https://crt.sh/?q=%25.{domain}&output=json"
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
 
-        response = requests.get(url, headers=headers, timeout=timeout)
+        session = self._get_session()
+        response = session.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
 
         subdomains = set()
@@ -115,7 +141,8 @@ class SubdomainEnumExecutor(BaseExecutor):
         """Query HackerTarget API (100 free requests/day)."""
         url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
 
-        response = requests.get(url, timeout=timeout)
+        session = self._get_session()
+        response = session.get(url, timeout=timeout)
         response.raise_for_status()
 
         subdomains = set()
@@ -134,7 +161,8 @@ class SubdomainEnumExecutor(BaseExecutor):
         url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
 
-        response = requests.get(url, headers=headers, timeout=timeout)
+        session = self._get_session()
+        response = session.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
 
         subdomains = set()
