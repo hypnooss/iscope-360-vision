@@ -1,89 +1,200 @@
 
 
-## Alterar Cores de TXT e Subdomínios
+## Adicionar Mapa de Infraestrutura DNS ao Relatório PDF
 
-### Problema
+### Visão Geral
 
-Verde (emerald) em TXT e verde-água (teal) em Subdomínios estão muito próximos, e o teal conflita com a cor primária do tema (que também é teal).
-
-### Cores Atuais
-
-| Grupo | Ícone | Borda/Background |
-|-------|-------|------------------|
-| NS | `sky-400` | `sky-500` |
-| MX | `violet-400` | `violet-500` |
-| SOA | `amber-400` | `amber-500` |
-| TXT | `emerald-400` | `emerald-500` |
-| Subdomínios | `teal-400` | `teal-500` |
-
-### Novas Cores
-
-| Grupo | Ícone | Borda/Background | Justificativa |
-|-------|-------|------------------|---------------|
-| TXT | `pink-400` | `pink-500` | Rosa contrasta bem com as cores frias existentes |
-| Subdomínios | `indigo-400` | `indigo-500` | Azul-índigo complementa sky sem repetir |
+Criar uma nova página no PDF de Domínio Externo que exibe o Mapa de Infraestrutura DNS em formato estático, adaptado para impressão. O mapa será inserido entre a página de "Issues Summary" e a página de "Subdomínios Descobertos".
 
 ---
 
-### Alterações Técnicas
+### Estrutura do Mapa no PDF
 
-**Arquivo:** `src/components/external-domain/DNSMapSection.tsx`
+O layout será uma representação simplificada do mapa web, organizado em 3 colunas:
 
-#### 1. TXT (linha 480-485)
-
-**Antes:**
-```tsx
-<DNSGroup
-  title="TXT"
-  count={3}
-  icon={<FileText className="w-4 h-4 text-emerald-400" />}
-  color="border-emerald-500/30 bg-emerald-500/5"
-```
-
-**Depois:**
-```tsx
-<DNSGroup
-  title="TXT"
-  count={3}
-  icon={<FileText className="w-4 h-4 text-pink-400" />}
-  color="border-pink-500/30 bg-pink-500/5"
-```
-
-#### 2. Subdomínios (linha 584-589)
-
-**Antes:**
-```tsx
-<DNSGroup
-  title="Subdomínios"
-  count={subdomainSummary?.total_found ?? 0}
-  icon={<Globe className="w-4 h-4 text-teal-400" />}
-  color="border-teal-500/30 bg-teal-500/5"
-```
-
-**Depois:**
-```tsx
-<DNSGroup
-  title="Subdomínios"
-  count={subdomainSummary?.total_found ?? 0}
-  icon={<Globe className="w-4 h-4 text-indigo-400" />}
-  color="border-indigo-500/30 bg-indigo-500/5"
+```text
+┌─────────────────────────────────────────────────────────────┐
+│           MAPA DE INFRAESTRUTURA DNS                        │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│   NS Records    │   SOA / DNSSEC  │     Subdomínios         │
+│   ───────────   │   ───────────── │     ───────────         │
+│   ns1.host.com  │   Primary: ...  │     sub1.domain.com ●   │
+│   ns2.host.com  │   Contact: ...  │     sub2.domain.com ●   │
+│                 │   DNSSEC: Ativo │     sub3.domain.com ○   │
+├─────────────────┼─────────────────┤     ...                 │
+│   MX Records    │   TXT (Email)   │     (+X mais)           │
+│   ───────────   │   ───────────── │                         │
+│   mail.host.com │   SPF: ● ...    │                         │
+│   priority: 10  │   DKIM: ● sel1  │                         │
+│                 │   DMARC: ● p=.. │                         │
+└─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
 ---
 
-### Paleta Final
+### Arquivos a Criar/Modificar
 
-| Grupo | Cor |
-|-------|-----|
-| NS | Sky (azul claro) |
-| MX | Violet (roxo) |
-| SOA | Amber (âmbar/laranja) |
-| TXT | Pink (rosa) |
-| Subdomínios | Indigo (azul-índigo) |
+#### 1. Novo Componente: `src/components/pdf/sections/PDFDNSMap.tsx`
+
+Componente dedicado para renderizar o mapa DNS no PDF:
+
+```tsx
+// Estrutura do componente
+interface PDFDNSMapProps {
+  dnsSummary?: DnsSummary;
+  emailAuth?: { spf: boolean; dkim: boolean; dmarc: boolean };
+  subdomainSummary?: SubdomainSummary;
+  categories: ComplianceCategory[];
+}
+
+// Seções:
+// - Título "Mapa de Infraestrutura DNS" 
+// - Grid 3 colunas usando View + flexDirection: 'row'
+// - Coluna 1: NS + MX (cards empilhados verticalmente)
+// - Coluna 2: SOA/DNSSEC + TXT/Email Auth
+// - Coluna 3: Subdomínios (lista com indicadores ●/○)
+```
+
+**Estilo Visual:**
+- Usar cores da paleta existente em `pdfStyles.ts`
+- Cards com bordas coloridas por tipo (sky para NS, violet para MX, etc.)
+- Indicadores de status como círculos coloridos (●/○)
+- Limite de 15 subdomínios na visualização com indicador "+X mais"
+
+#### 2. Atualizar: `src/components/pdf/sections/index.ts`
+
+Adicionar export do novo componente:
+
+```typescript
+export { PDFDNSMap } from './PDFDNSMap';
+```
+
+#### 3. Atualizar: `src/components/pdf/ExternalDomainPDF.tsx`
+
+Inserir nova página com o mapa DNS após a página de Issues:
+
+```tsx
+{/* PAGE: DNS Infrastructure Map */}
+<Page size="A4" style={pageStyles.page}>
+  <View style={pageStyles.content}>
+    <PDFDNSMap 
+      dnsSummary={dnsSummary}
+      emailAuth={emailAuth}
+      subdomainSummary={subdomainSummary}
+      categories={report.categories}
+    />
+  </View>
+  <PDFFooter />
+</Page>
+```
 
 ---
 
-### Arquivo Modificado
+### Detalhes Técnicos do PDFDNSMap
 
-- `src/components/external-domain/DNSMapSection.tsx`
+#### Extração de Dados
+
+Reutilizar as mesmas funções helper do `DNSMapSection.tsx`:
+
+```typescript
+// Copiar e adaptar para o contexto PDF
+const extractNsRecords = (categories) => { ... }
+const extractMxRecords = (categories) => { ... }
+const extractSpfRecord = (categories) => { ... }
+const extractDkimKeys = (categories) => { ... }
+const extractDmarcPolicy = (categories) => { ... }
+```
+
+#### Estilos Específicos
+
+```typescript
+const dnsMapStyles = StyleSheet.create({
+  container: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  header: {
+    backgroundColor: colors.cardBg,
+    padding: spacing.cardPadding,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: colors.primary,
+  },
+  grid: {
+    flexDirection: 'row',
+    padding: spacing.cardPadding,
+  },
+  column: {
+    flex: 1,
+    paddingHorizontal: 6,
+  },
+  groupCard: {
+    marginBottom: 12,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: 10,
+  },
+  groupTitle: {
+    fontSize: typography.body,
+    fontFamily: typography.bold,
+    marginBottom: 6,
+  },
+  recordItem: {
+    fontSize: typography.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: 3,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+});
+```
+
+#### Cores por Categoria
+
+| Grupo | Cor da Borda | Background |
+|-------|--------------|------------|
+| NS | `#0EA5E9` (sky-500) | `#F0F9FF` (sky-50) |
+| MX | `#A855F7` (purple-500) | `#FAF5FF` (purple-50) |
+| SOA | `#F59E0B` (amber-500) | `#FFFBEB` (amber-50) |
+| TXT | `#EC4899` (pink-500) | `#FDF2F8` (pink-50) |
+| Subdomínios | `#6366F1` (indigo-500) | `#EEF2FF` (indigo-50) |
+
+---
+
+### Limites de Exibição
+
+| Elemento | Limite | Indicador |
+|----------|--------|-----------|
+| NS Records | 6 | "+X nameservers" |
+| MX Records | 4 | "+X mail servers" |
+| DKIM Keys | 3 | "+X seletores" |
+| Subdomínios | 15 | "+X subdomínios" |
+
+---
+
+### Ordem das Páginas (Atualizada)
+
+1. **Página 1**: Resumo Executivo (Score, Stats, Info, Tabela de Categorias)
+2. **Página 2**: Problemas Encontrados (se houver falhas)
+3. **Página 3**: **Mapa de Infraestrutura DNS** ← NOVA
+4. **Página 4**: Subdomínios Descobertos (tabela detalhada)
+5. **Páginas 5+**: Detalhamento por Categoria
+
+---
+
+### Arquivos Modificados
+
+- `src/components/pdf/sections/PDFDNSMap.tsx` (novo)
+- `src/components/pdf/sections/index.ts` (atualizar exports)
+- `src/components/pdf/ExternalDomainPDF.tsx` (adicionar página)
 
