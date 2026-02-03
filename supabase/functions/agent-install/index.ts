@@ -271,7 +271,7 @@ ensure_user() {
 }
 
 ensure_dirs() {
-  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
+  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope"
 }
 
 stop_service_if_exists() {
@@ -397,6 +397,7 @@ EOF
   if id "$SERVICE_USER" >/dev/null 2>&1; then
     chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
     chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope" || true
   fi
 }
 
