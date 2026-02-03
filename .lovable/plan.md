@@ -1,14 +1,27 @@
 
 
-## Paginação de Subdomínios no Mapa DNS
+## Alterar Cores de TXT e Subdomínios
 
 ### Problema
 
-Com 55 subdomínios ativos, a coluna fica muito longa e estranha visualmente. Atualmente, todos os subdomínios são renderizados de uma vez (linhas 609-622).
+Verde (emerald) em TXT e verde-água (teal) em Subdomínios estão muito próximos, e o teal conflita com a cor primária do tema (que também é teal).
 
-### Solução
+### Cores Atuais
 
-Implementar paginação progressiva com limite de 10 itens por vez e botão "Exibir mais".
+| Grupo | Ícone | Borda/Background |
+|-------|-------|------------------|
+| NS | `sky-400` | `sky-500` |
+| MX | `violet-400` | `violet-500` |
+| SOA | `amber-400` | `amber-500` |
+| TXT | `emerald-400` | `emerald-500` |
+| Subdomínios | `teal-400` | `teal-500` |
+
+### Novas Cores
+
+| Grupo | Ícone | Borda/Background | Justificativa |
+|-------|-------|------------------|---------------|
+| TXT | `pink-400` | `pink-500` | Rosa contrasta bem com as cores frias existentes |
+| Subdomínios | `indigo-400` | `indigo-500` | Azul-índigo complementa sky sem repetir |
 
 ---
 
@@ -16,90 +29,57 @@ Implementar paginação progressiva com limite de 10 itens por vez e botão "Exi
 
 **Arquivo:** `src/components/external-domain/DNSMapSection.tsx`
 
-#### 1. Adicionar estado para controle de paginação
-
-```typescript
-// Linha ~285, junto com o state de subdomainFilter
-const [subdomainVisibleCount, setSubdomainVisibleCount] = useState(10);
-```
-
-#### 2. Criar lista paginada de subdomínios
-
-```typescript
-// Após filteredSubdomains (linha ~305)
-const visibleSubdomains = filteredSubdomains.slice(0, subdomainVisibleCount);
-const hasMoreSubdomains = subdomainVisibleCount < filteredSubdomains.length;
-```
-
-#### 3. Reset da paginação ao mudar filtro
-
-Atualizar o `useMemo` do `filteredSubdomains` para resetar a contagem quando o filtro mudar:
-
-```typescript
-// Adicionar useEffect para resetar paginação quando filtro muda
-useEffect(() => {
-  setSubdomainVisibleCount(10);
-}, [subdomainFilter]);
-```
-
-#### 4. Atualizar renderização (linhas 609-627)
+#### 1. TXT (linha 480-485)
 
 **Antes:**
 ```tsx
-{filteredSubdomains.length > 0 ? (
-  filteredSubdomains.map((sub, idx) => (
-    <DNSNode ... />
-  ))
-) : (...)}
+<DNSGroup
+  title="TXT"
+  count={3}
+  icon={<FileText className="w-4 h-4 text-emerald-400" />}
+  color="border-emerald-500/30 bg-emerald-500/5"
 ```
 
 **Depois:**
 ```tsx
-{filteredSubdomains.length > 0 ? (
-  <>
-    {visibleSubdomains.map((sub, idx) => (
-      <DNSNode 
-        key={idx} 
-        label={sub.subdomain}
-        sublabel={sub.addresses.length > 0 
-          ? sub.addresses.slice(0, 2).map(a => a.ip).join(', ')
-          : undefined
-        }
-        isActive={sub.is_alive}
-        showCopy 
-        showExternalLink={sub.is_alive}
-      />
-    ))}
-    
-    {/* Botão Exibir Mais */}
-    {hasMoreSubdomains && (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => setSubdomainVisibleCount(prev => prev + 10)}
-      >
-        Exibir mais ({subdomainVisibleCount} de {filteredSubdomains.length})
-      </Button>
-    )}
-  </>
-) : (
-  <div className="text-[13px] text-muted-foreground text-center py-2">
-    Nenhum subdomínio encontrado
-  </div>
-)}
+<DNSGroup
+  title="TXT"
+  count={3}
+  icon={<FileText className="w-4 h-4 text-pink-400" />}
+  color="border-pink-500/30 bg-pink-500/5"
+```
+
+#### 2. Subdomínios (linha 584-589)
+
+**Antes:**
+```tsx
+<DNSGroup
+  title="Subdomínios"
+  count={subdomainSummary?.total_found ?? 0}
+  icon={<Globe className="w-4 h-4 text-teal-400" />}
+  color="border-teal-500/30 bg-teal-500/5"
+```
+
+**Depois:**
+```tsx
+<DNSGroup
+  title="Subdomínios"
+  count={subdomainSummary?.total_found ?? 0}
+  icon={<Globe className="w-4 h-4 text-indigo-400" />}
+  color="border-indigo-500/30 bg-indigo-500/5"
 ```
 
 ---
 
-### Comportamento
+### Paleta Final
 
-| Ação | Resultado |
-|------|-----------|
-| Página inicial | Exibe 10 subdomínios |
-| Clique em "Exibir mais" | Mostra +10 (total: 20) |
-| Continuar clicando | Incrementa 10 até exibir todos |
-| Mudar filtro (ativos/inativos) | Reseta para 10 |
+| Grupo | Cor |
+|-------|-----|
+| NS | Sky (azul claro) |
+| MX | Violet (roxo) |
+| SOA | Amber (âmbar/laranja) |
+| TXT | Pink (rosa) |
+| Subdomínios | Indigo (azul-índigo) |
 
 ---
 
