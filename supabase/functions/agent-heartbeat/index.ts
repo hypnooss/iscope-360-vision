@@ -12,6 +12,13 @@ interface HeartbeatRequest {
   agent_version: string;
 }
 
+interface UpdateInfo {
+  version: string;
+  download_url: string;
+  checksum: string;
+  force: boolean;
+}
+
 interface HeartbeatSuccessResponse {
   success: true;
   agent_id: string;
@@ -19,11 +26,30 @@ interface HeartbeatSuccessResponse {
   next_heartbeat_in: number;
   config_flag: 0 | 1;
   has_pending_tasks: boolean;
+  update_available: boolean;
+  update_info?: UpdateInfo;
 }
 
 interface HeartbeatErrorResponse {
   error: string;
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
+}
+
+/**
+ * Compare semantic versions (e.g., "1.0.0" vs "1.1.0")
+ * Returns: -1 if a < b, 0 if a == b, 1 if a > b
+ */
+function compareVersions(a: string, b: string): number {
+  const partsA = a.split('.').map(n => parseInt(n, 10) || 0);
+  const partsB = b.split('.').map(n => parseInt(n, 10) || 0);
+  
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const numA = partsA[i] || 0;
+    const numB = partsB[i] || 0;
+    if (numA < numB) return -1;
+    if (numA > numB) return 1;
+  }
+  return 0;
 }
 
 interface RpcHeartbeatResult {
@@ -182,7 +208,23 @@ serve(async (req: Request) => {
       body = { status: 'unknown', agent_version: 'unknown' };
     }
 
-    console.log(`Heartbeat OK: agent=${agentId}, version=${body.agent_version}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}`);
+    const agentVersion = body.agent_version || '0.0.0';
+
+    // Check for available updates
+    const { data: updateSettings } = await supabase
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['agent_latest_version', 'agent_update_checksum', 'agent_force_update']);
+
+    const latestVersion = (updateSettings?.find(s => s.key === 'agent_latest_version')?.value as string || '1.0.0').replace(/"/g, '');
+    const updateChecksum = (updateSettings?.find(s => s.key === 'agent_update_checksum')?.value as string || '').replace(/"/g, '');
+    const forceUpdate = updateSettings?.find(s => s.key === 'agent_force_update')?.value === true || 
+                        updateSettings?.find(s => s.key === 'agent_force_update')?.value === 'true';
+
+    // Compare versions to determine if update is available
+    const updateAvailable = compareVersions(agentVersion, latestVersion) < 0;
+
+    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, latest=${latestVersion}, update=${updateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}`);
 
     // Build success response
     const response: HeartbeatSuccessResponse = {
@@ -192,7 +234,18 @@ serve(async (req: Request) => {
       next_heartbeat_in: result.next_heartbeat_in || 120,
       config_flag: (result.config_flag || 0) as 0 | 1,
       has_pending_tasks: result.has_pending_tasks || false,
+      update_available: updateAvailable,
     };
+
+    // Include update info if available
+    if (updateAvailable) {
+      response.update_info = {
+        version: latestVersion,
+        download_url: `${supabaseUrl}/storage/v1/object/public/agent-releases/iscope-agent-${latestVersion}.tar.gz`,
+        checksum: updateChecksum,
+        force: forceUpdate,
+      };
+    }
 
     return new Response(
       JSON.stringify(response),

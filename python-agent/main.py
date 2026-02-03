@@ -6,6 +6,8 @@ from agent.scheduler import AgentScheduler
 from agent.heartbeat import AgentHeartbeat, AgentStopped
 from agent.tasks import TaskExecutor
 from agent.logger import setup_logger
+from agent.updater import AutoUpdater
+from agent.version import get_version
 
 import argparse
 import json
@@ -55,27 +57,22 @@ class AgentApp:
         self.auth = AuthManager(self.state, self.api, logger)
         self.heartbeat = AgentHeartbeat(self.api, self.state, logger)
         self.task_executor = TaskExecutor(self.api, self.state, logger)
+        self.updater = AutoUpdater(logger)
 
     def agent_loop(self):
-        self.logger.info("Início do loop do agent")
+        self.logger.info(f"Início do loop do agent v{get_version()}")
 
         self.auth.ensure_authenticated()
 
         try:
-            result = self.heartbeat.send(
-                status="running",
-                version="1.0.0"
-            )
+            result = self.heartbeat.send(status="running")
         except RuntimeError as e:
             msg = str(e)
             if "TOKEN_EXPIRED" in msg:
                 self.logger.info("Token expirado durante heartbeat, renovando...")
                 self.auth.refresh_tokens()
                 # Retry heartbeat after refresh
-                result = self.heartbeat.send(
-                    status="running",
-                    version="1.0.0"
-                )
+                result = self.heartbeat.send(status="running")
             else:
                 raise
 
@@ -84,19 +81,34 @@ class AgentApp:
         self.logger.info(
             f"Heartbeat OK | config_flag={result.get('config_flag')} | "
             f"has_pending_tasks={result.get('has_pending_tasks')} | "
+            f"update={result.get('update_available')} | "
             f"next={next_interval}s"
         )
+
+        # Check for available updates
+        if result.get('update_available') and result.get('update_info'):
+            self.logger.info("Atualização disponível detectada")
+            update_info = result['update_info']
+
+            # Force update or no pending tasks: proceed with update
+            if update_info.get('force') or not result.get('has_pending_tasks'):
+                self.logger.info(f"Iniciando update para v{update_info.get('version')}")
+                if self.updater.check_and_update(update_info):
+                    # Update succeeded, process will restart
+                    return next_interval
+            else:
+                self.logger.info("Adiando update - há tarefas pendentes")
 
         # Processar tarefas pendentes se houver
         if result.get('has_pending_tasks'):
             self.logger.info("Tarefas pendentes detectadas. Processando...")
-            
+
             # Garantir token válido ANTES de processar tarefas
             # Tarefas podem levar vários minutos, então verificamos novamente
             if not self.auth.is_access_token_valid():
                 self.logger.info("Token próximo de expirar, renovando antes de processar tarefas...")
                 self.auth.refresh_tokens()
-            
+
             try:
                 processed = self.task_executor.process_all()
                 self.logger.info(f"{processed} tarefas processadas")
