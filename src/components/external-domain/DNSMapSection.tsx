@@ -480,8 +480,8 @@ export function DNSMapSection({
             <DNSGroup
               title="TXT"
               count={3}
-              icon={<FileText className="w-4 h-4 text-emerald-400" />}
-              color="border-emerald-500/30 bg-emerald-500/5"
+              icon={<FileText className="w-4 h-4 text-pink-400" />}
+              color="border-pink-500/30 bg-pink-500/5"
               defaultExpanded={true}
             >
               <div className="space-y-3.5 px-1 py-1">
@@ -584,8 +584,8 @@ export function DNSMapSection({
           <DNSGroup
             title="Subdomínios"
             count={subdomainSummary?.total_found ?? 0}
-            icon={<Globe className="w-4 h-4 text-teal-400" />}
-            color="border-teal-500/30 bg-teal-500/5"
+            icon={<Globe className="w-4 h-4 text-indigo-400" />}
+            color="border-indigo-500/30 bg-indigo-500/5"
             defaultExpanded={true}
           >
             {/* Filter Buttons */}
