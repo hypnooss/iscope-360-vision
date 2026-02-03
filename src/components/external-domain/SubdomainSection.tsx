@@ -76,11 +76,21 @@ export function SubdomainSection({ summary, className }: SubdomainSectionProps) 
                 <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">
                   <Globe className="w-5 h-5 text-sky-400" />
                 </div>
-                <div>
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-foreground">Subdomínios Descobertos</span>
-                  <Badge variant="secondary" className="ml-2 bg-sky-500/10 text-sky-400 border-sky-500/20">
+                  <Badge variant="secondary" className="bg-sky-500/10 text-sky-400 border-sky-500/20">
                     {summary.total_found}
                   </Badge>
+                  {summary.subdomains.some(s => s.is_alive !== undefined) && (
+                    <>
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {summary.subdomains.filter(s => s.is_alive).length} ativos
+                      </Badge>
+                      <Badge variant="secondary" className="bg-muted text-muted-foreground border-muted-foreground/20">
+                        {summary.subdomains.filter(s => s.is_alive === false).length} inativos
+                      </Badge>
+                    </>
+                  )}
                 </div>
               </CardTitle>
               <div className="flex items-center gap-2">
@@ -148,7 +158,23 @@ export function SubdomainSection({ summary, className }: SubdomainSectionProps) 
                       <TableRow key={idx} className="group hover:bg-muted/20">
                         <TableCell className="font-mono text-sm">
                           <div className="flex items-center gap-2">
-                            <span className="text-foreground break-all">{sub.subdomain}</span>
+                            {sub.is_alive !== undefined && (
+                              <span 
+                                className={cn(
+                                  "w-2 h-2 rounded-full flex-shrink-0",
+                                  sub.is_alive 
+                                    ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
+                                    : "bg-muted-foreground/30"
+                                )}
+                                title={sub.is_alive ? "Ativo" : "Inativo"}
+                              />
+                            )}
+                            <span className={cn(
+                              "break-all",
+                              sub.is_alive === false ? "text-muted-foreground" : "text-foreground"
+                            )}>
+                              {sub.subdomain}
+                            </span>
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                               <Button
                                 variant="ghost"
@@ -198,7 +224,9 @@ export function SubdomainSection({ summary, className }: SubdomainSectionProps) 
                               )}
                             </div>
                           ) : (
-                            <span className="text-muted-foreground/50">—</span>
+                            <span className="text-muted-foreground/50">
+                              {sub.is_alive === false ? 'Não resolvido' : '—'}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">

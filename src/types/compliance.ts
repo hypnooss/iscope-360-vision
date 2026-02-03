@@ -37,6 +37,7 @@ export interface SubdomainEntry {
   subdomain: string;
   sources: string[];
   addresses: Array<{ ip: string; type?: string }>;
+  is_alive?: boolean;
 }
 
 export interface SubdomainSummary {
