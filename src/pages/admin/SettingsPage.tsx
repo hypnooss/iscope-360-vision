@@ -252,16 +252,29 @@ export default function SettingsPage() {
 
     setPublishingUpdate(true);
     try {
-      // 1. Upload to Supabase Storage
-      const filename = `iscope-agent-${newVersion}.tar.gz`;
+      // 1. Upload versioned file to Supabase Storage
+      const versionedFilename = `iscope-agent-${newVersion}.tar.gz`;
       const { error: uploadError } = await supabase.storage
         .from('agent-releases')
-        .upload(filename, selectedFile, {
+        .upload(versionedFilename, selectedFile, {
           upsert: true,
           contentType: 'application/gzip'
         });
 
       if (uploadError) throw uploadError;
+
+      // 2. Also upload as 'latest' for default installations
+      const { error: latestUploadError } = await supabase.storage
+        .from('agent-releases')
+        .upload('iscope-agent-latest.tar.gz', selectedFile, {
+          upsert: true,
+          contentType: 'application/gzip'
+        });
+
+      if (latestUploadError) {
+        console.error('Error uploading latest:', latestUploadError);
+        toast.warning('Versão publicada, mas erro ao atualizar arquivo latest');
+      }
 
       // 2. Update system_settings (upsert pattern)
       const settings = [
