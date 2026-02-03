@@ -1,178 +1,444 @@
 
-# Plano: Adicionar Domínios Externos ao Modal de Detalhes do Workspace
 
-## Problema Identificado
+# Plano: Integrar Amass ao Python Agent
 
-No modal "Detalhes do Workspace" (acessado pelo ícone de olho em Administração > Workspaces), são exibidos:
-- Firewalls
-- Microsoft 365 Tenants  
-- Agents
+## Visão Geral
 
-**Faltando:** Domínios Externos não estão sendo buscados nem exibidos.
+Adicionar o Amass (ferramenta de enumeração de subdomínios em Go) ao Python Agent, incluindo instalação automática via script de instalação e um novo executor para processar os resultados.
 
 ---
 
-## Arquivo a Modificar
+## Arquitetura
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/ClientsPage.tsx` | Adicionar busca e exibição de External Domains |
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│                    Script de Instalação (Bash)                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  install_amass() - Nova função                               │  │
+│  │  - Detecta arquitetura (amd64/arm64)                         │  │
+│  │  - Baixa release do GitHub                                   │  │
+│  │  - Extrai binário para /usr/local/bin/amass                  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                     Python Agent (Executor)                        │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  AmassExecutor - python-agent/agent/executors/amass.py       │  │
+│  │  - Executa: amass enum -passive -d domain -json /tmp/out     │  │
+│  │  - Lê e parseia arquivo JSON de saída                        │  │
+│  │  - Retorna lista de subdomínios + metadados                  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Alterações Técnicas
+## Fase 1: Atualizar Script de Instalação
 
-### 1. Adicionar Interface para External Domain (após linha 58)
+### Arquivo: `supabase/functions/agent-install/index.ts`
 
-```typescript
-interface ExternalDomain {
-  id: string;
-  name: string;
-  domain: string;
-  last_score: number | null;
-  status: string;
+**Alterações:**
+
+1. Adicionar função `install_amass()` que:
+   - Detecta arquitetura do sistema (amd64 ou arm64)
+   - Baixa o binário pré-compilado do GitHub Releases
+   - Extrai e instala em `/usr/local/bin/amass`
+   - Verifica instalação com `amass -version`
+
+2. Chamar `install_amass` após `install_deps` no fluxo principal
+
+**Nova função a adicionar (~linhas 187-220):**
+
+```bash
+install_amass() {
+  echo "Instalando Amass para enumeração de subdomínios..."
+  
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64)  arch="amd64" ;;
+    aarch64) arch="arm64" ;;
+    *)
+      echo "Aviso: arquitetura $arch não suportada para Amass. Pulando instalação."
+      return 0
+      ;;
+  esac
+  
+  local version="v4.2.0"
+  local filename="amass_Linux_${arch}.zip"
+  local url="https://github.com/owasp-amass/amass/releases/download/${version}/${filename}"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  
+  echo "Baixando Amass ${version} (${arch})..."
+  
+  if ! curl -fsSL "$url" -o "${tmp_dir}/amass.zip"; then
+    echo "Aviso: falha ao baixar Amass. Continuando sem ele."
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+  
+  # Instalar unzip se necessário
+  if ! command -v unzip >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y unzip || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y unzip || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y unzip || true
+    fi
+  fi
+  
+  unzip -q "${tmp_dir}/amass.zip" -d "$tmp_dir"
+  
+  # O zip contém uma pasta amass_Linux_xxx/amass
+  local bin_path
+  bin_path="$(find "$tmp_dir" -name 'amass' -type f -executable | head -1)"
+  
+  if [[ -n "$bin_path" ]]; then
+    mv "$bin_path" /usr/local/bin/amass
+    chmod +x /usr/local/bin/amass
+    echo "Amass instalado: $(amass -version 2>&1 | head -1)"
+  else
+    echo "Aviso: binário do Amass não encontrado no pacote."
+  fi
+  
+  rm -rf "$tmp_dir"
 }
 ```
 
-### 2. Atualizar Interface WorkspaceDetails (linha 60-64)
+**Atualização da função main (~linha 383):**
 
-```typescript
-interface WorkspaceDetails {
-  firewalls: Firewall[];
-  tenants: M365Tenant[];
-  agents: Agent[];
-  externalDomains: ExternalDomain[];  // NOVO
+```bash
+main() {
+  # ... existing code ...
+  
+  install_deps
+  install_amass    # <-- NOVA LINHA
+  ensure_user
+  # ... rest of function ...
 }
 ```
 
-### 3. Adicionar Import do Ícone Globe (linha 25)
+---
 
-```typescript
-import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot, Globe } from "lucide-react";
+## Fase 2: Criar Executor Amass
+
+### Novo Arquivo: `python-agent/agent/executors/amass.py`
+
+```python
+"""
+Amass Executor - Subdomain enumeration using OWASP Amass.
+
+Executes Amass in passive or active mode and returns discovered subdomains
+with source information.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from typing import Any, Dict, List, Optional
+
+from .base import BaseExecutor
+
+
+class AmassExecutor(BaseExecutor):
+    """Executor for subdomain enumeration using Amass."""
+
+    DEFAULT_TIMEOUT = 300  # 5 minutes default
+    MAX_TIMEOUT = 900      # 15 minutes max
+
+    def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute Amass enumeration.
+
+        Config options:
+            domain: Target domain (required, can come from context)
+            mode: 'passive' (default) or 'active'
+            timeout: Max execution time in seconds (default: 300)
+            max_depth: DNS brute force recursion depth (active mode only)
+            config_file: Path to custom Amass config.yaml (optional)
+
+        Returns:
+            Dict with:
+                - domain: Target domain
+                - subdomains: List of discovered subdomains with metadata
+                - total_found: Number of unique subdomains
+                - sources: List of data sources used
+                - mode: Enumeration mode used
+        """
+        config = step.get('config', {}) or {}
+        step_id = step.get('id', 'unknown')
+
+        domain = (config.get('domain') or context.get('domain') or '').strip().rstrip('.')
+        mode = config.get('mode', 'passive').lower()
+        timeout = min(config.get('timeout', self.DEFAULT_TIMEOUT), self.MAX_TIMEOUT)
+        max_depth = config.get('max_depth', 1)
+
+        if not domain:
+            return {'status_code': 0, 'data': None, 'error': 'Missing domain'}
+
+        # Check if Amass is installed
+        amass_path = shutil.which('amass')
+        if not amass_path:
+            self.logger.error(f"Step {step_id}: Amass not installed")
+            return {
+                'status_code': 0,
+                'data': {'domain': domain, 'subdomains': []},
+                'error': 'Amass not installed. Run agent installer with --update.'
+            }
+
+        self.logger.info(f"Step {step_id}: Running Amass ({mode}) for {domain}")
+
+        # Create temp file for JSON output
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_file = f.name
+
+        try:
+            # Build command
+            cmd = [
+                amass_path,
+                'enum',
+                '-d', domain,
+                '-json', output_file,
+                '-timeout', str(int(timeout / 60)),  # Amass uses minutes
+            ]
+
+            if mode == 'passive':
+                cmd.append('-passive')
+            elif mode == 'active':
+                cmd.extend(['-active', '-brute'])
+                if max_depth > 1:
+                    cmd.extend(['-max-depth', str(max_depth)])
+
+            # Execute Amass
+            self.logger.debug(f"Step {step_id}: Executing: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 30,  # Extra buffer
+                cwd='/tmp'
+            )
+
+            if result.returncode != 0 and not os.path.exists(output_file):
+                error_msg = result.stderr[:500] if result.stderr else f"Exit code: {result.returncode}"
+                self.logger.error(f"Step {step_id}: Amass failed - {error_msg}")
+                return {
+                    'status_code': result.returncode,
+                    'data': {'domain': domain, 'subdomains': []},
+                    'error': f"Amass failed: {error_msg}"
+                }
+
+            # Parse JSON output (one JSON object per line)
+            subdomains = []
+            sources_set = set()
+
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                with open(output_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            name = entry.get('name', '').lower()
+                            if name and self._is_valid_subdomain(name, domain):
+                                subdomain_entry = {
+                                    'subdomain': name,
+                                    'sources': entry.get('sources', []),
+                                    'addresses': entry.get('addresses', []),
+                                }
+                                subdomains.append(subdomain_entry)
+                                for src in entry.get('sources', []):
+                                    sources_set.add(src)
+                        except json.JSONDecodeError:
+                            continue
+
+            # Deduplicate by subdomain name
+            seen = set()
+            unique_subdomains = []
+            for sub in subdomains:
+                if sub['subdomain'] not in seen:
+                    seen.add(sub['subdomain'])
+                    unique_subdomains.append(sub)
+
+            # Sort alphabetically
+            unique_subdomains.sort(key=lambda x: x['subdomain'])
+
+            self.logger.info(
+                f"Step {step_id}: Amass found {len(unique_subdomains)} unique subdomains "
+                f"from {len(sources_set)} sources"
+            )
+
+            return {
+                'status_code': 200,
+                'data': {
+                    'domain': domain,
+                    'mode': mode,
+                    'total_found': len(unique_subdomains),
+                    'sources': sorted(list(sources_set)),
+                    'subdomains': unique_subdomains,
+                },
+                'error': None,
+            }
+
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Step {step_id}: Amass timeout after {timeout}s")
+            return {
+                'status_code': 0,
+                'data': {'domain': domain, 'subdomains': []},
+                'error': f'Amass timeout after {timeout} seconds'
+            }
+
+        except Exception as e:
+            self.logger.error(f"Step {step_id}: Amass error - {str(e)}")
+            return {
+                'status_code': 0,
+                'data': {'domain': domain, 'subdomains': []},
+                'error': str(e),
+            }
+
+        finally:
+            # Cleanup temp file
+            if os.path.exists(output_file):
+                os.remove(output_file)
+
+    def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
+        """Check if name is a valid subdomain of base_domain."""
+        name = name.lstrip('*.').lower()
+        base_domain = base_domain.lower()
+        if not name:
+            return False
+        return name == base_domain or name.endswith(f".{base_domain}")
 ```
 
-### 4. Atualizar fetchData para contar External Domains (linhas 120-133)
+---
 
-```typescript
-const clientsWithCounts = await Promise.all(
-  (clientsData || []).map(async (client) => {
-    const [firewallsResult, tenantsResult, agentsResult, domainsResult] = await Promise.all([
-      supabase.from("firewalls").select("id", { count: "exact", head: true }).eq("client_id", client.id),
-      supabase.from("m365_tenants").select("id", { count: "exact", head: true }).eq("client_id", client.id),
-      supabase.from("agents").select("id", { count: "exact", head: true }).eq("client_id", client.id),
-      supabase.from("external_domains").select("id", { count: "exact", head: true }).eq("client_id", client.id),
-    ]);
+## Fase 3: Registrar Executor
 
-    return {
-      ...client,
-      scopes_count: (firewallsResult.count || 0) + (tenantsResult.count || 0) + (domainsResult.count || 0),
-      agents_count: agentsResult.count || 0,
-    };
-  }),
-);
+### Arquivo: `python-agent/agent/executors/__init__.py`
+
+Adicionar import e export:
+
+```python
+from agent.executors.base import BaseExecutor
+from agent.executors.http_request import HTTPRequestExecutor
+from agent.executors.ssh import SSHExecutor
+from agent.executors.snmp import SNMPExecutor
+from agent.executors.dns_query import DNSQueryExecutor
+from agent.executors.amass import AmassExecutor  # NOVO
+
+__all__ = [
+    'BaseExecutor',
+    'HTTPRequestExecutor',
+    'SSHExecutor',
+    'SNMPExecutor',
+    'DNSQueryExecutor',
+    'AmassExecutor',  # NOVO
+]
 ```
 
-### 5. Atualizar openViewDialog para buscar External Domains (linhas 248-271)
+### Arquivo: `python-agent/agent/tasks.py`
 
-```typescript
-const openViewDialog = async (client: Client) => {
-  setViewingClient(client);
-  setViewDialogOpen(true);
-  setLoadingDetails(true);
+Adicionar executor ao registro (linha ~14 e ~45):
 
-  try {
-    const [firewallsRes, tenantsRes, agentsRes, domainsRes] = await Promise.all([
-      supabase
-        .from("firewalls")
-        .select("id, name, description, last_score")
-        .eq("client_id", client.id)
-        .order("name"),
-      supabase
-        .from("m365_tenants")
-        .select("id, display_name, tenant_domain, connection_status")
-        .eq("client_id", client.id)
-        .order("display_name"),
-      supabase
-        .from("agents")
-        .select("id, name, last_seen, revoked")
-        .eq("client_id", client.id)
-        .order("name"),
-      supabase
-        .from("external_domains")
-        .select("id, name, domain, last_score, status")
-        .eq("client_id", client.id)
-        .order("name"),
-    ]);
+```python
+from agent.executors.amass import AmassExecutor
 
-    setWorkspaceDetails({
-      firewalls: firewallsRes.data || [],
-      tenants: tenantsRes.data || [],
-      agents: agentsRes.data || [],
-      externalDomains: domainsRes.data || [],
-    });
-  } catch (error) {
-    console.error("Erro ao buscar detalhes:", error);
-    toast.error("Erro ao carregar detalhes do workspace");
-  } finally {
-    setLoadingDetails(false);
+# Na classe TaskExecutor.__init__:
+self._executors = {
+    'http_request': HTTPRequestExecutor(logger),
+    'http_session': HTTPSessionExecutor(logger),
+    'ssh_command': SSHExecutor(logger),
+    'snmp_query': SNMPExecutor(logger),
+    'dns_query': DNSQueryExecutor(logger),
+    'amass': AmassExecutor(logger),  # NOVO
+}
+```
+
+---
+
+## Fase 4: Exemplo de Blueprint Step
+
+Para usar o Amass no blueprint de external_domain, adicionar um step como:
+
+```json
+{
+  "id": "subdomain_enum",
+  "type": "amass",
+  "config": {
+    "mode": "passive",
+    "timeout": 300
   }
-};
-```
-
-### 6. Adicionar Seção de External Domains no Modal (após a seção de M365 Tenants, ~linha 539)
-
-```tsx
-{/* External Domains */}
-<div className="space-y-2">
-  <div className="flex items-center gap-2">
-    <Globe className="w-4 h-4 text-primary" />
-    <h4 className="font-medium">Domínios Externos ({workspaceDetails?.externalDomains.length || 0})</h4>
-  </div>
-  {workspaceDetails?.externalDomains.length === 0 ? (
-    <p className="text-sm text-muted-foreground pl-6">Nenhum domínio externo vinculado</p>
-  ) : (
-    <div className="space-y-2 pl-6">
-      {workspaceDetails?.externalDomains.map((domain) => (
-        <div key={domain.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-sm">{domain.name}</p>
-              <p className="text-xs text-muted-foreground">{domain.domain}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {domain.last_score !== null && (
-                <Badge variant={domain.last_score >= 70 ? "default" : domain.last_score >= 40 ? "secondary" : "destructive"}>
-                  Score: {domain.last_score}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
+}
 ```
 
 ---
 
-## Ordem dos Objetos no Modal
+## Resumo de Arquivos
 
-Após a alteração, o modal exibirá na seguinte ordem:
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `supabase/functions/agent-install/index.ts` | Editar | Adicionar função `install_amass()` |
+| `python-agent/agent/executors/amass.py` | Criar | Novo executor Amass |
+| `python-agent/agent/executors/__init__.py` | Editar | Registrar AmassExecutor |
+| `python-agent/agent/tasks.py` | Editar | Adicionar amass ao mapa de executors |
 
-1. **Informações do Workspace** (nome, descrição, ID)
-2. **Firewalls** - com ícone Shield
-3. **Microsoft 365 Tenants** - com ícone Cloud
-4. **Domínios Externos** - com ícone Globe (NOVO)
-5. **Agents** - com ícone Bot
+---
+
+## Fontes de Dados do Amass (modo passive)
+
+O Amass consulta automaticamente 50+ fontes gratuitas:
+
+| Categoria | Fontes |
+|-----------|--------|
+| Certificate Transparency | crt.sh, Censys, CertSpotter, Facebook CT |
+| DNS Passivo | VirusTotal, SecurityTrails, RiskIQ, Robtex |
+| Web Archives | Wayback Machine, CommonCrawl |
+| Search Engines | Google, Bing, Yahoo, Baidu |
+| Outros | DNSDumpster, ThreatCrowd, Shodan (com API key) |
+
+---
+
+## Modo Active vs Passive
+
+| Modo | Comportamento | Tempo | Ruído |
+|------|---------------|-------|-------|
+| `passive` | Só consulta APIs externas | ~1-3 min | Zero (não toca o alvo) |
+| `active` | Passive + brute-force + resolução | ~5-15 min | Gera queries DNS para o alvo |
+
+**Recomendação:** Usar `passive` como padrão para não gerar tráfego suspeito no domínio alvo.
 
 ---
 
 ## Resultado Esperado
 
-Ao clicar no ícone de visualizar um Workspace, o modal exibirá uma nova seção "Domínios Externos" mostrando:
-- Nome do domínio
-- URL/domínio
-- Score da última análise (se houver)
+Após a implementação, o Agent poderá executar tasks com steps do tipo `amass`, retornando:
 
-O contador de "Escopos" na tabela também será atualizado para incluir a contagem de domínios externos.
+```json
+{
+  "domain": "example.com",
+  "mode": "passive",
+  "total_found": 47,
+  "sources": ["crtsh", "virustotal", "wayback", "commoncrawl"],
+  "subdomains": [
+    {
+      "subdomain": "api.example.com",
+      "sources": ["crtsh", "virustotal"],
+      "addresses": [{"ip": "1.2.3.4", "cidr": "1.2.3.0/24"}]
+    },
+    {
+      "subdomain": "mail.example.com",
+      "sources": ["wayback"],
+      "addresses": []
+    }
+  ]
+}
+```
+
