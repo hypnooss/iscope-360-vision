@@ -1,80 +1,49 @@
 
-# Plano: Corrigir Localização do Diretório de Backup do AutoUpdater
+# Plano: Corrigir Versão do Agent para Parar Loop de Atualização
 
 ## Problema Identificado
 
-O auto-update falha com:
+O agent está em loop infinito de atualização porque o arquivo `version.py` dentro do pacote ainda contém `__version__ = "1.0.0"` em vez de `1.1.1`.
+
+**Sequência do loop:**
 ```
-[ERROR] Erro durante update: [Errno 13] Permission denied: '/opt/iscope-agent-backup'
+Agent inicia → reporta v1.0.0 → backend diz "atualize para 1.1.1" → 
+instala → reinicia → reporta v1.0.0 → repete infinitamente
 ```
-
-**Causa**: O `AutoUpdater` tenta criar o backup em `/opt/iscope-agent-backup`, mas:
-1. O agent roda como usuário `iscope`
-2. O diretório `/opt` pertence a `root`
-3. O usuário `iscope` não pode criar diretórios em `/opt`
-
-## Solução
-
-Mover o diretório de backup para dentro de `/var/lib/iscope-agent/backup`, onde o usuário `iscope` já tem permissões.
 
 ---
 
-### Arquivo: `python-agent/agent/updater.py`
+## Alterações Necessárias
 
-**Alteração no construtor (linhas 29-32):**
+### Arquivo: `python-agent/agent/version.py`
 
-De:
+**De:**
 ```python
-def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
-    self.logger = logger
-    self.install_dir = Path(install_dir)
-    self.backup_dir = self.install_dir.parent / "iscope-agent-backup"
+__version__ = "1.0.0"
 ```
 
-Para:
+**Para:**
 ```python
-def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
-    self.logger = logger
-    self.install_dir = Path(install_dir)
-    # Backup dir in /var/lib/iscope-agent/backup (user iscope has write access)
-    self.backup_dir = Path("/var/lib/iscope-agent/backup")
+__version__ = "1.1.1"
 ```
 
 ---
 
-## Resumo
+## Passos Após Aprovação
 
-| Local | Alteração |
-|-------|-----------|
-| `updater.py` linha 32 | Mudar `backup_dir` de `/opt/iscope-agent-backup` para `/var/lib/iscope-agent/backup` |
-
----
-
-## Resultado Esperado
-
-Após a correção:
-1. O backup será criado em `/var/lib/iscope-agent/backup`
-2. O usuário `iscope` já tem permissão nesse diretório
-3. O auto-update funcionará corretamente
+1. Atualizar `version.py` para `1.1.1`
+2. Você precisará recriar o pacote `iscope-agent-1.1.1.tar.gz` com o version.py corrigido
+3. Fazer upload do novo pacote para o bucket `agent-releases`
+4. Atualizar o checksum na configuração do admin
 
 ---
 
-## Próximos Passos Após Aprovação
+## Solução Imediata no Servidor (enquanto o pacote não é recriado)
 
-1. Atualizar o arquivo `python-agent/agent/updater.py`
-2. Criar uma nova release (v1.1.1) com a correção
-3. Fazer upload para o bucket `agent-releases`
-4. O agent irá baixar a atualização automaticamente no próximo heartbeat
+Execute no servidor para parar o loop agora:
 
----
-
-## Solução Imediata (enquanto a correção não é deployada)
-
-Para corrigir o servidor atual, execute:
 ```bash
-sudo mkdir -p /opt/iscope-agent-backup
-sudo chown iscope:iscope /opt/iscope-agent-backup
-sudo systemctl restart iscope-agent
+sudo systemctl stop iscope-agent
+sudo sed -i 's/__version__ = "1.0.0"/__version__ = "1.1.1"/' /opt/iscope-agent/agent/version.py
+sudo systemctl start iscope-agent
 ```
-
-Isso permitirá que o auto-update funcione até que a nova versão com a correção seja instalada.
