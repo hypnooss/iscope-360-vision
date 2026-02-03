@@ -383,6 +383,11 @@ AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
 EOF
 
   chmod 600 "$env_file"
+  
+  # Ensure the service user can read the config file
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown "$SERVICE_USER":"$SERVICE_USER" "$env_file"
+  fi
 }
 
 ensure_state_file() {
