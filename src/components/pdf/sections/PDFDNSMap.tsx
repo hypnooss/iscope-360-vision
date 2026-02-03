@@ -1,7 +1,7 @@
 /**
  * PDFDNSMap - DNS Infrastructure Map for PDF reports
- * Layout: Row-based (2 rows of 2 cards + 1 full-width row)
- * Version: 2.0.0 - Refactored from 3-column to row-based layout
+ * Layout: Full-width cards with colored headers (matching category sections)
+ * Version: 3.0.0 - Redesigned to match "Detalhamento por Categoria" style
  */
 import React from 'react';
 import { View, Text, StyleSheet } from '@react-pdf/renderer';
@@ -13,7 +13,7 @@ import {
 } from '../styles/pdfStyles';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types (PDF-specific - matches ExternalDomainPDF types)
+// Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DnsSummary {
@@ -85,204 +85,110 @@ interface PDFDNSMapProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Colors
+// Colors - Header backgrounds (solid colors matching web DNS Map)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const groupColors = {
-  ns: { border: '#0EA5E9', bg: '#F0F9FF', text: '#0369A1' },
-  mx: { border: '#A855F7', bg: '#FAF5FF', text: '#7C3AED' },
-  soa: { border: '#F59E0B', bg: '#FFFBEB', text: '#B45309' },
-  txt: { border: '#EC4899', bg: '#FDF2F8', text: '#BE185D' },
-  subdomain: { border: '#6366F1', bg: '#EEF2FF', text: '#4338CA' },
+const headerColors = {
+  ns: '#0EA5E9',      // Sky
+  soa: '#F59E0B',     // Amber
+  mx: '#A855F7',      // Violet
+  txt: '#EC4899',     // Pink
+  subdomain: '#6366F1', // Indigo
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Styles (Row-based layout for better readability)
+// Styles
 // ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
+  // Page title (matches "Detalhamento por Categoria")
+  pageTitle: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: spacing.sectionGap,
+  },
+  // Card container
+  card: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
+    marginBottom: 12,
     overflow: 'hidden',
-    backgroundColor: colors.cardBg,
   },
-  header: {
-    backgroundColor: '#1E293B',
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+  // Card header (solid color background, white text)
+  cardHeader: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  headerIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: 'rgba(20, 184, 166, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  headerIconText: {
-    fontSize: 12,
-    color: colors.primary,
-  },
-  headerTitle: {
-    fontSize: typography.heading,
+  cardHeaderText: {
+    fontSize: typography.body,
     fontFamily: typography.bold,
     color: '#FFFFFF',
   },
-  // New row-based layout
-  content: {
-    padding: spacing.cardPadding,
-  },
-  row: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  halfColumn: {
-    flex: 1,
-    marginRight: 10,
-  },
-  halfColumnLast: {
-    flex: 1,
-    marginRight: 0,
-  },
-  fullWidthCard: {
-    marginTop: 4,
-  },
-  groupCard: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-  },
-  groupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  groupTitle: {
-    fontSize: typography.body,
-    fontFamily: typography.bold,
-    flex: 1,
-    marginRight: 6,
-  },
-  groupCount: {
-    fontSize: typography.tiny,
-    fontFamily: typography.bold,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  groupContent: {
+  // Card body
+  cardBody: {
     backgroundColor: '#FFFFFF',
-    padding: 10,
+    padding: 12,
   },
-  recordItem: {
+  // Info item (● icon + text, like SPF Válido)
+  infoItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  recordText: {
-    fontSize: typography.bodySmall,
-    color: colors.textPrimary,
-    fontFamily: 'Courier',
-    flex: 1,
-  },
-  recordSublabel: {
-    fontSize: typography.tiny,
-    color: colors.textSecondary,
-    marginTop: 1,
+  infoItemLast: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 0,
   },
   statusDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     marginTop: 3,
-    marginRight: 6,
+    marginRight: 10,
   },
   statusDotActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.success,
   },
   statusDotInactive: {
     backgroundColor: colors.textMuted,
   },
-  statusDotPass: {
-    backgroundColor: colors.success,
+  infoText: {
+    fontSize: typography.bodySmall,
+    color: colors.textPrimary,
+    flex: 1,
   },
-  statusDotFail: {
-    backgroundColor: colors.danger,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    marginBottom: 4,
+  infoTextMono: {
+    fontSize: typography.bodySmall,
+    color: colors.textPrimary,
+    fontFamily: 'Courier',
+    flex: 1,
   },
   infoLabel: {
     fontSize: typography.bodySmall,
-    color: colors.textSecondary,
-    width: 60,
-  },
-  infoValue: {
-    fontSize: typography.bodySmall,
-    color: colors.textPrimary,
-    fontFamily: 'Courier',
-    flex: 1,
-  },
-  authRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  authLabel: {
-    fontSize: typography.bodySmall,
     fontFamily: typography.bold,
     color: colors.textPrimary,
-    width: 50,
+    marginRight: 6,
   },
-  authValue: {
-    fontSize: typography.tiny,
-    color: colors.textSecondary,
-    fontFamily: 'Courier',
-    flex: 1,
-  },
-  moreText: {
-    fontSize: typography.tiny,
-    color: colors.textMuted,
-    fontStyle: 'italic',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: typography.bodySmall,
-    color: colors.textMuted,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  // Subdomain 2-column grid
+  // Subdomain grid (2 columns)
   subdomainGrid: {
     flexDirection: 'row',
   },
   subdomainColumn: {
     flex: 1,
   },
-  subdomainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  subdomainText: {
+  // Empty state
+  emptyText: {
     fontSize: typography.bodySmall,
-    color: colors.textPrimary,
-    fontFamily: 'Courier',
-    flex: 1,
+    color: colors.textMuted,
+    fontStyle: 'italic',
   },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers (adapted from web version)
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 const extractNsRecords = (categories: ComplianceCategory[]): NsRecord[] => {
@@ -343,22 +249,52 @@ const truncate = (str: string, len: number): string => {
 // Sub-Components
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface GroupCardProps {
+interface InfoItemProps {
+  text: string;
+  isActive?: boolean;
+  isLast?: boolean;
+  mono?: boolean;
+}
+
+function InfoItem({ text, isActive = true, isLast = false, mono = true }: InfoItemProps) {
+  return (
+    <View style={isLast ? styles.infoItemLast : styles.infoItem}>
+      <View style={[styles.statusDot, isActive ? styles.statusDotActive : styles.statusDotInactive]} />
+      <Text style={mono ? styles.infoTextMono : styles.infoText}>{text}</Text>
+    </View>
+  );
+}
+
+interface InfoItemWithLabelProps {
+  label: string;
+  value: string;
+  isActive?: boolean;
+  isLast?: boolean;
+}
+
+function InfoItemWithLabel({ label, value, isActive = true, isLast = false }: InfoItemWithLabelProps) {
+  return (
+    <View style={isLast ? styles.infoItemLast : styles.infoItem}>
+      <View style={[styles.statusDot, isActive ? styles.statusDotActive : styles.statusDotInactive]} />
+      <Text style={styles.infoLabel}>{label}:</Text>
+      <Text style={styles.infoTextMono}>{value}</Text>
+    </View>
+  );
+}
+
+interface DNSCardProps {
   title: string;
-  count: number;
-  colorKey: keyof typeof groupColors;
+  color: string;
   children: React.ReactNode;
 }
 
-function GroupCard({ title, count, colorKey, children }: GroupCardProps) {
-  const color = groupColors[colorKey];
+function DNSCard({ title, color, children }: DNSCardProps) {
   return (
-    <View style={[styles.groupCard, { borderColor: color.border }]}>
-      <View style={[styles.groupHeader, { backgroundColor: color.bg }]}>
-        <Text style={[styles.groupTitle, { color: color.text }]}>{title}</Text>
-        <Text style={[styles.groupCount, { color: color.text }]}>{count}</Text>
+    <View style={styles.card} wrap={false}>
+      <View style={[styles.cardHeader, { backgroundColor: color }]}>
+        <Text style={styles.cardHeaderText}>{title}</Text>
       </View>
-      <View style={styles.groupContent}>
+      <View style={styles.cardBody}>
         {children}
       </View>
     </View>
@@ -382,225 +318,135 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
   
   const dnssecActive = dnsSummary?.dnssecHasDnskey || dnsSummary?.dnssecHasDs;
 
-  // Increased limits for better layout
-  const MAX_NS = 6;
-  const MAX_MX = 4;
-  const MAX_DKIM = 3;
-  const MAX_SUBDOMAINS = 20;
+  // Filter only active subdomains
+  const allSubdomains = subdomainSummary?.subdomains || [];
+  const activeSubdomains = allSubdomains.filter(sub => sub.is_alive === true);
 
-  const visibleNs = nsRecords.slice(0, MAX_NS);
-  const moreNs = nsRecords.length > MAX_NS ? nsRecords.length - MAX_NS : 0;
-
-  const visibleMx = mxRecords.slice(0, MAX_MX);
-  const moreMx = mxRecords.length > MAX_MX ? mxRecords.length - MAX_MX : 0;
-
-  const visibleDkim = dkimKeys.slice(0, MAX_DKIM);
-  const moreDkim = dkimKeys.length > MAX_DKIM ? dkimKeys.length - MAX_DKIM : 0;
-
-  const subdomains = subdomainSummary?.subdomains || [];
-  const visibleSubdomains = subdomains.slice(0, MAX_SUBDOMAINS);
-  const moreSubdomains = subdomains.length > MAX_SUBDOMAINS ? subdomains.length - MAX_SUBDOMAINS : 0;
-
-  // Split subdomains into 2 columns
-  const halfSubdomains = Math.ceil(visibleSubdomains.length / 2);
-  const subdomainCol1 = visibleSubdomains.slice(0, halfSubdomains);
-  const subdomainCol2 = visibleSubdomains.slice(halfSubdomains);
+  // Split into 2 columns
+  const halfSubs = Math.ceil(activeSubdomains.length / 2);
+  const subCol1 = activeSubdomains.slice(0, halfSubs);
+  const subCol2 = activeSubdomains.slice(halfSubs);
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>●</Text>
-        </View>
-        <Text style={styles.headerTitle}>Mapa de Infraestrutura DNS</Text>
-      </View>
+    <View>
+      {/* Page Title (teal, like "Detalhamento por Categoria") */}
+      <Text style={styles.pageTitle}>Mapa de Infraestrutura DNS</Text>
 
-      {/* Content with row-based layout */}
-      <View style={styles.content}>
-        {/* Row 1: NS + SOA */}
-        <View style={styles.row}>
-          {/* NS Records */}
-          <View style={styles.halfColumn}>
-            <GroupCard title="NS" count={nsRecords.length} colorKey="ns">
-              {visibleNs.length > 0 ? (
-                <View>
-                  {visibleNs.map((ns, idx) => (
-                    <View key={idx} style={styles.recordItem}>
-                      <Text style={styles.recordText}>{truncate(ns.host, 45)}</Text>
-                    </View>
-                  ))}
-                  {moreNs > 0 && (
-                    <Text style={styles.moreText}>+{moreNs} nameservers</Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>Nenhum NS encontrado</Text>
-              )}
-            </GroupCard>
+      {/* NS Card */}
+      <DNSCard title="NS" color={headerColors.ns}>
+        {nsRecords.length > 0 ? (
+          nsRecords.map((ns, idx) => (
+            <InfoItem 
+              key={idx} 
+              text={ns.host} 
+              isLast={idx === nsRecords.length - 1}
+            />
+          ))
+        ) : (
+          <Text style={styles.emptyText}>Nenhum NS encontrado</Text>
+        )}
+      </DNSCard>
+
+      {/* SOA Card */}
+      <DNSCard title="SOA" color={headerColors.soa}>
+        <InfoItemWithLabel 
+          label="Primary" 
+          value={dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 50) : 'N/A'} 
+        />
+        <InfoItemWithLabel 
+          label="Contact" 
+          value={dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 50) : 'N/A'} 
+        />
+        <InfoItemWithLabel 
+          label="DNSSEC" 
+          value={dnssecActive ? 'Ativo' : 'Inativo'} 
+          isActive={dnssecActive}
+          isLast
+        />
+      </DNSCard>
+
+      {/* MX Card */}
+      <DNSCard title="MX" color={headerColors.mx}>
+        {mxRecords.length > 0 ? (
+          mxRecords.map((mx, idx) => (
+            <InfoItem 
+              key={idx} 
+              text={`${mx.exchange} (Pri: ${mx.priority})`}
+              isLast={idx === mxRecords.length - 1}
+            />
+          ))
+        ) : (
+          <Text style={styles.emptyText}>Nenhum MX encontrado</Text>
+        )}
+      </DNSCard>
+
+      {/* TXT (Email Auth) Card */}
+      <DNSCard title="TXT (Email Auth)" color={headerColors.txt}>
+        {/* SPF */}
+        <InfoItemWithLabel 
+          label="SPF" 
+          value={spfRecord ? truncate(spfRecord, 70) : 'Não encontrado'} 
+          isActive={emailAuth?.spf}
+        />
+        
+        {/* DKIM */}
+        {dkimKeys.length > 0 ? (
+          dkimKeys.map((key, idx) => (
+            <InfoItemWithLabel 
+              key={idx}
+              label="DKIM" 
+              value={`${key.selector}${key.keySize ? ` - ${key.keySize} bits` : ''}`}
+              isActive={emailAuth?.dkim}
+            />
+          ))
+        ) : (
+          <InfoItemWithLabel 
+            label="DKIM" 
+            value="Nenhum seletor" 
+            isActive={false}
+          />
+        )}
+        
+        {/* DMARC */}
+        <InfoItemWithLabel 
+          label="DMARC" 
+          value={
+            dmarcPolicy.p || dmarcPolicy.sp 
+              ? `p=${dmarcPolicy.p || 'none'}${dmarcPolicy.sp ? `, sp=${dmarcPolicy.sp}` : ''}`
+              : 'Não encontrado'
+          }
+          isActive={emailAuth?.dmarc}
+          isLast
+        />
+      </DNSCard>
+
+      {/* Subdomínios Card (only active) */}
+      <DNSCard title="Subdomínios" color={headerColors.subdomain}>
+        {activeSubdomains.length > 0 ? (
+          <View style={styles.subdomainGrid}>
+            <View style={styles.subdomainColumn}>
+              {subCol1.map((sub, idx) => (
+                <InfoItem 
+                  key={idx} 
+                  text={truncate(sub.subdomain, 40)}
+                  isLast={idx === subCol1.length - 1 && subCol2.length === 0}
+                />
+              ))}
+            </View>
+            <View style={styles.subdomainColumn}>
+              {subCol2.map((sub, idx) => (
+                <InfoItem 
+                  key={idx} 
+                  text={truncate(sub.subdomain, 40)}
+                  isLast={idx === subCol2.length - 1}
+                />
+              ))}
+            </View>
           </View>
-
-          {/* SOA / DNSSEC */}
-          <View style={styles.halfColumnLast}>
-            <GroupCard title="SOA" count={1} colorKey="soa">
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Primary:</Text>
-                <Text style={styles.infoValue}>
-                  {dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 35) : 'N/A'}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Contact:</Text>
-                <Text style={styles.infoValue}>
-                  {dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 35) : 'N/A'}
-                </Text>
-              </View>
-              <View style={[styles.authRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border }]}>
-                <View style={[styles.statusDot, dnssecActive ? styles.statusDotActive : styles.statusDotInactive]} />
-                <Text style={styles.infoLabel}>DNSSEC:</Text>
-                <Text style={[styles.infoValue, { color: dnssecActive ? colors.primary : colors.textMuted }]}>
-                  {dnssecActive ? 'Ativo' : 'Inativo'}
-                </Text>
-              </View>
-            </GroupCard>
-          </View>
-        </View>
-
-        {/* Row 2: MX + TXT (Email Auth) */}
-        <View style={styles.row}>
-          {/* MX Records */}
-          <View style={styles.halfColumn}>
-            <GroupCard title="MX" count={mxRecords.length} colorKey="mx">
-              {visibleMx.length > 0 ? (
-                <View>
-                  {visibleMx.map((mx, idx) => (
-                    <View key={idx} style={{ marginBottom: 4 }}>
-                      <Text style={styles.recordText}>{truncate(mx.exchange, 45)}</Text>
-                      <Text style={styles.recordSublabel}>Prioridade: {mx.priority}</Text>
-                    </View>
-                  ))}
-                  {moreMx > 0 && (
-                    <Text style={styles.moreText}>+{moreMx} mail servers</Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>Nenhum MX encontrado</Text>
-              )}
-            </GroupCard>
-          </View>
-
-          {/* TXT (Email Auth) */}
-          <View style={styles.halfColumnLast}>
-            <GroupCard title="TXT (Email Auth)" count={3} colorKey="txt">
-              {/* SPF */}
-              <View style={styles.authRow}>
-                <View style={[styles.statusDot, emailAuth?.spf ? styles.statusDotPass : styles.statusDotFail]} />
-                <Text style={styles.authLabel}>SPF</Text>
-              </View>
-              {spfRecord ? (
-                <Text style={[styles.authValue, { marginLeft: 9, marginBottom: 6 }]}>
-                  {truncate(spfRecord, 60)}
-                </Text>
-              ) : (
-                <Text style={[styles.authValue, { marginLeft: 9, marginBottom: 6, fontStyle: 'italic' }]}>
-                  Não encontrado
-                </Text>
-              )}
-
-              {/* DKIM */}
-              <View style={styles.authRow}>
-                <View style={[styles.statusDot, emailAuth?.dkim ? styles.statusDotPass : styles.statusDotFail]} />
-                <Text style={styles.authLabel}>DKIM</Text>
-              </View>
-              {visibleDkim.length > 0 ? (
-                <View>
-                  {visibleDkim.map((key, idx) => (
-                    <Text key={idx} style={[styles.authValue, { marginLeft: 9 }]}>
-                      {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
-                    </Text>
-                  ))}
-                  {moreDkim > 0 && (
-                    <Text style={[styles.moreText, { marginLeft: 9, marginBottom: 6 }]}>+{moreDkim} seletores</Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={[styles.authValue, { marginLeft: 9, marginBottom: 6, fontStyle: 'italic' }]}>
-                  Nenhum seletor
-                </Text>
-              )}
-
-              {/* DMARC */}
-              <View style={[styles.authRow, { marginTop: 4 }]}>
-                <View style={[styles.statusDot, emailAuth?.dmarc ? styles.statusDotPass : styles.statusDotFail]} />
-                <Text style={styles.authLabel}>DMARC</Text>
-              </View>
-              {dmarcPolicy.p || dmarcPolicy.sp ? (
-                <View>
-                  {dmarcPolicy.p && (
-                    <Text style={[styles.authValue, { marginLeft: 9 }]}>
-                      Politica: {dmarcPolicy.p}
-                    </Text>
-                  )}
-                  {dmarcPolicy.sp && (
-                    <Text style={[styles.authValue, { marginLeft: 9 }]}>
-                      Subdominios: {dmarcPolicy.sp}
-                    </Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={[styles.authValue, { marginLeft: 9, fontStyle: 'italic' }]}>
-                  Não encontrado
-                </Text>
-              )}
-            </GroupCard>
-          </View>
-        </View>
-
-        {/* Row 3: Subdomains - Full Width with 2 internal columns */}
-        <View style={styles.fullWidthCard}>
-          <GroupCard title="Subdominios" count={subdomainSummary?.total_found ?? 0} colorKey="subdomain">
-            {visibleSubdomains.length > 0 ? (
-              <View>
-                <View style={styles.subdomainGrid}>
-                  {/* Column 1 */}
-                  <View style={styles.subdomainColumn}>
-                    {subdomainCol1.map((sub, idx) => (
-                      <View key={idx} style={styles.subdomainRow}>
-                        <View style={[
-                          styles.statusDot, 
-                          sub.is_alive ? styles.statusDotActive : styles.statusDotInactive
-                        ]} />
-                        <Text style={styles.subdomainText}>
-                          {truncate(sub.subdomain, 38)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                  {/* Column 2 */}
-                  <View style={styles.subdomainColumn}>
-                    {subdomainCol2.map((sub, idx) => (
-                      <View key={idx} style={styles.subdomainRow}>
-                        <View style={[
-                          styles.statusDot, 
-                          sub.is_alive ? styles.statusDotActive : styles.statusDotInactive
-                        ]} />
-                        <Text style={styles.subdomainText}>
-                          {truncate(sub.subdomain, 38)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-                {moreSubdomains > 0 && (
-                  <Text style={styles.moreText}>+{moreSubdomains} subdominios</Text>
-                )}
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>Nenhum subdominio encontrado</Text>
-            )}
-          </GroupCard>
-        </View>
-      </View>
+        ) : (
+          <Text style={styles.emptyText}>Nenhum subdomínio ativo encontrado</Text>
+        )}
+      </DNSCard>
     </View>
   );
 }
