@@ -189,13 +189,16 @@ install_deps() {
 install_amass() {
   echo "Instalando Amass para enumeração de subdomínios..."
   
+  # Garantir que /usr/local/bin está no PATH
+  export PATH="/usr/local/bin:\$PATH"
+  
   local arch
-  arch="$(uname -m)"
-  case "$arch" in
+  arch="\$(uname -m)"
+  case "\$arch" in
     x86_64)  arch="amd64" ;;
     aarch64) arch="arm64" ;;
     *)
-      echo "Aviso: arquitetura $arch não suportada para Amass. Pulando instalação."
+      echo "Aviso: arquitetura \$arch não suportada para Amass. Pulando instalação."
       return 0
       ;;
   esac
@@ -204,13 +207,13 @@ install_amass() {
   local filename="amass_Linux_\${arch}.zip"
   local url="https://github.com/owasp-amass/amass/releases/download/\${version}/\${filename}"
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="\$(mktemp -d)"
   
   echo "Baixando Amass \${version} (\${arch})..."
   
-  if ! curl -fsSL "$url" -o "\${tmp_dir}/amass.zip"; then
+  if ! curl -fsSL "\$url" -o "\${tmp_dir}/amass.zip"; then
     echo "Aviso: falha ao baixar Amass. Continuando sem ele."
-    rm -rf "$tmp_dir"
+    rm -rf "\$tmp_dir"
     return 0
   fi
   
@@ -225,21 +228,34 @@ install_amass() {
     fi
   fi
   
-  unzip -q "\${tmp_dir}/amass.zip" -d "$tmp_dir"
+  unzip -q "\${tmp_dir}/amass.zip" -d "\$tmp_dir"
   
-  # O zip contém uma pasta amass_Linux_xxx/amass
+  # Buscar binário - primeiro sem -executable (compatibilidade)
   local bin_path
-  bin_path="$(find "$tmp_dir" -name 'amass' -type f -executable | head -1)"
+  bin_path="\$(find "\$tmp_dir" -name 'amass' -type f 2>/dev/null | head -1)"
   
-  if [[ -n "$bin_path" ]]; then
-    mv "$bin_path" /usr/local/bin/amass
-    chmod +x /usr/local/bin/amass
-    echo "Amass instalado: $(amass -version 2>&1 | head -1)"
-  else
-    echo "Aviso: binário do Amass não encontrado no pacote."
+  # Fallback: buscar em estrutura conhecida
+  if [[ -z "\$bin_path" ]]; then
+    bin_path="\$(find "\$tmp_dir" -path '*/amass_Linux_*/amass' -type f 2>/dev/null | head -1)"
   fi
   
-  rm -rf "$tmp_dir"
+  if [[ -n "\$bin_path" ]]; then
+    mv "\$bin_path" /usr/local/bin/amass
+    chmod +x /usr/local/bin/amass
+    
+    # Verificar usando caminho absoluto
+    if /usr/local/bin/amass -version >/dev/null 2>&1; then
+      echo "Amass instalado: \$(/usr/local/bin/amass -version 2>&1 | head -1)"
+    else
+      echo "Amass instalado em /usr/local/bin/amass"
+    fi
+  else
+    echo "Aviso: binário do Amass não encontrado no pacote."
+    echo "Arquivos encontrados:"
+    find "\$tmp_dir" -type f 2>/dev/null | head -10
+  fi
+  
+  rm -rf "\$tmp_dir"
 }
 
 ensure_user() {
