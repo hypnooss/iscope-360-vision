@@ -62,6 +62,22 @@ interface RpcHeartbeatResult {
   next_heartbeat_in?: number;
 }
 
+/**
+ * Update agent version in database
+ */
+async function updateAgentVersion(supabase: any, agentId: string, version: string): Promise<void> {
+  if (!version || version === '0.0.0' || version === 'unknown') return;
+  
+  try {
+    await supabase
+      .from('agents')
+      .update({ agent_version: version })
+      .eq('id', agentId);
+  } catch (error) {
+    console.error('Failed to update agent version:', error);
+  }
+}
+
 serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -209,6 +225,9 @@ serve(async (req: Request) => {
     }
 
     const agentVersion = body.agent_version || '0.0.0';
+
+    // Update agent version in database (fire and forget)
+    await updateAgentVersion(supabase, agentId, agentVersion);
 
     // Check for available updates
     const { data: updateSettings } = await supabase

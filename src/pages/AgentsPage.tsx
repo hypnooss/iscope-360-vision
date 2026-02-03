@@ -57,6 +57,7 @@ interface Agent {
   revoked: boolean;
   activation_code: string | null;
   activation_code_expires_at: string | null;
+  agent_version: string | null;
   client_name?: string;
 }
 
@@ -498,6 +499,7 @@ export default function AgentsPage() {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Versão</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Last Seen</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -522,6 +524,15 @@ export default function AgentsPage() {
                               <Building className="w-3 h-3 mr-1" />
                               {agent.client_name}
                             </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {agent.agent_version ? (
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                              v{agent.agent_version}
+                            </code>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
