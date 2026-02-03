@@ -313,19 +313,20 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
       </View>
 
       {/* SOA Section */}
+      {/* SOA Section */}
       <View style={styles.section}>
         <CategoryHeader title="SOA" color={headerColors.soa} />
         <ValueCard 
-          primary={dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 60) : 'N/A'} 
-          secondary="Primary"
+          primary="Primary" 
+          secondary={dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 60) : 'N/A'}
         />
         <ValueCard 
-          primary={dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 60) : 'N/A'} 
-          secondary="Contact"
+          primary="Contact" 
+          secondary={dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 60) : 'N/A'}
         />
         <ValueCard 
-          primary={dnssecActive ? 'Ativo' : 'Inativo'} 
-          secondary="DNSSEC"
+          primary="DNSSEC" 
+          secondary={dnssecActive ? 'Ativo' : 'Inativo'}
           isActive={dnssecActive}
         />
       </View>
@@ -352,8 +353,8 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         
         {/* SPF */}
         <ValueCard 
-          primary={spfRecord ? truncate(spfRecord, 80) : 'Não encontrado'} 
-          secondary="SPF"
+          primary="SPF" 
+          secondary={spfRecord ? truncate(spfRecord, 80) : 'Não encontrado'}
           isActive={emailAuth?.spf}
         />
         
@@ -363,26 +364,26 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
             <ValueCard 
               key={idx}
               primary={key.selector}
-              secondary={`DKIM${key.keySize ? ` - ${key.keySize} bits` : ''}`}
+              secondary={key.keySize ? `Tamanho da chave - ${key.keySize} bits` : 'Tamanho desconhecido'}
               isActive={emailAuth?.dkim}
             />
           ))
         ) : (
           <ValueCard 
-            primary="Nenhum seletor encontrado" 
-            secondary="DKIM"
+            primary="DKIM" 
+            secondary="Nenhum seletor encontrado"
             isActive={false}
           />
         )}
         
         {/* DMARC */}
         <ValueCard 
-          primary={
-            dmarcPolicy.p || dmarcPolicy.sp 
-              ? `p=${dmarcPolicy.p || 'none'}${dmarcPolicy.sp ? `, sp=${dmarcPolicy.sp}` : ''}`
+          primary="DMARC" 
+          secondary={
+            dmarcPolicy.p 
+              ? `Política: ${dmarcPolicy.p}${dmarcPolicy.sp ? ` | Política Subdomínios: ${dmarcPolicy.sp}` : ''}`
               : 'Não encontrado'
           }
-          secondary="DMARC"
           isActive={emailAuth?.dmarc}
         />
       </View>
