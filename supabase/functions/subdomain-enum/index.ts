@@ -488,6 +488,57 @@ async function queryJLDC(domain: string, timeout: number): Promise<Set<string>> 
   return subdomains;
 }
 
+/**
+ * Query SecurityTrails API for subdomains (PRIMARY SOURCE).
+ * Requires API key stored in SECURITYTRAILS_API_KEY env variable.
+ */
+async function querySecurityTrails(domain: string, timeout: number): Promise<Set<string>> {
+  const apiKey = Deno.env.get('SECURITYTRAILS_API_KEY');
+  const subdomains = new Set<string>();
+
+  if (!apiKey) {
+    console.log('[securitytrails] API key not configured, skipping');
+    return subdomains;
+  }
+
+  const url = `https://api.securitytrails.com/v1/domain/${domain}/subdomains`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, {
+      headers: {
+        'APIKEY': apiKey,
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.log(`[securitytrails] API returned ${response.status}`);
+      return subdomains;
+    }
+
+    const data = await response.json();
+    
+    // SecurityTrails returns { subdomains: ["www", "mail", ...], endpoint: "/v1/..." }
+    for (const sub of data.subdomains || []) {
+      const fullSubdomain = `${sub}.${domain}`.toLowerCase();
+      if (isValidSubdomain(fullSubdomain, domain)) {
+        subdomains.add(fullSubdomain);
+      }
+    }
+
+    console.log(`[securitytrails] Found ${subdomains.size} subdomains`);
+  } catch (e) {
+    console.log(`[securitytrails] Error: ${e}`);
+  }
+
+  return subdomains;
+}
+
 // ============================================
 // Main Enumeration Function
 // ============================================
@@ -503,7 +554,26 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
 
   console.log(`[subdomain-enum] Starting enumeration for ${cleanDomain}`);
 
-  // Query all APIs in parallel
+  // ======================================
+  // PHASE 1: SecurityTrails (Primary API)
+  // ======================================
+  try {
+    const securityTrailsSubs = await querySecurityTrails(cleanDomain, apiTimeout);
+    if (securityTrailsSubs.size > 0) {
+      sourcesUsed.push(`securitytrails (${securityTrailsSubs.size})`);
+      for (const sub of securityTrailsSubs) {
+        allSubdomains.set(sub, { sources: ['securitytrails'] });
+      }
+      console.log(`[subdomain-enum] SecurityTrails found ${securityTrailsSubs.size} subdomains`);
+    }
+  } catch (e) {
+    errors.push(`securitytrails: ${e}`);
+    console.log(`[subdomain-enum] SecurityTrails error: ${e}`);
+  }
+
+  // ======================================
+  // PHASE 2: Free APIs (Complementary)
+  // ======================================
   const apiQueries = [
     { name: 'crt.sh', fn: () => queryCrtsh(cleanDomain, apiTimeout) },
     { name: 'hackertarget', fn: () => queryHackerTarget(cleanDomain, apiTimeout) },
@@ -525,7 +595,7 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
     }
   }));
 
-  // Process results
+  // Process results (merge with SecurityTrails)
   for (const result of results) {
     if (result.status === 'fulfilled') {
       const { name, subdomains, error } = result.value as { name: string; subdomains: Set<string>; error?: string };
