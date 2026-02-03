@@ -1,16 +1,13 @@
 """
 Amass Executor - Subdomain enumeration using OWASP Amass.
 
-Executes Amass in passive or active mode and returns discovered subdomains
-with source information.
+Supports Amass v4.x text output format.
 """
 
-import json
-import os
+import re
 import shutil
 import subprocess
-import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, List, Set, Tuple
 
 from .base import BaseExecutor
 
@@ -50,7 +47,6 @@ class AmassExecutor(BaseExecutor):
         if not domain:
             return {'status_code': 0, 'data': None, 'error': 'Missing domain'}
 
-        # Check if Amass is installed
         amass_path = shutil.which('amass')
         if not amass_path:
             self.logger.error(f"Step {step_id}: Amass not installed")
@@ -62,17 +58,12 @@ class AmassExecutor(BaseExecutor):
 
         self.logger.info(f"Step {step_id}: Running Amass ({mode}) for {domain}")
 
-        # Create temp file for JSON output
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            output_file = f.name
-
         try:
-            # Build command
+            # Build command (Amass v4.x - no JSON flag)
             cmd = [
                 amass_path,
                 'enum',
                 '-d', domain,
-                '-json', output_file,
                 '-timeout', str(int(timeout / 60)),  # Amass uses minutes
             ]
 
@@ -83,7 +74,6 @@ class AmassExecutor(BaseExecutor):
                 if max_depth > 1:
                     cmd.extend(['-max-depth', str(max_depth)])
 
-            # Execute Amass
             self.logger.debug(f"Step {step_id}: Executing: {' '.join(cmd)}")
 
             result = subprocess.run(
@@ -94,53 +84,15 @@ class AmassExecutor(BaseExecutor):
                 cwd='/tmp'
             )
 
-            if result.returncode != 0 and not os.path.exists(output_file):
-                error_msg = result.stderr[:500] if result.stderr else f"Exit code: {result.returncode}"
-                self.logger.error(f"Step {step_id}: Amass failed - {error_msg}")
-                return {
-                    'status_code': result.returncode,
-                    'data': {'domain': domain, 'subdomains': []},
-                    'error': f"Amass failed: {error_msg}"
-                }
-
-            # Parse JSON output (one JSON object per line)
-            subdomains = []
-            sources_set = set()
-
-            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                with open(output_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            entry = json.loads(line)
-                            name = entry.get('name', '').lower()
-                            if name and self._is_valid_subdomain(name, domain):
-                                subdomain_entry = {
-                                    'subdomain': name,
-                                    'sources': entry.get('sources', []),
-                                    'addresses': entry.get('addresses', []),
-                                }
-                                subdomains.append(subdomain_entry)
-                                for src in entry.get('sources', []):
-                                    sources_set.add(src)
-                        except json.JSONDecodeError:
-                            continue
-
-            # Deduplicate by subdomain name
-            seen = set()
-            unique_subdomains = []
-            for sub in subdomains:
-                if sub['subdomain'] not in seen:
-                    seen.add(sub['subdomain'])
-                    unique_subdomains.append(sub)
+            # Parse text output (Amass v4.x format)
+            combined_output = (result.stdout or '') + '\n' + (result.stderr or '')
+            subdomains, sources_set = self._parse_amass_output(combined_output, domain)
 
             # Sort alphabetically
-            unique_subdomains.sort(key=lambda x: x['subdomain'])
+            subdomains.sort(key=lambda x: x['subdomain'])
 
             self.logger.info(
-                f"Step {step_id}: Amass found {len(unique_subdomains)} unique subdomains "
+                f"Step {step_id}: Amass found {len(subdomains)} unique subdomains "
                 f"from {len(sources_set)} sources"
             )
 
@@ -149,9 +101,9 @@ class AmassExecutor(BaseExecutor):
                 'data': {
                     'domain': domain,
                     'mode': mode,
-                    'total_found': len(unique_subdomains),
+                    'total_found': len(subdomains),
                     'sources': sorted(list(sources_set)),
-                    'subdomains': unique_subdomains,
+                    'subdomains': subdomains,
                 },
                 'error': None,
             }
@@ -172,10 +124,75 @@ class AmassExecutor(BaseExecutor):
                 'error': str(e),
             }
 
-        finally:
-            # Cleanup temp file
-            if os.path.exists(output_file):
-                os.remove(output_file)
+    def _parse_amass_output(self, output: str, base_domain: str) -> Tuple[List[Dict], Set[str]]:
+        """
+        Parse Amass v4.x text output format.
+        
+        Format examples:
+            subdomain.example.com (FQDN) --> a_record --> 192.168.1.1 (IPAddress)
+            subdomain.example.com (FQDN) --> cname_record --> target.cdn.com (FQDN)
+            Querying Crtsh for example.com subdomains
+        """
+        subdomains: Dict[str, Dict] = {}
+        sources_set: Set[str] = set()
+        
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Extract sources from "Querying X for domain" lines
+            if line.startswith('Querying '):
+                source_match = re.match(r'Querying (\S+) for', line)
+                if source_match:
+                    sources_set.add(source_match.group(1))
+                continue
+            
+            # Parse format: "name (FQDN) --> record_type --> target (type)"
+            if ' --> ' not in line:
+                continue
+                
+            parts = line.split(' --> ')
+            if len(parts) < 1:
+                continue
+            
+            # Extract subdomain from first part
+            match = re.match(r'^([^\s]+)\s*\(FQDN\)', parts[0])
+            if not match:
+                continue
+                
+            name = match.group(1).lower()
+            if not self._is_valid_subdomain(name, base_domain):
+                continue
+            
+            if name not in subdomains:
+                subdomains[name] = {
+                    'subdomain': name,
+                    'sources': [],
+                    'addresses': [],
+                }
+            
+            # Extract IP addresses from last part
+            if len(parts) >= 3:
+                last_part = parts[-1]
+                
+                # IPv4 address
+                ipv4_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*\(IPAddress\)', last_part)
+                if ipv4_match:
+                    ip = ipv4_match.group(1)
+                    existing_ips = [a.get('ip') for a in subdomains[name]['addresses']]
+                    if ip not in existing_ips:
+                        subdomains[name]['addresses'].append({'ip': ip, 'type': 'A'})
+                
+                # IPv6 address
+                ipv6_match = re.search(r'([a-fA-F0-9:]+)\s*\(IPAddress\)', last_part)
+                if ipv6_match and ':' in ipv6_match.group(1):
+                    ip = ipv6_match.group(1)
+                    existing_ips = [a.get('ip') for a in subdomains[name]['addresses']]
+                    if ip not in existing_ips:
+                        subdomains[name]['addresses'].append({'ip': ip, 'type': 'AAAA'})
+        
+        return list(subdomains.values()), sources_set
 
     def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
         """Check if name is a valid subdomain of base_domain."""
