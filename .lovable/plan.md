@@ -1,199 +1,274 @@
 
 
-## Correção de Conectividade IPv6 no SubdomainEnumExecutor
+## Expansão do SubdomainEnumExecutor: Novas Fontes de APIs
 
-### Problema Identificado
+### APIs Gratuitas para Adicionar
 
-O servidor está tentando conectar via **IPv6 primeiro** e falhando:
-
-```
-Trying 2a0e:ac00:c7:d449::5bc7:d449:443...
-Immediate connect fail for 2a0e:ac00:c7:d449::5bc7:d449: Network is unreachable
-```
-
-O Python `requests` segue o comportamento padrão do sistema, tentando IPv6 antes de IPv4.
-
-### Solução: Forçar IPv4 nas Requisições
-
-Usar um `requests.adapters.HTTPAdapter` customizado que força a família de endereços para **AF_INET** (IPv4 only).
+| API | URL Base | Limite | Qualidade |
+|-----|----------|--------|-----------|
+| **RapidDNS** | `rapiddns.io/subdomain/{domain}` | Ilimitado | Muito boa |
+| **ThreatMiner** | `api.threatminer.org/v2/domain.php` | Ilimitado | Boa |
+| **URLScan.io** | `urlscan.io/api/v1/search` | 100/dia | Excelente |
+| **Wayback Machine** | `web.archive.org/cdx/search/cdx` | Ilimitado | Histórica |
+| **CertSpotter** | `api.certspotter.com/v1/issuances` | 100/hora | Boa (CT logs) |
+| **JLDC** | `jldc.me/anubis/subdomains/{domain}` | Ilimitado | Boa |
 
 ### Alterações no Arquivo
 
 **Arquivo:** `python-agent/agent/executors/subdomain_enum.py`
 
-**1. Adicionar imports necessários:**
+### Novos Métodos a Adicionar
 
 ```python
-import socket
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.connection import allowed_gai_family
-from typing import Any, Dict, List, Set
-from .base import BaseExecutor
-```
-
-**2. Criar adapter IPv4-only:**
-
-```python
-class IPv4HTTPAdapter(HTTPAdapter):
-    """Force IPv4 connections only."""
-    def init_poolmanager(self, *args, **kwargs):
-        import urllib3.util.connection as urllib3_conn
-        # Monkey-patch temporário para forçar IPv4
-        original_allowed_gai_family = urllib3_conn.allowed_gai_family
-        urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
-        try:
-            super().init_poolmanager(*args, **kwargs)
-        finally:
-            urllib3_conn.allowed_gai_family = original_allowed_gai_family
-```
-
-**3. Criar sessão com adapter IPv4:**
-
-```python
-def _get_session(self) -> requests.Session:
-    """Create a requests session that forces IPv4."""
-    session = requests.Session()
-    adapter = IPv4HTTPAdapter()
-    session.mount('https://', adapter)
-    session.mount('http://', adapter)
-    return session
-```
-
-**4. Atualizar métodos de query para usar a sessão:**
-
-```python
-def _query_crtsh(self, domain: str, timeout: int) -> Set[str]:
-    """Query crt.sh Certificate Transparency logs."""
-    url = f"https://crt.sh/?q=%25.{domain}&output=json"
+def _query_rapiddns(self, domain: str, timeout: int) -> Set[str]:
+    """Query RapidDNS.io for subdomains."""
+    import re
+    url = f"https://rapiddns.io/subdomain/{domain}?full=1"
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
 
     session = self._get_session()
     response = session.get(url, headers=headers, timeout=timeout)
     response.raise_for_status()
-    # ... resto do código
+
+    subdomains = set()
+    # Parse HTML response - subdomains are in <td> tags
+    pattern = r'<td>([a-zA-Z0-9.-]+\.' + re.escape(domain) + r')</td>'
+    matches = re.findall(pattern, response.text, re.IGNORECASE)
+    
+    for match in matches:
+        name = match.strip().lower()
+        if self._is_valid_subdomain(name, domain):
+            subdomains.add(name)
+
+    return subdomains
+
+
+def _query_threatminer(self, domain: str, timeout: int) -> Set[str]:
+    """Query ThreatMiner API for subdomains."""
+    url = f"https://api.threatminer.org/v2/domain.php?q={domain}&rt=5"
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+
+    session = self._get_session()
+    response = session.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    subdomains = set()
+    data = response.json()
+
+    if data.get('status_code') == '200':
+        for subdomain in data.get('results', []):
+            name = subdomain.strip().lower()
+            if self._is_valid_subdomain(name, domain):
+                subdomains.add(name)
+
+    return subdomains
+
+
+def _query_urlscan(self, domain: str, timeout: int) -> Set[str]:
+    """Query URLScan.io for subdomains (100 requests/day free)."""
+    url = f"https://urlscan.io/api/v1/search/?q=domain:{domain}"
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+
+    session = self._get_session()
+    response = session.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    subdomains = set()
+    data = response.json()
+
+    for result in data.get('results', []):
+        task = result.get('task', {})
+        page_domain = task.get('domain', '').strip().lower()
+        if self._is_valid_subdomain(page_domain, domain):
+            subdomains.add(page_domain)
+
+    return subdomains
+
+
+def _query_wayback(self, domain: str, timeout: int) -> Set[str]:
+    """Query Wayback Machine CDX API for historical subdomains."""
+    url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&fl=original&collapse=urlkey"
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+
+    session = self._get_session()
+    response = session.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    subdomains = set()
+    data = response.json()
+
+    # Skip header row
+    for row in data[1:] if len(data) > 1 else []:
+        if row:
+            # Extract domain from URL
+            url_str = row[0] if isinstance(row, list) else row
+            # Parse: https://subdomain.domain.com/path -> subdomain.domain.com
+            import re
+            match = re.search(r'https?://([^/]+)', url_str)
+            if match:
+                hostname = match.group(1).split(':')[0].lower()
+                if self._is_valid_subdomain(hostname, domain):
+                    subdomains.add(hostname)
+
+    return subdomains
+
+
+def _query_certspotter(self, domain: str, timeout: int) -> Set[str]:
+    """Query CertSpotter API for certificate transparency data."""
+    url = f"https://api.certspotter.com/v1/issuances?domain={domain}&include_subdomains=true&expand=dns_names"
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+
+    session = self._get_session()
+    response = session.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    subdomains = set()
+    data = response.json()
+
+    for cert in data:
+        for name in cert.get('dns_names', []):
+            name = name.strip().lower().lstrip('*.')
+            if self._is_valid_subdomain(name, domain):
+                subdomains.add(name)
+
+    return subdomains
+
+
+def _query_jldc(self, domain: str, timeout: int) -> Set[str]:
+    """Query JLDC Anubis API for subdomains."""
+    url = f"https://jldc.me/anubis/subdomains/{domain}"
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+
+    session = self._get_session()
+    response = session.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    subdomains = set()
+    data = response.json()
+
+    for subdomain in data:
+        name = subdomain.strip().lower()
+        if self._is_valid_subdomain(name, domain):
+            subdomains.add(name)
+
+    return subdomains
 ```
 
-### Código Completo Atualizado
+### Atualização do Método `run()`
+
+Adicionar chamadas para as novas fontes após as existentes:
 
 ```python
-"""
-Subdomain Enumeration Executor - Multi-source subdomain discovery.
-Uses free APIs: crt.sh, HackerTarget, AlienVault OTX.
-Forces IPv4 to avoid IPv6 connectivity issues.
-"""
+# 4. RapidDNS
+try:
+    rapid_results = self._query_rapiddns(domain, timeout)
+    for sub in rapid_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['rapiddns']}
+        elif 'rapiddns' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('rapiddns')
+    sources_used.append(f"rapiddns ({len(rapid_results)})")
+    self.logger.info(f"Step {step_id}: rapiddns returned {len(rapid_results)} subdomains")
+except Exception as e:
+    errors.append(f"rapiddns: {str(e)}")
+    self.logger.warning(f"Step {step_id}: rapiddns error - {e}")
 
-import socket
-import requests
-from requests.adapters import HTTPAdapter
-from typing import Any, Dict, List, Set
-from .base import BaseExecutor
+# 5. ThreatMiner
+try:
+    tm_results = self._query_threatminer(domain, timeout)
+    for sub in tm_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['threatminer']}
+        elif 'threatminer' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('threatminer')
+    sources_used.append(f"threatminer ({len(tm_results)})")
+    self.logger.info(f"Step {step_id}: threatminer returned {len(tm_results)} subdomains")
+except Exception as e:
+    errors.append(f"threatminer: {str(e)}")
+    self.logger.warning(f"Step {step_id}: threatminer error - {e}")
 
+# 6. URLScan.io
+try:
+    urlscan_results = self._query_urlscan(domain, timeout)
+    for sub in urlscan_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['urlscan']}
+        elif 'urlscan' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('urlscan')
+    sources_used.append(f"urlscan ({len(urlscan_results)})")
+    self.logger.info(f"Step {step_id}: urlscan returned {len(urlscan_results)} subdomains")
+except Exception as e:
+    errors.append(f"urlscan: {str(e)}")
+    self.logger.warning(f"Step {step_id}: urlscan error - {e}")
 
-class IPv4HTTPAdapter(HTTPAdapter):
-    """Force IPv4 connections only."""
-    def init_poolmanager(self, *args, **kwargs):
-        import urllib3.util.connection as urllib3_conn
-        original_gai_family = urllib3_conn.allowed_gai_family
-        urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
-        try:
-            super().init_poolmanager(*args, **kwargs)
-        finally:
-            urllib3_conn.allowed_gai_family = original_gai_family
+# 7. Wayback Machine
+try:
+    wb_results = self._query_wayback(domain, timeout)
+    for sub in wb_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['wayback']}
+        elif 'wayback' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('wayback')
+    sources_used.append(f"wayback ({len(wb_results)})")
+    self.logger.info(f"Step {step_id}: wayback returned {len(wb_results)} subdomains")
+except Exception as e:
+    errors.append(f"wayback: {str(e)}")
+    self.logger.warning(f"Step {step_id}: wayback error - {e}")
 
+# 8. CertSpotter
+try:
+    cs_results = self._query_certspotter(domain, timeout)
+    for sub in cs_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['certspotter']}
+        elif 'certspotter' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('certspotter')
+    sources_used.append(f"certspotter ({len(cs_results)})")
+    self.logger.info(f"Step {step_id}: certspotter returned {len(cs_results)} subdomains")
+except Exception as e:
+    errors.append(f"certspotter: {str(e)}")
+    self.logger.warning(f"Step {step_id}: certspotter error - {e}")
 
-class SubdomainEnumExecutor(BaseExecutor):
-    """Executor for subdomain enumeration using multiple free APIs."""
-
-    DEFAULT_TIMEOUT = 30
-
-    def _get_session(self) -> requests.Session:
-        """Create a requests session that forces IPv4."""
-        session = requests.Session()
-        adapter = IPv4HTTPAdapter()
-        session.mount('https://', adapter)
-        session.mount('http://', adapter)
-        return session
-
-    def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        # ... mesmo código atual ...
-        pass
-
-    def _query_crtsh(self, domain: str, timeout: int) -> Set[str]:
-        """Query crt.sh Certificate Transparency logs."""
-        url = f"https://crt.sh/?q=%25.{domain}&output=json"
-        headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-        session = self._get_session()
-        response = session.get(url, headers=headers, timeout=timeout)
-        response.raise_for_status()
-
-        subdomains = set()
-        data = response.json()
-
-        for cert in data:
-            name_value = cert.get('name_value', '')
-            for name in name_value.split('\n'):
-                name = name.strip().lower().lstrip('*.')
-                if self._is_valid_subdomain(name, domain):
-                    subdomains.add(name)
-
-        return subdomains
-
-    def _query_hackertarget(self, domain: str, timeout: int) -> Set[str]:
-        """Query HackerTarget API."""
-        url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
-
-        session = self._get_session()
-        response = session.get(url, timeout=timeout)
-        response.raise_for_status()
-
-        subdomains = set()
-        for line in response.text.strip().split('\n'):
-            if ',' in line:
-                subdomain = line.split(',')[0].strip().lower()
-                if self._is_valid_subdomain(subdomain, domain):
-                    subdomains.add(subdomain)
-
-        return subdomains
-
-    def _query_alienvault(self, domain: str, timeout: int) -> Set[str]:
-        """Query AlienVault OTX passive DNS."""
-        url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
-        headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-        session = self._get_session()
-        response = session.get(url, headers=headers, timeout=timeout)
-        response.raise_for_status()
-
-        subdomains = set()
-        data = response.json()
-
-        for record in data.get('passive_dns', []):
-            hostname = record.get('hostname', '').strip().lower()
-            if self._is_valid_subdomain(hostname, domain):
-                subdomains.add(hostname)
-
-        return subdomains
-
-    def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
-        # ... mesmo código ...
-        pass
+# 9. JLDC Anubis
+try:
+    jldc_results = self._query_jldc(domain, timeout)
+    for sub in jldc_results:
+        if sub not in all_subdomains:
+            all_subdomains[sub] = {'subdomain': sub, 'sources': ['jldc']}
+        elif 'jldc' not in all_subdomains[sub]['sources']:
+            all_subdomains[sub]['sources'].append('jldc')
+    sources_used.append(f"jldc ({len(jldc_results)})")
+    self.logger.info(f"Step {step_id}: jldc returned {len(jldc_results)} subdomains")
+except Exception as e:
+    errors.append(f"jldc: {str(e)}")
+    self.logger.warning(f"Step {step_id}: jldc error - {e}")
 ```
+
+### Resumo das Fontes
+
+| # | Fonte | Tipo de Dados |
+|---|-------|---------------|
+| 1 | crt.sh | Certificate Transparency |
+| 2 | HackerTarget | DNS records |
+| 3 | AlienVault OTX | Passive DNS |
+| 4 | RapidDNS | DNS aggregator |
+| 5 | ThreatMiner | Threat intelligence |
+| 6 | URLScan.io | Web scan results |
+| 7 | Wayback Machine | Historical URLs |
+| 8 | CertSpotter | Certificate Transparency |
+| 9 | JLDC Anubis | Subdomain aggregator |
+
+### Benefícios
+
+- **Redundancia**: Se uma fonte falhar, as outras continuam funcionando
+- **Cobertura ampliada**: Diferentes fontes capturam diferentes subdomínios
+- **Dados históricos**: Wayback Machine encontra subdomínios antigos que podem ter sido removidos
+- **Sem dependencia de API keys**: Todas funcionam gratuitamente
 
 ### Deploy
 
-1. Copiar o arquivo atualizado para o servidor
+1. Atualizar o arquivo `subdomain_enum.py` no servidor
 2. Limpar cache: `rm -rf /opt/iscope-agent/agent/__pycache__ /opt/iscope-agent/agent/executors/__pycache__`
 3. Reiniciar: `systemctl restart iscope-agent`
-4. Disparar nova análise de External Domain
-
-### Teste Manual (validar antes do deploy)
-
-```bash
-# Forçar IPv4 com curl
-curl -4 "https://crt.sh/?q=%25.google.com&output=json" --max-time 30 | head -c 500
-```
-
-Se funcionar com `-4`, a correção no Python resolverá o problema.
+4. Disparar nova analise de External Domain
 
