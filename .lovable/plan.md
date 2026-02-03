@@ -1,220 +1,260 @@
 
-
-## Mapa DNS Visual para Domínios Externos
+## Melhorias no Mapa DNS - Layout de 3 Colunas
 
 ### Objetivo
 
-Substituir a tabela de subdomínios por uma visualização em árvore/mapa hierárquico mostrando toda a infraestrutura DNS do domínio, similar ao estilo DNSDumpster.
+Reorganizar o mapa DNS para layout de 3 colunas (empilhadas) conforme o esboço, e enriquecer os cards com mais informações técnicas.
 
-### Design do Mapa
+### Layout Proposto
 
-O mapa terá layout vertical (infinito na vertical, limitado na horizontal) com o domínio principal no topo, ramificando para os diferentes tipos de registros:
-
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         taschibra.com.br                                  │
+└────────────────────────────────┬─────────────────────────────────────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│  COLUNA 1      │     │  COLUNA 2      │     │  COLUNA 3      │
+│                │     │                │     │                │
+│  ┌──────────┐  │     │  ┌──────────┐  │     │  ┌──────────┐  │
+│  │    NS    │  │     │  │   SOA    │  │     │  │ Subdomín.│  │
+│  └──────────┘  │     │  └──────────┘  │     │  └──────────┘  │
+│  ns1-06...    │     │  Primary:      │     │  10 ativos     │
+│  40.112.72... │     │  ns1-06...     │     │  7 inativos    │
+│  ns2-06...    │     │  Contact:      │     │                │
+│  40.112.72... │     │  azuredns-...  │     │  ● www         │
+│  ...          │     │  DNSSEC: ○     │     │    187.85...   │
+│               │     │                │     │  ● drive       │
+│  ┌──────────┐  │     │  ┌──────────┐  │     │    187.85...   │
+│  │    MX    │  │     │  │   TXT    │  │     │  ○ chat        │
+│  └──────────┘  │     │  └──────────┘  │     │  ○ mail        │
+│  outlook.mail  │     │  ● SPF        │     │  ...           │
+│  Prio: 0 •    │     │    v=spf1 ... │     │                │
+│  2a01:111:... │     │  ● DKIM       │     │                │
+│               │     │    selector1   │     │                │
+│               │     │    selector2   │     │                │
+│               │     │  ● DMARC      │     │                │
+│               │     │    p: reject   │     │                │
+│               │     │    sp: reject  │     │                │
+└────────────────┘     └────────────────┘     └────────────────┘
 ```
-                    ┌─────────────────────────┐
-                    │   taschibra.com.br      │  ← Domínio Principal
-                    │   ● Score: 85%          │
-                    └───────────┬─────────────┘
-                                │
-        ┌───────────┬───────────┼───────────┬───────────┐
-        ▼           ▼           ▼           ▼           ▼
-   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-   │   NS    │ │   MX    │ │   SOA   │ │   TXT   │ │ SUBDM.  │
-   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
-        │           │           │           │           │
-        ▼           ▼           ▼           ▼           ▼
-   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-   │ns1-06.  │ │outlook. │ │Primary: │ │SPF: ✓   │ │www ●    │
-   │azure... │ │mail...  │ │ns1-06   │ │DKIM: ✓  │ │drive ●  │
-   └────┬────┘ └─────────┘ │Contact: │ │DMARC: ✓ │ │ida-fw ● │
-        │                  │admin@   │ └─────────┘ │chat ○   │
-        ▼                  └─────────┘             │mail ○   │
-   ┌─────────┐                                     └─────────┘
-   │ns2-06.  │
-   │azure... │
-   └─────────┘
-   ...
-```
 
-### Estrutura de Dados para o Mapa
+---
 
-Todos os dados necessários já estão disponíveis no relatório:
+### Alterações Detalhadas
 
-| Tipo | Fonte no Report | Dados |
-|------|-----------------|-------|
-| **NS** | `dnsSummary.ns[]` | Lista de nameservers |
-| **MX** | `categories['Configuração de Email - MX'].checks[0].rawData.data.records[]` | Exchange, Priority, IPs |
-| **SOA** | `dnsSummary.soaMname`, `dnsSummary.soaContact` | Primary NS, Contact |
-| **TXT** | Checks SPF, DKIM, DMARC via `deriveEmailAuthStatus()` | Status pass/fail |
-| **Subdomínios** | `subdomainSummary.subdomains[]` | Subdomain, IPs, is_alive |
-| **DNSSEC** | `dnsSummary.dnssecHasDnskey`, `dnssecHasDs` | Status ativo/inativo |
+#### 1. Layout em 3 Colunas
 
-### Componentes a Criar
+**Antes:** Grid de 5 colunas (`lg:grid-cols-5`)
 
-#### 1. `src/components/external-domain/DNSMapSection.tsx` (Novo)
-
-Componente principal que renderiza o mapa DNS completo:
+**Depois:** Grid de 3 colunas com empilhamento vertical:
+- **Coluna 1:** NS + MX (empilhados)
+- **Coluna 2:** SOA + TXT (empilhados)
+- **Coluna 3:** Subdomínios (coluna inteira, com scroll)
 
 ```tsx
-interface DNSMapSectionProps {
-  domain: string;
-  dnsSummary?: ComplianceReport['dnsSummary'];
-  subdomainSummary?: SubdomainSummary;
-  categories: ComplianceCategory[];
-  emailAuth: { spf: boolean; dkim: boolean; dmarc: boolean };
-}
-```
-
-Estrutura visual:
-- **Card container** com fundo escuro e grid pattern (mesmo estilo do Command Center)
-- **Nó raiz**: Domínio principal (centralizado no topo)
-- **Linhas de conexão**: SVG paths conectando os nós
-- **Nós filhos**: Grupos de registros (NS, MX, SOA, TXT, Subdomínios)
-- **Nós folha**: Registros individuais dentro de cada grupo
-
-#### 2. Componentes Auxiliares
-
-```tsx
-// Nó individual do mapa
-function DNSMapNode({ 
-  type, 
-  label, 
-  value, 
-  status,
-  children,
-  isRoot
-}: DNSMapNodeProps)
-
-// Linha de conexão SVG
-function DNSMapConnector({ 
-  from, 
-  to, 
-  type 
-}: DNSMapConnectorProps)
-
-// Grupo de registros expansível
-function DNSMapGroup({
-  type,
-  title,
-  items,
-  icon,
-  color
-}: DNSMapGroupProps)
-```
-
-### Layout Responsivo
-
-O mapa será renderizado em CSS puro (sem bibliotecas externas como D3) para simplicidade:
-
-- **Desktop (lg+)**: Layout horizontal com 5 colunas (NS, MX, SOA, TXT, Subdomínios)
-- **Tablet (md)**: Layout 2-3 colunas com scroll vertical
-- **Mobile**: Layout em lista vertical (uma coluna)
-
-### Cores por Tipo de Registro
-
-| Tipo | Cor (Tailwind) | Hex |
-|------|---------------|-----|
-| NS | `sky-400` | #38bdf8 |
-| MX | `purple-400` | #c084fc |
-| SOA | `amber-400` | #fbbf24 |
-| TXT | `emerald-400` | #34d399 |
-| Subdomínios | `teal-400` | #2dd4bf |
-| Ativo | `primary` | Tema |
-| Inativo | `muted-foreground/30` | Cinza |
-
-### Funcionalidades
-
-1. **Status visual**: Indicador verde/cinza para registros ativos/inativos
-2. **Hover details**: Tooltip com informações completas ao passar o mouse
-3. **Clique para copiar**: Copiar hostname/IP ao clicar
-4. **Expandir/Colapsar**: Grupos com muitos itens (ex: subdomínios) colapsáveis
-5. **Busca**: Filtro para encontrar registros específicos (reutilizar da tabela)
-6. **Link externo**: Ícone para abrir subdomínio em nova aba
-
-### Alterações Necessárias
-
-#### Arquivos a Modificar
-
-1. **`src/components/external-domain/DNSMapSection.tsx`** (criar)
-   - Novo componente principal do mapa
-
-2. **`src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`** (modificar)
-   - Substituir `<SubdomainSection>` por `<DNSMapSection>`
-   - Passar todos os dados necessários (dnsSummary, subdomainSummary, categories, emailAuth)
-
-3. **`src/components/external-domain/SubdomainSection.tsx`** (manter)
-   - Manter para compatibilidade, mas não será usado na página principal
-
-4. **`src/types/compliance.ts`** (opcional)
-   - Adicionar tipos para MX records se necessário
-
-### Extração de Dados MX
-
-Para extrair os registros MX do relatório:
-
-```tsx
-const extractMxRecords = (categories: ComplianceCategory[]) => {
-  const mxCategory = categories.find(c => c.name.includes('MX'));
-  if (!mxCategory) return [];
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+  {/* Coluna 1: NS + MX */}
+  <div className="space-y-4">
+    <DNSGroup title="NS" ... />
+    <DNSGroup title="MX" ... />
+  </div>
   
-  const mxCheck = mxCategory.checks.find(ch => ch.rawData?.step_id === 'mx_records');
-  const records = (mxCheck?.rawData?.data as any)?.records || [];
+  {/* Coluna 2: SOA + TXT */}
+  <div className="space-y-4">
+    <DNSGroup title="SOA" ... />
+    <DNSGroup title="TXT" ... />
+  </div>
   
-  return records.map((r: any) => ({
-    exchange: r.exchange,
-    priority: r.priority,
-    ips: r.resolved_ips || [],
-    ipCount: r.resolved_ip_count || 0
-  }));
+  {/* Coluna 3: Subdomínios */}
+  <DNSGroup title="Subdomínios" ... />
+</div>
+```
+
+---
+
+#### 2. NS Records - Adicionar IPs Resolvidos
+
+Atualmente só mostra o hostname. Adicionar sublabel com IP resolvido via DNS-over-HTTPS.
+
+**Problema:** Os IPs dos NS não estão disponíveis no `dnsSummary.ns[]` (só nomes).
+
+**Solução:** Para esta iteração, **não resolver dinamicamente** (evitar delay). Exibir apenas o hostname, já que NS geralmente são serviços externos (Azure DNS, Cloudflare, etc).
+
+*Alternativa futura:* Adicionar campo `ns_ips` ao `dnsSummary` na edge function.
+
+---
+
+#### 3. Grupo TXT - SPF com Registro Completo
+
+**Antes:**
+```
+● SPF    ✓ Válido
+```
+
+**Depois:**
+```
+● SPF
+  v=spf1 include:spf.protection.outlook.com -all
+```
+
+Extração do dado:
+```tsx
+const extractSpfRecord = (categories: ComplianceCategory[]) => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const spfCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'spf_record');
+  return (spfCheck?.rawData as any)?.data?.raw || null;
 };
 ```
 
-### Exemplo Visual (ASCII)
+---
 
+#### 4. Grupo TXT - DKIM com Seletores
+
+**Antes:**
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                         MAPA DE INFRAESTRUTURA DNS                          │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│                          ┌─────────────────────┐                            │
-│                          │  taschibra.com.br   │                            │
-│                          └──────────┬──────────┘                            │
-│                                     │                                       │
-│      ┌──────────┬──────────┬────────┴────────┬──────────┬──────────┐       │
-│      │          │          │                 │          │          │       │
-│   ┌──▼──┐   ┌──▼──┐   ┌──▼──┐           ┌──▼──┐   ┌──▼──┐         │       │
-│   │ NS  │   │ MX  │   │ SOA │           │ TXT │   │ SUB │         │       │
-│   │ 4   │   │ 1   │   │     │           │ 3   │   │ 10  │         │       │
-│   └──┬──┘   └──┬──┘   └──┬──┘           └──┬──┘   └──┬──┘         │       │
-│      │         │         │                 │         │            │       │
-│   ns1-06...  outlook  Primary:           SPF ✓    ● www          │       │
-│   ns2-06...  .mail.   ns1-06...         DKIM ✓    ● drive        │       │
-│   ns3-06...  outlook  Contact:          DMARC ✓   ● ida-fw       │       │
-│   ns4-06...  .com     admin@...                   ○ chat         │       │
-│                       DNSSEC: ✗                   ○ mail         │       │
-│                                                   ○ mx2          │       │
-│                                                   ○ ns1          │       │
-│                                                   ○ ns2          │       │
-│                                                   ○ ns3          │       │
-│                                                   ○ vpn          │       │
-│                                                                             │
-└────────────────────────────────────────────────────────────────────────────┘
+● DKIM   ✓ Válido
 ```
 
-### Tecnologias Utilizadas
+**Depois:**
+```
+● DKIM
+  selector1
+  selector2
+```
 
-- **CSS Grid/Flexbox**: Layout responsivo
-- **SVG inline**: Linhas de conexão
-- **Tailwind CSS**: Estilos consistentes com o tema
-- **Framer Motion** (opcional): Animações suaves de expansão
+Extração do dado:
+```tsx
+const extractDkimSelectors = (categories: ComplianceCategory[]) => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const dkimCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dkim_records');
+  const found = (dkimCheck?.rawData as any)?.data?.found || [];
+  return found.map((f: any) => f.selector).filter(Boolean);
+};
+```
 
-### Ordem de Implementação
+---
 
-1. Criar estrutura base do `DNSMapSection`
-2. Implementar nós individuais (DNSMapNode)
-3. Adicionar linhas de conexão SVG
-4. Implementar grupos expansíveis
-5. Integrar na página de relatório
-6. Adicionar funcionalidades (busca, copiar, tooltips)
-7. Responsividade mobile
+#### 5. Grupo TXT - DMARC com Políticas
 
+**Antes:**
+```
+● DMARC  ✓ Válido
+```
+
+**Depois:**
+```
+● DMARC
+  Política: reject
+  Política Subdomínios: reject
+```
+
+Extração do dado:
+```tsx
+const extractDmarcPolicy = (categories: ComplianceCategory[]) => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const dmarcCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dmarc_record');
+  const parsed = (dmarcCheck?.rawData as any)?.data?.parsed || {};
+  return {
+    p: parsed.p || null,   // política principal
+    sp: parsed.sp || null, // política de subdomínios
+  };
+};
+```
+
+---
+
+#### 6. Conector Visual (SVG)
+
+Atualizar as linhas de conexão para refletir 3 colunas em vez de 5:
+
+```tsx
+{/* Horizontal connector bar */}
+<div className="relative h-4 mx-8 mb-2">
+  <div className="absolute inset-x-0 top-0 h-px bg-border" />
+  {/* 3 drops: 25%, 50%, 75% */}
+  <div className="absolute left-1/4 top-0 w-px h-4 bg-border" />
+  <div className="absolute left-1/2 top-0 w-px h-4 bg-border -translate-x-1/2" />
+  <div className="absolute left-3/4 top-0 w-px h-4 bg-border" />
+</div>
+```
+
+---
+
+### Arquivo Modificado
+
+- `src/components/external-domain/DNSMapSection.tsx`
+
+---
+
+### Componente TXT Atualizado (Exemplo)
+
+```tsx
+{/* TXT (Email Auth) - Detalhado */}
+<DNSGroup
+  title="TXT"
+  count={3}
+  icon={<FileText className="w-4 h-4 text-emerald-400" />}
+  color="border-emerald-500/30 bg-emerald-500/5"
+>
+  <div className="space-y-3 px-1">
+    {/* SPF */}
+    <div className="text-xs">
+      <div className="flex items-center gap-2 mb-1">
+        <span className={cn("w-2 h-2 rounded-full", emailAuth.spf ? "bg-primary" : "bg-rose-400")} />
+        <span className="font-medium text-foreground">SPF</span>
+      </div>
+      {spfRecord && (
+        <span className="text-[10px] text-muted-foreground font-mono block pl-4 truncate">
+          {spfRecord}
+        </span>
+      )}
+    </div>
+    
+    {/* DKIM */}
+    <div className="text-xs">
+      <div className="flex items-center gap-2 mb-1">
+        <span className={cn("w-2 h-2 rounded-full", emailAuth.dkim ? "bg-primary" : "bg-rose-400")} />
+        <span className="font-medium text-foreground">DKIM</span>
+      </div>
+      {dkimSelectors.map((sel, i) => (
+        <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
+          {sel}
+        </span>
+      ))}
+    </div>
+    
+    {/* DMARC */}
+    <div className="text-xs">
+      <div className="flex items-center gap-2 mb-1">
+        <span className={cn("w-2 h-2 rounded-full", emailAuth.dmarc ? "bg-primary" : "bg-rose-400")} />
+        <span className="font-medium text-foreground">DMARC</span>
+      </div>
+      {dmarcPolicy.p && (
+        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+          Política: {dmarcPolicy.p}
+        </span>
+      )}
+      {dmarcPolicy.sp && (
+        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+          Política Subdomínios: {dmarcPolicy.sp}
+        </span>
+      )}
+    </div>
+  </div>
+</DNSGroup>
+```
+
+---
+
+### Resultado Visual Esperado
+
+| Antes | Depois |
+|-------|--------|
+| 5 colunas estreitas | 3 colunas largas empilhadas |
+| SPF: ✓ Válido | SPF + registro `v=spf1...` |
+| DKIM: ✓ Válido | DKIM + seletores (selector1, selector2) |
+| DMARC: ✓ Válido | DMARC + p:reject, sp:reject |
+| NS sem IPs | NS (IPs futuramente) |
