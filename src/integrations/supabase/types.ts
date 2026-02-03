@@ -134,6 +134,7 @@ export type Database = {
         Row: {
           activation_code: string | null
           activation_code_expires_at: string | null
+          agent_version: string | null
           client_id: string | null
           config_fetched_at: string | null
           config_updated_at: string | null
@@ -148,6 +149,7 @@ export type Database = {
         Insert: {
           activation_code?: string | null
           activation_code_expires_at?: string | null
+          agent_version?: string | null
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
@@ -162,6 +164,7 @@ export type Database = {
         Update: {
           activation_code?: string | null
           activation_code_expires_at?: string | null
+          agent_version?: string | null
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
