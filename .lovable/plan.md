@@ -1,30 +1,16 @@
 
 
-# Plano: Corrigir Instalação Python no CentOS Stream 8
+# Plano: Habilitar AppStream Automaticamente no Script de Instalação
 
-## Problema Identificado
+## Causa Raiz Identificada
 
-O servidor está rodando **CentOS Stream 8** (não CentOS 8 EOL). Os pacotes Python existem, mas:
+O repositório **AppStream** está desabilitado no servidor. Este repositório contém os módulos Python necessários para instalação.
 
-1. No CentOS Stream 8, `python39` está disponível via **módulo AppStream**, não via EPEL
-2. O módulo precisa ser habilitado **antes** de tentar instalar
-3. Os nomes dos pacotes podem variar: `python39`, `python3.9`, `python38`, etc.
-
-**Output revelador:**
 ```
-CentOS Stream 8 - BaseOS   ← É CentOS Stream, não CentOS 8 regular!
+appstream    CentOS Stream 8 - AppStream    disabled
 ```
 
----
-
-## Solução
-
-Reescrever a lógica de instalação do Python no script para:
-
-1. **Detectar CentOS Stream** separadamente do CentOS 8 EOL
-2. **Habilitar módulo python39** corretamente antes de instalar
-3. **Usar nomes alternativos** de pacotes (`python3.9` além de `python39`)
-4. **Verificar se Python já existe** antes de tentar instalar
+Após habilitar com `dnf config-manager --set-enabled appstream`, o Python 3.9 fica disponível.
 
 ---
 
@@ -32,7 +18,20 @@ Reescrever a lógica de instalação do Python no script para:
 
 ### Arquivo: `supabase/functions/agent-install/index.ts`
 
-**Função `install_deps()` - Nova lógica para dnf:**
+**Função `install_deps()` - Adicionar habilitação do AppStream:**
+
+Inserir antes de tentar instalar Python:
+
+```bash
+# Habilitar repositório AppStream (necessário para módulos Python)
+echo "Habilitando repositório AppStream..."
+dnf config-manager --set-enabled appstream 2>/dev/null || true
+dnf config-manager --set-enabled powertools 2>/dev/null || true  # útil para -devel
+```
+
+---
+
+## Código Completo da Seção DNF
 
 ```bash
 if command -v dnf >/dev/null 2>&1; then
@@ -44,24 +43,32 @@ if command -v dnf >/dev/null 2>&1; then
   
   # Para CentOS 8 EOL (não Stream): apontar repos para vault
   if [[ -f /etc/centos-release ]] && grep -q "CentOS Linux.*8" /etc/centos-release 2>/dev/null; then
+    echo "Detectado CentOS Linux 8 (EOL) - redirecionando repos para vault..."
     sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
     dnf clean all 2>/dev/null || true
   fi
   
-  # Listar módulos disponíveis para debug
+  # NOVO: Habilitar repositório AppStream (contém módulos Python)
+  echo "Habilitando repositório AppStream..."
+  dnf config-manager --set-enabled appstream 2>/dev/null || true
+  dnf config-manager --set-enabled powertools 2>/dev/null || true
+  
+  # Listar módulos Python disponíveis para debug
   echo "Módulos Python disponíveis:"
   dnf module list python* 2>/dev/null | head -20 || true
   
   # Tentar habilitar módulo python39 (CentOS/RHEL 8/Stream)
+  echo "Habilitando módulo python39..."
   dnf module reset python39 -y 2>/dev/null || true
-  dnf module enable python39 -y 2>/dev/null || true
+  dnf module enable python39:3.9 -y 2>/dev/null || dnf module enable python39 -y 2>/dev/null || true
   
   # Tentar habilitar módulo python38 como fallback
   dnf module reset python38 -y 2>/dev/null || true
-  dnf module enable python38 -y 2>/dev/null || true
+  dnf module enable python38:3.8 -y 2>/dev/null || dnf module enable python38 -y 2>/dev/null || true
   
-  # Instalar Python (múltiplos fallbacks com nomes alternativos)
+  # Instalar Python (múltiplos fallbacks)
+  echo "Instalando Python..."
   dnf install -y python39 python39-pip python39-devel 2>/dev/null || \
   dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \
   dnf install -y python38 python38-pip python38-devel 2>/dev/null || \
@@ -69,62 +76,41 @@ if command -v dnf >/dev/null 2>&1; then
   dnf install -y python3 python3-pip python3-devel 2>/dev/null || \
   dnf install -y python36 python36-pip python36-devel 2>/dev/null || true
   
+  # Verificar se Python foi instalado
+  echo "Verificando Python instalado:"
+  which python3 python3.9 python3.8 2>/dev/null || true
+  
   return
 fi
 ```
 
 ---
 
-## Debug Imediato (Executar no Servidor)
+## Solução Imediata (Testar Agora)
 
-Por favor, execute estes comandos para investigar:
+Agora que o AppStream está habilitado, tente instalar o agente novamente:
 
 ```bash
-# Ver qual Python já está instalado
-which python3 python3.8 python3.9 2>/dev/null
+curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "G3RB-7LGP-90L7-WGWW"
+```
 
-# Listar módulos Python disponíveis
-sudo dnf module list python*
+Se ainda falhar, instale Python manualmente primeiro:
 
-# Ver detalhes do módulo python39
-sudo dnf module info python39
-
-# Tentar habilitar e instalar passo a passo
-sudo dnf module reset python39 -y
+```bash
 sudo dnf module enable python39:3.9 -y
 sudo dnf install -y python39 python39-pip
+curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "G3RB-7LGP-90L7-WGWW"
 ```
-
-**Importante:** O output de `dnf module list python*` vai mostrar exatamente quais versões estão disponíveis e como instalá-las.
 
 ---
 
-## Por que isso acontece?
+## Resumo da Correção
 
-| Distro | Como instalar Python 3.9 |
-|--------|--------------------------|
-| CentOS 8 EOL | EPEL + vault repos |
-| CentOS Stream 8 | `dnf module enable python39` + `dnf install python39` |
-| RHEL 8 | Mesmo do Stream |
-| Fedora | `dnf install python3` direto |
+| Problema | Solução |
+|----------|---------|
+| AppStream desabilitado | `dnf config-manager --set-enabled appstream` |
+| Módulos Python não encontrados | Habilitar repo antes de listar módulos |
+| Compatibilidade ampla | Adicionar PowerTools para pacotes -devel |
 
-O script atual não diferencia entre **CentOS Linux 8** (EOL) e **CentOS Stream 8** (ainda suportado).
-
----
-
-## Mudança na Detecção
-
-Atual:
-```bash
-grep -q "CentOS.*8" /etc/centos-release
-```
-
-Proposto:
-```bash
-# CentOS Linux 8 (EOL) - precisa vault
-grep -q "CentOS Linux.*8" /etc/centos-release
-
-# CentOS Stream 8 - usar módulos AppStream
-grep -q "CentOS Stream" /etc/centos-release
-```
+Esta alteração adiciona **2 linhas** ao script e resolve o problema de instalação em sistemas onde AppStream está desabilitado por padrão.
 
