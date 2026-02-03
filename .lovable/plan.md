@@ -1,383 +1,493 @@
 
 
-# Plano: Integrar Amass ao Python Agent
+# Plano: Sistema de Auto-Update para Python Agent
 
-## Visão Geral
+## Problema
 
-Adicionar o Amass (ferramenta de enumeração de subdomínios em Go) ao Python Agent, incluindo instalação automática via script de instalação e um novo executor para processar os resultados.
+Agents instalados em servidores remotos não têm mecanismo para receber atualizações automáticas. Atualmente, a única forma de atualizar é:
+1. SSH manual no servidor
+2. Executar o instalador novamente com `--update`
 
 ---
 
-## Arquitetura
+## Estratégias Consideradas
+
+| Estratégia | Descrição | Prós | Contras |
+|------------|-----------|------|---------|
+| **A. Flag no Heartbeat** | Backend sinaliza "update disponível" no heartbeat | Simples, baixo overhead | Agent precisa saber como se atualizar |
+| **B. Self-Update Script** | Agent baixa e executa script de update | Controle total | Complexidade, risco de falha |
+| **C. Versionamento + Auto-restart** | Agent detecta nova versão, baixa, substitui e reinicia systemd | Mais robusto | Mais complexo, precisa de permissões |
+| **D. Híbrido (Recomendado)** | Backend sinaliza via heartbeat + Agent executa update controlado | Melhor dos dois mundos | Implementação mais completa |
+
+**Recomendação:** Estratégia D (Híbrida)
+
+---
+
+## Arquitetura Proposta
 
 ```text
-┌────────────────────────────────────────────────────────────────────┐
-│                    Script de Instalação (Bash)                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  install_amass() - Nova função                               │  │
-│  │  - Detecta arquitetura (amd64/arm64)                         │  │
-│  │  - Baixa release do GitHub                                   │  │
-│  │  - Extrai binário para /usr/local/bin/amass                  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                     Python Agent (Executor)                        │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AmassExecutor - python-agent/agent/executors/amass.py       │  │
-│  │  - Executa: amass enum -passive -d domain -json /tmp/out     │  │
-│  │  - Lê e parseia arquivo JSON de saída                        │  │
-│  │  - Retorna lista de subdomínios + metadados                  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Backend (Supabase)                            │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  system_settings                                                  │  │
+│  │  - agent_latest_version: "1.1.0"                                  │  │
+│  │  - agent_update_url: "/storage/.../iscope-agent-1.1.0.tar.gz"     │  │
+│  │  - agent_update_checksum: "sha256:abc123..."                      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                   │                                      │
+│                                   ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  Edge Function: agent-heartbeat                                   │  │
+│  │  - Compara agent_version do request com agent_latest_version      │  │
+│  │  - Se diferente: retorna update_available: true + metadata        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Python Agent                                    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  Heartbeat Response Handler                                       │  │
+│  │  - Se update_available: true, chama AutoUpdater                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                   │                                      │
+│                                   ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  AutoUpdater (novo módulo)                                        │  │
+│  │  1. Baixa o novo pacote para /tmp                                 │  │
+│  │  2. Verifica checksum SHA256                                      │  │
+│  │  3. Extrai para diretório temporário                              │  │
+│  │  4. Executa script de migração (se existir)                       │  │
+│  │  5. Substitui arquivos em INSTALL_DIR                             │  │
+│  │  6. Solicita restart via systemctl (ou sinal)                     │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Fase 1: Atualizar Script de Instalação
+## Fase 1: Backend - Sinalização de Update
 
-### Arquivo: `supabase/functions/agent-install/index.ts`
+### 1.1 Nova coluna em system_settings
 
-**Alterações:**
+Adicionar configurações de versão no banco:
 
-1. Adicionar função `install_amass()` que:
-   - Detecta arquitetura do sistema (amd64 ou arm64)
-   - Baixa o binário pré-compilado do GitHub Releases
-   - Extrai e instala em `/usr/local/bin/amass`
-   - Verifica instalação com `amass -version`
+```sql
+-- Inserir configurações de versão do agent
+INSERT INTO system_settings (key, value) VALUES
+  ('agent_latest_version', '"1.0.0"'),
+  ('agent_update_checksum', '""'),
+  ('agent_force_update', 'false')
+ON CONFLICT (key) DO NOTHING;
+```
 
-2. Chamar `install_amass` após `install_deps` no fluxo principal
+### 1.2 Atualizar Edge Function agent-heartbeat
 
-**Nova função a adicionar (~linhas 187-220):**
+Modificar a resposta do heartbeat para incluir informações de update:
 
-```bash
-install_amass() {
-  echo "Instalando Amass para enumeração de subdomínios..."
-  
-  local arch
-  arch="$(uname -m)"
-  case "$arch" in
-    x86_64)  arch="amd64" ;;
-    aarch64) arch="arm64" ;;
-    *)
-      echo "Aviso: arquitetura $arch não suportada para Amass. Pulando instalação."
-      return 0
-      ;;
-  esac
-  
-  local version="v4.2.0"
-  local filename="amass_Linux_${arch}.zip"
-  local url="https://github.com/owasp-amass/amass/releases/download/${version}/${filename}"
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  
-  echo "Baixando Amass ${version} (${arch})..."
-  
-  if ! curl -fsSL "$url" -o "${tmp_dir}/amass.zip"; then
-    echo "Aviso: falha ao baixar Amass. Continuando sem ele."
-    rm -rf "$tmp_dir"
-    return 0
-  fi
-  
-  # Instalar unzip se necessário
-  if ! command -v unzip >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-      apt-get install -y unzip || true
-    elif command -v dnf >/dev/null 2>&1; then
-      dnf install -y unzip || true
-    elif command -v yum >/dev/null 2>&1; then
-      yum install -y unzip || true
-    fi
-  fi
-  
-  unzip -q "${tmp_dir}/amass.zip" -d "$tmp_dir"
-  
-  # O zip contém uma pasta amass_Linux_xxx/amass
-  local bin_path
-  bin_path="$(find "$tmp_dir" -name 'amass' -type f -executable | head -1)"
-  
-  if [[ -n "$bin_path" ]]; then
-    mv "$bin_path" /usr/local/bin/amass
-    chmod +x /usr/local/bin/amass
-    echo "Amass instalado: $(amass -version 2>&1 | head -1)"
-  else
-    echo "Aviso: binário do Amass não encontrado no pacote."
-  fi
-  
-  rm -rf "$tmp_dir"
+```typescript
+// Nova interface de resposta
+interface HeartbeatSuccessResponse {
+  success: true;
+  agent_id: string;
+  timestamp: string;
+  next_heartbeat_in: number;
+  config_flag: 0 | 1;
+  has_pending_tasks: boolean;
+  // NOVOS CAMPOS
+  update_available: boolean;
+  update_info?: {
+    version: string;
+    download_url: string;
+    checksum: string;
+    force: boolean;
+  };
 }
 ```
 
-**Atualização da função main (~linha 383):**
+Lógica adicional:
 
-```bash
-main() {
-  # ... existing code ...
-  
-  install_deps
-  install_amass    # <-- NOVA LINHA
-  ensure_user
-  # ... rest of function ...
+```typescript
+// Buscar versão do agent no request body
+const requestBody = await req.json();
+const agentVersion = requestBody.agent_version || '0.0.0';
+
+// Buscar versão mais recente do system_settings
+const { data: settings } = await supabase
+  .from('system_settings')
+  .select('key, value')
+  .in('key', ['agent_latest_version', 'agent_update_checksum', 'agent_force_update']);
+
+const latestVersion = settings?.find(s => s.key === 'agent_latest_version')?.value || '1.0.0';
+const checksum = settings?.find(s => s.key === 'agent_update_checksum')?.value || '';
+const forceUpdate = settings?.find(s => s.key === 'agent_force_update')?.value === 'true';
+
+// Comparar versões
+const updateAvailable = compareVersions(agentVersion, latestVersion) < 0;
+
+// Incluir na resposta
+response.update_available = updateAvailable;
+if (updateAvailable) {
+  response.update_info = {
+    version: latestVersion,
+    download_url: `${STORAGE_URL}/agent-releases/iscope-agent-${latestVersion}.tar.gz`,
+    checksum: checksum,
+    force: forceUpdate
+  };
 }
 ```
 
 ---
 
-## Fase 2: Criar Executor Amass
+## Fase 2: Python Agent - AutoUpdater
 
-### Novo Arquivo: `python-agent/agent/executors/amass.py`
+### 2.1 Novo módulo: `python-agent/agent/updater.py`
 
 ```python
 """
-Amass Executor - Subdomain enumeration using OWASP Amass.
+AutoUpdater - Handles automatic agent updates.
 
-Executes Amass in passive or active mode and returns discovered subdomains
-with source information.
+Flow:
+1. Receive update info from heartbeat
+2. Download new package to temp location
+3. Verify checksum
+4. Extract and validate contents
+5. Replace current installation
+6. Signal systemd to restart
 """
 
-import json
+import hashlib
 import os
 import shutil
 import subprocess
+import sys
+import tarfile
 import tempfile
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Dict, Optional
 
-from .base import BaseExecutor
+import requests
 
 
-class AmassExecutor(BaseExecutor):
-    """Executor for subdomain enumeration using Amass."""
+class AutoUpdater:
+    """Handles automatic agent updates with safety checks."""
 
-    DEFAULT_TIMEOUT = 300  # 5 minutes default
-    MAX_TIMEOUT = 900      # 15 minutes max
+    def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
+        self.logger = logger
+        self.install_dir = Path(install_dir)
+        self.backup_dir = self.install_dir.parent / "iscope-agent-backup"
 
-    def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def check_and_update(self, update_info: Dict) -> bool:
         """
-        Execute Amass enumeration.
-
-        Config options:
-            domain: Target domain (required, can come from context)
-            mode: 'passive' (default) or 'active'
-            timeout: Max execution time in seconds (default: 300)
-            max_depth: DNS brute force recursion depth (active mode only)
-            config_file: Path to custom Amass config.yaml (optional)
-
+        Check update info and perform update if valid.
+        
+        Args:
+            update_info: Dict with version, download_url, checksum, force
+            
         Returns:
-            Dict with:
-                - domain: Target domain
-                - subdomains: List of discovered subdomains with metadata
-                - total_found: Number of unique subdomains
-                - sources: List of data sources used
-                - mode: Enumeration mode used
+            True if update was successful and restart is needed
         """
-        config = step.get('config', {}) or {}
-        step_id = step.get('id', 'unknown')
+        version = update_info.get('version')
+        download_url = update_info.get('download_url')
+        expected_checksum = update_info.get('checksum', '')
+        force = update_info.get('force', False)
 
-        domain = (config.get('domain') or context.get('domain') or '').strip().rstrip('.')
-        mode = config.get('mode', 'passive').lower()
-        timeout = min(config.get('timeout', self.DEFAULT_TIMEOUT), self.MAX_TIMEOUT)
-        max_depth = config.get('max_depth', 1)
+        if not version or not download_url:
+            self.logger.warning("Update info incompleto, ignorando")
+            return False
 
-        if not domain:
-            return {'status_code': 0, 'data': None, 'error': 'Missing domain'}
-
-        # Check if Amass is installed
-        amass_path = shutil.which('amass')
-        if not amass_path:
-            self.logger.error(f"Step {step_id}: Amass not installed")
-            return {
-                'status_code': 0,
-                'data': {'domain': domain, 'subdomains': []},
-                'error': 'Amass not installed. Run agent installer with --update.'
-            }
-
-        self.logger.info(f"Step {step_id}: Running Amass ({mode}) for {domain}")
-
-        # Create temp file for JSON output
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            output_file = f.name
+        self.logger.info(f"Iniciando atualização para versão {version}")
 
         try:
-            # Build command
-            cmd = [
-                amass_path,
-                'enum',
-                '-d', domain,
-                '-json', output_file,
-                '-timeout', str(int(timeout / 60)),  # Amass uses minutes
-            ]
+            # 1. Download para temp
+            tmp_file = self._download_package(download_url)
+            if not tmp_file:
+                return False
 
-            if mode == 'passive':
-                cmd.append('-passive')
-            elif mode == 'active':
-                cmd.extend(['-active', '-brute'])
-                if max_depth > 1:
-                    cmd.extend(['-max-depth', str(max_depth)])
+            # 2. Verificar checksum (se fornecido)
+            if expected_checksum:
+                if not self._verify_checksum(tmp_file, expected_checksum):
+                    self.logger.error("Checksum inválido, abortando update")
+                    os.remove(tmp_file)
+                    return False
 
-            # Execute Amass
-            self.logger.debug(f"Step {step_id}: Executing: {' '.join(cmd)}")
+            # 3. Extrair para temp
+            extract_dir = self._extract_package(tmp_file)
+            os.remove(tmp_file)
+            
+            if not extract_dir:
+                return False
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout + 30,  # Extra buffer
-                cwd='/tmp'
-            )
+            # 4. Validar conteúdo (deve ter main.py, requirements.txt)
+            if not self._validate_package(extract_dir):
+                shutil.rmtree(extract_dir)
+                return False
 
-            if result.returncode != 0 and not os.path.exists(output_file):
-                error_msg = result.stderr[:500] if result.stderr else f"Exit code: {result.returncode}"
-                self.logger.error(f"Step {step_id}: Amass failed - {error_msg}")
-                return {
-                    'status_code': result.returncode,
-                    'data': {'domain': domain, 'subdomains': []},
-                    'error': f"Amass failed: {error_msg}"
-                }
+            # 5. Backup atual
+            self._backup_current()
 
-            # Parse JSON output (one JSON object per line)
-            subdomains = []
-            sources_set = set()
+            # 6. Substituir arquivos
+            self._replace_files(extract_dir)
+            shutil.rmtree(extract_dir)
 
-            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                with open(output_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            entry = json.loads(line)
-                            name = entry.get('name', '').lower()
-                            if name and self._is_valid_subdomain(name, domain):
-                                subdomain_entry = {
-                                    'subdomain': name,
-                                    'sources': entry.get('sources', []),
-                                    'addresses': entry.get('addresses', []),
-                                }
-                                subdomains.append(subdomain_entry)
-                                for src in entry.get('sources', []):
-                                    sources_set.add(src)
-                        except json.JSONDecodeError:
-                            continue
+            # 7. Reinstalar dependências se requirements mudou
+            self._update_dependencies()
 
-            # Deduplicate by subdomain name
-            seen = set()
-            unique_subdomains = []
-            for sub in subdomains:
-                if sub['subdomain'] not in seen:
-                    seen.add(sub['subdomain'])
-                    unique_subdomains.append(sub)
-
-            # Sort alphabetically
-            unique_subdomains.sort(key=lambda x: x['subdomain'])
-
-            self.logger.info(
-                f"Step {step_id}: Amass found {len(unique_subdomains)} unique subdomains "
-                f"from {len(sources_set)} sources"
-            )
-
-            return {
-                'status_code': 200,
-                'data': {
-                    'domain': domain,
-                    'mode': mode,
-                    'total_found': len(unique_subdomains),
-                    'sources': sorted(list(sources_set)),
-                    'subdomains': unique_subdomains,
-                },
-                'error': None,
-            }
-
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Step {step_id}: Amass timeout after {timeout}s")
-            return {
-                'status_code': 0,
-                'data': {'domain': domain, 'subdomains': []},
-                'error': f'Amass timeout after {timeout} seconds'
-            }
+            self.logger.info(f"Update para {version} concluído com sucesso")
+            
+            # 8. Solicitar restart
+            self._request_restart()
+            
+            return True
 
         except Exception as e:
-            self.logger.error(f"Step {step_id}: Amass error - {str(e)}")
-            return {
-                'status_code': 0,
-                'data': {'domain': domain, 'subdomains': []},
-                'error': str(e),
-            }
-
-        finally:
-            # Cleanup temp file
-            if os.path.exists(output_file):
-                os.remove(output_file)
-
-    def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
-        """Check if name is a valid subdomain of base_domain."""
-        name = name.lstrip('*.').lower()
-        base_domain = base_domain.lower()
-        if not name:
+            self.logger.error(f"Erro durante update: {e}")
+            self._restore_backup()
             return False
-        return name == base_domain or name.endswith(f".{base_domain}")
+
+    def _download_package(self, url: str) -> Optional[str]:
+        """Download package to temp file."""
+        try:
+            self.logger.info(f"Baixando pacote de {url}")
+            response = requests.get(url, stream=True, timeout=120)
+            response.raise_for_status()
+
+            tmp_file = tempfile.mktemp(suffix='.tar.gz')
+            with open(tmp_file, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            self.logger.info(f"Download concluído: {tmp_file}")
+            return tmp_file
+
+        except Exception as e:
+            self.logger.error(f"Erro no download: {e}")
+            return None
+
+    def _verify_checksum(self, filepath: str, expected: str) -> bool:
+        """Verify SHA256 checksum."""
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                sha256.update(chunk)
+
+        actual = sha256.hexdigest()
+        
+        # Handle both "sha256:xxx" and plain "xxx" formats
+        if expected.startswith('sha256:'):
+            expected = expected[7:]
+
+        if actual == expected:
+            self.logger.info("Checksum verificado com sucesso")
+            return True
+        else:
+            self.logger.error(f"Checksum mismatch: esperado {expected}, recebido {actual}")
+            return False
+
+    def _extract_package(self, filepath: str) -> Optional[str]:
+        """Extract tar.gz to temp directory."""
+        try:
+            extract_dir = tempfile.mkdtemp(prefix='iscope-update-')
+            with tarfile.open(filepath, 'r:gz') as tar:
+                tar.extractall(extract_dir)
+
+            self.logger.info(f"Pacote extraído em {extract_dir}")
+            return extract_dir
+
+        except Exception as e:
+            self.logger.error(f"Erro na extração: {e}")
+            return None
+
+    def _validate_package(self, extract_dir: str) -> bool:
+        """Validate package contains required files."""
+        required_files = ['main.py', 'requirements.txt', 'agent/__init__.py']
+        
+        # Find the actual root (might be nested)
+        root = Path(extract_dir)
+        if not (root / 'main.py').exists():
+            # Check for nested folder
+            subdirs = list(root.iterdir())
+            if len(subdirs) == 1 and subdirs[0].is_dir():
+                root = subdirs[0]
+
+        for file in required_files:
+            if not (root / file).exists():
+                self.logger.error(f"Arquivo obrigatório ausente: {file}")
+                return False
+
+        self.logger.info("Validação do pacote OK")
+        return True
+
+    def _backup_current(self):
+        """Backup current installation."""
+        if self.backup_dir.exists():
+            shutil.rmtree(self.backup_dir)
+        
+        if self.install_dir.exists():
+            shutil.copytree(self.install_dir, self.backup_dir, dirs_exist_ok=True)
+            self.logger.info(f"Backup criado em {self.backup_dir}")
+
+    def _replace_files(self, extract_dir: str):
+        """Replace current files with new ones."""
+        root = Path(extract_dir)
+        
+        # Find actual root
+        if not (root / 'main.py').exists():
+            subdirs = list(root.iterdir())
+            if len(subdirs) == 1 and subdirs[0].is_dir():
+                root = subdirs[0]
+
+        # Preserve venv and state
+        preserved = ['venv', 'storage', 'logs']
+        
+        for item in self.install_dir.iterdir():
+            if item.name not in preserved:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+        # Copy new files
+        for item in root.iterdir():
+            dest = self.install_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dest)
+
+        self.logger.info("Arquivos substituídos com sucesso")
+
+    def _update_dependencies(self):
+        """Update pip dependencies if requirements.txt changed."""
+        venv_pip = self.install_dir / 'venv' / 'bin' / 'pip'
+        requirements = self.install_dir / 'requirements.txt'
+
+        if venv_pip.exists() and requirements.exists():
+            self.logger.info("Atualizando dependências...")
+            try:
+                subprocess.run(
+                    [str(venv_pip), 'install', '-r', str(requirements)],
+                    capture_output=True,
+                    timeout=300
+                )
+            except Exception as e:
+                self.logger.warning(f"Erro ao atualizar dependências: {e}")
+
+    def _restore_backup(self):
+        """Restore from backup on failure."""
+        if self.backup_dir.exists():
+            self.logger.info("Restaurando backup...")
+            shutil.rmtree(self.install_dir, ignore_errors=True)
+            shutil.copytree(self.backup_dir, self.install_dir)
+            self.logger.info("Backup restaurado")
+
+    def _request_restart(self):
+        """Request systemd to restart the service."""
+        self.logger.info("Solicitando restart do serviço...")
+        try:
+            # Option 1: systemctl (requires sudo/polkit)
+            subprocess.run(
+                ['systemctl', 'restart', 'iscope-agent'],
+                capture_output=True,
+                timeout=30
+            )
+        except Exception as e:
+            self.logger.warning(f"Não foi possível reiniciar via systemctl: {e}")
+            # Option 2: Exit and let systemd restart us
+            self.logger.info("Saindo para permitir restart pelo systemd...")
+            sys.exit(0)
+```
+
+### 2.2 Integrar no main.py
+
+Modificar o loop principal para processar updates:
+
+```python
+# Em AgentApp.__init__
+from agent.updater import AutoUpdater
+self.updater = AutoUpdater(logger)
+
+# Em agent_loop(), após processar heartbeat:
+if result.get('update_available') and result.get('update_info'):
+    self.logger.info("Atualização disponível detectada")
+    update_info = result['update_info']
+    
+    # Verificar se é update forçado ou se podemos adiar
+    if update_info.get('force') or not result.get('has_pending_tasks'):
+        if self.updater.check_and_update(update_info):
+            # Update succeeded, process will restart
+            return next_interval
+    else:
+        self.logger.info("Adiando update - há tarefas pendentes")
+```
+
+### 2.3 Versionamento no Agent
+
+Criar `python-agent/agent/version.py`:
+
+```python
+"""Agent version information."""
+
+__version__ = "1.0.0"
+
+def get_version() -> str:
+    return __version__
+```
+
+Atualizar main.py para usar:
+
+```python
+from agent.version import get_version
+
+# No heartbeat.send():
+result = self.heartbeat.send(
+    status="running",
+    version=get_version()
+)
 ```
 
 ---
 
-## Fase 3: Registrar Executor
+## Fase 3: Processo de Release
 
-### Arquivo: `python-agent/agent/executors/__init__.py`
+### 3.1 Workflow de Deploy
 
-Adicionar import e export:
+1. **Atualizar código** no repositório
+2. **Atualizar versão** em `python-agent/agent/version.py`
+3. **Empacotar**: 
+   ```bash
+   cd python-agent
+   tar -czvf iscope-agent-1.1.0.tar.gz \
+     --exclude='*.pyc' \
+     --exclude='__pycache__' \
+     --exclude='venv' \
+     --exclude='storage' \
+     --exclude='logs' \
+     --exclude='.env' \
+     .
+   ```
+4. **Calcular checksum**:
+   ```bash
+   sha256sum iscope-agent-1.1.0.tar.gz
+   ```
+5. **Upload** para Supabase Storage (bucket `agent-releases`)
+6. **Atualizar** system_settings:
+   ```sql
+   UPDATE system_settings SET value = '"1.1.0"' WHERE key = 'agent_latest_version';
+   UPDATE system_settings SET value = '"sha256:abc123..."' WHERE key = 'agent_update_checksum';
+   ```
 
-```python
-from agent.executors.base import BaseExecutor
-from agent.executors.http_request import HTTPRequestExecutor
-from agent.executors.ssh import SSHExecutor
-from agent.executors.snmp import SNMPExecutor
-from agent.executors.dns_query import DNSQueryExecutor
-from agent.executors.amass import AmassExecutor  # NOVO
+### 3.2 Rollback
 
-__all__ = [
-    'BaseExecutor',
-    'HTTPRequestExecutor',
-    'SSHExecutor',
-    'SNMPExecutor',
-    'DNSQueryExecutor',
-    'AmassExecutor',  # NOVO
-]
+Para reverter uma versão:
+
+```sql
+-- Voltar para versão anterior
+UPDATE system_settings SET value = '"1.0.0"' WHERE key = 'agent_latest_version';
+UPDATE system_settings SET value = '"sha256:old_checksum"' WHERE key = 'agent_update_checksum';
 ```
 
-### Arquivo: `python-agent/agent/tasks.py`
-
-Adicionar executor ao registro (linha ~14 e ~45):
-
-```python
-from agent.executors.amass import AmassExecutor
-
-# Na classe TaskExecutor.__init__:
-self._executors = {
-    'http_request': HTTPRequestExecutor(logger),
-    'http_session': HTTPSessionExecutor(logger),
-    'ssh_command': SSHExecutor(logger),
-    'snmp_query': SNMPExecutor(logger),
-    'dns_query': DNSQueryExecutor(logger),
-    'amass': AmassExecutor(logger),  # NOVO
-}
-```
-
----
-
-## Fase 4: Exemplo de Blueprint Step
-
-Para usar o Amass no blueprint de external_domain, adicionar um step como:
-
-```json
-{
-  "id": "subdomain_enum",
-  "type": "amass",
-  "config": {
-    "mode": "passive",
-    "timeout": 300
-  }
-}
-```
+Agents baixarão a versão anterior no próximo heartbeat.
 
 ---
 
@@ -385,60 +495,60 @@ Para usar o Amass no blueprint de external_domain, adicionar um step como:
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `supabase/functions/agent-install/index.ts` | Editar | Adicionar função `install_amass()` |
-| `python-agent/agent/executors/amass.py` | Criar | Novo executor Amass |
-| `python-agent/agent/executors/__init__.py` | Editar | Registrar AmassExecutor |
-| `python-agent/agent/tasks.py` | Editar | Adicionar amass ao mapa de executors |
+| `supabase/functions/agent-heartbeat/index.ts` | Editar | Adicionar lógica de update_available |
+| `python-agent/agent/version.py` | Criar | Versão do agent centralizada |
+| `python-agent/agent/updater.py` | Criar | Módulo de auto-update |
+| `python-agent/main.py` | Editar | Integrar AutoUpdater no loop |
+| `python-agent/agent/heartbeat.py` | Editar | Usar version.py |
+| Migration SQL | Criar | Adicionar settings de versão |
 
 ---
 
-## Fontes de Dados do Amass (modo passive)
+## Segurança
 
-O Amass consulta automaticamente 50+ fontes gratuitas:
-
-| Categoria | Fontes |
-|-----------|--------|
-| Certificate Transparency | crt.sh, Censys, CertSpotter, Facebook CT |
-| DNS Passivo | VirusTotal, SecurityTrails, RiskIQ, Robtex |
-| Web Archives | Wayback Machine, CommonCrawl |
-| Search Engines | Google, Bing, Yahoo, Baidu |
-| Outros | DNSDumpster, ThreatCrowd, Shodan (com API key) |
+| Aspecto | Proteção |
+|---------|----------|
+| Download | HTTPS obrigatório |
+| Integridade | Checksum SHA256 verificado |
+| Rollback | Backup automático antes de update |
+| Permissões | Apenas arquivos de código são substituídos |
+| Timing | Updates adiados se há tarefas em execução |
 
 ---
 
-## Modo Active vs Passive
+## Fluxo Visual
 
-| Modo | Comportamento | Tempo | Ruído |
-|------|---------------|-------|-------|
-| `passive` | Só consulta APIs externas | ~1-3 min | Zero (não toca o alvo) |
-| `active` | Passive + brute-force + resolução | ~5-15 min | Gera queries DNS para o alvo |
-
-**Recomendação:** Usar `passive` como padrão para não gerar tráfego suspeito no domínio alvo.
-
----
-
-## Resultado Esperado
-
-Após a implementação, o Agent poderá executar tasks com steps do tipo `amass`, retornando:
-
-```json
-{
-  "domain": "example.com",
-  "mode": "passive",
-  "total_found": 47,
-  "sources": ["crtsh", "virustotal", "wayback", "commoncrawl"],
-  "subdomains": [
-    {
-      "subdomain": "api.example.com",
-      "sources": ["crtsh", "virustotal"],
-      "addresses": [{"ip": "1.2.3.4", "cidr": "1.2.3.0/24"}]
-    },
-    {
-      "subdomain": "mail.example.com",
-      "sources": ["wayback"],
-      "addresses": []
-    }
-  ]
-}
+```text
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│    Agent     │     │   Backend    │     │   Storage    │
+│  v1.0.0      │     │              │     │              │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       │  Heartbeat         │                    │
+       │  version=1.0.0     │                    │
+       │───────────────────>│                    │
+       │                    │                    │
+       │  update_available  │                    │
+       │  version=1.1.0     │                    │
+       │  checksum=abc...   │                    │
+       │<───────────────────│                    │
+       │                    │                    │
+       │  Download package  │                    │
+       │────────────────────────────────────────>│
+       │                    │                    │
+       │  iscope-agent-1.1.0.tar.gz             │
+       │<────────────────────────────────────────│
+       │                    │                    │
+       │ ┌────────────────┐ │                    │
+       │ │ Verify checksum│ │                    │
+       │ │ Backup current │ │                    │
+       │ │ Extract & copy │ │                    │
+       │ │ Restart service│ │                    │
+       │ └────────────────┘ │                    │
+       │                    │                    │
+   ┌───┴───┐                │                    │
+   │ Agent │                │                    │
+   │ v1.1.0│                │                    │
+   └───────┘                │                    │
 ```
 
