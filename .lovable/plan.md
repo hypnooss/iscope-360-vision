@@ -1,209 +1,206 @@
 
 
-## Correção do Fluxo de Dados de Subdomínios
+## Migração da Enumeração de Subdomínios para Edge Function
 
-### Problema Identificado
+### Contexto
 
-O agente Python agora envia os dados de subdomínios com o novo formato:
+Atualmente, a enumeração de subdomínios roda no Python Agent (rede do cliente), o que causa:
+1. **DNS mascarado** - IPs internos como `172.16.10.250` aparecem em vez dos IPs públicos reais
+2. **APIs bloqueadas** - Firewalls corporativos podem bloquear as APIs de enumeração
+3. **Dependência do ambiente** - Resultados variam conforme a rede do cliente
 
-```json
-{
-  "subdomain": "www.taschibra.com.br",
-  "sources": ["crt.sh"],
-  "ips": ["192.168.1.10"],
-  "is_alive": true
-}
-```
-
-Porém, a edge function `agent-task-result` espera o formato antigo com `addresses`:
-
-```json
-{
-  "subdomain": "www.taschibra.com.br",
-  "sources": ["crt.sh"],
-  "addresses": [{ "ip": "192.168.1.10", "type": "A" }]
-}
-```
-
-Como resultado, os IPs não são mapeados corretamente e a interface exibe `—` na coluna de endereços IP.
-
-### Solução
-
-Atualizar 3 arquivos para suportar o novo formato e exibir o status de atividade:
-
----
-
-### 1. Edge Function: `agent-task-result/index.ts`
-
-**Localização:** Linhas 3549-3565 (normalização de subdomínios)
-
-**Alteração:** Converter o novo formato `ips` para `addresses` e preservar `is_alive`:
-
-```typescript
-// Normalize subdomain entries
-const normalizedSubdomains: SubdomainEntry[] = subdomains
-  .filter((s: unknown) => s && typeof s === 'object')
-  .map((s: unknown) => {
-    const sub = s as Record<string, unknown>;
-    
-    // Support new format: "ips" array of strings
-    let addresses: Array<{ ip: string; type?: string }> = [];
-    if (Array.isArray(sub.ips)) {
-      addresses = (sub.ips as string[])
-        .filter((ip) => typeof ip === 'string' && ip.length > 0)
-        .map((ip) => ({ ip, type: ip.includes(':') ? 'AAAA' : 'A' }));
-    } else if (Array.isArray(sub.addresses)) {
-      addresses = (sub.addresses as Array<Record<string, unknown>>).map((addr) => ({
-        ip: typeof addr.ip === 'string' ? addr.ip : (typeof addr.address === 'string' ? addr.address : ''),
-        type: typeof addr.type === 'string' ? addr.type : undefined,
-      }));
-    }
-    
-    return {
-      subdomain: typeof sub.subdomain === 'string' ? sub.subdomain : (typeof sub.name === 'string' ? sub.name : ''),
-      sources: Array.isArray(sub.sources) ? sub.sources.filter((src: unknown) => typeof src === 'string') : [],
-      addresses,
-      is_alive: typeof sub.is_alive === 'boolean' ? sub.is_alive : undefined,
-    };
-  })
-  .filter((s: SubdomainEntry) => s.subdomain.length > 0);
-```
-
-**Atualizar interface SubdomainEntry (linhas 90-94):**
-
-```typescript
-interface SubdomainEntry {
-  subdomain: string;
-  sources: string[];
-  addresses: Array<{ ip: string; type?: string }>;
-  is_alive?: boolean;
-}
-```
-
----
-
-### 2. Tipos do Frontend: `src/types/compliance.ts`
-
-**Alteração:** Adicionar campo `is_alive` ao tipo `SubdomainEntry`:
-
-```typescript
-export interface SubdomainEntry {
-  subdomain: string;
-  sources: string[];
-  addresses: Array<{ ip: string; type?: string }>;
-  is_alive?: boolean;
-}
-```
-
----
-
-### 3. Componente de UI: `src/components/external-domain/SubdomainSection.tsx`
-
-**Alterações:**
-
-1. **Adicionar badge de status (ativo/inativo)** na coluna de subdomínio
-2. **Adicionar contagem de ativos/inativos** no header
-3. **Melhorar visual** para destacar subdomínios inativos
-
-```tsx
-// No header, após o badge de total:
-{summary.subdomains.some(s => s.is_alive !== undefined) && (
-  <>
-    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary border-primary/20">
-      {summary.subdomains.filter(s => s.is_alive).length} ativos
-    </Badge>
-    <Badge variant="secondary" className="ml-1 bg-muted text-muted-foreground border-muted-foreground/20">
-      {summary.subdomains.filter(s => s.is_alive === false).length} inativos
-    </Badge>
-  </>
-)}
-
-// Na célula do subdomínio, adicionar indicador visual:
-<TableCell className="font-mono text-sm">
-  <div className="flex items-center gap-2">
-    {sub.is_alive !== undefined && (
-      <span 
-        className={cn(
-          "w-2 h-2 rounded-full flex-shrink-0",
-          sub.is_alive 
-            ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
-            : "bg-muted-foreground/30"
-        )}
-        title={sub.is_alive ? "Ativo" : "Inativo"}
-      />
-    )}
-    <span className={cn(
-      "text-foreground break-all",
-      sub.is_alive === false && "text-muted-foreground"
-    )}>
-      {sub.subdomain}
-    </span>
-    // ... botões de ação
-  </div>
-</TableCell>
-
-// Na célula de IPs, mostrar "Não resolvido" para inativos:
-<TableCell className="text-sm text-muted-foreground">
-  {sub.addresses.length > 0 ? (
-    // ... exibir badges de IP
-  ) : (
-    <span className="text-muted-foreground/50">
-      {sub.is_alive === false ? 'Não resolvido' : '—'}
-    </span>
-  )}
-</TableCell>
-```
-
----
-
-### Fluxo de Dados Corrigido
+### Solução: Arquitetura Híbrida
 
 ```text
-┌─────────────────────┐
-│   Python Agent      │
-│ ips: ["1.2.3.4"]    │
-│ is_alive: true      │
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│  agent-task-result  │
-│  Edge Function      │
-│  Converte ips →     │
-│  addresses          │
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│    Supabase DB      │
-│  addresses: [...]   │
-│  is_alive: true     │
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│   SubdomainSection  │
-│   Exibe IPs e       │
-│   status visual     │
-└─────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        NOVA ARQUITETURA                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐      ┌──────────────┐      ┌───────────────┐  │
+│  │   Frontend   │──────│  trigger-    │──────│  agent_tasks  │  │
+│  │ (Disparar)   │      │  external-   │      │   (pending)   │  │
+│  └──────────────┘      │  domain-     │      └───────┬───────┘  │
+│                        │  analysis    │              │          │
+│                        └──────────────┘              ▼          │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                      Python Agent                         │   │
+│  │  Executa APENAS steps de DNS direto:                      │   │
+│  │  • ns_records, mx_records, soa_record                     │   │
+│  │  • spf_record, dmarc_record, dkim_records, dnssec_status  │   │
+│  │                                                           │   │
+│  │  NÃO executa mais: subdomain_enum                         │   │
+│  └──────────────────────────────┬───────────────────────────┘   │
+│                                 │                                │
+│                                 ▼                                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                  agent-task-result                        │   │
+│  │  1. Recebe resultado dos steps DNS                        │   │
+│  │  2. Detecta target_type = 'external_domain'               │   │
+│  │  3. Chama subdomain-enum Edge Function                    │   │
+│  │  4. Mescla resultado dos subdomínios com os dados DNS     │   │
+│  │  5. Processa compliance rules + salva histórico           │   │
+│  └──────────────────────────────┬───────────────────────────┘   │
+│                                 │                                │
+│                                 ▼                                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              subdomain-enum (NOVA)                        │   │
+│  │  • Consulta 9 APIs públicas (crt.sh, HackerTarget, etc.)  │   │
+│  │  • Usa DNS-over-HTTPS (Cloudflare/Google)                 │   │
+│  │  • Retorna IPs públicos reais (sem mascaramento)          │   │
+│  │  • Executa em ambiente neutro (Supabase Edge)             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Resultado Esperado
+### Arquivos a Criar/Modificar
 
-| Antes | Depois |
-|-------|--------|
-| Todos subdomínios sem IP | IPs resolvidos exibidos |
-| Sem indicação de status | Badge verde (ativo) ou cinza (inativo) |
-| Lista plana | Contagem de ativos/inativos no header |
+#### 1. Nova Edge Function: `supabase/functions/subdomain-enum/index.ts`
+
+Responsável por:
+- Consultar as 9 APIs de enumeração (crt.sh, HackerTarget, AlienVault, RapidDNS, ThreatMiner, URLScan, Wayback, CertSpotter, JLDC)
+- Validar subdomínios via DNS-over-HTTPS (Cloudflare/Google) para obter IPs públicos reais
+- Retornar lista de subdomínios com status `is_alive` e `ips`
+
+```typescript
+// Estrutura principal
+interface SubdomainEnumRequest {
+  domain: string;
+  timeout?: number; // segundos
+}
+
+interface SubdomainEnumResponse {
+  success: boolean;
+  domain: string;
+  total_found: number;
+  alive_count: number;
+  inactive_count: number;
+  sources: string[];
+  subdomains: SubdomainEntry[];
+  errors?: string[];
+  execution_time_ms: number;
+}
+
+// Resolução DNS via DoH (Cloudflare)
+async function resolveDNS(hostname: string): Promise<string[]> {
+  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`;
+  const resp = await fetch(url, { headers: { 'Accept': 'application/dns-json' } });
+  const data = await resp.json();
+  return data.Answer?.filter(a => a.type === 1).map(a => a.data) || [];
+}
+```
+
+#### 2. Atualizar: `supabase/functions/agent-task-result/index.ts`
+
+Modificar para:
+- Detectar quando `target_type === 'external_domain'`
+- Chamar a edge function `subdomain-enum` via fetch interno
+- Mesclar o resultado no `rawData` antes de processar compliance rules
+
+```typescript
+// Após reconstruir rawData dos step_results (linha ~3800)
+if (task.target_type === 'external_domain' && rawData) {
+  // Get domain from task payload
+  const domain = (task.payload as any)?.domain;
+  if (domain) {
+    console.log(`[external_domain] Invoking subdomain-enum for ${domain}`);
+    
+    const subdomainResult = await invokeSubdomainEnum(domain);
+    if (subdomainResult) {
+      // Inject subdomain data as if it came from agent step
+      rawData['subdomain_enum'] = {
+        data: subdomainResult
+      };
+    }
+  }
+}
+```
+
+#### 3. Atualizar Blueprint no Banco de Dados
+
+Remover o step `subdomain_enum` do blueprint de `external_domain`:
+
+```sql
+UPDATE device_blueprints 
+SET collection_steps = '{"steps": [
+  {"id": "ns_records", "type": "dns_query", "config": {"query_type": "NS"}},
+  {"id": "mx_records", "type": "dns_query", "config": {"query_type": "MX"}},
+  {"id": "soa_record", "type": "dns_query", "config": {"query_type": "SOA"}},
+  {"id": "spf_record", "type": "dns_query", "config": {"query_type": "SPF"}},
+  {"id": "dmarc_record", "type": "dns_query", "config": {"query_type": "DMARC"}},
+  {"id": "dkim_records", "type": "dns_query", "config": {"query_type": "DKIM", "selectors": [...], "best_effort": true}},
+  {"id": "dnssec_status", "type": "dns_query", "config": {"query_type": "DNSSEC", "best_effort": true}}
+]}'::jsonb
+WHERE device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain')
+  AND is_active = true;
+```
+
+#### 4. Python Agent (Opcional - Limpeza)
+
+Arquivos que podem ser removidos ou mantidos para uso futuro:
+- `python-agent/agent/executors/subdomain_enum.py` - Pode ser removido
+- `python-agent/agent/executors/__init__.py` - Remover import do SubdomainEnumExecutor
+- `python-agent/agent/tasks.py` - Remover mapeamento de `subdomain_enum`
 
 ---
 
-### Deploy
+### Detalhes Técnicos
 
-1. Atualizar edge function `agent-task-result`
-2. Atualizar tipos TypeScript
-3. Atualizar componente SubdomainSection
-4. Disparar nova análise para popular dados no novo formato
+#### APIs de Enumeração (TypeScript/Deno)
+
+| API | Endpoint | Formato | Rate Limit |
+|-----|----------|---------|------------|
+| crt.sh | `crt.sh/?q=%25.{domain}&output=json` | JSON | Ilimitado |
+| HackerTarget | `api.hackertarget.com/hostsearch/?q={domain}` | CSV | 100/dia |
+| AlienVault | `otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns` | JSON | Rate limited |
+| RapidDNS | `rapiddns.io/subdomain/{domain}?full=1` | HTML | Ilimitado |
+| ThreatMiner | `api.threatminer.org/v2/domain.php?q={domain}&rt=5` | JSON | Instável |
+| URLScan | `urlscan.io/api/v1/search/?q=domain:{domain}` | JSON | 100/dia |
+| Wayback | `web.archive.org/cdx/search/cdx?url=*.{domain}/*` | JSON | Bloqueio frequente |
+| CertSpotter | `api.certspotter.com/v1/issuances?domain={domain}` | JSON | 100/hora |
+| JLDC | `jldc.me/anubis/subdomains/{domain}` | JSON | SSL issues |
+
+#### DNS-over-HTTPS (DoH)
+
+Usar Cloudflare como primário, Google como fallback:
+- **Cloudflare**: `https://cloudflare-dns.com/dns-query?name={hostname}&type=A`
+- **Google**: `https://dns.google/resolve?name={hostname}&type=A`
+
+Isso garante resolução de IPs públicos reais, sem interferência de DNS internos.
+
+---
+
+### Benefícios
+
+| Aspecto | Antes (Agent) | Depois (Edge Function) |
+|---------|---------------|------------------------|
+| **DNS** | Mascarado por DNS interno | IPs públicos reais via DoH |
+| **APIs** | Podem estar bloqueadas | Sempre acessíveis |
+| **Consistência** | Varia por ambiente | Sempre igual |
+| **Manutenção** | Python + TypeScript | TypeScript centralizado |
+| **Tempo** | Depende do Agent processar | Paralelo ao Agent |
+
+---
+
+### Considerações
+
+1. **Timeout de Edge Functions**: Limite de ~30s no Supabase. Para muitos subdomínios, processar em batches ou limitar a 200-300 resoluções DNS.
+
+2. **Fallback**: Se a edge function falhar, o relatório ainda terá os dados DNS (MX, SPF, DMARC, etc.) - apenas a seção de subdomínios ficará vazia.
+
+3. **Cache**: Considerar cache de 24h para domínios já analisados recentemente.
+
+---
+
+### Ordem de Implementação
+
+1. Criar edge function `subdomain-enum` com todas as 9 APIs + DoH
+2. Testar edge function isoladamente
+3. Atualizar `agent-task-result` para chamar a nova função
+4. Atualizar blueprint no banco (remover step subdomain_enum)
+5. Deploy e testar fluxo completo
+6. (Opcional) Remover código do Python Agent
 
