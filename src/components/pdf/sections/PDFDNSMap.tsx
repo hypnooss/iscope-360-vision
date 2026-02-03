@@ -363,7 +363,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
           dkimKeys.map((key, idx) => (
             <ValueCard 
               key={idx}
-              primary={key.selector}
+              primary={`DKIM - ${key.selector}`}
               secondary={key.keySize ? `Tamanho da chave - ${key.keySize} bits` : 'Tamanho desconhecido'}
               isActive={emailAuth?.dkim}
             />
