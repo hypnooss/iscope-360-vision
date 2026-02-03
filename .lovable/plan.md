@@ -1,165 +1,70 @@
 
-## Reformular Layout do Mapa DNS no PDF
+## Ajustar Cores dos Ícones de Status nas Categorias
 
-### Objetivo
+### Problema Identificado
 
-Seguir os padrões visuais existentes no PDF para criar um layout mais consistente e limpo.
+Os ícones de check e fail nos itens das categorias (print 2) usam tonalidades diferentes das usadas nos cards de informação (print 1):
 
----
+| Elemento | Cor Atual | Cor Esperada |
+|----------|-----------|--------------|
+| Check (pass) | Verde esmeralda (`success`: HSL 142 76% 36%) | Teal/Primary (`text-primary`: HSL 175 80% 45%) |
+| Fail | Vermelho (`destructive`: HSL 0 72% 51%) | Rosa (`text-rose-400`: rose-400) |
 
-### 1. Título Principal: "Mapa de Infraestrutura DNS"
+### Análise
 
-**Referência:** "Detalhamento por Categoria" (print 2)
+Os cards MiniStat usam:
+- **Aprovadas (success)**: `text-primary` + `border-primary/30` + `bg-primary/10`
+- **Falhas (destructive)**: `text-rose-400` + `border-rose-500/30` + `bg-rose-500/10`
 
-Usar estilo de título principal com cor teal:
-
-```text
-Mapa de Infraestrutura DNS
-```
-
-- Cor: `colors.primary` (#0D9488)
-- Fonte: `typography.heading` (16px)
-- Font-weight: bold
-- Sem fundo escuro, apenas texto colorido
+Enquanto as classes de status dos ComplianceCard usam:
+- **status-pass**: `text-success` + `bg-success/10` + `border-success/30`
+- **status-fail**: `text-destructive` + `bg-destructive/10` + `border-destructive/30`
 
 ---
 
-### 2. Cards de Categoria: NS, SOA, MX, TXT, Subdomínios
+### Solução
 
-**Referência:** "Segurança DNS" (print 3)
-
-Cada seção terá um header com fundo colorido (mantendo as cores do mapa web):
-
-| Seção | Cor do Header |
-|-------|--------------|
-| NS | Sky (#0EA5E9) |
-| SOA | Amber (#F59E0B) |
-| MX | Violet (#A855F7) |
-| TXT (Email Auth) | Pink (#EC4899) |
-| Subdomínios | Indigo (#6366F1) |
-
-**Layout do header:**
-- Fundo sólido colorido
-- Texto branco, bold
-- **Sem contagem (4/6)** e **sem porcentagem (67%)**
-
----
-
-### 3. Valores: Estilo "SPF Válido"
-
-**Referência:** Print 4
-
-Cada item dentro do card seguirá o padrão:
-
-```text
-● ns1-06.azure-dns.com
-● ns2-06.azure-dns.net
-```
-
-- Ícone de status (círculo colorido) à esquerda
-- Texto do valor à direita
-- Card ocupando **largura horizontal total**
-- Fundo branco com borda sutil
-
----
-
-### 4. Estrutura Final
-
-**Layout em coluna única (largura total da página):**
-
-```text
-Mapa de Infraestrutura DNS         ← Título teal (sem fundo)
-
-┌─────────────────────────────────────────────────────────────┐
-│  NS                                                          │  ← Header Sky
-├─────────────────────────────────────────────────────────────┤
-│  ● ns1-06.azure-dns.com                                      │
-│  ● ns2-06.azure-dns.net                                      │
-│  ● ns3-06.azure-dns.org                                      │
-│  ● ns4-06.azure-dns.info                                     │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  SOA                                                         │  ← Header Amber
-├─────────────────────────────────────────────────────────────┤
-│  ● Primary: ns1-06.azure-dns.com                             │
-│  ● Contact: azuredns-hostmaster@microsoft.com                │
-│  ○ DNSSEC: Inativo                                           │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  MX                                                          │  ← Header Violet
-├─────────────────────────────────────────────────────────────┤
-│  ● taschibra-com-br.mail.protection.outlook.com (Pri: 0)     │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  TXT (Email Auth)                                            │  ← Header Pink
-├─────────────────────────────────────────────────────────────┤
-│  ● SPF: v=spf1 include:spf.protection.outlook.com...         │
-│  ● DKIM: selector1 - 2352 bits                               │
-│  ● DMARC: p=reject, sp=reject                                │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  Subdomínios                                                 │  ← Header Indigo
-├─────────────────────────────────────────────────────────────┤
-│  ● chat.taschibra.com.br        ● ns2.taschibra.com.br       │
-│  ● drive.taschibra.com.br       ● ns3.taschibra.com.br       │
-│  ● ida-fw.taschibra.com.br      ● vpn.taschibra.com.br       │
-│  ● mail.taschibra.com.br        ● www.taschibra.com.br       │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 5. Subdomínios: Apenas Ativos
-
-Filtrar subdomínios para exibir apenas os que possuem `is_alive === true`:
-
-```typescript
-const activeSubdomains = subdomains.filter(sub => sub.is_alive === true);
-```
-
----
-
-### 6. Remover Elementos
-
-- **Remover:** Seção "Subdomínios Descobertos" separada
-- **Remover:** Tabela de subdomínios que aparece depois
-- **Manter apenas:** Subdomínios integrados no card "Subdomínios" do mapa
+Atualizar as classes `status-pass` e `status-fail` no arquivo `src/index.css` para usar as mesmas cores dos cards de estatística.
 
 ---
 
 ### Alterações Técnicas
 
-**Arquivo:** `src/components/pdf/sections/PDFDNSMap.tsx`
+**Arquivo:** `src/index.css`
 
-1. **Título**: Remover header escuro, usar texto teal simples
-2. **GroupCard**: Reformular para usar header colorido sem contagem
-3. **Valores**: Criar novo componente `InfoItem` com ícone + texto
-4. **Layout**: Cards em coluna única (largura total)
-5. **Subdomínios**: Filtrar apenas ativos, remover seção separada
+**Código atual (linhas 98-104):**
+```css
+.status-pass {
+  @apply text-success bg-success/10 border-success/30;
+}
 
-**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
+.status-fail {
+  @apply text-destructive bg-destructive/10 border-destructive/30;
+}
+```
 
-1. Remover a página separada de "Subdomínios Descobertos" que contém a tabela
+**Novo código:**
+```css
+.status-pass {
+  @apply text-primary bg-primary/10 border-primary/30;
+}
+
+.status-fail {
+  @apply text-rose-400 bg-rose-500/10 border-rose-500/30;
+}
+```
 
 ---
 
-### Resumo das Mudanças
+### Resultado Visual
 
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Título | Header escuro com ícone | Texto teal simples |
-| Cards | Headers com contagem/% | Headers coloridos, só nome |
-| Valores | Texto monospace simples | Ícone de status + texto |
-| Layout | 2 colunas | 1 coluna (largura total) |
-| Subdomínios | Todos + página separada | Apenas ativos, sem página extra |
+| Estado | Antes | Depois |
+|--------|-------|--------|
+| Pass | Verde esmeralda | Teal (igual ao card "21 APROVADAS") |
+| Fail | Vermelho | Rosa (igual ao card "2 FALHAS") |
 
 ---
 
-### Arquivos Modificados
+### Arquivo Modificado
 
-- `src/components/pdf/sections/PDFDNSMap.tsx`
-- `src/components/pdf/ExternalDomainPDF.tsx`
+- `src/index.css`
