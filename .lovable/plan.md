@@ -1,49 +1,51 @@
 
-# Plano: Corrigir Versão do Agent para Parar Loop de Atualização
+
+# Plano: Corrigir Comparação Case-Insensitive do Checksum
 
 ## Problema Identificado
 
-O agent está em loop infinito de atualização porque o arquivo `version.py` dentro do pacote ainda contém `__version__ = "1.0.0"` em vez de `1.1.1`.
+```
+Checksum mismatch: 
+  esperado AD2CB0F92C9888DC6894AF557A3D3D3923C692CFF4EA8D58E66199FF8CBA8130
+  recebido ad2cb0f92c9888dc6894af557a3d3d3923c692cff4ea8d58e66199ff8cba8130
+```
 
-**Sequência do loop:**
-```
-Agent inicia → reporta v1.0.0 → backend diz "atualize para 1.1.1" → 
-instala → reinicia → reporta v1.0.0 → repete infinitamente
-```
+O checksum no banco está em **UPPERCASE**, mas `hashlib.sha256().hexdigest()` retorna **lowercase**.
 
 ---
 
-## Alterações Necessárias
+## Alteração Necessária
 
-### Arquivo: `python-agent/agent/version.py`
+### Arquivo: `python-agent/agent/updater.py`
 
-**De:**
+**Linha 134** - De:
 ```python
-__version__ = "1.0.0"
+if actual == expected:
 ```
 
-**Para:**
+Para:
 ```python
-__version__ = "1.1.1"
+if actual.lower() == expected.lower():
 ```
 
 ---
 
-## Passos Após Aprovação
+## Alternativa Rápida (sem deploy)
 
-1. Atualizar `version.py` para `1.1.1`
-2. Você precisará recriar o pacote `iscope-agent-1.1.1.tar.gz` com o version.py corrigido
-3. Fazer upload do novo pacote para o bucket `agent-releases`
-4. Atualizar o checksum na configuração do admin
+Você pode simplesmente atualizar o checksum no banco para lowercase:
+
+```sql
+UPDATE system_settings 
+SET value = to_jsonb('ad2cb0f92c9888dc6894af557a3d3d3923c692cff4ea8d58e66199ff8cba8130'::text),
+    updated_at = NOW()
+WHERE key = 'agent_update_checksum';
+```
 
 ---
 
-## Solução Imediata no Servidor (enquanto o pacote não é recriado)
+## Recomendação
 
-Execute no servidor para parar o loop agora:
+**Para resolver agora**: Execute o SQL acima para converter o checksum para lowercase.
 
-```bash
-sudo systemctl stop iscope-agent
-sudo sed -i 's/__version__ = "1.0.0"/__version__ = "1.1.1"/' /opt/iscope-agent/agent/version.py
-sudo systemctl start iscope-agent
-```
+**Para prevenir no futuro**: Aprovar este plano para adicionar comparação case-insensitive no código.
+
