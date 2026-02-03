@@ -91,6 +91,7 @@ interface SubdomainEntry {
   subdomain: string;
   sources: string[];
   addresses: Array<{ ip: string; type?: string }>;
+  is_alive?: boolean;
 }
 
 interface SubdomainSummary {
@@ -3546,20 +3547,32 @@ function processComplianceRules(
 
     if (totalFound === 0 && subdomains.length === 0) return undefined;
 
-    // Normalize subdomain entries
+    // Normalize subdomain entries - supports both old (addresses) and new (ips) formats
     const normalizedSubdomains: SubdomainEntry[] = subdomains
       .filter((s: unknown) => s && typeof s === 'object')
       .map((s: unknown) => {
         const sub = s as Record<string, unknown>;
+        
+        // Support new format: "ips" array of strings from Python agent
+        let addresses: Array<{ ip: string; type?: string }> = [];
+        if (Array.isArray(sub.ips)) {
+          // New format: ips is an array of IP strings
+          addresses = (sub.ips as string[])
+            .filter((ip) => typeof ip === 'string' && ip.length > 0)
+            .map((ip) => ({ ip, type: ip.includes(':') ? 'AAAA' : 'A' }));
+        } else if (Array.isArray(sub.addresses)) {
+          // Old format: addresses is an array of objects
+          addresses = (sub.addresses as Array<Record<string, unknown>>).map((addr) => ({
+            ip: typeof addr.ip === 'string' ? addr.ip : (typeof addr.address === 'string' ? addr.address : ''),
+            type: typeof addr.type === 'string' ? addr.type : undefined,
+          }));
+        }
+        
         return {
           subdomain: typeof sub.subdomain === 'string' ? sub.subdomain : (typeof sub.name === 'string' ? sub.name : ''),
           sources: Array.isArray(sub.sources) ? sub.sources.filter((src: unknown) => typeof src === 'string') : [],
-          addresses: Array.isArray(sub.addresses)
-            ? (sub.addresses as Array<Record<string, unknown>>).map((addr) => ({
-                ip: typeof addr.ip === 'string' ? addr.ip : (typeof addr.address === 'string' ? addr.address : ''),
-                type: typeof addr.type === 'string' ? addr.type : undefined,
-              }))
-            : [],
+          addresses,
+          is_alive: typeof sub.is_alive === 'boolean' ? sub.is_alive : undefined,
         };
       })
       .filter((s: SubdomainEntry) => s.subdomain.length > 0);
