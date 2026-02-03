@@ -1,79 +1,220 @@
-# Migração da Enumeração de Subdomínios para Edge Function
 
-## ✅ Status: CONCLUÍDO
 
-**Data:** 2026-02-03
+## Mapa DNS Visual para Domínios Externos
 
-## Resumo
+### Objetivo
 
-A enumeração de subdomínios foi migrada do Python Agent (rede do cliente) para uma Edge Function (servidor Supabase), resolvendo problemas de:
-1. **DNS mascarado** - IPs internos como `172.16.10.250` aparecendo em vez dos públicos
-2. **APIs bloqueadas** - Firewalls corporativos bloqueando APIs de enumeração
-3. **Inconsistência** - Resultados variando conforme a rede do cliente
+Substituir a tabela de subdomínios por uma visualização em árvore/mapa hierárquico mostrando toda a infraestrutura DNS do domínio, similar ao estilo DNSDumpster.
 
-## Arquitetura Implementada
+### Design do Mapa
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                    ARQUITETURA HÍBRIDA                        │
-├──────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Python Agent (rede do cliente)                               │
-│  └─ Executa APENAS: ns, mx, soa, spf, dmarc, dkim, dnssec    │
-│                                                               │
-│                        ↓                                      │
-│                                                               │
-│  agent-task-result (Edge Function)                            │
-│  └─ Detecta target_type = 'external_domain'                   │
-│  └─ Chama subdomain-enum Edge Function                        │
-│  └─ Mescla resultados + processa compliance                   │
-│                                                               │
-│                        ↓                                      │
-│                                                               │
-│  subdomain-enum (Nova Edge Function)                          │
-│  └─ Consulta 9 APIs públicas em paralelo                      │
-│  └─ Usa DNS-over-HTTPS (Cloudflare/Google)                    │
-│  └─ Retorna IPs públicos reais                                │
-│                                                               │
-└──────────────────────────────────────────────────────────────┘
+O mapa terá layout vertical (infinito na vertical, limitado na horizontal) com o domínio principal no topo, ramificando para os diferentes tipos de registros:
+
+```
+                    ┌─────────────────────────┐
+                    │   taschibra.com.br      │  ← Domínio Principal
+                    │   ● Score: 85%          │
+                    └───────────┬─────────────┘
+                                │
+        ┌───────────┬───────────┼───────────┬───────────┐
+        ▼           ▼           ▼           ▼           ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │   NS    │ │   MX    │ │   SOA   │ │   TXT   │ │ SUBDM.  │
+   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
+        │           │           │           │           │
+        ▼           ▼           ▼           ▼           ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │ns1-06.  │ │outlook. │ │Primary: │ │SPF: ✓   │ │www ●    │
+   │azure... │ │mail...  │ │ns1-06   │ │DKIM: ✓  │ │drive ●  │
+   └────┬────┘ └─────────┘ │Contact: │ │DMARC: ✓ │ │ida-fw ● │
+        │                  │admin@   │ └─────────┘ │chat ○   │
+        ▼                  └─────────┘             │mail ○   │
+   ┌─────────┐                                     └─────────┘
+   │ns2-06.  │
+   │azure... │
+   └─────────┘
+   ...
 ```
 
-## Alterações Realizadas
+### Estrutura de Dados para o Mapa
 
-### 1. Nova Edge Function: `supabase/functions/subdomain-enum/index.ts`
-- Consulta 9 APIs: crt.sh, HackerTarget, AlienVault, RapidDNS, ThreatMiner, URLScan, Wayback, CertSpotter, JLDC
-- Resolução DNS via DoH (Cloudflare + Google fallback)
-- Limite de 200 resoluções DNS por execução (evitar timeout)
-- Retorna `{ subdomain, sources, ips, is_alive }`
+Todos os dados necessários já estão disponíveis no relatório:
 
-### 2. Atualização: `supabase/functions/agent-task-result/index.ts`
-- Adicionado `payload` na query de busca da task
-- Após receber resultados do agent, chama `subdomain-enum` para domínios externos
-- Injeta resultado em `rawData['subdomain_enum']` antes do processamento de compliance
+| Tipo | Fonte no Report | Dados |
+|------|-----------------|-------|
+| **NS** | `dnsSummary.ns[]` | Lista de nameservers |
+| **MX** | `categories['Configuração de Email - MX'].checks[0].rawData.data.records[]` | Exchange, Priority, IPs |
+| **SOA** | `dnsSummary.soaMname`, `dnsSummary.soaContact` | Primary NS, Contact |
+| **TXT** | Checks SPF, DKIM, DMARC via `deriveEmailAuthStatus()` | Status pass/fail |
+| **Subdomínios** | `subdomainSummary.subdomains[]` | Subdomain, IPs, is_alive |
+| **DNSSEC** | `dnsSummary.dnssecHasDnskey`, `dnssecHasDs` | Status ativo/inativo |
 
-### 3. Blueprint Atualizado: `device_blueprints` (ID: 27b856b1-3b20-4180-b9da-ea5834c55ac6)
-- Removido step `subdomain_enum` do blueprint de External Domain
-- Agent agora executa apenas os 7 steps DNS diretos
+### Componentes a Criar
 
-### 4. Python Agent: Limpeza
-- Removido `python-agent/agent/executors/subdomain_enum.py`
-- Removido import/mapping de `SubdomainEnumExecutor` de `__init__.py` e `tasks.py`
+#### 1. `src/components/external-domain/DNSMapSection.tsx` (Novo)
 
-## Benefícios
+Componente principal que renderiza o mapa DNS completo:
 
-| Aspecto | Antes (Agent) | Depois (Edge Function) |
-|---------|---------------|------------------------|
-| **DNS** | Mascarado por DNS interno | IPs públicos reais via DoH |
-| **APIs** | Podem estar bloqueadas | Sempre acessíveis |
-| **Consistência** | Varia por ambiente | Sempre igual |
-| **Manutenção** | Python + TypeScript | TypeScript centralizado |
+```tsx
+interface DNSMapSectionProps {
+  domain: string;
+  dnsSummary?: ComplianceReport['dnsSummary'];
+  subdomainSummary?: SubdomainSummary;
+  categories: ComplianceCategory[];
+  emailAuth: { spf: boolean; dkim: boolean; dmarc: boolean };
+}
+```
 
-## Como Testar
+Estrutura visual:
+- **Card container** com fundo escuro e grid pattern (mesmo estilo do Command Center)
+- **Nó raiz**: Domínio principal (centralizado no topo)
+- **Linhas de conexão**: SVG paths conectando os nós
+- **Nós filhos**: Grupos de registros (NS, MX, SOA, TXT, Subdomínios)
+- **Nós folha**: Registros individuais dentro de cada grupo
 
-1. Disparar uma nova análise de External Domain
-2. Verificar nos logs da Edge Function `agent-task-result` a mensagem:
-   ```
-   [external_domain] Invoking server-side subdomain enumeration for {domain}
-   [external_domain] Subdomain enum completed: X found, Y alive
-   ```
-3. Conferir no relatório se os IPs são públicos (não RFC1918)
+#### 2. Componentes Auxiliares
+
+```tsx
+// Nó individual do mapa
+function DNSMapNode({ 
+  type, 
+  label, 
+  value, 
+  status,
+  children,
+  isRoot
+}: DNSMapNodeProps)
+
+// Linha de conexão SVG
+function DNSMapConnector({ 
+  from, 
+  to, 
+  type 
+}: DNSMapConnectorProps)
+
+// Grupo de registros expansível
+function DNSMapGroup({
+  type,
+  title,
+  items,
+  icon,
+  color
+}: DNSMapGroupProps)
+```
+
+### Layout Responsivo
+
+O mapa será renderizado em CSS puro (sem bibliotecas externas como D3) para simplicidade:
+
+- **Desktop (lg+)**: Layout horizontal com 5 colunas (NS, MX, SOA, TXT, Subdomínios)
+- **Tablet (md)**: Layout 2-3 colunas com scroll vertical
+- **Mobile**: Layout em lista vertical (uma coluna)
+
+### Cores por Tipo de Registro
+
+| Tipo | Cor (Tailwind) | Hex |
+|------|---------------|-----|
+| NS | `sky-400` | #38bdf8 |
+| MX | `purple-400` | #c084fc |
+| SOA | `amber-400` | #fbbf24 |
+| TXT | `emerald-400` | #34d399 |
+| Subdomínios | `teal-400` | #2dd4bf |
+| Ativo | `primary` | Tema |
+| Inativo | `muted-foreground/30` | Cinza |
+
+### Funcionalidades
+
+1. **Status visual**: Indicador verde/cinza para registros ativos/inativos
+2. **Hover details**: Tooltip com informações completas ao passar o mouse
+3. **Clique para copiar**: Copiar hostname/IP ao clicar
+4. **Expandir/Colapsar**: Grupos com muitos itens (ex: subdomínios) colapsáveis
+5. **Busca**: Filtro para encontrar registros específicos (reutilizar da tabela)
+6. **Link externo**: Ícone para abrir subdomínio em nova aba
+
+### Alterações Necessárias
+
+#### Arquivos a Modificar
+
+1. **`src/components/external-domain/DNSMapSection.tsx`** (criar)
+   - Novo componente principal do mapa
+
+2. **`src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`** (modificar)
+   - Substituir `<SubdomainSection>` por `<DNSMapSection>`
+   - Passar todos os dados necessários (dnsSummary, subdomainSummary, categories, emailAuth)
+
+3. **`src/components/external-domain/SubdomainSection.tsx`** (manter)
+   - Manter para compatibilidade, mas não será usado na página principal
+
+4. **`src/types/compliance.ts`** (opcional)
+   - Adicionar tipos para MX records se necessário
+
+### Extração de Dados MX
+
+Para extrair os registros MX do relatório:
+
+```tsx
+const extractMxRecords = (categories: ComplianceCategory[]) => {
+  const mxCategory = categories.find(c => c.name.includes('MX'));
+  if (!mxCategory) return [];
+  
+  const mxCheck = mxCategory.checks.find(ch => ch.rawData?.step_id === 'mx_records');
+  const records = (mxCheck?.rawData?.data as any)?.records || [];
+  
+  return records.map((r: any) => ({
+    exchange: r.exchange,
+    priority: r.priority,
+    ips: r.resolved_ips || [],
+    ipCount: r.resolved_ip_count || 0
+  }));
+};
+```
+
+### Exemplo Visual (ASCII)
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         MAPA DE INFRAESTRUTURA DNS                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│                          ┌─────────────────────┐                            │
+│                          │  taschibra.com.br   │                            │
+│                          └──────────┬──────────┘                            │
+│                                     │                                       │
+│      ┌──────────┬──────────┬────────┴────────┬──────────┬──────────┐       │
+│      │          │          │                 │          │          │       │
+│   ┌──▼──┐   ┌──▼──┐   ┌──▼──┐           ┌──▼──┐   ┌──▼──┐         │       │
+│   │ NS  │   │ MX  │   │ SOA │           │ TXT │   │ SUB │         │       │
+│   │ 4   │   │ 1   │   │     │           │ 3   │   │ 10  │         │       │
+│   └──┬──┘   └──┬──┘   └──┬──┘           └──┬──┘   └──┬──┘         │       │
+│      │         │         │                 │         │            │       │
+│   ns1-06...  outlook  Primary:           SPF ✓    ● www          │       │
+│   ns2-06...  .mail.   ns1-06...         DKIM ✓    ● drive        │       │
+│   ns3-06...  outlook  Contact:          DMARC ✓   ● ida-fw       │       │
+│   ns4-06...  .com     admin@...                   ○ chat         │       │
+│                       DNSSEC: ✗                   ○ mail         │       │
+│                                                   ○ mx2          │       │
+│                                                   ○ ns1          │       │
+│                                                   ○ ns2          │       │
+│                                                   ○ ns3          │       │
+│                                                   ○ vpn          │       │
+│                                                                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Tecnologias Utilizadas
+
+- **CSS Grid/Flexbox**: Layout responsivo
+- **SVG inline**: Linhas de conexão
+- **Tailwind CSS**: Estilos consistentes com o tema
+- **Framer Motion** (opcional): Animações suaves de expansão
+
+### Ordem de Implementação
+
+1. Criar estrutura base do `DNSMapSection`
+2. Implementar nós individuais (DNSMapNode)
+3. Adicionar linhas de conexão SVG
+4. Implementar grupos expansíveis
+5. Integrar na página de relatório
+6. Adicionar funcionalidades (busca, copiar, tooltips)
+7. Responsividade mobile
+
