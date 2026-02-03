@@ -182,6 +182,11 @@ install_deps() {
       dnf clean all 2>/dev/null || true
     fi
     
+    # Habilitar repositório AppStream (contém módulos Python)
+    echo "Habilitando repositório AppStream..."
+    dnf config-manager --set-enabled appstream 2>/dev/null || true
+    dnf config-manager --set-enabled powertools 2>/dev/null || true
+    
     # Listar módulos Python disponíveis para debug
     echo "Módulos Python disponíveis:"
     dnf module list python* 2>/dev/null | head -20 || true
