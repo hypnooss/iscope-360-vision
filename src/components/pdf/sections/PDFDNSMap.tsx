@@ -1,3 +1,8 @@
+/**
+ * PDFDNSMap - DNS Infrastructure Map for PDF reports
+ * Layout: Row-based (2 rows of 2 cards + 1 full-width row)
+ * Version: 2.0.0 - Refactored from 3-column to row-based layout
+ */
 import React from 'react';
 import { View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
