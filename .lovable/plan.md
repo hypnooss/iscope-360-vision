@@ -1,200 +1,153 @@
 
 
-## Adicionar Mapa de Infraestrutura DNS ao Relatório PDF
+## Correção: Mapa de Infraestrutura DNS não aparece no PDF
 
-### Visão Geral
+### Diagnóstico
 
-Criar uma nova página no PDF de Domínio Externo que exibe o Mapa de Infraestrutura DNS em formato estático, adaptado para impressão. O mapa será inserido entre a página de "Issues Summary" e a página de "Subdomínios Descobertos".
+O componente `PDFDNSMap` não está sendo renderizado no PDF devido a **incompatibilidades com o `@react-pdf/renderer`**:
 
----
+1. **Propriedade `gap` não suportada**: O react-pdf não suporta a propriedade CSS `gap`. Quando encontra essa propriedade, pode falhar silenciosamente.
 
-### Estrutura do Mapa no PDF
+2. **Caractere especial `◉`**: Pode causar problemas de codificação em algumas fontes.
 
-O layout será uma representação simplificada do mapa web, organizado em 3 colunas:
+3. **React Fragments (`<>...</>`)**: Podem causar problemas em contextos específicos do react-pdf.
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│           MAPA DE INFRAESTRUTURA DNS                        │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│   NS Records    │   SOA / DNSSEC  │     Subdomínios         │
-│   ───────────   │   ───────────── │     ───────────         │
-│   ns1.host.com  │   Primary: ...  │     sub1.domain.com ●   │
-│   ns2.host.com  │   Contact: ...  │     sub2.domain.com ●   │
-│                 │   DNSSEC: Ativo │     sub3.domain.com ○   │
-├─────────────────┼─────────────────┤     ...                 │
-│   MX Records    │   TXT (Email)   │     (+X mais)           │
-│   ───────────   │   ───────────── │                         │
-│   mail.host.com │   SPF: ● ...    │                         │
-│   priority: 10  │   DKIM: ● sel1  │                         │
-│                 │   DMARC: ● p=.. │                         │
-└─────────────────┴─────────────────┴─────────────────────────┘
-```
+### Solução
+
+Substituir `gap` por `marginBottom`/`marginRight` e corrigir outros problemas de compatibilidade.
 
 ---
 
-### Arquivos a Criar/Modificar
+### Alterações Técnicas
 
-#### 1. Novo Componente: `src/components/pdf/sections/PDFDNSMap.tsx`
+**Arquivo:** `src/components/pdf/sections/PDFDNSMap.tsx`
 
-Componente dedicado para renderizar o mapa DNS no PDF:
+#### 1. Corrigir estilos com `gap` (linhas 130-150)
 
-```tsx
-// Estrutura do componente
-interface PDFDNSMapProps {
-  dnsSummary?: DnsSummary;
-  emailAuth?: { spf: boolean; dkim: boolean; dmarc: boolean };
-  subdomainSummary?: SubdomainSummary;
-  categories: ComplianceCategory[];
-}
-
-// Seções:
-// - Título "Mapa de Infraestrutura DNS" 
-// - Grid 3 colunas usando View + flexDirection: 'row'
-// - Coluna 1: NS + MX (cards empilhados verticalmente)
-// - Coluna 2: SOA/DNSSEC + TXT/Email Auth
-// - Coluna 3: Subdomínios (lista com indicadores ●/○)
-```
-
-**Estilo Visual:**
-- Usar cores da paleta existente em `pdfStyles.ts`
-- Cards com bordas coloridas por tipo (sky para NS, violet para MX, etc.)
-- Indicadores de status como círculos coloridos (●/○)
-- Limite de 15 subdomínios na visualização com indicador "+X mais"
-
-#### 2. Atualizar: `src/components/pdf/sections/index.ts`
-
-Adicionar export do novo componente:
-
+**Antes:**
 ```typescript
-export { PDFDNSMap } from './PDFDNSMap';
+grid: {
+  flexDirection: 'row',
+  padding: spacing.cardPadding,
+  gap: 12,  // ❌ Não suportado
+},
+column: {
+  flex: 1,
+  gap: 10,  // ❌ Não suportado
+},
+groupHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 8,
+  paddingVertical: 6,
+  gap: 6,  // ❌ Não suportado
+},
 ```
 
-#### 3. Atualizar: `src/components/pdf/ExternalDomainPDF.tsx`
+**Depois:**
+```typescript
+grid: {
+  flexDirection: 'row',
+  padding: spacing.cardPadding,
+},
+column: {
+  flex: 1,
+  marginRight: 12,  // ✓ Substitui gap
+},
+columnLast: {
+  flex: 1,
+  marginRight: 0,
+},
+groupCard: {
+  borderWidth: 1,
+  borderRadius: radius.md,
+  overflow: 'hidden',
+  marginBottom: 10,  // ✓ Substitui gap da column
+},
+groupHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 8,
+  paddingVertical: 6,
+},
+headerIcon: {
+  ...
+  marginRight: 8,  // ✓ Substitui gap
+},
+```
 
-Inserir nova página com o mapa DNS após a página de Issues:
+#### 2. Corrigir caractere especial no header (linha 389)
 
+**Antes:**
 ```tsx
-{/* PAGE: DNS Infrastructure Map */}
-<Page size="A4" style={pageStyles.page}>
-  <View style={pageStyles.content}>
-    <PDFDNSMap 
-      dnsSummary={dnsSummary}
-      emailAuth={emailAuth}
-      subdomainSummary={subdomainSummary}
-      categories={report.categories}
-    />
+<Text style={styles.headerIconText}>◉</Text>
+```
+
+**Depois:**
+```tsx
+<Text style={styles.headerIconText}>●</Text>
+```
+
+#### 3. Substituir Fragments por Views (linhas 400-410, etc.)
+
+**Antes:**
+```tsx
+{visibleNs.length > 0 ? (
+  <>
+    {visibleNs.map(...)}
+    {moreNs > 0 && (...)}
+  </>
+) : (...)}
+```
+
+**Depois:**
+```tsx
+{visibleNs.length > 0 ? (
+  <View>
+    {visibleNs.map(...)}
+    {moreNs > 0 && (...)}
   </View>
-  <PDFFooter />
-</Page>
+) : (...)}
 ```
 
----
+#### 4. Ajustar header gap (linha 109-111)
 
-### Detalhes Técnicos do PDFDNSMap
-
-#### Extração de Dados
-
-Reutilizar as mesmas funções helper do `DNSMapSection.tsx`:
-
+**Antes:**
 ```typescript
-// Copiar e adaptar para o contexto PDF
-const extractNsRecords = (categories) => { ... }
-const extractMxRecords = (categories) => { ... }
-const extractSpfRecord = (categories) => { ... }
-const extractDkimKeys = (categories) => { ... }
-const extractDmarcPolicy = (categories) => { ... }
+header: {
+  ...
+  gap: 8,
+},
 ```
 
-#### Estilos Específicos
-
+**Depois:**
 ```typescript
-const dnsMapStyles = StyleSheet.create({
-  container: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  header: {
-    backgroundColor: colors.cardBg,
-    padding: spacing.cardPadding,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  title: {
-    fontSize: typography.heading,
-    fontFamily: typography.bold,
-    color: colors.primary,
-  },
-  grid: {
-    flexDirection: 'row',
-    padding: spacing.cardPadding,
-  },
-  column: {
-    flex: 1,
-    paddingHorizontal: 6,
-  },
-  groupCard: {
-    marginBottom: 12,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: 10,
-  },
-  groupTitle: {
-    fontSize: typography.body,
-    fontFamily: typography.bold,
-    marginBottom: 6,
-  },
-  recordItem: {
-    fontSize: typography.bodySmall,
-    color: colors.textSecondary,
-    marginBottom: 3,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 4,
-  },
-});
+header: {
+  ...
+  // gap removido, usar marginRight no headerIcon
+},
+headerIcon: {
+  ...
+  marginRight: 8,
+},
 ```
 
-#### Cores por Categoria
-
-| Grupo | Cor da Borda | Background |
-|-------|--------------|------------|
-| NS | `#0EA5E9` (sky-500) | `#F0F9FF` (sky-50) |
-| MX | `#A855F7` (purple-500) | `#FAF5FF` (purple-50) |
-| SOA | `#F59E0B` (amber-500) | `#FFFBEB` (amber-50) |
-| TXT | `#EC4899` (pink-500) | `#FDF2F8` (pink-50) |
-| Subdomínios | `#6366F1` (indigo-500) | `#EEF2FF` (indigo-50) |
-
 ---
 
-### Limites de Exibição
+### Resumo das Correções
 
-| Elemento | Limite | Indicador |
-|----------|--------|-----------|
-| NS Records | 6 | "+X nameservers" |
-| MX Records | 4 | "+X mail servers" |
-| DKIM Keys | 3 | "+X seletores" |
-| Subdomínios | 15 | "+X subdomínios" |
-
----
-
-### Ordem das Páginas (Atualizada)
-
-1. **Página 1**: Resumo Executivo (Score, Stats, Info, Tabela de Categorias)
-2. **Página 2**: Problemas Encontrados (se houver falhas)
-3. **Página 3**: **Mapa de Infraestrutura DNS** ← NOVA
-4. **Página 4**: Subdomínios Descobertos (tabela detalhada)
-5. **Páginas 5+**: Detalhamento por Categoria
+| Problema | Local | Correção |
+|----------|-------|----------|
+| `gap: 12` no grid | linha 133 | Usar `marginRight: 12` nas columns |
+| `gap: 10` na column | linha 137 | Usar `marginBottom: 10` nos groupCards |
+| `gap: 6` no groupHeader | linha 149 | Usar `marginRight: 6` no groupTitle |
+| `gap: 8` no header | linha 111 | Usar `marginRight: 8` no headerIcon |
+| Caractere `◉` | linha 389 | Trocar para `●` (mais compatível) |
+| React Fragments | múltiplas | Substituir por `<View>` |
 
 ---
 
 ### Arquivos Modificados
 
-- `src/components/pdf/sections/PDFDNSMap.tsx` (novo)
-- `src/components/pdf/sections/index.ts` (atualizar exports)
-- `src/components/pdf/ExternalDomainPDF.tsx` (adicionar página)
+- `src/components/pdf/sections/PDFDNSMap.tsx`
 
