@@ -1,274 +1,177 @@
 
 
-## Expansão do SubdomainEnumExecutor: Novas Fontes de APIs
+## Validação DNS de Subdomínios Descobertos
 
-### APIs Gratuitas para Adicionar
+### Problema Identificado
 
-| API | URL Base | Limite | Qualidade |
-|-----|----------|--------|-----------|
-| **RapidDNS** | `rapiddns.io/subdomain/{domain}` | Ilimitado | Muito boa |
-| **ThreatMiner** | `api.threatminer.org/v2/domain.php` | Ilimitado | Boa |
-| **URLScan.io** | `urlscan.io/api/v1/search` | 100/dia | Excelente |
-| **Wayback Machine** | `web.archive.org/cdx/search/cdx` | Ilimitado | Histórica |
-| **CertSpotter** | `api.certspotter.com/v1/issuances` | 100/hora | Boa (CT logs) |
-| **JLDC** | `jldc.me/anubis/subdomains/{domain}` | Ilimitado | Boa |
+As APIs de enumeração de subdomínios retornam registros históricos que podem não existir mais. Na imagem, vemos subdomínios como `chat.taschibra.com.br`, `drive.taschibra.com.br`, etc. sem endereços IP resolvidos - indicando que podem ser registros antigos.
+
+### Solução Proposta
+
+Adicionar uma etapa de **validação DNS** após a coleta, que tenta resolver cada subdomínio para verificar se ainda existe.
 
 ### Alterações no Arquivo
 
 **Arquivo:** `python-agent/agent/executors/subdomain_enum.py`
 
-### Novos Métodos a Adicionar
+### 1. Novo Método de Resolução DNS
 
 ```python
-def _query_rapiddns(self, domain: str, timeout: int) -> Set[str]:
-    """Query RapidDNS.io for subdomains."""
-    import re
-    url = f"https://rapiddns.io/subdomain/{domain}?full=1"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+def _resolve_subdomain(self, subdomain: str, timeout: float = 2.0) -> Dict[str, Any]:
+    """
+    Resolve a subdomain to get its IP addresses.
+    Returns dict with 'ips' list and 'is_alive' boolean.
+    """
+    try:
+        import dns.resolver
+    except ImportError:
+        # Fallback to socket if dnspython not available
+        try:
+            ips = list(set(socket.gethostbyname_ex(subdomain)[2]))
+            return {'ips': sorted(ips), 'is_alive': len(ips) > 0}
+        except socket.gaierror:
+            return {'ips': [], 'is_alive': False}
+        except Exception:
+            return {'ips': [], 'is_alive': False}
 
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
+    resolver = dns.resolver.Resolver(configure=True)
+    resolver.lifetime = timeout
+    resolver.timeout = timeout
 
-    subdomains = set()
-    # Parse HTML response - subdomains are in <td> tags
-    pattern = r'<td>([a-zA-Z0-9.-]+\.' + re.escape(domain) + r')</td>'
-    matches = re.findall(pattern, response.text, re.IGNORECASE)
+    ips = set()
     
-    for match in matches:
-        name = match.strip().lower()
-        if self._is_valid_subdomain(name, domain):
-            subdomains.add(name)
+    # Try A records (IPv4)
+    try:
+        answers = resolver.resolve(subdomain, 'A')
+        for r in answers:
+            ips.add(str(r))
+    except Exception:
+        pass
 
-    return subdomains
+    # Try AAAA records (IPv6)
+    try:
+        answers = resolver.resolve(subdomain, 'AAAA')
+        for r in answers:
+            ips.add(str(r))
+    except Exception:
+        pass
 
-
-def _query_threatminer(self, domain: str, timeout: int) -> Set[str]:
-    """Query ThreatMiner API for subdomains."""
-    url = f"https://api.threatminer.org/v2/domain.php?q={domain}&rt=5"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-
-    subdomains = set()
-    data = response.json()
-
-    if data.get('status_code') == '200':
-        for subdomain in data.get('results', []):
-            name = subdomain.strip().lower()
-            if self._is_valid_subdomain(name, domain):
-                subdomains.add(name)
-
-    return subdomains
-
-
-def _query_urlscan(self, domain: str, timeout: int) -> Set[str]:
-    """Query URLScan.io for subdomains (100 requests/day free)."""
-    url = f"https://urlscan.io/api/v1/search/?q=domain:{domain}"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-
-    subdomains = set()
-    data = response.json()
-
-    for result in data.get('results', []):
-        task = result.get('task', {})
-        page_domain = task.get('domain', '').strip().lower()
-        if self._is_valid_subdomain(page_domain, domain):
-            subdomains.add(page_domain)
-
-    return subdomains
-
-
-def _query_wayback(self, domain: str, timeout: int) -> Set[str]:
-    """Query Wayback Machine CDX API for historical subdomains."""
-    url = f"http://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&fl=original&collapse=urlkey"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-
-    subdomains = set()
-    data = response.json()
-
-    # Skip header row
-    for row in data[1:] if len(data) > 1 else []:
-        if row:
-            # Extract domain from URL
-            url_str = row[0] if isinstance(row, list) else row
-            # Parse: https://subdomain.domain.com/path -> subdomain.domain.com
-            import re
-            match = re.search(r'https?://([^/]+)', url_str)
-            if match:
-                hostname = match.group(1).split(':')[0].lower()
-                if self._is_valid_subdomain(hostname, domain):
-                    subdomains.add(hostname)
-
-    return subdomains
-
-
-def _query_certspotter(self, domain: str, timeout: int) -> Set[str]:
-    """Query CertSpotter API for certificate transparency data."""
-    url = f"https://api.certspotter.com/v1/issuances?domain={domain}&include_subdomains=true&expand=dns_names"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-
-    subdomains = set()
-    data = response.json()
-
-    for cert in data:
-        for name in cert.get('dns_names', []):
-            name = name.strip().lower().lstrip('*.')
-            if self._is_valid_subdomain(name, domain):
-                subdomains.add(name)
-
-    return subdomains
-
-
-def _query_jldc(self, domain: str, timeout: int) -> Set[str]:
-    """Query JLDC Anubis API for subdomains."""
-    url = f"https://jldc.me/anubis/subdomains/{domain}"
-    headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
-
-    session = self._get_session()
-    response = session.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-
-    subdomains = set()
-    data = response.json()
-
-    for subdomain in data:
-        name = subdomain.strip().lower()
-        if self._is_valid_subdomain(name, domain):
-            subdomains.add(name)
-
-    return subdomains
+    return {
+        'ips': sorted(list(ips)),
+        'is_alive': len(ips) > 0
+    }
 ```
 
-### Atualização do Método `run()`
-
-Adicionar chamadas para as novas fontes após as existentes:
+### 2. Método de Validação em Lote
 
 ```python
-# 4. RapidDNS
-try:
-    rapid_results = self._query_rapiddns(domain, timeout)
-    for sub in rapid_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['rapiddns']}
-        elif 'rapiddns' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('rapiddns')
-    sources_used.append(f"rapiddns ({len(rapid_results)})")
-    self.logger.info(f"Step {step_id}: rapiddns returned {len(rapid_results)} subdomains")
-except Exception as e:
-    errors.append(f"rapiddns: {str(e)}")
-    self.logger.warning(f"Step {step_id}: rapiddns error - {e}")
-
-# 5. ThreatMiner
-try:
-    tm_results = self._query_threatminer(domain, timeout)
-    for sub in tm_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['threatminer']}
-        elif 'threatminer' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('threatminer')
-    sources_used.append(f"threatminer ({len(tm_results)})")
-    self.logger.info(f"Step {step_id}: threatminer returned {len(tm_results)} subdomains")
-except Exception as e:
-    errors.append(f"threatminer: {str(e)}")
-    self.logger.warning(f"Step {step_id}: threatminer error - {e}")
-
-# 6. URLScan.io
-try:
-    urlscan_results = self._query_urlscan(domain, timeout)
-    for sub in urlscan_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['urlscan']}
-        elif 'urlscan' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('urlscan')
-    sources_used.append(f"urlscan ({len(urlscan_results)})")
-    self.logger.info(f"Step {step_id}: urlscan returned {len(urlscan_results)} subdomains")
-except Exception as e:
-    errors.append(f"urlscan: {str(e)}")
-    self.logger.warning(f"Step {step_id}: urlscan error - {e}")
-
-# 7. Wayback Machine
-try:
-    wb_results = self._query_wayback(domain, timeout)
-    for sub in wb_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['wayback']}
-        elif 'wayback' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('wayback')
-    sources_used.append(f"wayback ({len(wb_results)})")
-    self.logger.info(f"Step {step_id}: wayback returned {len(wb_results)} subdomains")
-except Exception as e:
-    errors.append(f"wayback: {str(e)}")
-    self.logger.warning(f"Step {step_id}: wayback error - {e}")
-
-# 8. CertSpotter
-try:
-    cs_results = self._query_certspotter(domain, timeout)
-    for sub in cs_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['certspotter']}
-        elif 'certspotter' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('certspotter')
-    sources_used.append(f"certspotter ({len(cs_results)})")
-    self.logger.info(f"Step {step_id}: certspotter returned {len(cs_results)} subdomains")
-except Exception as e:
-    errors.append(f"certspotter: {str(e)}")
-    self.logger.warning(f"Step {step_id}: certspotter error - {e}")
-
-# 9. JLDC Anubis
-try:
-    jldc_results = self._query_jldc(domain, timeout)
-    for sub in jldc_results:
-        if sub not in all_subdomains:
-            all_subdomains[sub] = {'subdomain': sub, 'sources': ['jldc']}
-        elif 'jldc' not in all_subdomains[sub]['sources']:
-            all_subdomains[sub]['sources'].append('jldc')
-    sources_used.append(f"jldc ({len(jldc_results)})")
-    self.logger.info(f"Step {step_id}: jldc returned {len(jldc_results)} subdomains")
-except Exception as e:
-    errors.append(f"jldc: {str(e)}")
-    self.logger.warning(f"Step {step_id}: jldc error - {e}")
+def _validate_subdomains(self, subdomains: Dict[str, Dict], step_id: str) -> Dict[str, Dict]:
+    """
+    Validate all discovered subdomains by resolving their DNS.
+    Adds 'ips' and 'is_alive' to each subdomain entry.
+    """
+    total = len(subdomains)
+    alive_count = 0
+    
+    self.logger.info(f"Step {step_id}: Validating {total} subdomains via DNS resolution...")
+    
+    for idx, (name, data) in enumerate(subdomains.items(), 1):
+        result = self._resolve_subdomain(name)
+        data['ips'] = result['ips']
+        data['is_alive'] = result['is_alive']
+        
+        if result['is_alive']:
+            alive_count += 1
+        
+        # Log progress every 10 subdomains
+        if idx % 10 == 0 or idx == total:
+            self.logger.info(f"Step {step_id}: Validated {idx}/{total} subdomains ({alive_count} alive)")
+    
+    self.logger.info(f"Step {step_id}: Validation complete - {alive_count}/{total} subdomains are alive")
+    
+    return subdomains
 ```
 
-### Resumo das Fontes
+### 3. Atualização do Método run()
 
-| # | Fonte | Tipo de Dados |
-|---|-------|---------------|
-| 1 | crt.sh | Certificate Transparency |
-| 2 | HackerTarget | DNS records |
-| 3 | AlienVault OTX | Passive DNS |
-| 4 | RapidDNS | DNS aggregator |
-| 5 | ThreatMiner | Threat intelligence |
-| 6 | URLScan.io | Web scan results |
-| 7 | Wayback Machine | Historical URLs |
-| 8 | CertSpotter | Certificate Transparency |
-| 9 | JLDC Anubis | Subdomain aggregator |
+Adicionar chamada de validação antes de retornar os resultados:
+
+```python
+# Após coletar de todas as fontes, antes de ordenar
+
+# Validate subdomains via DNS resolution
+all_subdomains = self._validate_subdomains(all_subdomains, step_id)
+
+# Separate alive and dead subdomains for stats
+alive_subdomains = {k: v for k, v in all_subdomains.items() if v.get('is_alive')}
+dead_subdomains = {k: v for k, v in all_subdomains.items() if not v.get('is_alive')}
+
+# Sort results
+subdomains_list = sorted(all_subdomains.values(), key=lambda x: x['subdomain'])
+
+self.logger.info(
+    f"Step {step_id}: Total {len(subdomains_list)} unique subdomains from {len(sources_used)} sources "
+    f"({len(alive_subdomains)} alive, {len(dead_subdomains)} inactive)"
+)
+
+return {
+    'status_code': 200,
+    'data': {
+        'domain': domain,
+        'total_found': len(subdomains_list),
+        'alive_count': len(alive_subdomains),
+        'inactive_count': len(dead_subdomains),
+        'sources': sources_used,
+        'subdomains': subdomains_list,
+        'errors': errors if errors else None,
+    },
+    'error': None,
+}
+```
+
+### 4. Estrutura de Dados Atualizada
+
+Cada subdomínio agora terá:
+
+```json
+{
+  "subdomain": "chat.taschibra.com.br",
+  "sources": ["crt.sh", "rapiddns"],
+  "ips": ["192.168.1.10", "2001:db8::1"],
+  "is_alive": true
+}
+```
+
+Ou para subdomínios inativos:
+
+```json
+{
+  "subdomain": "old.taschibra.com.br",
+  "sources": ["wayback"],
+  "ips": [],
+  "is_alive": false
+}
+```
 
 ### Benefícios
 
-- **Redundancia**: Se uma fonte falhar, as outras continuam funcionando
-- **Cobertura ampliada**: Diferentes fontes capturam diferentes subdomínios
-- **Dados históricos**: Wayback Machine encontra subdomínios antigos que podem ter sido removidos
-- **Sem dependencia de API keys**: Todas funcionam gratuitamente
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| **Dados** | Lista bruta de subdomínios | Lista validada com IPs |
+| **Qualidade** | Muitos registros obsoletos | Separação claro entre ativos/inativos |
+| **Visibilidade** | Sem indicação de status | Campo `is_alive` e lista de `ips` |
+| **Relatório** | Coluna "Endereços IP" vazia | IPs preenchidos para subdomínios ativos |
+
+### Considerações de Performance
+
+- **Timeout curto (2s)**: Evita atrasos excessivos em subdomínios inexistentes
+- **Resolução sequencial**: Mais lento, mas evita rate limiting de servidores DNS
+- **Opção futura**: Implementar resolução paralela com ThreadPoolExecutor para maior velocidade
 
 ### Deploy
 
-1. Atualizar o arquivo `subdomain_enum.py` no servidor
+1. Atualizar `subdomain_enum.py` no servidor
 2. Limpar cache: `rm -rf /opt/iscope-agent/agent/__pycache__ /opt/iscope-agent/agent/executors/__pycache__`
 3. Reiniciar: `systemctl restart iscope-agent`
-4. Disparar nova analise de External Domain
+4. Disparar nova análise de External Domain
 
