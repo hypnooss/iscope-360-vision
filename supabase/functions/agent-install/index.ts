@@ -186,6 +186,62 @@ install_deps() {
   exit 1
 }
 
+install_amass() {
+  echo "Instalando Amass para enumeração de subdomínios..."
+  
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64)  arch="amd64" ;;
+    aarch64) arch="arm64" ;;
+    *)
+      echo "Aviso: arquitetura $arch não suportada para Amass. Pulando instalação."
+      return 0
+      ;;
+  esac
+  
+  local version="v4.2.0"
+  local filename="amass_Linux_\${arch}.zip"
+  local url="https://github.com/owasp-amass/amass/releases/download/\${version}/\${filename}"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  
+  echo "Baixando Amass \${version} (\${arch})..."
+  
+  if ! curl -fsSL "$url" -o "\${tmp_dir}/amass.zip"; then
+    echo "Aviso: falha ao baixar Amass. Continuando sem ele."
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+  
+  # Instalar unzip se necessário
+  if ! command -v unzip >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y unzip || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y unzip || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y unzip || true
+    fi
+  fi
+  
+  unzip -q "\${tmp_dir}/amass.zip" -d "$tmp_dir"
+  
+  # O zip contém uma pasta amass_Linux_xxx/amass
+  local bin_path
+  bin_path="$(find "$tmp_dir" -name 'amass' -type f -executable | head -1)"
+  
+  if [[ -n "$bin_path" ]]; then
+    mv "$bin_path" /usr/local/bin/amass
+    chmod +x /usr/local/bin/amass
+    echo "Amass instalado: $(amass -version 2>&1 | head -1)"
+  else
+    echo "Aviso: binário do Amass não encontrado no pacote."
+  fi
+  
+  rm -rf "$tmp_dir"
+}
+
 ensure_user() {
   if id "$SERVICE_USER" >/dev/null 2>&1; then
     return
@@ -381,6 +437,7 @@ main() {
   fi
 
   install_deps
+  install_amass
   ensure_user
   ensure_dirs
   download_release

@@ -4,6 +4,7 @@ from agent.executors.http_request import HTTPRequestExecutor
 from agent.executors.ssh import SSHExecutor
 from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
+from agent.executors.amass import AmassExecutor
 
 __all__ = [
     'BaseExecutor',
@@ -11,4 +12,5 @@ __all__ = [
     'SSHExecutor',
     'SNMPExecutor',
     'DNSQueryExecutor',
+    'AmassExecutor',
 ]

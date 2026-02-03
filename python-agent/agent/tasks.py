@@ -12,6 +12,7 @@ from agent.executors.http_session import HTTPSessionExecutor
 from agent.executors.ssh import SSHExecutor
 from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
+from agent.executors.amass import AmassExecutor
 
 
 class TaskExecutor:
@@ -43,6 +44,7 @@ class TaskExecutor:
             'ssh_command': SSHExecutor(logger),
             'snmp_query': SNMPExecutor(logger),
             'dns_query': DNSQueryExecutor(logger),
+            'amass': AmassExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
