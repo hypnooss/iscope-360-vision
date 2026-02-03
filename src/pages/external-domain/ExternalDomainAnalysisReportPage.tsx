@@ -5,7 +5,7 @@ import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { ExternalDomainCategorySection } from '@/components/external-domain/ExternalDomainCategorySection';
-import { SubdomainSection } from '@/components/external-domain/SubdomainSection';
+import { DNSMapSection } from '@/components/external-domain/DNSMapSection';
 import { supabase } from '@/integrations/supabase/client';
 import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/compliance';
 import { toast } from 'sonner';
@@ -458,6 +458,10 @@ export default function ExternalDomainAnalysisReportPage() {
     ? dnsSummary.dnssecNotes.join(' | ')
     : undefined;
 
+  const emailAuth = useMemo(() => {
+    return report ? deriveEmailAuthStatus(report.categories) : { spf: false, dkim: false, dmarc: false };
+  }, [report]);
+
   useEffect(() => {
     if (initialReport) return;
     if (!domainId) return;
@@ -675,7 +679,6 @@ export default function ExternalDomainAnalysisReportPage() {
 
           {/* COMMAND CENTER HEADER */}
           {(() => {
-            const emailAuth = deriveEmailAuthStatus(report.categories);
             return (
               <div className="max-w-full mb-8">
                 <div 
@@ -776,10 +779,15 @@ export default function ExternalDomainAnalysisReportPage() {
             </div>
           )}
 
-          {/* Subdomain Enumeration Section */}
-          {report.subdomainSummary && report.subdomainSummary.total_found > 0 && (
-            <SubdomainSection summary={report.subdomainSummary} className="mb-8" />
-          )}
+          {/* DNS Infrastructure Map */}
+          <DNSMapSection
+            domain={domain?.domain || ''}
+            dnsSummary={report.dnsSummary}
+            subdomainSummary={report.subdomainSummary}
+            categories={report.categories}
+            emailAuth={emailAuth}
+            className="mb-8"
+          />
 
           {/* Categories */}
           <div className="space-y-4">
