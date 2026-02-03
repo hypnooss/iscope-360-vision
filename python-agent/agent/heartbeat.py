@@ -1,3 +1,6 @@
+from agent.version import get_version
+
+
 class AgentStopped(Exception):
     pass
 
@@ -8,8 +11,10 @@ class AgentHeartbeat:
         self.state = state
         self.logger = logger
 
-    def send(self, status="running", version="1.0.0"):
-        self.logger.info("Enviando heartbeat")
+    def send(self, status="running", version=None):
+        if version is None:
+            version = get_version()
+        self.logger.info(f"Enviando heartbeat (v{version})")
 
         try:
             response = self.api.post(
