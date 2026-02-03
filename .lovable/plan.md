@@ -1,22 +1,14 @@
 
-
-# Plano: Adicionar Suporte a "all versions" na Extração de CVEs
+# Plano: Adicionar Domínios Externos ao Modal de Detalhes do Workspace
 
 ## Problema Identificado
 
-A CVE-2025-31514 menciona:
-```
-FortiOS 7.4 all versions → Migrate to a fixed release
-```
+No modal "Detalhes do Workspace" (acessado pelo ícone de olho em Administração > Workspaces), são exibidos:
+- Firewalls
+- Microsoft 365 Tenants  
+- Agents
 
-O regex atual na função `extractFortiOSInfo()` não captura esse padrão:
-
-```typescript
-// Linha 35 - Só captura versões específicas com range
-const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
-```
-
-**Resultado**: CVEs que afetam "all versions" ficam sem a informação de versões afetadas exibida corretamente.
+**Faltando:** Domínios Externos não estão sendo buscados nem exibidos.
 
 ---
 
@@ -24,179 +16,163 @@ const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:throu
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/fortigate-cve/index.ts` | Adicionar regex para capturar padrão "all versions" |
+| `src/pages/ClientsPage.tsx` | Adicionar busca e exibição de External Domains |
 
 ---
 
-## Alteração Técnica
+## Alterações Técnicas
 
-### Adicionar Novo Padrão Regex (após linha 36)
-
-```typescript
-// Padrões comuns de versão FortiOS na descrição
-const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
-const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
-
-// NOVO: Padrão para "all versions"
-const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
-```
-
-### Modificar Lógica de Extração (linhas 38-48)
+### 1. Adicionar Interface para External Domain (após linha 58)
 
 ```typescript
-// Encontrar versões FortiOS afetadas
-let affectedVersions = '';
-
-// Primeiro: verificar padrão "all versions"
-const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
-if (allVersionsMatches && allVersionsMatches.length > 0) {
-  affectedVersions = allVersionsMatches.join(', ');
-}
-
-// Segundo: verificar range de versões (through/to/before)
-if (!affectedVersions) {
-  const matches = fullDescription.match(fortiOSPattern);
-  if (matches && matches.length > 0) {
-    affectedVersions = matches.join(', ');
-  }
-}
-
-// Terceiro: verificar versão única
-if (!affectedVersions) {
-  const singleMatches = fullDescription.match(fortiOSSinglePattern);
-  if (singleMatches) {
-    affectedVersions = singleMatches.join(', ');
-  }
+interface ExternalDomain {
+  id: string;
+  name: string;
+  domain: string;
+  last_score: number | null;
+  status: string;
 }
 ```
 
----
-
-## Padrões Capturados Após Correção
-
-| Padrão na Descrição | Resultado |
-|---------------------|-----------|
-| `FortiOS 7.4.0 through 7.4.10` | `FortiOS 7.4.0 through 7.4.10` ✅ |
-| `FortiOS 7.4 all versions` | `FortiOS 7.4 all versions` ✅ **NOVO** |
-| `FortiOS version 7.2 all versions` | `FortiOS version 7.2 all versions` ✅ **NOVO** |
-| `FortiOS 7.6.0 before 7.6.4` | `FortiOS 7.6.0 before 7.6.4` ✅ |
-
----
-
-## Resultado Esperado na UI
-
-### CVE-2025-31514
-
-**Antes**:
-```
-CVE-2025-31514 | HIGH (7.1)
-(sem versões afetadas mostradas)
-"An Insertion of Sensitive Information into Log File vulnerability..."
-```
-
-**Depois**:
-```
-CVE-2025-31514 | HIGH (7.1)
-Versões FortiOS afetadas: FortiOS 7.4 all versions
-"FortiOS 7.4 all versions - allows an attacker with at least read-only privileges to retrieve sensitive 2FA-related information..."
-```
-
----
-
-## Código Completo da Função Atualizada
+### 2. Atualizar Interface WorkspaceDetails (linha 60-64)
 
 ```typescript
-function extractFortiOSInfo(fullDescription: string): {
-  fortiOSDescription: string;
-  affectedVersions: string;
-  technicalDescription: string;
-} {
-  const descLower = fullDescription.toLowerCase();
-  
-  // Se não menciona FortiOS, retornar descrição original
-  if (!descLower.includes('fortios')) {
+interface WorkspaceDetails {
+  firewalls: Firewall[];
+  tenants: M365Tenant[];
+  agents: Agent[];
+  externalDomains: ExternalDomain[];  // NOVO
+}
+```
+
+### 3. Adicionar Import do Ícone Globe (linha 25)
+
+```typescript
+import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot, Globe } from "lucide-react";
+```
+
+### 4. Atualizar fetchData para contar External Domains (linhas 120-133)
+
+```typescript
+const clientsWithCounts = await Promise.all(
+  (clientsData || []).map(async (client) => {
+    const [firewallsResult, tenantsResult, agentsResult, domainsResult] = await Promise.all([
+      supabase.from("firewalls").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+      supabase.from("m365_tenants").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+      supabase.from("agents").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+      supabase.from("external_domains").select("id", { count: "exact", head: true }).eq("client_id", client.id),
+    ]);
+
     return {
-      fortiOSDescription: fullDescription,
-      affectedVersions: '',
-      technicalDescription: fullDescription
+      ...client,
+      scopes_count: (firewallsResult.count || 0) + (tenantsResult.count || 0) + (domainsResult.count || 0),
+      agents_count: agentsResult.count || 0,
     };
-  }
-  
-  // Padrões comuns de versão FortiOS na descrição
-  const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
-  const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
-  // NOVO: Padrão para "all versions"
-  const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
-  
-  // Encontrar versões FortiOS afetadas
-  let affectedVersions = '';
-  
-  // Primeiro: verificar padrão "all versions"
-  const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
-  if (allVersionsMatches && allVersionsMatches.length > 0) {
-    affectedVersions = allVersionsMatches.join(', ');
-  }
-  
-  // Segundo: verificar range de versões (through/to/before)
-  if (!affectedVersions) {
-    const matches = fullDescription.match(fortiOSPattern);
-    if (matches && matches.length > 0) {
-      affectedVersions = matches.join(', ');
-    }
-  }
-  
-  // Terceiro: verificar versão única
-  if (!affectedVersions) {
-    const singleMatches = fullDescription.match(fortiOSSinglePattern);
-    if (singleMatches) {
-      affectedVersions = singleMatches.join(', ');
-    }
-  }
-  
-  // Extrair a parte técnica da descrição
-  const technicalPatterns = [
-    /\b(allows?\s+.+)/i,
-    /\b(may\s+allow\s+.+)/i,
-    /\b(enables?\s+.+)/i,
-    /\b(could\s+allow\s+.+)/i,
-    /\b(permits?\s+.+)/i,
-    /\b(makes?\s+it\s+possible\s+.+)/i,
-  ];
-  
-  let technicalDescription = '';
-  for (const pattern of technicalPatterns) {
-    const techMatch = fullDescription.match(pattern);
-    if (techMatch) {
-      technicalDescription = techMatch[1];
-      break;
-    }
-  }
-  
-  // Construir descrição focada no FortiOS
-  let fortiOSDescription = '';
-  if (affectedVersions) {
-    fortiOSDescription = affectedVersions;
-    if (technicalDescription) {
-      fortiOSDescription += ' - ' + technicalDescription;
-    }
-  } else {
-    const sentences = fullDescription.split(/[.;]/);
-    for (const sentence of sentences) {
-      if (sentence.toLowerCase().includes('fortios')) {
-        fortiOSDescription = sentence.trim();
-        break;
-      }
-    }
-    if (!fortiOSDescription) {
-      fortiOSDescription = fullDescription;
-    }
-  }
-  
-  return {
-    fortiOSDescription: fortiOSDescription.substring(0, 400) + (fortiOSDescription.length > 400 ? '...' : ''),
-    affectedVersions,
-    technicalDescription: technicalDescription || fullDescription
-  };
-}
+  }),
+);
 ```
 
+### 5. Atualizar openViewDialog para buscar External Domains (linhas 248-271)
+
+```typescript
+const openViewDialog = async (client: Client) => {
+  setViewingClient(client);
+  setViewDialogOpen(true);
+  setLoadingDetails(true);
+
+  try {
+    const [firewallsRes, tenantsRes, agentsRes, domainsRes] = await Promise.all([
+      supabase
+        .from("firewalls")
+        .select("id, name, description, last_score")
+        .eq("client_id", client.id)
+        .order("name"),
+      supabase
+        .from("m365_tenants")
+        .select("id, display_name, tenant_domain, connection_status")
+        .eq("client_id", client.id)
+        .order("display_name"),
+      supabase
+        .from("agents")
+        .select("id, name, last_seen, revoked")
+        .eq("client_id", client.id)
+        .order("name"),
+      supabase
+        .from("external_domains")
+        .select("id, name, domain, last_score, status")
+        .eq("client_id", client.id)
+        .order("name"),
+    ]);
+
+    setWorkspaceDetails({
+      firewalls: firewallsRes.data || [],
+      tenants: tenantsRes.data || [],
+      agents: agentsRes.data || [],
+      externalDomains: domainsRes.data || [],
+    });
+  } catch (error) {
+    console.error("Erro ao buscar detalhes:", error);
+    toast.error("Erro ao carregar detalhes do workspace");
+  } finally {
+    setLoadingDetails(false);
+  }
+};
+```
+
+### 6. Adicionar Seção de External Domains no Modal (após a seção de M365 Tenants, ~linha 539)
+
+```tsx
+{/* External Domains */}
+<div className="space-y-2">
+  <div className="flex items-center gap-2">
+    <Globe className="w-4 h-4 text-primary" />
+    <h4 className="font-medium">Domínios Externos ({workspaceDetails?.externalDomains.length || 0})</h4>
+  </div>
+  {workspaceDetails?.externalDomains.length === 0 ? (
+    <p className="text-sm text-muted-foreground pl-6">Nenhum domínio externo vinculado</p>
+  ) : (
+    <div className="space-y-2 pl-6">
+      {workspaceDetails?.externalDomains.map((domain) => (
+        <div key={domain.id} className="p-3 rounded-md bg-muted/30 border border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">{domain.name}</p>
+              <p className="text-xs text-muted-foreground">{domain.domain}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {domain.last_score !== null && (
+                <Badge variant={domain.last_score >= 70 ? "default" : domain.last_score >= 40 ? "secondary" : "destructive"}>
+                  Score: {domain.last_score}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+```
+
+---
+
+## Ordem dos Objetos no Modal
+
+Após a alteração, o modal exibirá na seguinte ordem:
+
+1. **Informações do Workspace** (nome, descrição, ID)
+2. **Firewalls** - com ícone Shield
+3. **Microsoft 365 Tenants** - com ícone Cloud
+4. **Domínios Externos** - com ícone Globe (NOVO)
+5. **Agents** - com ícone Bot
+
+---
+
+## Resultado Esperado
+
+Ao clicar no ícone de visualizar um Workspace, o modal exibirá uma nova seção "Domínios Externos" mostrando:
+- Nome do domínio
+- URL/domínio
+- Score da última análise (se houver)
+
+O contador de "Escopos" na tabela também será atualizado para incluir a contagem de domínios externos.
