@@ -1,116 +1,242 @@
 
 
-# Plano: Habilitar AppStream Automaticamente no Script de Instalação
+# Plano: Integrar Enumeração de Subdomínios (Amass) na Análise de Domínios Externos
 
-## Causa Raiz Identificada
+## Visão Geral
 
-O repositório **AppStream** está desabilitado no servidor. Este repositório contém os módulos Python necessários para instalação.
-
-```
-appstream    CentOS Stream 8 - AppStream    disabled
-```
-
-Após habilitar com `dnf config-manager --set-enabled appstream`, o Python 3.9 fica disponível.
+Este plano adiciona a capacidade de **enumeração de subdomínios** usando OWASP Amass ao fluxo de análise de domínios externos. Os subdomínios descobertos serão exibidos no relatório de análise.
 
 ---
 
-## Alteração Necessária
+## Componentes Já Prontos
 
-### Arquivo: `supabase/functions/agent-install/index.ts`
-
-**Função `install_deps()` - Adicionar habilitação do AppStream:**
-
-Inserir antes de tentar instalar Python:
-
-```bash
-# Habilitar repositório AppStream (necessário para módulos Python)
-echo "Habilitando repositório AppStream..."
-dnf config-manager --set-enabled appstream 2>/dev/null || true
-dnf config-manager --set-enabled powertools 2>/dev/null || true  # útil para -devel
-```
+| Componente | Status |
+|------------|--------|
+| AmassExecutor no Python Agent | Implementado |
+| Instalação do Amass nos Agents | Implementado |
+| Blueprint de External Domain | Existe (apenas DNS) |
+| Tabela `external_domain_analysis_history` | Existe |
+| RPC `rpc_get_agent_tasks` | Funcional |
 
 ---
 
-## Código Completo da Seção DNF
+## Alterações Necessárias
 
-```bash
-if command -v dnf >/dev/null 2>&1; then
-  # Instalar dependências básicas
-  dnf install -y tar curl gcc openssl-devel libffi-devel || true
-  
-  # Instalar EPEL (útil para algumas distros)
-  dnf install -y epel-release 2>/dev/null || true
-  
-  # Para CentOS 8 EOL (não Stream): apontar repos para vault
-  if [[ -f /etc/centos-release ]] && grep -q "CentOS Linux.*8" /etc/centos-release 2>/dev/null; then
-    echo "Detectado CentOS Linux 8 (EOL) - redirecionando repos para vault..."
-    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
-    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
-    dnf clean all 2>/dev/null || true
-  fi
-  
-  # NOVO: Habilitar repositório AppStream (contém módulos Python)
-  echo "Habilitando repositório AppStream..."
-  dnf config-manager --set-enabled appstream 2>/dev/null || true
-  dnf config-manager --set-enabled powertools 2>/dev/null || true
-  
-  # Listar módulos Python disponíveis para debug
-  echo "Módulos Python disponíveis:"
-  dnf module list python* 2>/dev/null | head -20 || true
-  
-  # Tentar habilitar módulo python39 (CentOS/RHEL 8/Stream)
-  echo "Habilitando módulo python39..."
-  dnf module reset python39 -y 2>/dev/null || true
-  dnf module enable python39:3.9 -y 2>/dev/null || dnf module enable python39 -y 2>/dev/null || true
-  
-  # Tentar habilitar módulo python38 como fallback
-  dnf module reset python38 -y 2>/dev/null || true
-  dnf module enable python38:3.8 -y 2>/dev/null || dnf module enable python38 -y 2>/dev/null || true
-  
-  # Instalar Python (múltiplos fallbacks)
-  echo "Instalando Python..."
-  dnf install -y python39 python39-pip python39-devel 2>/dev/null || \
-  dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \
-  dnf install -y python38 python38-pip python38-devel 2>/dev/null || \
-  dnf install -y python3.8 python3.8-pip python3.8-devel 2>/dev/null || \
-  dnf install -y python3 python3-pip python3-devel 2>/dev/null || \
-  dnf install -y python36 python36-pip python36-devel 2>/dev/null || true
-  
-  # Verificar se Python foi instalado
-  echo "Verificando Python instalado:"
-  which python3 python3.9 python3.8 2>/dev/null || true
-  
-  return
-fi
+### 1. Blueprint - Adicionar Step do Amass
+
+**Arquivo:** Atualizar no banco via UI ou SQL
+
+**Adicionar step ao blueprint "External Domain DNS Scan":**
+
+```json
+{
+  "steps": [
+    // ... steps existentes de DNS ...
+    {
+      "id": "subdomain_enum",
+      "executor": "amass",
+      "config": {
+        "mode": "passive",
+        "timeout": 300
+      }
+    }
+  ]
+}
 ```
+
+O step será executado após os DNS queries e retornará:
+- `domain`: domínio alvo
+- `subdomains`: lista de subdomínios com fontes e IPs
+- `total_found`: quantidade total
+- `sources`: fontes de dados usadas
 
 ---
 
-## Solução Imediata (Testar Agora)
+### 2. Agent Task Result - Processar Resultado do Amass
 
-Agora que o AppStream está habilitado, tente instalar o agente novamente:
+**Arquivo:** `supabase/functions/agent-task-result/index.ts`
 
-```bash
-curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "G3RB-7LGP-90L7-WGWW"
-```
+**Alterações:**
+- Adicionar mapeamento de endpoint para `subdomain_enum`
+- Extrair dados do Amass e incluir no `report_data`
+- Criar resumo de subdomínios similar ao `dns_summary`
 
-Se ainda falhar, instale Python manualmente primeiro:
+```typescript
+// Em sourceKeyToEndpoint
+'subdomain_enum': 'Amass (Subdomain Enumeration)',
 
-```bash
-sudo dnf module enable python39:3.9 -y
-sudo dnf install -y python39 python39-pip
-curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "G3RB-7LGP-90L7-WGWW"
+// Nova interface
+interface SubdomainSummary {
+  total_found: number;
+  subdomains: Array<{
+    subdomain: string;
+    sources: string[];
+    addresses: Array<{ ip: string; type: string }>;
+  }>;
+  sources: string[];
+  mode: string;
+}
+
+// No processamento do resultado
+const subdomainData = getStepPayload(rawData, 'subdomain_enum');
+if (subdomainData?.data) {
+  subdomainSummary = {
+    total_found: subdomainData.data.total_found || 0,
+    subdomains: subdomainData.data.subdomains || [],
+    sources: subdomainData.data.sources || [],
+    mode: subdomainData.data.mode || 'passive',
+  };
+}
 ```
 
 ---
 
-## Resumo da Correção
+### 3. Frontend - Exibir Subdomínios no Relatório
 
-| Problema | Solução |
-|----------|---------|
-| AppStream desabilitado | `dnf config-manager --set-enabled appstream` |
-| Módulos Python não encontrados | Habilitar repo antes de listar módulos |
-| Compatibilidade ampla | Adicionar PowerTools para pacotes -devel |
+**Arquivo:** `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx`
 
-Esta alteração adiciona **2 linhas** ao script e resolve o problema de instalação em sistemas onde AppStream está desabilitado por padrão.
+**Alterações:**
+- Adicionar nova seção "Subdomínios Descobertos"
+- Exibir lista de subdomínios com:
+  - Nome do subdomínio
+  - Endereços IP (se disponíveis)
+  - Fontes de descoberta
+- Adicionar contador no header do relatório
+
+**Novo componente sugerido:** `SubdomainSection.tsx`
+
+```tsx
+interface SubdomainSectionProps {
+  subdomains: Array<{
+    subdomain: string;
+    sources: string[];
+    addresses: Array<{ ip: string }>;
+  }>;
+  totalFound: number;
+  sources: string[];
+}
+
+function SubdomainSection({ subdomains, totalFound, sources }: SubdomainSectionProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Globe className="w-5 h-5" />
+          Subdomínios Descobertos ({totalFound})
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Fontes: {sources.join(', ')}
+        </p>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Subdomínio</TableHead>
+              <TableHead>Endereços IP</TableHead>
+              <TableHead>Fontes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {subdomains.map((sub, idx) => (
+              <TableRow key={idx}>
+                <TableCell className="font-mono">{sub.subdomain}</TableCell>
+                <TableCell>{sub.addresses.map(a => a.ip).join(', ') || '-'}</TableCell>
+                <TableCell className="text-xs">{sub.sources.join(', ')}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+---
+
+### 4. Types - Atualizar Interfaces
+
+**Arquivo:** `src/types/compliance.ts`
+
+```typescript
+export interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+}
+
+export interface SubdomainSummary {
+  total_found: number;
+  subdomains: SubdomainEntry[];
+  sources: string[];
+  mode: 'passive' | 'active';
+}
+
+export interface ComplianceReport {
+  // ... campos existentes ...
+  subdomainSummary?: SubdomainSummary;
+}
+```
+
+---
+
+### 5. PDF - Incluir Subdomínios no Relatório PDF
+
+**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
+
+**Alterações:**
+- Adicionar seção de subdomínios no PDF
+- Listar até 50 subdomínios (para não sobrecarregar o PDF)
+- Incluir contagem total e fontes
+
+---
+
+## Regras de Compliance (Opcional)
+
+Podemos adicionar regras de compliance para subdomínios:
+
+| Código | Nome | Lógica |
+|--------|------|--------|
+| SUB-001 | Subdomínios Encontrados | Informativo - lista subdomínios descobertos |
+| SUB-002 | Subdomínios Expostos | Aviso se > 50 subdomínios públicos |
+
+*Nota: Essas regras são opcionais e podem ser adicionadas posteriormente.*
+
+---
+
+## Sequência de Implementação
+
+```text
+1. Atualizar Blueprint
+   └── Adicionar step "subdomain_enum" com config do Amass
+
+2. Atualizar agent-task-result
+   └── Processar resultado do Amass
+   └── Incluir subdomain_summary no report_data
+
+3. Atualizar Frontend
+   └── Criar SubdomainSection.tsx
+   └── Integrar no ExternalDomainAnalysisReportPage
+   └── Atualizar types/compliance.ts
+
+4. Atualizar PDF (opcional)
+   └── Adicionar seção de subdomínios no PDF
+
+5. Testar
+   └── Executar análise em domínio de teste
+   └── Verificar se subdomínios aparecem no relatório
+```
+
+---
+
+## Considerações
+
+1. **Timeout**: O Amass pode demorar até 5 minutos no modo passivo. O timeout atual do blueprint é adequado.
+
+2. **Volume de dados**: Domínios grandes podem ter centenas de subdomínios. A UI deve implementar paginação ou mostrar apenas os primeiros N.
+
+3. **Modo passivo vs ativo**: Inicialmente usaremos modo **passivo** (consulta APIs públicas). O modo ativo (brute-force DNS) pode ser habilitado futuramente via configuração.
+
+4. **Cache**: Considerar cachear resultados do Amass por algumas horas para evitar consultas excessivas às APIs de terceiros.
 
