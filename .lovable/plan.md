@@ -1,240 +1,166 @@
 
-## Reformular Cards de Valores no Mapa DNS do PDF
 
-### Objetivo
+## Inverter Ordem das Linhas nos Cards SOA e TXT
 
-Separar visualmente o **header da categoria** dos **cards de valor**, onde cada valor terá:
-- Linha 1: Valor principal (hostname)
-- Linha 2: Valor secundário (IPs, prioridade, etc.)
-- Status dot à esquerda
-- Card ocupando largura horizontal total
+### Problema Identificado
 
----
+Nas seções **SOA** e **TXT (Email Auth)**, as linhas estão invertidas:
 
-### Estrutura Visual Desejada
-
-Baseado na referência (print do usuário):
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  NS                                                              │  ← Header Sky (card de categoria)
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  ● ns1-06.azure-dns.com                                         │  ← Card de valor
-│    13.107.236.6, 2603:1061:0:700::6                             │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  ● ns2-06.azure-dns.net                                         │  ← Card de valor
-│    13.107.222.6, 2603:1061:2300::6                              │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Seção | Atual | Esperado |
+|-------|-------|----------|
+| SOA Primary | `ns1-06.azure-dns.com` / `Primary` | `Primary` / `ns1-06.azure-dns.com` |
+| SOA Contact | `email@...` / `Contact` | `Contact` / `email@...` |
+| SOA DNSSEC | `Inativo` / `DNSSEC` | `DNSSEC` / `Inativo` |
+| SPF | `v=spf1...` / `SPF` | `SPF` / `v=spf1...` |
+| DKIM | `selector1` / `DKIM - 2352 bits` | `selector1` / `Tamanho da chave - 2352 bits` |
+| DMARC | `p=reject, sp=reject` / `DMARC` | `DMARC` / `Política: reject` + `Política Subdomínios: reject` |
 
 ---
 
-### Mudanças Técnicas
+### Solução
+
+Inverter a ordem dos parâmetros nas chamadas do `ValueCard` para SOA e TXT:
+
+---
+
+### Alterações Técnicas
 
 **Arquivo:** `src/components/pdf/sections/PDFDNSMap.tsx`
 
-#### 1. Novos Estilos
+#### 1. Seção SOA (linhas ~212-228)
 
+**Antes:**
 ```typescript
-// Valor card (estilo similar ao card de info SPF/DKIM)
-valueCard: {
-  flexDirection: 'row',
-  alignItems: 'flex-start',
-  backgroundColor: colors.cardBg,
-  borderRadius: radius.md,
-  borderWidth: 1,
-  borderColor: colors.border,
-  padding: 10,
-  marginBottom: 6,
-},
-statusDot: {
-  width: 10,
-  height: 10,
-  borderRadius: 5,
-  marginTop: 3,
-  marginRight: 10,
-},
-valueContent: {
-  flex: 1,
-},
-valuePrimary: {
-  fontSize: typography.bodySmall,
-  fontFamily: typography.bold,
-  color: colors.textPrimary,
-  marginBottom: 2,
-},
-valueSecondary: {
-  fontSize: typography.caption,
-  color: colors.textMuted,
-},
+<ValueCard primary={soaMname} secondary="Primary" />
+<ValueCard primary={soaContact} secondary="Contact" />
+<ValueCard primary={dnssecActive ? 'Ativo' : 'Inativo'} secondary="DNSSEC" />
 ```
 
-#### 2. Novo Componente `ValueCard`
-
-Exibir valor principal e secundário em linhas separadas:
-
+**Depois:**
 ```typescript
-interface ValueCardProps {
-  primary: string;
-  secondary?: string;
-  isActive?: boolean;
-}
-
-function ValueCard({ primary, secondary, isActive = true }: ValueCardProps) {
-  return (
-    <View style={styles.valueCard}>
-      <View style={[
-        styles.statusDot, 
-        { backgroundColor: isActive ? colors.success : colors.textMuted }
-      ]} />
-      <View style={styles.valueContent}>
-        <Text style={styles.valuePrimary}>{primary}</Text>
-        {secondary && (
-          <Text style={styles.valueSecondary}>{secondary}</Text>
-        )}
-      </View>
-    </View>
-  );
-}
+<ValueCard primary="Primary" secondary={soaMname} />
+<ValueCard primary="Contact" secondary={soaContact} />
+<ValueCard primary="DNSSEC" secondary={dnssecActive ? 'Ativo' : 'Inativo'} isActive={dnssecActive} />
 ```
 
-#### 3. Reformular `DNSCard`
+#### 2. Seção TXT - SPF (linhas ~240-244)
 
-O header da categoria fica separado, sem incluir os valores dentro do mesmo card:
-
+**Antes:**
 ```typescript
-function CategoryHeader({ title, color }: { title: string; color: string }) {
-  return (
-    <View style={[styles.categoryHeader, { backgroundColor: color }]}>
-      <Text style={styles.categoryHeaderText}>{title}</Text>
-    </View>
-  );
-}
-```
-
-#### 4. Aplicar em Cada Seção
-
-**NS:**
-```typescript
-<CategoryHeader title="NS" color={headerColors.ns} />
-{nsRecords.map((ns, idx) => (
-  <ValueCard
-    key={idx}
-    primary={ns.host}
-    secondary={ns.resolvedIps.length > 0 ? ns.resolvedIps.join(', ') : undefined}
-  />
-))}
-```
-
-**MX:**
-```typescript
-<CategoryHeader title="MX" color={headerColors.mx} />
-{mxRecords.map((mx, idx) => (
-  <ValueCard
-    key={idx}
-    primary={mx.exchange}
-    secondary={`Prioridade: ${mx.priority}${mx.ips.length ? ` • ${mx.ips.join(', ')}` : ''}`}
-  />
-))}
-```
-
-**SOA:**
-```typescript
-<CategoryHeader title="SOA" color={headerColors.soa} />
-<ValueCard primary={dnsSummary?.soaMname || 'N/A'} secondary="Primary" />
-<ValueCard primary={dnsSummary?.soaContact || 'N/A'} secondary="Contact" />
-<ValueCard 
-  primary={dnssecActive ? 'Ativo' : 'Inativo'} 
-  secondary="DNSSEC"
-  isActive={dnssecActive}
-/>
-```
-
-**TXT (Email Auth):**
-```typescript
-<CategoryHeader title="TXT (Email Auth)" color={headerColors.txt} />
 <ValueCard 
   primary={spfRecord || 'Não encontrado'} 
   secondary="SPF"
   isActive={emailAuth?.spf}
 />
-{dkimKeys.map((key, idx) => (
-  <ValueCard
-    key={idx}
-    primary={key.selector}
-    secondary={`DKIM${key.keySize ? ` • ${key.keySize} bits` : ''}`}
-    isActive={emailAuth?.dkim}
-  />
-))}
+```
+
+**Depois:**
+```typescript
 <ValueCard 
-  primary={dmarcPolicy.p ? `p=${dmarcPolicy.p}${dmarcPolicy.sp ? `, sp=${dmarcPolicy.sp}` : ''}` : 'Não encontrado'} 
-  secondary="DMARC"
-  isActive={emailAuth?.dmarc}
+  primary="SPF" 
+  secondary={spfRecord || 'Não encontrado'}
+  isActive={emailAuth?.spf}
 />
 ```
 
-**Subdomínios:**
+#### 3. Seção TXT - DKIM (linhas ~246-254)
+
+**Antes:**
 ```typescript
-<CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
-{activeSubdomains.map((sub, idx) => (
-  <ValueCard
-    key={idx}
-    primary={sub.subdomain}
-    secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
-  />
-))}
+<ValueCard
+  primary={key.selector}
+  secondary={`DKIM${key.keySize ? ` - ${key.keySize} bits` : ''}`}
+/>
+```
+
+**Depois:**
+```typescript
+<ValueCard
+  primary={key.selector}
+  secondary={key.keySize ? `Tamanho da chave - ${key.keySize} bits` : 'Tamanho desconhecido'}
+/>
+```
+
+#### 4. Seção TXT - DMARC (linhas ~262-268)
+
+**Antes:**
+```typescript
+<ValueCard 
+  primary={dmarcPolicy.p ? `p=${dmarcPolicy.p}${dmarcPolicy.sp ? `, sp=${dmarcPolicy.sp}` : ''}` : 'Não encontrado'} 
+  secondary="DMARC"
+/>
+```
+
+**Depois:**
+```typescript
+<ValueCard 
+  primary="DMARC" 
+  secondary={
+    dmarcPolicy.p 
+      ? `Política: ${dmarcPolicy.p}${dmarcPolicy.sp ? `\nPolítica Subdomínios: ${dmarcPolicy.sp}` : ''}`
+      : 'Não encontrado'
+  }
+/>
 ```
 
 ---
 
-### Layout Final Esperado
+### Resultado Visual Esperado
 
+**SOA:**
 ```text
-Mapa de Infraestrutura DNS                    ← Título teal
-
 ┌─────────────────────────────────────────────────────────────┐
-│  NS                                                          │  ← Header Sky
+│  ● Primary                                                   │
+│    ns1-06.azure-dns.com                                      │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│  ● ns1-06.azure-dns.com                                      │
-│    13.107.236.6, 2603:1061:0:700::6                          │
+│  ● Contact                                                   │
+│    azuredns-hostmaster@microsoft.com                         │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│  ● ns2-06.azure-dns.net                                      │
-│    13.107.222.6, 2603:1061:2300::6                           │
+│  ○ DNSSEC                                                    │
+│    Inativo                                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**TXT (Email Auth):**
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  ● SPF                                                       │
+│    v=spf1 include:spf.protection.outlook.com...              │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│  SOA                                                         │  ← Header Amber
+│  ● selector1                                                 │
+│    Tamanho da chave - 2352 bits                              │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│  ● ns1-06.azure-dns.com                                      │
-│    Primary                                                   │
+│  ● DMARC                                                     │
+│    Política: reject                                          │
+│    Política Subdomínios: reject                              │
 └─────────────────────────────────────────────────────────────┘
-...
-
 ```
 
 ---
 
-### Resumo das Alterações
+### Resumo
 
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Estrutura | Header + valores no mesmo card | Header separado dos value cards |
-| Valores | Uma linha apenas | Duas linhas (principal + secundário) |
-| Estilo | Simples com dot + texto | Card individual com borda, padding |
-| Subdomínios | Grid 2 colunas | Value cards individuais |
+| Seção | Linha 1 (Primary) | Linha 2 (Secondary) |
+|-------|-------------------|---------------------|
+| NS | Hostname | IPs (sem mudança) |
+| SOA | Label (Primary/Contact/DNSSEC) | Valor |
+| MX | Exchange | Prioridade + IPs (sem mudança) |
+| SPF | "SPF" | Registro completo |
+| DKIM | Nome do seletor | "Tamanho da chave - X bits" |
+| DMARC | "DMARC" | Política + Política Subdomínios |
+| Subdomínios | Hostname | IPs (sem mudança) |
 
 ---
 
 ### Arquivo Modificado
 
-- `src/components/pdf/sections/PDFDNSMap.tsx` (reescrita completa)
+- `src/components/pdf/sections/PDFDNSMap.tsx`
+
