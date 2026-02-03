@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers, Bot } from 'lucide-react';
+import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers, Bot, Upload, AlertTriangle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -58,6 +59,20 @@ export default function SettingsPage() {
   const [loadingAgentSettings, setLoadingAgentSettings] = useState(false);
   const [savingAgentSettings, setSavingAgentSettings] = useState(false);
 
+  // Agent update management
+  const [agentLatestVersion, setAgentLatestVersion] = useState('');
+  const [agentForceUpdate, setAgentForceUpdate] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [calculatedChecksum, setCalculatedChecksum] = useState('');
+  const [calculatingChecksum, setCalculatingChecksum] = useState(false);
+  const [publishingUpdate, setPublishingUpdate] = useState(false);
+  const [newVersion, setNewVersion] = useState('');
+  const [agentStats, setAgentStats] = useState<{
+    total: number;
+    upToDate: number;
+    outdated: { name: string; version: string; client: string }[];
+  }>({ total: 0, upToDate: 0, outdated: [] });
+
   const defaultPermissions: PermissionStatus[] = [
     // Core permissions
     { name: 'User.Read.All', granted: false, type: 'required' },
@@ -94,6 +109,8 @@ export default function SettingsPage() {
     if (user && role === 'super_admin') {
       checkM365Config();
       loadAgentSettings();
+      loadAgentUpdateSettings();
+      loadAgentStats();
     }
   }, [user, role]);
 
@@ -113,6 +130,191 @@ export default function SettingsPage() {
       console.error('Error loading agent settings:', error);
     } finally {
       setLoadingAgentSettings(false);
+    }
+  };
+
+  const loadAgentUpdateSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('key, value')
+        .in('key', ['agent_latest_version', 'agent_force_update']);
+
+      if (data) {
+        data.forEach(setting => {
+          if (setting.key === 'agent_latest_version') {
+            const version = typeof setting.value === 'string' 
+              ? setting.value.replace(/"/g, '') 
+              : String(setting.value || '');
+            setAgentLatestVersion(version);
+          }
+          if (setting.key === 'agent_force_update') {
+            setAgentForceUpdate(setting.value === true || setting.value === 'true');
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading agent update settings:', error);
+    }
+  };
+
+  const loadAgentStats = async () => {
+    try {
+      // Get all agents with their versions and client info
+      const { data: agents, error } = await supabase
+        .from('agents')
+        .select(`
+          id,
+          name,
+          agent_version,
+          revoked,
+          clients!agents_client_id_fkey (name)
+        `)
+        .eq('revoked', false);
+
+      if (error) throw error;
+
+      // Get the latest version from system_settings
+      const { data: versionSetting } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'agent_latest_version')
+        .maybeSingle();
+
+      const latestVersion = versionSetting?.value 
+        ? (typeof versionSetting.value === 'string' 
+          ? versionSetting.value.replace(/"/g, '') 
+          : String(versionSetting.value))
+        : '';
+
+      if (agents) {
+        const upToDate = agents.filter(a => a.agent_version === latestVersion).length;
+        const outdated = agents
+          .filter(a => a.agent_version && a.agent_version !== latestVersion)
+          .map(a => ({
+            name: a.name,
+            version: a.agent_version || 'N/A',
+            client: (a.clients as any)?.name || 'Sem cliente'
+          }));
+
+        setAgentStats({
+          total: agents.length,
+          upToDate,
+          outdated
+        });
+      }
+    } catch (error) {
+      console.error('Error loading agent stats:', error);
+    }
+  };
+
+  const calculateSHA256 = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.tar.gz')) {
+      toast.error('Selecione um arquivo .tar.gz');
+      return;
+    }
+
+    setSelectedFile(file);
+    setCalculatingChecksum(true);
+    
+    try {
+      const checksum = await calculateSHA256(file);
+      setCalculatedChecksum(checksum);
+    } catch (error) {
+      toast.error('Erro ao calcular checksum');
+      console.error('Error calculating checksum:', error);
+    } finally {
+      setCalculatingChecksum(false);
+    }
+  };
+
+  const handlePublishUpdate = async () => {
+    if (!selectedFile || !newVersion) {
+      toast.error('Selecione um arquivo e informe a versão');
+      return;
+    }
+
+    if (!calculatedChecksum) {
+      toast.error('Aguarde o cálculo do checksum');
+      return;
+    }
+
+    setPublishingUpdate(true);
+    try {
+      // 1. Upload to Supabase Storage
+      const filename = `iscope-agent-${newVersion}.tar.gz`;
+      const { error: uploadError } = await supabase.storage
+        .from('agent-releases')
+        .upload(filename, selectedFile, {
+          upsert: true,
+          contentType: 'application/gzip'
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Update system_settings (upsert pattern)
+      const settings = [
+        { key: 'agent_latest_version', value: newVersion },
+        { key: 'agent_update_checksum', value: calculatedChecksum },
+        { key: 'agent_force_update', value: agentForceUpdate }
+      ];
+
+      for (const setting of settings) {
+        // Try update first
+        const { data: updateData, error: updateError } = await supabase
+          .from('system_settings')
+          .update({
+            value: setting.value,
+            updated_by: user?.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('key', setting.key)
+          .select();
+
+        // If no row was updated, insert
+        if (!updateError && (!updateData || updateData.length === 0)) {
+          await supabase
+            .from('system_settings')
+            .insert({
+              key: setting.key,
+              value: setting.value,
+              updated_by: user?.id,
+              description: setting.key === 'agent_latest_version' 
+                ? 'Versão mais recente do agent' 
+                : setting.key === 'agent_update_checksum'
+                ? 'Checksum SHA256 do pacote do agent'
+                : 'Forçar atualização ignorando tarefas pendentes'
+            });
+        }
+      }
+
+      toast.success(`Versão ${newVersion} publicada com sucesso!`);
+      setAgentLatestVersion(newVersion);
+      setNewVersion('');
+      setSelectedFile(null);
+      setCalculatedChecksum('');
+      
+      // Clear file input
+      const fileInput = document.getElementById('agentPackageFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
+      await loadAgentStats();
+    } catch (error) {
+      console.error('Error publishing update:', error);
+      toast.error('Erro ao publicar atualização');
+    } finally {
+      setPublishingUpdate(false);
     }
   };
 
@@ -609,6 +811,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="agents" className="space-y-6">
+            {/* Card 1: Configurações dos Agents */}
             <Card className="border-border/50">
               <CardHeader>
                 <CardTitle>Configurações dos Agents</CardTitle>
@@ -664,6 +867,162 @@ export default function SettingsPage() {
                     </div>
                   </>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Card 2: Gerenciamento de Atualizações */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="w-5 h-5" />
+                      Gerenciamento de Atualizações
+                    </CardTitle>
+                    <CardDescription>
+                      Publique novas versões do agent para atualização automática
+                    </CardDescription>
+                  </div>
+                  {agentLatestVersion && (
+                    <Badge variant="outline" className="text-sm">
+                      Versão atual: v{agentLatestVersion}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Nova Versão */}
+                <div className="space-y-4 p-4 border rounded-lg">
+                  <h4 className="font-medium">Publicar Nova Versão</h4>
+                  
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="newVersion">Versão</Label>
+                      <Input
+                        id="newVersion"
+                        placeholder="1.1.0"
+                        value={newVersion}
+                        onChange={(e) => setNewVersion(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Formato semântico: major.minor.patch (ex: 1.2.0)
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="agentPackageFile">Pacote (.tar.gz)</Label>
+                      <Input
+                        id="agentPackageFile"
+                        type="file"
+                        accept=".tar.gz,.gz"
+                        onChange={handleFileSelect}
+                      />
+                      {selectedFile && (
+                        <p className="text-xs text-muted-foreground">
+                          Arquivo: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {calculatingChecksum && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Calculando checksum...</span>
+                    </div>
+                  )}
+
+                  {calculatedChecksum && !calculatingChecksum && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <span className="text-muted-foreground">SHA256:</span>
+                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                        {calculatedChecksum.substring(0, 32)}...
+                      </code>
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="forceUpdate"
+                      checked={agentForceUpdate}
+                      onCheckedChange={setAgentForceUpdate}
+                    />
+                    <Label htmlFor="forceUpdate" className="cursor-pointer">
+                      Forçar atualização (ignorar tarefas pendentes)
+                    </Label>
+                  </div>
+
+                  <Button 
+                    onClick={handlePublishUpdate} 
+                    disabled={!selectedFile || !newVersion || publishingUpdate || calculatingChecksum}
+                    className="w-full sm:w-auto"
+                  >
+                    {publishingUpdate ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    Publicar Atualização
+                  </Button>
+                </div>
+
+                {/* Status dos Agents */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium">Status dos Agents</h4>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={loadAgentStats}
+                      className="h-8"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      <div>
+                        <p className="font-medium">{agentStats.upToDate} atualizados</p>
+                        {agentLatestVersion && (
+                          <p className="text-xs text-muted-foreground">v{agentLatestVersion}</p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                      <AlertTriangle className="w-5 h-5 text-amber-500" />
+                      <div>
+                        <p className="font-medium">{agentStats.outdated.length} desatualizados</p>
+                        <p className="text-xs text-muted-foreground">Aguardando update</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {agentStats.outdated.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
+                      <ul className="space-y-1">
+                        {agentStats.outdated.map((agent, i) => (
+                          <li key={i} className="flex items-center gap-2 text-sm">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            <span>{agent.name}</span>
+                            <Badge variant="outline" className="text-xs">v{agent.version}</Badge>
+                            <span className="text-muted-foreground">- {agent.client}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {agentStats.total === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Nenhum agent registrado no sistema
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
