@@ -27,8 +27,8 @@ POLL_INTERVAL="60"
 PYTHON_BIN=""
 
 INSTALL_DIR="/opt/iscope-agent"
-CONFIG_DIR="/etc/iscope"
-STATE_DIR="/var/lib/iscope"
+CONFIG_DIR="/etc/iscope-agent"
+STATE_DIR="/var/lib/iscope-agent"
 
 SERVICE_NAME="iscope-agent"
 SERVICE_USER="iscope"
@@ -271,7 +271,7 @@ ensure_user() {
 }
 
 ensure_dirs() {
-  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope"
+  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope-agent"
 }
 
 stop_service_if_exists() {
@@ -378,7 +378,7 @@ write_env_file() {
 AGENT_API_BASE_URL=\${API_BASE_URL}
 AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
 AGENT_STATE_FILE=\${STATE_DIR}/state.json
-AGENT_LOG_FILE=/var/log/iscope/agent.log
+AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
 AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
 EOF
 
@@ -402,7 +402,7 @@ EOF
   if id "$SERVICE_USER" >/dev/null 2>&1; then
     chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
     chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
-    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope-agent" || true
   fi
 }
 
