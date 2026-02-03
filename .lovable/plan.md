@@ -1,56 +1,85 @@
 
+# Plano: Criar diretório de log durante instalação
 
-# Plano: Adicionar Log File e Ajustar Poll Interval
+## Problema Identificado
 
-## Contexto
+O agent está falhando ao iniciar porque:
+1. O arquivo de ambiente define `AGENT_LOG_FILE=/var/log/iscope/agent.log`
+2. O diretório `/var/log/iscope/` não existe
+3. O agent (rodando como usuário `iscope`) não tem permissão para criar diretórios em `/var/log/`
 
-O usuário solicitou:
-1. Adicionar o arquivo de log padrão: `AGENT_LOG_FILE=/var/log/iscope/agent.log`
-2. Alterar o intervalo de polling de 120s para 60s
+## Solução Imediata (execute no servidor agora)
 
-**Nota**: Peço desculpas pela alteração anterior nos logs que foi feita sem sua autorização.
+```bash
+sudo mkdir -p /var/log/iscope
+sudo chown iscope:iscope /var/log/iscope
+sudo systemctl restart iscope-agent
+systemctl status iscope-agent --no-pager
+```
 
 ---
 
-## Alterações
+## Solução Permanente
+
+Modificar o script de instalação para criar o diretório de log com as permissões corretas.
 
 ### Arquivo: `supabase/functions/agent-install/index.ts`
 
-**Alteração 1 - Linha 25 (valor padrão do POLL_INTERVAL):**
+**Alteração na função `ensure_dirs()` (linha ~339):**
 
 De:
 ```bash
-POLL_INTERVAL="120"
+ensure_dirs() {
+  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
+}
 ```
 
 Para:
 ```bash
-POLL_INTERVAL="60"
+ensure_dirs() {
+  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope"
+}
 ```
 
 ---
 
-**Alteração 2 - Linhas 377-382 (função write_env_file):**
+**Alteração na função `ensure_state_file()` (linhas ~392-400):**
 
 De:
 ```bash
-cat > "$env_file" <<EOF
-AGENT_API_BASE_URL=\${API_BASE_URL}
-AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
-AGENT_STATE_FILE=\${STATE_DIR}/state.json
-AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
+ensure_state_file() {
+  local state_file
+  state_file="$STATE_DIR/state.json"
+  if [[ ! -f "$state_file" ]]; then
+    cat > "$state_file" <<EOF
+{}
 EOF
+  fi
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
+  fi
+}
 ```
 
 Para:
 ```bash
-cat > "$env_file" <<EOF
-AGENT_API_BASE_URL=\${API_BASE_URL}
-AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
-AGENT_STATE_FILE=\${STATE_DIR}/state.json
-AGENT_LOG_FILE=/var/log/iscope/agent.log
-AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
+ensure_state_file() {
+  local state_file
+  state_file="$STATE_DIR/state.json"
+  if [[ ! -f "$state_file" ]]; then
+    cat > "$state_file" <<EOF
+{}
 EOF
+  fi
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope" || true
+  fi
+}
 ```
 
 ---
@@ -59,16 +88,21 @@ EOF
 
 | Local | Alteração |
 |-------|-----------|
-| Linha 25 | `POLL_INTERVAL="120"` → `POLL_INTERVAL="60"` |
-| Função `write_env_file()` | Adicionar linha `AGENT_LOG_FILE=/var/log/iscope/agent.log` |
+| Função `ensure_dirs()` | Adicionar criação de `/var/log/iscope` |
+| Função `ensure_state_file()` | Adicionar `chown` para `/var/log/iscope` |
 
 ---
 
-## Resultado
+## Resultado Esperado
 
-Após a alteração, novas instalações do agent terão:
-- Intervalo de heartbeat de 60 segundos (ao invés de 120)
-- Arquivo de log em `/var/log/iscope/agent.log` habilitado por padrão
+Após a correção:
+1. Novas instalações criarão automaticamente o diretório `/var/log/iscope`
+2. O diretório terá as permissões corretas para o usuário `iscope`
+3. O agent conseguirá escrever logs em `/var/log/iscope/agent.log`
 
-**Nota**: Para agents já instalados, você precisará editar manualmente o arquivo `/etc/iscope/agent.env` e reiniciar o serviço.
+---
 
+## Próximos Passos
+
+1. Execute a **solução imediata** no servidor para resolver o problema agora
+2. Aprove este plano para aplicar a **correção permanente** no script de instalação
