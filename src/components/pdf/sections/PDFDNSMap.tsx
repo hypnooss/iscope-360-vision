@@ -92,7 +92,7 @@ const groupColors = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Styles
+// Styles (FIXED: removed unsupported 'gap' property)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -108,7 +108,6 @@ const styles = StyleSheet.create({
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   headerIcon: {
     width: 24,
@@ -117,6 +116,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20, 184, 166, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 8,
   },
   headerIconText: {
     fontSize: 12,
@@ -130,28 +130,32 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     padding: spacing.cardPadding,
-    gap: 12,
   },
   column: {
     flex: 1,
-    gap: 10,
+    marginRight: 12,
+  },
+  columnLast: {
+    flex: 1,
+    marginRight: 0,
   },
   groupCard: {
     borderWidth: 1,
     borderRadius: radius.md,
     overflow: 'hidden',
+    marginBottom: 10,
   },
   groupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 6,
-    gap: 6,
   },
   groupTitle: {
     fontSize: typography.body,
     fontFamily: typography.bold,
     flex: 1,
+    marginRight: 6,
   },
   groupCount: {
     fontSize: typography.tiny,
@@ -169,7 +173,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 4,
-    gap: 6,
   },
   recordText: {
     fontSize: typography.bodySmall,
@@ -187,6 +190,7 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
     marginTop: 3,
+    marginRight: 6,
   },
   statusDotActive: {
     backgroundColor: colors.primary,
@@ -219,7 +223,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
-    gap: 4,
   },
   authLabel: {
     fontSize: typography.bodySmall,
@@ -250,7 +253,6 @@ const styles = StyleSheet.create({
   subdomainRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
     marginBottom: 3,
   },
   subdomainText: {
@@ -386,7 +388,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>◉</Text>
+          <Text style={styles.headerIconText}>●</Text>
         </View>
         <Text style={styles.headerTitle}>Mapa de Infraestrutura DNS</Text>
       </View>
@@ -398,7 +400,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
           {/* NS Records */}
           <GroupCard title="NS" count={nsRecords.length} colorKey="ns">
             {visibleNs.length > 0 ? (
-              <>
+              <View>
                 {visibleNs.map((ns, idx) => (
                   <View key={idx} style={styles.recordItem}>
                     <Text style={styles.recordText}>{truncate(ns.host, 28)}</Text>
@@ -407,7 +409,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
                 {moreNs > 0 && (
                   <Text style={styles.moreText}>+{moreNs} nameservers</Text>
                 )}
-              </>
+              </View>
             ) : (
               <Text style={styles.emptyText}>Nenhum NS encontrado</Text>
             )}
@@ -416,7 +418,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
           {/* MX Records */}
           <GroupCard title="MX" count={mxRecords.length} colorKey="mx">
             {visibleMx.length > 0 ? (
-              <>
+              <View>
                 {visibleMx.map((mx, idx) => (
                   <View key={idx} style={{ marginBottom: 4 }}>
                     <Text style={styles.recordText}>{truncate(mx.exchange, 28)}</Text>
@@ -426,7 +428,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
                 {moreMx > 0 && (
                   <Text style={styles.moreText}>+{moreMx} mail servers</Text>
                 )}
-              </>
+              </View>
             ) : (
               <Text style={styles.emptyText}>Nenhum MX encontrado</Text>
             )}
@@ -481,7 +483,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
               <Text style={styles.authLabel}>DKIM</Text>
             </View>
             {visibleDkim.length > 0 ? (
-              <>
+              <View>
                 {visibleDkim.map((key, idx) => (
                   <Text key={idx} style={[styles.authValue, { marginLeft: 9 }]}>
                     {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
@@ -490,7 +492,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
                 {moreDkim > 0 && (
                   <Text style={[styles.moreText, { marginLeft: 9, marginBottom: 6 }]}>+{moreDkim} seletores</Text>
                 )}
-              </>
+              </View>
             ) : (
               <Text style={[styles.authValue, { marginLeft: 9, marginBottom: 6, fontStyle: 'italic' }]}>
                 Nenhum seletor
@@ -503,7 +505,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
               <Text style={styles.authLabel}>DMARC</Text>
             </View>
             {dmarcPolicy.p || dmarcPolicy.sp ? (
-              <>
+              <View>
                 {dmarcPolicy.p && (
                   <Text style={[styles.authValue, { marginLeft: 9 }]}>
                     Política: {dmarcPolicy.p}
@@ -514,7 +516,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
                     Subdomínios: {dmarcPolicy.sp}
                   </Text>
                 )}
-              </>
+              </View>
             ) : (
               <Text style={[styles.authValue, { marginLeft: 9, fontStyle: 'italic' }]}>
                 Não encontrado
@@ -524,10 +526,10 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         </View>
 
         {/* Column 3: Subdomains */}
-        <View style={styles.column}>
+        <View style={styles.columnLast}>
           <GroupCard title="Subdomínios" count={subdomainSummary?.total_found ?? 0} colorKey="subdomain">
             {visibleSubdomains.length > 0 ? (
-              <>
+              <View>
                 {visibleSubdomains.map((sub, idx) => (
                   <View key={idx} style={styles.subdomainRow}>
                     <View style={[
@@ -542,7 +544,7 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
                 {moreSubdomains > 0 && (
                   <Text style={styles.moreText}>+{moreSubdomains} subdomínios</Text>
                 )}
-              </>
+              </View>
             ) : (
               <Text style={styles.emptyText}>Nenhum subdomínio encontrado</Text>
             )}
