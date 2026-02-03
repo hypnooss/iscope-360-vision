@@ -1,117 +1,103 @@
 
 
-## Ajustes Visuais no Mapa DNS
+## Melhorias Visuais e IPs dos Nameservers
 
-### Resumo das Alterações
+### Problemas Identificados
 
-1. **Fundo do card DNS Map** - Aplicar o mesmo estilo visual do card de informações (gradient escuro + grid pattern)
-2. **Globo visível atrás do domínio** - Tornar o card do domínio transparente para o globo aparecer
-3. **IPs dos registros NS** - Buscar e exibir IPs resolvidos dos nameservers
-4. **Filtro padrão de subdomínios** - Iniciar com "ativos" selecionado
-5. **Tamanho das fontes** - Aumentar fontes das informações secundárias
+1. **Globo com borda opaca** - O nome do domínio tem fundo opaco que esconde o globo
+2. **Espaçamento insuficiente** entre as categorias (NS/MX e SOA/TXT)
+3. **Estilo inconsistente** dos itens - Precisam do padrão "fundo mais escuro, borda cinza"
+4. **Fontes pequenas** nas informações secundárias
+5. **IPs dos NS não aparecem** - Os dados existem no `rawData` mas não estão sendo extraídos
+
+### Por que os IPs dos NS não aparecem?
+
+O backend salva os IPs resolvidos dentro de cada registro NS:
+```json
+{
+  "step_id": "ns_records",
+  "data": {
+    "records": [
+      { "host": "ns1-06.azure-dns.com", "resolved_ips": ["40.112.72.205"] },
+      { "host": "ns2-06.azure-dns.net", "resolved_ips": ["64.4.48.205"] }
+    ]
+  }
+}
+```
+
+Porém, o `dnsSummary` passado para o `DNSMapSection` contém apenas uma lista de strings (hostnames):
+```typescript
+dnsSummary.ns = ["ns1-06.azure-dns.com", "ns2-06.azure-dns.net"]
+```
+
+**Solucao**: Criar uma funcao `extractNsRecords()` que extrai os dados completos (hostname + IPs) diretamente do `rawData` das categorias, igual ja fazemos para MX, SPF, DKIM e DMARC.
 
 ---
 
-### Detalhes Técnicos
+### Alteracoes Tecnicas
 
-#### 1. Fundo do Card DNS Map
+#### 1. Nova Interface e Funcao de Extracao para NS
 
-**Problema:** O DNS Map usa `glass-card` (bg-card/80), enquanto o card de informações usa gradient escuro com grid pattern.
+```typescript
+interface NsRecord {
+  host: string;
+  resolvedIps: string[];
+}
 
-**Solução:** Aplicar o mesmo estilo do Command Center Header:
-
-```tsx
-// Antes
-<Card className={cn("glass-card border-border/50", className)}>
-
-// Depois
-<div 
-  className={cn(
-    "relative overflow-hidden rounded-2xl border border-primary/20",
-    className
-  )}
-  style={{
-    background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
-  }}
->
-  {/* Grid pattern overlay */}
-  <div 
-    className="absolute inset-0 opacity-30 pointer-events-none"
-    style={{
-      backgroundImage: `
-        linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)
-      `,
-      backgroundSize: "32px 32px"
-    }}
-  />
+const extractNsRecords = (categories: ComplianceCategory[]): NsRecord[] => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const nsCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'ns_records');
+  const records = (nsCheck?.rawData as any)?.data?.records || [];
   
-  {/* Header */}
-  <div className="relative px-6 py-4 border-b border-border/20">
-    ...
-  </div>
-  
-  {/* Content */}
-  <div className="relative p-6">
-    ...
-  </div>
+  return records.map((r: any) => ({
+    host: r.host || r.name || r.value || 'Unknown',
+    resolvedIps: Array.isArray(r.resolved_ips) ? r.resolved_ips : [],
+  })).filter((ns: NsRecord) => ns.host && ns.host !== 'Unknown');
+};
+```
+
+#### 2. Atualizar Estilo do No do Dominio
+
+Remover o fundo opaco, manter apenas blur e borda para o globo ficar visivel:
+
+```typescript
+// Card do dominio - transparente
+<div className="relative px-8 py-4 rounded-xl border border-primary/30">
+  <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
 </div>
 ```
 
----
+#### 3. Aumentar Espacamento entre Categorias
 
-#### 2. Globo Visível Atrás do Domínio
+Alterar o `space-y-4` para `space-y-6` nas colunas 1 e 2:
 
-**Problema:** O card do domínio tem `bg-card/80` que esconde o globo.
-
-**Solução:** Usar fundo transparente com apenas blur e borda:
-
-```tsx
-// Antes
-<div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-card/80 backdrop-blur-sm shadow-lg shadow-primary/10">
-
-// Depois
-<div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-transparent backdrop-blur-[2px] shadow-lg shadow-primary/10">
+```typescript
+{/* Column 1: NS + MX */}
+<div className="space-y-6">
+  <DNSGroup title="NS" ... />
+  <DNSGroup title="MX" ... />
+</div>
 ```
 
----
+#### 4. Padronizar Estilo dos Itens (DNSNode)
 
-#### 3. IPs dos Registros NS
+Aplicar o padrao visual da print de referencia - fundo mais escuro com borda sutil:
 
-**Problema:** Os IPs dos NS não estão disponíveis no `dnsSummary.ns[]` (só contém nomes).
-
-**Solução:** Os dados de NS tipicamente não incluem IPs resolvidos no backend atual. Por ora, manter só o hostname. 
-
-*Nota para futuro:* Adicionar campo `ns_resolved` ou similar na edge function de análise.
-
----
-
-#### 4. Filtro Padrão "Ativos"
-
-**Solução:** Alterar o estado inicial:
-
-```tsx
-// Antes
-const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('all');
-
-// Depois
-const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('active');
+```typescript
+<div className={cn(
+  "group relative px-3 py-2.5 rounded-lg border transition-all",
+  "bg-[hsl(220_18%_8%)] border-border/40 hover:border-border/60"
+)}>
 ```
 
----
-
-#### 5. Aumentar Tamanho das Fontes
-
-Atualizar os tamanhos de `text-[10px]` para `text-xs` (12px) nas informações secundárias:
+#### 5. Aumentar Tamanho das Fontes Secundarias
 
 | Elemento | Antes | Depois |
 |----------|-------|--------|
-| SPF record | `text-[10px]` | `text-xs` |
-| DKIM selectors | `text-[10px]` | `text-xs` |
-| DMARC policies | `text-[10px]` | `text-xs` |
-| Subdomain IPs | `text-[10px]` | `text-xs` |
-| SOA labels | `text-xs` | `text-sm` (para labels) |
-| Filter buttons | `text-[10px]` | `text-xs` |
+| Label principal | `text-sm` | `text-sm` (manter) |
+| Sublabel/IP | `text-xs` | `text-[13px]` |
+| SOA labels | `text-xs` | `text-sm` |
+| TXT records | `text-xs` | `text-[13px]` |
 
 ---
 
@@ -123,8 +109,24 @@ Atualizar os tamanhos de `text-[10px]` para `text-xs` (12px) nas informações s
 
 ### Resultado Visual Esperado
 
-- Fundo do mapa DNS consistente com o card de informações (gradient escuro + grid)
-- Globo visível atrás do nome do domínio (sem card opaco)
-- Filtro "ativos" selecionado por padrão
-- Textos secundários mais legíveis (fonte maior)
+**Antes (NS):**
+```
+ns1-06.azure-dns.com
+ns2-06.azure-dns.net
+```
+
+**Depois (NS com IPs):**
+```
+● ns1-06.azure-dns.com
+  40.112.72.205
+
+● ns2-06.azure-dns.net  
+  64.4.48.205
+```
+
+**Padrao Visual dos Cards:**
+- Fundo: `hsl(220 18% 8%)` (escuro, consistente com o mapa)
+- Borda: `border-border/40` (cinza sutil)
+- Fonte principal: `text-sm font-mono`
+- Fonte secundaria: `text-[13px] text-muted-foreground`
 
