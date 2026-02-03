@@ -1,177 +1,209 @@
 
 
-## Validação DNS de Subdomínios Descobertos
+## Correção do Fluxo de Dados de Subdomínios
 
 ### Problema Identificado
 
-As APIs de enumeração de subdomínios retornam registros históricos que podem não existir mais. Na imagem, vemos subdomínios como `chat.taschibra.com.br`, `drive.taschibra.com.br`, etc. sem endereços IP resolvidos - indicando que podem ser registros antigos.
-
-### Solução Proposta
-
-Adicionar uma etapa de **validação DNS** após a coleta, que tenta resolver cada subdomínio para verificar se ainda existe.
-
-### Alterações no Arquivo
-
-**Arquivo:** `python-agent/agent/executors/subdomain_enum.py`
-
-### 1. Novo Método de Resolução DNS
-
-```python
-def _resolve_subdomain(self, subdomain: str, timeout: float = 2.0) -> Dict[str, Any]:
-    """
-    Resolve a subdomain to get its IP addresses.
-    Returns dict with 'ips' list and 'is_alive' boolean.
-    """
-    try:
-        import dns.resolver
-    except ImportError:
-        # Fallback to socket if dnspython not available
-        try:
-            ips = list(set(socket.gethostbyname_ex(subdomain)[2]))
-            return {'ips': sorted(ips), 'is_alive': len(ips) > 0}
-        except socket.gaierror:
-            return {'ips': [], 'is_alive': False}
-        except Exception:
-            return {'ips': [], 'is_alive': False}
-
-    resolver = dns.resolver.Resolver(configure=True)
-    resolver.lifetime = timeout
-    resolver.timeout = timeout
-
-    ips = set()
-    
-    # Try A records (IPv4)
-    try:
-        answers = resolver.resolve(subdomain, 'A')
-        for r in answers:
-            ips.add(str(r))
-    except Exception:
-        pass
-
-    # Try AAAA records (IPv6)
-    try:
-        answers = resolver.resolve(subdomain, 'AAAA')
-        for r in answers:
-            ips.add(str(r))
-    except Exception:
-        pass
-
-    return {
-        'ips': sorted(list(ips)),
-        'is_alive': len(ips) > 0
-    }
-```
-
-### 2. Método de Validação em Lote
-
-```python
-def _validate_subdomains(self, subdomains: Dict[str, Dict], step_id: str) -> Dict[str, Dict]:
-    """
-    Validate all discovered subdomains by resolving their DNS.
-    Adds 'ips' and 'is_alive' to each subdomain entry.
-    """
-    total = len(subdomains)
-    alive_count = 0
-    
-    self.logger.info(f"Step {step_id}: Validating {total} subdomains via DNS resolution...")
-    
-    for idx, (name, data) in enumerate(subdomains.items(), 1):
-        result = self._resolve_subdomain(name)
-        data['ips'] = result['ips']
-        data['is_alive'] = result['is_alive']
-        
-        if result['is_alive']:
-            alive_count += 1
-        
-        # Log progress every 10 subdomains
-        if idx % 10 == 0 or idx == total:
-            self.logger.info(f"Step {step_id}: Validated {idx}/{total} subdomains ({alive_count} alive)")
-    
-    self.logger.info(f"Step {step_id}: Validation complete - {alive_count}/{total} subdomains are alive")
-    
-    return subdomains
-```
-
-### 3. Atualização do Método run()
-
-Adicionar chamada de validação antes de retornar os resultados:
-
-```python
-# Após coletar de todas as fontes, antes de ordenar
-
-# Validate subdomains via DNS resolution
-all_subdomains = self._validate_subdomains(all_subdomains, step_id)
-
-# Separate alive and dead subdomains for stats
-alive_subdomains = {k: v for k, v in all_subdomains.items() if v.get('is_alive')}
-dead_subdomains = {k: v for k, v in all_subdomains.items() if not v.get('is_alive')}
-
-# Sort results
-subdomains_list = sorted(all_subdomains.values(), key=lambda x: x['subdomain'])
-
-self.logger.info(
-    f"Step {step_id}: Total {len(subdomains_list)} unique subdomains from {len(sources_used)} sources "
-    f"({len(alive_subdomains)} alive, {len(dead_subdomains)} inactive)"
-)
-
-return {
-    'status_code': 200,
-    'data': {
-        'domain': domain,
-        'total_found': len(subdomains_list),
-        'alive_count': len(alive_subdomains),
-        'inactive_count': len(dead_subdomains),
-        'sources': sources_used,
-        'subdomains': subdomains_list,
-        'errors': errors if errors else None,
-    },
-    'error': None,
-}
-```
-
-### 4. Estrutura de Dados Atualizada
-
-Cada subdomínio agora terá:
+O agente Python agora envia os dados de subdomínios com o novo formato:
 
 ```json
 {
-  "subdomain": "chat.taschibra.com.br",
-  "sources": ["crt.sh", "rapiddns"],
-  "ips": ["192.168.1.10", "2001:db8::1"],
+  "subdomain": "www.taschibra.com.br",
+  "sources": ["crt.sh"],
+  "ips": ["192.168.1.10"],
   "is_alive": true
 }
 ```
 
-Ou para subdomínios inativos:
+Porém, a edge function `agent-task-result` espera o formato antigo com `addresses`:
 
 ```json
 {
-  "subdomain": "old.taschibra.com.br",
-  "sources": ["wayback"],
-  "ips": [],
-  "is_alive": false
+  "subdomain": "www.taschibra.com.br",
+  "sources": ["crt.sh"],
+  "addresses": [{ "ip": "192.168.1.10", "type": "A" }]
 }
 ```
 
-### Benefícios
+Como resultado, os IPs não são mapeados corretamente e a interface exibe `—` na coluna de endereços IP.
 
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| **Dados** | Lista bruta de subdomínios | Lista validada com IPs |
-| **Qualidade** | Muitos registros obsoletos | Separação claro entre ativos/inativos |
-| **Visibilidade** | Sem indicação de status | Campo `is_alive` e lista de `ips` |
-| **Relatório** | Coluna "Endereços IP" vazia | IPs preenchidos para subdomínios ativos |
+### Solução
 
-### Considerações de Performance
+Atualizar 3 arquivos para suportar o novo formato e exibir o status de atividade:
 
-- **Timeout curto (2s)**: Evita atrasos excessivos em subdomínios inexistentes
-- **Resolução sequencial**: Mais lento, mas evita rate limiting de servidores DNS
-- **Opção futura**: Implementar resolução paralela com ThreadPoolExecutor para maior velocidade
+---
+
+### 1. Edge Function: `agent-task-result/index.ts`
+
+**Localização:** Linhas 3549-3565 (normalização de subdomínios)
+
+**Alteração:** Converter o novo formato `ips` para `addresses` e preservar `is_alive`:
+
+```typescript
+// Normalize subdomain entries
+const normalizedSubdomains: SubdomainEntry[] = subdomains
+  .filter((s: unknown) => s && typeof s === 'object')
+  .map((s: unknown) => {
+    const sub = s as Record<string, unknown>;
+    
+    // Support new format: "ips" array of strings
+    let addresses: Array<{ ip: string; type?: string }> = [];
+    if (Array.isArray(sub.ips)) {
+      addresses = (sub.ips as string[])
+        .filter((ip) => typeof ip === 'string' && ip.length > 0)
+        .map((ip) => ({ ip, type: ip.includes(':') ? 'AAAA' : 'A' }));
+    } else if (Array.isArray(sub.addresses)) {
+      addresses = (sub.addresses as Array<Record<string, unknown>>).map((addr) => ({
+        ip: typeof addr.ip === 'string' ? addr.ip : (typeof addr.address === 'string' ? addr.address : ''),
+        type: typeof addr.type === 'string' ? addr.type : undefined,
+      }));
+    }
+    
+    return {
+      subdomain: typeof sub.subdomain === 'string' ? sub.subdomain : (typeof sub.name === 'string' ? sub.name : ''),
+      sources: Array.isArray(sub.sources) ? sub.sources.filter((src: unknown) => typeof src === 'string') : [],
+      addresses,
+      is_alive: typeof sub.is_alive === 'boolean' ? sub.is_alive : undefined,
+    };
+  })
+  .filter((s: SubdomainEntry) => s.subdomain.length > 0);
+```
+
+**Atualizar interface SubdomainEntry (linhas 90-94):**
+
+```typescript
+interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+  is_alive?: boolean;
+}
+```
+
+---
+
+### 2. Tipos do Frontend: `src/types/compliance.ts`
+
+**Alteração:** Adicionar campo `is_alive` ao tipo `SubdomainEntry`:
+
+```typescript
+export interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+  is_alive?: boolean;
+}
+```
+
+---
+
+### 3. Componente de UI: `src/components/external-domain/SubdomainSection.tsx`
+
+**Alterações:**
+
+1. **Adicionar badge de status (ativo/inativo)** na coluna de subdomínio
+2. **Adicionar contagem de ativos/inativos** no header
+3. **Melhorar visual** para destacar subdomínios inativos
+
+```tsx
+// No header, após o badge de total:
+{summary.subdomains.some(s => s.is_alive !== undefined) && (
+  <>
+    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary border-primary/20">
+      {summary.subdomains.filter(s => s.is_alive).length} ativos
+    </Badge>
+    <Badge variant="secondary" className="ml-1 bg-muted text-muted-foreground border-muted-foreground/20">
+      {summary.subdomains.filter(s => s.is_alive === false).length} inativos
+    </Badge>
+  </>
+)}
+
+// Na célula do subdomínio, adicionar indicador visual:
+<TableCell className="font-mono text-sm">
+  <div className="flex items-center gap-2">
+    {sub.is_alive !== undefined && (
+      <span 
+        className={cn(
+          "w-2 h-2 rounded-full flex-shrink-0",
+          sub.is_alive 
+            ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
+            : "bg-muted-foreground/30"
+        )}
+        title={sub.is_alive ? "Ativo" : "Inativo"}
+      />
+    )}
+    <span className={cn(
+      "text-foreground break-all",
+      sub.is_alive === false && "text-muted-foreground"
+    )}>
+      {sub.subdomain}
+    </span>
+    // ... botões de ação
+  </div>
+</TableCell>
+
+// Na célula de IPs, mostrar "Não resolvido" para inativos:
+<TableCell className="text-sm text-muted-foreground">
+  {sub.addresses.length > 0 ? (
+    // ... exibir badges de IP
+  ) : (
+    <span className="text-muted-foreground/50">
+      {sub.is_alive === false ? 'Não resolvido' : '—'}
+    </span>
+  )}
+</TableCell>
+```
+
+---
+
+### Fluxo de Dados Corrigido
+
+```text
+┌─────────────────────┐
+│   Python Agent      │
+│ ips: ["1.2.3.4"]    │
+│ is_alive: true      │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  agent-task-result  │
+│  Edge Function      │
+│  Converte ips →     │
+│  addresses          │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│    Supabase DB      │
+│  addresses: [...]   │
+│  is_alive: true     │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│   SubdomainSection  │
+│   Exibe IPs e       │
+│   status visual     │
+└─────────────────────┘
+```
+
+---
+
+### Resultado Esperado
+
+| Antes | Depois |
+|-------|--------|
+| Todos subdomínios sem IP | IPs resolvidos exibidos |
+| Sem indicação de status | Badge verde (ativo) ou cinza (inativo) |
+| Lista plana | Contagem de ativos/inativos no header |
+
+---
 
 ### Deploy
 
-1. Atualizar `subdomain_enum.py` no servidor
-2. Limpar cache: `rm -rf /opt/iscope-agent/agent/__pycache__ /opt/iscope-agent/agent/executors/__pycache__`
-3. Reiniciar: `systemctl restart iscope-agent`
-4. Disparar nova análise de External Domain
+1. Atualizar edge function `agent-task-result`
+2. Atualizar tipos TypeScript
+3. Atualizar componente SubdomainSection
+4. Disparar nova análise para popular dados no novo formato
 
