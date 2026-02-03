@@ -363,9 +363,10 @@ setup_venv() {
   if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
     echo "Instalando dependências (offline wheels bundle)..."
     "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
-  else
-    "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
-  fi
+else
+  # Use --no-cache-dir to avoid issues with corrupted cached packages (e.g., certifi missing cacert.pem)
+  "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+fi
 }
 
 write_env_file() {
