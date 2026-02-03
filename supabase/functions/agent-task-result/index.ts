@@ -3738,7 +3738,7 @@ serve(async (req: Request) => {
     // Fetch the task to verify ownership
     const { data: task, error: taskError } = await supabase
       .from('agent_tasks')
-      .select('id, agent_id, task_type, target_id, target_type, status')
+      .select('id, agent_id, task_type, target_id, target_type, status, payload')
       .eq('id', body.task_id)
       .single();
 
@@ -3797,6 +3797,51 @@ serve(async (req: Request) => {
           }
         }
         console.log(`Reconstructed raw_data from ${stepResults.length} steps, ${Object.keys(rawData).length} successful`);
+      }
+    }
+
+    // ========================================================
+    // External Domain: Invoke server-side subdomain enumeration
+    // This runs subdomain discovery from the Supabase Edge environment
+    // to avoid DNS masking and firewall blocking issues on client networks
+    // ========================================================
+    if ((body.status === 'completed' || body.status === 'partial') && task.target_type === 'external_domain' && rawData) {
+      // Get domain from task payload
+      const taskPayload = task.payload as Record<string, unknown> | null;
+      const domain = taskPayload?.domain as string | undefined;
+      
+      if (domain) {
+        console.log(`[external_domain] Invoking server-side subdomain enumeration for ${domain}`);
+        
+        try {
+          const subdomainEnumUrl = `${supabaseUrl}/functions/v1/subdomain-enum`;
+          const subdomainResponse = await fetch(subdomainEnumUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ domain, timeout: 20 }),
+          });
+          
+          if (subdomainResponse.ok) {
+            const subdomainResult = await subdomainResponse.json();
+            console.log(`[external_domain] Subdomain enum completed: ${subdomainResult.total_found} found, ${subdomainResult.alive_count} alive`);
+            
+            // Inject subdomain data into rawData as if it came from an agent step
+            rawData['subdomain_enum'] = {
+              data: subdomainResult,
+            };
+          } else {
+            const errorText = await subdomainResponse.text();
+            console.error(`[external_domain] Subdomain enum failed: ${subdomainResponse.status} - ${errorText}`);
+          }
+        } catch (subdomainError) {
+          console.error(`[external_domain] Subdomain enum error:`, subdomainError);
+          // Continue without subdomain data - the DNS records will still be processed
+        }
+      } else {
+        console.log(`[external_domain] No domain in task payload, skipping subdomain enumeration`);
       }
     }
 

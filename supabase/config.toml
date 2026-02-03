@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.exchange-online-insights]
 verify_jwt = false
+
+[functions.subdomain-enum]
+verify_jwt = false

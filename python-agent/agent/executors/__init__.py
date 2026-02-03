@@ -5,7 +5,7 @@ from agent.executors.ssh import SSHExecutor
 from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
 from agent.executors.amass import AmassExecutor
-from agent.executors.subdomain_enum import SubdomainEnumExecutor
+# SubdomainEnumExecutor removed - subdomain enumeration now runs server-side
 
 __all__ = [
     'BaseExecutor',
@@ -14,5 +14,4 @@ __all__ = [
     'SNMPExecutor',
     'DNSQueryExecutor',
     'AmassExecutor',
-    'SubdomainEnumExecutor',
 ]
