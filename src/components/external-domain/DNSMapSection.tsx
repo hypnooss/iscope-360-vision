@@ -348,19 +348,12 @@ export function DNSMapSection({
 
       {/* Content */}
       <div className="relative p-6">
-        {/* Root Domain Node - with globe background */}
-        <div className="flex justify-center mb-4">
-          <div className="relative">
-            {/* Globe background */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <Globe className="w-24 h-24 text-primary/10" />
-            </div>
-            {/* Domain name overlay - transparent border only to show globe */}
-            <div className="relative px-8 py-4 rounded-xl border border-primary/30">
-              <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
-            </div>
-          </div>
+      {/* Root Domain Node - globe icon only */}
+      <div className="flex justify-center mb-4">
+        <div className="p-4 rounded-full border border-primary/30 bg-primary/5">
+          <Globe className="w-12 h-12 text-primary/40" />
         </div>
+      </div>
 
         {/* Connector Lines - L-shaped drops */}
         <div className="relative h-12 mx-8 mb-2 hidden md:block">
