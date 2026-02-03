@@ -91,6 +91,97 @@ const pageStyles = StyleSheet.create({
     color: '#1E40AF',
     lineHeight: 1.4,
   },
+  // Subdomain Section
+  subdomainSection: {
+    marginBottom: spacing.sectionGap,
+  },
+  subdomainHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.itemGap,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  subdomainTitle: {
+    fontSize: typography.heading,
+    fontFamily: typography.bold,
+    color: '#0EA5E9', // Sky color
+  },
+  subdomainCount: {
+    fontSize: typography.body,
+    fontFamily: typography.bold,
+    color: '#0EA5E9',
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  subdomainMeta: {
+    fontSize: typography.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: spacing.itemGap,
+  },
+  subdomainTable: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 4,
+  },
+  subdomainTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  subdomainTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  subdomainTableRowLast: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  subdomainColName: {
+    flex: 2,
+  },
+  subdomainColIP: {
+    flex: 1.5,
+  },
+  subdomainColSource: {
+    flex: 1,
+  },
+  subdomainHeaderText: {
+    fontSize: typography.bodySmall,
+    fontFamily: typography.bold,
+    color: colors.textSecondary,
+  },
+  subdomainCellText: {
+    fontSize: typography.bodySmall,
+    color: colors.textPrimary,
+  },
+  subdomainCellMono: {
+    fontSize: typography.bodySmall,
+    fontFamily: 'Courier',
+    color: colors.textPrimary,
+  },
+  subdomainCellMuted: {
+    fontSize: typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  subdomainMore: {
+    fontSize: typography.bodySmall,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
 });
 
 // Types
@@ -108,6 +199,19 @@ interface DnsSummary {
   dnssecHasDs?: boolean;
   dnssecValidated?: boolean;
   dnssecNotes?: string[];
+}
+
+interface SubdomainEntry {
+  subdomain: string;
+  sources: string[];
+  addresses: Array<{ ip: string; type?: string }>;
+}
+
+interface SubdomainSummary {
+  total_found: number;
+  subdomains: SubdomainEntry[];
+  sources: string[];
+  mode: string;
 }
 
 interface ComplianceCategory {
@@ -140,6 +244,7 @@ interface ExternalDomainPDFProps {
   };
   dnsSummary?: DnsSummary;
   emailAuth?: EmailAuthStatus;
+  subdomainSummary?: SubdomainSummary;
   logoBase64?: string;
   categoryConfigs?: CategoryConfig[];
 }
@@ -149,6 +254,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
   domainInfo,
   dnsSummary,
   emailAuth,
+  subdomainSummary,
   logoBase64,
   categoryConfigs,
 }) => {
@@ -271,6 +377,97 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <Page size="A4" style={pageStyles.page}>
           <View style={pageStyles.content}>
             <PDFIssuesSummary issues={issues} maxItems={20} />
+          </View>
+
+          <PDFFooter />
+        </Page>
+      )}
+
+      {/* PAGE: Subdomain Enumeration */}
+      {subdomainSummary && subdomainSummary.total_found > 0 && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <View style={pageStyles.subdomainSection}>
+              {/* Header */}
+              <View style={pageStyles.subdomainHeader}>
+                <Text style={pageStyles.subdomainTitle}>
+                  Subdomínios Descobertos
+                </Text>
+                <Text style={pageStyles.subdomainCount}>
+                  {subdomainSummary.total_found}
+                </Text>
+              </View>
+              
+              {/* Meta info */}
+              <Text style={pageStyles.subdomainMeta}>
+                Modo: {subdomainSummary.mode}
+                {subdomainSummary.sources.length > 0 && 
+                  ` • Fontes: ${subdomainSummary.sources.slice(0, 5).join(', ')}${subdomainSummary.sources.length > 5 ? ` (+${subdomainSummary.sources.length - 5})` : ''}`
+                }
+              </Text>
+
+              {/* Table */}
+              <View style={pageStyles.subdomainTable}>
+                {/* Header Row */}
+                <View style={pageStyles.subdomainTableHeader}>
+                  <View style={pageStyles.subdomainColName}>
+                    <Text style={pageStyles.subdomainHeaderText}>Subdomínio</Text>
+                  </View>
+                  <View style={pageStyles.subdomainColIP}>
+                    <Text style={pageStyles.subdomainHeaderText}>Endereços IP</Text>
+                  </View>
+                  <View style={pageStyles.subdomainColSource}>
+                    <Text style={pageStyles.subdomainHeaderText}>Fontes</Text>
+                  </View>
+                </View>
+
+                {/* Data Rows - limit to 50 for PDF */}
+                {subdomainSummary.subdomains.slice(0, 50).map((sub, idx) => {
+                  const isLast = idx === Math.min(subdomainSummary.subdomains.length, 50) - 1;
+                  return (
+                    <View 
+                      key={idx} 
+                      style={isLast ? pageStyles.subdomainTableRowLast : pageStyles.subdomainTableRow}
+                      wrap={false}
+                    >
+                      <View style={pageStyles.subdomainColName}>
+                        <Text style={pageStyles.subdomainCellMono}>
+                          {sub.subdomain.length > 40 
+                            ? sub.subdomain.substring(0, 37) + '...' 
+                            : sub.subdomain
+                          }
+                        </Text>
+                      </View>
+                      <View style={pageStyles.subdomainColIP}>
+                        <Text style={pageStyles.subdomainCellText}>
+                          {sub.addresses.length > 0 
+                            ? sub.addresses.slice(0, 2).map(a => a.ip).join(', ')
+                              + (sub.addresses.length > 2 ? ` +${sub.addresses.length - 2}` : '')
+                            : '—'
+                          }
+                        </Text>
+                      </View>
+                      <View style={pageStyles.subdomainColSource}>
+                        <Text style={pageStyles.subdomainCellMuted}>
+                          {sub.sources.length > 0 
+                            ? sub.sources.slice(0, 2).join(', ')
+                              + (sub.sources.length > 2 ? ` +${sub.sources.length - 2}` : '')
+                            : '—'
+                          }
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* More indicator */}
+              {subdomainSummary.subdomains.length > 50 && (
+                <Text style={pageStyles.subdomainMore}>
+                  +{subdomainSummary.subdomains.length - 50} subdomínios adicionais não exibidos
+                </Text>
+              )}
+            </View>
           </View>
 
           <PDFFooter />
