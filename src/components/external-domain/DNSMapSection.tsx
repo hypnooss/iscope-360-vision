@@ -9,12 +9,10 @@ import {
   ChevronUp, 
   Copy, 
   Check, 
-  ExternalLink,
-  Search
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -44,6 +42,18 @@ interface MxRecord {
   ips: string[];
 }
 
+interface DkimKey {
+  selector: string;
+  keySize: number | null;
+}
+
+interface DmarcPolicy {
+  p: string | null;
+  sp: string | null;
+}
+
+type SubdomainFilter = 'all' | 'active' | 'inactive';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,17 +76,15 @@ const extractSpfRecord = (categories: ComplianceCategory[]): string | null => {
   return (spfCheck?.rawData as any)?.data?.raw || null;
 };
 
-const extractDkimSelectors = (categories: ComplianceCategory[]): string[] => {
+const extractDkimKeys = (categories: ComplianceCategory[]): DkimKey[] => {
   const allChecks = categories.flatMap(c => c.checks);
   const dkimCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dkim_records');
   const found = (dkimCheck?.rawData as any)?.data?.found || [];
-  return found.map((f: any) => f.selector).filter(Boolean);
+  return found.map((f: any) => ({
+    selector: f.selector,
+    keySize: f.key_size_bits || null,
+  })).filter((k: DkimKey) => k.selector);
 };
-
-interface DmarcPolicy {
-  p: string | null;
-  sp: string | null;
-}
 
 const extractDmarcPolicy = (categories: ComplianceCategory[]): DmarcPolicy => {
   const allChecks = categories.flatMap(c => c.checks);
@@ -201,10 +209,9 @@ interface DNSGroupProps {
   color: string;
   children: React.ReactNode;
   defaultExpanded?: boolean;
-  maxHeight?: string;
 }
 
-function DNSGroup({ title, count, icon, color, children, defaultExpanded = true, maxHeight = "300px" }: DNSGroupProps) {
+function DNSGroup({ title, count, icon, color, children, defaultExpanded = true }: DNSGroupProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
@@ -237,12 +244,9 @@ function DNSGroup({ title, count, icon, color, children, defaultExpanded = true,
         <div className="w-px bg-border/50" />
       </div>
 
-      {/* Items */}
+      {/* Items - No scrollbar, variable height */}
       {isExpanded && (
-        <div 
-          className="space-y-1 overflow-y-auto scrollbar-thin"
-          style={{ maxHeight }}
-        >
+        <div className="space-y-1">
           {children}
         </div>
       )}
@@ -262,25 +266,26 @@ export function DNSMapSection({
   emailAuth,
   className 
 }: DNSMapSectionProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('all');
   
   const mxRecords = useMemo(() => extractMxRecords(categories), [categories]);
   const spfRecord = useMemo(() => extractSpfRecord(categories), [categories]);
-  const dkimSelectors = useMemo(() => extractDkimSelectors(categories), [categories]);
+  const dkimKeys = useMemo(() => extractDkimKeys(categories), [categories]);
   const dmarcPolicy = useMemo(() => extractDmarcPolicy(categories), [categories]);
   
-  // Filter subdomains by search
+  // Filter subdomains by active/inactive filter
   const filteredSubdomains = useMemo(() => {
     if (!subdomainSummary?.subdomains) return [];
-    if (!searchTerm.trim()) return subdomainSummary.subdomains;
     
-    const term = searchTerm.toLowerCase();
-    return subdomainSummary.subdomains.filter(
-      (sub) =>
-        sub.subdomain.toLowerCase().includes(term) ||
-        sub.addresses.some((addr) => addr.ip.includes(term))
-    );
-  }, [subdomainSummary?.subdomains, searchTerm]);
+    switch (subdomainFilter) {
+      case 'active':
+        return subdomainSummary.subdomains.filter(s => s.is_alive);
+      case 'inactive':
+        return subdomainSummary.subdomains.filter(s => s.is_alive === false);
+      default:
+        return subdomainSummary.subdomains;
+    }
+  }, [subdomainSummary?.subdomains, subdomainFilter]);
 
   const activeCount = subdomainSummary?.subdomains.filter(s => s.is_alive).length ?? 0;
   const inactiveCount = subdomainSummary?.subdomains.filter(s => s.is_alive === false).length ?? 0;
@@ -300,38 +305,32 @@ export function DNSMapSection({
       </CardHeader>
 
       <CardContent>
-        {/* Search (for subdomains) */}
-        {subdomainSummary && subdomainSummary.total_found > 0 && (
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar subdomínio ou IP..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-background/50"
-            />
-          </div>
-        )}
-
-        {/* Root Domain Node */}
+        {/* Root Domain Node - with globe background */}
         <div className="flex justify-center mb-4">
-          <div className="px-6 py-3 rounded-xl border-2 border-primary/50 bg-primary/5 shadow-lg shadow-primary/10">
-            <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
+          <div className="relative">
+            {/* Globe background */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <Globe className="w-24 h-24 text-primary/10" />
+            </div>
+            {/* Domain name overlay */}
+            <div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-card/80 backdrop-blur-sm shadow-lg shadow-primary/10">
+              <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
+            </div>
           </div>
         </div>
 
-        {/* Connector from root */}
-        <div className="flex justify-center h-6">
-          <div className="w-px bg-border" />
-        </div>
-
-        {/* Horizontal connector bar - 3 columns */}
-        <div className="relative h-4 mx-8 mb-2 hidden md:block">
-          <div className="absolute inset-x-0 top-0 h-px bg-border" />
-          {/* 3 drops: 16.67%, 50%, 83.33% */}
-          <div className="absolute left-[16.67%] top-0 w-px h-4 bg-border" />
-          <div className="absolute left-1/2 top-0 w-px h-4 bg-border -translate-x-1/2" />
-          <div className="absolute left-[83.33%] top-0 w-px h-4 bg-border" />
+        {/* Connector Lines - L-shaped drops */}
+        <div className="relative h-12 mx-8 mb-2 hidden md:block">
+          {/* Vertical line from domain center */}
+          <div className="absolute left-1/2 top-0 w-px h-6 bg-border -translate-x-1/2" />
+          
+          {/* Horizontal connector bar */}
+          <div className="absolute left-[16.67%] right-[16.67%] top-6 h-px bg-border" />
+          
+          {/* Vertical drops to each column */}
+          <div className="absolute left-[16.67%] top-6 w-px h-6 bg-border" />
+          <div className="absolute left-1/2 top-6 w-px h-6 bg-border -translate-x-1/2" />
+          <div className="absolute left-[83.33%] top-6 w-px h-6 bg-border" />
         </div>
 
         {/* DNS Groups Grid - 3 Columns */}
@@ -485,10 +484,10 @@ export function DNSMapSection({
                     />
                     <span className="font-medium text-foreground">DKIM</span>
                   </div>
-                  {dkimSelectors.length > 0 ? (
-                    dkimSelectors.map((sel, i) => (
+                  {dkimKeys.length > 0 ? (
+                    dkimKeys.map((key, i) => (
                       <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
-                        {sel}
+                        {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
                       </span>
                     ))
                   ) : (
@@ -541,22 +540,37 @@ export function DNSMapSection({
             icon={<Globe className="w-4 h-4 text-teal-400" />}
             color="border-teal-500/30 bg-teal-500/5"
             defaultExpanded={true}
-            maxHeight="500px"
           >
-            {/* Stats */}
+            {/* Filter Buttons */}
             {subdomainSummary && subdomainSummary.total_found > 0 && (
-              <div className="flex gap-2 mb-2 px-1">
-                <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+              <div className="flex gap-1 mb-2 px-1">
+                <button
+                  onClick={() => setSubdomainFilter(f => f === 'active' ? 'all' : 'active')}
+                  className={cn(
+                    "text-[10px] px-2 py-1 rounded-md border transition-all",
+                    subdomainFilter === 'active' 
+                      ? "bg-primary/20 text-primary border-primary/40" 
+                      : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
+                  )}
+                >
                   {activeCount} ativos
-                </Badge>
-                <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground">
+                </button>
+                <button
+                  onClick={() => setSubdomainFilter(f => f === 'inactive' ? 'all' : 'inactive')}
+                  className={cn(
+                    "text-[10px] px-2 py-1 rounded-md border transition-all",
+                    subdomainFilter === 'inactive' 
+                      ? "bg-muted text-muted-foreground border-muted-foreground/40" 
+                      : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
+                  )}
+                >
                   {inactiveCount} inativos
-                </Badge>
+                </button>
               </div>
             )}
             
             {filteredSubdomains.length > 0 ? (
-              filteredSubdomains.slice(0, 50).map((sub, idx) => (
+              filteredSubdomains.map((sub, idx) => (
                 <DNSNode 
                   key={idx} 
                   label={sub.subdomain}
@@ -571,13 +585,7 @@ export function DNSMapSection({
               ))
             ) : (
               <div className="text-xs text-muted-foreground text-center py-2">
-                {searchTerm ? 'Nenhum resultado' : 'Nenhum subdomínio encontrado'}
-              </div>
-            )}
-            
-            {filteredSubdomains.length > 50 && (
-              <div className="text-xs text-muted-foreground text-center py-2 border-t border-border/30 mt-2">
-                +{filteredSubdomains.length - 50} subdomínios (use a busca para filtrar)
+                Nenhum subdomínio encontrado
               </div>
             )}
           </DNSGroup>
