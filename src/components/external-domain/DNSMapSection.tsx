@@ -60,6 +60,34 @@ const extractMxRecords = (categories: ComplianceCategory[]): MxRecord[] => {
   }));
 };
 
+const extractSpfRecord = (categories: ComplianceCategory[]): string | null => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const spfCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'spf_record');
+  return (spfCheck?.rawData as any)?.data?.raw || null;
+};
+
+const extractDkimSelectors = (categories: ComplianceCategory[]): string[] => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const dkimCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dkim_records');
+  const found = (dkimCheck?.rawData as any)?.data?.found || [];
+  return found.map((f: any) => f.selector).filter(Boolean);
+};
+
+interface DmarcPolicy {
+  p: string | null;
+  sp: string | null;
+}
+
+const extractDmarcPolicy = (categories: ComplianceCategory[]): DmarcPolicy => {
+  const allChecks = categories.flatMap(c => c.checks);
+  const dmarcCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dmarc_record');
+  const parsed = (dmarcCheck?.rawData as any)?.data?.parsed || {};
+  return {
+    p: parsed.p || null,
+    sp: parsed.sp || null,
+  };
+};
+
 const truncateHostname = (hostname: string, maxLen = 25): string => {
   if (hostname.length <= maxLen) return hostname;
   return hostname.substring(0, maxLen - 2) + '…';
@@ -237,6 +265,9 @@ export function DNSMapSection({
   const [searchTerm, setSearchTerm] = useState('');
   
   const mxRecords = useMemo(() => extractMxRecords(categories), [categories]);
+  const spfRecord = useMemo(() => extractSpfRecord(categories), [categories]);
+  const dkimSelectors = useMemo(() => extractDkimSelectors(categories), [categories]);
+  const dmarcPolicy = useMemo(() => extractDmarcPolicy(categories), [categories]);
   
   // Filter subdomains by search
   const filteredSubdomains = useMemo(() => {
@@ -294,151 +325,223 @@ export function DNSMapSection({
           <div className="w-px bg-border" />
         </div>
 
-        {/* Horizontal connector bar */}
-        <div className="relative h-4 mx-8 mb-2">
+        {/* Horizontal connector bar - 3 columns */}
+        <div className="relative h-4 mx-8 mb-2 hidden md:block">
           <div className="absolute inset-x-0 top-0 h-px bg-border" />
-          {/* Vertical drops */}
-          <div className="absolute left-[10%] top-0 w-px h-4 bg-border" />
-          <div className="absolute left-[30%] top-0 w-px h-4 bg-border" />
-          <div className="absolute left-[50%] top-0 w-px h-4 bg-border -translate-x-1/2" />
-          <div className="absolute left-[70%] top-0 w-px h-4 bg-border" />
-          <div className="absolute left-[90%] top-0 w-px h-4 bg-border" />
+          {/* 3 drops: 16.67%, 50%, 83.33% */}
+          <div className="absolute left-[16.67%] top-0 w-px h-4 bg-border" />
+          <div className="absolute left-1/2 top-0 w-px h-4 bg-border -translate-x-1/2" />
+          <div className="absolute left-[83.33%] top-0 w-px h-4 bg-border" />
         </div>
 
-        {/* DNS Groups Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* DNS Groups Grid - 3 Columns */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           
-          {/* NS Records */}
-          <DNSGroup
-            title="NS"
-            count={nsRecords.length}
-            icon={<Server className="w-4 h-4 text-sky-400" />}
-            color="border-sky-500/30 bg-sky-500/5"
-            defaultExpanded={true}
-          >
-            {nsRecords.length > 0 ? (
-              nsRecords.map((ns, idx) => (
-                <DNSNode 
-                  key={idx} 
-                  label={ns} 
-                  showCopy 
-                />
-              ))
-            ) : (
-              <div className="text-xs text-muted-foreground text-center py-2">
-                Nenhum NS encontrado
-              </div>
-            )}
-          </DNSGroup>
+          {/* Column 1: NS + MX */}
+          <div className="space-y-4">
+            {/* NS Records */}
+            <DNSGroup
+              title="NS"
+              count={nsRecords.length}
+              icon={<Server className="w-4 h-4 text-sky-400" />}
+              color="border-sky-500/30 bg-sky-500/5"
+              defaultExpanded={true}
+            >
+              {nsRecords.length > 0 ? (
+                nsRecords.map((ns, idx) => (
+                  <DNSNode 
+                    key={idx} 
+                    label={ns} 
+                    showCopy 
+                  />
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  Nenhum NS encontrado
+                </div>
+              )}
+            </DNSGroup>
 
-          {/* MX Records */}
-          <DNSGroup
-            title="MX"
-            count={mxRecords.length}
-            icon={<Mail className="w-4 h-4 text-purple-400" />}
-            color="border-purple-500/30 bg-purple-500/5"
-            defaultExpanded={true}
-          >
-            {mxRecords.length > 0 ? (
-              mxRecords.map((mx, idx) => (
-                <DNSNode 
-                  key={idx} 
-                  label={mx.exchange}
-                  sublabel={`Prioridade: ${mx.priority}${mx.ips.length ? ` • ${mx.ips.slice(0, 2).join(', ')}` : ''}`}
-                  showCopy 
-                />
-              ))
-            ) : (
-              <div className="text-xs text-muted-foreground text-center py-2">
-                Nenhum MX encontrado
-              </div>
-            )}
-          </DNSGroup>
+            {/* MX Records */}
+            <DNSGroup
+              title="MX"
+              count={mxRecords.length}
+              icon={<Mail className="w-4 h-4 text-purple-400" />}
+              color="border-purple-500/30 bg-purple-500/5"
+              defaultExpanded={true}
+            >
+              {mxRecords.length > 0 ? (
+                mxRecords.map((mx, idx) => (
+                  <DNSNode 
+                    key={idx} 
+                    label={mx.exchange}
+                    sublabel={`Prioridade: ${mx.priority}${mx.ips.length ? ` • ${mx.ips.slice(0, 2).join(', ')}` : ''}`}
+                    showCopy 
+                  />
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  Nenhum MX encontrado
+                </div>
+              )}
+            </DNSGroup>
+          </div>
 
-          {/* SOA / DNSSEC */}
-          <DNSGroup
-            title="SOA"
-            count={1}
-            icon={<Shield className="w-4 h-4 text-amber-400" />}
-            color="border-amber-500/30 bg-amber-500/5"
-            defaultExpanded={true}
-          >
-            <div className="space-y-2 px-1">
-              <div className="text-xs">
-                <span className="text-muted-foreground">Primary:</span>
-                <span className="ml-2 font-mono text-foreground truncate block">
-                  {dnsSummary?.soaMname || 'N/A'}
-                </span>
-              </div>
-              <div className="text-xs">
-                <span className="text-muted-foreground">Contact:</span>
-                <span className="ml-2 font-mono text-foreground truncate block">
-                  {dnsSummary?.soaContact || 'N/A'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs pt-1 border-t border-border/30">
-                <span 
-                  className={cn(
-                    "w-2 h-2 rounded-full",
-                    dnssecActive 
-                      ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
-                      : "bg-muted-foreground/30"
-                  )}
-                />
-                <span className="text-muted-foreground">DNSSEC:</span>
-                <span className={cn(
-                  "font-medium",
-                  dnssecActive ? "text-primary" : "text-muted-foreground"
-                )}>
-                  {dnssecActive ? 'Ativo' : 'Inativo'}
-                </span>
-              </div>
-            </div>
-          </DNSGroup>
-
-          {/* TXT (Email Auth) */}
-          <DNSGroup
-            title="TXT"
-            count={3}
-            icon={<FileText className="w-4 h-4 text-emerald-400" />}
-            color="border-emerald-500/30 bg-emerald-500/5"
-            defaultExpanded={true}
-          >
-            <div className="space-y-1.5 px-1">
-              {[
-                { name: 'SPF', valid: emailAuth.spf },
-                { name: 'DKIM', valid: emailAuth.dkim },
-                { name: 'DMARC', valid: emailAuth.dmarc },
-              ].map((record) => (
-                <div key={record.name} className="flex items-center gap-2 text-xs py-1">
+          {/* Column 2: SOA + TXT */}
+          <div className="space-y-4">
+            {/* SOA / DNSSEC */}
+            <DNSGroup
+              title="SOA"
+              count={1}
+              icon={<Shield className="w-4 h-4 text-amber-400" />}
+              color="border-amber-500/30 bg-amber-500/5"
+              defaultExpanded={true}
+            >
+              <div className="space-y-2 px-1">
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Primary:</span>
+                  <span className="ml-2 font-mono text-foreground truncate block">
+                    {dnsSummary?.soaMname || 'N/A'}
+                  </span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Contact:</span>
+                  <span className="ml-2 font-mono text-foreground truncate block">
+                    {dnsSummary?.soaContact || 'N/A'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs pt-1 border-t border-border/30">
                   <span 
                     className={cn(
                       "w-2 h-2 rounded-full",
-                      record.valid 
+                      dnssecActive 
                         ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
-                        : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+                        : "bg-muted-foreground/30"
                     )}
                   />
-                  <span className="text-muted-foreground w-12">{record.name}</span>
+                  <span className="text-muted-foreground">DNSSEC:</span>
                   <span className={cn(
                     "font-medium",
-                    record.valid ? "text-primary" : "text-rose-400"
+                    dnssecActive ? "text-primary" : "text-muted-foreground"
                   )}>
-                    {record.valid ? '✓ Válido' : '✗ Ausente'}
+                    {dnssecActive ? 'Ativo' : 'Inativo'}
                   </span>
                 </div>
-              ))}
-            </div>
-          </DNSGroup>
+              </div>
+            </DNSGroup>
 
-          {/* Subdomains */}
+            {/* TXT (Email Auth) - Detailed */}
+            <DNSGroup
+              title="TXT"
+              count={3}
+              icon={<FileText className="w-4 h-4 text-emerald-400" />}
+              color="border-emerald-500/30 bg-emerald-500/5"
+              defaultExpanded={true}
+            >
+              <div className="space-y-3 px-1">
+                {/* SPF */}
+                <div className="text-xs">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span 
+                      className={cn(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        emailAuth.spf 
+                          ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
+                          : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+                      )}
+                    />
+                    <span className="font-medium text-foreground">SPF</span>
+                  </div>
+                  {spfRecord ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-[10px] text-muted-foreground font-mono block pl-4 truncate cursor-default">
+                            {spfRecord}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-md">
+                          <p className="font-mono text-xs break-all">{spfRecord}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                      Registro não encontrado
+                    </span>
+                  )}
+                </div>
+                
+                {/* DKIM */}
+                <div className="text-xs">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span 
+                      className={cn(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        emailAuth.dkim 
+                          ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
+                          : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+                      )}
+                    />
+                    <span className="font-medium text-foreground">DKIM</span>
+                  </div>
+                  {dkimSelectors.length > 0 ? (
+                    dkimSelectors.map((sel, i) => (
+                      <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
+                        {sel}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                      Nenhum seletor encontrado
+                    </span>
+                  )}
+                </div>
+                
+                {/* DMARC */}
+                <div className="text-xs">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span 
+                      className={cn(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        emailAuth.dmarc 
+                          ? "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.5)]" 
+                          : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
+                      )}
+                    />
+                    <span className="font-medium text-foreground">DMARC</span>
+                  </div>
+                  {dmarcPolicy.p || dmarcPolicy.sp ? (
+                    <>
+                      {dmarcPolicy.p && (
+                        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+                          Política: {dmarcPolicy.p}
+                        </span>
+                      )}
+                      {dmarcPolicy.sp && (
+                        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+                          Política Subdomínios: {dmarcPolicy.sp}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                      Registro não encontrado
+                    </span>
+                  )}
+                </div>
+              </div>
+            </DNSGroup>
+          </div>
+
+          {/* Column 3: Subdomains */}
           <DNSGroup
             title="Subdomínios"
             count={subdomainSummary?.total_found ?? 0}
             icon={<Globe className="w-4 h-4 text-teal-400" />}
             color="border-teal-500/30 bg-teal-500/5"
             defaultExpanded={true}
-            maxHeight="400px"
+            maxHeight="500px"
           >
             {/* Stats */}
             {subdomainSummary && subdomainSummary.total_found > 0 && (
