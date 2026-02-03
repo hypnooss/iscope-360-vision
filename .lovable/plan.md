@@ -1,111 +1,111 @@
 
 
-# Plano: Atualizar arquivo `latest` ao publicar nova versão
+# Plano: Corrigir Problema do Certificado TLS no Agent
 
 ## Problema Identificado
 
-Ao publicar uma nova versão do agent em **Configurações > Agents**, o código atual:
-
-1. Faz upload apenas de `iscope-agent-{version}.tar.gz`
-2. **NÃO** atualiza o arquivo `iscope-agent-latest.tar.gz`
-
-Como o script de instalação usa `latest` por padrão, os novos agents instalados pegam uma versão desatualizada (ou o arquivo nem existe).
-
----
-
-## Solução
-
-Modificar a função `handlePublishUpdate` em `SettingsPage.tsx` para fazer **dois uploads**:
-1. `iscope-agent-{version}.tar.gz` (arquivo versionado)
-2. `iscope-agent-latest.tar.gz` (cópia para instalações padrão)
-
----
-
-## Alteração
-
-### Arquivo: `src/pages/admin/SettingsPage.tsx`
-
-**Código atual (linhas 254-264):**
-```typescript
-// 1. Upload to Supabase Storage
-const filename = `iscope-agent-${newVersion}.tar.gz`;
-const { error: uploadError } = await supabase.storage
-  .from('agent-releases')
-  .upload(filename, selectedFile, {
-    upsert: true,
-    contentType: 'application/gzip'
-  });
-
-if (uploadError) throw uploadError;
+O agent está falhando com o erro:
+```
+OSError: Could not find a suitable TLS CA certificate bundle, invalid path: /opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
 ```
 
-**Código corrigido:**
-```typescript
-// 1. Upload versioned file to Supabase Storage
-const versionedFilename = `iscope-agent-${newVersion}.tar.gz`;
-const { error: uploadError } = await supabase.storage
-  .from('agent-releases')
-  .upload(versionedFilename, selectedFile, {
-    upsert: true,
-    contentType: 'application/gzip'
-  });
+**Causa**: O pacote `certifi` foi instalado a partir do cache do pip, mas o arquivo `cacert.pem` não foi extraído corretamente.
 
-if (uploadError) throw uploadError;
+## Solução Imediata (execute no servidor)
 
-// 2. Also upload as 'latest' for default installations
-const { error: latestUploadError } = await supabase.storage
-  .from('agent-releases')
-  .upload('iscope-agent-latest.tar.gz', selectedFile, {
-    upsert: true,
-    contentType: 'application/gzip'
-  });
+Rode os comandos abaixo para corrigir manualmente:
 
-if (latestUploadError) {
-  console.error('Error uploading latest:', latestUploadError);
-  toast.warning('Versão publicada, mas erro ao atualizar arquivo latest');
-}
+```bash
+# Parar o serviço
+sudo systemctl stop iscope-agent
+
+# Reinstalar certifi forçando download limpo
+/opt/iscope-agent/venv/bin/pip uninstall certifi -y
+/opt/iscope-agent/venv/bin/pip install --no-cache-dir certifi
+
+# Verificar se o arquivo existe agora
+ls -la /opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
+
+# Reiniciar o serviço
+sudo systemctl start iscope-agent
+
+# Verificar logs
+journalctl -u iscope-agent -f --no-pager
+```
+
+---
+
+## Solução Permanente (alteração no script)
+
+Modificar o script de instalação para usar `--no-cache-dir` ao instalar dependências, garantindo que os pacotes sejam sempre baixados frescos.
+
+### Arquivo: `supabase/functions/agent-install/index.ts`
+
+**Alteração na função `setup_venv()` (linhas 360-368):**
+
+**De:**
+```bash
+"$INSTALL_DIR/venv/bin/pip" install --upgrade pip
+
+# Offline bundle support: if wheels/ exists, install without hitting PyPI
+if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
+  echo "Instalando dependências (offline wheels bundle)..."
+  "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
+else
+  "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+fi
+```
+
+**Para:**
+```bash
+"$INSTALL_DIR/venv/bin/pip" install --upgrade pip
+
+# Offline bundle support: if wheels/ exists, install without hitting PyPI
+if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
+  echo "Instalando dependências (offline wheels bundle)..."
+  "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
+else
+  # Use --no-cache-dir to avoid issues with corrupted cached packages (e.g., certifi missing cacert.pem)
+  "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+fi
+```
+
+---
+
+## Sobre os Logs
+
+O arquivo de log não existe mais porque o agent foi atualizado para usar apenas `journalctl` por padrão.
+
+**Como ver os logs:**
+```bash
+# Logs em tempo real
+journalctl -u iscope-agent -f --no-pager
+
+# Últimas 100 linhas
+journalctl -u iscope-agent -n 100 --no-pager
+
+# Logs desde hoje
+journalctl -u iscope-agent --since today
+```
+
+**Opcional**: Se você quiser um arquivo de log, adicione ao `/etc/iscope/agent.env`:
+```
+AGENT_LOG_FILE=/var/log/iscope/agent.log
 ```
 
 ---
 
 ## Resumo
 
-| Arquivo | Ação |
-|---------|------|
-| `src/pages/admin/SettingsPage.tsx` | Adicionar upload do arquivo `latest` junto com o versionado |
+| Ação | Tipo |
+|------|------|
+| Reinstalar certifi manualmente | Correção imediata |
+| Adicionar `--no-cache-dir` ao pip install | Correção permanente |
 
 ---
 
-## Resultado Esperado
+## Próximos Passos
 
-Após a correção:
-1. Ao publicar versão `1.1.0`, serão criados dois arquivos:
-   - `iscope-agent-1.1.0.tar.gz`
-   - `iscope-agent-latest.tar.gz` (cópia do 1.1.0)
-2. Novas instalações com o script padrão baixarão sempre a versão mais recente
-3. Instalações com `--version X.X.X` continuam funcionando normalmente
-
----
-
-## Seção Técnica
-
-### Fluxo de Upload
-
-```
-Usuário seleciona arquivo
-       ↓
-Calcula SHA256 checksum
-       ↓
-Clica "Publicar"
-       ↓
-Upload 1: iscope-agent-{version}.tar.gz
-       ↓
-Upload 2: iscope-agent-latest.tar.gz  ← NOVO
-       ↓
-Atualiza system_settings (version, checksum, force_update)
-```
-
-### Por que dois uploads?
-
-O Supabase Storage não suporta "aliases" ou "symlinks" para arquivos. A única forma de manter um arquivo `latest` é fazer upload duas vezes do mesmo conteúdo.
+1. Execute a **solução imediata** no servidor para corrigir o agent agora
+2. Depois que confirmar que está funcionando, aprove a **solução permanente** para evitar o problema em futuras instalações
 
