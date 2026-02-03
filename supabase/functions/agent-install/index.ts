@@ -168,17 +168,27 @@ install_deps() {
   fi
 
   if command -v dnf >/dev/null 2>&1; then
-    # OL/RHEL/CentOS 8+: habilitar módulo Python 3.9 antes de instalar
+    # Instalar dependências básicas
     dnf install -y tar curl gcc openssl-devel libffi-devel || true
     
-    # Tentar habilitar módulo python39 (CentOS/RHEL 8)
+    # Instalar EPEL para CentOS/RHEL 8 (necessário após EOL)
+    dnf install -y epel-release 2>/dev/null || true
+    
+    # Para CentOS 8 EOL: apontar repos para vault
+    if [[ -f /etc/centos-release ]] && grep -q "CentOS.*8" /etc/centos-release 2>/dev/null; then
+      sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+      sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+      dnf clean all 2>/dev/null || true
+    fi
+    
+    # Tentar habilitar módulo python39 (se disponível)
     dnf module reset python39 -y 2>/dev/null || true
     dnf module enable python39 -y 2>/dev/null || true
     
-    # Instalar Python (com fallback)
+    # Instalar Python (múltiplos fallbacks)
     dnf install -y python39 python39-pip python39-devel 2>/dev/null || \\
-    dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \\
-    dnf install -y python3 python3-pip python3-devel || true
+    dnf install -y python3 python3-pip python3-devel 2>/dev/null || \\
+    dnf install -y python38 python38-pip python38-devel 2>/dev/null || true
     
     return
   fi
