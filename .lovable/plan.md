@@ -1,179 +1,65 @@
+# Migração da Enumeração de Subdomínios para Edge Function
 
+## ✅ Status: CONCLUÍDO
 
-## Migração da Enumeração de Subdomínios para Edge Function
+**Data:** 2026-02-03
 
-### Contexto
+## Resumo
 
-Atualmente, a enumeração de subdomínios roda no Python Agent (rede do cliente), o que causa:
-1. **DNS mascarado** - IPs internos como `172.16.10.250` aparecem em vez dos IPs públicos reais
-2. **APIs bloqueadas** - Firewalls corporativos podem bloquear as APIs de enumeração
-3. **Dependência do ambiente** - Resultados variam conforme a rede do cliente
+A enumeração de subdomínios foi migrada do Python Agent (rede do cliente) para uma Edge Function (servidor Supabase), resolvendo problemas de:
+1. **DNS mascarado** - IPs internos como `172.16.10.250` aparecendo em vez dos públicos
+2. **APIs bloqueadas** - Firewalls corporativos bloqueando APIs de enumeração
+3. **Inconsistência** - Resultados variando conforme a rede do cliente
 
-### Solução: Arquitetura Híbrida
+## Arquitetura Implementada
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        NOVA ARQUITETURA                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐      ┌──────────────┐      ┌───────────────┐  │
-│  │   Frontend   │──────│  trigger-    │──────│  agent_tasks  │  │
-│  │ (Disparar)   │      │  external-   │      │   (pending)   │  │
-│  └──────────────┘      │  domain-     │      └───────┬───────┘  │
-│                        │  analysis    │              │          │
-│                        └──────────────┘              ▼          │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                      Python Agent                         │   │
-│  │  Executa APENAS steps de DNS direto:                      │   │
-│  │  • ns_records, mx_records, soa_record                     │   │
-│  │  • spf_record, dmarc_record, dkim_records, dnssec_status  │   │
-│  │                                                           │   │
-│  │  NÃO executa mais: subdomain_enum                         │   │
-│  └──────────────────────────────┬───────────────────────────┘   │
-│                                 │                                │
-│                                 ▼                                │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                  agent-task-result                        │   │
-│  │  1. Recebe resultado dos steps DNS                        │   │
-│  │  2. Detecta target_type = 'external_domain'               │   │
-│  │  3. Chama subdomain-enum Edge Function                    │   │
-│  │  4. Mescla resultado dos subdomínios com os dados DNS     │   │
-│  │  5. Processa compliance rules + salva histórico           │   │
-│  └──────────────────────────────┬───────────────────────────┘   │
-│                                 │                                │
-│                                 ▼                                │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              subdomain-enum (NOVA)                        │   │
-│  │  • Consulta 9 APIs públicas (crt.sh, HackerTarget, etc.)  │   │
-│  │  • Usa DNS-over-HTTPS (Cloudflare/Google)                 │   │
-│  │  • Retorna IPs públicos reais (sem mascaramento)          │   │
-│  │  • Executa em ambiente neutro (Supabase Edge)             │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    ARQUITETURA HÍBRIDA                        │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  Python Agent (rede do cliente)                               │
+│  └─ Executa APENAS: ns, mx, soa, spf, dmarc, dkim, dnssec    │
+│                                                               │
+│                        ↓                                      │
+│                                                               │
+│  agent-task-result (Edge Function)                            │
+│  └─ Detecta target_type = 'external_domain'                   │
+│  └─ Chama subdomain-enum Edge Function                        │
+│  └─ Mescla resultados + processa compliance                   │
+│                                                               │
+│                        ↓                                      │
+│                                                               │
+│  subdomain-enum (Nova Edge Function)                          │
+│  └─ Consulta 9 APIs públicas em paralelo                      │
+│  └─ Usa DNS-over-HTTPS (Cloudflare/Google)                    │
+│  └─ Retorna IPs públicos reais                                │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
 ```
 
----
+## Alterações Realizadas
 
-### Arquivos a Criar/Modificar
+### 1. Nova Edge Function: `supabase/functions/subdomain-enum/index.ts`
+- Consulta 9 APIs: crt.sh, HackerTarget, AlienVault, RapidDNS, ThreatMiner, URLScan, Wayback, CertSpotter, JLDC
+- Resolução DNS via DoH (Cloudflare + Google fallback)
+- Limite de 200 resoluções DNS por execução (evitar timeout)
+- Retorna `{ subdomain, sources, ips, is_alive }`
 
-#### 1. Nova Edge Function: `supabase/functions/subdomain-enum/index.ts`
+### 2. Atualização: `supabase/functions/agent-task-result/index.ts`
+- Adicionado `payload` na query de busca da task
+- Após receber resultados do agent, chama `subdomain-enum` para domínios externos
+- Injeta resultado em `rawData['subdomain_enum']` antes do processamento de compliance
 
-Responsável por:
-- Consultar as 9 APIs de enumeração (crt.sh, HackerTarget, AlienVault, RapidDNS, ThreatMiner, URLScan, Wayback, CertSpotter, JLDC)
-- Validar subdomínios via DNS-over-HTTPS (Cloudflare/Google) para obter IPs públicos reais
-- Retornar lista de subdomínios com status `is_alive` e `ips`
+### 3. Blueprint Atualizado: `device_blueprints` (ID: 27b856b1-3b20-4180-b9da-ea5834c55ac6)
+- Removido step `subdomain_enum` do blueprint de External Domain
+- Agent agora executa apenas os 7 steps DNS diretos
 
-```typescript
-// Estrutura principal
-interface SubdomainEnumRequest {
-  domain: string;
-  timeout?: number; // segundos
-}
+### 4. Python Agent: Limpeza
+- Removido `python-agent/agent/executors/subdomain_enum.py`
+- Removido import/mapping de `SubdomainEnumExecutor` de `__init__.py` e `tasks.py`
 
-interface SubdomainEnumResponse {
-  success: boolean;
-  domain: string;
-  total_found: number;
-  alive_count: number;
-  inactive_count: number;
-  sources: string[];
-  subdomains: SubdomainEntry[];
-  errors?: string[];
-  execution_time_ms: number;
-}
-
-// Resolução DNS via DoH (Cloudflare)
-async function resolveDNS(hostname: string): Promise<string[]> {
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`;
-  const resp = await fetch(url, { headers: { 'Accept': 'application/dns-json' } });
-  const data = await resp.json();
-  return data.Answer?.filter(a => a.type === 1).map(a => a.data) || [];
-}
-```
-
-#### 2. Atualizar: `supabase/functions/agent-task-result/index.ts`
-
-Modificar para:
-- Detectar quando `target_type === 'external_domain'`
-- Chamar a edge function `subdomain-enum` via fetch interno
-- Mesclar o resultado no `rawData` antes de processar compliance rules
-
-```typescript
-// Após reconstruir rawData dos step_results (linha ~3800)
-if (task.target_type === 'external_domain' && rawData) {
-  // Get domain from task payload
-  const domain = (task.payload as any)?.domain;
-  if (domain) {
-    console.log(`[external_domain] Invoking subdomain-enum for ${domain}`);
-    
-    const subdomainResult = await invokeSubdomainEnum(domain);
-    if (subdomainResult) {
-      // Inject subdomain data as if it came from agent step
-      rawData['subdomain_enum'] = {
-        data: subdomainResult
-      };
-    }
-  }
-}
-```
-
-#### 3. Atualizar Blueprint no Banco de Dados
-
-Remover o step `subdomain_enum` do blueprint de `external_domain`:
-
-```sql
-UPDATE device_blueprints 
-SET collection_steps = '{"steps": [
-  {"id": "ns_records", "type": "dns_query", "config": {"query_type": "NS"}},
-  {"id": "mx_records", "type": "dns_query", "config": {"query_type": "MX"}},
-  {"id": "soa_record", "type": "dns_query", "config": {"query_type": "SOA"}},
-  {"id": "spf_record", "type": "dns_query", "config": {"query_type": "SPF"}},
-  {"id": "dmarc_record", "type": "dns_query", "config": {"query_type": "DMARC"}},
-  {"id": "dkim_records", "type": "dns_query", "config": {"query_type": "DKIM", "selectors": [...], "best_effort": true}},
-  {"id": "dnssec_status", "type": "dns_query", "config": {"query_type": "DNSSEC", "best_effort": true}}
-]}'::jsonb
-WHERE device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain')
-  AND is_active = true;
-```
-
-#### 4. Python Agent (Opcional - Limpeza)
-
-Arquivos que podem ser removidos ou mantidos para uso futuro:
-- `python-agent/agent/executors/subdomain_enum.py` - Pode ser removido
-- `python-agent/agent/executors/__init__.py` - Remover import do SubdomainEnumExecutor
-- `python-agent/agent/tasks.py` - Remover mapeamento de `subdomain_enum`
-
----
-
-### Detalhes Técnicos
-
-#### APIs de Enumeração (TypeScript/Deno)
-
-| API | Endpoint | Formato | Rate Limit |
-|-----|----------|---------|------------|
-| crt.sh | `crt.sh/?q=%25.{domain}&output=json` | JSON | Ilimitado |
-| HackerTarget | `api.hackertarget.com/hostsearch/?q={domain}` | CSV | 100/dia |
-| AlienVault | `otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns` | JSON | Rate limited |
-| RapidDNS | `rapiddns.io/subdomain/{domain}?full=1` | HTML | Ilimitado |
-| ThreatMiner | `api.threatminer.org/v2/domain.php?q={domain}&rt=5` | JSON | Instável |
-| URLScan | `urlscan.io/api/v1/search/?q=domain:{domain}` | JSON | 100/dia |
-| Wayback | `web.archive.org/cdx/search/cdx?url=*.{domain}/*` | JSON | Bloqueio frequente |
-| CertSpotter | `api.certspotter.com/v1/issuances?domain={domain}` | JSON | 100/hora |
-| JLDC | `jldc.me/anubis/subdomains/{domain}` | JSON | SSL issues |
-
-#### DNS-over-HTTPS (DoH)
-
-Usar Cloudflare como primário, Google como fallback:
-- **Cloudflare**: `https://cloudflare-dns.com/dns-query?name={hostname}&type=A`
-- **Google**: `https://dns.google/resolve?name={hostname}&type=A`
-
-Isso garante resolução de IPs públicos reais, sem interferência de DNS internos.
-
----
-
-### Benefícios
+## Benefícios
 
 | Aspecto | Antes (Agent) | Depois (Edge Function) |
 |---------|---------------|------------------------|
@@ -181,26 +67,13 @@ Isso garante resolução de IPs públicos reais, sem interferência de DNS inter
 | **APIs** | Podem estar bloqueadas | Sempre acessíveis |
 | **Consistência** | Varia por ambiente | Sempre igual |
 | **Manutenção** | Python + TypeScript | TypeScript centralizado |
-| **Tempo** | Depende do Agent processar | Paralelo ao Agent |
 
----
+## Como Testar
 
-### Considerações
-
-1. **Timeout de Edge Functions**: Limite de ~30s no Supabase. Para muitos subdomínios, processar em batches ou limitar a 200-300 resoluções DNS.
-
-2. **Fallback**: Se a edge function falhar, o relatório ainda terá os dados DNS (MX, SPF, DMARC, etc.) - apenas a seção de subdomínios ficará vazia.
-
-3. **Cache**: Considerar cache de 24h para domínios já analisados recentemente.
-
----
-
-### Ordem de Implementação
-
-1. Criar edge function `subdomain-enum` com todas as 9 APIs + DoH
-2. Testar edge function isoladamente
-3. Atualizar `agent-task-result` para chamar a nova função
-4. Atualizar blueprint no banco (remover step subdomain_enum)
-5. Deploy e testar fluxo completo
-6. (Opcional) Remover código do Python Agent
-
+1. Disparar uma nova análise de External Domain
+2. Verificar nos logs da Edge Function `agent-task-result` a mensagem:
+   ```
+   [external_domain] Invoking server-side subdomain enumeration for {domain}
+   [external_domain] Subdomain enum completed: X found, Y alive
+   ```
+3. Conferir no relatório se os IPs são públicos (não RFC1918)
