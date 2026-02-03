@@ -1,75 +1,43 @@
 
-
-# Plano: Corrigir permissões do arquivo agent.env
+# Plano: Corrigir Localização do Diretório de Backup do AutoUpdater
 
 ## Problema Identificado
 
-O agent falha ao iniciar porque:
-1. O arquivo `/etc/iscope/agent.env` é criado com permissões `600` (apenas root pode ler)
-2. O agent roda como usuário `iscope`
-3. O usuário `iscope` não tem permissão para ler o arquivo de configuração
-
-**Evidência**: Executando manualmente como root funciona, mas via systemd (como usuário iscope) falha.
-
-## Solução Imediata (execute no servidor)
-
-```bash
-sudo chown iscope:iscope /etc/iscope/agent.env
-sudo systemctl restart iscope-agent
-systemctl status iscope-agent --no-pager
+O auto-update falha com:
 ```
+[ERROR] Erro durante update: [Errno 13] Permission denied: '/opt/iscope-agent-backup'
+```
+
+**Causa**: O `AutoUpdater` tenta criar o backup em `/opt/iscope-agent-backup`, mas:
+1. O agent roda como usuário `iscope`
+2. O diretório `/opt` pertence a `root`
+3. O usuário `iscope` não pode criar diretórios em `/opt`
+
+## Solução
+
+Mover o diretório de backup para dentro de `/var/lib/iscope-agent/backup`, onde o usuário `iscope` já tem permissões.
 
 ---
 
-## Solução Permanente
+### Arquivo: `python-agent/agent/updater.py`
 
-Modificar o script de instalação para definir o proprietário correto do arquivo `agent.env`.
-
-### Arquivo: `supabase/functions/agent-install/index.ts`
-
-**Alteração na função `write_env_file()` (aproximadamente linhas 305-320):**
+**Alteração no construtor (linhas 29-32):**
 
 De:
-```bash
-write_env_file() {
-  local env_file
-  env_file="$CONFIG_DIR/agent.env"
-
-  # Do not echo activation code to stdout
-  cat > "$env_file" <<EOF
-AGENT_API_BASE_URL=\${API_BASE_URL}
-AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
-AGENT_STATE_FILE=\${STATE_DIR}/state.json
-AGENT_LOG_FILE=/var/log/iscope/agent.log
-AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
-EOF
-
-  chmod 600 "$env_file"
-}
+```python
+def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
+    self.logger = logger
+    self.install_dir = Path(install_dir)
+    self.backup_dir = self.install_dir.parent / "iscope-agent-backup"
 ```
 
 Para:
-```bash
-write_env_file() {
-  local env_file
-  env_file="$CONFIG_DIR/agent.env"
-
-  # Do not echo activation code to stdout
-  cat > "$env_file" <<EOF
-AGENT_API_BASE_URL=\${API_BASE_URL}
-AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
-AGENT_STATE_FILE=\${STATE_DIR}/state.json
-AGENT_LOG_FILE=/var/log/iscope/agent.log
-AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
-EOF
-
-  chmod 600 "$env_file"
-  
-  # Ensure the service user can read the config file
-  if id "$SERVICE_USER" >/dev/null 2>&1; then
-    chown "$SERVICE_USER":"$SERVICE_USER" "$env_file"
-  fi
-}
+```python
+def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
+    self.logger = logger
+    self.install_dir = Path(install_dir)
+    # Backup dir in /var/lib/iscope-agent/backup (user iscope has write access)
+    self.backup_dir = Path("/var/lib/iscope-agent/backup")
 ```
 
 ---
@@ -78,21 +46,35 @@ EOF
 
 | Local | Alteração |
 |-------|-----------|
-| Função `write_env_file()` | Adicionar `chown` para o usuário do serviço após criar o arquivo |
+| `updater.py` linha 32 | Mudar `backup_dir` de `/opt/iscope-agent-backup` para `/var/lib/iscope-agent/backup` |
 
 ---
 
 ## Resultado Esperado
 
 Após a correção:
-1. O arquivo `agent.env` será criado com owner `iscope:iscope`
-2. O agent conseguirá ler as configurações ao iniciar
-3. As permissões `600` são mantidas (apenas o dono pode ler/escrever) - seguro para o activation code
+1. O backup será criado em `/var/lib/iscope-agent/backup`
+2. O usuário `iscope` já tem permissão nesse diretório
+3. O auto-update funcionará corretamente
 
 ---
 
-## Próximos Passos
+## Próximos Passos Após Aprovação
 
-1. Execute a **solução imediata** no servidor para resolver o problema agora
-2. Aprove este plano para aplicar a **correção permanente** no script de instalação
+1. Atualizar o arquivo `python-agent/agent/updater.py`
+2. Criar uma nova release (v1.1.1) com a correção
+3. Fazer upload para o bucket `agent-releases`
+4. O agent irá baixar a atualização automaticamente no próximo heartbeat
 
+---
+
+## Solução Imediata (enquanto a correção não é deployada)
+
+Para corrigir o servidor atual, execute:
+```bash
+sudo mkdir -p /opt/iscope-agent-backup
+sudo chown iscope:iscope /opt/iscope-agent-backup
+sudo systemctl restart iscope-agent
+```
+
+Isso permitirá que o auto-update funcione até que a nova versão com a correção seja instalada.
