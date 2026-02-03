@@ -1,125 +1,239 @@
 
 
-## Melhorias no Amass Executor para Enumeração Efetiva de Subdomínios
+## Alternativa ao Amass: Executor de Enumeração de Subdomínios via APIs
 
-### Problema Identificado
+### Análise do Problema
 
-O Amass está funcionando (50s de execução), mas retornou apenas 1 resultado - o registro MX do próprio domínio base. Isso indica que:
+O Amass v4.x sem configuração de API keys depende de fontes muito limitadas. Executando por 50 segundos, retornou apenas o registro MX do domínio base, o que é insuficiente para uma análise de segurança.
 
-1. **Fontes limitadas**: O Amass v4.x sem configuração de API keys só usa fontes públicas muito limitadas
-2. **Parser muito restritivo**: O parser atual aceita o domínio base como "subdomínio" válido
-3. **Sem log de fontes consultadas**: Não sabemos quais fontes o Amass está realmente usando
+### Solução Proposta: Executor Híbrido com APIs Diretas
 
-### Solução Proposta
+Criar um novo executor que consulta diretamente APIs públicas gratuitas, garantindo resultados consistentes:
 
-#### 1. Configurar Fontes Gratuitas no Amass
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                  SubdomainEnumExecutor                      │
+├─────────────────────────────────────────────────────────────┤
+│  1. crt.sh (Certificate Transparency) - GRATUITO           │
+│     - Busca certificados SSL emitidos para *.domain.com    │
+│     - Fonte mais efetiva para subdomínios reais            │
+│                                                             │
+│  2. HackerTarget API - GRATUITO (100 req/dia)              │
+│     - API REST simples: api.hackertarget.com               │
+│                                                             │
+│  3. DNSDumpster - GRATUITO (scraping)                      │
+│     - Dados de DNS passivo                                  │
+│                                                             │
+│  4. Amass (fallback) - Se já estiver instalado             │
+│     - Mantém como opção adicional                          │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Adicionar suporte para um arquivo de configuração do Amass que habilita fontes gratuitas sem API key:
+### Implementação: Novo Executor `subdomain_enum.py`
 
-**Fontes gratuitas disponíveis:**
-- crt.sh (Certificate Transparency - muito efetiva)
-- Wayback Machine
-- DNSDumpster
-- Hackertarget
-- BufferOver
-- VirusTotal (limitado sem API)
-- AlienVault OTX
-- Robtex
-
-#### 2. Melhorar o Comando Amass
-
-Adicionar flags para maximizar resultados:
-- `-src` - Mostra a fonte de cada resultado
-- `-nocolor` - Melhor para parsing
-- `-oA /tmp/amass-output` - Output estruturado
-
-#### 3. Corrigir o Parser
-
-- Excluir o domínio base da lista de subdomínios
-- Capturar a fonte de cada descoberta
-- Log completo de todas as linhas para debug
-
-### Alterações Técnicas
-
-**Arquivo:** `python-agent/agent/executors/amass.py`
-
-**1. Atualizar o comando para incluir `-src` e melhor logging:**
+**Arquivo:** `python-agent/agent/executors/subdomain_enum.py`
 
 ```python
-cmd = [
-    amass_path,
-    'enum',
-    '-d', domain,
-    '-timeout', str(timeout_minutes),
-    '-nocolor',  # Melhor para parsing
-    '-src',      # Mostra fonte de cada resultado
-]
+"""
+Subdomain Enumeration Executor - Multi-source subdomain discovery.
+Uses free APIs: crt.sh, HackerTarget, AlienVault OTX.
+"""
+
+import json
+import re
+import requests
+from typing import Any, Dict, List, Set
+from .base import BaseExecutor
+
+
+class SubdomainEnumExecutor(BaseExecutor):
+    """Executor for subdomain enumeration using multiple free APIs."""
+
+    DEFAULT_TIMEOUT = 30
+
+    def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        config = step.get('config', {}) or {}
+        step_id = step.get('id', 'unknown')
+
+        domain = (config.get('domain') or context.get('domain') or '').strip().rstrip('.')
+        timeout = config.get('timeout', self.DEFAULT_TIMEOUT)
+
+        if not domain:
+            return {'status_code': 0, 'data': None, 'error': 'Missing domain'}
+
+        self.logger.info(f"Step {step_id}: Starting subdomain enumeration for {domain}")
+
+        all_subdomains: Dict[str, Dict] = {}
+        sources_used: List[str] = []
+        errors: List[str] = []
+
+        # 1. crt.sh (Certificate Transparency) - Most effective
+        try:
+            crt_results = self._query_crtsh(domain, timeout)
+            for sub in crt_results:
+                if sub not in all_subdomains:
+                    all_subdomains[sub] = {'subdomain': sub, 'sources': ['crt.sh']}
+                elif 'crt.sh' not in all_subdomains[sub]['sources']:
+                    all_subdomains[sub]['sources'].append('crt.sh')
+            sources_used.append(f"crt.sh ({len(crt_results)})")
+            self.logger.info(f"Step {step_id}: crt.sh returned {len(crt_results)} subdomains")
+        except Exception as e:
+            errors.append(f"crt.sh: {str(e)}")
+            self.logger.warning(f"Step {step_id}: crt.sh error - {e}")
+
+        # 2. HackerTarget API
+        try:
+            ht_results = self._query_hackertarget(domain, timeout)
+            for sub in ht_results:
+                if sub not in all_subdomains:
+                    all_subdomains[sub] = {'subdomain': sub, 'sources': ['hackertarget']}
+                elif 'hackertarget' not in all_subdomains[sub]['sources']:
+                    all_subdomains[sub]['sources'].append('hackertarget')
+            sources_used.append(f"hackertarget ({len(ht_results)})")
+            self.logger.info(f"Step {step_id}: hackertarget returned {len(ht_results)} subdomains")
+        except Exception as e:
+            errors.append(f"hackertarget: {str(e)}")
+            self.logger.warning(f"Step {step_id}: hackertarget error - {e}")
+
+        # 3. AlienVault OTX (gratuito, sem API key para consultas básicas)
+        try:
+            otx_results = self._query_alienvault(domain, timeout)
+            for sub in otx_results:
+                if sub not in all_subdomains:
+                    all_subdomains[sub] = {'subdomain': sub, 'sources': ['alienvault']}
+                elif 'alienvault' not in all_subdomains[sub]['sources']:
+                    all_subdomains[sub]['sources'].append('alienvault')
+            sources_used.append(f"alienvault ({len(otx_results)})")
+            self.logger.info(f"Step {step_id}: alienvault returned {len(otx_results)} subdomains")
+        except Exception as e:
+            errors.append(f"alienvault: {str(e)}")
+            self.logger.warning(f"Step {step_id}: alienvault error - {e}")
+
+        # Sort results
+        subdomains_list = sorted(all_subdomains.values(), key=lambda x: x['subdomain'])
+
+        self.logger.info(
+            f"Step {step_id}: Total {len(subdomains_list)} unique subdomains from {len(sources_used)} sources"
+        )
+
+        return {
+            'status_code': 200,
+            'data': {
+                'domain': domain,
+                'total_found': len(subdomains_list),
+                'sources': sources_used,
+                'subdomains': subdomains_list,
+                'errors': errors if errors else None,
+            },
+            'error': None,
+        }
+
+    def _query_crtsh(self, domain: str, timeout: int) -> Set[str]:
+        """Query crt.sh Certificate Transparency logs."""
+        url = f"https://crt.sh/?q=%25.{domain}&output=json"
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+        
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        
+        subdomains = set()
+        data = response.json()
+        
+        for cert in data:
+            name_value = cert.get('name_value', '')
+            # Split by newline (wildcard certs may have multiple names)
+            for name in name_value.split('\n'):
+                name = name.strip().lower().lstrip('*.')
+                if self._is_valid_subdomain(name, domain):
+                    subdomains.add(name)
+        
+        return subdomains
+
+    def _query_hackertarget(self, domain: str, timeout: int) -> Set[str]:
+        """Query HackerTarget API (100 free requests/day)."""
+        url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
+        
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        
+        subdomains = set()
+        
+        # Format: subdomain,ip
+        for line in response.text.strip().split('\n'):
+            if ',' in line:
+                subdomain = line.split(',')[0].strip().lower()
+                if self._is_valid_subdomain(subdomain, domain):
+                    subdomains.add(subdomain)
+        
+        return subdomains
+
+    def _query_alienvault(self, domain: str, timeout: int) -> Set[str]:
+        """Query AlienVault OTX passive DNS."""
+        url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns"
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)'}
+        
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        
+        subdomains = set()
+        data = response.json()
+        
+        for record in data.get('passive_dns', []):
+            hostname = record.get('hostname', '').strip().lower()
+            if self._is_valid_subdomain(hostname, domain):
+                subdomains.add(hostname)
+        
+        return subdomains
+
+    def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
+        """Check if name is a valid subdomain (excludes base domain itself)."""
+        if not name:
+            return False
+        name = name.lower()
+        base_domain = base_domain.lower()
+        
+        # Exclude the base domain itself
+        if name == base_domain:
+            return False
+        
+        # Must end with .base_domain
+        return name.endswith(f".{base_domain}")
 ```
 
-**2. Corrigir validação de subdomínio (excluir domínio base):**
+### Alterações Necessárias
 
-```python
-def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
-    """Check if name is a valid subdomain of base_domain (excludes base domain itself)."""
-    name = name.lstrip('*.').lower()
-    base_domain = base_domain.lower()
-    if not name:
-        return False
-    # IMPORTANTE: Excluir o próprio domínio base
-    if name == base_domain:
-        return False
-    return name.endswith(f".{base_domain}")
-```
+**1. Criar o novo executor:**
+- Arquivo: `python-agent/agent/executors/subdomain_enum.py`
 
-**3. Melhorar parsing para capturar fontes por subdomínio:**
+**2. Registrar no mapeamento de executors:**
+- Arquivo: `python-agent/agent/executors/__init__.py`
+- Adicionar: `'subdomain_enum': SubdomainEnumExecutor`
 
-```python
-# Parse format: "[source] subdomain (FQDN) --> ..."
-source_subdomain_match = re.match(r'^\[([^\]]+)\]\s+([^\s]+)\s*\(FQDN\)', parts[0])
-if source_subdomain_match:
-    source = source_subdomain_match.group(1)
-    name = source_subdomain_match.group(2).lower()
-    sources_set.add(source)
-    # Adicionar fonte ao subdomínio
-    if name not in subdomains:
-        subdomains[name] = {'subdomain': name, 'sources': [source], 'addresses': []}
-    elif source not in subdomains[name]['sources']:
-        subdomains[name]['sources'].append(source)
-```
+**3. Atualizar o blueprint do External Domain:**
+- Alterar o step de `type: 'amass'` para `type: 'subdomain_enum'`
+- Ou manter ambos como opção configurável
 
-**4. Adicionar log de linhas não parseadas para debug:**
+### Vantagens da Nova Abordagem
 
-```python
-# Log de linhas que não foram parseadas (para debug)
-unparsed_lines = []
-for line in output.splitlines():
-    if line.strip() and not self._is_known_line(line):
-        unparsed_lines.append(line[:100])
+| Aspecto | Amass | Novo Executor |
+|---------|-------|---------------|
+| Dependências | Binário Go externo | Apenas Python requests |
+| Velocidade | 50s+ | ~5-10s |
+| Confiabilidade | Depende de config | APIs diretas |
+| Fontes gratuitas | Limitadas sem config | crt.sh, HackerTarget, AlienVault |
+| Manutenção | Atualizações do binário | Código próprio |
 
-if unparsed_lines:
-    self.logger.info(f"Unparsed lines: {unparsed_lines[:5]}")
-```
+### Teste Esperado
 
-### Teste Manual Recomendado
+Para o domínio `taschibra.com.br`, o crt.sh geralmente retorna:
+- Certificados emitidos para `*.taschibra.com.br`
+- Subdomínios como `www`, `mail`, `webmail`, `api`, etc.
 
-Para verificar o que o Amass pode descobrir com as fontes disponíveis, execute no servidor:
+### Próximos Passos
 
-```bash
-# Teste com flag -src para ver fontes
-/usr/local/bin/amass enum -d taschibra.com.br -timeout 5 -passive -src -nocolor
-
-# Teste com domínio mais conhecido (para validar setup)
-/usr/local/bin/amass enum -d google.com -timeout 2 -passive -src -nocolor
-```
-
-Se mesmo com `-src` os resultados forem pobres, pode ser necessário:
-1. Verificar conectividade com APIs externas
-2. Configurar API keys no arquivo `~/.config/amass/config.yaml`
-
-### Resultado Esperado
-
-Após as alterações:
-- Log mostrará as fontes consultadas (`[crt.sh]`, `[DNSDumpster]`, etc.)
-- O domínio base não aparecerá como subdomínio
-- Linhas não parseadas serão logadas para debug futuro
+1. Implementar o novo executor `subdomain_enum.py`
+2. Registrar no `__init__.py` dos executors
+3. Atualizar o blueprint para usar o novo tipo
+4. Testar com uma nova análise de External Domain
+5. Manter o AmassExecutor como alternativa para modo `active` (brute-force)
 
