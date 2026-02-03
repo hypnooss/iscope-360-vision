@@ -162,7 +162,7 @@ function DNSNode({ label, value, sublabel, isActive, showCopy, showExternalLink,
           </Tooltip>
         </TooltipProvider>
         {sublabel && (
-          <span className="text-[10px] text-muted-foreground truncate block">{sublabel}</span>
+          <span className="text-xs text-muted-foreground truncate block">{sublabel}</span>
         )}
       </div>
       
@@ -266,7 +266,7 @@ export function DNSMapSection({
   emailAuth,
   className 
 }: DNSMapSectionProps) {
-  const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('all');
+  const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('active');
   
   const mxRecords = useMemo(() => extractMxRecords(categories), [categories]);
   const spfRecord = useMemo(() => extractSpfRecord(categories), [categories]);
@@ -294,17 +294,39 @@ export function DNSMapSection({
   const dnssecActive = dnsSummary?.dnssecHasDnskey || dnsSummary?.dnssecHasDs;
 
   return (
-    <Card className={cn("glass-card border-border/50", className)}>
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-3 text-lg">
+    <div 
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-primary/20",
+        className
+      )}
+      style={{
+        background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
+      }}
+    >
+      {/* Grid pattern overlay */}
+      <div 
+        className="absolute inset-0 opacity-30 pointer-events-none"
+        style={{
+          backgroundImage: `
+            linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)
+          `,
+          backgroundSize: "32px 32px"
+        }}
+      />
+
+      {/* Header */}
+      <div className="relative px-6 py-4 border-b border-border/20">
+        <div className="flex items-center gap-3 text-lg font-semibold">
           <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
             <Globe className="w-5 h-5 text-primary" />
           </div>
           <span className="text-foreground">Mapa de Infraestrutura DNS</span>
-        </CardTitle>
-      </CardHeader>
+        </div>
+      </div>
 
-      <CardContent>
+      {/* Content */}
+      <div className="relative p-6">
         {/* Root Domain Node - with globe background */}
         <div className="flex justify-center mb-4">
           <div className="relative">
@@ -312,8 +334,8 @@ export function DNSMapSection({
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <Globe className="w-24 h-24 text-primary/10" />
             </div>
-            {/* Domain name overlay */}
-            <div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-card/80 backdrop-blur-sm shadow-lg shadow-primary/10">
+            {/* Domain name overlay - transparent to show globe */}
+            <div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-transparent backdrop-blur-[2px] shadow-lg shadow-primary/10">
               <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
             </div>
           </div>
@@ -455,7 +477,7 @@ export function DNSMapSection({
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-[10px] text-muted-foreground font-mono block pl-4 truncate cursor-default">
+                          <span className="text-xs text-muted-foreground font-mono block pl-4 truncate cursor-default">
                             {spfRecord}
                           </span>
                         </TooltipTrigger>
@@ -465,7 +487,7 @@ export function DNSMapSection({
                       </Tooltip>
                     </TooltipProvider>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
                       Registro não encontrado
                     </span>
                   )}
@@ -486,12 +508,12 @@ export function DNSMapSection({
                   </div>
                   {dkimKeys.length > 0 ? (
                     dkimKeys.map((key, i) => (
-                      <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
+                      <span key={i} className="text-xs text-muted-foreground font-mono block pl-4">
                         {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
                       </span>
                     ))
                   ) : (
-                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
                       Nenhum seletor encontrado
                     </span>
                   )}
@@ -513,18 +535,18 @@ export function DNSMapSection({
                   {dmarcPolicy.p || dmarcPolicy.sp ? (
                     <>
                       {dmarcPolicy.p && (
-                        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+                        <span className="text-xs text-muted-foreground font-mono block pl-4">
                           Política: {dmarcPolicy.p}
                         </span>
                       )}
                       {dmarcPolicy.sp && (
-                        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
+                        <span className="text-xs text-muted-foreground font-mono block pl-4">
                           Política Subdomínios: {dmarcPolicy.sp}
                         </span>
                       )}
                     </>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground/60 italic block pl-4">
+                    <span className="text-xs text-muted-foreground/60 italic block pl-4">
                       Registro não encontrado
                     </span>
                   )}
@@ -547,7 +569,7 @@ export function DNSMapSection({
                 <button
                   onClick={() => setSubdomainFilter(f => f === 'active' ? 'all' : 'active')}
                   className={cn(
-                    "text-[10px] px-2 py-1 rounded-md border transition-all",
+                    "text-xs px-2 py-1 rounded-md border transition-all",
                     subdomainFilter === 'active' 
                       ? "bg-primary/20 text-primary border-primary/40" 
                       : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
@@ -558,7 +580,7 @@ export function DNSMapSection({
                 <button
                   onClick={() => setSubdomainFilter(f => f === 'inactive' ? 'all' : 'inactive')}
                   className={cn(
-                    "text-[10px] px-2 py-1 rounded-md border transition-all",
+                    "text-xs px-2 py-1 rounded-md border transition-all",
                     subdomainFilter === 'inactive' 
                       ? "bg-muted text-muted-foreground border-muted-foreground/40" 
                       : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
@@ -601,7 +623,7 @@ export function DNSMapSection({
             </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
