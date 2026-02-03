@@ -539,6 +539,58 @@ async function querySecurityTrails(domain: string, timeout: number): Promise<Set
   return subdomains;
 }
 
+/**
+ * Query VirusTotal API for subdomains (COMPLEMENTARY SOURCE).
+ * Uses the domain relationships endpoint to find subdomains.
+ * Requires API key stored in VIRUSTOTAL_API_KEY env variable.
+ */
+async function queryVirusTotal(domain: string, timeout: number): Promise<Set<string>> {
+  const apiKey = Deno.env.get('VIRUSTOTAL_API_KEY');
+  const subdomains = new Set<string>();
+
+  if (!apiKey) {
+    console.log('[virustotal] API key not configured, skipping');
+    return subdomains;
+  }
+
+  const url = `https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=100`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, {
+      headers: {
+        'x-apikey': apiKey,
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.log(`[virustotal] API returned ${response.status}`);
+      return subdomains;
+    }
+
+    const data = await response.json();
+    
+    // VirusTotal returns { data: [{ id: "subdomain.domain.com", ... }] }
+    for (const item of data.data || []) {
+      const subdomain = item.id?.toLowerCase();
+      if (subdomain && isValidSubdomain(subdomain, domain)) {
+        subdomains.add(subdomain);
+      }
+    }
+
+    console.log(`[virustotal] Found ${subdomains.size} subdomains`);
+  } catch (e) {
+    console.log(`[virustotal] Error: ${e}`);
+  }
+
+  return subdomains;
+}
+
 // ============================================
 // Main Enumeration Function
 // ============================================
@@ -555,8 +607,10 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
   console.log(`[subdomain-enum] Starting enumeration for ${cleanDomain}`);
 
   // ======================================
-  // PHASE 1: SecurityTrails (Primary API)
+  // PHASE 1: Premium APIs (Sequential)
   // ======================================
+
+  // 1.1 SecurityTrails (Primary)
   try {
     const securityTrailsSubs = await querySecurityTrails(cleanDomain, apiTimeout);
     if (securityTrailsSubs.size > 0) {
@@ -569,6 +623,28 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
   } catch (e) {
     errors.push(`securitytrails: ${e}`);
     console.log(`[subdomain-enum] SecurityTrails error: ${e}`);
+  }
+
+  // 1.2 VirusTotal (Complementary)
+  try {
+    const virusTotalSubs = await queryVirusTotal(cleanDomain, apiTimeout);
+    if (virusTotalSubs.size > 0) {
+      sourcesUsed.push(`virustotal (${virusTotalSubs.size})`);
+      for (const sub of virusTotalSubs) {
+        if (allSubdomains.has(sub)) {
+          const existing = allSubdomains.get(sub)!;
+          if (!existing.sources.includes('virustotal')) {
+            existing.sources.push('virustotal');
+          }
+        } else {
+          allSubdomains.set(sub, { sources: ['virustotal'] });
+        }
+      }
+      console.log(`[subdomain-enum] VirusTotal found ${virusTotalSubs.size} subdomains`);
+    }
+  } catch (e) {
+    errors.push(`virustotal: ${e}`);
+    console.log(`[subdomain-enum] VirusTotal error: ${e}`);
   }
 
   // ======================================
