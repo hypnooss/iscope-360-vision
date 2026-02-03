@@ -1,173 +1,125 @@
 
 
-## Diagnóstico: Amass Executor Retornando 0 Resultados
+## Melhorias no Amass Executor para Enumeração Efetiva de Subdomínios
 
 ### Problema Identificado
 
-Após análise detalhada, confirmei que:
+O Amass está funcionando (50s de execução), mas retornou apenas 1 resultado - o registro MX do próprio domínio base. Isso indica que:
 
-1. **Mapeamento correto**: O step usa `type: 'amass'` (não `subdomain_enum`), então o mapeamento já funcionava antes da alteração
-2. **Domínio passado corretamente**: O log mostra `Running Amass (passive) for taschibra.com.br`
-3. **Execução em ~23ms**: Impossível para uma execução real do Amass (deveria levar segundos/minutos)
-4. **Teste manual funciona**: `subprocess.run` com Python interativo retorna resultados
+1. **Fontes limitadas**: O Amass v4.x sem configuração de API keys só usa fontes públicas muito limitadas
+2. **Parser muito restritivo**: O parser atual aceita o domínio base como "subdomínio" válido
+3. **Sem log de fontes consultadas**: Não sabemos quais fontes o Amass está realmente usando
 
-### Causa Raiz Provável
+### Solução Proposta
 
-O problema está no **ambiente de execução do systemd** vs execução interativa:
-- **Usuário diferente**: O Agent roda como `iscope` (não `root`)
-- **PATH diferente**: O binário `/usr/local/bin/amass` pode não estar no PATH do serviço
-- **HOME/Config diferentes**: Amass pode precisar de diretórios de configuração
+#### 1. Configurar Fontes Gratuitas no Amass
 
-### Evidência Técnica
+Adicionar suporte para um arquivo de configuração do Amass que habilita fontes gratuitas sem API key:
 
-O `shutil.which('amass')` pode retornar `None` no contexto do serviço systemd, fazendo o executor retornar imediatamente com erro silencioso. Mas o log mostra "Running Amass" que só aparece **após** a verificação do path (linha 59), então o path está sendo encontrado.
+**Fontes gratuitas disponíveis:**
+- crt.sh (Certificate Transparency - muito efetiva)
+- Wayback Machine
+- DNSDumpster
+- Hackertarget
+- BufferOver
+- VirusTotal (limitado sem API)
+- AlienVault OTX
+- Robtex
 
-Outra possibilidade: **Amass está retornando rapidamente sem resultados** por falta de configuração ou permissões de rede no contexto do usuário `iscope`.
+#### 2. Melhorar o Comando Amass
 
-### Solução: Adicionar Logging Detalhado
+Adicionar flags para maximizar resultados:
+- `-src` - Mostra a fonte de cada resultado
+- `-nocolor` - Melhor para parsing
+- `-oA /tmp/amass-output` - Output estruturado
 
-Adicionar logs para capturar:
-1. O comando exato executado
-2. Return code do processo
-3. Tempo de execução real do subprocess
-4. stdout e stderr completos
-5. Variáveis de ambiente relevantes
+#### 3. Corrigir o Parser
 
-### Alterações
+- Excluir o domínio base da lista de subdomínios
+- Capturar a fonte de cada descoberta
+- Log completo de todas as linhas para debug
+
+### Alterações Técnicas
 
 **Arquivo:** `python-agent/agent/executors/amass.py`
 
-Modificar o método `run()` para incluir logging detalhado:
+**1. Atualizar o comando para incluir `-src` e melhor logging:**
 
 ```python
-def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    config = step.get('config', {}) or {}
-    step_id = step.get('id', 'unknown')
-
-    domain = (config.get('domain') or context.get('domain') or '').strip().rstrip('.')
-    mode = config.get('mode', 'passive').lower()
-    timeout = min(config.get('timeout', self.DEFAULT_TIMEOUT), self.MAX_TIMEOUT)
-    max_depth = config.get('max_depth', 1)
-
-    if not domain:
-        return {'status_code': 0, 'data': None, 'error': 'Missing domain'}
-
-    amass_path = shutil.which('amass')
-    if not amass_path:
-        self.logger.error(f"Step {step_id}: Amass not installed")
-        return {
-            'status_code': 0,
-            'data': {'domain': domain, 'subdomains': []},
-            'error': 'Amass not installed. Run agent installer with --update.'
-        }
-
-    self.logger.info(f"Step {step_id}: Running Amass ({mode}) for {domain}")
-
-    try:
-        # Build command
-        cmd = [
-            amass_path,
-            'enum',
-            '-d', domain,
-            '-timeout', str(int(timeout / 60)),
-        ]
-
-        if mode == 'passive':
-            cmd.append('-passive')
-        elif mode == 'active':
-            cmd.extend(['-active', '-brute'])
-            if max_depth > 1:
-                cmd.extend(['-max-depth', str(max_depth)])
-
-        # ===== NOVO: Log detalhado antes da execução =====
-        self.logger.info(f"Step {step_id}: Command: {' '.join(cmd)}")
-        self.logger.info(f"Step {step_id}: Timeout: {timeout}s, CWD: /tmp")
-        
-        import time as _time
-        exec_start = _time.time()
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
-            cwd='/tmp'
-        )
-        
-        exec_ms = int((_time.time() - exec_start) * 1000)
-        
-        # ===== NOVO: Log detalhado após execução =====
-        self.logger.info(
-            f"Step {step_id}: Amass finished in {exec_ms}ms | "
-            f"RC={result.returncode} | "
-            f"stdout={len(result.stdout or '')} chars | "
-            f"stderr={len(result.stderr or '')} chars"
-        )
-        
-        # Log primeiras linhas de stdout/stderr para debug
-        if result.stdout:
-            first_lines = '\n'.join(result.stdout.strip().split('\n')[:5])
-            self.logger.info(f"Step {step_id}: STDOUT preview:\n{first_lines}")
-        if result.stderr:
-            self.logger.info(f"Step {step_id}: STDERR: {result.stderr.strip()[:200]}")
-        
-        # Parse text output
-        combined_output = (result.stdout or '') + '\n' + (result.stderr or '')
-        subdomains, sources_set = self._parse_amass_output(combined_output, domain)
-
-        subdomains.sort(key=lambda x: x['subdomain'])
-
-        self.logger.info(
-            f"Step {step_id}: Amass found {len(subdomains)} unique subdomains "
-            f"from {len(sources_set)} sources"
-        )
-
-        return {
-            'status_code': 200,
-            'data': {
-                'domain': domain,
-                'mode': mode,
-                'total_found': len(subdomains),
-                'sources': sorted(list(sources_set)),
-                'subdomains': subdomains,
-            },
-            'error': None,
-        }
-
-    except subprocess.TimeoutExpired:
-        self.logger.error(f"Step {step_id}: Amass timeout after {timeout}s")
-        return {
-            'status_code': 0,
-            'data': {'domain': domain, 'subdomains': []},
-            'error': f'Amass timeout after {timeout} seconds'
-        }
-
-    except Exception as e:
-        self.logger.error(f"Step {step_id}: Amass error - {str(e)}")
-        return {
-            'status_code': 0,
-            'data': {'domain': domain, 'subdomains': []},
-            'error': str(e),
-        }
+cmd = [
+    amass_path,
+    'enum',
+    '-d', domain,
+    '-timeout', str(timeout_minutes),
+    '-nocolor',  # Melhor para parsing
+    '-src',      # Mostra fonte de cada resultado
+]
 ```
 
-### Passos de Deploy
+**2. Corrigir validação de subdomínio (excluir domínio base):**
 
-Após aprovação:
-1. Atualizar o arquivo `amass.py` no repositório
-2. Copiar para o servidor: `/opt/iscope-agent/agent/executors/amass.py`
-3. Limpar cache: `rm -rf /opt/iscope-agent/agent/__pycache__ /opt/iscope-agent/agent/executors/__pycache__`
-4. Reiniciar: `systemctl restart iscope-agent`
-5. Disparar análise e verificar logs com detalhes
+```python
+def _is_valid_subdomain(self, name: str, base_domain: str) -> bool:
+    """Check if name is a valid subdomain of base_domain (excludes base domain itself)."""
+    name = name.lstrip('*.').lower()
+    base_domain = base_domain.lower()
+    if not name:
+        return False
+    # IMPORTANTE: Excluir o próprio domínio base
+    if name == base_domain:
+        return False
+    return name.endswith(f".{base_domain}")
+```
+
+**3. Melhorar parsing para capturar fontes por subdomínio:**
+
+```python
+# Parse format: "[source] subdomain (FQDN) --> ..."
+source_subdomain_match = re.match(r'^\[([^\]]+)\]\s+([^\s]+)\s*\(FQDN\)', parts[0])
+if source_subdomain_match:
+    source = source_subdomain_match.group(1)
+    name = source_subdomain_match.group(2).lower()
+    sources_set.add(source)
+    # Adicionar fonte ao subdomínio
+    if name not in subdomains:
+        subdomains[name] = {'subdomain': name, 'sources': [source], 'addresses': []}
+    elif source not in subdomains[name]['sources']:
+        subdomains[name]['sources'].append(source)
+```
+
+**4. Adicionar log de linhas não parseadas para debug:**
+
+```python
+# Log de linhas que não foram parseadas (para debug)
+unparsed_lines = []
+for line in output.splitlines():
+    if line.strip() and not self._is_known_line(line):
+        unparsed_lines.append(line[:100])
+
+if unparsed_lines:
+    self.logger.info(f"Unparsed lines: {unparsed_lines[:5]}")
+```
+
+### Teste Manual Recomendado
+
+Para verificar o que o Amass pode descobrir com as fontes disponíveis, execute no servidor:
+
+```bash
+# Teste com flag -src para ver fontes
+/usr/local/bin/amass enum -d taschibra.com.br -timeout 5 -passive -src -nocolor
+
+# Teste com domínio mais conhecido (para validar setup)
+/usr/local/bin/amass enum -d google.com -timeout 2 -passive -src -nocolor
+```
+
+Se mesmo com `-src` os resultados forem pobres, pode ser necessário:
+1. Verificar conectividade com APIs externas
+2. Configurar API keys no arquivo `~/.config/amass/config.yaml`
 
 ### Resultado Esperado
 
-Os logs irão mostrar:
-```
-Step subdomain_enum: Command: /usr/local/bin/amass enum -d taschibra.com.br -timeout 5 -passive
-Step subdomain_enum: Timeout: 300s, CWD: /tmp
-Step subdomain_enum: Amass finished in 23ms | RC=0 | stdout=0 chars | stderr=0 chars
-```
-
-Se stdout/stderr estiverem vazios mas RC=0, isso indica que o Amass está retornando sem executar (provavelmente configuração/permissões). Se tiver output, o parser pode estar com problema.
+Após as alterações:
+- Log mostrará as fontes consultadas (`[crt.sh]`, `[DNSDumpster]`, etc.)
+- O domínio base não aparecerá como subdomínio
+- Linhas não parseadas serão logadas para debug futuro
 
