@@ -29,7 +29,8 @@ class AutoUpdater:
     def __init__(self, logger, install_dir: str = "/opt/iscope-agent"):
         self.logger = logger
         self.install_dir = Path(install_dir)
-        self.backup_dir = self.install_dir.parent / "iscope-agent-backup"
+        # Backup dir in /var/lib/iscope-agent/backup (user iscope has write access)
+        self.backup_dir = Path("/var/lib/iscope-agent/backup")
 
     def check_and_update(self, update_info: Dict[str, Any]) -> bool:
         """
