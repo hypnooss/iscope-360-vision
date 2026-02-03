@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Globe, 
   Server, 
@@ -283,6 +283,7 @@ export function DNSMapSection({
   className 
 }: DNSMapSectionProps) {
   const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('active');
+  const [subdomainVisibleCount, setSubdomainVisibleCount] = useState(10);
   
   const nsRecords = useMemo(() => extractNsRecords(categories), [categories]);
   const mxRecords = useMemo(() => extractMxRecords(categories), [categories]);
@@ -303,6 +304,15 @@ export function DNSMapSection({
         return subdomainSummary.subdomains;
     }
   }, [subdomainSummary?.subdomains, subdomainFilter]);
+
+  // Paginated subdomains
+  const visibleSubdomains = filteredSubdomains.slice(0, subdomainVisibleCount);
+  const hasMoreSubdomains = subdomainVisibleCount < filteredSubdomains.length;
+
+  // Reset pagination when filter changes
+  useEffect(() => {
+    setSubdomainVisibleCount(10);
+  }, [subdomainFilter]);
 
   const activeCount = subdomainSummary?.subdomains.filter(s => s.is_alive).length ?? 0;
   const inactiveCount = subdomainSummary?.subdomains.filter(s => s.is_alive === false).length ?? 0;
@@ -607,19 +617,33 @@ export function DNSMapSection({
             )}
             
             {filteredSubdomains.length > 0 ? (
-              filteredSubdomains.map((sub, idx) => (
-                <DNSNode 
-                  key={idx} 
-                  label={sub.subdomain}
-                  sublabel={sub.addresses.length > 0 
-                    ? sub.addresses.slice(0, 2).map(a => a.ip).join(', ')
-                    : undefined
-                  }
-                  isActive={sub.is_alive}
-                  showCopy 
-                  showExternalLink={sub.is_alive}
-                />
-              ))
+              <>
+                {visibleSubdomains.map((sub, idx) => (
+                  <DNSNode 
+                    key={idx} 
+                    label={sub.subdomain}
+                    sublabel={sub.addresses.length > 0 
+                      ? sub.addresses.slice(0, 2).map(a => a.ip).join(', ')
+                      : undefined
+                    }
+                    isActive={sub.is_alive}
+                    showCopy 
+                    showExternalLink={sub.is_alive}
+                  />
+                ))}
+                
+                {/* Botão Exibir Mais */}
+                {hasMoreSubdomains && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setSubdomainVisibleCount(prev => prev + 10)}
+                  >
+                    Exibir mais ({subdomainVisibleCount} de {filteredSubdomains.length})
+                  </Button>
+                )}
+              </>
             ) : (
               <div className="text-[13px] text-muted-foreground text-center py-2">
                 Nenhum subdomínio encontrado
