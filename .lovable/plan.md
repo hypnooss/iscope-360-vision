@@ -1,18 +1,19 @@
 
-# Plano: Corrigir Instalação do Python no CentOS 8
+
+# Plano: Adicionar Suporte a EPEL para CentOS 8 EOL
 
 ## Problema Identificado
 
-No **CentOS 8**, o Python 3.9+ requer habilitação do módulo AppStream antes da instalação:
+O **CentOS 8 chegou ao EOL** em dezembro de 2021. Os repositórios padrão (AppStream) não têm mais o módulo `python39`:
 
 ```
-No match for argument: python39
-No match for argument: python39-pip
+Error: Problems in request:
+missing groups or modules: python39
 ```
 
-O script atual tenta `dnf install -y python39` diretamente, mas no CentOS 8 é necessário:
-1. Habilitar o módulo: `dnf module enable python39 -y`
-2. Depois instalar: `dnf install python39 python39-pip -y`
+## Solução
+
+Adicionar instalação do **EPEL (Extra Packages for Enterprise Linux)** que ainda mantém pacotes Python 3.9 para RHEL/CentOS 8.
 
 ---
 
@@ -20,33 +21,31 @@ O script atual tenta `dnf install -y python39` diretamente, mas no CentOS 8 é n
 
 ### Arquivo: `supabase/functions/agent-install/index.ts`
 
-**Função `install_deps()`** - Adicionar suporte a módulos do CentOS/RHEL 8:
+**Função `install_deps()` - Adicionar instalação do EPEL antes do Python:**
 
-**De (linhas 170-176):**
 ```bash
 if command -v dnf >/dev/null 2>&1; then
-  # OL/RHEL-like: prefer python39+ to avoid EOL Python 3.6 issues
-  dnf install -y tar curl gcc openssl-devel libffi-devel || true
-  dnf install -y python39 python39-pip python39-devel || true
-  dnf install -y python3 python3-pip python3-devel || true
-  return
-fi
-```
-
-**Para:**
-```bash
-if command -v dnf >/dev/null 2>&1; then
-  # OL/RHEL/CentOS 8+: habilitar módulo Python 3.9 antes de instalar
+  # Instalar dependências básicas
   dnf install -y tar curl gcc openssl-devel libffi-devel || true
   
-  # Tentar habilitar módulo python39 (CentOS/RHEL 8)
+  # Instalar EPEL para CentOS/RHEL 8 (necessário após EOL)
+  dnf install -y epel-release 2>/dev/null || true
+  
+  # Para CentOS 8 EOL: apontar repos para vault
+  if [[ -f /etc/centos-release ]] && grep -q "CentOS.*8" /etc/centos-release 2>/dev/null; then
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+    dnf clean all 2>/dev/null || true
+  fi
+  
+  # Tentar habilitar módulo python39 (se disponível)
   dnf module reset python39 -y 2>/dev/null || true
   dnf module enable python39 -y 2>/dev/null || true
   
-  # Instalar Python (com fallback)
+  # Instalar Python (múltiplos fallbacks)
   dnf install -y python39 python39-pip python39-devel 2>/dev/null || \
-  dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \
-  dnf install -y python3 python3-pip python3-devel || true
+  dnf install -y python3 python3-pip python3-devel 2>/dev/null || \
+  dnf install -y python38 python38-pip python38-devel 2>/dev/null || true
   
   return
 fi
@@ -56,14 +55,20 @@ fi
 
 ## Solução Imediata (Manual no Servidor)
 
-Enquanto o deploy não é feito, execute manualmente no servidor:
+Execute no servidor para resolver agora:
 
 ```bash
-# Habilitar módulo Python 3.9
-sudo dnf module reset python39 -y
-sudo dnf module enable python39 -y
+# Corrigir repos do CentOS 8 EOL (apontar para vault)
+sudo sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo
+sudo sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
 
-# Instalar Python
+# Limpar cache
+sudo dnf clean all
+
+# Instalar EPEL
+sudo dnf install -y epel-release
+
+# Agora instalar Python 3.9
 sudo dnf install -y python39 python39-pip
 
 # Rodar instalador novamente
@@ -72,13 +77,20 @@ curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install |
 
 ---
 
-## Detalhes Técnicos
+## Por que isso acontece?
 
-| Distro | Método |
-|--------|--------|
-| Ubuntu/Debian | `apt-get install python3` |
-| CentOS 8/RHEL 8 | `dnf module enable python39` + `dnf install python39` |
-| Oracle Linux 8 | Mesmo do CentOS 8 |
-| Fedora | `dnf install python3` (direto) |
+| Situação | Descrição |
+|----------|-----------|
+| CentOS 8 EOL | Suporte oficial terminou em 31/12/2021 |
+| Repos migrados | Conteúdo movido de `mirror.centos.org` para `vault.centos.org` |
+| EPEL | Repositório comunitário que ainda mantém pacotes para RHEL/CentOS |
 
-O comando `dnf module reset/enable` é ignorado silenciosamente em distros que não usam módulos (como Fedora), então é seguro adicionar.
+---
+
+## Consideração
+
+Se este servidor precisar de suporte a longo prazo, recomendo migrar para:
+- **AlmaLinux 8** (drop-in replacement para CentOS 8)
+- **Rocky Linux 8** (outro fork do CentOS)
+- **CentOS Stream 9** (rolling release)
+
