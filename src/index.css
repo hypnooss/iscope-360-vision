@@ -96,11 +96,11 @@
   }
 
   .status-pass {
-    @apply text-success bg-success/10 border-success/30;
+    @apply text-primary bg-primary/10 border-primary/30;
   }
 
   .status-fail {
-    @apply text-destructive bg-destructive/10 border-destructive/30;
+    @apply text-rose-400 bg-rose-500/10 border-rose-500/30;
   }
 
   .status-warning {
