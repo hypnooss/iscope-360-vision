@@ -131,7 +131,7 @@ class AutoUpdater:
         if expected.startswith('sha256:'):
             expected = expected[7:]
 
-        if actual == expected:
+        if actual.lower() == expected.lower():
             self.logger.info("Checksum verificado com sucesso")
             return True
         else:
