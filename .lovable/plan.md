@@ -1,184 +1,189 @@
 
-## Melhorias no Mapa DNS - Layout de 3 Colunas
 
-### Objetivo
+## Melhorias no Mapa DNS - Visual e Funcionalidades
 
-Reorganizar o mapa DNS para layout de 3 colunas (empilhadas) conforme o esboço, e enriquecer os cards com mais informações técnicas.
+### Resumo das Alterações
 
-### Layout Proposto
-
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         taschibra.com.br                                  │
-└────────────────────────────────┬─────────────────────────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│  COLUNA 1      │     │  COLUNA 2      │     │  COLUNA 3      │
-│                │     │                │     │                │
-│  ┌──────────┐  │     │  ┌──────────┐  │     │  ┌──────────┐  │
-│  │    NS    │  │     │  │   SOA    │  │     │  │ Subdomín.│  │
-│  └──────────┘  │     │  └──────────┘  │     │  └──────────┘  │
-│  ns1-06...    │     │  Primary:      │     │  10 ativos     │
-│  40.112.72... │     │  ns1-06...     │     │  7 inativos    │
-│  ns2-06...    │     │  Contact:      │     │                │
-│  40.112.72... │     │  azuredns-...  │     │  ● www         │
-│  ...          │     │  DNSSEC: ○     │     │    187.85...   │
-│               │     │                │     │  ● drive       │
-│  ┌──────────┐  │     │  ┌──────────┐  │     │    187.85...   │
-│  │    MX    │  │     │  │   TXT    │  │     │  ○ chat        │
-│  └──────────┘  │     │  └──────────┘  │     │  ○ mail        │
-│  outlook.mail  │     │  ● SPF        │     │  ...           │
-│  Prio: 0 •    │     │    v=spf1 ... │     │                │
-│  2a01:111:... │     │  ● DKIM       │     │                │
-│               │     │    selector1   │     │                │
-│               │     │    selector2   │     │                │
-│               │     │  ● DMARC      │     │                │
-│               │     │    p: reject   │     │                │
-│               │     │    sp: reject  │     │                │
-└────────────────┘     └────────────────┘     └────────────────┘
-```
+1. **Remover campo de busca** do topo do mapa
+2. **Melhorar exibição do domínio** com globo de fundo
+3. **Redesenhar linhas de conexão** conforme referência (linhas verticais saindo para baixo e depois conectando às colunas)
+4. **DKIM com tamanho da chave** (dados disponíveis: `key_size_bits`)
+5. **Filtros de subdomínios** (ativos/inativos como botões seletores)
+6. **Remover scrollbars** - altura variável baseada no conteúdo
 
 ---
 
 ### Alterações Detalhadas
 
-#### 1. Layout em 3 Colunas
+#### 1. Remover Campo de Busca
 
-**Antes:** Grid de 5 colunas (`lg:grid-cols-5`)
+Remover o bloco de Input com ícone Search (linhas 303-314).
 
-**Depois:** Grid de 3 colunas com empilhamento vertical:
-- **Coluna 1:** NS + MX (empilhados)
-- **Coluna 2:** SOA + TXT (empilhados)
-- **Coluna 3:** Subdomínios (coluna inteira, com scroll)
+---
+
+#### 2. Domínio com Globo de Fundo
+
+Redesenhar o nó raiz com um globo estilizado ao fundo:
 
 ```tsx
-<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-  {/* Coluna 1: NS + MX */}
-  <div className="space-y-4">
-    <DNSGroup title="NS" ... />
-    <DNSGroup title="MX" ... />
+{/* Root Domain Node - with globe background */}
+<div className="flex justify-center mb-4">
+  <div className="relative">
+    {/* Globe background */}
+    <div className="absolute inset-0 flex items-center justify-center">
+      <Globe className="w-24 h-24 text-primary/10" />
+    </div>
+    {/* Domain name overlay */}
+    <div className="relative px-8 py-4 rounded-xl border-2 border-primary/50 bg-card/80 backdrop-blur-sm shadow-lg shadow-primary/10">
+      <span className="text-lg font-bold text-foreground tracking-wide">{domain}</span>
+    </div>
   </div>
-  
-  {/* Coluna 2: SOA + TXT */}
-  <div className="space-y-4">
-    <DNSGroup title="SOA" ... />
-    <DNSGroup title="TXT" ... />
-  </div>
-  
-  {/* Coluna 3: Subdomínios */}
-  <DNSGroup title="Subdomínios" ... />
 </div>
 ```
 
 ---
 
-#### 2. NS Records - Adicionar IPs Resolvidos
+#### 3. Redesenhar Linhas de Conexão
 
-Atualmente só mostra o hostname. Adicionar sublabel com IP resolvido via DNS-over-HTTPS.
+Conforme a referência, as linhas devem:
+- Sair do centro do domínio para baixo (vertical)
+- Fazer curva em "L" invertido para cada coluna
+- Terminar no topo de cada grupo (NS/MX, SOA/TXT, Subdomínios)
 
-**Problema:** Os IPs dos NS não estão disponíveis no `dnsSummary.ns[]` (só nomes).
+Nova estrutura SVG:
 
-**Solução:** Para esta iteração, **não resolver dinamicamente** (evitar delay). Exibir apenas o hostname, já que NS geralmente são serviços externos (Azure DNS, Cloudflare, etc).
-
-*Alternativa futura:* Adicionar campo `ns_ips` ao `dnsSummary` na edge function.
+```tsx
+{/* Connector Lines - L-shaped drops */}
+<div className="relative h-12 mx-8 mb-2 hidden md:block">
+  {/* Vertical line from domain center */}
+  <div className="absolute left-1/2 top-0 w-px h-6 bg-border -translate-x-1/2" />
+  
+  {/* Horizontal connector bar */}
+  <div className="absolute left-[16.67%] right-[16.67%] top-6 h-px bg-border" />
+  
+  {/* Vertical drops to each column */}
+  <div className="absolute left-[16.67%] top-6 w-px h-6 bg-border" />
+  <div className="absolute left-1/2 top-6 w-px h-6 bg-border -translate-x-1/2" />
+  <div className="absolute left-[83.33%] top-6 w-px h-6 bg-border" />
+  
+  {/* Corner pieces (optional rounded corners) */}
+  <div className="absolute left-[16.67%] top-[23px] w-2 h-2 border-l border-t border-border rounded-tl" />
+  <div className="absolute left-[83.33%] top-[23px] w-2 h-2 border-r border-t border-border rounded-tr -translate-x-full" />
+</div>
+```
 
 ---
 
-#### 3. Grupo TXT - SPF com Registro Completo
+#### 4. DKIM com Tamanho da Chave
+
+Atualizar a função `extractDkimSelectors` para retornar seletor + tamanho:
 
 **Antes:**
-```
-● SPF    ✓ Válido
-```
-
-**Depois:**
-```
-● SPF
-  v=spf1 include:spf.protection.outlook.com -all
-```
-
-Extração do dado:
 ```tsx
-const extractSpfRecord = (categories: ComplianceCategory[]) => {
-  const allChecks = categories.flatMap(c => c.checks);
-  const spfCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'spf_record');
-  return (spfCheck?.rawData as any)?.data?.raw || null;
+const extractDkimSelectors = (categories: ComplianceCategory[]): string[] => {
+  // Retorna apenas seletores: ['selector1', 'selector2']
 };
 ```
 
----
-
-#### 4. Grupo TXT - DKIM com Seletores
-
-**Antes:**
-```
-● DKIM   ✓ Válido
-```
-
 **Depois:**
-```
-● DKIM
-  selector1
-  selector2
-```
-
-Extração do dado:
 ```tsx
-const extractDkimSelectors = (categories: ComplianceCategory[]) => {
+interface DkimKey {
+  selector: string;
+  keySize: number | null;
+}
+
+const extractDkimKeys = (categories: ComplianceCategory[]): DkimKey[] => {
   const allChecks = categories.flatMap(c => c.checks);
   const dkimCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dkim_records');
   const found = (dkimCheck?.rawData as any)?.data?.found || [];
-  return found.map((f: any) => f.selector).filter(Boolean);
+  return found.map((f: any) => ({
+    selector: f.selector,
+    keySize: f.key_size_bits || null,
+  })).filter((k: DkimKey) => k.selector);
 };
+```
+
+**Exibição:**
+```tsx
+{dkimKeys.map((key, i) => (
+  <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
+    {key.selector}{key.keySize ? ` - ${key.keySize} bits` : ''}
+  </span>
+))}
 ```
 
 ---
 
-#### 5. Grupo TXT - DMARC com Políticas
+#### 5. Filtros de Subdomínios (Toggle Buttons)
+
+Transformar os badges "X ativos" e "Y inativos" em botões de filtro:
+
+```tsx
+type SubdomainFilter = 'all' | 'active' | 'inactive';
+const [subdomainFilter, setSubdomainFilter] = useState<SubdomainFilter>('all');
+
+// Filter logic
+const filteredSubdomains = useMemo(() => {
+  if (!subdomainSummary?.subdomains) return [];
+  
+  switch (subdomainFilter) {
+    case 'active':
+      return subdomainSummary.subdomains.filter(s => s.is_alive);
+    case 'inactive':
+      return subdomainSummary.subdomains.filter(s => s.is_alive === false);
+    default:
+      return subdomainSummary.subdomains;
+  }
+}, [subdomainSummary?.subdomains, subdomainFilter]);
+
+// Toggle buttons UI
+<div className="flex gap-1 mb-2 px-1">
+  <button
+    onClick={() => setSubdomainFilter(f => f === 'active' ? 'all' : 'active')}
+    className={cn(
+      "text-[10px] px-2 py-1 rounded-md border transition-all",
+      subdomainFilter === 'active' 
+        ? "bg-primary/20 text-primary border-primary/40" 
+        : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
+    )}
+  >
+    {activeCount} ativos
+  </button>
+  <button
+    onClick={() => setSubdomainFilter(f => f === 'inactive' ? 'all' : 'inactive')}
+    className={cn(
+      "text-[10px] px-2 py-1 rounded-md border transition-all",
+      subdomainFilter === 'inactive' 
+        ? "bg-muted text-muted-foreground border-muted-foreground/40" 
+        : "bg-muted/50 text-muted-foreground border-border/50 hover:bg-muted"
+    )}
+  >
+    {inactiveCount} inativos
+  </button>
+</div>
+```
+
+---
+
+#### 6. Remover Scrollbars - Altura Variável
+
+**Mudanças no `DNSGroup`:**
+
+- Remover prop `maxHeight`
+- Remover `overflow-y-auto` e `scrollbar-thin`
+- Permitir que o conteúdo cresça naturalmente
 
 **Antes:**
-```
-● DMARC  ✓ Válido
+```tsx
+<div 
+  className="space-y-1 overflow-y-auto scrollbar-thin"
+  style={{ maxHeight }}
+>
 ```
 
 **Depois:**
-```
-● DMARC
-  Política: reject
-  Política Subdomínios: reject
-```
-
-Extração do dado:
 ```tsx
-const extractDmarcPolicy = (categories: ComplianceCategory[]) => {
-  const allChecks = categories.flatMap(c => c.checks);
-  const dmarcCheck = allChecks.find((ch: any) => ch.rawData?.step_id === 'dmarc_record');
-  const parsed = (dmarcCheck?.rawData as any)?.data?.parsed || {};
-  return {
-    p: parsed.p || null,   // política principal
-    sp: parsed.sp || null, // política de subdomínios
-  };
-};
-```
-
----
-
-#### 6. Conector Visual (SVG)
-
-Atualizar as linhas de conexão para refletir 3 colunas em vez de 5:
-
-```tsx
-{/* Horizontal connector bar */}
-<div className="relative h-4 mx-8 mb-2">
-  <div className="absolute inset-x-0 top-0 h-px bg-border" />
-  {/* 3 drops: 25%, 50%, 75% */}
-  <div className="absolute left-1/4 top-0 w-px h-4 bg-border" />
-  <div className="absolute left-1/2 top-0 w-px h-4 bg-border -translate-x-1/2" />
-  <div className="absolute left-3/4 top-0 w-px h-4 bg-border" />
-</div>
+<div className="space-y-1">
 ```
 
 ---
@@ -189,72 +194,55 @@ Atualizar as linhas de conexão para refletir 3 colunas em vez de 5:
 
 ---
 
-### Componente TXT Atualizado (Exemplo)
+### Resultado Visual Esperado
 
-```tsx
-{/* TXT (Email Auth) - Detalhado */}
-<DNSGroup
-  title="TXT"
-  count={3}
-  icon={<FileText className="w-4 h-4 text-emerald-400" />}
-  color="border-emerald-500/30 bg-emerald-500/5"
->
-  <div className="space-y-3 px-1">
-    {/* SPF */}
-    <div className="text-xs">
-      <div className="flex items-center gap-2 mb-1">
-        <span className={cn("w-2 h-2 rounded-full", emailAuth.spf ? "bg-primary" : "bg-rose-400")} />
-        <span className="font-medium text-foreground">SPF</span>
-      </div>
-      {spfRecord && (
-        <span className="text-[10px] text-muted-foreground font-mono block pl-4 truncate">
-          {spfRecord}
-        </span>
-      )}
-    </div>
-    
-    {/* DKIM */}
-    <div className="text-xs">
-      <div className="flex items-center gap-2 mb-1">
-        <span className={cn("w-2 h-2 rounded-full", emailAuth.dkim ? "bg-primary" : "bg-rose-400")} />
-        <span className="font-medium text-foreground">DKIM</span>
-      </div>
-      {dkimSelectors.map((sel, i) => (
-        <span key={i} className="text-[10px] text-muted-foreground font-mono block pl-4">
-          {sel}
-        </span>
-      ))}
-    </div>
-    
-    {/* DMARC */}
-    <div className="text-xs">
-      <div className="flex items-center gap-2 mb-1">
-        <span className={cn("w-2 h-2 rounded-full", emailAuth.dmarc ? "bg-primary" : "bg-rose-400")} />
-        <span className="font-medium text-foreground">DMARC</span>
-      </div>
-      {dmarcPolicy.p && (
-        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
-          Política: {dmarcPolicy.p}
-        </span>
-      )}
-      {dmarcPolicy.sp && (
-        <span className="text-[10px] text-muted-foreground font-mono block pl-4">
-          Política Subdomínios: {dmarcPolicy.sp}
-        </span>
-      )}
-    </div>
-  </div>
-</DNSGroup>
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  🌐 Mapa de Infraestrutura DNS                                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│                          ┌─────🌍─────┐                                  │
+│                          │   taschibra│                                  │
+│                          │   .com.br  │                                  │
+│                          └─────┬──────┘                                  │
+│                                │                                         │
+│               ┌────────────────┼────────────────┐                        │
+│               │                │                │                        │
+│               ▼                ▼                ▼                        │
+│     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                │
+│     │      NS      │  │     SOA      │  │  Subdomínios │                │
+│     └──────────────┘  └──────────────┘  └──────────────┘                │
+│     ns1-06...        Primary:           [3 ativos] [7 inativos]         │
+│     ns2-06...        ns1-06...          ● chat.taschibra...             │
+│     ns3-06...        Contact:           ● drive.taschibra...            │
+│     ns4-06...        azuredns-host...     187.85.164.49                 │
+│                      DNSSEC: ○          ● ida-fw.taschibra...           │
+│     ┌──────────────┐                      177.200.196.230               │
+│     │      MX      │  ┌──────────────┐  ○ mail.taschibra...             │
+│     └──────────────┘  │     TXT      │  ○ mx2.taschibra...              │
+│     taschibra-com...  └──────────────┘  ○ ns1.taschibra...              │
+│     Prio: 0 •         ● SPF             ○ ns2.taschibra...              │
+│     2a01:111:f403..     v=spf1 include  ○ ns3.taschibra...              │
+│                       ● DKIM            ○ vpn.taschibra...              │
+│                         selector1 - 2352 bits                           │
+│                         selector2 - 2352 bits                           │
+│                       ● DMARC                                           │
+│                         Política: reject                                │
+│                         Política Subdomínios: reject                    │
+│                                                                          │
+│  Fontes: crt.sh, hackertarget, alienvault, rapiddns, certspotter        │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Resultado Visual Esperado
+### Ordem de Implementação
 
-| Antes | Depois |
-|-------|--------|
-| 5 colunas estreitas | 3 colunas largas empilhadas |
-| SPF: ✓ Válido | SPF + registro `v=spf1...` |
-| DKIM: ✓ Válido | DKIM + seletores (selector1, selector2) |
-| DMARC: ✓ Válido | DMARC + p:reject, sp:reject |
-| NS sem IPs | NS (IPs futuramente) |
+1. Remover Input de busca
+2. Redesenhar nó do domínio com globo
+3. Atualizar estrutura de conectores SVG
+4. Modificar `extractDkimSelectors` → `extractDkimKeys` com tamanho
+5. Implementar filtros de subdomínios (toggle buttons)
+6. Remover `maxHeight` e scrollbars do `DNSGroup`
+7. Testar altura variável em relatórios com muitos subdomínios
+
