@@ -1,276 +1,149 @@
 
 
-## Reformulação do Relatório PDF de Domínio Externo
+## Ajustes no Layout do PDF de Domínio Externo
 
-### Objetivo
+### Resumo das Alterações
 
-Transformar o PDF atual de "checklist técnico" em um **guia prático de correção** para administradores de infraestrutura não especialistas em segurança.
+Serão feitas 4 modificações principais para atender às solicitações:
 
 ---
 
-### Visão Geral das Mudanças
+### 1. Reorganizar Página 1 (Sumário Executivo)
+
+**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
+
+| Antes (Página 1) | Depois (Página 1) |
+|------------------|-------------------|
+| Como Ler Este Relatório | Como Ler Este Relatório |
+| Postura Geral | Postura Geral |
+| Infraestrutura DNS | ~~Removido~~ |
+| Resumo por Categoria | ~~Removido~~ |
+
+**Mudanças:**
+- Remover `<PDFDomainInfo>` da página 1
+- Remover `<PDFCategorySummaryTable>` da página 1
+- A página 1 ficará apenas com Header + "Como Ler" + "Postura Geral"
+
+---
+
+### 2. Layout Side-by-Side para NS e SOA (Página 2)
+
+**Arquivo:** `src/components/pdf/sections/PDFDNSMap.tsx`
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         ANTES (Checklist Técnico)                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Página 1: Score 86, porcentagens, tabela resumo                        │
-│  Página 2: Lista de falhas (técnica)                                    │
-│  Página 3: Mapa DNS                                                     │
-│  Página 4+: Detalhamento por categoria (pass/fail com %)                │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    ↓
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      DEPOIS (Guia Prático de Correção)                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Página 1: Como Ler Este Relatório + Postura Geral (Boa/Atenção/Crítica)│
-│  Página 2: Resumo Executivo Visual (Prioridades, não porcentagens)      │
-│  Página 3: Mapa DNS (mantido)                                           │
-│  Página 4+: Cartões Explicativos (O que é, Por que importa, Como corrigir)│
-│  Página Final: Plano de Ação Sugerido (Roadmap temporal)                │
-└─────────────────────────────────────────────────────────────────────────┘
+ANTES:
+┌────────────────────────────────────────────┐
+│ [NS Header]                                │
+│ [NS Card 1]                                │
+│ [NS Card 2]                                │
+├────────────────────────────────────────────┤
+│ [SOA Header]                               │
+│ [SOA Card 1]                               │
+│ [SOA Card 2]                               │
+└────────────────────────────────────────────┘
+
+DEPOIS:
+┌────────────────────┬───────────────────────┐
+│ [NS Header]        │ [SOA Header]          │
+│ [NS Card 1]        │ [Primary: ...]        │
+│ [NS Card 2]        │ [Contact: ...]        │
+│                    │ [DNSSEC: ...]         │
+└────────────────────┴───────────────────────┘
 ```
 
----
-
-### Alterações Detalhadas
-
-#### 1. Nova Seção: "Como Ler Este Relatório" (Página 1)
-
-**Novo componente:** `PDFHowToRead.tsx`
-
-Conteúdo:
-- "Este relatório avalia apenas a configuração pública do domínio (DNS e email)."
-- "Cada item informa o risco, o impacto prático e como corrigir."
-- Legenda de prioridades com ícones visuais:
-  - Vermelho: Corrigir agora - risco real de fraude ou indisponibilidade
-  - Laranja: Planejar correção - melhora resiliência
-  - Verde: OK - nenhuma ação necessária
+**Implementação:**
+- Criar container `flexDirection: 'row'` para NS e SOA
+- Cada seção ocupa `width: '48%'` com pequeno espaço entre elas
+- Usar `marginRight` para simular gap (react-pdf não suporta gap nativo)
 
 ---
 
-#### 2. Substituir Score Numérico por Classificação Compreensível
+### 3. Layout de Duas Colunas para Subdomínios
 
-**Arquivo:** `PDFScoreGauge.tsx` e `ExternalDomainPDF.tsx`
-
-| Antes | Depois |
-|-------|--------|
-| Score: 86 | Postura Geral: Boa |
-| 86% | Ícone visual + texto descritivo |
-| Taxa de aprovação | Contagem por prioridade |
-
-**Nova lógica:**
-- Score >= 75: "Postura Geral: Boa" (verde)
-- Score >= 50: "Postura Geral: Atenção" (laranja)
-- Score < 50: "Postura Geral: Crítica" (vermelho)
-
-**Novo texto resumo:**
-"Postura geral: Boa, com 1 risco crítico e 2 melhorias recomendadas"
-
-**Remover:**
-- Número de score (86)
-- Porcentagens nas categorias
-- Gauge circular numérico
-
-**Adicionar:**
-- Contagem de problemas por prioridade (Corrigir agora: X, Planejar: Y, OK: Z)
-
----
-
-#### 3. Transformar Falhas em "Cartões Explicativos"
-
-**Novo componente:** `PDFExplanatoryCard.tsx`
-
-Estrutura de cada cartão:
+**Arquivo:** `src/components/pdf/sections/PDFDNSMap.tsx`
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ [●] DMARC não configurado                              🔴 CRÍTICO  │
-├─────────────────────────────────────────────────────────────────────┤
-│ O QUE É                                                             │
-│ Sistema que protege seu domínio contra envio de emails falsos       │
-├─────────────────────────────────────────────────────────────────────┤
-│ POR QUE IMPORTA                                                     │
-│ Sem DMARC, qualquer pessoa pode enviar emails fingindo ser você     │
-├─────────────────────────────────────────────────────────────────────┤
-│ IMPACTO POSSÍVEL                                                    │
-│ • Clientes recebem emails falsos em seu nome                        │
-│ • Perda de confiança e danos à reputação                            │
-│ • Emails legítimos podem ir para spam                               │
-├─────────────────────────────────────────────────────────────────────┤
-│ COMO CORRIGIR                                                       │
-│ 1. Acesse seu painel DNS (Cloudflare, Registro.br, etc.)            │
-│ 2. Adicione um registro TXT para _dmarc.seudominio.com              │
-│ 3. Valor inicial: v=DMARC1; p=none; rua=mailto:admin@seudominio.com │
-│ 4. Após 30 dias, mude p=none para p=quarantine                      │
-├─────────────────────────────────────────────────────────────────────┤
-│ ⏱ Dificuldade: Baixa    |    ⏰ Tempo estimado: 15 min              │
-└─────────────────────────────────────────────────────────────────────┘
+ANTES:
+┌────────────────────────────────────────────┐
+│ [Subdomínios Header]                       │
+│ [subdomain1.domain.com]                    │
+│ [subdomain2.domain.com]                    │
+│ [subdomain3.domain.com]                    │
+│ [subdomain4.domain.com]                    │
+└────────────────────────────────────────────┘
+
+DEPOIS:
+┌────────────────────────────────────────────┐
+│ [Subdomínios Header]                       │
+├────────────────────┬───────────────────────┤
+│ [subdomain1]       │ [subdomain2]          │
+│ [subdomain3]       │ [subdomain4]          │
+│ [subdomain5]       │ [subdomain6]          │
+└────────────────────┴───────────────────────┘
 ```
 
-**Campos do cartão:**
-
-| Campo | Descrição |
-|-------|-----------|
-| Título | Nome amigável (sem jargões) |
-| Prioridade | Ícone colorido + texto (Crítico/Recomendado/OK) |
-| O que é | Descrição em 1 frase simples |
-| Por que importa | Explicação do risco em linguagem leiga |
-| Impacto possível | Lista de consequências práticas |
-| Como corrigir | Passo a passo direto com exemplos de provedores |
-| Dificuldade | Baixa/Média/Alta |
-| Tempo estimado | 5 min/15 min/30 min/1h |
+**Implementação:**
+- Dividir array de subdomínios ativos em duas colunas (índices pares/ímpares ou split no meio)
+- Renderizar em container `flexDirection: 'row'` com duas Views de `width: '48%'`
 
 ---
 
-#### 4. Simplificar Linguagem Técnica
+### 4. Remover Tags de Provedores dos Cartões Explicativos
 
-**Arquivo:** Criar mapeamento de termos em `pdfStyles.ts` ou novo arquivo `pdfTranslations.ts`
+**Arquivo:** `src/components/pdf/sections/PDFExplanatoryCard.tsx`
 
-| Termo Técnico | Tradução Simples |
-|---------------|------------------|
-| Delegation Signer (DS) | Assinatura de segurança do DNS |
-| DNSKEY | Chave de autenticação do domínio |
-| Cadeia de confiança | Sistema de verificação em camadas |
-| Lookups SPF | Consultas de verificação |
-| Record TXT | Configuração de texto no DNS |
-| MX Records | Servidores que recebem seus emails |
-| Nameservers | Servidores que controlam seu domínio |
-| DNSSEC | Proteção contra falsificação de DNS |
-
----
-
-#### 5. Melhorar Recomendações
-
-**Regra de linguagem:**
-
-| Evitar | Usar |
-|--------|------|
-| "Considere habilitar" | "Ative" |
-| "Recomenda-se" | "Faça" |
-| "É aconselhável" | "Adicione" |
-| "Pode ser interessante" | "Configure" |
-
-**Estrutura obrigatória:**
-1. **Onde configurar:** Nome do painel/sistema
-2. **Passos:** Numerados, objetivos
-3. **Exemplos:** Cloudflare, Registro.br, GoDaddy, Microsoft 365
-
----
-
-#### 6. Nova Seção Final: "Plano de Ação Sugerido"
-
-**Novo componente:** `PDFActionPlan.tsx`
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                      PLANO DE AÇÃO SUGERIDO                         │
-├─────────────────────────────────────────────────────────────────────┤
-│ 🔴 IMEDIATO (0-7 dias)                                              │
-│ ├── Configurar DMARC básico (15 min)                                │
-│ └── Corrigir registro SPF (10 min)                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│ 🟠 CURTO PRAZO (30 dias)                                            │
-│ ├── Habilitar DNSSEC (30 min)                                       │
-│ └── Adicionar segundo servidor de email (1h)                        │
-├─────────────────────────────────────────────────────────────────────┤
-│ 🟢 MELHORIA CONTÍNUA                                                │
-│ ├── Revisar política DMARC para reject                              │
-│ └── Monitorar relatórios de email mensalmente                       │
-└─────────────────────────────────────────────────────────────────────┘
+**Antes (linhas 260-269):**
+```tsx
+{/* Provider examples */}
+{content.providerExamples && content.providerExamples.length > 0 && (
+  <View style={styles.providersContainer}>
+    {content.providerExamples.map((provider, index) => (
+      <View key={index} style={styles.providerTag}>
+        <Text style={styles.providerText}>{provider}</Text>
+      </View>
+    ))}
+  </View>
+)}
 ```
 
----
-
-### Componentes a Criar
-
-| Componente | Arquivo | Propósito |
-|------------|---------|-----------|
-| PDFHowToRead | `src/components/pdf/sections/PDFHowToRead.tsx` | Seção "Como ler este relatório" |
-| PDFPostureOverview | `src/components/pdf/sections/PDFPostureOverview.tsx` | Substituir Score Gauge por visão geral |
-| PDFExplanatoryCard | `src/components/pdf/sections/PDFExplanatoryCard.tsx` | Cartão explicativo para cada falha |
-| PDFActionPlan | `src/components/pdf/sections/PDFActionPlan.tsx` | Plano de ação temporal |
+**Depois:**
+- Remover completamente este bloco de código
+- Remover estilos relacionados (`providersContainer`, `providerTag`, `providerText`)
 
 ---
 
-### Componentes a Modificar
+### Arquivos a Modificar
 
-| Componente | Arquivo | Alteração |
-|------------|---------|-----------|
-| PDFScoreGauge | `src/components/pdf/sections/PDFScoreGauge.tsx` | Remover número, mostrar classificação textual |
-| PDFCategorySection | `src/components/pdf/sections/PDFCategorySection.tsx` | Remover porcentagens, usar cartões explicativos |
-| PDFCategorySummaryTable | `src/components/pdf/sections/PDFCategorySummaryTable.tsx` | Simplificar para contagem por prioridade |
-| PDFIssuesSummary | `src/components/pdf/sections/PDFIssuesSummary.tsx` | Converter para cartões explicativos |
-| ExternalDomainPDF | `src/components/pdf/ExternalDomainPDF.tsx` | Reorganizar páginas e integrar novos componentes |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/pdf/ExternalDomainPDF.tsx` | Remover PDFDomainInfo e PDFCategorySummaryTable da página 1 |
+| `src/components/pdf/sections/PDFDNSMap.tsx` | Layout side-by-side NS/SOA + subdomínios em 2 colunas |
+| `src/components/pdf/sections/PDFExplanatoryCard.tsx` | Remover tags de provedores |
 
 ---
 
-### Estrutura Final do PDF
 
-| Página | Conteúdo |
-|--------|----------|
-| 1 | Header + "Como Ler Este Relatório" + Postura Geral + Resumo de Prioridades |
-| 2 | Mapa DNS (mantido, já acessível) |
-| 3+ | Cartões Explicativos por Categoria (apenas falhas com detalhamento completo) |
-| Final | Plano de Ação Sugerido |
+### Resultado Visual Esperado
+**Página 1:**
 
----
+- Header (iScope 360 + logo)
+- Como Ler Este Relatório (legenda de prioridades)
+- Postura Geral (classificação + resumo de verificações)
 
-### Dados Necessários para Cartões Explicativos
 
-Cada regra de compliance precisará de campos adicionais (ou mapeamento):
+**Página 2:**
 
-```typescript
-interface ExplanatoryContent {
-  friendlyTitle: string;        // Título amigável
-  whatIs: string;               // O que é (1 frase)
-  whyMatters: string;           // Por que importa
-  impacts: string[];            // Impactos possíveis (lista)
-  howToFix: string[];           // Passos de correção
-  difficulty: 'low' | 'medium' | 'high';
-  timeEstimate: string;         // "15 min", "1h"
-  providerExamples?: string[];  // Cloudflare, Registro.br
-}
-```
+- INFRAESTRUTURA DNS
+- AUTENTICAÇÃO DE EMAIL
+- Resumo por Categoria
 
-**Implementação:** Criar arquivo `src/components/pdf/data/explanatoryContent.ts` com mapeamento por rule ID (ex: SPF-001, DKIM-001, DMARC-001, DNS-001, etc.)
+**Página 3 (Mapa DNS):**
+- NS (50%) | SOA (50%) - lado a lado
+- MX (100% largura)
+- TXT (100% largura)
+- Subdomínios em 2 colunas
 
----
+**Páginas 4+ (Guia de Correções):**
+- Cartões explicativos sem as tags de provedores no rodapé
 
-### Exemplo de Mapeamento (explanatoryContent.ts)
-
-```typescript
-export const EXPLANATORY_CONTENT: Record<string, ExplanatoryContent> = {
-  'DMARC-001': {
-    friendlyTitle: 'Proteção contra emails falsos (DMARC)',
-    whatIs: 'Sistema que protege seu domínio contra envio de emails falsos por terceiros.',
-    whyMatters: 'Sem DMARC, qualquer pessoa pode enviar emails fingindo ser sua empresa.',
-    impacts: [
-      'Clientes podem receber emails fraudulentos em seu nome',
-      'Perda de confiança e danos à reputação',
-      'Emails legítimos podem ir para a pasta de spam',
-    ],
-    howToFix: [
-      'Acesse o painel DNS do seu domínio (Cloudflare, Registro.br, GoDaddy)',
-      'Adicione um novo registro do tipo TXT',
-      'Nome: _dmarc.seudominio.com',
-      'Valor: v=DMARC1; p=none; rua=mailto:admin@seudominio.com',
-      'Após 30 dias monitorando, mude p=none para p=quarantine',
-    ],
-    difficulty: 'low',
-    timeEstimate: '15 min',
-    providerExamples: ['Cloudflare', 'Registro.br', 'GoDaddy', 'Microsoft 365'],
-  },
-  // ... demais regras
-};
-```
-
----
-
-### Considerações de Implementação
-
-1. **Manter layout visual:** Cores, fontes e estrutura geral serão preservadas
-2. **Escopo restrito:** Apenas DNS e autenticação de email (sem portas, TLS, vulnerabilidades web)
-3. **Compatibilidade @react-pdf/renderer:** Todos os novos componentes seguirão as restrições conhecidas (sem `gap`, sem Unicode especial)
-4. **Fallback para regras sem mapeamento:** Usar descrição/recomendação existente formatada de forma simplificada
 
