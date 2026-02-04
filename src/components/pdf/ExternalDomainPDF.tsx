@@ -8,17 +8,22 @@ import {
 } from './styles/pdfStyles';
 import {
   PDFHeader,
-  PDFScoreGauge,
-  PDFComplianceStats,
   PDFDomainInfo,
-  PDFIssuesSummary,
-  PDFCategorySection,
   PDFCategorySummaryTable,
   PDFFooter,
   PDFDNSMap,
+  PDFHowToRead,
+  PDFPostureOverview,
+  PDFExplanatoryCard,
+  PDFActionPlan,
 } from './sections';
-import type { Issue, Check, CategorySummary } from './sections';
+import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
+import {
+  severityToPriority,
+  getExplanatoryContent,
+  Priority,
+} from './data/explanatoryContent';
 
 // Page styles
 const pageStyles = StyleSheet.create({
@@ -29,37 +34,25 @@ const pageStyles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  // Page 1: Executive Summary
-  heroSection: {
-    flexDirection: 'row',
-    gap: spacing.cardGap,
-    marginBottom: spacing.sectionGap,
-  },
-  scoreColumn: {
-    width: 180,
-    alignItems: 'center',
-  },
-  statsColumn: {
-    flex: 1,
-  },
-  // Categories Section
-  sectionTitle: {
-    fontSize: typography.heading,
-    fontFamily: typography.bold,
-    color: colors.textPrimary,
-    marginBottom: spacing.itemGap,
-    marginTop: spacing.sectionGap,
-    paddingBottom: spacing.tight,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
+  // Page titles
   pageTitle: {
     fontSize: typography.heading,
     fontFamily: typography.bold,
     color: colors.primary,
     marginBottom: spacing.sectionGap,
   },
-  // Security Notice
+  // Category header for grouping cards
+  categoryHeader: {
+    fontSize: typography.subheading,
+    fontFamily: typography.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.itemGap,
+    marginTop: spacing.sectionGap,
+    paddingBottom: spacing.tight,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary,
+  },
+  // Security Notice for DNS Map
   securityNotice: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -91,6 +84,39 @@ const pageStyles = StyleSheet.create({
     fontSize: typography.bodySmall,
     color: '#1E40AF',
     lineHeight: 1.4,
+  },
+  // Passed checks summary section
+  passedSection: {
+    marginTop: spacing.sectionGap,
+  },
+  passedTitle: {
+    fontSize: typography.subheading,
+    fontFamily: typography.bold,
+    color: colors.success,
+    marginBottom: spacing.itemGap,
+  },
+  passedList: {
+    backgroundColor: colors.successBg,
+    borderRadius: 6,
+    padding: spacing.cardPadding,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  passedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  passedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+    marginRight: 8,
+  },
+  passedText: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
   },
 });
 
@@ -183,42 +209,56 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
     });
   }, [report.categories, categoryConfigs]);
 
-  // Helper to get color for a category (from configs or fallback)
-  const getColorForCategory = (categoryName: string): string => {
-    const config = categoryConfigs?.find(c => c.name === categoryName);
-    if (config) {
-      return getColorHexByName(config.color);
-    }
-    // Fallback to default configs
-    const defaultConfig = DEFAULT_CATEGORY_CONFIGS[categoryName];
-    if (defaultConfig) {
-      return getColorHexByName(defaultConfig.color);
-    }
-    return colors.primary;
-  };
+  // Categorize checks by priority
+  const categorizedChecks = useMemo(() => {
+    const critical: Array<{ check: ComplianceCategory['checks'][0]; category: string; categoryDisplayName: string }> = [];
+    const recommended: Array<{ check: ComplianceCategory['checks'][0]; category: string; categoryDisplayName: string }> = [];
+    const passed: Array<{ check: ComplianceCategory['checks'][0]; category: string; categoryDisplayName: string }> = [];
 
-  // Extract all failed checks as issues
-  const issues: Issue[] = sortedCategories
-    .flatMap((cat) => cat.checks)
-    .filter((check) => check.status === 'fail')
-    .map((check) => ({
-      name: check.name,
-      description: check.description,
-      severity: (check.severity || 'medium') as Issue['severity'],
-      category: undefined,
-    }));
+    sortedCategories.forEach(cat => {
+      const config = getCategoryConfig(categoryConfigs, cat.name);
+      cat.checks.forEach(check => {
+        const priority = check.status === 'pass' 
+          ? 'ok' 
+          : severityToPriority(check.severity);
+        
+        const item = { 
+          check, 
+          category: cat.name,
+          categoryDisplayName: config.displayName,
+        };
+
+        if (check.status === 'pass') {
+          passed.push(item);
+        } else if (priority === 'critical') {
+          critical.push(item);
+        } else {
+          recommended.push(item);
+        }
+      });
+    });
+
+    return { critical, recommended, passed };
+  }, [sortedCategories, categoryConfigs]);
+
+  // Priority counts for posture overview
+  const priorityCounts = {
+    critical: categorizedChecks.critical.length,
+    recommended: categorizedChecks.recommended.length,
+    ok: categorizedChecks.passed.length,
+  };
 
   // Prepare category summaries for the table (using displayName from configs)
   const categorySummaries: CategorySummary[] = sortedCategories.map((cat) => {
     const config = getCategoryConfig(categoryConfigs, cat.name);
-    const passed = cat.checks.filter((c) => c.status === 'pass').length;
-    const failed = cat.checks.filter((c) => c.status === 'fail').length;
+    const passedCount = cat.checks.filter((c) => c.status === 'pass').length;
+    const failedCount = cat.checks.filter((c) => c.status === 'fail').length;
     const total = cat.checks.length;
     return {
-      name: config.displayName, // Use displayName from config
-      passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
-      passed,
-      failed,
+      name: config.displayName,
+      passRate: total > 0 ? Math.round((passedCount / total) * 100) : 0,
+      passed: passedCount,
+      failed: failedCount,
       total,
     };
   });
@@ -234,8 +274,55 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
     dmarc: emailAuth ? { valid: emailAuth.dmarc } : undefined,
   };
 
-  // All categories for detail pages (sorted by display_order)
-  const allCategories = sortedCategories;
+  // Build action plan items
+  const immediateActions = categorizedChecks.critical.map(item => {
+    const content = getExplanatoryContent(
+      item.check.id,
+      item.check.name,
+      item.check.description,
+      item.check.recommendation
+    );
+    return {
+      name: content.friendlyTitle,
+      timeEstimate: content.timeEstimate,
+      priority: 'critical' as Priority,
+    };
+  });
+
+  const shortTermActions = categorizedChecks.recommended.map(item => {
+    const content = getExplanatoryContent(
+      item.check.id,
+      item.check.name,
+      item.check.description,
+      item.check.recommendation
+    );
+    return {
+      name: content.friendlyTitle,
+      timeEstimate: content.timeEstimate,
+      priority: 'recommended' as Priority,
+    };
+  });
+
+  // Group failed checks by category for the detail pages
+  const failedByCategory = useMemo(() => {
+    const grouped: Record<string, Array<{ check: ComplianceCategory['checks'][0]; priority: Priority }>> = {};
+    
+    [...categorizedChecks.critical, ...categorizedChecks.recommended].forEach(item => {
+      if (!grouped[item.categoryDisplayName]) {
+        grouped[item.categoryDisplayName] = [];
+      }
+      grouped[item.categoryDisplayName].push({
+        check: item.check,
+        priority: item.check.status === 'pass' 
+          ? 'ok' 
+          : severityToPriority(item.check.severity),
+      });
+    });
+    
+    return grouped;
+  }, [categorizedChecks]);
+
+  const hasFailedChecks = categorizedChecks.critical.length > 0 || categorizedChecks.recommended.length > 0;
 
   return (
     <Document
@@ -257,23 +344,17 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             logoBase64={logoBase64}
           />
 
-          {/* Hero Section: Score + Stats + Domain Info */}
-          <View style={pageStyles.heroSection}>
-            <View style={pageStyles.scoreColumn}>
-              <PDFScoreGauge score={report.overallScore} />
-            </View>
-            <View style={pageStyles.statsColumn}>
-              <PDFComplianceStats
-                total={report.totalChecks}
-                passed={report.passed}
-                failed={report.failed}
-                warnings={report.warnings}
-              />
-              
-              {/* Domain Info Panel */}
-              <PDFDomainInfo data={domainInfoData} />
-            </View>
-          </View>
+          {/* How to Read This Report */}
+          <PDFHowToRead />
+
+          {/* Posture Overview (replaces Score Gauge) */}
+          <PDFPostureOverview
+            counts={priorityCounts}
+            domainName={domainInfo.domain}
+          />
+
+          {/* Domain Info Panel */}
+          <PDFDomainInfo data={domainInfoData} />
 
           {/* Category Summary Table */}
           <PDFCategorySummaryTable categories={categorySummaries} />
@@ -282,18 +363,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <PDFFooter />
       </Page>
 
-      {/* PAGE 2: Issues Summary */}
-      {issues.length > 0 && (
-        <Page size="A4" style={pageStyles.page}>
-          <View style={pageStyles.content}>
-            <PDFIssuesSummary issues={issues} maxItems={20} />
-          </View>
-
-          <PDFFooter />
-        </Page>
-      )}
-
-      {/* PAGE 3: DNS Infrastructure Map */}
+      {/* PAGE 2: DNS Infrastructure Map */}
       <Page size="A4" style={pageStyles.page}>
         <View style={pageStyles.content}>
           <PDFDNSMap
@@ -306,54 +376,88 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <PDFFooter />
       </Page>
 
-      {/* Removed: Subdomain Enumeration page - subdomains are now shown in the DNS Map */}
-
-      {/* PAGE 2+: Category Details */}
-      {allCategories.length > 0 && (
+      {/* PAGE 3+: Explanatory Cards for Failed Checks */}
+      {hasFailedChecks && (
         <Page size="A4" style={pageStyles.page} wrap>
           <View style={pageStyles.content}>
             <Text style={pageStyles.pageTitle}>
-              Detalhamento por Categoria
+              Guia de Correções
             </Text>
             
-            {/* Aviso de Segurança */}
+            {/* Security Notice */}
             <View style={pageStyles.securityNotice}>
               <View style={pageStyles.noticeIcon}>
                 <Text style={pageStyles.noticeIconText}>i</Text>
               </View>
               <Text style={pageStyles.noticeText}>
-                Por questões de segurança, as evidências coletadas não são exibidas em relatórios exportados para PDF.
+                Cada item abaixo explica o problema, por que é importante e como corrigir. 
+                Siga a ordem de prioridade para máxima eficiência.
               </Text>
             </View>
-            
-            {allCategories.map((category, index) => {
-              const config = getCategoryConfig(categoryConfigs, category.name);
-              const checks: Check[] = category.checks.map((check) => ({
-                name: check.name,
-                status: check.status as Check['status'],
-                severity: check.severity as Check['severity'],
-                description: check.description,
-                recommendation: check.recommendation,
-              }));
 
-              // Get color from config or fallback
-              const color = getColorForCategory(category.name);
+            {/* Render explanatory cards grouped by category */}
+            {Object.entries(failedByCategory).map(([categoryName, items]) => (
+              <View key={categoryName}>
+                <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
+                
+                {items.map((item, index) => {
+                  const content = getExplanatoryContent(
+                    item.check.id,
+                    item.check.name,
+                    item.check.description,
+                    item.check.recommendation
+                  );
+                  
+                  return (
+                    <PDFExplanatoryCard
+                      key={`${item.check.id}-${index}`}
+                      content={content}
+                      priority={item.priority}
+                      originalName={item.check.name}
+                    />
+                  );
+                })}
+              </View>
+            ))}
 
-              return (
-                <PDFCategorySection
-                  key={index}
-                  name={config.displayName} // Use displayName from config
-                  checks={checks}
-                  color={color}
-                  showPassedChecks={true}
-                />
-              );
-            })}
+            {/* Passed checks summary */}
+            {categorizedChecks.passed.length > 0 && (
+              <View style={pageStyles.passedSection}>
+                <Text style={pageStyles.passedTitle}>
+                  Verificações Aprovadas ({categorizedChecks.passed.length})
+                </Text>
+                <View style={pageStyles.passedList}>
+                  {categorizedChecks.passed.map((item, index) => (
+                    <View key={index} style={pageStyles.passedItem}>
+                      <View style={pageStyles.passedDot} />
+                      <Text style={pageStyles.passedText}>{item.check.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
           </View>
 
           <PDFFooter />
         </Page>
       )}
+
+      {/* FINAL PAGE: Action Plan */}
+      <Page size="A4" style={pageStyles.page}>
+        <View style={pageStyles.content}>
+          <PDFActionPlan
+            immediateActions={immediateActions}
+            shortTermActions={shortTermActions}
+            continuousActions={[
+              'Revisar política DMARC progressivamente até p=reject',
+              'Monitorar relatórios DMARC mensalmente',
+              'Agendar verificações trimestrais de configuração DNS',
+            ]}
+          />
+        </View>
+
+        <PDFFooter />
+      </Page>
     </Document>
   );
 };
