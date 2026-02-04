@@ -122,6 +122,13 @@ export default function AgentsPage() {
   useEffect(() => {
     if (user && canAccessPage) {
       fetchData();
+      
+      // Polling every 5 seconds to keep data synchronized
+      const interval = setInterval(() => {
+        fetchData();
+      }, 5000);
+      
+      return () => clearInterval(interval);
     }
   }, [user, canAccessPage]);
 

@@ -111,6 +111,13 @@ export default function SettingsPage() {
       loadAgentSettings();
       loadAgentUpdateSettings();
       loadAgentStats();
+      
+      // Polling every 5 seconds to keep agent stats synchronized
+      const interval = setInterval(() => {
+        loadAgentStats();
+      }, 5000);
+      
+      return () => clearInterval(interval);
     }
   }, [user, role]);
 
