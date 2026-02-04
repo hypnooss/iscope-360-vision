@@ -352,7 +352,14 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             counts={priorityCounts}
             domainName={domainInfo.domain}
           />
+        </View>
 
+        <PDFFooter />
+      </Page>
+
+      {/* PAGE 2: Infrastructure Summary */}
+      <Page size="A4" style={pageStyles.page}>
+        <View style={pageStyles.content}>
           {/* Domain Info Panel */}
           <PDFDomainInfo data={domainInfoData} />
 
@@ -363,7 +370,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <PDFFooter />
       </Page>
 
-      {/* PAGE 2: DNS Infrastructure Map */}
+      {/* PAGE 3: DNS Infrastructure Map */}
       <Page size="A4" style={pageStyles.page}>
         <View style={pageStyles.content}>
           <PDFDNSMap
@@ -376,7 +383,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <PDFFooter />
       </Page>
 
-      {/* PAGE 3+: Explanatory Cards for Failed Checks */}
+      {/* PAGE 4+: Explanatory Cards for Failed Checks */}
       {hasFailedChecks && (
         <Page size="A4" style={pageStyles.page} wrap>
           <View style={pageStyles.content}>
