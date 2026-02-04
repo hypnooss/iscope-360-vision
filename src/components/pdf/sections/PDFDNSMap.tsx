@@ -112,6 +112,27 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 16,
   },
+  // Row container for side-by-side layout
+  rowContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  halfSection: {
+    width: '48%',
+  },
+  halfSectionLeft: {
+    marginRight: '4%',
+  },
+  // Two-column layout for subdomains
+  twoColumnContainer: {
+    flexDirection: 'row',
+  },
+  column: {
+    width: '48%',
+  },
+  columnLeft: {
+    marginRight: '4%',
+  },
   // Category header (colored bar)
   categoryHeader: {
     paddingHorizontal: 12,
@@ -296,39 +317,41 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
       {/* Page Title */}
       <Text style={styles.pageTitle}>Mapa de Infraestrutura DNS</Text>
 
-      {/* NS Section */}
-      <View style={styles.section}>
-        <CategoryHeader title="NS" color={headerColors.ns} />
-        {nsRecords.length > 0 ? (
-          nsRecords.map((ns, idx) => (
-            <ValueCard 
-              key={idx}
-              primary={truncate(ns.host, 60)}
-              secondary={ns.resolvedIps.length > 0 ? ns.resolvedIps.join(', ') : undefined}
-            />
-          ))
-        ) : (
-          <Text style={styles.emptyText}>Nenhum NS encontrado</Text>
-        )}
-      </View>
+      {/* NS and SOA Side by Side */}
+      <View style={styles.rowContainer}>
+        {/* NS Section */}
+        <View style={[styles.halfSection, styles.halfSectionLeft]}>
+          <CategoryHeader title="NS" color={headerColors.ns} />
+          {nsRecords.length > 0 ? (
+            nsRecords.map((ns, idx) => (
+              <ValueCard 
+                key={idx}
+                primary={truncate(ns.host, 40)}
+                secondary={ns.resolvedIps.length > 0 ? ns.resolvedIps.join(', ') : undefined}
+              />
+            ))
+          ) : (
+            <Text style={styles.emptyText}>Nenhum NS encontrado</Text>
+          )}
+        </View>
 
-      {/* SOA Section */}
-      {/* SOA Section */}
-      <View style={styles.section}>
-        <CategoryHeader title="SOA" color={headerColors.soa} />
-        <ValueCard 
-          primary="Primary" 
-          secondary={dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 60) : 'N/A'}
-        />
-        <ValueCard 
-          primary="Contact" 
-          secondary={dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 60) : 'N/A'}
-        />
-        <ValueCard 
-          primary="DNSSEC" 
-          secondary={dnssecActive ? 'Ativo' : 'Inativo'}
-          isActive={dnssecActive}
-        />
+        {/* SOA Section */}
+        <View style={styles.halfSection}>
+          <CategoryHeader title="SOA" color={headerColors.soa} />
+          <ValueCard 
+            primary="Primary" 
+            secondary={dnsSummary?.soaMname ? truncate(dnsSummary.soaMname, 40) : 'N/A'}
+          />
+          <ValueCard 
+            primary="Contact" 
+            secondary={dnsSummary?.soaContact ? truncate(dnsSummary.soaContact, 40) : 'N/A'}
+          />
+          <ValueCard 
+            primary="DNSSEC" 
+            secondary={dnssecActive ? 'Ativo' : 'Inativo'}
+            isActive={dnssecActive}
+          />
+        </View>
       </View>
 
       {/* MX Section */}
@@ -388,17 +411,32 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         />
       </View>
 
-      {/* Subdomínios Section */}
+      {/* Subdomínios Section - Two columns */}
       <View style={styles.section}>
         <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
         {activeSubdomains.length > 0 ? (
-          activeSubdomains.slice(0, 20).map((sub, idx) => (
-            <ValueCard 
-              key={idx}
-              primary={truncate(sub.subdomain, 60)}
-              secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
-            />
-          ))
+          <View style={styles.twoColumnContainer}>
+            {/* Left column - odd indices */}
+            <View style={[styles.column, styles.columnLeft]}>
+              {activeSubdomains.slice(0, 20).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
+                <ValueCard 
+                  key={idx}
+                  primary={truncate(sub.subdomain, 35)}
+                  secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                />
+              ))}
+            </View>
+            {/* Right column - even indices */}
+            <View style={styles.column}>
+              {activeSubdomains.slice(0, 20).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
+                <ValueCard 
+                  key={idx}
+                  primary={truncate(sub.subdomain, 35)}
+                  secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                />
+              ))}
+            </View>
+          </View>
         ) : (
           <Text style={styles.emptyText}>Nenhum subdomínio ativo encontrado</Text>
         )}

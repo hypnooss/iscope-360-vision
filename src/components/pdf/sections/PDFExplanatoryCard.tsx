@@ -136,24 +136,6 @@ const styles = StyleSheet.create({
     fontFamily: typography.bold,
     color: colors.textSecondary,
   },
-  // Providers
-  providersContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-  },
-  providerTag: {
-    backgroundColor: colors.cardBgAlt,
-    borderRadius: radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginRight: 4,
-    marginBottom: 2,
-  },
-  providerText: {
-    fontSize: typography.tiny,
-    color: colors.textSecondary,
-  },
 });
 
 interface PDFExplanatoryCardProps {
@@ -256,17 +238,6 @@ export const PDFExplanatoryCard: React.FC<PDFExplanatoryCardProps> = ({
             </View>
           ))}
         </View>
-        
-        {/* Provider examples */}
-        {content.providerExamples && content.providerExamples.length > 0 && (
-          <View style={styles.providersContainer}>
-            {content.providerExamples.map((provider, index) => (
-              <View key={index} style={styles.providerTag}>
-                <Text style={styles.providerText}>{provider}</Text>
-              </View>
-            ))}
-          </View>
-        )}
       </View>
       
       {/* Footer with difficulty and time */}
