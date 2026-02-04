@@ -12,3 +12,9 @@ export { PDFCategorySummaryTable } from './PDFCategorySummaryTable';
 export type { CategorySummary } from './PDFCategorySummaryTable';
 export { PDFFooter } from './PDFFooter';
 export { PDFDNSMap } from './PDFDNSMap';
+
+// New didactic report components
+export { PDFHowToRead } from './PDFHowToRead';
+export { PDFPostureOverview } from './PDFPostureOverview';
+export { PDFExplanatoryCard } from './PDFExplanatoryCard';
+export { PDFActionPlan } from './PDFActionPlan';
