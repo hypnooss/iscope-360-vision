@@ -1,194 +1,129 @@
 
 
-## Integrar VirusTotal como Fonte Complementar de Subdomínios
+## Atualizar README.md do Python Agent
 
-### Visão Geral
+### Objetivo
 
-Adicionar a API do VirusTotal como fonte **complementar** (Fase 1.5) para enumeração de subdomínios. O VirusTotal fornece dados de Certificate Transparency logs e relações de domínio através de sua API de inteligência.
+Atualizar a documentação do agent Python com todas as melhorias implementadas, opções do script de instalação, pré-requisitos e módulos desenvolvidos.
 
 ---
 
-### Arquitetura Atualizada
+### Principais Atualizações
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  FASE 1: APIs Pagas (Premium)                                │
-│                                                              │
-│  1.1 SecurityTrails (Primária)                               │
-│  1.2 VirusTotal (Complementar) ← NOVA                        │
-│                                                              │
-│  Executadas sequencialmente para melhor controle             │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  FASE 2: APIs Gratuitas (Paralelo)                           │
-│  crt.sh, hackertarget, alienvault, rapiddns, etc.            │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  FASE 3: Merge + Deduplicação + Resolução DNS                │
-└─────────────────────────────────────────────────────────────┘
+| Seção | O que será adicionado |
+|-------|----------------------|
+| **Versão** | Versão atual: 1.1.1 |
+| **Pré-requisitos** | Python >= 3.9 (atualizado de 3.8), systemd, Amass (opcional) |
+| **Instalação Automática** | Comando curl \| bash com todas as opções |
+| **Opções do Script** | Todas as flags disponíveis (--version, --update, --uninstall, etc.) |
+| **Módulos/Executores** | 6 executores implementados (http_request, http_session, ssh, snmp, dns_query, amass) |
+| **Auto-Update** | Sistema de atualização automática via heartbeat |
+| **Diretórios Padrão** | /opt/iscope-agent, /etc/iscope-agent, /var/lib/iscope-agent |
+| **Compatibilidade** | CentOS 8 EOL, CentOS Stream 8, RHEL 8, Ubuntu/Debian |
+
+---
+
+### Conteúdo do README Atualizado
+
+#### 1. Cabeçalho e Versão
+- Versão atual: 1.1.1
+- Descrição atualizada do projeto
+
+#### 2. Pré-requisitos
+- Python >= 3.9 (obrigatório)
+- systemd (obrigatório)
+- Linux (Ubuntu/Debian, RHEL/CentOS 8+, Oracle Linux)
+- Acesso à rede para endpoints do backend
+- Amass (instalado automaticamente)
+
+#### 3. Instalação Automática (Produção)
+```bash
+curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "XXXX-XXXX-XXXX-XXXX"
+```
+
+#### 4. Opções do Script de Instalação
+| Flag | Descrição | Padrão |
+|------|-----------|--------|
+| `--activation-code` | Código de ativação (obrigatório) | - |
+| `--version` | Versão específica para instalar | latest |
+| `--poll-interval` | Intervalo de heartbeat (segundos) | 60 |
+| `--install-dir` | Diretório de instalação | /opt/iscope-agent |
+| `--config-dir` | Diretório de configuração | /etc/iscope-agent |
+| `--state-dir` | Diretório de estado | /var/lib/iscope-agent |
+| `--update` | Reinstalar/atualizar agent existente | - |
+| `--uninstall` | Remover completamente o agent | - |
+
+#### 5. Módulos/Executores Desenvolvidos
+| Executor | Descrição | Dependência |
+|----------|-----------|-------------|
+| `http_request` | Requisições HTTP genéricas com interpolação | requests |
+| `http_session` | APIs com autenticação por sessão (cookies) | requests |
+| `ssh_command` | Execução de comandos via SSH | paramiko |
+| `snmp_query` | Queries SNMP (GET, WALK, BULK) | pysnmp |
+| `dns_query` | Queries DNS (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) | dnspython |
+| `amass` | Enumeração de subdomínios via OWASP Amass | amass |
+
+#### 6. Sistema de Auto-Update
+- Verificação automática via heartbeat
+- Download com verificação de checksum (SHA256)
+- Backup automático antes de atualização
+- Rollback em caso de falha
+- Restart automático via systemd
+
+#### 7. Compatibilidade de Sistemas
+- Ubuntu/Debian (apt-get)
+- RHEL 8/9, CentOS Stream 8 (dnf)
+- CentOS Linux 8 EOL (vault repos)
+- Oracle Linux 8/9
+
+#### 8. Endpoints Atualizados
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/register-agent` | POST | Registro inicial |
+| `/agent-heartbeat` | POST | Heartbeat periódico |
+| `/agent-refresh` | POST | Renovação de token |
+| `/agent-tasks` | GET | Buscar tarefas pendentes |
+| `/agent-step-result` | POST | Upload progressivo de cada step |
+| `/agent-task-result` | POST | Conclusão final de tarefa |
+
+#### 9. Estrutura de Arquivos Atualizada
+```
+python-agent/
+├── main.py               # Entry point
+├── requirements.txt      # Dependências
+├── .env.example          # Template de configuração
+└── agent/
+    ├── __init__.py
+    ├── config.py         # Configurações
+    ├── state.py          # Estado persistente
+    ├── api_client.py     # Cliente HTTP
+    ├── auth.py           # Autenticação JWT
+    ├── heartbeat.py      # Heartbeat com update check
+    ├── tasks.py          # Orquestrador de tarefas
+    ├── scheduler.py      # Loop principal
+    ├── logger.py         # Logging com rotação
+    ├── updater.py        # Auto-update com rollback
+    ├── version.py        # Versão centralizada
+    └── executors/
+        ├── base.py           # Classe base abstrata
+        ├── http_request.py   # HTTP genérico
+        ├── http_session.py   # HTTP com sessão
+        ├── ssh.py            # SSH (paramiko)
+        ├── snmp.py           # SNMP (pysnmp)
+        ├── dns_query.py      # DNS queries
+        └── amass.py          # Subdomain enum
 ```
 
 ---
 
-### Etapa 1: Adicionar Segredo
+### Detalhes Técnicos
 
-**Segredo a criar:**
-- Nome: `VIRUSTOTAL_API_KEY`
-- Valor: A chave que você já possui
+**Arquivo a modificar:** `python-agent/README.md`
 
----
-
-### Etapa 2: Implementar Função VirusTotal
-
-**Arquivo:** `supabase/functions/subdomain-enum/index.ts`
-
-**Nova função após `querySecurityTrails` (linha ~540):**
-
-```typescript
-/**
- * Query VirusTotal API for subdomains (COMPLEMENTARY SOURCE).
- * Uses the domain relationships endpoint to find subdomains.
- * Requires API key stored in VIRUSTOTAL_API_KEY env variable.
- */
-async function queryVirusTotal(domain: string, timeout: number): Promise<Set<string>> {
-  const apiKey = Deno.env.get('VIRUSTOTAL_API_KEY');
-  const subdomains = new Set<string>();
-
-  if (!apiKey) {
-    console.log('[virustotal] API key not configured, skipping');
-    return subdomains;
-  }
-
-  const url = `https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=100`;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: {
-        'x-apikey': apiKey,
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.log(`[virustotal] API returned ${response.status}`);
-      return subdomains;
-    }
-
-    const data = await response.json();
-    
-    // VirusTotal returns { data: [{ id: "subdomain.domain.com", ... }] }
-    for (const item of data.data || []) {
-      const subdomain = item.id?.toLowerCase();
-      if (subdomain && isValidSubdomain(subdomain, domain)) {
-        subdomains.add(subdomain);
-      }
-    }
-
-    console.log(`[virustotal] Found ${subdomains.size} subdomains`);
-  } catch (e) {
-    console.log(`[virustotal] Error: ${e}`);
-  }
-
-  return subdomains;
-}
-```
-
----
-
-### Etapa 3: Modificar Função de Enumeração
-
-**Alterar `enumerateSubdomains` para adicionar VirusTotal na Fase 1:**
-
-```typescript
-// ======================================
-// PHASE 1: Premium APIs (Sequential)
-// ======================================
-
-// 1.1 SecurityTrails (Primary)
-try {
-  const securityTrailsSubs = await querySecurityTrails(cleanDomain, apiTimeout);
-  if (securityTrailsSubs.size > 0) {
-    sourcesUsed.push(`securitytrails (${securityTrailsSubs.size})`);
-    for (const sub of securityTrailsSubs) {
-      allSubdomains.set(sub, { sources: ['securitytrails'] });
-    }
-    console.log(`[subdomain-enum] SecurityTrails found ${securityTrailsSubs.size} subdomains`);
-  }
-} catch (e) {
-  errors.push(`securitytrails: ${e}`);
-  console.log(`[subdomain-enum] SecurityTrails error: ${e}`);
-}
-
-// 1.2 VirusTotal (Complementary)
-try {
-  const virusTotalSubs = await queryVirusTotal(cleanDomain, apiTimeout);
-  if (virusTotalSubs.size > 0) {
-    sourcesUsed.push(`virustotal (${virusTotalSubs.size})`);
-    for (const sub of virusTotalSubs) {
-      if (allSubdomains.has(sub)) {
-        const existing = allSubdomains.get(sub)!;
-        if (!existing.sources.includes('virustotal')) {
-          existing.sources.push('virustotal');
-        }
-      } else {
-        allSubdomains.set(sub, { sources: ['virustotal'] });
-      }
-    }
-    console.log(`[subdomain-enum] VirusTotal found ${virusTotalSubs.size} subdomains`);
-  }
-} catch (e) {
-  errors.push(`virustotal: ${e}`);
-  console.log(`[subdomain-enum] VirusTotal error: ${e}`);
-}
-
-// ======================================
-// PHASE 2: Free APIs (Complementary)
-// ======================================
-// ... código existente permanece igual
-```
-
----
-
-### Resultado Esperado
-
-**Logs de Execução:**
-```text
-[subdomain-enum] Starting enumeration for precisio.com.br
-[securitytrails] Found 47 subdomains
-[virustotal] Found 23 subdomains
-[subdomain-enum] Found 95 unique subdomains from 7 sources
-```
-
-**Fontes no Relatório:**
-```text
-Sources: securitytrails (47), virustotal (23), crt.sh (32), hackertarget (15), ...
-```
-
----
-
-### API VirusTotal - Detalhes Técnicos
-
-| Aspecto | Valor |
-|---------|-------|
-| Endpoint | `/api/v3/domains/{domain}/subdomains` |
-| Header de Auth | `x-apikey: {API_KEY}` |
-| Rate Limit (Free) | 4 req/min, 500/dia |
-| Rate Limit (Premium) | 1000 req/min |
-| Limite por Request | 100 subdomínios (paginável) |
-
----
-
-### Arquivos Modificados
-
-1. **Segredos Supabase** - Adicionar `VIRUSTOTAL_API_KEY`
-2. **`supabase/functions/subdomain-enum/index.ts`**:
-   - Nova função `queryVirusTotal` (~50 linhas)
-   - Modificar `enumerateSubdomains` para incluir VirusTotal na Fase 1
+O novo README terá aproximadamente 350-400 linhas incluindo:
+- Diagrama de fluxo de autenticação (ASCII)
+- Tabelas de referência para opções e executores
+- Exemplos de comandos de verificação
+- Seção de troubleshooting expandida
+- Notas de compatibilidade para CentOS 8 EOL
 
