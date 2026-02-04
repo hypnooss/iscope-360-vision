@@ -1,129 +1,108 @@
 
 
-## Atualizar README.md do Python Agent
+## Corrigir Inconsistência de Versões entre Telas de Agents
 
-### Objetivo
+### Diagnóstico
 
-Atualizar a documentação do agent Python com todas as melhorias implementadas, opções do script de instalação, pré-requisitos e módulos desenvolvidos.
+Analisei o banco de dados e o código das duas telas:
 
----
+**Dados atuais no banco:**
+| Agent | Versão Atual | Status |
+|-------|-------------|--------|
+| ESTRELA-ITP | 1.0.0 | Desatualizado |
+| ESTRELA-SAO | 1.1.1 | Atualizado |
+| Todos outros | 1.1.1 | Atualizados |
 
-### Principais Atualizações
+**Causa raiz identificada:** As telas não possuem **auto-refresh** nem **real-time subscription**. Quando os agents enviam heartbeat e atualizam suas versões, as telas permanecem com dados antigos até que o usuario clique em refresh ou navegue novamente.
 
-| Seção | O que será adicionado |
-|-------|----------------------|
-| **Versão** | Versão atual: 1.1.1 |
-| **Pré-requisitos** | Python >= 3.9 (atualizado de 3.8), systemd, Amass (opcional) |
-| **Instalação Automática** | Comando curl \| bash com todas as opções |
-| **Opções do Script** | Todas as flags disponíveis (--version, --update, --uninstall, etc.) |
-| **Módulos/Executores** | 6 executores implementados (http_request, http_session, ssh, snmp, dns_query, amass) |
-| **Auto-Update** | Sistema de atualização automática via heartbeat |
-| **Diretórios Padrão** | /opt/iscope-agent, /etc/iscope-agent, /var/lib/iscope-agent |
-| **Compatibilidade** | CentOS 8 EOL, CentOS Stream 8, RHEL 8, Ubuntu/Debian |
+No momento dos screenshots:
+- Ambas as telas estavam mostrando dados de momentos diferentes
+- Os agents estavam em processo de atualização (os dados mudaram entre as consultas)
 
 ---
 
-### Conteúdo do README Atualizado
+### Solucao Proposta
 
-#### 1. Cabeçalho e Versão
-- Versão atual: 1.1.1
-- Descrição atualizada do projeto
+Implementar **polling automatico** nas duas telas para manter os dados sincronizados:
 
-#### 2. Pré-requisitos
-- Python >= 3.9 (obrigatório)
-- systemd (obrigatório)
-- Linux (Ubuntu/Debian, RHEL/CentOS 8+, Oracle Linux)
-- Acesso à rede para endpoints do backend
-- Amass (instalado automaticamente)
+#### 1. AgentsPage.tsx - Adicionar auto-refresh
 
-#### 3. Instalação Automática (Produção)
-```bash
-curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --activation-code "XXXX-XXXX-XXXX-XXXX"
+```typescript
+// Adicionar polling a cada 5 segundos para manter dados atualizados
+useEffect(() => {
+  if (user && canAccessPage) {
+    fetchData();
+    
+    // Polling every 5 seconds
+    const interval = setInterval(() => {
+      fetchData();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }
+}, [user, canAccessPage]);
 ```
 
-#### 4. Opções do Script de Instalação
-| Flag | Descrição | Padrão |
-|------|-----------|--------|
-| `--activation-code` | Código de ativação (obrigatório) | - |
-| `--version` | Versão específica para instalar | latest |
-| `--poll-interval` | Intervalo de heartbeat (segundos) | 60 |
-| `--install-dir` | Diretório de instalação | /opt/iscope-agent |
-| `--config-dir` | Diretório de configuração | /etc/iscope-agent |
-| `--state-dir` | Diretório de estado | /var/lib/iscope-agent |
-| `--update` | Reinstalar/atualizar agent existente | - |
-| `--uninstall` | Remover completamente o agent | - |
+#### 2. SettingsPage.tsx - Adicionar auto-refresh para stats
 
-#### 5. Módulos/Executores Desenvolvidos
-| Executor | Descrição | Dependência |
-|----------|-----------|-------------|
-| `http_request` | Requisições HTTP genéricas com interpolação | requests |
-| `http_session` | APIs com autenticação por sessão (cookies) | requests |
-| `ssh_command` | Execução de comandos via SSH | paramiko |
-| `snmp_query` | Queries SNMP (GET, WALK, BULK) | pysnmp |
-| `dns_query` | Queries DNS (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) | dnspython |
-| `amass` | Enumeração de subdomínios via OWASP Amass | amass |
-
-#### 6. Sistema de Auto-Update
-- Verificação automática via heartbeat
-- Download com verificação de checksum (SHA256)
-- Backup automático antes de atualização
-- Rollback em caso de falha
-- Restart automático via systemd
-
-#### 7. Compatibilidade de Sistemas
-- Ubuntu/Debian (apt-get)
-- RHEL 8/9, CentOS Stream 8 (dnf)
-- CentOS Linux 8 EOL (vault repos)
-- Oracle Linux 8/9
-
-#### 8. Endpoints Atualizados
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/register-agent` | POST | Registro inicial |
-| `/agent-heartbeat` | POST | Heartbeat periódico |
-| `/agent-refresh` | POST | Renovação de token |
-| `/agent-tasks` | GET | Buscar tarefas pendentes |
-| `/agent-step-result` | POST | Upload progressivo de cada step |
-| `/agent-task-result` | POST | Conclusão final de tarefa |
-
-#### 9. Estrutura de Arquivos Atualizada
-```
-python-agent/
-├── main.py               # Entry point
-├── requirements.txt      # Dependências
-├── .env.example          # Template de configuração
-└── agent/
-    ├── __init__.py
-    ├── config.py         # Configurações
-    ├── state.py          # Estado persistente
-    ├── api_client.py     # Cliente HTTP
-    ├── auth.py           # Autenticação JWT
-    ├── heartbeat.py      # Heartbeat com update check
-    ├── tasks.py          # Orquestrador de tarefas
-    ├── scheduler.py      # Loop principal
-    ├── logger.py         # Logging com rotação
-    ├── updater.py        # Auto-update com rollback
-    ├── version.py        # Versão centralizada
-    └── executors/
-        ├── base.py           # Classe base abstrata
-        ├── http_request.py   # HTTP genérico
-        ├── http_session.py   # HTTP com sessão
-        ├── ssh.py            # SSH (paramiko)
-        ├── snmp.py           # SNMP (pysnmp)
-        ├── dns_query.py      # DNS queries
-        └── amass.py          # Subdomain enum
+```typescript
+// Adicionar polling para stats de agents na aba de updates
+useEffect(() => {
+  if (user && role === 'super_admin') {
+    loadAgentStats();
+    
+    // Polling every 5 seconds when on the agents tab
+    const interval = setInterval(() => {
+      loadAgentStats();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }
+}, [user, role]);
 ```
 
 ---
 
-### Detalhes Técnicos
+### Alternativa: Real-time com Supabase
 
-**Arquivo a modificar:** `python-agent/README.md`
+Uma solucao mais elegante seria usar Supabase Realtime:
 
-O novo README terá aproximadamente 350-400 linhas incluindo:
-- Diagrama de fluxo de autenticação (ASCII)
-- Tabelas de referência para opções e executores
-- Exemplos de comandos de verificação
-- Seção de troubleshooting expandida
-- Notas de compatibilidade para CentOS 8 EOL
+```typescript
+useEffect(() => {
+  const channel = supabase
+    .channel('agents-changes')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'agents' },
+      (payload) => {
+        // Atualizar apenas o agent que mudou
+        setAgents(prev => prev.map(a => 
+          a.id === payload.new.id 
+            ? { ...a, ...payload.new }
+            : a
+        ));
+      }
+    )
+    .subscribe();
+
+  return () => { supabase.removeChannel(channel); };
+}, []);
+```
+
+---
+
+### Arquivos a Modificar
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/pages/AgentsPage.tsx` | Adicionar polling de 5s no useEffect |
+| `src/pages/admin/SettingsPage.tsx` | Adicionar polling de 5s para loadAgentStats |
+
+---
+
+### Consideracoes
+
+1. **Performance**: Polling de 5s e leve (apenas SELECT dos agents)
+2. **Consistencia**: Ambas as telas mostrarao os mesmos dados
+3. **UX**: O botao de refresh manual pode ser mantido para forcas atualizacao imediata
 
