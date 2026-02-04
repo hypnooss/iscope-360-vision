@@ -65,8 +65,7 @@ export const PDFHowToRead: React.FC = () => {
       <Text style={styles.title}>Como Ler Este Relatório</Text>
       
       <Text style={styles.description}>
-        Este relatório avalia apenas a configuração pública do seu domínio (DNS e email). 
-        Cada item informa o risco, o impacto prático e como corrigir o problema.
+        Este relatório avalia a configuração pública do seu domínio. Cada item informa o risco, o impacto prático e como corrigir o problema.
       </Text>
       
       <Text style={styles.subtitle}>Prioridades:</Text>
