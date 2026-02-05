@@ -423,37 +423,68 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         />
       </View>
 
-      {/* Subdomínios Section - Header ensures content follows */}
+      {/* Subdomínios Section */}
       <View style={styles.section}>
-        <CategoryHeader title="Subdomínios" color={headerColors.subdomain} minPresenceAhead={100} />
         {activeSubdomains.length > 0 ? (
-          <View style={styles.twoColumnContainer}>
-            {/* Left column - odd indices */}
-            <View style={[styles.column, styles.columnLeft]}>
-              {activeSubdomains.slice(0, 20).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
-                <ValueCard 
-                  key={idx}
-                  primary={truncate(sub.subdomain, 35)}
-                  secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
-                />
-              ))}
+          <>
+            {/* Initial block: Header + first 4 subdomains - kept together */}
+            <View wrap={false}>
+              <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
+              <View style={styles.twoColumnContainer}>
+                <View style={[styles.column, styles.columnLeft]}>
+                  {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
+                    <ValueCard 
+                      key={idx}
+                      primary={truncate(sub.subdomain, 35)}
+                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                    />
+                  ))}
+                </View>
+                <View style={styles.column}>
+                  {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
+                    <ValueCard 
+                      key={idx}
+                      primary={truncate(sub.subdomain, 35)}
+                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                    />
+                  ))}
+                </View>
+              </View>
             </View>
-            {/* Right column - even indices */}
-            <View style={styles.column}>
-              {activeSubdomains.slice(0, 20).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
-                <ValueCard 
-                  key={idx}
-                  primary={truncate(sub.subdomain, 35)}
-                  secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
-                />
-              ))}
-            </View>
-          </View>
+            
+            {/* Remaining subdomains - can break across pages */}
+            {activeSubdomains.length > 4 && (
+              <View style={styles.twoColumnContainer}>
+                <View style={[styles.column, styles.columnLeft]}>
+                  {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
+                    <ValueCard 
+                      key={idx}
+                      primary={truncate(sub.subdomain, 35)}
+                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                    />
+                  ))}
+                </View>
+                <View style={styles.column}>
+                  {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
+                    <ValueCard 
+                      key={idx}
+                      primary={truncate(sub.subdomain, 35)}
+                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            {activeSubdomains.length > 20 && (
+              <Text style={styles.emptyText}>+ {activeSubdomains.length - 20} subdomínios adicionais</Text>
+            )}
+          </>
         ) : (
-          <Text style={styles.emptyText}>Nenhum subdomínio ativo encontrado</Text>
-        )}
-        {activeSubdomains.length > 20 && (
-          <Text style={styles.emptyText}>+ {activeSubdomains.length - 20} subdomínios adicionais</Text>
+          <View wrap={false}>
+            <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
+            <Text style={styles.emptyText}>Nenhum subdomínio ativo encontrado</Text>
+          </View>
         )}
       </View>
     </View>
