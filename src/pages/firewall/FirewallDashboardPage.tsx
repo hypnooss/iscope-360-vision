@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +23,7 @@ interface RecentAnalysis {
 export default function FirewallDashboardPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,19 +39,41 @@ export default function FirewallDashboardPage() {
     }
   }, [user, authLoading, navigate, hasModuleAccess]);
 
-  useEffect(() => {
-    if (user && hasModuleAccess('scope_firewall')) {
-      fetchRecentAnalyses();
-    }
-  }, [user]);
-
-  const fetchRecentAnalyses = async () => {
+  const fetchRecentAnalyses = useCallback(async () => {
     try {
-      const { data: recentData } = await supabase
+      // Get workspace IDs to filter by (use preview workspaces if in preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // If in preview mode, first get firewall IDs belonging to the workspaces
+      let firewallIdsFilter: string[] | null = null;
+      if (workspaceIds && workspaceIds.length > 0) {
+        const { data: firewallsData } = await supabase
+          .from('firewalls')
+          .select('id')
+          .in('client_id', workspaceIds);
+        firewallIdsFilter = firewallsData?.map(f => f.id) || [];
+        
+        if (firewallIdsFilter.length === 0) {
+          setRecentAnalyses([]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Build analysis query with optional firewall filter
+      let analysisQuery = supabase
         .from('analysis_history')
         .select('id, score, created_at, firewall_id')
         .order('created_at', { ascending: false })
         .limit(5);
+        
+      if (firewallIdsFilter) {
+        analysisQuery = analysisQuery.in('firewall_id', firewallIdsFilter);
+      }
+
+      const { data: recentData } = await analysisQuery;
 
       const formattedRecent: RecentAnalysis[] = [];
       if (recentData && recentData.length > 0) {
@@ -89,7 +113,13 @@ export default function FirewallDashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isPreviewMode, previewTarget]);
+
+  useEffect(() => {
+    if (user && hasModuleAccess('scope_firewall')) {
+      fetchRecentAnalyses();
+    }
+  }, [user, hasModuleAccess, fetchRecentAnalyses]);
 
   const getScoreColor = (score: number) => {
     if (score >= 75) return 'text-success';

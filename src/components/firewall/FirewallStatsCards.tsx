@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,21 +13,28 @@ interface DashboardStats {
 
 interface FirewallStatsCardsProps {
   onStatsLoaded?: (stats: DashboardStats) => void;
+  workspaceIds?: string[];
 }
 
-export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
+export function FirewallStatsCards({ onStatsLoaded, workspaceIds }: FirewallStatsCardsProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
+      // Build queries with optional workspace filtering
+      let countQuery = supabase.from('firewalls').select('id', { count: 'exact', head: true });
+      let dataQuery = supabase.from('firewalls').select('id, last_score');
+
+      // Apply workspace filter if provided
+      if (workspaceIds && workspaceIds.length > 0) {
+        countQuery = countQuery.in('client_id', workspaceIds);
+        dataQuery = dataQuery.in('client_id', workspaceIds);
+      }
+
       const [firewallsRes, firewallsWithScoreRes] = await Promise.all([
-        supabase.from('firewalls').select('id', { count: 'exact', head: true }),
-        supabase.from('firewalls').select('id, last_score'),
+        countQuery,
+        dataQuery,
       ]);
 
       const totalFirewalls = firewallsRes.count || 0;
@@ -59,7 +66,11 @@ export function FirewallStatsCards({ onStatsLoaded }: FirewallStatsCardsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [workspaceIds, onStatsLoaded]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   const getScoreColor = (score: number) => {
     if (score >= 75) return 'text-success';
