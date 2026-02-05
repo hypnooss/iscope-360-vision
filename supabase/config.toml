@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.subdomain-enum]
 verify_jwt = false
+
+[functions.get-user-preview-data]
+verify_jwt = false

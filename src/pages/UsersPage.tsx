@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePreview } from "@/contexts/PreviewContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,9 +32,10 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Layers, Trash2 } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Layers, Trash2, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
+import { PreviewUserDialog } from "@/components/preview/PreviewUserDialog";
 
 type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
 type ModulePermissionLevel = "none" | "view" | "edit";
@@ -66,6 +68,7 @@ interface Module {
 
 export default function UsersPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
+  const { canStartPreview } = usePreview();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -79,6 +82,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [previewUser, setPreviewUser] = useState<UserProfile | null>(null);
   const canAccessPage = isSuperAdmin() || isAdmin();
 
   useEffect(() => {
@@ -474,6 +478,16 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {canStartPreview() && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setPreviewUser(u)}
+                              title="Visualizar como este usuário"
+                            >
+                              <Eye className="w-4 h-4 text-primary" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -618,6 +632,7 @@ export default function UsersPage() {
         </Dialog>
 
         {/* Delete Confirmation Dialog */}
+        {/* Delete Confirmation Dialog */}
         <AlertDialog open={!!deletingUser} onOpenChange={() => setDeletingUser(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -640,6 +655,14 @@ export default function UsersPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Preview User Dialog */}
+        <PreviewUserDialog
+          open={!!previewUser}
+          onOpenChange={(open) => !open && setPreviewUser(null)}
+          user={previewUser}
+          onSuccess={() => navigate('/dashboard')}
+        />
       </div>
     </AppLayout>
   );
