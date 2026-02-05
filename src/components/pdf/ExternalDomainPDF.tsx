@@ -405,7 +405,9 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             {/* Render explanatory cards grouped by category */}
             {Object.entries(failedByCategory).map(([categoryName, items]) => (
               <View key={categoryName}>
-                <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
+                <View minPresenceAhead={120}>
+                  <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
+                </View>
                 
                 {items.map((item, index) => {
                   const content = getExplanatoryContent(

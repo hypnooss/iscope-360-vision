@@ -258,14 +258,26 @@ const truncate = (str: string, len: number): string => {
 interface CategoryHeaderProps {
   title: string;
   color: string;
+  minPresenceAhead?: number;
 }
 
-function CategoryHeader({ title, color }: CategoryHeaderProps) {
-  return (
+function CategoryHeader({ title, color, minPresenceAhead }: CategoryHeaderProps) {
+  const headerContent = (
     <View style={[styles.categoryHeader, { backgroundColor: color }]}>
       <Text style={styles.categoryHeaderText}>{title}</Text>
     </View>
   );
+  
+  // Wrap with minPresenceAhead if specified
+  if (minPresenceAhead) {
+    return (
+      <View minPresenceAhead={minPresenceAhead}>
+        {headerContent}
+      </View>
+    );
+  }
+  
+  return headerContent;
 }
 
 interface ValueCardProps {
@@ -317,8 +329,8 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
       {/* Page Title */}
       <Text style={styles.pageTitle}>Mapa de Infraestrutura DNS</Text>
 
-      {/* NS and SOA Side by Side */}
-      <View style={styles.rowContainer}>
+      {/* NS and SOA Side by Side - Keep together */}
+      <View style={styles.rowContainer} wrap={false}>
         {/* NS Section */}
         <View style={[styles.halfSection, styles.halfSectionLeft]}>
           <CategoryHeader title="NS" color={headerColors.ns} />
@@ -354,8 +366,8 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         </View>
       </View>
 
-      {/* MX Section */}
-      <View style={styles.section}>
+      {/* MX Section - Keep together */}
+      <View style={styles.section} wrap={false}>
         <CategoryHeader title="MX" color={headerColors.mx} />
         {mxRecords.length > 0 ? (
           mxRecords.map((mx, idx) => (
@@ -370,8 +382,8 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         )}
       </View>
 
-      {/* TXT (Email Auth) Section */}
-      <View style={styles.section}>
+      {/* TXT (Email Auth) Section - Keep together */}
+      <View style={styles.section} wrap={false}>
         <CategoryHeader title="TXT (Email Auth)" color={headerColors.txt} />
         
         {/* SPF */}
@@ -411,9 +423,9 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
         />
       </View>
 
-      {/* Subdomínios Section - Two columns */}
+      {/* Subdomínios Section - Header ensures content follows */}
       <View style={styles.section}>
-        <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
+        <CategoryHeader title="Subdomínios" color={headerColors.subdomain} minPresenceAhead={100} />
         {activeSubdomains.length > 0 ? (
           <View style={styles.twoColumnContainer}>
             {/* Left column - odd indices */}
