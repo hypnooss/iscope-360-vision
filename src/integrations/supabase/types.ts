@@ -1084,6 +1084,56 @@ export type Database = {
         }
         Relationships: []
       }
+      preview_sessions: {
+        Row: {
+          admin_id: string
+          created_at: string
+          ended_at: string | null
+          id: string
+          ip_address: string | null
+          mode: string
+          reason: string | null
+          started_at: string
+          target_user_id: string
+          target_workspace_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          admin_id: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          mode?: string
+          reason?: string | null
+          started_at?: string
+          target_user_id: string
+          target_workspace_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          admin_id?: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          mode?: string
+          reason?: string | null
+          started_at?: string
+          target_user_id?: string
+          target_workspace_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "preview_sessions_target_workspace_id_fkey"
+            columns: ["target_workspace_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

@@ -6,8 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ModuleProvider } from "@/contexts/ModuleContext";
-
-// Critical pages - loaded immediately
+import { PreviewProvider } from "@/contexts/PreviewContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -68,66 +67,68 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ModuleProvider>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                {/* Public routes */}
-                <Route path="/" element={<Index />} />
-                <Route path="/auth" element={<Auth />} />
+            <PreviewProvider>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  {/* Public routes */}
+                  <Route path="/" element={<Index />} />
+                  <Route path="/auth" element={<Auth />} />
 
-                {/* Module Selection */}
-                <Route path="/modules" element={<ModuleSelectionPage />} />
+                  {/* Module Selection */}
+                  <Route path="/modules" element={<ModuleSelectionPage />} />
 
-                {/* General Dashboard */}
-                <Route path="/dashboard" element={<GeneralDashboardPage />} />
+                  {/* General Dashboard */}
+                  <Route path="/dashboard" element={<GeneralDashboardPage />} />
 
-                {/* Scope Firewall Module */}
-                <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
-                <Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
-                <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
-                <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
-                <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
+                  {/* Scope Firewall Module */}
+                  <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
+                  <Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
+                  <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
+                  <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
+                  <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
 
-                {/* External Domain Module */}
-                <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
-                <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
-                <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
-                <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
+                  {/* External Domain Module */}
+                  <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
+                  <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
+                  <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
+                  <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
 
-                {/* Microsoft 365 Module */}
-                <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
-                <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
-                <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
-                <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
-                <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
-                <Route path="/scope-m365/entra-id/applications" element={<EntraIdApplicationInsightsPage />} />
-                <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
-                <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
-                <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
+                  {/* Microsoft 365 Module */}
+                  <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
+                  <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
+                  <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
+                  <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
+                  <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
+                  <Route path="/scope-m365/entra-id/applications" element={<EntraIdApplicationInsightsPage />} />
+                  <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
+                  <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
+                  <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
 
-                {/* Legacy routes - redirect to new structure */}
-                <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
-                <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
-                <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
+                  {/* Legacy routes - redirect to new structure */}
+                  <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
+                  <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
+                  <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
 
-                {/* Admin */}
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/workspaces" element={<ClientsPage />} />
-                <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
-                <Route path="/administrators" element={<AdministratorsPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/collections" element={<CollectionsPage />} />
-                <Route path="/templates" element={<TemplatesPage />} />
-                <Route path="/templates/:id" element={<TemplateDetailPage />} />
+                  {/* Admin */}
+                  <Route path="/users" element={<UsersPage />} />
+                  <Route path="/agents" element={<AgentsPage />} />
+                  <Route path="/workspaces" element={<ClientsPage />} />
+                  <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
+                  <Route path="/administrators" element={<AdministratorsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/collections" element={<CollectionsPage />} />
+                  <Route path="/templates" element={<TemplatesPage />} />
+                  <Route path="/templates/:id" element={<TemplateDetailPage />} />
 
-                {/* Preview routes (temporary) */}
-                <Route path="/preview/domain-report" element={<DomainReportPreview />} />
-                <Route path="/preview/firewall-report" element={<FirewallReportPreview />} />
+                  {/* Preview routes (temporary) */}
+                  <Route path="/preview/domain-report" element={<DomainReportPreview />} />
+                  <Route path="/preview/firewall-report" element={<FirewallReportPreview />} />
 
-                {/* Catch-all */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
+                  {/* Catch-all */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </PreviewProvider>
           </ModuleProvider>
         </AuthProvider>
       </BrowserRouter>

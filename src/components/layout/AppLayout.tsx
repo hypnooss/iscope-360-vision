@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { SystemAlertBanner } from '@/components/alerts/SystemAlertBanner';
+import { PreviewBanner } from '@/components/preview/PreviewBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules, ScopeModule } from '@/contexts/ModuleContext';
 import { cn } from '@/lib/utils';
@@ -544,7 +545,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* System Alerts Banner - appears at very top */}
+      {/* Preview Banner - appears at very top when in preview mode */}
+      <PreviewBanner />
+      
+      {/* System Alerts Banner */}
       <SystemAlertBanner />
       
       {/* Mobile Header */}
