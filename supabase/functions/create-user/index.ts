@@ -152,14 +152,15 @@ serve(async (req) => {
       // Don't throw, profile might be created by trigger
     }
 
-    // 3. Create role
-    const { error: roleError } = await supabaseAdmin.from("user_roles").insert({
-      user_id: userId,
-      role: role || "user",
-    });
+    // 3. Update role (trigger already inserted 'user' role)
+    const { error: roleError } = await supabaseAdmin
+      .from("user_roles")
+      .update({ role: role || "user" })
+      .eq("user_id", userId);
 
     if (roleError) {
-      console.error("Error creating role:", roleError);
+      console.error("Error updating role:", roleError);
+      throw new Error("Failed to set user role: " + roleError.message);
     }
 
     // 4. Create client associations (only if not super_admin)
