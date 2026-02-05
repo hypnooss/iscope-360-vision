@@ -180,15 +180,11 @@ export default function UsersPage() {
 
     setSaving(true);
     try {
-      // Update role
+      // Update role (constraint is UNIQUE on user_id only)
       await supabase
         .from("user_roles")
-        .upsert({ user_id: editingUser.id, role: editRole }, { onConflict: "user_id,role" });
-
-      // If role changed, delete old role first
-      if (editingUser.role !== editRole) {
-        await supabase.from("user_roles").delete().eq("user_id", editingUser.id).neq("role", editRole);
-      }
+        .update({ role: editRole })
+        .eq("user_id", editingUser.id);
 
       // Update client associations
       await supabase.from("user_clients").delete().eq("user_id", editingUser.id);
