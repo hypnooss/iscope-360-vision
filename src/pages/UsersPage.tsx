@@ -180,11 +180,17 @@ export default function UsersPage() {
 
     setSaving(true);
     try {
-      // Update role (constraint is UNIQUE on user_id only)
-      await supabase
+      // Use upsert to handle case where role doesn't exist
+      const { error: roleError } = await supabase
         .from("user_roles")
-        .update({ role: editRole })
-        .eq("user_id", editingUser.id);
+        .upsert(
+          { user_id: editingUser.id, role: editRole },
+          { onConflict: "user_id" }
+        );
+
+      if (roleError) {
+        throw new Error("Erro ao atualizar role: " + roleError.message);
+      }
 
       // Update client associations
       await supabase.from("user_clients").delete().eq("user_id", editingUser.id);

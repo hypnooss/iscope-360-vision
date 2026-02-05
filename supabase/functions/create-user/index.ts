@@ -152,14 +152,16 @@ serve(async (req) => {
       // Don't throw, profile might be created by trigger
     }
 
-    // 3. Update role (trigger already inserted 'user' role)
+    // 3. Use upsert in case trigger didn't create the role
     const { error: roleError } = await supabaseAdmin
       .from("user_roles")
-      .update({ role: role || "user" })
-      .eq("user_id", userId);
+      .upsert(
+        { user_id: userId, role: role || "user" },
+        { onConflict: "user_id" }
+      );
 
     if (roleError) {
-      console.error("Error updating role:", roleError);
+      console.error("Error setting role:", roleError);
       throw new Error("Failed to set user role: " + roleError.message);
     }
 
