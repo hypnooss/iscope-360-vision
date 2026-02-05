@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ interface GroupedFirewall {
 export default function FirewallReportsPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess, loading: moduleLoading } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,10 +80,15 @@ export default function FirewallReportsPage() {
     if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_firewall')) {
       fetchReports();
     }
-  }, [user, authLoading, moduleLoading]);
+  }, [user, authLoading, moduleLoading, isPreviewMode, previewTarget]);
 
   const fetchReports = async () => {
     try {
+      // Get workspace IDs to filter by (for preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
       // Fetch analysis history - only lightweight fields for listing
       const { data: historyData } = await supabase
         .from('analysis_history')
@@ -96,10 +103,17 @@ export default function FirewallReportsPage() {
 
       // Get firewall info
       const firewallIds = [...new Set(historyData.map(h => h.firewall_id))];
-      const { data: firewallsData } = await supabase
+      let firewallsQuery = supabase
         .from('firewalls')
         .select('id, name, client_id')
         .in('id', firewallIds);
+      
+      // Filter by workspaces in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+      }
+      
+      const { data: firewallsData } = await firewallsQuery;
 
       // Get client info
       const clientIds = [...new Set((firewallsData || []).map(f => f.client_id))];
@@ -115,7 +129,11 @@ export default function FirewallReportsPage() {
       setClients((clientsData || []).map(c => ({ id: c.id, name: c.name })));
       setFirewalls((firewallsData || []).map(f => ({ id: f.id, name: f.name })));
 
-      const formattedReports: AnalysisReport[] = historyData.map(h => {
+      // Filter history to only include accessible firewalls
+      const accessibleFirewallIds = new Set((firewallsData || []).map(f => f.id));
+      const filteredHistory = historyData.filter(h => accessibleFirewallIds.has(h.firewall_id));
+
+      const formattedReports: AnalysisReport[] = filteredHistory.map(h => {
         const firewall = firewallMap.get(h.firewall_id);
         const client = firewall ? clientMap.get(firewall.client_id) : null;
         return {

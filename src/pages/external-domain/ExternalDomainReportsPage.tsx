@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ interface GroupedDomain {
 export default function ExternalDomainReportsPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess, loading: moduleLoading } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,10 +79,15 @@ export default function ExternalDomainReportsPage() {
     if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_external_domain')) {
       fetchReports();
     }
-  }, [user, authLoading, moduleLoading, hasModuleAccess]);
+  }, [user, authLoading, moduleLoading, hasModuleAccess, isPreviewMode, previewTarget]);
 
   const fetchReports = async () => {
     try {
+      // Get workspace IDs to filter by (for preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
       const { data: historyData } = await supabase
         .from('external_domain_analysis_history')
         .select('id, domain_id, score, created_at')
@@ -93,10 +100,17 @@ export default function ExternalDomainReportsPage() {
       }
 
       const domainIds = [...new Set(historyData.map(h => h.domain_id))];
-      const { data: domainsData } = await supabase
+      let domainsQuery = supabase
         .from('external_domains')
         .select('id, name, domain, client_id')
         .in('id', domainIds);
+      
+      // Filter by workspaces in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        domainsQuery = domainsQuery.in('client_id', workspaceIds);
+      }
+      
+      const { data: domainsData } = await domainsQuery;
 
       const clientIds = [...new Set((domainsData || []).map(d => d.client_id))];
       const { data: clientsData } = await supabase
@@ -110,7 +124,11 @@ export default function ExternalDomainReportsPage() {
       setClients((clientsData || []).map(c => ({ id: c.id, name: c.name })));
       setDomains((domainsData || []).map(d => ({ id: d.id, name: d.name })));
 
-      const formattedReports: DomainReport[] = historyData.map(h => {
+      // Filter history to only include accessible domains
+      const accessibleDomainIds = new Set((domainsData || []).map(d => d.id));
+      const filteredHistory = historyData.filter(h => accessibleDomainIds.has(h.domain_id));
+
+      const formattedReports: DomainReport[] = filteredHistory.map(h => {
         const domain = domainMap.get(h.domain_id);
         const client = domain ? clientMap.get(domain.client_id) : null;
         return {

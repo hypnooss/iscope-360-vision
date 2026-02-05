@@ -4,6 +4,8 @@ import { SystemAlertBanner } from '@/components/alerts/SystemAlertBanner';
 import { PreviewBanner } from '@/components/preview/PreviewBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules, ScopeModule } from '@/contexts/ModuleContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -155,7 +157,9 @@ const getDefaultModuleConfig = (code: string) => {
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, role, signOut } = useAuth();
-  const { userModules, activeModule, setActiveModule, hasModuleAccess } = useModules();
+  const { activeModule, setActiveModule, hasModuleAccess } = useModules();
+  const { effectiveProfile, effectiveRole, isPreviewMode } = useEffectiveAuth();
+  const { effectiveUserModules } = useEffectiveModules();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -209,7 +213,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const getRoleBadge = () => {
-    switch (role) {
+    // Use effective role when in preview mode
+    const displayRole = effectiveRole || role;
+    switch (displayRole) {
       case 'super_admin':
         return 'Super Admin';
       case 'super_suporte':
@@ -238,8 +244,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isActiveRoute = (href: string) => location.pathname === href;
   const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
 
-  // Build module configs dynamically from userModules
-  const accessibleModuleConfigs: ModuleNavConfig[] = userModules.map(um => {
+  // Build module configs dynamically from effectiveUserModules (respects preview mode)
+  const accessibleModuleConfigs: ModuleNavConfig[] = effectiveUserModules.map(um => {
     const code = um.module.code;
     const name = um.module.name;
     const moduleIcon = um.module.icon;
@@ -261,7 +267,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: navItems,
     };
   });
-  const canAccessUsers = role === 'super_admin' || role === 'workspace_admin';
+  
+  // Use effective role for menu visibility (respects preview mode)
+  const canAccessUsers = effectiveRole === 'super_admin' || effectiveRole === 'workspace_admin';
 
   // Helper component for sidebar items with tooltip when collapsed
   const SidebarLink = ({ to, icon: Icon, label, isActive, color }: { to: string; icon: React.ComponentType<{ className?: string }>; label: string; isActive: boolean; color?: string }) => {
@@ -536,10 +544,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Divider before Workspaces */}
-      {role === 'super_admin' && sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
+      {effectiveRole === 'super_admin' && sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
 
-      {/* Administração - Super Admin and Super Suporte */}
-      {(role === 'super_admin' || role === 'super_suporte') && <AdminButton />}
+      {/* Administração - Super Admin and Super Suporte (hidden in preview mode unless target has access) */}
+      {(effectiveRole === 'super_admin' || effectiveRole === 'super_suporte') && <AdminButton />}
     </TooltipProvider>
   );
 
@@ -644,12 +652,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <button className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
                     <Avatar className="h-9 w-9">
                       <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                        {getInitials(profile?.full_name ?? profile?.email ?? null)}
+                        {getInitials(effectiveProfile?.full_name ?? effectiveProfile?.email ?? null)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 text-left min-w-0">
                       <p className="text-sm font-medium text-sidebar-foreground truncate">
-                        {profile?.full_name || profile?.email}
+                        {effectiveProfile?.full_name || effectiveProfile?.email}
                       </p>
                       <p className="text-xs text-muted-foreground">{getRoleBadge()}</p>
                     </div>

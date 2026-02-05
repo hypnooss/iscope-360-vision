@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { usePreview } from '@/contexts/PreviewContext';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -87,6 +88,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 export default function TaskExecutionsPage() {
   const queryClient = useQueryClient();
+  const { isPreviewMode, previewTarget } = usePreview();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('1h');
   const [searchTerm, setSearchTerm] = useState('');
@@ -113,20 +115,32 @@ export default function TaskExecutionsPage() {
 
   // Fetch tasks
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['agent-tasks', statusFilter, timeFilter],
+    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
+      
+      // Get workspace IDs to filter by (for preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
 
       // Importante: não confiar apenas em target_type.
       // Existem tasks legadas (ex.: domínio externo) com target_type='firewall' por default.
       // Aqui garantimos que só voltam tasks cujo target_id existe em firewalls acessíveis.
-      const { data: firewallRows, error: firewallsError } = await supabase
+      let firewallsQuery = supabase
         .from('firewalls')
         .select('id')
         .limit(1000);
+      
+      // Filter by workspaces in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+      }
+
+      const { data: firewallRows, error: firewallsError } = await firewallsQuery;
 
       if (firewallsError) throw firewallsError;
-
+      
       const firewallIds = (firewallRows ?? []).map((f) => f.id);
       if (firewallIds.length === 0) return [] as AgentTask[];
       
