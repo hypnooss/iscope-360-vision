@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +19,9 @@ interface GeneralStats {
 
 export default function GeneralDashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { userModules, setActiveModule } = useModules();
+  const { setActiveModule } = useModules();
+  const { effectiveUserModules } = useEffectiveModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [stats, setStats] = useState<GeneralStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,13 +36,27 @@ export default function GeneralDashboardPage() {
     if (user) {
       fetchStats();
     }
-  }, [user]);
+  }, [user, isPreviewMode, previewTarget]);
 
   const fetchStats = async () => {
     try {
+      // Get workspace IDs for filtering
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // Build queries with optional filtering
+      let firewallsQuery = supabase.from('firewalls').select('id', { count: 'exact', head: true });
+      let clientsQuery = supabase.from('clients').select('id', { count: 'exact', head: true });
+
+      if (workspaceIds && workspaceIds.length > 0) {
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+      }
+
       const [firewallsRes, clientsRes] = await Promise.all([
-        supabase.from('firewalls').select('id', { count: 'exact', head: true }),
-        supabase.from('clients').select('id', { count: 'exact', head: true }),
+        firewallsQuery,
+        clientsQuery,
       ]);
 
       setStats({
@@ -98,7 +116,7 @@ export default function GeneralDashboardPage() {
                   <p className="text-sm text-muted-foreground mb-3">
                     Firewalls monitorados
                   </p>
-                  {userModules.some(m => m.module.code === 'scope_firewall') && (
+                  {effectiveUserModules.some(m => m.module.code === 'scope_firewall') && (
                     <Button 
                       variant="ghost" 
                       size="sm" 

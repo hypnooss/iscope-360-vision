@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ interface RecentAnalysis {
 
 export default function DashboardPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
@@ -42,19 +44,55 @@ export default function DashboardPage() {
     if (user) {
       fetchDashboardData();
     }
-  }, [user]);
+  }, [user, isPreviewMode, previewTarget]);
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch counts
-      const [clientsRes, firewallsRes, historyRes] = await Promise.all([
-        supabase.from('clients').select('id', { count: 'exact', head: true }),
-        supabase.from('firewalls').select('id', { count: 'exact', head: true }),
-        supabase.from('analysis_history').select('id, score', { count: 'exact' }).limit(100),
+      // Get workspace IDs for filtering in preview mode
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // Build queries with optional filtering
+      let clientsQuery = supabase.from('clients').select('id', { count: 'exact', head: true });
+      let firewallsQuery = supabase.from('firewalls').select('id, client_id', { count: 'exact' });
+
+      if (workspaceIds && workspaceIds.length > 0) {
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+      }
+
+      const [clientsRes, firewallsRes] = await Promise.all([
+        clientsQuery,
+        firewallsQuery,
       ]);
 
       const totalClients = clientsRes.count || 0;
       const totalFirewalls = firewallsRes.count || 0;
+
+      // Get firewall IDs for filtering analysis history
+      const firewallIds = (firewallsRes.data || []).map((f: any) => f.id);
+
+      // Fetch analysis history filtered by accessible firewalls
+      let historyQuery = supabase.from('analysis_history').select('id, score', { count: 'exact' }).limit(100);
+      if (workspaceIds && workspaceIds.length > 0 && firewallIds.length > 0) {
+        historyQuery = historyQuery.in('firewall_id', firewallIds);
+      } else if (workspaceIds && workspaceIds.length > 0 && firewallIds.length === 0) {
+        // No accessible firewalls, return empty result
+        setStats({
+          totalClients,
+          totalFirewalls: 0,
+          recentAnalyses: 0,
+          averageScore: 0,
+          criticalIssues: 0,
+          pendingSchedules: 0,
+        });
+        setRecentAnalyses([]);
+        setLoading(false);
+        return;
+      }
+
+      const historyRes = await historyQuery;
       const analyses = historyRes.data || [];
       
       const averageScore = analyses.length > 0
@@ -62,11 +100,17 @@ export default function DashboardPage() {
         : 0;
 
       // Fetch recent analyses with firewall info
-      const { data: recentData, error: recentError } = await supabase
+      let recentQuery = supabase
         .from('analysis_history')
         .select('id, score, created_at, firewall_id')
         .order('created_at', { ascending: false })
         .limit(5);
+
+      if (workspaceIds && workspaceIds.length > 0 && firewallIds.length > 0) {
+        recentQuery = recentQuery.in('firewall_id', firewallIds);
+      }
+
+      const { data: recentData, error: recentError } = await recentQuery;
 
       if (recentError) {
         console.error('Error fetching recent analyses:', recentError);
@@ -75,12 +119,12 @@ export default function DashboardPage() {
       // Get firewall and client info separately
       const formattedRecent: RecentAnalysis[] = [];
       if (recentData && recentData.length > 0) {
-        const firewallIds = [...new Set(recentData.map(a => a.firewall_id))];
+        const recentFirewallIds = [...new Set(recentData.map(a => a.firewall_id))];
         
         const { data: firewallsData } = await supabase
           .from('firewalls')
           .select('id, name, client_id')
-          .in('id', firewallIds);
+          .in('id', recentFirewallIds);
 
         const clientIds = [...new Set((firewallsData || []).map(f => f.client_id))];
         

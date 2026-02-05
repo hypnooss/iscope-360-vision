@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePreview } from '@/contexts/PreviewContext';
 
 export interface TenantConnection {
   id: string;
@@ -37,6 +38,7 @@ export interface TenantPermission {
 
 export function useTenantConnection() {
   const { user } = useAuth();
+  const { isPreviewMode, previewTarget } = usePreview();
   const [tenants, setTenants] = useState<TenantConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function useTenantConnection() {
       setLoading(true);
       setError(null);
       
-      const { data, error: fetchError } = await supabase
+      let query = supabase
         .from('m365_tenants')
         .select(`
           id,
@@ -61,6 +63,16 @@ export function useTenantConnection() {
           clients!inner(id, name)
         `)
         .order('created_at', { ascending: false });
+
+      // Filter by preview workspaces if in preview mode
+      if (isPreviewMode && previewTarget?.workspaces) {
+        const workspaceIds = previewTarget.workspaces.map(w => w.id);
+        if (workspaceIds.length > 0) {
+          query = query.in('client_id', workspaceIds);
+        }
+      }
+
+      const { data, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
 
@@ -296,7 +308,7 @@ export function useTenantConnection() {
 
   useEffect(() => {
     fetchTenants();
-  }, [user]);
+  }, [user, isPreviewMode, previewTarget]);
 
   return {
     tenants,
