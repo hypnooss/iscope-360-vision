@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +65,7 @@ type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
 export default function FirewallListPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [firewalls, setFirewalls] = useState<Firewall[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -97,16 +99,33 @@ export default function FirewallListPage() {
     if (user && hasModuleAccess('scope_firewall')) {
       fetchData();
     }
-  }, [user]);
+  }, [user, isPreviewMode, previewTarget]);
 
   const fetchData = async () => {
     try {
+      // Get workspace IDs to filter by (use preview workspaces if in preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // Build queries with optional workspace filtering
+      let clientsQuery = supabase.from('clients').select('*').order('name');
+      let firewallsQuery = supabase.from('firewalls').select('*').order('created_at', { ascending: false });
+      let agentsQuery = supabase.from('agents').select('id, name, client_id').eq('revoked', false);
+
+      // Apply workspace filter if in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+        agentsQuery = agentsQuery.in('client_id', workspaceIds);
+      }
+
       // Fetch all data in parallel
       const [clientsRes, firewallsRes, deviceTypesRes, agentsRes] = await Promise.all([
-        supabase.from('clients').select('*').order('name'),
-        supabase.from('firewalls').select('*').order('created_at', { ascending: false }),
+        clientsQuery,
+        firewallsQuery,
         supabase.from('device_types').select('id, name, vendor').eq('is_active', true),
-        supabase.from('agents').select('id, name, client_id').eq('revoked', false),
+        agentsQuery,
       ]);
       
       if (clientsRes.data) setClients(clientsRes.data);
