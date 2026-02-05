@@ -38,6 +38,7 @@ const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-dom
 
 // Microsoft 365 Module Pages - lazy loaded
 const M365DashboardPage = lazy(() => import("./pages/m365/M365DashboardPage"));
+const M365PosturePage = lazy(() => import("./pages/m365/M365PosturePage"));
 const TenantConnectionPage = lazy(() => import("./pages/m365/TenantConnectionPage"));
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
 const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
@@ -95,6 +96,7 @@ const App = () => (
 
                   {/* Microsoft 365 Module */}
                   <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
+                  <Route path="/scope-m365/posture" element={<M365PosturePage />} />
                   <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
                   <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
                   <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />

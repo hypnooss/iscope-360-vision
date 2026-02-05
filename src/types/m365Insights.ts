@@ -101,6 +101,14 @@ export const PRODUCT_PORTAL_URLS: Record<M365Product, string> = {
   intune: 'https://intune.microsoft.com',
 };
 
+export const SEVERITY_LABELS: Record<M365Severity, string> = {
+  critical: 'Crítico',
+  high: 'Alto',
+  medium: 'Médio',
+  low: 'Baixo',
+  info: 'Info',
+};
+
 export const SEVERITY_CONFIG: Record<M365Severity, {
   label: string;
   color: string;

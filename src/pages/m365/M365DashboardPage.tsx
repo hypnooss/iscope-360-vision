@@ -6,7 +6,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Shield, Users, Key, Building, ArrowRight } from 'lucide-react';
+import { Shield, Users, Key, Building, ArrowRight, Activity } from 'lucide-react';
 
 export default function M365DashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -40,7 +40,34 @@ export default function M365DashboardPage() {
           </p>
         </div>
 
+        {/* Security Posture Card - Highlight */}
+        <Card 
+          className="glass-card border-l-4 border-l-primary hover:shadow-lg transition-shadow cursor-pointer group mb-8"
+          onClick={() => navigate('/scope-m365/posture')}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div className="p-3 rounded-lg bg-primary/10">
+                <Activity className="w-8 h-8 text-primary" />
+              </div>
+              <ArrowRight className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <CardTitle className="text-xl mt-4">Postura de Segurança</CardTitle>
+            <CardDescription className="text-base">
+              Visão consolidada de todos os riscos de segurança do tenant Microsoft 365, 
+              organizados por categoria com score unificado e guias de correção.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="mt-2">
+              Acessar Dashboard
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Submodules Grid */}
+        <h2 className="text-lg font-semibold text-foreground mb-4">Produtos</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Entra ID - Available */}
           <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer group"
@@ -105,10 +132,10 @@ export default function M365DashboardPage() {
           </Card>
 
           {/* Defender - Coming Soon */}
-          <Card className="glass-card border-l-4 border-l-red-500 opacity-60">
+          <Card className="glass-card border-l-4 border-l-rose-500 opacity-60">
             <CardHeader className="pb-2">
-              <div className="p-2 rounded-lg bg-red-500/10 w-fit">
-                <Shield className="w-6 h-6 text-red-500" />
+              <div className="p-2 rounded-lg bg-rose-500/10 w-fit">
+                <Shield className="w-6 h-6 text-rose-500" />
               </div>
               <CardTitle className="text-lg mt-3">Defender</CardTitle>
               <CardDescription>
