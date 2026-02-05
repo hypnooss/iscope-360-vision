@@ -1,16 +1,43 @@
 
 
-## Correção: Layout Quebrado de Subdomínios no PDF
+## Correção: Filtrar Clientes no Wizard de Conexão M365
 
 ### Problema Identificado
 
-O `minPresenceAhead` do `@react-pdf/renderer` tem um bug conhecido (#2658) que faz com que não funcione corretamente em alguns cenários. O cabeçalho "Subdomínios" continua sendo renderizado sozinho no final da página.
+O wizard de conexão de tenant M365 (`TenantConnectionWizard`) exibe **todos os clientes** no dropdown, independentemente:
+1. Da role do usuário (workspace_admin/user deveria ver apenas seus workspaces)
+2. Do modo Preview (deveria ver apenas os workspaces do usuário alvo)
+
+### Análise do Código Atual
+
+```typescript
+// TenantConnectionWizard.tsx - linhas 150-162
+const fetchClients = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, name')
+      .order('name');
+
+    if (error) throw error;
+    setClients(data || []);  // ← Não aplica filtro por preview/role
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+  }
+};
+```
+
+**Nota:** O RLS na tabela `clients` já filtra para workspace_admin e users normais, mas o **Preview Mode** precisa de tratamento adicional porque o RLS usa o `auth.uid()` do admin real, não do usuário sendo visualizado.
 
 ---
 
 ### Solução
 
-Usar uma abordagem diferente: **agrupar o cabeçalho junto com os primeiros itens de conteúdo** usando `wrap={false}`, garantindo que pelo menos o cabeçalho + alguns subdomínios fiquem juntos.
+Aplicar o mesmo padrão usado em `FirewallListPage`:
+1. Importar `usePreview` no componente
+2. Ao buscar clientes, verificar se está em Preview Mode
+3. Se sim, filtrar por `previewTarget.workspaces`
+4. Se não, deixar o RLS fazer o trabalho (já filtra para não-admins)
 
 ---
 
@@ -18,112 +45,124 @@ Usar uma abordagem diferente: **agrupar o cabeçalho junto com os primeiros iten
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/pdf/sections/PDFDNSMap.tsx` | Separar os primeiros subdomínios em um bloco "inicial" com `wrap={false}` |
-
----
-
-### Estratégia
-
-```text
-┌────────────────────────────────────────────────────────────────┐
-│                    BLOCO INICIAL (wrap={false})                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  HEADER: Subdomínios                                      │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
-│  │ Subdomínio 1            │  │ Subdomínio 2                │  │
-│  ├─────────────────────────┤  ├─────────────────────────────┤  │
-│  │ Subdomínio 3            │  │ Subdomínio 4                │  │
-│  └─────────────────────────┘  └─────────────────────────────┘  │
-│                                                                │
-│  Se não couber na página atual, TODO o bloco vai              │
-│  para a próxima página                                         │
-└────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────┐
-│                    RESTANTE (pode quebrar)                     │
-│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
-│  │ Subdomínio 5            │  │ Subdomínio 6                │  │
-│  ├─────────────────────────┤  ├─────────────────────────────┤  │
-│  │ ...                     │  │ ...                         │  │
-│  └─────────────────────────┘  └─────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
-```
+| `src/components/m365/TenantConnectionWizard.tsx` | Adicionar filtro de workspaces no fetchClients |
 
 ---
 
 ### Mudanças no Código
 
-**Antes (linhas 426-458):**
+#### 1. Adicionar import do PreviewContext
+
 ```typescript
-{/* Subdomínios Section - Header ensures content follows */}
-<View style={styles.section}>
-  <CategoryHeader title="Subdomínios" color={headerColors.subdomain} minPresenceAhead={100} />
-  {activeSubdomains.length > 0 ? (
-    <View style={styles.twoColumnContainer}>
-      {/* ... all subdomains ... */}
-    </View>
-  ) : (
-    <Text style={styles.emptyText}>...</Text>
-  )}
-</View>
+import { usePreview } from '@/contexts/PreviewContext';
+```
+
+#### 2. Obter estado do Preview no componente
+
+```typescript
+export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: TenantConnectionWizardProps) {
+  const { user } = useAuth();
+  const { isPreviewMode, previewTarget } = usePreview(); // ← Adicionar
+```
+
+#### 3. Modificar fetchClients para filtrar por workspaces
+
+**Antes:**
+```typescript
+const fetchClients = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, name')
+      .order('name');
+
+    if (error) throw error;
+    setClients(data || []);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+  }
+};
 ```
 
 **Depois:**
 ```typescript
-{/* Subdomínios Section */}
-<View style={styles.section}>
-  {activeSubdomains.length > 0 ? (
-    <>
-      {/* Initial block: Header + first 4 subdomains - kept together */}
-      <View wrap={false}>
-        <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
-        <View style={styles.twoColumnContainer}>
-          <View style={[styles.column, styles.columnLeft]}>
-            {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
-              <ValueCard key={idx} primary={...} secondary={...} />
-            ))}
-          </View>
-          <View style={styles.column}>
-            {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
-              <ValueCard key={idx} primary={...} secondary={...} />
-            ))}
-          </View>
-        </View>
-      </View>
-      
-      {/* Remaining subdomains - can break across pages */}
-      {activeSubdomains.length > 4 && (
-        <View style={styles.twoColumnContainer}>
-          <View style={[styles.column, styles.columnLeft]}>
-            {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
-              <ValueCard key={idx} primary={...} secondary={...} />
-            ))}
-          </View>
-          <View style={styles.column}>
-            {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
-              <ValueCard key={idx} primary={...} secondary={...} />
-            ))}
-          </View>
-        </View>
-      )}
-    </>
-  ) : (
-    <View wrap={false}>
-      <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
-      <Text style={styles.emptyText}>Nenhum subdomínio ativo encontrado</Text>
-    </View>
-  )}
-</View>
+const fetchClients = async () => {
+  try {
+    let query = supabase
+      .from('clients')
+      .select('id, name')
+      .order('name');
+
+    // Apply workspace filter if in preview mode
+    if (isPreviewMode && previewTarget?.workspaces) {
+      const workspaceIds = previewTarget.workspaces.map(w => w.id);
+      if (workspaceIds.length > 0) {
+        query = query.in('id', workspaceIds);
+      }
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+    setClients(data || []);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+  }
+};
+```
+
+#### 4. Atualizar useEffect para reagir a mudanças no Preview
+
+```typescript
+useEffect(() => {
+  if (open) {
+    fetchClients();
+  }
+}, [open, isPreviewMode, previewTarget]); // ← Adicionar dependências
 ```
 
 ---
 
-### Por que isso funciona?
+### Comportamento Esperado
 
-1. **`wrap={false}` no bloco inicial**: Garante que o cabeçalho + primeiros 4 subdomínios nunca sejam separados
-2. **Bloco pequeno o suficiente**: 4 subdomínios cabem facilmente em uma página, então nunca serão "empurrados" por falta de espaço total
-3. **Restante pode quebrar**: Após os primeiros 4, o react-pdf pode quebrar normalmente entre páginas
+| Cenário | Clientes Exibidos |
+|---------|-------------------|
+| Super Admin (normal) | Todos |
+| Workspace Admin (normal) | Apenas seus workspaces (RLS) |
+| User (normal) | Apenas seus workspaces (RLS) |
+| Admin em Preview Mode | Apenas workspaces do usuário alvo |
+
+---
+
+### Fluxo Visual
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                    WIZARD CONEXÃO M365                        │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  1. Verificar isPreviewMode                                   │
+│     ┌───────────────────────────────────────┐                 │
+│     │ isPreviewMode = true?                 │                 │
+│     └───────────────────────────────────────┘                 │
+│              │                     │                          │
+│         SIM ▼                 NÃO ▼                           │
+│   ┌─────────────────┐    ┌─────────────────────┐              │
+│   │ Filtrar por     │    │ RLS filtra         │              │
+│   │ previewTarget.  │    │ automaticamente    │              │
+│   │ workspaces      │    │ por user_clients   │              │
+│   └─────────────────┘    └─────────────────────┘              │
+│              │                     │                          │
+│              └──────────┬──────────┘                          │
+│                         ▼                                     │
+│              ┌─────────────────────┐                          │
+│              │ Exibir dropdown     │                          │
+│              │ com clientes        │                          │
+│              │ filtrados           │                          │
+│              └─────────────────────┘                          │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -131,7 +170,8 @@ Usar uma abordagem diferente: **agrupar o cabeçalho junto com os primeiros iten
 
 | Tarefa | Tempo |
 |--------|-------|
-| Reestruturar seção de subdomínios | 15min |
-| Testar PDF visualmente | 10min |
-| **Total** | **~25min** |
+| Adicionar import e hook usePreview | 2min |
+| Modificar fetchClients | 5min |
+| Testar em modo normal e Preview | 10min |
+| **Total** | **~17min** |
 
