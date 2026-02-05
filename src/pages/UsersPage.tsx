@@ -68,7 +68,7 @@ interface Module {
 
 export default function UsersPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
-  const { canStartPreview } = usePreview();
+  const { canStartPreview, isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -98,10 +98,15 @@ export default function UsersPage() {
     if (user && canAccessPage) {
       fetchData();
     }
-  }, [user, canAccessPage]);
+  }, [user, canAccessPage, isPreviewMode, previewTarget]);
 
   const fetchData = async () => {
     try {
+      // Get workspace filter for Preview Mode
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
       // First, get my client associations if I'm an admin (not super admin)
       let adminClientIds: string[] = [];
       if (!isSuperAdmin()) {
@@ -118,16 +123,30 @@ export default function UsersPage() {
       const { data: roles } = await supabase.from("user_roles").select("user_id, role");
 
       // Fetch user-client associations - RLS will filter
-      const { data: userClients } = await supabase.from("user_clients").select("user_id, client_id");
+      let userClientsQuery = supabase.from("user_clients").select("user_id, client_id");
+      // In Preview Mode, filter by workspace
+      if (workspaceIds && workspaceIds.length > 0) {
+        userClientsQuery = userClientsQuery.in("client_id", workspaceIds);
+      }
+      const { data: userClients } = await userClientsQuery;
 
       // Fetch user-module associations with permissions
       const { data: userModules } = await supabase.from("user_modules").select("user_id, module_id, permission");
 
-      // Fetch clients I have access to
-      const { data: clientsData } = await supabase.from("clients").select("id, name").order("name");
+      // Fetch clients - filter by workspace in Preview Mode
+      let clientsQuery = supabase.from("clients").select("id, name").order("name");
+      if (workspaceIds && workspaceIds.length > 0) {
+        clientsQuery = clientsQuery.in("id", workspaceIds);
+      }
+      const { data: clientsData } = await clientsQuery;
 
       // Fetch available modules
       const { data: modulesData } = await supabase.from("modules").select("id, code, name").eq("is_active", true).order("name");
+
+      // In Preview Mode, get user IDs that belong to the filtered workspaces
+      const userIdsInWorkspace = workspaceIds && workspaceIds.length > 0
+        ? new Set((userClients || []).map(uc => uc.user_id))
+        : null;
 
       // Merge data
       const mergedUsers: UserProfile[] = (profiles || []).map((profile) => {
@@ -147,9 +166,14 @@ export default function UsersPage() {
       });
 
       // Filter out super_admin and super_suporte users - they are managed in Administrators page
-      const filteredUsers = mergedUsers.filter(
+      let filteredUsers = mergedUsers.filter(
         (u) => u.role !== "super_admin" && u.role !== "super_suporte"
       );
+
+      // In Preview Mode, only show users that belong to the filtered workspaces
+      if (userIdsInWorkspace) {
+        filteredUsers = filteredUsers.filter(u => userIdsInWorkspace.has(u.id));
+      }
 
       setUsers(filteredUsers);
       setClients(clientsData || []);
