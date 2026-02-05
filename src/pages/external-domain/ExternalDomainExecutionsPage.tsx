@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { usePreview } from '@/contexts/PreviewContext';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -92,6 +93,7 @@ export default function ExternalDomainExecutionsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
+  const { isPreviewMode, previewTarget } = usePreview();
   const queryClient = useQueryClient();
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -113,9 +115,32 @@ export default function ExternalDomainExecutionsPage() {
     isLoading,
     refetch
   } = useQuery({
-    queryKey: ['external-domain-agent-tasks', statusFilter, timeFilter],
+    queryKey: ['external-domain-agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
+      
+      // Get workspace IDs to filter by (for preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+      
+      // First, get accessible domain IDs
+      let domainsQuery = supabase
+        .from('external_domains')
+        .select('id')
+        .limit(1000);
+      
+      if (workspaceIds && workspaceIds.length > 0) {
+        domainsQuery = domainsQuery.in('client_id', workspaceIds);
+      }
+      
+      const { data: domainRows } = await domainsQuery;
+      const accessibleDomainIds = (domainRows || []).map(d => d.id);
+      
+      if (accessibleDomainIds.length === 0 && workspaceIds && workspaceIds.length > 0) {
+        return [] as AgentTask[];
+      }
+      
       let query = supabase.from('agent_tasks').select(`
           id,
           agent_id,
@@ -134,6 +159,12 @@ export default function ExternalDomainExecutionsPage() {
         `).eq('target_type', 'external_domain').gte('created_at', startTime.toISOString()).order('created_at', {
         ascending: false
       }).limit(100);
+      
+      // Filter by accessible domains in preview mode
+      if (accessibleDomainIds.length > 0 && workspaceIds && workspaceIds.length > 0) {
+        query = query.in('target_id', accessibleDomainIds);
+      }
+      
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter as AgentTask['status']);
       }

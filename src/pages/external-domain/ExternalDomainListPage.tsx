@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { toast } from 'sonner';
@@ -31,6 +32,7 @@ interface Agent {
 export default function ExternalDomainListPage() {
   const { user, loading: authLoading, hasPermission, isSuperAdmin, role } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [domains, setDomains] = useState<ExternalDomainRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -56,17 +58,34 @@ export default function ExternalDomainListPage() {
     if (user && hasModuleAccess('scope_external_domain')) {
       fetchData();
     }
-  }, [user, hasModuleAccess]);
+  }, [user, hasModuleAccess, isPreviewMode, previewTarget]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
 
+      // Get workspace IDs to filter by (for preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // Build queries with optional workspace filtering
+      let clientsQuery = supabase.from('clients').select('id, name').order('name');
+      let domainsQuery = supabase.from('external_domains').select('*').order('created_at', { ascending: false });
+      let agentsQuery = supabase.from('agents').select('id, name').eq('revoked', false);
+      
+      // Filter by workspaces in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+        domainsQuery = domainsQuery.in('client_id', workspaceIds);
+        agentsQuery = agentsQuery.in('client_id', workspaceIds);
+      }
+
       // Busca principal em paralelo
       const [clientsRes, domainsRes, agentsRes] = await Promise.all([
-        supabase.from('clients').select('id, name').order('name'),
-        supabase.from('external_domains').select('*').order('created_at', { ascending: false }),
-        supabase.from('agents').select('id, name').eq('revoked', false),
+        clientsQuery,
+        domainsQuery,
+        agentsQuery,
       ]);
 
       if (clientsRes.error) throw clientsRes.error;
