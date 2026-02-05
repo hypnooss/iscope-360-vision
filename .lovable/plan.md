@@ -1,139 +1,157 @@
 
 
-## Correção: Evitar Quebra de Layout no PDF
+## Correção: Mapeamento Errado de IDs no Guia de Correções do PDF
 
 ### Problema Identificado
 
-O cabeçalho de seção "Subdomínios" está sendo renderizado no final de uma página enquanto o conteúdo vai para a próxima página. Isso acontece porque o `@react-pdf/renderer` não sabe que o cabeçalho e o conteúdo devem ficar juntos.
+O PDF está exibindo conteúdo explicativo **errado** para os checks que falharam. Por exemplo:
+- Check **DNS-001** no backend = "DNSSEC Habilitado" (fail)
+- Mas `EXPLANATORY_CONTENT` mapeia **DNS-001** para "Servidores DNS (Nameservers)"
+
+Isso acontece porque os IDs das regras foram alterados no backend, mas o arquivo `explanatoryContent.ts` não foi atualizado.
+
+---
+
+### Mapeamento Atual (Backend) vs EXPLANATORY_CONTENT
+
+| ID Backend | Nome Backend | ID no EXPLANATORY_CONTENT | Nome Antigo |
+|------------|--------------|---------------------------|-------------|
+| DNS-001 | DNSSEC Habilitado | DNS-001 | Servidores DNS (Nameservers) ❌ |
+| DNS-002 | Registro DS na Zona Pai | DNS-002 | Servidor principal (SOA) ❌ |
+| DNS-003 | Redundância de Nameservers | DNS-003 | Redundância de DNS ✓ |
+| DNS-004 | Diversidade de Nameservers | DNS-004 | Diversidade de infraestrutura DNS ✓ |
+| DNS-005 | SOA Serial Atualizado | - | (não existe) |
+| DNS-006 | SOA Refresh Adequado | - | (não existe) |
+
+O `EXPLANATORY_CONTENT` também tem `DNSSEC-001` e `DNSSEC-002`, que aparentemente são os IDs antigos para as regras de DNSSEC.
 
 ---
 
 ### Solução
 
-Usar a propriedade `wrap={false}` estrategicamente para manter grupos de elementos juntos, e criar wrappers "quebráveis" para seções longas que garantam que o cabeçalho nunca fique sozinho.
+Atualizar o arquivo `src/components/pdf/data/explanatoryContent.ts` para alinhar os IDs com o backend atual.
 
 ---
 
-### Arquivos a Modificar
+### Arquivo a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/pdf/sections/PDFDNSMap.tsx` | Adicionar `wrap={false}` em seções pequenas e `minPresenceAhead` no cabeçalho de subdomínios |
+| `src/components/pdf/data/explanatoryContent.ts` | Reorganizar mapeamento de IDs DNS/DNSSEC |
 
 ---
 
-### Estratégias de Quebra de Página do react-pdf
+### Mudanças Detalhadas
 
-1. **`wrap={false}`** - Impede que o elemento seja dividido entre páginas (move inteiro para próxima página se não couber)
-2. **`minPresenceAhead`** - Garante que exista espaço mínimo após o elemento (útil para cabeçalhos)
-3. **`break`** - Força quebra de página antes do elemento
+#### 1. Renomear/Realocar DNS-001 e DNS-002
 
----
-
-### Mudanças no Código
-
-#### PDFDNSMap.tsx - Seções com wrap={false} e minPresenceAhead
-
-**Adicionar aos styles:**
+**Antes:**
 ```typescript
-// Category header with minimum content guarantee
-categoryHeaderWithContent: {
-  paddingHorizontal: 12,
-  paddingVertical: 8,
-  borderRadius: radius.md,
-  marginBottom: 8,
-  // Ensures at least 80pt of content follows before page break
-  minPresenceAhead: 80,
+'DNS-001': {
+  friendlyTitle: 'Servidores DNS (Nameservers)',
+  ...
+},
+'DNS-002': {
+  friendlyTitle: 'Servidor principal (SOA)',
+  ...
 },
 ```
 
-**Modificar CategoryHeader para receber minPresenceAhead:**
+**Depois:**
 ```typescript
-function CategoryHeader({ title, color, minPresenceAhead }: CategoryHeaderProps) {
-  const headerStyle = minPresenceAhead 
-    ? [styles.categoryHeader, { backgroundColor: color, minPresenceAhead }]
-    : [styles.categoryHeader, { backgroundColor: color }];
-    
-  return (
-    <View style={headerStyle}>
-      <Text style={styles.categoryHeaderText}>{title}</Text>
-    </View>
-  );
-}
+'DNS-001': {
+  friendlyTitle: 'Proteção contra falsificação de DNS (DNSSEC)',
+  whatIs: 'Sistema de segurança que protege o DNS contra ataques de envenenamento de cache.',
+  whyMatters: 'Sem DNSSEC, atacantes podem redirecionar visitantes do seu site para páginas falsas sem você saber.',
+  impacts: [
+    'Visitantes podem ser redirecionados para sites falsos',
+    'Risco de roubo de credenciais',
+    'Emails podem ser interceptados',
+  ],
+  howToFix: [
+    'Acesse o painel do seu provedor DNS (Cloudflare, AWS, etc.)',
+    'Ative o DNSSEC nas configurações do domínio',
+    'Copie os registros DS gerados',
+    'Adicione os registros DS no registrador do domínio (Registro.br, etc.)',
+  ],
+  difficulty: 'medium',
+  timeEstimate: '30 min',
+  providerExamples: ['Cloudflare', 'Registro.br', 'AWS Route 53'],
+},
+'DNS-002': {
+  friendlyTitle: 'Registro DS na Zona Pai',
+  whatIs: 'Registro que conecta o DNSSEC do seu domínio com a zona pai (.com.br, .com, etc.).',
+  whyMatters: 'Sem o registro DS, o DNSSEC não funciona pois falta o elo de confiança com a hierarquia DNS.',
+  impacts: [
+    'DNSSEC não funciona mesmo se ativado',
+    'Proteção contra falsificação fica inativa',
+    'Possíveis falhas de resolução DNS',
+  ],
+  howToFix: [
+    'Acesse o painel do seu provedor DNS e copie os registros DS',
+    'Vá ao registrador do domínio (Registro.br, GoDaddy, etc.)',
+    'Adicione os registros DS na configuração DNSSEC',
+    'Aguarde até 48 horas para propagação',
+  ],
+  difficulty: 'medium',
+  timeEstimate: '30 min',
+  providerExamples: ['Registro.br', 'GoDaddy', 'Cloudflare'],
+},
 ```
 
-**Aplicar wrap={false} em seções compactas (NS/SOA, MX):**
+#### 2. Adicionar DNS-005 e DNS-006
+
 ```typescript
-{/* NS and SOA Side by Side - Keep together */}
-<View style={styles.rowContainer} wrap={false}>
-  ...
-</View>
-
-{/* MX Section - Keep together */}
-<View style={styles.section} wrap={false}>
-  ...
-</View>
-
-{/* TXT Section - Keep together */}
-<View style={styles.section} wrap={false}>
-  ...
-</View>
-
-{/* Subdomínios - Header must have content below */}
-<View style={styles.section}>
-  <CategoryHeader 
-    title="Subdomínios" 
-    color={headerColors.subdomain} 
-    minPresenceAhead={100}  // Garante 100pt de conteúdo abaixo
-  />
-  ...
-</View>
+'DNS-005': {
+  friendlyTitle: 'Atualização do SOA Serial',
+  whatIs: 'Número de série do registro SOA que indica quando a zona foi atualizada.',
+  whyMatters: 'Servidores DNS usam o serial para saber quando sincronizar alterações.',
+  impacts: [
+    'Alterações DNS podem não propagar corretamente',
+    'Servidores secundários podem ter dados desatualizados',
+  ],
+  howToFix: [
+    'Verifique o formato do serial (recomendado: YYYYMMDDNN)',
+    'Atualize o serial sempre que fizer alterações na zona',
+    'A maioria dos provedores faz isso automaticamente',
+  ],
+  difficulty: 'low',
+  timeEstimate: '10 min',
+},
+'DNS-006': {
+  friendlyTitle: 'Intervalo de Refresh do SOA',
+  whatIs: 'Tempo que servidores secundários esperam antes de verificar atualizações.',
+  whyMatters: 'Valor muito alto atrasa propagação; muito baixo sobrecarrega os servidores.',
+  impacts: [
+    'Alterações DNS podem demorar a propagar',
+    'Possível sobrecarga de consultas DNS',
+  ],
+  howToFix: [
+    'Valor recomendado: 3600 a 86400 segundos (1 a 24 horas)',
+    'Ajuste no registro SOA da zona DNS',
+    'Provedores gerenciados geralmente usam valores otimizados',
+  ],
+  difficulty: 'low',
+  timeEstimate: '10 min',
+},
 ```
+
+#### 3. Mover conteúdo antigo de Nameservers/SOA para DNSSEC-001/DNSSEC-002
+
+O conteúdo atual de `DNSSEC-001` e `DNSSEC-002` pode ser mantido como está - eles funcionam como fallback ou podem ser removidos se não forem mais usados pelo backend.
 
 ---
 
-### Outras Melhorias de Quebra
+### Resumo das Alterações
 
-**ExternalDomainPDF.tsx - Cabeçalhos de categoria:**
-```typescript
-// Category headers in Guia de Correções
-<View key={categoryName}>
-  <Text 
-    style={pageStyles.categoryHeader} 
-    minPresenceAhead={120}  // Garante pelo menos um card após o cabeçalho
-  >
-    {categoryName}
-  </Text>
-  ...
-</View>
-```
-
----
-
-### Seção Técnica
-
-**Como `minPresenceAhead` funciona:**
-
-```text
-┌────────────────────────────────────────┐
-│ ... conteúdo anterior ...              │
-│                                        │
-│ ┌──────────────────────────────────┐   │
-│ │  HEADER (minPresenceAhead: 100)  │   │ ← Se não houver 100pt
-│ └──────────────────────────────────┘   │   de espaço abaixo,
-│                                        │   todo o grupo vai
-│ Apenas 50pt restantes na página...     │   para próxima página
-└────────────────────────────────────────┘
-
-┌────────────────────────────────────────┐
-│ ┌──────────────────────────────────┐   │
-│ │  HEADER (movido para cá)         │   │
-│ └──────────────────────────────────┘   │
-│                                        │
-│ Conteúdo do subdomínio...              │
-│ Conteúdo do subdomínio...              │
-└────────────────────────────────────────┘
-```
+| ID | Antes | Depois |
+|----|-------|--------|
+| DNS-001 | Nameservers | DNSSEC Habilitado |
+| DNS-002 | SOA | Registro DS na Zona Pai |
+| DNS-003 | Redundância DNS | Redundância de Nameservers (mantido) |
+| DNS-004 | Diversidade DNS | Diversidade de Nameservers (mantido) |
+| DNS-005 | (novo) | SOA Serial Atualizado |
+| DNS-006 | (novo) | SOA Refresh Adequado |
 
 ---
 
@@ -141,8 +159,8 @@ function CategoryHeader({ title, color, minPresenceAhead }: CategoryHeaderProps)
 
 | Tarefa | Tempo |
 |--------|-------|
-| Atualizar PDFDNSMap com wrap e minPresenceAhead | 20min |
-| Atualizar ExternalDomainPDF (category headers) | 15min |
-| Testes visuais | 15min |
-| **Total** | **~50min** |
+| Atualizar mapeamentos DNS-001 e DNS-002 | 10min |
+| Adicionar DNS-005 e DNS-006 | 10min |
+| Testar PDF com domínio gdmseeds.com | 10min |
+| **Total** | **~30min** |
 
