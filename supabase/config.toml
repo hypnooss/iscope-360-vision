@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.get-user-preview-data]
 verify_jwt = false
+
+[functions.m365-security-posture]
+verify_jwt = false
