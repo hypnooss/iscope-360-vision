@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePreview } from "@/contexts/PreviewContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,7 @@ interface Client {
 
 export default function AgentsPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
+  const { isPreviewMode, previewTarget } = usePreview();
   const navigate = useNavigate();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -119,6 +121,51 @@ export default function AgentsPage() {
     }
   }, [user, authLoading, navigate, canAccessPage]);
 
+  const fetchData = useCallback(async () => {
+    try {
+      // Get workspace IDs to filter by (use preview workspaces if in preview mode)
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      // Build queries with optional workspace filtering
+      let agentsQuery = supabase
+        .from("agents")
+        .select("*")
+        .order("created_at", { ascending: false });
+        
+      let clientsQuery = supabase
+        .from("clients")
+        .select("id, name")
+        .order("name");
+
+      // Apply workspace filter if in preview mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        agentsQuery = agentsQuery.in('client_id', workspaceIds);
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+      }
+
+      const [agentsRes, clientsRes] = await Promise.all([agentsQuery, clientsQuery]);
+
+      if (agentsRes.error) throw agentsRes.error;
+      if (clientsRes.error) throw clientsRes.error;
+
+      // Map client names to agents
+      const clientMap = new Map((clientsRes.data || []).map((c) => [c.id, c.name]));
+      const agentsWithClientNames = ((agentsRes.data as any[]) || []).map((agent) => ({
+        ...agent,
+        client_name: agent.client_id ? clientMap.get(agent.client_id) : undefined,
+      })) as Agent[];
+
+      setAgents(agentsWithClientNames);
+      setClients(clientsRes.data || []);
+    } catch (error: any) {
+      toast.error("Erro ao carregar agents: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [isPreviewMode, previewTarget]);
+
   useEffect(() => {
     if (user && canAccessPage) {
       fetchData();
@@ -130,41 +177,7 @@ export default function AgentsPage() {
       
       return () => clearInterval(interval);
     }
-  }, [user, canAccessPage]);
-
-  const fetchData = async () => {
-    try {
-      // Fetch agents - using type assertion since tables may not be in types yet
-      const { data: agentsData, error: agentsError } = await (supabase
-        .from("agents" as any)
-        .select("*")
-        .order("created_at", { ascending: false }) as any);
-
-      if (agentsError) throw agentsError;
-
-      // Fetch clients
-      const { data: clientsData, error: clientsError } = await supabase
-        .from("clients")
-        .select("id, name")
-        .order("name");
-
-      if (clientsError) throw clientsError;
-
-      // Map client names to agents
-      const clientMap = new Map((clientsData || []).map((c) => [c.id, c.name]));
-      const agentsWithClientNames = ((agentsData as any[]) || []).map((agent) => ({
-        ...agent,
-        client_name: agent.client_id ? clientMap.get(agent.client_id) : undefined,
-      })) as Agent[];
-
-      setAgents(agentsWithClientNames);
-      setClients(clientsData || []);
-    } catch (error: any) {
-      toast.error("Erro ao carregar agents: " + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user, canAccessPage, fetchData]);
 
   const getAgentStatus = (
     agent: Agent,

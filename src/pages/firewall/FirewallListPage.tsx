@@ -458,7 +458,12 @@ export default function FirewallListPage() {
         </div>
 
         {/* Stats Cards */}
-        <FirewallStatsCards />
+        <FirewallStatsCards 
+          workspaceIds={isPreviewMode && previewTarget?.workspaces 
+            ? previewTarget.workspaces.map(w => w.id) 
+            : undefined
+          } 
+        />
 
         {/* Firewalls Table */}
         <Card className="glass-card">
