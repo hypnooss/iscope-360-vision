@@ -1,31 +1,16 @@
 
 
-## Correção: Role Não Salva ao Editar Usuário
+## Correção: Evitar Quebra de Layout no PDF
 
 ### Problema Identificado
 
-Ao investigar o banco de dados, encontrei **5 usuários sem role na tabela `user_roles`**:
-
-| Email | ID |
-|-------|-----|
-| admin@taschibra.com.br | cd8a938c-... |
-| admin@nexta.com.br | 2e1da6a9-... |
-| admin@estrela.com.br | 5e1a04a4-... |
-| admin@iemadeira.com.br | 627b89aa-... |
-| admin@precisio.global | eedec5c2-... |
-
-**Causa raiz:**
-1. A edge function `create-user` cria o usuário via `auth.admin.createUser()`
-2. O trigger `handle_new_user` deveria inserir automaticamente a role `'user'` na tabela `user_roles`
-3. Por algum motivo (erro de RLS ou timing), o trigger não inseriu as roles
-4. Quando o admin tenta atualizar a role, o `.update()` não encontra nenhuma linha para modificar
-5. O Supabase retorna 204 (sucesso) mesmo sem atualizar nada
+O cabeçalho de seção "Subdomínios" está sendo renderizado no final de uma página enquanto o conteúdo vai para a próxima página. Isso acontece porque o `@react-pdf/renderer` não sabe que o cabeçalho e o conteúdo devem ficar juntos.
 
 ---
 
 ### Solução
 
-Alterar o código para usar **UPSERT** ao invés de **UPDATE**, garantindo que a role seja criada caso não exista.
+Usar a propriedade `wrap={false}` estrategicamente para manter grupos de elementos juntos, e criar wrappers "quebráveis" para seções longas que garantam que o cabeçalho nunca fique sozinho.
 
 ---
 
@@ -33,88 +18,122 @@ Alterar o código para usar **UPSERT** ao invés de **UPDATE**, garantindo que a
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/pages/UsersPage.tsx` | Usar upsert com conflito em `user_id` |
-| `supabase/functions/create-user/index.ts` | Usar upsert ao invés de update |
+| `src/components/pdf/sections/PDFDNSMap.tsx` | Adicionar `wrap={false}` em seções pequenas e `minPresenceAhead` no cabeçalho de subdomínios |
 
 ---
 
-### Detalhamento das Mudanças
+### Estratégias de Quebra de Página do react-pdf
 
-#### 1. UsersPage.tsx - handleSave
+1. **`wrap={false}`** - Impede que o elemento seja dividido entre páginas (move inteiro para próxima página se não couber)
+2. **`minPresenceAhead`** - Garante que exista espaço mínimo após o elemento (útil para cabeçalhos)
+3. **`break`** - Força quebra de página antes do elemento
 
-**Antes:**
+---
+
+### Mudanças no Código
+
+#### PDFDNSMap.tsx - Seções com wrap={false} e minPresenceAhead
+
+**Adicionar aos styles:**
 ```typescript
-await supabase
-  .from("user_roles")
-  .update({ role: editRole })
-  .eq("user_id", editingUser.id);
+// Category header with minimum content guarantee
+categoryHeaderWithContent: {
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: radius.md,
+  marginBottom: 8,
+  // Ensures at least 80pt of content follows before page break
+  minPresenceAhead: 80,
+},
 ```
 
-**Depois:**
+**Modificar CategoryHeader para receber minPresenceAhead:**
 ```typescript
-// Use upsert to handle case where role doesn't exist
-const { error: roleError } = await supabase
-  .from("user_roles")
-  .upsert(
-    { user_id: editingUser.id, role: editRole },
-    { onConflict: "user_id" }
+function CategoryHeader({ title, color, minPresenceAhead }: CategoryHeaderProps) {
+  const headerStyle = minPresenceAhead 
+    ? [styles.categoryHeader, { backgroundColor: color, minPresenceAhead }]
+    : [styles.categoryHeader, { backgroundColor: color }];
+    
+  return (
+    <View style={headerStyle}>
+      <Text style={styles.categoryHeaderText}>{title}</Text>
+    </View>
   );
-
-if (roleError) {
-  throw new Error("Erro ao atualizar role: " + roleError.message);
 }
 ```
 
-#### 2. Edge function create-user/index.ts
-
-**Antes:**
+**Aplicar wrap={false} em seções compactas (NS/SOA, MX):**
 ```typescript
-const { error: roleError } = await supabaseAdmin
-  .from("user_roles")
-  .update({ role: role || "user" })
-  .eq("user_id", userId);
-```
+{/* NS and SOA Side by Side - Keep together */}
+<View style={styles.rowContainer} wrap={false}>
+  ...
+</View>
 
-**Depois:**
-```typescript
-// Use upsert in case trigger didn't create the role
-const { error: roleError } = await supabaseAdmin
-  .from("user_roles")
-  .upsert(
-    { user_id: userId, role: role || "user" },
-    { onConflict: "user_id" }
-  );
+{/* MX Section - Keep together */}
+<View style={styles.section} wrap={false}>
+  ...
+</View>
+
+{/* TXT Section - Keep together */}
+<View style={styles.section} wrap={false}>
+  ...
+</View>
+
+{/* Subdomínios - Header must have content below */}
+<View style={styles.section}>
+  <CategoryHeader 
+    title="Subdomínios" 
+    color={headerColors.subdomain} 
+    minPresenceAhead={100}  // Garante 100pt de conteúdo abaixo
+  />
+  ...
+</View>
 ```
 
 ---
 
-### Correção dos Dados Existentes
+### Outras Melhorias de Quebra
 
-Também precisamos inserir as roles para os usuários que estão sem:
-
-```sql
-INSERT INTO user_roles (user_id, role)
-SELECT p.id, 'user'::app_role
-FROM profiles p
-LEFT JOIN user_roles ur ON p.id = ur.user_id
-WHERE ur.user_id IS NULL;
+**ExternalDomainPDF.tsx - Cabeçalhos de categoria:**
+```typescript
+// Category headers in Guia de Correções
+<View key={categoryName}>
+  <Text 
+    style={pageStyles.categoryHeader} 
+    minPresenceAhead={120}  // Garante pelo menos um card após o cabeçalho
+  >
+    {categoryName}
+  </Text>
+  ...
+</View>
 ```
 
 ---
 
 ### Seção Técnica
 
-**Por que UPDATE falha silenciosamente:**
+**Como `minPresenceAhead` funciona:**
 
-O Supabase (PostgREST) retorna 204 No Content quando um UPDATE não encontra linhas que correspondam ao filtro. Isso não é considerado erro, mas simplesmente "0 linhas atualizadas".
+```text
+┌────────────────────────────────────────┐
+│ ... conteúdo anterior ...              │
+│                                        │
+│ ┌──────────────────────────────────┐   │
+│ │  HEADER (minPresenceAhead: 100)  │   │ ← Se não houver 100pt
+│ └──────────────────────────────────┘   │   de espaço abaixo,
+│                                        │   todo o grupo vai
+│ Apenas 50pt restantes na página...     │   para próxima página
+└────────────────────────────────────────┘
 
-**Por que UPSERT resolve:**
-
-`UPSERT` (INSERT ... ON CONFLICT DO UPDATE) garante que:
-- Se a linha existe → atualiza
-- Se a linha não existe → insere
-
-O `onConflict: "user_id"` indica qual constraint usar para detectar conflitos (a constraint UNIQUE em `user_id`).
+┌────────────────────────────────────────┐
+│ ┌──────────────────────────────────┐   │
+│ │  HEADER (movido para cá)         │   │
+│ └──────────────────────────────────┘   │
+│                                        │
+│ Conteúdo do subdomínio...              │
+│ Conteúdo do subdomínio...              │
+└────────────────────────────────────────┘
+```
 
 ---
 
@@ -122,9 +141,8 @@ O `onConflict: "user_id"` indica qual constraint usar para detectar conflitos (a
 
 | Tarefa | Tempo |
 |--------|-------|
-| Atualizar UsersPage.tsx | 10min |
-| Atualizar edge function | 10min |
-| Inserir roles faltantes no banco | 5min |
-| Deploy e testes | 10min |
-| **Total** | **~35min** |
+| Atualizar PDFDNSMap com wrap e minPresenceAhead | 20min |
+| Atualizar ExternalDomainPDF (category headers) | 15min |
+| Testes visuais | 15min |
+| **Total** | **~50min** |
 
