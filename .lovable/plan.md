@@ -1,177 +1,288 @@
 
+Plano v2 — Refatoração do Módulo Microsoft 365 (Revisado com melhorias arquiteturais)
+Visão Geral
 
-## Correção: Filtrar Clientes no Wizard de Conexão M365
+Transformar o módulo M365 de uma estrutura centrada em produtos técnicos (Entra ID, Exchange) para um modelo híbrido centrado em categorias de risco, mantendo o contexto do produto para a remediação.
 
-### Problema Identificado
+Objetivos:
 
-O wizard de conexão de tenant M365 (`TenantConnectionWizard`) exibe **todos os clientes** no dropdown, independentemente:
-1. Da role do usuário (workspace_admin/user deveria ver apenas seus workspaces)
-2. Do modo Preview (deveria ver apenas os workspaces do usuário alvo)
+Descoberta por risco (executivo)
 
-### Análise do Código Atual
+Correção por produto (técnico)
 
-```typescript
-// TenantConnectionWizard.tsx - linhas 150-162
-const fetchClients = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, name')
-      .order('name');
+Score consolidado
 
-    if (error) throw error;
-    setClients(data || []);  // ← Não aplica filtro por preview/role
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-  }
-};
-```
+Linguagem simples estilo relatório de compliance
 
-**Nota:** O RLS na tabela `clients` já filtra para workspace_admin e users normais, mas o **Preview Mode** precisa de tratamento adicional porque o RLS usa o `auth.uid()` do admin real, não do usuário sendo visualizado.
+Guia de correção passo-a-passo
 
----
+Estado Atual vs Estado Desejado
 
-### Solução
+(sem alterações — arquitetura proposta está correta)
 
-Aplicar o mesmo padrão usado em `FirewallListPage`:
-1. Importar `usePreview` no componente
-2. Ao buscar clientes, verificar se está em Preview Mode
-3. Se sim, filtrar por `previewTarget.workspaces`
-4. Se não, deixar o RLS fazer o trabalho (já filtra para não-admins)
+Fases de Implementação
+✅ Fase 1: Modelo de Dados Unificado (Fundação)
 
----
+Objetivo: Criar um modelo de dados único que suporte todos os insights M365 com informações completas de remediação.
 
-### Arquivo a Modificar
+👉 Status: arquitetura excelente, manter.
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/m365/TenantConnectionWizard.tsx` | Adicionar filtro de workspaces no fetchClients |
+1.1 Novo Tipo TypeScript: M365Insight
+🔵 Melhoria adicionada:
 
----
+Adicionar origem do dado (Graph vs PowerShell) + suporte a histórico.
 
-### Mudanças no Código
+Versão ajustada:
+export type InsightSource =
+  | 'graph'
+  | 'exchange_powershell'
+  | 'mixed';
 
-#### 1. Adicionar import do PreviewContext
+export interface M365Insight {
+  id: string;
+  code: string;
 
-```typescript
-import { usePreview } from '@/contexts/PreviewContext';
-```
+  category: M365RiskCategory;
+  product: M365Product;
+  severity: M365Severity;
 
-#### 2. Obter estado do Preview no componente
+  titulo: string;
+  descricaoExecutiva: string;
+  riscoTecnico: string;
+  impactoNegocio: string;
 
-```typescript
-export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: TenantConnectionWizardProps) {
-  const { user } = useAuth();
-  const { isPreviewMode, previewTarget } = usePreview(); // ← Adicionar
-```
+  scoreImpacto: number;
+  status: 'pass' | 'fail' | 'warning';
 
-#### 3. Modificar fetchClients para filtrar por workspaces
+  evidencias: unknown[];
+  affectedCount: number;
 
-**Antes:**
-```typescript
-const fetchClients = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, name')
-      .order('name');
+  endpointUsado: string;
 
-    if (error) throw error;
-    setClients(data || []);
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-  }
-};
-```
+  // 🔵 NOVO → origem da coleta
+  source: InsightSource;
 
-**Depois:**
-```typescript
-const fetchClients = async () => {
-  try {
-    let query = supabase
-      .from('clients')
-      .select('id, name')
-      .order('name');
+  remediacao: RemediationGuide;
 
-    // Apply workspace filter if in preview mode
-    if (isPreviewMode && previewTarget?.workspaces) {
-      const workspaceIds = previewTarget.workspaces.map(w => w.id);
-      if (workspaceIds.length > 0) {
-        query = query.in('id', workspaceIds);
-      }
-    }
+  detectedAt: string;
 
-    const { data, error } = await query;
+  // 🔵 NOVO → histórico/tendência futura
+  previousStatus?: 'pass' | 'fail' | 'warning';
+}
 
-    if (error) throw error;
-    setClients(data || []);
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-  }
-};
-```
+Motivo
 
-#### 4. Atualizar useEffect para reagir a mudanças no Preview
+Exchange não é 100% coberto pelo Graph
 
-```typescript
-useEffect(() => {
-  if (open) {
-    fetchClients();
-  }
-}, [open, isPreviewMode, previewTarget]); // ← Adicionar dependências
-```
+facilita debug
 
----
+prepara terreno para histórico
 
-### Comportamento Esperado
+1.2 Blueprints no banco
 
-| Cenário | Clientes Exibidos |
-|---------|-------------------|
-| Super Admin (normal) | Todos |
-| Workspace Admin (normal) | Apenas seus workspaces (RLS) |
-| User (normal) | Apenas seus workspaces (RLS) |
-| Admin em Preview Mode | Apenas workspaces do usuário alvo |
+👉 manter
 
----
+🟢 Boa prática adicional
 
-### Fluxo Visual
+Adicionar:
 
-```text
-┌───────────────────────────────────────────────────────────────┐
-│                    WIZARD CONEXÃO M365                        │
-├───────────────────────────────────────────────────────────────┤
-│                                                               │
-│  1. Verificar isPreviewMode                                   │
-│     ┌───────────────────────────────────────┐                 │
-│     │ isPreviewMode = true?                 │                 │
-│     └───────────────────────────────────────┘                 │
-│              │                     │                          │
-│         SIM ▼                 NÃO ▼                           │
-│   ┌─────────────────┐    ┌─────────────────────┐              │
-│   │ Filtrar por     │    │ RLS filtra         │              │
-│   │ previewTarget.  │    │ automaticamente    │              │
-│   │ workspaces      │    │ por user_clients   │              │
-│   └─────────────────┘    └─────────────────────┘              │
-│              │                     │                          │
-│              └──────────┬──────────┘                          │
-│                         ▼                                     │
-│              ┌─────────────────────┐                          │
-│              │ Exibir dropdown     │                          │
-│              │ com clientes        │                          │
-│              │ filtrados           │                          │
-│              └─────────────────────┘                          │
-│                                                               │
-└───────────────────────────────────────────────────────────────┘
-```
+first_seen_at
+last_seen_at
 
----
 
-### Estimativa
+Para tracking de risco recorrente.
 
-| Tarefa | Tempo |
-|--------|-------|
-| Adicionar import e hook usePreview | 2min |
-| Modificar fetchClients | 5min |
-| Testar em modo normal e Preview | 10min |
-| **Total** | **~17min** |
+⚠️ Fase 2: Edge Function Consolidada (AJUSTADA)
 
+Objetivo: Retornar todos os insights organizados.
+
+🔴 Mudança importante
+
+❌ NÃO implementar lógica inteira numa função monolítica gigante
+✅ Implementar modular internamente
+
+2.1 Nova Edge Function: m365-security-posture
+Estrutura recomendada:
+await Promise.all([
+  collectIdentityInsights(),
+  collectAuthInsights(),
+  collectPrivilegeInsights(),
+  collectAppsInsights(),
+  collectExchangeInsights(),
+  collectThreatInsights()
+]);
+
+Motivo
+
+paraleliza
+
+evita timeout
+
+facilita manutenção
+
+falha parcial não quebra tudo
+
+melhora performance
+
+🔵 NOVO — Cache recomendado
+
+Adicionar cache por tenant:
+
+duração: 5–15 min
+
+evita estourar limites Graph
+
+melhora UX
+
+🔵 NOVO — Snapshots históricos
+
+Criar:
+
+m365_posture_snapshots
+m365_insight_history
+
+
+Para:
+
+tendência
+
+evolução do score
+
+relatórios mensais
+
+comparação “antes/depois”
+
+Valor de negócio:
+
+Executivos valorizam MUITO evolução, não só estado atual.
+
+2.2 Mapeamento de Verificações
+
+👉 manter lista
+
+🟡 Atenção técnica importante
+
+Alguns checks NÃO podem usar Graph apenas:
+
+Necessário PowerShell (Exchange):
+
+SMTP AUTH
+
+POP/IMAP
+
+AntiPhish/SafeLinks
+
+Mailbox permissions
+
+Transport rules
+
+Usar:
+Exchange Online PowerShell module
+
+Marcar esses insights como:
+
+source: 'exchange_powershell'
+
+✅ Fase 3: Nova Estrutura de Navegação
+
+👉 layout proposto está excelente — manter.
+
+Categoria + Produto visível = modelo híbrido perfeito.
+
+Sem alterações.
+
+⚠️ Fase 4: Cálculo de Score (MELHORADO)
+Problema do algoritmo atual
+
+Penalidade fixa por severidade não escala bem:
+
+1 usuário sem MFA ≠ 500 usuários
+
+tenants grandes ficam injustos
+
+🔵 Novo algoritmo recomendado
+function calculatePenalty(insight: M365Insight) {
+  const severityWeight = {
+    critical: 15,
+    high: 8,
+    medium: 4,
+    low: 2,
+    info: 0
+  }[insight.severity];
+
+  const impactScale = Math.log10(insight.affectedCount + 1) + 1;
+
+  return severityWeight * insight.scoreImpacto * impactScale;
+}
+
+score = 100 - sum(penalties)
+
+Benefícios
+
+✔ proporcional
+✔ escalável
+✔ mais justo
+✔ mais profissional
+
+⚠️ Permissões Graph API (AJUSTE DE SEGURANÇA)
+Remover
+
+❌ Policy.ReadWrite.ConditionalAccess
+
+Usar apenas
+Policy.Read.All
+
+Motivo
+
+princípio do menor privilégio
+
+menos fricção no consent
+
+melhor segurança SaaS
+
+🔵 NOVO — Fase 5: Histórico & Tendências
+
+Adicionar:
+
+Funcionalidades:
+
+score ao longo do tempo
+
+gráfico de tendência
+
+“+15% melhoria no último mês”
+
+novos riscos vs riscos resolvidos
+
+Tabelas:
+m365_posture_snapshots
+m365_insight_history
+
+Valor:
+
+Transforma o produto em:
+👉 auditoria contínua (não só scanner pontual)
+
+Cronograma Ajustado
+Fase	Escopo	Tempo
+1	Modelo de dados	2h
+2	Edge modular + cache	10h
+3	UI	8h
+4	Score inteligente	2h
+5	Histórico & tendências	4h
+Total		~26–28h
+✅ Veredito Final
+
+Plano original: excelente
+Com ajustes: nível produto enterprise
+
+Arquitetura final agora possui:
+✔ modelo híbrido
+✔ dados unificados
+✔ modularidade
+✔ histórico
+✔ score justo
+✔ Graph + PowerShell
+✔ UX executiva
+
+👉 pronto para escalar como produto comercial sério.
