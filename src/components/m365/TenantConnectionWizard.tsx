@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePreview } from '@/contexts/PreviewContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog,
@@ -64,6 +65,7 @@ const STEPS: { key: WizardStep; label: string; icon: React.ComponentType<{ class
 
 export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: TenantConnectionWizardProps) {
   const { user } = useAuth();
+  const { isPreviewMode, previewTarget } = usePreview();
   
   const [step, setStep] = useState<WizardStep>('client');
   const [loading, setLoading] = useState(false);
@@ -83,7 +85,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
     if (open) {
       fetchClients();
     }
-  }, [open]);
+  }, [open, isPreviewMode, previewTarget]);
 
   useEffect(() => {
     if (!open) {
@@ -149,10 +151,20 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
   const fetchClients = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('clients')
         .select('id, name')
         .order('name');
+
+      // Apply workspace filter if in preview mode
+      if (isPreviewMode && previewTarget?.workspaces) {
+        const workspaceIds = previewTarget.workspaces.map(w => w.id);
+        if (workspaceIds.length > 0) {
+          query = query.in('id', workspaceIds);
+        }
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setClients(data || []);
