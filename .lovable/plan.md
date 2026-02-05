@@ -21,7 +21,16 @@ Estado Atual vs Estado Desejado
 (sem alterações — arquitetura proposta está correta)
 
 Fases de Implementação
-✅ Fase 1: Modelo de Dados Unificado (Fundação)
+✅ Fase 1: Modelo de Dados Unificado (Fundação) — CONCLUÍDA
+Arquivos criados:
+- src/types/m365Insights.ts
+
+✅ Fase 2: Edge Function Consolidada (AJUSTADA) — CONCLUÍDA
+Arquivos criados:
+- supabase/functions/m365-security-posture/index.ts
+- src/hooks/useM365SecurityPosture.ts
+
+⏳ Fase 3: Nova Estrutura de Navegação — PRÓXIMA
 
 Objetivo: Criar um modelo de dados único que suporte todos os insights M365 com informações completas de remediação.
 
