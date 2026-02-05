@@ -18,18 +18,33 @@ interface Agent {
   client_id: string | null;
 }
 
+interface Client {
+  id: string;
+  name: string;
+}
+
 interface EditExternalDomainDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   domain: ExternalDomainRow | null;
-  onSave: (payload: { agent_id: string; schedule: ScheduleFrequency }) => Promise<void>;
+  clients: Client[];
+  isSuperAdmin: boolean;
+  onSave: (payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency }) => Promise<void>;
 }
 
-export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }: EditExternalDomainDialogProps) {
+export function EditExternalDomainDialog({ 
+  open, 
+  onOpenChange, 
+  domain, 
+  clients,
+  isSuperAdmin,
+  onSave 
+}: EditExternalDomainDialogProps) {
   const [saving, setSaving] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
 
   const [formData, setFormData] = useState({
+    client_id: '',
     agent_id: '',
     schedule: 'manual' as ScheduleFrequency,
   });
@@ -38,14 +53,17 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
     if (!open || !domain) return;
 
     setFormData({
+      client_id: domain.client_id || '',
       agent_id: domain.agent_id || '',
       schedule: (domain.schedule_frequency || 'manual') as ScheduleFrequency,
     });
   }, [open, domain]);
 
+  // Fetch agents when client_id changes
   useEffect(() => {
     const fetchAgents = async () => {
-      if (!open || !domain?.client_id) {
+      const clientId = formData.client_id;
+      if (!open || !clientId) {
         setAgents([]);
         return;
       }
@@ -53,7 +71,7 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
       const { data, error } = await supabase
         .from('agents')
         .select('id, name, client_id')
-        .eq('client_id', domain.client_id)
+        .eq('client_id', clientId)
         .eq('revoked', false)
         .order('name');
 
@@ -67,7 +85,18 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
     };
 
     fetchAgents();
-  }, [open, domain?.client_id]);
+  }, [open, formData.client_id]);
+
+  // Clear agent when workspace changes (only if changing to different workspace)
+  const handleWorkspaceChange = (newClientId: string) => {
+    if (newClientId !== formData.client_id) {
+      setFormData((prev) => ({ 
+        ...prev, 
+        client_id: newClientId,
+        agent_id: '' // Reset agent when workspace changes
+      }));
+    }
+  };
 
   const canSubmit = useMemo(() => {
     return !!formData.agent_id;
@@ -77,12 +106,26 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
     if (!canSubmit) return;
     setSaving(true);
     try {
-      await onSave({ agent_id: formData.agent_id, schedule: formData.schedule });
+      const payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency } = {
+        agent_id: formData.agent_id,
+        schedule: formData.schedule,
+      };
+      
+      // Include client_id only if super admin changed it
+      if (isSuperAdmin && formData.client_id !== domain?.client_id) {
+        payload.client_id = formData.client_id;
+      }
+      
+      await onSave(payload);
       onOpenChange(false);
     } finally {
       setSaving(false);
     }
   };
+
+  const currentWorkspaceName = useMemo(() => {
+    return clients.find(c => c.id === domain?.client_id)?.name || domain?.client_name || 'N/A';
+  }, [clients, domain]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -98,8 +141,26 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
         <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4 py-2 px-6">
             <div className="space-y-2">
-              <Label>Cliente</Label>
-              <Input value={domain?.client_name || 'N/A'} disabled />
+              <Label>Workspace</Label>
+              {isSuperAdmin ? (
+                <Select
+                  value={formData.client_id}
+                  onValueChange={handleWorkspaceChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={currentWorkspaceName} disabled />
+              )}
             </div>
 
             <div className="space-y-2">
@@ -112,10 +173,10 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
               <Select
                 value={formData.agent_id}
                 onValueChange={(v) => setFormData((p) => ({ ...p, agent_id: v }))}
-                disabled={!domain?.client_id}
+                disabled={!formData.client_id}
               >
                 <SelectTrigger id="edit-ext-agent">
-                  <SelectValue placeholder={domain?.client_id ? 'Selecione o agent' : 'Selecione um cliente primeiro'} />
+                  <SelectValue placeholder={formData.client_id ? 'Selecione o agent' : 'Selecione um workspace primeiro'} />
                 </SelectTrigger>
                 <SelectContent>
                   {agents.map((a) => (
@@ -125,6 +186,9 @@ export function EditExternalDomainDialog({ open, onOpenChange, domain, onSave }:
                   ))}
                 </SelectContent>
               </Select>
+              {formData.client_id && agents.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum agent disponível para este workspace</p>
+              )}
             </div>
 
             <div className="space-y-2">

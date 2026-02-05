@@ -487,7 +487,7 @@ export default function FirewallListPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Firewall</TableHead>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead>Workspace</TableHead>
                     <TableHead>Fabricante</TableHead>
                     <TableHead>Agent</TableHead>
                     <TableHead>Schedule</TableHead>

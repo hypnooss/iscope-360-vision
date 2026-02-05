@@ -29,7 +29,7 @@ interface Agent {
 }
 
 export default function ExternalDomainListPage() {
-  const { user, loading: authLoading, hasPermission } = useAuth();
+  const { user, loading: authLoading, hasPermission, isSuperAdmin, role } = useAuth();
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
   const [domains, setDomains] = useState<ExternalDomainRow[]>([]);
@@ -235,7 +235,7 @@ export default function ExternalDomainListPage() {
     setShowEditDialog(true);
   };
 
-  const handleEditDomain = async (payload: { agent_id: string; schedule: ScheduleFrequency }) => {
+  const handleEditDomain = async (payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency }) => {
     if (!user?.id) {
       toast.error('Usuário não autenticado');
       return;
@@ -246,11 +246,18 @@ export default function ExternalDomainListPage() {
       return;
     }
 
+    // Build update data - include client_id if it was changed
+    const updateData: { agent_id: string; client_id?: string } = { 
+      agent_id: payload.agent_id 
+    };
+    
+    if (payload.client_id && payload.client_id !== editingDomain.client_id) {
+      updateData.client_id = payload.client_id;
+    }
+
     const { error: updateError } = await supabase
       .from('external_domains')
-      .update({
-        agent_id: payload.agent_id,
-      })
+      .update(updateData)
       .eq('id', editingDomain.id);
 
     if (updateError) {
@@ -380,6 +387,8 @@ export default function ExternalDomainListPage() {
             if (!open) setEditingDomain(null);
           }}
           domain={editingDomain}
+          clients={clients}
+          isSuperAdmin={isSuperAdmin() || role === 'super_suporte'}
           onSave={handleEditDomain}
         />
 
