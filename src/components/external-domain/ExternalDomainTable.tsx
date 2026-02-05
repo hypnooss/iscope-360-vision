@@ -78,7 +78,7 @@ export function ExternalDomainTable({
             <TableHeader>
               <TableRow>
                 <TableHead>Domínio</TableHead>
-                <TableHead>Cliente</TableHead>
+                <TableHead>Workspace</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Frequência</TableHead>
                 <TableHead className="text-right">Ações</TableHead>

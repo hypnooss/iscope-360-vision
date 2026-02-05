@@ -218,15 +218,15 @@ export function EditFirewallDialog({
 
         <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4 py-2 px-6">
-            {/* Cliente */}
+            {/* Workspace */}
             <div className="space-y-2">
-              <Label htmlFor="edit-fw-client">Cliente *</Label>
+              <Label htmlFor="edit-fw-client">Workspace *</Label>
               <Select
                 value={formData.client_id}
                 onValueChange={(v) => setFormData({ ...formData, client_id: v })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um cliente" />
+                  <SelectValue placeholder="Selecione um workspace" />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((client) => (

@@ -399,7 +399,7 @@ export default function FirewallReportsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Firewall</TableHead>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead>Workspace</TableHead>
                     <TableHead>Score</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
