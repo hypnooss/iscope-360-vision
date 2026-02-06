@@ -32,6 +32,10 @@ interface M365Config {
   permissionsValidated: boolean;
   lastValidatedAt: string | null;
   validationTenantId: string | null;
+  // Azure certificate upload config
+  appObjectId: string | null;
+  homeTenantId: string | null;
+  hasAzureConfig: boolean;
 }
 
 export default function SettingsPage() {
@@ -49,10 +53,16 @@ export default function SettingsPage() {
     permissionsValidated: false,
     lastValidatedAt: null,
     validationTenantId: null,
+    appObjectId: null,
+    homeTenantId: null,
+    hasAzureConfig: false,
   });
   const [newAppId, setNewAppId] = useState('');
   const [newClientSecret, setNewClientSecret] = useState('');
   const [tenantIdForValidation, setTenantIdForValidation] = useState('');
+  // Azure certificate upload config
+  const [newAppObjectId, setNewAppObjectId] = useState('');
+  const [newHomeTenantId, setNewHomeTenantId] = useState('');
   
   // Agent settings
   const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
@@ -418,8 +428,17 @@ export default function SettingsPage() {
               permissionsValidated: retryData.permissions_validated || false,
               lastValidatedAt: retryData.last_validated_at || null,
               validationTenantId: retryData.validation_tenant_id || null,
+              appObjectId: retryData.app_object_id || null,
+              homeTenantId: retryData.home_tenant_id || null,
+              hasAzureConfig: retryData.has_azure_config || false,
             });
             setNewAppId(retryData.app_id);
+            if (retryData.app_object_id) {
+              setNewAppObjectId(retryData.app_object_id);
+            }
+            if (retryData.home_tenant_id) {
+              setNewHomeTenantId(retryData.home_tenant_id);
+            }
             if (retryData.validation_tenant_id) {
               setTenantIdForValidation(retryData.validation_tenant_id);
             }
@@ -427,7 +446,7 @@ export default function SettingsPage() {
           }
         }
         
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
       } else if (data?.configured && data?.app_id) {
         setM365Config({
           appId: data.app_id,
@@ -437,19 +456,28 @@ export default function SettingsPage() {
           permissionsValidated: data.permissions_validated || false,
           lastValidatedAt: data.last_validated_at || null,
           validationTenantId: data.validation_tenant_id || null,
+          appObjectId: data.app_object_id || null,
+          homeTenantId: data.home_tenant_id || null,
+          hasAzureConfig: data.has_azure_config || false,
         });
         setNewAppId(data.app_id);
+        if (data.app_object_id) {
+          setNewAppObjectId(data.app_object_id);
+        }
+        if (data.home_tenant_id) {
+          setNewHomeTenantId(data.home_tenant_id);
+        }
         // Restore tenant ID if we have a saved one
         if (data.validation_tenant_id) {
           setTenantIdForValidation(data.validation_tenant_id);
         }
       } else {
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
         setNewAppId('');
       }
     } catch (error) {
       console.error('Error:', error);
-      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null });
+      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
     } finally {
       setLoading(false);
     }
@@ -534,6 +562,8 @@ export default function SettingsPage() {
         body: {
           app_id: newAppId.trim(),
           client_secret: newClientSecret.trim() || undefined,
+          app_object_id: newAppObjectId.trim() || undefined,
+          home_tenant_id: newHomeTenantId.trim() || undefined,
         },
       });
 
@@ -811,6 +841,77 @@ export default function SettingsPage() {
                     </div>
                   )}
 
+                {/* Azure Certificate Auto-Upload Configuration */}
+                <div className="bg-muted/50 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-sm flex items-center gap-2">
+                        Configuração de Upload Automático de Certificados
+                        {m365Config.hasAzureConfig ? (
+                          <Badge variant="default" className="bg-green-600 text-xs">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Configurado
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">
+                            Opcional
+                          </Badge>
+                        )}
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Permite que certificados de agents sejam registrados automaticamente no Azure App Registration via Graph API.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="appObjectId">App Object ID</Label>
+                      <Input
+                        id="appObjectId"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        value={newAppObjectId}
+                        onChange={(e) => setNewAppObjectId(e.target.value)}
+                      />
+                      {m365Config.appObjectId && (
+                        <p className="text-xs text-green-600 font-mono">
+                          Configurado: {m365Config.appObjectId.substring(0, 8)}...
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Object ID do App Registration (diferente do App ID). Encontrado em: Azure Portal → App Registrations → Seu App → Overview → Object ID
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="homeTenantId">Home Tenant ID</Label>
+                      <Input
+                        id="homeTenantId"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        value={newHomeTenantId}
+                        onChange={(e) => setNewHomeTenantId(e.target.value)}
+                      />
+                      {m365Config.homeTenantId && (
+                        <p className="text-xs text-green-600 font-mono">
+                          Configurado: {m365Config.homeTenantId.substring(0, 8)}...
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Tenant ID onde o App Registration foi criado. Encontrado em: Azure Portal → Microsoft Entra ID → Overview → Tenant ID
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-background rounded-lg p-3 border border-border/50">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <p className="font-medium text-foreground">Pré-requisito: Permissão no Azure</p>
+                        <p>Para habilitar o upload automático de certificados, adicione a permissão <code className="bg-muted px-1 py-0.5 rounded">Application.ReadWrite.OwnedBy</code> no App Registration e conceda Admin Consent.</p>
+                        <p>Esta permissão permite que o app adicione certificados a si mesmo sem acesso a outros apps.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveM365Config} disabled={saving}>

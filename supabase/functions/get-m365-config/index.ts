@@ -352,6 +352,10 @@ Deno.serve(async (req) => {
         last_validated_at: lastValidatedAt,
         validation_tenant_id: validationTenantId,
         source: configData ? 'database' : 'env_vars',
+        // Azure certificate upload config
+        app_object_id: configData?.app_object_id || null,
+        home_tenant_id: configData?.home_tenant_id || null,
+        has_azure_config: !!(configData?.app_object_id && configData?.home_tenant_id),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

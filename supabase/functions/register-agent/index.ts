@@ -11,6 +11,192 @@ const corsHeaders = {
 const RATE_LIMIT_MAX_ATTEMPTS = 10;
 const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour in milliseconds
 
+// ============= AES-256-GCM Decryption =============
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error('M365_ENCRYPTION_KEY not configured or invalid');
+  }
+  
+  const keyBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+  }
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+}
+
+function fromHex(hex: string): Uint8Array {
+  const length = hex.length / 2;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
+}
+
+async function decryptSecret(encrypted: string): Promise<string> {
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ctHex] = encrypted.split(':');
+      const key = await getEncryptionKey();
+      const iv = fromHex(ivHex);
+      const ciphertext = fromHex(ctHex);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        key,
+        ciphertext as unknown as Uint8Array<ArrayBuffer>
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('[register-agent] AES-GCM decryption failed:', error);
+      return '';
+    }
+  }
+  
+  // Legacy Base64 fallback
+  try {
+    return atob(encrypted);
+  } catch {
+    return '';
+  }
+}
+
+// ============= Azure Certificate Upload =============
+
+interface AzureUploadResult {
+  success: boolean;
+  keyId?: string;
+  error?: string;
+}
+
+async function uploadCertificateToAzure(
+  appObjectId: string,
+  appId: string,
+  clientSecret: string,
+  homeTenantId: string,
+  certificatePem: string,
+  displayName: string
+): Promise<AzureUploadResult> {
+  try {
+    console.log(`[register-agent] Starting Azure certificate upload for ${displayName}`);
+    
+    // 1. Get access token for Graph API (home tenant)
+    const tokenUrl = `https://login.microsoftonline.com/${homeTenantId}/oauth2/v2.0/token`;
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials',
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error(`[register-agent] Failed to get Graph API token: ${tokenResponse.status} - ${errorText}`);
+      return { success: false, error: `Failed to authenticate with Azure: ${tokenResponse.status}` };
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    console.log('[register-agent] Successfully obtained Graph API access token');
+
+    // 2. Get existing certificates from the app
+    const appUrl = `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=keyCredentials`;
+    const appResponse = await fetch(appUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!appResponse.ok) {
+      const errorText = await appResponse.text();
+      console.error(`[register-agent] Failed to get app info: ${appResponse.status} - ${errorText}`);
+      return { success: false, error: `Failed to get app registration: ${appResponse.status}` };
+    }
+
+    const appData = await appResponse.json();
+    const existingCerts = appData.keyCredentials || [];
+    
+    console.log(`[register-agent] Found ${existingCerts.length} existing certificates`);
+
+    // 3. Convert PEM to base64 (remove headers and newlines)
+    const certBase64 = certificatePem
+      .replace(/-----BEGIN CERTIFICATE-----/g, '')
+      .replace(/-----END CERTIFICATE-----/g, '')
+      .replace(/\n/g, '')
+      .replace(/\r/g, '')
+      .trim();
+
+    // 4. Calculate dates (2 years validity)
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setFullYear(endDate.getFullYear() + 2);
+
+    // 5. Generate a unique key ID
+    const keyId = crypto.randomUUID();
+
+    // 6. Create new certificate entry
+    const newCert = {
+      type: 'AsymmetricX509Cert',
+      usage: 'Verify',
+      key: certBase64,
+      displayName: displayName,
+      startDateTime: startDate.toISOString(),
+      endDateTime: endDate.toISOString(),
+      keyId: keyId,
+    };
+
+    // 7. Combine existing and new certificates
+    const updatedCerts = [...existingCerts, newCert];
+
+    // 8. PATCH the app registration
+    const patchUrl = `https://graph.microsoft.com/v1.0/applications/${appObjectId}`;
+    const patchResponse = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ keyCredentials: updatedCerts }),
+    });
+
+    if (!patchResponse.ok) {
+      const errorText = await patchResponse.text();
+      console.error(`[register-agent] Failed to update app: ${patchResponse.status} - ${errorText}`);
+      
+      // Check for common errors
+      if (patchResponse.status === 403) {
+        return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.OwnedBy permission is granted.' };
+      }
+      
+      return { success: false, error: `Failed to add certificate: ${patchResponse.status}` };
+    }
+
+    console.log(`[register-agent] Successfully uploaded certificate with keyId: ${keyId}`);
+    return { success: true, keyId };
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[register-agent] Azure certificate upload error: ${errorMessage}`);
+    return { success: false, error: errorMessage };
+  }
+}
+
+// ============= Helper Functions =============
+
 // Generate a cryptographically secure random string
 function generateSecureSecret(length: number = 64): string {
   const array = new Uint8Array(length);
@@ -93,6 +279,8 @@ async function checkRateLimit(
     count: currentCount + 1,
   };
 }
+
+// ============= Main Handler =============
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -287,12 +475,80 @@ serve(async (req) => {
 
     console.log(`[register-agent] Agent ${agent.id} registered successfully`);
 
-    // Step 6: Return tokens
+    // Step 6: Upload certificate to Azure if provided and M365 config exists
+    let azureCertificateKeyId: string | null = null;
+    
+    if (certificate_public_key && certificate_thumbprint) {
+      console.log(`[register-agent] Attempting to upload certificate to Azure...`);
+      
+      try {
+        // Fetch M365 global config
+        const { data: m365Config, error: configError } = await supabase
+          .from("m365_global_config")
+          .select("app_id, client_secret_encrypted, app_object_id, home_tenant_id")
+          .limit(1)
+          .maybeSingle();
+        
+        if (configError) {
+          console.warn(`[register-agent] Error fetching M365 config: ${configError.message}`);
+        } else if (!m365Config) {
+          console.log("[register-agent] M365 global config not found, skipping Azure upload");
+        } else if (!m365Config.app_object_id || !m365Config.home_tenant_id) {
+          console.log("[register-agent] M365 config missing app_object_id or home_tenant_id, skipping Azure upload");
+        } else if (!m365Config.client_secret_encrypted) {
+          console.log("[register-agent] M365 config missing client_secret, skipping Azure upload");
+        } else {
+          // Decrypt client secret
+          const clientSecret = await decryptSecret(m365Config.client_secret_encrypted);
+          
+          if (!clientSecret) {
+            console.warn("[register-agent] Failed to decrypt client secret, skipping Azure upload");
+          } else {
+            // Upload certificate to Azure
+            const displayName = `iScope-Agent-${agent.name}-${agent.id.substring(0, 8)}`;
+            const uploadResult = await uploadCertificateToAzure(
+              m365Config.app_object_id,
+              m365Config.app_id,
+              clientSecret,
+              m365Config.home_tenant_id,
+              certificate_public_key,
+              displayName
+            );
+            
+            if (uploadResult.success && uploadResult.keyId) {
+              azureCertificateKeyId = uploadResult.keyId;
+              
+              // Update agent with azure_certificate_key_id
+              const { error: azureUpdateError } = await supabase
+                .from("agents")
+                .update({ azure_certificate_key_id: azureCertificateKeyId })
+                .eq("id", agent.id);
+              
+              if (azureUpdateError) {
+                console.warn(`[register-agent] Failed to save azure_certificate_key_id: ${azureUpdateError.message}`);
+              } else {
+                console.log(`[register-agent] Certificate uploaded to Azure with keyId: ${azureCertificateKeyId}`);
+              }
+            } else {
+              console.warn(`[register-agent] Azure certificate upload failed: ${uploadResult.error}`);
+              // Don't fail registration, just log the warning
+            }
+          }
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        console.warn(`[register-agent] Azure certificate upload error: ${errorMessage}`);
+        // Don't fail registration, just log the warning
+      }
+    }
+
+    // Step 7: Return tokens
     return new Response(
       JSON.stringify({
         agent_id: agent.id,
         access_token: accessToken,
         refresh_token: refreshToken,
+        azure_certificate_uploaded: !!azureCertificateKeyId,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

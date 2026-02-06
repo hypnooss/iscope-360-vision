@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
 
     // Parse request body
     const body = await req.json();
-    const { app_id, client_secret } = body;
+    const { app_id, client_secret, app_object_id, home_tenant_id } = body;
 
     if (!app_id) {
       return new Response(
@@ -115,6 +115,22 @@ Deno.serve(async (req) => {
     if (!guidRegex.test(app_id)) {
       return new Response(
         JSON.stringify({ error: 'Invalid app_id format. Must be a valid GUID.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate app_object_id format if provided
+    if (app_object_id && !guidRegex.test(app_object_id)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid app_object_id format. Must be a valid GUID.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate home_tenant_id format if provided
+    if (home_tenant_id && !guidRegex.test(home_tenant_id)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid home_tenant_id format. Must be a valid GUID.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -155,6 +171,14 @@ Deno.serve(async (req) => {
         updateData.client_secret_encrypted = await encryptSecret(client_secret);
       }
 
+      // Update Azure certificate config fields if provided
+      if (app_object_id !== undefined) {
+        updateData.app_object_id = app_object_id || null;
+      }
+      if (home_tenant_id !== undefined) {
+        updateData.home_tenant_id = home_tenant_id || null;
+      }
+
       const { data, error } = await supabase
         .from('m365_global_config')
         .update(updateData)
@@ -186,6 +210,8 @@ Deno.serve(async (req) => {
           client_secret_encrypted: encryptedSecret,
           created_by: user.id,
           updated_by: user.id,
+          app_object_id: app_object_id || null,
+          home_tenant_id: home_tenant_id || null,
         })
         .select()
         .single();
@@ -207,6 +233,8 @@ Deno.serve(async (req) => {
       details: {
         app_id_updated: true,
         client_secret_updated: !!client_secret,
+        app_object_id_updated: app_object_id !== undefined,
+        home_tenant_id_updated: home_tenant_id !== undefined,
         encryption_method: 'AES-256-GCM',
         config_id: result.id,
       },
