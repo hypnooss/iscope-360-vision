@@ -18,12 +18,26 @@ import {
   PDFActionPlan,
 } from './sections';
 import type { CategorySummary } from './sections';
-import { CategoryConfig, getCategoryConfig, getColorHexByName, DEFAULT_CATEGORY_CONFIGS } from '@/hooks/useCategoryConfig';
+import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import {
   severityToPriority,
   getExplanatoryContent,
   Priority,
+  ExplanatoryContent,
 } from './data/explanatoryContent';
+
+// Type for correction guides from database
+export interface CorrectionGuideData {
+  rule_code: string;
+  friendly_title: string | null;
+  what_is: string | null;
+  why_matters: string | null;
+  impacts: string[];
+  how_to_fix: string[];
+  provider_examples: string[];
+  difficulty: 'low' | 'medium' | 'high' | null;
+  time_estimate: string | null;
+}
 
 // Page styles
 const pageStyles = StyleSheet.create({
@@ -183,7 +197,36 @@ interface ExternalDomainPDFProps {
   subdomainSummary?: SubdomainSummary;
   logoBase64?: string;
   categoryConfigs?: CategoryConfig[];
+  correctionGuides?: CorrectionGuideData[];
 }
+
+// Helper to get guide content from database or fallback
+const getGuideContent = (
+  ruleId: string,
+  correctionGuides: CorrectionGuideData[] | undefined,
+  fallbackName?: string,
+  fallbackDescription?: string,
+  fallbackRecommendation?: string
+): ExplanatoryContent => {
+  // First try to find in database guides
+  const dbGuide = correctionGuides?.find(g => g.rule_code === ruleId);
+  
+  if (dbGuide && dbGuide.friendly_title) {
+    return {
+      friendlyTitle: dbGuide.friendly_title || fallbackName || ruleId,
+      whatIs: dbGuide.what_is || fallbackDescription || 'Verificação de configuração.',
+      whyMatters: dbGuide.why_matters || 'Esta configuração afeta a segurança do seu domínio.',
+      impacts: dbGuide.impacts || [],
+      howToFix: dbGuide.how_to_fix || (fallbackRecommendation ? [fallbackRecommendation] : []),
+      difficulty: dbGuide.difficulty || 'medium',
+      timeEstimate: dbGuide.time_estimate || '30 min',
+      providerExamples: dbGuide.provider_examples || undefined,
+    };
+  }
+  
+  // Fallback to hardcoded content
+  return getExplanatoryContent(ruleId, fallbackName, fallbackDescription, fallbackRecommendation);
+};
 
 export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
   report,
@@ -193,6 +236,7 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
   subdomainSummary,
   logoBase64,
   categoryConfigs,
+  correctionGuides,
 }) => {
   const generatedDate = report.generatedAt instanceof Date
     ? report.generatedAt
@@ -276,8 +320,9 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
 
   // Build action plan items
   const immediateActions = categorizedChecks.critical.map(item => {
-    const content = getExplanatoryContent(
+    const content = getGuideContent(
       item.check.id,
+      correctionGuides,
       item.check.name,
       item.check.description,
       item.check.recommendation
@@ -290,8 +335,9 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
   });
 
   const shortTermActions = categorizedChecks.recommended.map(item => {
-    const content = getExplanatoryContent(
+    const content = getGuideContent(
       item.check.id,
+      correctionGuides,
       item.check.name,
       item.check.description,
       item.check.recommendation
@@ -410,8 +456,9 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
                 </View>
                 
                 {items.map((item, index) => {
-                  const content = getExplanatoryContent(
+                  const content = getGuideContent(
                     item.check.id,
+                    correctionGuides,
                     item.check.name,
                     item.check.description,
                     item.check.recommendation

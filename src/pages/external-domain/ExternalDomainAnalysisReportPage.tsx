@@ -19,8 +19,9 @@ import {
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
-import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
+import { ExternalDomainPDF, CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { useCategoryConfigs, getCategoryConfig } from '@/hooks/useCategoryConfig';
+import { useQuery } from '@tanstack/react-query';
 
 type LocationState = {
   report?: Record<string, unknown>;
@@ -423,6 +424,35 @@ export default function ExternalDomainAnalysisReportPage() {
   // Fetch category configs for external_domain device type
   const { data: categoryConfigs } = useCategoryConfigs(deviceTypeId);
 
+  // Fetch correction guides for PDF
+  const { data: correctionGuides } = useQuery({
+    queryKey: ['correction-guides-pdf', deviceTypeId],
+    queryFn: async () => {
+      if (!deviceTypeId) return [];
+      const { data, error } = await supabase
+        .from('rule_correction_guides')
+        .select(`
+          *,
+          compliance_rules!inner(code, device_type_id)
+        `)
+        .eq('compliance_rules.device_type_id', deviceTypeId);
+
+      if (error) throw error;
+      return (data || []).map(g => ({
+        rule_code: g.compliance_rules.code,
+        friendly_title: g.friendly_title,
+        what_is: g.what_is,
+        why_matters: g.why_matters,
+        impacts: Array.isArray(g.impacts) ? g.impacts as string[] : [],
+        how_to_fix: Array.isArray(g.how_to_fix) ? g.how_to_fix as string[] : [],
+        provider_examples: Array.isArray(g.provider_examples) ? g.provider_examples as string[] : [],
+        difficulty: g.difficulty as 'low' | 'medium' | 'high' | null,
+        time_estimate: g.time_estimate,
+      })) as CorrectionGuideData[];
+    },
+    enabled: !!deviceTypeId,
+  });
+
   const dnsSummary = report?.dnsSummary;
   const nsText = Array.isArray(dnsSummary?.ns) && dnsSummary?.ns.length > 0
     ? dnsSummary.ns.join(', ')
@@ -657,6 +687,7 @@ export default function ExternalDomainAnalysisReportPage() {
                         subdomainSummary={report.subdomainSummary || undefined}
                         logoBase64={logoBase64}
                         categoryConfigs={categoryConfigs}
+                        correctionGuides={correctionGuides}
                       />,
                       filename
                     );
