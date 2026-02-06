@@ -1,230 +1,259 @@
 
-# Plano: Adicionar Estado "Não Encontrado" aos Cards de Preview
+# Plano: Migrar Guia de Correções para Banco de Dados
 
 ## Objetivo
 
-Adicionar um terceiro estado (**Não Encontrado** / `not_found`) aos cards de preview de regras na aba Fluxo de Análise, para representar situações onde os dados simplesmente não existem (ex: nenhum servidor RADIUS configurado).
+Migrar os textos do "Guia de Correções" do arquivo hardcoded (`explanatoryContent.ts`) para o banco de dados, permitindo edição via interface administrativa sem necessidade de alterações no código.
 
 ---
 
-## Contexto
+## Análise da Situação Atual
 
-| Status | Significado | Exemplo |
-|--------|-------------|---------|
-| `pass` | Configuração correta e segura | LDAP configurado com LDAPS |
-| `fail` | Configuração insegura ou incorreta | LDAP configurado sem criptografia |
-| `not_found` | Recurso não configurado/utilizado | Nenhum servidor RADIUS encontrado |
+### Estrutura do `EXPLANATORY_CONTENT` (arquivo `.ts`)
 
-O status `not_found` **não é um erro de segurança** — indica apenas que o recurso não está em uso naquele ambiente.
+| Campo | Tipo | Exemplo |
+|-------|------|---------|
+| `friendlyTitle` | string | "Proteção contra emails falsos (DMARC)" |
+| `whatIs` | string | "Sistema que protege seu domínio..." |
+| `whyMatters` | string | "Sem DMARC, qualquer pessoa pode..." |
+| `impacts` | string[] | ["Clientes podem receber...", "Perda de confiança..."] |
+| `howToFix` | string[] | ["Acesse o painel DNS...", "Adicione registro TXT..."] |
+| `difficulty` | 'low' \| 'medium' \| 'high' | "low" |
+| `timeEstimate` | string | "15 min" |
+| `providerExamples` | string[] (opcional) | ["Cloudflare", "Registro.br"] |
+
+### Cobertura Atual
+
+- **23 regras** no banco (template Domínio Externo)
+- **~17 regras** com conteúdo no `EXPLANATORY_CONTENT`
+- **~6 regras** faltando: DKIM-003, DMARC-004/005/006, MX-003/004/005
 
 ---
 
 ## Alterações Necessárias
 
-### 1. Adicionar Coluna no Banco de Dados
+### 1. Criar Nova Tabela no Banco de Dados
 
 ```sql
-ALTER TABLE compliance_rules 
-ADD COLUMN not_found_description TEXT;
+CREATE TABLE rule_correction_guides (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Referência à regra
+  rule_id UUID NOT NULL REFERENCES compliance_rules(id) ON DELETE CASCADE,
+  
+  -- Textos do guia
+  friendly_title TEXT,
+  what_is TEXT,
+  why_matters TEXT,
+  impacts JSONB DEFAULT '[]'::jsonb,          -- Array de strings
+  how_to_fix JSONB DEFAULT '[]'::jsonb,       -- Array de strings
+  provider_examples JSONB DEFAULT '[]'::jsonb, -- Array de strings (opcional)
+  
+  -- Metadados
+  difficulty TEXT CHECK (difficulty IN ('low', 'medium', 'high')) DEFAULT 'medium',
+  time_estimate TEXT DEFAULT '30 min',
+  
+  -- Controle
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  UNIQUE(rule_id)
+);
 
-COMMENT ON COLUMN compliance_rules.not_found_description IS 
-  'Mensagem exibida quando os dados para avaliação não são encontrados (recurso não configurado)';
+-- RLS Policies
+ALTER TABLE rule_correction_guides ENABLE ROW LEVEL SECURITY;
+
+-- Super admins podem gerenciar
+CREATE POLICY "Super admins can manage guides"
+  ON rule_correction_guides FOR ALL
+  USING (has_role(auth.uid(), 'super_admin'));
+
+-- Usuários podem visualizar
+CREATE POLICY "Users can view guides"
+  ON rule_correction_guides FOR SELECT
+  USING (true);
 ```
 
 ---
 
-### 2. Atualizar Tipos TypeScript
+### 2. Migrar Dados Existentes
 
-**`src/types/complianceRule.ts`:**
-```typescript
-export interface ComplianceRuleDB {
-  // ... campos existentes ...
-  not_found_description: string | null;
-}
+Inserir os dados do `EXPLANATORY_CONTENT` na nova tabela:
 
-export interface ComplianceRuleBasic {
-  // ... campos existentes ...
-  not_found_description: string | null;
-}
+```sql
+-- Exemplo para DMARC-001
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT 
+  cr.id,
+  'Proteção contra emails falsos (DMARC)',
+  'Sistema que protege seu domínio contra envio de emails falsos por terceiros.',
+  'Sem DMARC, qualquer pessoa pode enviar emails fingindo ser sua empresa...',
+  '["Clientes podem receber emails fraudulentos", "Perda de confiança", ...]'::jsonb,
+  '["Acesse o painel DNS...", "Adicione registro TXT...", ...]'::jsonb,
+  'low',
+  '15 min',
+  '["Cloudflare", "Registro.br", "GoDaddy", "Microsoft 365"]'::jsonb
+FROM compliance_rules cr
+WHERE cr.code = 'DMARC-001'
+  AND cr.device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
 ```
 
 ---
 
-### 3. Atualizar Formulário de Edição
+### 3. Adicionar Nova Aba no TemplateDetailPage
 
-**`src/components/admin/TemplateRulesManagement.tsx`:**
+**Arquivo:** `src/pages/admin/TemplateDetailPage.tsx`
 
-Adicionar campo ao form state:
-```typescript
-const [formData, setFormData] = useState({
-  // ... campos existentes ...
-  not_found_description: '',
-});
-```
+Adicionar nova aba "Guia de Correções":
 
-Adicionar campo no formulário UI (ao lado de pass/fail descriptions):
 ```tsx
-<div className="space-y-2">
-  <Label htmlFor="not_found_description">Mensagem Não Encontrado</Label>
-  <Input
-    id="not_found_description"
-    value={formData.not_found_description}
-    onChange={(e) => setFormData({ ...formData, not_found_description: e.target.value })}
-    placeholder="Ex: Nenhum servidor RADIUS configurado"
-  />
-  <p className="text-xs text-muted-foreground">
-    Exibida quando o recurso não está configurado/em uso
-  </p>
-</div>
+<TabsTrigger value="guides" className="gap-2">
+  <BookOpen className="w-4 h-4" />
+  Guia de Correções
+  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+    {guidesCount}
+  </Badge>
+</TabsTrigger>
+
+<TabsContent value="guides" className="mt-6">
+  <CorrectionGuidesManagement deviceTypeId={id!} />
+</TabsContent>
 ```
 
 ---
 
-### 4. Atualizar RulePreviewCard
+### 4. Criar Componente de Gerenciamento
 
-**`src/components/admin/RulePreviewCard.tsx`:**
+**Novo arquivo:** `src/components/admin/CorrectionGuidesManagement.tsx`
 
-Adicionar terceiro estado ao toggle:
-```typescript
-const [previewState, setPreviewState] = useState<'pass' | 'fail' | 'not_found'>('fail');
-
-const statusConfig = {
-  pass: { 
-    icon: CheckCircle, 
-    iconClass: 'text-primary',
-    bgClass: 'bg-primary/10 border-primary/30',
-    label: 'Aprovado',
-    message: rule.pass_description || 'Configuração conforme esperado'
-  },
-  fail: { 
-    icon: XCircle, 
-    iconClass: 'text-rose-400',
-    bgClass: 'bg-rose-500/10 border-rose-500/30',
-    label: 'Falha',
-    message: rule.fail_description || 'Configuração fora do esperado'
-  },
-  not_found: { 
-    icon: HelpCircle, // ou MinusCircle
-    iconClass: 'text-muted-foreground',
-    bgClass: 'bg-muted/50 border-border',
-    label: 'Não Encontrado',
-    message: rule.not_found_description || 'Recurso não configurado neste ambiente'
-  },
-};
-```
-
-Adicionar terceiro botão no toggle:
-```tsx
-<div className="flex items-center gap-1 flex-shrink-0">
-  <Button 
-    size="sm" 
-    variant={previewState === 'pass' ? 'default' : 'outline'}
-    className="h-7 px-2 text-xs"
-    onClick={() => setPreviewState('pass')}
-  >
-    Sucesso
-  </Button>
-  <Button 
-    size="sm" 
-    variant={previewState === 'fail' ? 'destructive' : 'outline'}
-    className="h-7 px-2 text-xs"
-    onClick={() => setPreviewState('fail')}
-  >
-    Falha
-  </Button>
-  <Button 
-    size="sm" 
-    variant={previewState === 'not_found' ? 'secondary' : 'outline'}
-    className="h-7 px-2 text-xs"
-    onClick={() => setPreviewState('not_found')}
-  >
-    N/A
-  </Button>
-</div>
-```
-
-Ajustar lógica de exibição:
-- Seções de Risco Técnico e Impacto: **apenas em `fail`**
-- Badge de severidade: **cores neutras em `pass` e `not_found`**
-- Recomendação: **apenas em `fail`**
-
----
-
-### 5. Diagrama Visual dos 3 Estados
+Interface para gerenciar os textos do guia:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Estado: SUCESSO                                                            │
-│  [✓] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
-│      Servidores RADIUS configurados com timeout adequado                    │
+│  Guia de Correções                                            [Nova Entrada]│
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Regra         │ Título Amigável            │ Dificuldade │ Tempo │ Ações   │
+├────────────────┼────────────────────────────┼─────────────┼───────┼─────────┤
+│  DMARC-001     │ Proteção contra emails...  │ Baixa       │ 15min │ [✏️][🗑️]│
+│  DMARC-002     │ Política DMARC permissiva  │ Baixa       │ 10min │ [✏️][🗑️]│
+│  SPF-001       │ Lista de servidores...     │ Baixa       │ 15min │ [✏️][🗑️]│
+│  DNS-001       │ (sem guia configurado)     │ -           │ -     │ [➕]    │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Estado: FALHA                                                              │
-│  [✗] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
-│      Servidores RADIUS com timeout excessivo ou configuração insegura       │
-│      → Reduza o timeout e configure servidores redundantes                  │
-│                                                                             │
-│      ▼ Ver detalhes do card                                                 │
-│      ┌─────────────────────────────────────────────────────────────────┐    │
-│      │ RISCO TÉCNICO: ...                                              │    │
-│      │ IMPACTO NO NEGÓCIO: ...                                         │    │
-│      └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
+**Diálogo de Edição:**
 
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Estado: NÃO ENCONTRADO                                                     │
-│  [?] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
-│      Nenhum servidor RADIUS configurado neste ambiente                      │
+│  Editar Guia de Correção - DMARC-001                                    [X] │
+├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│      (Sem seções de risco - não é uma falha de segurança)                   │
+│  Título Amigável *                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ Proteção contra emails falsos (DMARC)                               │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  O que é *                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ Sistema que protege seu domínio contra envio de emails falsos...   │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  Por que importa *                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ Sem DMARC, qualquer pessoa pode enviar emails fingindo ser...      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  Impactos Possíveis (um por linha)                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ Clientes podem receber emails fraudulentos em seu nome             │    │
+│  │ Perda de confiança e danos à reputação                             │    │
+│  │ Emails legítimos podem ir para spam                                │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  Como Corrigir (passos numerados, um por linha)                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ Acesse o painel DNS do seu domínio                                 │    │
+│  │ Adicione um novo registro do tipo TXT                              │    │
+│  │ Nome: _dmarc.seudominio.com.br                                     │    │
+│  │ Valor: v=DMARC1; p=none; rua=mailto:admin@...                      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
+│  │ Dificuldade     │  │ Tempo Estimado  │  │ Exemplos de Provedores      │  │
+│  │ [▼ Baixa    ]   │  │ [ 15 min     ]  │  │ Cloudflare, Registro.br,... │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
+│                                                                             │
+│                                             [Cancelar]  [Salvar]            │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 6. Popular Mensagens Existentes
+### 5. Atualizar Componente do PDF
 
-Após criar a coluna, popular as mensagens para regras que fazem sentido ter estado "não encontrado":
+**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
 
-```sql
--- Autenticação
-UPDATE compliance_rules SET not_found_description = 'Nenhum servidor LDAP configurado' 
-WHERE code = 'auth-001';
+Alterar para buscar dados do banco em vez do arquivo hardcoded:
 
-UPDATE compliance_rules SET not_found_description = 'Nenhum servidor RADIUS configurado' 
-WHERE code = 'auth-002';
+```typescript
+// Antes (hardcoded)
+import { getExplanatoryContent } from './data/explanatoryContent';
 
-UPDATE compliance_rules SET not_found_description = 'Nenhum agente FSSO configurado' 
-WHERE code = 'auth-003';
+// Depois (do banco)
+const { data: correctionGuides } = useQuery({
+  queryKey: ['correction-guides', deviceTypeId],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from('rule_correction_guides')
+      .select('*, compliance_rules!inner(code)')
+      .eq('compliance_rules.device_type_id', deviceTypeId);
+    return data;
+  },
+});
 
-UPDATE compliance_rules SET not_found_description = 'Nenhum provedor SAML configurado' 
-WHERE code = 'auth-004';
-
--- VPN
-UPDATE compliance_rules SET not_found_description = 'Nenhum túnel VPN IPsec configurado' 
-WHERE code = 'vpn-001';
-
--- HA (não aplicável - HA desabilitado é diferente de não encontrado)
--- Firmware, Licenciamento, etc. - não têm estado "não encontrado"
+// Helper para buscar guia por código da regra
+const getGuideContent = (ruleCode: string) => {
+  const guide = correctionGuides?.find(g => g.compliance_rules.code === ruleCode);
+  if (guide) {
+    return {
+      friendlyTitle: guide.friendly_title || rule.name,
+      whatIs: guide.what_is || rule.description,
+      whyMatters: guide.why_matters || '',
+      impacts: guide.impacts || [],
+      howToFix: guide.how_to_fix || [rule.recommendation],
+      difficulty: guide.difficulty || 'medium',
+      timeEstimate: guide.time_estimate || '30 min',
+    };
+  }
+  // Fallback para regras sem guia
+  return getExplanatoryContent(ruleCode, rule.name, rule.description, rule.recommendation);
+};
 ```
 
 ---
 
-## Arquivos a Modificar
+### 6. Manter Fallback para Compatibilidade
 
-| Arquivo | Mudança |
-|---------|---------|
-| Migração SQL | Adicionar coluna `not_found_description` |
-| `src/types/complianceRule.ts` | Adicionar campo aos tipos |
-| `src/components/admin/TemplateRulesManagement.tsx` | Adicionar campo ao formulário |
-| `src/components/admin/RulePreviewCard.tsx` | Adicionar terceiro estado ao toggle |
+O arquivo `explanatoryContent.ts` será mantido como **fallback** para regras que ainda não têm guia no banco. Isso garante compatibilidade durante a migração.
+
+---
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `supabase/migrations/xxx_create_rule_correction_guides.sql` | **Criar** tabela + migrar dados |
+| `src/components/admin/CorrectionGuidesManagement.tsx` | **Criar** componente de gerenciamento |
+| `src/pages/admin/TemplateDetailPage.tsx` | **Modificar** - adicionar nova aba |
+| `src/components/pdf/ExternalDomainPDF.tsx` | **Modificar** - buscar do banco |
+| `src/integrations/supabase/types.ts` | Auto-atualizado pelo Supabase |
 
 ---
 
 ## Benefícios
 
-- Clareza na diferenciação entre **falha de segurança** e **recurso não utilizado**
-- Relatórios mais precisos que não geram falsos alertas
-- Administrador pode customizar mensagem para cada cenário
-- Consistência com o status `unknown` já existente no `ComplianceCard`
+- Administradores podem editar textos do Guia de Correções sem depender de desenvolvedores
+- Novos templates (ex: FortiGate, SonicWall) podem ter seus próprios guias
+- Manutenção centralizada no banco de dados
+- Interface amigável para edição de textos complexos (impactos, passos de correção)
+- Fallback automático para regras sem guia configurado
