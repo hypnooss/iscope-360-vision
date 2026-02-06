@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.m365-check-defender]
 verify_jwt = false
+
+[functions.trigger-m365-posture-analysis]
+verify_jwt = false

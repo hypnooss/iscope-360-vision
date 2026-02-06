@@ -839,6 +839,72 @@ export type Database = {
         }
         Relationships: []
       }
+      m365_posture_history: {
+        Row: {
+          analyzed_by: string | null
+          category_breakdown: Json | null
+          classification: string | null
+          client_id: string
+          completed_at: string | null
+          created_at: string | null
+          errors: Json | null
+          id: string
+          insights: Json | null
+          score: number | null
+          started_at: string | null
+          status: string
+          summary: Json | null
+          tenant_record_id: string
+        }
+        Insert: {
+          analyzed_by?: string | null
+          category_breakdown?: Json | null
+          classification?: string | null
+          client_id: string
+          completed_at?: string | null
+          created_at?: string | null
+          errors?: Json | null
+          id?: string
+          insights?: Json | null
+          score?: number | null
+          started_at?: string | null
+          status?: string
+          summary?: Json | null
+          tenant_record_id: string
+        }
+        Update: {
+          analyzed_by?: string | null
+          category_breakdown?: Json | null
+          classification?: string | null
+          client_id?: string
+          completed_at?: string | null
+          created_at?: string | null
+          errors?: Json | null
+          id?: string
+          insights?: Json | null
+          score?: number | null
+          started_at?: string | null
+          status?: string
+          summary?: Json | null
+          tenant_record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_posture_history_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_posture_history_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_required_permissions: {
         Row: {
           created_at: string
