@@ -87,36 +87,33 @@ function DetailRow({ label, value, subValue, indicator, highlight }: DetailRowPr
   };
 
   return (
-    <div className="group">
-      <div className="flex items-start gap-3 py-2">
-        <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
-          {label}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center">
-            {indicator && (
-              <span 
-                className={cn(
-                  "inline-block w-2 h-2 rounded-full mr-2",
-                  indicatorStyles[indicator]
-                )} 
-              />
-            )}
+    <div className="flex items-start gap-3 py-2">
+      <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
+        {label}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center">
+          {indicator && (
             <span 
               className={cn(
-                "text-sm font-medium",
-                highlight ? "text-primary" : "text-foreground"
-              )}
-            >
-              {value}
-            </span>
-          </div>
-          {subValue && (
-            <div className="text-xs text-muted-foreground mt-0.5">{subValue}</div>
+                "inline-block w-2 h-2 rounded-full mr-2",
+                indicatorStyles[indicator]
+              )} 
+            />
           )}
+          <span 
+            className={cn(
+              "text-sm font-medium",
+              highlight ? "text-primary" : "text-foreground"
+            )}
+          >
+            {value}
+          </span>
         </div>
+        {subValue && (
+          <div className="text-xs text-muted-foreground mt-0.5">{subValue}</div>
+        )}
       </div>
-      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
     </div>
   );
 }
@@ -444,7 +441,7 @@ export default function M365PostureReportPage() {
                       </div>
 
                       {/* Mini Stats Row */}
-                      <div className="flex gap-3 mt-10">
+                      <div className="flex gap-3 mt-14">
                         <MiniStat value={totalChecks} label="Total" variant="primary" />
                         <MiniStat value={passedCount} label="Aprovadas" variant="success" />
                         <MiniStat value={failedCount} label="Falhas" variant="destructive" />
@@ -494,23 +491,21 @@ export default function M365PostureReportPage() {
                       <DetailRow 
                         label="Cond. Access" 
                         value={envMetrics.conditionalAccessEnabled 
-                          ? `✓ ${envMetrics.conditionalAccessPoliciesCount} política(s) ativa(s)` 
-                          : '✗ Não configurado'}
+                          ? `${envMetrics.conditionalAccessPoliciesCount} política(s) ativa(s)` 
+                          : 'Não configurado'}
                         indicator={envMetrics.conditionalAccessEnabled ? "success" : "error"}
                       />
                       
-                      {/* Login Countries (if available) */}
-                      {envMetrics.loginCountries && envMetrics.loginCountries.length > 0 && (
-                        <>
-                          <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
-                          <DetailRow 
-                            label="Top Países" 
-                            value={envMetrics.loginCountries.slice(0, 3).map(c => 
-                              `${getCountryFlag(c.country)} ${c.country}`
-                            ).join(' ')}
-                          />
-                        </>
-                      )}
+                      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
+                      
+                      {/* Login Countries */}
+                      <DetailRow 
+                        label="Origem Auth" 
+                        value={envMetrics.loginCountries && envMetrics.loginCountries.length > 0 
+                          ? envMetrics.loginCountries.slice(0, 5).map(c => getCountryFlag(c.country)).join(' ')
+                          : 'N/A'
+                        }
+                      />
                     </div>
                   </div>
                 </div>
