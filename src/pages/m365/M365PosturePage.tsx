@@ -1,25 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
+import { usePreviewGuard } from '@/hooks/usePreviewGuard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { 
   RefreshCw, 
   AlertTriangle, 
   Calendar,
-  Building2,
-  ArrowLeft
+  ArrowLeft,
+  Lock
 } from 'lucide-react';
 import { 
   M365ScoreGauge, 
   M365CategoryCard, 
   M365SeverityBreakdown,
-  M365InsightCard
+  M365InsightCard,
+  TenantSelector
 } from '@/components/m365/posture';
 import { useM365SecurityPosture } from '@/hooks/useM365SecurityPosture';
 import { 
@@ -30,16 +33,24 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+interface TenantOption {
+  id: string;
+  displayName: string;
+  domain: string;
+}
+
 export default function M365PosturePage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode, previewTarget } = usePreview();
+  const { isBlocked, showBlockedMessage } = usePreviewGuard();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [tenantRecordId, setTenantRecordId] = useState<string | null>(null);
-  const [tenantInfo, setTenantInfo] = useState<{ displayName: string; domain: string } | null>(null);
-  const [loadingTenant, setLoadingTenant] = useState(true);
+  const [loadingTenants, setLoadingTenants] = useState(true);
 
   const { 
     data, 
@@ -63,69 +74,97 @@ export default function M365PosturePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Load tenant from URL param or fetch first connected tenant
-  useEffect(() => {
-    async function loadTenant() {
+  // Load tenants with workspace filtering (respects Preview Mode)
+  const loadTenants = useCallback(async () => {
+    if (!user) return;
+
+    setLoadingTenants(true);
+    try {
+      // Determine workspace IDs for filtering
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces
+        ? previewTarget.workspaces.map(w => w.id)
+        : null;
+
+      let query = supabase
+        .from('m365_tenants')
+        .select('id, display_name, tenant_domain, client_id')
+        .eq('connection_status', 'connected');
+
+      // Apply workspace filter in Preview Mode
+      if (workspaceIds && workspaceIds.length > 0) {
+        query = query.in('client_id', workspaceIds);
+      }
+
+      const { data: tenantsData, error: tenantsError } = await query;
+
+      if (tenantsError) {
+        console.error('Error loading tenants:', tenantsError);
+        toast({
+          title: 'Erro ao carregar tenants',
+          description: tenantsError.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const tenantOptions: TenantOption[] = (tenantsData || []).map(t => ({
+        id: t.id,
+        displayName: t.display_name || 'Tenant M365',
+        domain: t.tenant_domain || '',
+      }));
+
+      setTenants(tenantOptions);
+
+      // Set initial tenant from URL or first available
       const paramTenantId = searchParams.get('tenant');
-      
-      if (paramTenantId) {
+      if (paramTenantId && tenantOptions.some(t => t.id === paramTenantId)) {
         setTenantRecordId(paramTenantId);
-        // Fetch tenant info
-        const { data: tenant } = await supabase
-          .from('m365_tenants')
-          .select('display_name, tenant_domain')
-          .eq('id', paramTenantId)
-          .single();
-        
-        if (tenant) {
-          setTenantInfo({
-            displayName: tenant.display_name || 'Tenant M365',
-            domain: tenant.tenant_domain || '',
-          });
+      } else if (tenantOptions.length > 0) {
+        setTenantRecordId(tenantOptions[0].id);
+        // Update URL without navigation
+        if (!paramTenantId) {
+          setSearchParams({ tenant: tenantOptions[0].id }, { replace: true });
         }
       } else {
-        // Fetch first connected tenant for user's client
-        const { data: tenants, error: fetchError } = await supabase
-          .from('m365_tenants')
-          .select('id, display_name, tenant_domain')
-          .eq('connection_status', 'connected')
-          .limit(1)
-          .single();
-        
-        if (fetchError) {
-          toast({
-            title: 'Nenhum tenant conectado',
-            description: 'Conecte um tenant Microsoft 365 para continuar.',
-            variant: 'destructive',
-          });
-          navigate('/scope-m365/tenant-connection');
-          return;
-        }
-        
-        if (tenants) {
-          setTenantRecordId(tenants.id);
-          setTenantInfo({
-            displayName: tenants.display_name || 'Tenant M365',
-            domain: tenants.tenant_domain || '',
-          });
-        }
+        // No tenants available
+        toast({
+          title: 'Nenhum tenant conectado',
+          description: 'Conecte um tenant Microsoft 365 para continuar.',
+          variant: 'destructive',
+        });
       }
-      setLoadingTenant(false);
+    } finally {
+      setLoadingTenants(false);
     }
-    
-    if (user) {
-      loadTenant();
-    }
-  }, [user, searchParams, navigate, toast]);
+  }, [user, isPreviewMode, previewTarget, searchParams, setSearchParams, toast]);
 
-  // Trigger analysis when tenant is loaded
   useEffect(() => {
-    if (tenantRecordId && !loadingTenant) {
+    loadTenants();
+  }, [loadTenants]);
+
+  // Handle tenant selection
+  const handleTenantSelect = useCallback((newTenantId: string) => {
+    setTenantRecordId(newTenantId);
+    setSearchParams({ tenant: newTenantId });
+  }, [setSearchParams]);
+
+  // Trigger analysis when tenant changes
+  useEffect(() => {
+    if (tenantRecordId && !loadingTenants) {
       refetch();
     }
-  }, [tenantRecordId, loadingTenant, refetch]);
+  }, [tenantRecordId, loadingTenants, refetch]);
 
-  if (authLoading || loadingTenant) {
+  // Handle refresh with Preview Mode guard
+  const handleRefresh = useCallback(() => {
+    if (isBlocked) {
+      showBlockedMessage();
+      return;
+    }
+    refetch();
+  }, [isBlocked, showBlockedMessage, refetch]);
+
+  if (authLoading || loadingTenants) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8 flex items-center justify-center min-h-[60vh]">
@@ -136,13 +175,13 @@ export default function M365PosturePage() {
   }
 
   const groupedInsights = data?.insights ? groupInsightsByCategory(data.insights) : null;
-  const failedInsights = data?.insights?.filter(i => i.status === 'fail') || [];
+  const selectedTenant = tenants.find(t => t.id === tenantRecordId);
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <PageBreadcrumb 
               items={[
@@ -164,9 +203,11 @@ export default function M365PosturePage() {
               Voltar
             </Button>
             <Button 
-              onClick={() => refetch()} 
-              disabled={isLoading}
+              onClick={handleRefresh} 
+              disabled={isLoading || !tenantRecordId}
+              variant={isBlocked ? 'outline' : 'default'}
             >
+              {isBlocked && <Lock className="w-4 h-4 mr-2" />}
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               {isLoading ? 'Analisando...' : 'Atualizar'}
             </Button>
@@ -188,143 +229,174 @@ export default function M365PosturePage() {
           </Card>
         )}
 
-        {/* Score Header */}
-        <Card className="glass-card overflow-hidden">
-          <div className="bg-gradient-to-br from-card via-card to-muted/20 p-6 lg:p-8">
-            <div className="flex flex-col lg:flex-row items-center gap-8">
-              {/* Score Gauge */}
-              <div className="flex-shrink-0">
-                <M365ScoreGauge
-                  score={data?.score ?? 0}
-                  classification={data?.classification ?? 'critical'}
-                  size="lg"
-                  loading={isLoading}
-                />
-              </div>
-
-              {/* Tenant Info */}
-              <div className="flex-1 text-center lg:text-left">
-                <div className="flex items-center justify-center lg:justify-start gap-2 mb-2">
-                  <Building2 className="w-5 h-5 text-muted-foreground" />
-                  <span className="text-lg font-semibold text-foreground">
-                    {tenantInfo?.displayName || 'Carregando...'}
-                  </span>
-                </div>
-                {tenantInfo?.domain && (
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {tenantInfo.domain}
-                  </p>
-                )}
-                
-                {data?.analyzedAt && (
-                  <div className="flex items-center justify-center lg:justify-start gap-2 text-sm text-muted-foreground">
-                    <Calendar className="w-4 h-4" />
-                    <span>
-                      Última análise: {new Date(data.analyzedAt).toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                )}
-
-                {data?.cached && (
-                  <Badge variant="secondary" className="mt-2">
-                    Resultado em cache
-                  </Badge>
-                )}
-              </div>
-
-              {/* Severity Breakdown */}
-              <div className="w-full lg:w-auto lg:min-w-[400px]">
-                <M365SeverityBreakdown
-                  summary={data?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 }}
-                  loading={isLoading}
-                />
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Categories Grid */}
-        <div>
-          <h2 className="text-lg font-semibold text-foreground mb-4">Categorias de Risco</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data?.categoryBreakdown?.map((category) => (
-              <M365CategoryCard
-                key={category.category}
-                category={category.category}
-                stats={{
-                  count: category.count,
-                  score: category.score,
-                  criticalCount: category.criticalCount,
-                  highCount: category.highCount,
-                }}
-                onClick={() => {
-                  // Scroll to category section
-                  const element = document.getElementById(`category-${category.category}`);
-                  element?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                loading={isLoading}
-              />
-            ))}
-          </div>
-        </div>
-
-        <Separator className="my-8" />
-
-        {/* Insights by Category */}
-        {groupedInsights && (
-          <div className="space-y-8">
-            <h2 className="text-lg font-semibold text-foreground">Insights Detalhados</h2>
-            
-            {(Object.keys(groupedInsights) as M365RiskCategory[]).map((category) => {
-              const categoryInsights = groupedInsights[category];
-              if (categoryInsights.length === 0) return null;
-              
-              const failedCount = categoryInsights.filter(i => i.status === 'fail').length;
-              
-              return (
-                <div key={category} id={`category-${category}`} className="scroll-mt-24">
-                  <div className="flex items-center gap-3 mb-4">
-                    <h3 className="text-base font-semibold text-foreground">
-                      {CATEGORY_LABELS[category]}
-                    </h3>
-                    <Badge variant="secondary">
-                      {categoryInsights.length} verificação{categoryInsights.length !== 1 ? 'ões' : ''}
-                    </Badge>
-                    {failedCount > 0 && (
-                      <Badge variant="outline" className="status-fail">
-                        {failedCount} falha{failedCount !== 1 ? 's' : ''}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {categoryInsights.map((insight) => (
-                      <M365InsightCard key={insight.id} insight={insight} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && !error && (!data?.insights || data.insights.length === 0) && (
+        {/* No tenants state */}
+        {tenants.length === 0 && !loadingTenants && (
           <Card className="glass-card">
             <CardContent className="p-12 text-center">
               <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2">
-                Nenhum insight disponível
+                Nenhum tenant disponível
               </h3>
               <p className="text-muted-foreground mb-4">
-                Clique em "Atualizar" para executar a análise de segurança.
+                {isPreviewMode 
+                  ? 'O usuário visualizado não possui tenants M365 conectados.'
+                  : 'Conecte um tenant Microsoft 365 para analisar a postura de segurança.'}
               </p>
-              <Button onClick={() => refetch()}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Iniciar Análise
-              </Button>
+              {!isPreviewMode && (
+                <Button onClick={() => navigate('/scope-m365/tenant-connection')}>
+                  Conectar Tenant
+                </Button>
+              )}
             </CardContent>
           </Card>
+        )}
+
+        {/* Main content - only show if tenants available */}
+        {tenants.length > 0 && (
+          <>
+            {/* Score Header */}
+            <Card className="glass-card overflow-hidden">
+              <div className="bg-gradient-to-br from-card via-card to-muted/20 p-6 lg:p-8">
+                <div className="flex flex-col lg:flex-row items-center gap-8">
+                  {/* Score Gauge */}
+                  <div className="flex-shrink-0">
+                    <M365ScoreGauge
+                      score={data?.score ?? 0}
+                      classification={data?.classification ?? 'critical'}
+                      size="lg"
+                      loading={isLoading}
+                    />
+                  </div>
+
+                  {/* Tenant Info & Selector */}
+                  <div className="flex-1 text-center lg:text-left">
+                    <div className="mb-4">
+                      <TenantSelector
+                        tenants={tenants}
+                        selectedId={tenantRecordId}
+                        onSelect={handleTenantSelect}
+                        loading={isLoading}
+                        disabled={isBlocked}
+                      />
+                    </div>
+                    
+                    {data?.analyzedAt && (
+                      <div className="flex items-center justify-center lg:justify-start gap-2 text-sm text-muted-foreground">
+                        <Calendar className="w-4 h-4" />
+                        <span>
+                          Última análise: {new Date(data.analyzedAt).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                    )}
+
+                    {data?.cached && (
+                      <Badge variant="secondary" className="mt-2">
+                        Resultado em cache
+                      </Badge>
+                    )}
+
+                    {data?.errors && data.errors.length > 0 && (
+                      <Badge variant="outline" className="mt-2 text-warning border-warning/30">
+                        {data.errors.length} aviso(s) durante coleta
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Severity Breakdown */}
+                  <div className="w-full lg:w-auto lg:min-w-[400px]">
+                    <M365SeverityBreakdown
+                      summary={data?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 }}
+                      loading={isLoading}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Categories Grid */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4">Categorias de Risco</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {data?.categoryBreakdown?.map((category) => (
+                  <M365CategoryCard
+                    key={category.category}
+                    category={category.category}
+                    stats={{
+                      count: category.count,
+                      score: category.score,
+                      criticalCount: category.criticalCount ?? 0,
+                      highCount: category.highCount ?? 0,
+                    }}
+                    onClick={() => {
+                      const element = document.getElementById(`category-${category.category}`);
+                      element?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    loading={isLoading}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <Separator className="my-8" />
+
+            {/* Insights by Category */}
+            {groupedInsights && (
+              <div className="space-y-8">
+                <h2 className="text-lg font-semibold text-foreground">Insights Detalhados</h2>
+                
+                {(Object.keys(groupedInsights) as M365RiskCategory[]).map((category) => {
+                  const categoryInsights = groupedInsights[category];
+                  if (categoryInsights.length === 0) return null;
+                  
+                  const failedCount = categoryInsights.filter(i => i.status === 'fail').length;
+                  
+                  return (
+                    <div key={category} id={`category-${category}`} className="scroll-mt-24">
+                      <div className="flex items-center gap-3 mb-4">
+                        <h3 className="text-base font-semibold text-foreground">
+                          {CATEGORY_LABELS[category]}
+                        </h3>
+                        <Badge variant="secondary">
+                          {categoryInsights.length} verificação{categoryInsights.length !== 1 ? 'ões' : ''}
+                        </Badge>
+                        {failedCount > 0 && (
+                          <Badge variant="outline" className="status-fail">
+                            {failedCount} falha{failedCount !== 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {categoryInsights.map((insight) => (
+                          <M365InsightCard key={insight.id} insight={insight} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!isLoading && !error && (!data?.insights || data.insights.length === 0) && (
+              <Card className="glass-card">
+                <CardContent className="p-12 text-center">
+                  <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    Nenhum insight disponível
+                  </h3>
+                  <p className="text-muted-foreground mb-4">
+                    Clique em "Atualizar" para executar a análise de segurança.
+                  </p>
+                  <Button onClick={handleRefresh} disabled={isBlocked}>
+                    {isBlocked && <Lock className="w-4 h-4 mr-2" />}
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Iniciar Análise
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
       </div>
     </AppLayout>
