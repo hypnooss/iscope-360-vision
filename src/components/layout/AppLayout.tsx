@@ -125,6 +125,9 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-blue-500',
     items: [
       { label: 'Dashboard', href: '/scope-m365/dashboard', icon: LayoutDashboard },
+      { label: 'Análise', href: '/scope-m365/analysis', icon: Shield },
+      { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
+      { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Conexão com Tenant', href: '/scope-m365/tenant-connection', icon: Building },
     ],

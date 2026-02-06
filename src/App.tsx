@@ -38,6 +38,10 @@ const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-dom
 
 // Microsoft 365 Module Pages - lazy loaded
 const M365DashboardPage = lazy(() => import("./pages/m365/M365DashboardPage"));
+const M365AnalysisPage = lazy(() => import("./pages/m365/M365AnalysisPage"));
+const M365ExecutionsPage = lazy(() => import("./pages/m365/M365ExecutionsPage"));
+const M365ReportsPage = lazy(() => import("./pages/m365/M365ReportsPage"));
+const M365PostureReportPage = lazy(() => import("./pages/m365/M365PostureReportPage"));
 const M365PosturePage = lazy(() => import("./pages/m365/M365PosturePage"));
 const TenantConnectionPage = lazy(() => import("./pages/m365/TenantConnectionPage"));
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
@@ -96,6 +100,10 @@ const App = () => (
 
                   {/* Microsoft 365 Module */}
                   <Route path="/scope-m365/dashboard" element={<M365DashboardPage />} />
+                  <Route path="/scope-m365/analysis" element={<M365AnalysisPage />} />
+                  <Route path="/scope-m365/executions" element={<M365ExecutionsPage />} />
+                  <Route path="/scope-m365/reports" element={<M365ReportsPage />} />
+                  <Route path="/scope-m365/posture/report/:reportId" element={<M365PostureReportPage />} />
                   <Route path="/scope-m365/posture" element={<M365PosturePage />} />
                   <Route path="/scope-m365/tenant-connection" element={<TenantConnectionPage />} />
                   <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
