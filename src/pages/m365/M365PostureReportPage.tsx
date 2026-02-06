@@ -685,8 +685,9 @@ export default function M365PostureReportPage() {
                         value={envMetrics.loginCountries && envMetrics.loginCountries.length > 0 
                           ? envMetrics.loginCountries.slice(0, 5).map(c => {
                               const code = normalizeCountryCode(c.country);
+                              const flag = getCountryFlag(c.country);
                               const name = getCountryName(code || c.country);
-                              return name;
+                              return `${flag} ${name}`;
                             }).join(', ')
                           : 'N/A'
                         }
