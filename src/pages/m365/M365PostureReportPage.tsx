@@ -224,6 +224,36 @@ export default function M365PostureReportPage() {
   // Critical count for banner
   const criticalCount = insights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length;
 
+  // Extract environment metrics from insights
+  const environmentMetrics = useMemo(() => {
+    const metrics = {
+      totalUsers: 0,
+      totalAdmins: 0,
+      totalGuests: 0,
+    };
+    
+    insights.forEach((insight: any) => {
+      // IDT-001: "X de Y usuário(s) sem MFA" → Y = total de usuários
+      if (insight.id === 'IDT-001') {
+        const match = insight.descricaoExecutiva?.match(/de (\d+) usuário/);
+        if (match) metrics.totalUsers = parseInt(match[1], 10);
+      }
+      
+      // IDT-003 ou IDT-004: guests
+      if (insight.id === 'IDT-003' || insight.id === 'IDT-004') {
+        const count = insight.affectedCount || 0;
+        if (count > metrics.totalGuests) metrics.totalGuests = count;
+      }
+      
+      // ADM-003: usuários privilegiados
+      if (insight.id === 'ADM-003') {
+        metrics.totalAdmins = insight.affectedCount || 0;
+      }
+    });
+    
+    return metrics;
+  }, [insights]);
+
   if (authLoading || moduleLoading || isLoading) {
     return (
       <AppLayout>
@@ -332,15 +362,16 @@ export default function M365PostureReportPage() {
                       </div>
 
                       {/* Mini Stats Row */}
-                      <div className="flex gap-3 mt-6">
+                      <div className="flex gap-3 mt-10">
                         <MiniStat value={totalChecks} label="Total" variant="primary" />
                         <MiniStat value={passedCount} label="Aprovadas" variant="success" />
                         <MiniStat value={failedCount} label="Falhas" variant="destructive" />
                       </div>
                     </div>
 
-                    {/* Right Panel: Details */}
+                    {/* Right Panel: Environment + Severity */}
                     <div className="flex flex-col justify-center lg:border-l lg:border-border/30 lg:pl-8">
+                      {/* Identification */}
                       <DetailRow label="Workspace" value={displayInfo.client_name || 'N/A'} />
                       <DetailRow label="Domínio" value={displayInfo.tenant_domain || 'N/A'} highlight />
                       <DetailRow 
@@ -348,7 +379,23 @@ export default function M365PostureReportPage() {
                         value={format(new Date(reportData.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} 
                       />
                       
-                      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-2" />
+                      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
+                      
+                      {/* Environment Metrics */}
+                      <DetailRow 
+                        label="Usuários" 
+                        value={environmentMetrics.totalUsers > 0 ? environmentMetrics.totalUsers : 'N/A'} 
+                      />
+                      <DetailRow 
+                        label="Admins" 
+                        value={environmentMetrics.totalAdmins > 0 ? environmentMetrics.totalAdmins : 'N/A'} 
+                      />
+                      <DetailRow 
+                        label="Guests" 
+                        value={environmentMetrics.totalGuests > 0 ? environmentMetrics.totalGuests : 'N/A'} 
+                      />
+                      
+                      <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
                       
                       {/* Severity breakdown */}
                       <DetailRow 
