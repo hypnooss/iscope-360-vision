@@ -48,6 +48,10 @@ interface ComplianceRule {
   weight: number;
   // Note: External Domain rules use a different shape: { step_id, field, operator, value/values/pattern }
   evaluation_logic: Record<string, unknown>;
+  // New metadata fields
+  technical_risk: string | null;
+  business_impact: string | null;
+  api_endpoint: string | null;
 }
 
 type NormalizedEvaluationLogic = {
@@ -85,6 +89,9 @@ interface ComplianceCheck {
   evidence?: EvidenceItem[];
   rawData?: Record<string, unknown>;
   apiEndpoint?: string;
+  // New metadata fields for reports
+  technicalRisk?: string;
+  businessImpact?: string;
 }
 
 interface SubdomainEntry {
@@ -2572,6 +2579,8 @@ function processComplianceRules(
         recommendation: rule.recommendation || undefined,
         weight: rule.weight,
         apiEndpoint,
+        technicalRisk: rule.technical_risk || undefined,
+        businessImpact: rule.business_impact || undefined,
       });
       continue;
     }
@@ -3339,6 +3348,8 @@ function processComplianceRules(
       evidence: evidence.length > 0 ? evidence : undefined,
       rawData: Object.keys(checkRawData).length > 0 ? checkRawData : undefined,
       apiEndpoint,
+      technicalRisk: status !== 'pass' ? (rule.technical_risk || undefined) : undefined,
+      businessImpact: status !== 'pass' ? (rule.business_impact || undefined) : undefined,
     });
   }
   
