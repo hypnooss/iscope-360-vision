@@ -1,156 +1,261 @@
 
-# Plano: Padronizar ScoreGauge com Design do M365
+# Plano: Expor Campos de Metadados nas Regras de Compliance
 
 ## Objetivo
 
-Unificar o componente de gauge para todos os relatórios (M365, Domínio Externo, Firewall), adotando o design visual premium do `M365ScoreGauge` como padrão.
+Tornar os campos `technical_risk`, `business_impact` e `api_endpoint` visíveis e editáveis na interface de administração de templates, além de exibi-los nos relatórios de compliance.
 
 ---
 
-## Análise das Diferenças
+## Situação Atual
 
-| Característica | ScoreGauge Atual | M365ScoreGauge |
-|----------------|------------------|----------------|
-| Centro | Transparente | Fundo escuro preenchido |
-| Glow externo | `drop-shadow` 3px | `box-shadow` 30px radial |
-| Anel de fundo | Opacidade 100% | Opacidade 30% |
-| Tamanhos | Número único (size) | Presets (sm/md/lg) |
-| Classificação | Calculada internamente | Recebida via prop |
-| Animação | Sim (contador) | Não |
-
----
-
-## Estratégia
-
-Atualizar o componente `ScoreGauge.tsx` para incorporar o design visual do `M365ScoreGauge`, mantendo retrocompatibilidade e adicionando a animação numérica como diferencial.
-
-### Novo Design Unificado
-
-1. **Fundo escuro central** - Preenchimento circular escuro para destaque
-2. **Glow radial** - Sombra colorida baseada na classificação
-3. **Anel de fundo sutil** - Opacidade 30% para contraste
-4. **Classificação automática** - Calcula internamente baseado no score
-5. **Tamanhos preset** - sm (120px), md (160px), lg (200px)
-6. **Animação opcional** - Contador animado mantido
+| Componente | Status |
+|------------|--------|
+| `ComplianceRulesTable.tsx` | Campos existentes no formulário (linhas 531-563) |
+| `TemplateRulesManagement.tsx` | Campos **não existem** no formulário |
+| `ComplianceCard.tsx` | **Não exibe** Risco Técnico e Impacto no Negócio |
+| Edge Function `agent-task-result` | **Não inclui** os campos no output |
+| Banco de dados | Colunas criadas na migração anterior |
 
 ---
 
-## Alterações Técnicas
+## Alterações Necessárias
 
-### Arquivo: `src/components/ScoreGauge.tsx`
+### 1. Atualizar `TemplateRulesManagement.tsx`
 
-Reescrever com o novo design:
+Adicionar os campos novos ao formulário de criação/edição de regras:
 
+**Form State (linha ~103-116):**
 ```typescript
-interface ScoreGaugeProps {
-  score: number;
-  size?: 'sm' | 'md' | 'lg' | number; // Aceita preset ou número
-  skipAnimation?: boolean;
-  loading?: boolean;
+const [formData, setFormData] = useState({
+  // ... campos existentes ...
+  technical_risk: '',
+  business_impact: '',
+  api_endpoint: '',
+});
+```
+
+**Reset Form (linha ~142-157):**
+```typescript
+const resetForm = () => {
+  setFormData({
+    // ... campos existentes ...
+    technical_risk: '',
+    business_impact: '',
+    api_endpoint: '',
+  });
+};
+```
+
+**Open Dialog Edit (linha ~159-179):**
+```typescript
+setFormData({
+  // ... campos existentes ...
+  technical_risk: rule.technical_risk || '',
+  business_impact: rule.business_impact || '',
+  api_endpoint: rule.api_endpoint || '',
+});
+```
+
+**Handle Save (linha ~199-254):**
+```typescript
+const ruleData = {
+  // ... campos existentes ...
+  technical_risk: formData.technical_risk || null,
+  business_impact: formData.business_impact || null,
+  api_endpoint: formData.api_endpoint || null,
+};
+```
+
+**Formulário UI (após linha ~535):**
+```tsx
+{/* Novos campos: Risco Técnico e Impacto no Negócio */}
+<div className="grid grid-cols-2 gap-4">
+  <div className="space-y-2">
+    <Label htmlFor="technical_risk">Risco Técnico</Label>
+    <Textarea
+      id="technical_risk"
+      value={formData.technical_risk}
+      onChange={(e) => setFormData({ ...formData, technical_risk: e.target.value })}
+      placeholder="Descreva o risco técnico caso esta regra falhe..."
+      rows={2}
+    />
+  </div>
+  <div className="space-y-2">
+    <Label htmlFor="business_impact">Impacto no Negócio</Label>
+    <Textarea
+      id="business_impact"
+      value={formData.business_impact}
+      onChange={(e) => setFormData({ ...formData, business_impact: e.target.value })}
+      placeholder="Descreva o impacto no negócio se não corrigido..."
+      rows={2}
+    />
+  </div>
+</div>
+
+<div className="space-y-2">
+  <Label htmlFor="api_endpoint">Endpoint da API</Label>
+  <Input
+    id="api_endpoint"
+    value={formData.api_endpoint}
+    onChange={(e) => setFormData({ ...formData, api_endpoint: e.target.value })}
+    placeholder="Ex: /api/v2/cmdb/system/global"
+  />
+</div>
+```
+
+**View Dialog (após linha ~591):**
+Adicionar exibição dos novos campos no dialog de visualização.
+
+---
+
+### 2. Atualizar Edge Function `agent-task-result`
+
+**Interface ComplianceRule (linha ~38-51):**
+```typescript
+interface ComplianceRule {
+  // ... campos existentes ...
+  technical_risk: string | null;
+  business_impact: string | null;
+  api_endpoint: string | null;
 }
-
-// Classificação automática baseada no score
-const getClassification = (score: number) => {
-  if (score >= 90) return 'excellent';
-  if (score >= 75) return 'good';
-  if (score >= 60) return 'attention';
-  return 'critical';
-};
-
-// Cores por classificação (mesmo padrão M365)
-const CLASSIFICATION_COLORS = {
-  excellent: { text: 'text-primary', ring: 'stroke-primary', glow: '...' },
-  good: { text: 'text-emerald-400', ring: 'stroke-emerald-400', glow: '...' },
-  attention: { text: 'text-warning', ring: 'stroke-warning', glow: '...' },
-  critical: { text: 'text-rose-400', ring: 'stroke-rose-400', glow: '...' },
-};
-
-// Tamanhos preset
-const SIZE_CONFIG = {
-  sm: { size: 120, strokeWidth: 8, fontSize: 'text-2xl' },
-  md: { size: 160, strokeWidth: 10, fontSize: 'text-4xl' },
-  lg: { size: 200, strokeWidth: 12, fontSize: 'text-5xl' },
-};
 ```
 
-**Visual atualizado:**
-- Centro com fill escuro
-- Glow radial externo colorido
-- Label de classificação em uppercase
-- Transições suaves
+**Interface ComplianceCheck (linha ~74-88):**
+```typescript
+interface ComplianceCheck {
+  // ... campos existentes ...
+  technicalRisk?: string;
+  businessImpact?: string;
+}
+```
+
+**Query de busca das regras:**
+Incluir os novos campos na query (já são retornados pois usamos `select('*')`).
+
+**Criação do check (linha ~3329-3342):**
+```typescript
+checks.push({
+  // ... campos existentes ...
+  technicalRisk: rule.technical_risk || undefined,
+  businessImpact: rule.business_impact || undefined,
+});
+```
 
 ---
 
-### Arquivos que Usam ScoreGauge (sem mudanças necessárias)
+### 3. Atualizar `ComplianceCard.tsx`
 
-Os seguintes arquivos já usam `ScoreGauge` e herdarão o novo visual automaticamente:
+Adicionar exibição de Risco Técnico e Impacto no Negócio no conteúdo expandido:
 
-| Arquivo | Uso |
-|---------|-----|
-| `src/components/Dashboard.tsx` | Firewall report header |
-| `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx` | Domain report header |
-| `src/pages/preview/FirewallReportPreview.tsx` | Preview page |
-| `src/pages/preview/DomainReportPreview.tsx` | Preview page |
-| `src/pages/m365/EntraIdAnalysisPage.tsx` | Entra ID legacy page |
-
----
-
-### Arquivo: `src/pages/m365/M365PostureReportPage.tsx`
-
-Migrar de `M365ScoreGauge` para o `ScoreGauge` unificado:
-
-**Antes:**
 ```tsx
-import { M365ScoreGauge } from '@/components/m365/posture/M365ScoreGauge';
-// ...
-<M365ScoreGauge score={reportData.score} classification={...} size="lg" />
+{/* RISCO TÉCNICO - visível para todos quando falha */}
+{check.technicalRisk && check.status !== 'pass' && (
+  <div className="space-y-2">
+    <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+      <AlertTriangle className="w-3 h-3 text-warning" />
+      RISCO TÉCNICO
+    </h5>
+    <div className="bg-warning/10 rounded-md p-3 border border-warning/30">
+      <p className="text-sm text-foreground">{check.technicalRisk}</p>
+    </div>
+  </div>
+)}
+
+{/* IMPACTO NO NEGÓCIO - visível para todos quando falha */}
+{check.businessImpact && check.status !== 'pass' && (
+  <div className="space-y-2">
+    <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+      <Building2 className="w-3 h-3 text-destructive" />
+      IMPACTO NO NEGÓCIO
+    </h5>
+    <div className="bg-destructive/10 rounded-md p-3 border border-destructive/30">
+      <p className="text-sm text-foreground">{check.businessImpact}</p>
+    </div>
+  </div>
+)}
 ```
 
-**Depois:**
-```tsx
-import { ScoreGauge } from '@/components/ScoreGauge';
-// ...
-<ScoreGauge score={reportData.score} size="lg" />
-```
+---
+
+## Estrutura da Seção Expandida (Padronizada)
+
+| Seção | Visibilidade | Condição de Exibição |
+|-------|--------------|----------------------|
+| Endpoint consultado | Super Admin / Super Suporte | Sempre (se preenchido) |
+| ANÁLISE EFETUADA | Todos | Sempre (se houver details/description) |
+| RISCO TÉCNICO | Todos | Apenas se status != pass |
+| IMPACTO NO NEGÓCIO | Todos | Apenas se status != pass |
+| EVIDÊNCIAS COLETADAS | Todos | Sempre (se houver evidence) |
+| Dados brutos (JSON) | Super Admin / Super Suporte | Sempre (se houver rawData) |
 
 ---
 
-### Ajuste de Espaçamento (mt-14 → mt-6)
-
-Padronizar o espaçamento entre o gauge e os MiniStats em todos os relatórios:
-
-| Relatório | Atual | Padronizado |
-|-----------|-------|-------------|
-| M365 | `mt-14` (56px) | `mt-6` (24px) |
-| Domínio Externo | `mt-6` | `mt-6` ✓ |
-| Firewall | `mt-6` | `mt-6` ✓ |
-
----
-
-### Arquivo: `src/components/m365/posture/M365ScoreGauge.tsx`
-
-**Opção:** Manter como wrapper ou deprecar
-
-Recomendação: Deprecar e usar `ScoreGauge` diretamente, pois toda a lógica será absorvida.
-
----
-
-## Resumo de Arquivos a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/ScoreGauge.tsx` | Reescrever com design M365 (glow, centro escuro, classificação automática) |
-| `src/pages/m365/M365PostureReportPage.tsx` | Trocar `M365ScoreGauge` por `ScoreGauge`, ajustar espaçamento |
-| `src/components/m365/posture/index.ts` | Remover export do `M365ScoreGauge` (opcional) |
+| `src/components/admin/TemplateRulesManagement.tsx` | Adicionar campos technical_risk, business_impact, api_endpoint ao formulário |
+| `src/components/ComplianceCard.tsx` | Adicionar seções Risco Técnico e Impacto no Negócio |
+| `supabase/functions/agent-task-result/index.ts` | Incluir campos nos tipos e no output |
 
 ---
 
-## Resultado Visual
+## Fluxo de Dados
 
-Todos os relatórios terão:
-- ✓ Gauge com fundo escuro central
-- ✓ Glow radial colorido baseado no score
-- ✓ Label de classificação (Excelente/Bom/Atenção/Crítico)
-- ✓ Animação numérica opcional
-- ✓ Tamanhos padronizados (sm/md/lg)
-- ✓ Cores consistentes em toda a aplicação
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ADMINISTRAÇÃO (Templates)                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  Editar Regra                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Risco Técnico: [textarea]                                    │   │
+│  │ Impacto no Negócio: [textarea]                               │   │
+│  │ Endpoint da API: [input]                                     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                           │                                         │
+│                           ▼                                         │
+│              compliance_rules (DB)                                  │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     EDGE FUNCTION                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│  agent-task-result                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 1. Busca regras do DB (inclui technical_risk, etc.)         │   │
+│  │ 2. Avalia dados coletados                                    │   │
+│  │ 3. Monta ComplianceCheck com campos novos                    │   │
+│  │ 4. Salva report_data no histórico                            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       RELATÓRIO                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ComplianceCard                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ [Header com status e severidade]                             │   │
+│  │                                                               │   │
+│  │ ▼ Expandido (quando falha):                                  │   │
+│  │   ├─ Endpoint consultado (admin only)                        │   │
+│  │   ├─ ANÁLISE EFETUADA                                        │   │
+│  │   ├─ RISCO TÉCNICO                                           │   │
+│  │   ├─ IMPACTO NO NEGÓCIO                                      │   │
+│  │   ├─ EVIDÊNCIAS COLETADAS                                    │   │
+│  │   └─ Dados brutos JSON (admin only)                          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Benefícios
+
+- Administrador pode customizar textos sem depender de código
+- Dados estáticos (riscos, impactos) são gerenciados via UI
+- Dados dinâmicos (evidências, status) são coletados pelo agente
+- Separação clara entre configuração e execução
+- Relatórios mais informativos para o usuário final
