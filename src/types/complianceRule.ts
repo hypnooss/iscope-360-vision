@@ -13,6 +13,7 @@ export interface ComplianceRuleDB {
   recommendation: string | null;
   pass_description: string | null;
   fail_description: string | null;
+  not_found_description: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evaluation_logic: Record<string, any>;
   device_type_id: string;
@@ -45,6 +46,7 @@ export interface ComplianceRuleBasic {
   recommendation: string | null;
   pass_description: string | null;
   fail_description: string | null;
+  not_found_description: string | null;
   technical_risk: string | null;
   business_impact: string | null;
   api_endpoint: string | null;

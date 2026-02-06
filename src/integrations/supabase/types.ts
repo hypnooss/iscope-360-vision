@@ -303,6 +303,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          not_found_description: string | null
           pass_description: string | null
           recommendation: string | null
           severity: Database["public"]["Enums"]["rule_severity"]
@@ -323,6 +324,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          not_found_description?: string | null
           pass_description?: string | null
           recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
@@ -343,6 +345,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          not_found_description?: string | null
           pass_description?: string | null
           recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
