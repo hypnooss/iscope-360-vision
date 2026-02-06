@@ -200,15 +200,20 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
 
   // 7. Sign-in countries (requires Azure AD P1/P2)
   try {
-    // Calculate dynamic sample size based on active users (min 500, max 5000)
-    const signInSampleSize = Math.min(Math.max(metrics.activeUsers * 3, 500), 5000);
+    // Microsoft Graph signIns API has a maximum $top limit of 999
+    const signInSampleSize = Math.min(Math.max(metrics.activeUsers * 3, 500), 999);
     console.log(`[collectEnvironmentMetrics] Sign-in sample size: ${signInSampleSize} (based on ${metrics.activeUsers} active users)`);
     
-    const { data: signIns } = await graphFetchSafe(
+    const { data: signIns, error: signInsError } = await graphFetchSafe(
       accessToken,
       `/auditLogs/signIns?$select=location,status&$top=${signInSampleSize}`,
       { beta: true }
     );
+    
+    if (signInsError) {
+      console.error('[collectEnvironmentMetrics] Sign-in fetch error:', signInsError);
+    }
+    
     if (signIns?.value) {
       const countries = new Map<string, { success: number; fail: number }>();
       signIns.value.forEach((s: any) => {
@@ -229,6 +234,8 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
         .sort((a, b) => (b.success + b.fail) - (a.success + a.fail))
         .slice(0, 5);
       console.log(`[collectEnvironmentMetrics] Login countries: ${metrics.loginCountries.map(c => `${c.country}(${c.success}/${c.fail})`).join(', ')}`);
+    } else {
+      console.warn('[collectEnvironmentMetrics] Sign-in data is empty or missing .value');
     }
   } catch (e) {
     console.error('[collectEnvironmentMetrics] Sign-in logs failed:', e);
