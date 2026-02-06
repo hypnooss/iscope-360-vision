@@ -18,6 +18,10 @@ export interface ComplianceCheck {
   evidence?: EvidenceItem[];
   rawData?: Record<string, unknown>;
   apiEndpoint?: string;
+  /** Risco técnico - detalhes da vulnerabilidade ou problema */
+  technicalRisk?: string;
+  /** Impacto no negócio caso a regra falhe */
+  businessImpact?: string;
 }
 
 export interface ComplianceCategory {

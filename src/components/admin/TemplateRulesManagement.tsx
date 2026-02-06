@@ -31,25 +31,10 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, CheckCircle, Loader2, Search, Copy, Eye } from 'lucide-react';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
+import { ComplianceRuleDB, RuleSeverity } from '@/types/complianceRule';
 
-interface ComplianceRule {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  recommendation: string | null;
-  pass_description: string | null;
-  fail_description: string | null;
-  evaluation_logic: Record<string, any>;
-  device_type_id: string;
-  is_active: boolean;
-  created_at: string;
-}
-
-type RuleSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+// Using centralized type from @/types/complianceRule
+type ComplianceRule = ComplianceRuleDB;
 
 interface Props {
   deviceTypeId: string;

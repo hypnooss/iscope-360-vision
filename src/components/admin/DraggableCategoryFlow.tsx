@@ -29,11 +29,13 @@ import {
 } from '@/hooks/useCategoryConfig';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { ComplianceRuleBasic } from '@/types/complianceRule';
 
 // Types
 interface CollectionStep {
   id: string;
   executor: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   config: Record<string, any>;
 }
 
@@ -46,17 +48,8 @@ interface Blueprint {
   };
 }
 
-interface ComplianceRule {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  evaluation_logic: Record<string, any>;
-  is_active: boolean;
-}
+// Using simplified type for visualization
+type ComplianceRule = ComplianceRuleBasic;
 
 interface DraggableCategoryFlowProps {
   blueprint: Blueprint;
