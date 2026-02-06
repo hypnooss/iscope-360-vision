@@ -41,6 +41,13 @@ export interface ComplianceRuleBasic {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evaluation_logic: Record<string, any>;
   is_active: boolean;
+  // Campos de metadados para preview do relatório
+  recommendation: string | null;
+  pass_description: string | null;
+  fail_description: string | null;
+  technical_risk: string | null;
+  business_impact: string | null;
+  api_endpoint: string | null;
 }
 
 export type RuleSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
