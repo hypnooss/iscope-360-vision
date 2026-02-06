@@ -1313,6 +1313,59 @@ export type Database = {
           },
         ]
       }
+      rule_correction_guides: {
+        Row: {
+          created_at: string
+          difficulty: string | null
+          friendly_title: string | null
+          how_to_fix: Json | null
+          id: string
+          impacts: Json | null
+          provider_examples: Json | null
+          rule_id: string
+          time_estimate: string | null
+          updated_at: string
+          what_is: string | null
+          why_matters: string | null
+        }
+        Insert: {
+          created_at?: string
+          difficulty?: string | null
+          friendly_title?: string | null
+          how_to_fix?: Json | null
+          id?: string
+          impacts?: Json | null
+          provider_examples?: Json | null
+          rule_id: string
+          time_estimate?: string | null
+          updated_at?: string
+          what_is?: string | null
+          why_matters?: string | null
+        }
+        Update: {
+          created_at?: string
+          difficulty?: string | null
+          friendly_title?: string | null
+          how_to_fix?: Json | null
+          id?: string
+          impacts?: Json | null
+          provider_examples?: Json | null
+          rule_id?: string
+          time_estimate?: string | null
+          updated_at?: string
+          what_is?: string | null
+          why_matters?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rule_correction_guides_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: true
+            referencedRelation: "compliance_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_alerts: {
         Row: {
           alert_type: string

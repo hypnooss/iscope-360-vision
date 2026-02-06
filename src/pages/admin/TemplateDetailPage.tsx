@@ -10,12 +10,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings, BookOpen } from 'lucide-react';
 import { BlueprintFlowVisualization } from '@/components/admin/BlueprintFlowVisualization';
 import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow';
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
 import { TemplateRulesManagement } from '@/components/admin/TemplateRulesManagement';
 import { TemplateBlueprintsManagement } from '@/components/admin/TemplateBlueprintsManagement';
+import { CorrectionGuidesManagement } from '@/components/admin/CorrectionGuidesManagement';
 import { ComplianceRuleDB } from '@/types/complianceRule';
 
 // Map device codes to icons
@@ -125,6 +126,21 @@ export default function TemplateDetailPage() {
         .from('evidence_parses')
         .select('*', { count: 'exact', head: true })
         .eq('device_type_id', id);
+
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!user && !!id && (role === 'super_admin' || role === 'super_suporte'),
+  });
+
+  // Fetch correction guides count for this template
+  const { data: guidesCount = 0 } = useQuery({
+    queryKey: ['guides-count', id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('rule_correction_guides')
+        .select('*, compliance_rules!inner(device_type_id)', { count: 'exact', head: true })
+        .eq('compliance_rules.device_type_id', id);
 
       if (error) throw error;
       return count || 0;
@@ -254,6 +270,13 @@ export default function TemplateDetailPage() {
                 {parsesCount}
               </Badge>
             </TabsTrigger>
+            <TabsTrigger value="guides" className="gap-2">
+              <BookOpen className="w-4 h-4" />
+              Guia de Correções
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {guidesCount}
+              </Badge>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="flow" className="mt-6">
@@ -322,6 +345,10 @@ export default function TemplateDetailPage() {
 
           <TabsContent value="parses" className="mt-6">
             <ParsesManagement deviceTypeId={id!} />
+          </TabsContent>
+
+          <TabsContent value="guides" className="mt-6">
+            <CorrectionGuidesManagement deviceTypeId={id!} />
           </TabsContent>
         </Tabs>
       </div>
