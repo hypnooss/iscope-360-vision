@@ -221,10 +221,11 @@ function getCountryFlag(countryInput: string): string {
   
   const code = normalizeCountryCode(countryInput);
   
-  // Generate flag emoji dynamically using Unicode Regional Indicator Symbols
-  // 'BR' → 🇧🇷 (B=0x1F1E7, R=0x1F1F7)
-  if (code.length === 2) {
-    const codePoints = [...code.toUpperCase()].map(
+  // Validate we have a proper 2-letter ISO code
+  if (code.length === 2 && /^[A-Z]{2}$/.test(code)) {
+    // Generate flag emoji dynamically using Unicode Regional Indicator Symbols
+    // 'BR' → 🇧🇷 (B=0x1F1E7, R=0x1F1F7)
+    const codePoints = [...code].map(
       char => 0x1F1E6 - 65 + char.charCodeAt(0)
     );
     return String.fromCodePoint(...codePoints);
@@ -476,7 +477,7 @@ export default function M365PostureReportPage() {
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Postura</h1>
+                <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
                 <p className="text-muted-foreground">
                   Relatório gerado em {format(new Date(reportData.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                 </p>
