@@ -1,213 +1,164 @@
 
-# Plano: Expandir Verificações, Filtro por Workspace, Seletor de Tenant e Preview Mode
+# Plano: Expansao Massiva de Verificacoes M365 (30+ Checks)
 
-## Visão Geral
+## Situacao Atual
 
-Este plano cobre 4 melhorias no módulo M365 Postura de Segurança:
+A Edge Function `m365-security-posture` possui apenas **7 verificacoes**:
+- IDT-001: MFA Status
+- ADM-001: Quantidade de Global Admins
+- ADM-002: Admins sem MFA
+- AUT-001: Security Defaults
+- APP-001: Credenciais expirando
+- APP-002: Credenciais expiradas
+- EXO-001: Regras de forwarding
 
-1. **Expandir verificações** na Edge Function (mais insights de segurança)
-2. **Filtro por Workspace** para respeitar dados do usuário (Preview Mode incluso)
-3. **Seletor de Tenant** para alternar entre múltiplos tenants conectados
-4. **Preview Mode** aplicado corretamente na página
+## Verificacoes a Implementar (25+ novas)
 
----
+### Categoria: Identidades (identities)
 
-## 1. Expandir Verificações na Edge Function
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| IDT-002 | Usuarios inativos >90 dias | `/users?$filter=signInActivity/lastSignInDateTime lt {date}` |
+| IDT-003 | Usuarios convidados (guests) sem sponsor | `/users?$filter=userType eq 'Guest'` |
+| IDT-004 | Usuarios guests inativos >60 dias | `/users?$filter=userType eq 'Guest'` + signInActivity |
+| IDT-005 | Usuarios com senha expirada | `/users?$select=passwordPolicies,lastPasswordChangeDateTime` |
+| IDT-006 | Usuarios bloqueados ainda ativos | `/users?$filter=accountEnabled eq false` |
 
-### Verificações a Implementar
+### Categoria: Autenticacao e Acesso (auth_access)
 
-| Código | Categoria | Descrição | Endpoint Graph API |
-|--------|-----------|-----------|-------------------|
-| **ADM-001** | admin_privileges | Excesso de Global Admins (>5) | `/directoryRoles/.../members` |
-| **ADM-002** | admin_privileges | Admins sem MFA | Combina roles + MFA status |
-| **AUT-001** | auth_access | Security Defaults desabilitados | `/policies/identitySecurityDefaultsEnforcementPolicy` |
-| **APP-001** | apps_integrations | Credenciais de apps expirando em 30 dias | `/applications` + passwordCredentials |
-| **APP-002** | apps_integrations | Credenciais de apps expiradas | `/applications` + passwordCredentials |
-| **EXO-001** | email_exchange | Regras de redirecionamento externo | `/users/{id}/mailFolders/inbox/messageRules` |
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| AUT-002 | Conditional Access Policies ausentes | `/identity/conditionalAccess/policies` |
+| AUT-003 | Sign-ins de risco (ultimos 7 dias) | `/identityProtection/riskDetections` |
+| AUT-004 | Usuarios de risco ativos | `/identityProtection/riskyUsers` |
+| AUT-005 | Self-service password reset desabilitado | `/policies/authenticationMethodsPolicy` |
+| AUT-006 | Legacy authentication permitida | Verificar CA policies |
+| AUT-007 | Politica de bloqueio de conta fraca | `/policies/authenticationFlowsPolicy` |
 
-### Arquitetura Modular
+### Categoria: Privilegios Administrativos (admin_privileges)
 
-A Edge Function será reestruturada com coletores paralelos:
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| ADM-003 | Roles privilegiadas permanentes (sem PIM) | `/directoryRoles` + assignment type |
+| ADM-004 | Service accounts com roles admin | `/servicePrincipals` + role assignments |
+| ADM-005 | Guests com roles administrativas | `/directoryRoles/*/members?$filter=userType eq 'Guest'` |
+| ADM-006 | Roles sem protecao PIM | `/privilegedAccess/aadroles` |
 
-```text
-m365-security-posture
-├── Autenticação (decrypt + token)
-├── Promise.allSettled([
-│   ├── collectIdentityInsights()      → IDT-001 (MFA)
-│   ├── collectAdminInsights()         → ADM-001, ADM-002
-│   ├── collectAuthInsights()          → AUT-001
-│   ├── collectAppsInsights()          → APP-001, APP-002
-│   └── collectExchangeInsights()      → EXO-001
-│   ])
-└── Consolidação + Score
+### Categoria: Aplicacoes e Integracoes (apps_integrations)
+
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| APP-003 | Apps com permissoes excessivas (high privilege) | `/applications?$select=requiredResourceAccess` |
+| APP-004 | Service Principals inativos | `/servicePrincipals` + signInActivity |
+| APP-005 | OAuth apps de terceiros arriscados | `/oauth2PermissionGrants` |
+| APP-006 | Apps sem owner definido | `/applications?$expand=owners` |
+| APP-007 | Consent grants para aplicacoes externas | `/oauth2PermissionGrants?$filter=consentType eq 'AllPrincipals'` |
+
+### Categoria: Email e Exchange (email_exchange)
+
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| EXO-002 | Auto-forwarding externo habilitado globalmente | `/admin/exchange/settings` |
+| EXO-003 | Mailboxes com delegacao suspeita | `/users/{id}/mailboxSettings` |
+| EXO-004 | Audit log desabilitado | `/admin/serviceAnnouncement/healthOverviews` |
+| EXO-005 | Transport rules arriscadas | `/admin/exchange/transportRules` |
+
+### Categoria: Ameacas e Atividades (threats_activity)
+
+| Codigo | Verificacao | Endpoint Graph API |
+|--------|-------------|-------------------|
+| THR-001 | Sign-ins de paises incomuns | `/auditLogs/signIns?$filter=location/countryOrRegion ne 'BR'` |
+| THR-002 | Tentativas de brute force detectadas | `/identityProtection/riskDetections?$filter=riskEventType eq 'unfamiliarFeatures'` |
+| THR-003 | Usuarios comprometidos confirmados | `/identityProtection/riskyUsers?$filter=riskState eq 'atRisk'` |
+| THR-004 | Alertas de seguranca ativos | `/security/alerts` |
+| THR-005 | Anomalias de login (horarios incomuns) | `/auditLogs/signIns` + analise temporal |
+
+## Arquitetura Modular
+
+Devido ao limite de tamanho da Edge Function, sera necessario dividir em:
+
+```
+supabase/functions/
+├── m365-security-posture/index.ts      # Orquestrador principal
+├── m365-collectors-identity/index.ts    # IDT-001 a IDT-006
+├── m365-collectors-auth/index.ts        # AUT-001 a AUT-007
+├── m365-collectors-admin/index.ts       # ADM-001 a ADM-006
+├── m365-collectors-apps/index.ts        # APP-001 a APP-007
+├── m365-collectors-exchange/index.ts    # EXO-001 a EXO-005
+└── m365-collectors-threats/index.ts     # THR-001 a THR-005
 ```
 
-Cada coletor:
-- Retorna `{ insights: M365Insight[], errors?: string[] }`
-- Falha parcial não quebra toda a análise
-- Logs detalhados para debugging
+**Alternativa (preferida)**: Manter uma unica Edge Function mas com coletores inline otimizados para evitar timeout de bundle.
 
----
+## Permissoes Graph API Necessarias
 
-## 2. Filtro por Workspace (+ Preview Mode)
+Verificar se o App Registration tem estas permissoes:
+- `User.Read.All` - Usuarios e sign-in activity
+- `AuditLog.Read.All` - Logs de auditoria
+- `Policy.Read.All` - Politicas de CA e auth
+- `Directory.Read.All` - Roles e membros
+- `IdentityRiskEvent.Read.All` - Deteccoes de risco
+- `IdentityRiskyUser.Read.All` - Usuarios de risco
+- `Application.Read.All` - Aplicacoes registradas
+- `SecurityEvents.Read.All` - Alertas de seguranca
+- `MailboxSettings.Read` - Configuracoes de email
 
-### Problema Atual
-A página `M365PosturePage.tsx` busca qualquer tenant `connected` sem filtrar por workspace do usuário.
+## Estrategia de Implementacao
 
-### Solução
-Aplicar o padrão já usado em `FirewallListPage` e `ExternalDomainListPage`:
+### Fase 1: Core Checks (10 verificacoes)
+Adicionar as verificacoes mais criticas que usam endpoints ja disponiveis:
+- IDT-002 (usuarios inativos)
+- IDT-003 (guests sem sponsor)
+- AUT-002 (CA policies)
+- AUT-004 (risky users)
+- ADM-003 (roles permanentes)
+- ADM-005 (guests admin)
+- APP-003 (permissoes excessivas)
+- APP-006 (apps sem owner)
+- THR-003 (usuarios comprometidos)
+- THR-004 (alertas ativos)
 
-```typescript
-// Em M365PosturePage.tsx
-const { isPreviewMode, previewTarget } = usePreview();
+### Fase 2: Extended Checks (10 verificacoes)
+- IDT-004, IDT-005, IDT-006
+- AUT-003, AUT-005, AUT-006
+- ADM-004, ADM-006
+- APP-004, APP-005
 
-// Ao buscar tenants:
-const workspaceIds = isPreviewMode && previewTarget?.workspaces
-  ? previewTarget.workspaces.map(w => w.id)
-  : null;
+### Fase 3: Advanced Checks (10 verificacoes)
+- AUT-007
+- APP-007
+- EXO-002, EXO-003, EXO-004, EXO-005
+- THR-001, THR-002, THR-005
 
-let tenantsQuery = supabase
-  .from('m365_tenants')
-  .select('id, display_name, tenant_domain, client_id')
-  .eq('connection_status', 'connected');
+## Arquivos a Modificar
 
-if (workspaceIds && workspaceIds.length > 0) {
-  tenantsQuery = tenantsQuery.in('client_id', workspaceIds);
-}
-```
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/m365-security-posture/index.ts` | Expandir com 25+ coletores |
+| `src/types/m365Insights.ts` | Adicionar constantes para novos checks |
 
-### Arquivos Afetados
-- `src/pages/m365/M365PosturePage.tsx`
-- `src/hooks/useM365SecurityPosture.ts` (adicionar dependência de workspaces)
+## Consideracoes Tecnicas
 
----
+1. **Bundle Timeout**: O codigo sera otimizado para evitar timeouts
+   - Coletores inline sem imports externos
+   - Promise.allSettled para paralelismo
+   - Timeout individual por coletor (10s)
 
-## 3. Seletor de Tenant
+2. **Rate Limiting**: Graph API tem limites
+   - Batch requests onde possivel
+   - Delays entre chamadas se necessario
 
-### Componente: `TenantSelector`
+3. **Permissoes**: Alguns endpoints requerem licenca P2
+   - Verificar permissoes disponiveis
+   - Graceful degradation se falhar
 
-Um dropdown no header da página para alternar entre tenants conectados:
-
-```text
-┌────────────────────────────────────────────┐
-│  ▼ Tenant: Contoso Corp (contoso.com)      │
-├────────────────────────────────────────────┤
-│    ✓ Contoso Corp (contoso.com)            │
-│      Fabrikam Inc (fabrikam.com)           │
-│      Acme Corp (acme.onmicrosoft.com)      │
-└────────────────────────────────────────────┘
-```
-
-### Comportamento
-1. Carregar todos os tenants conectados do(s) workspace(s) do usuário
-2. Exibir tenant selecionado no header (ao lado do Score Gauge)
-3. Ao trocar, atualizar `tenantRecordId` e refazer análise
-4. URL param `?tenant=uuid` para deep-link
-
-### Localização na UI
-- Dentro do card de Score, ao lado das informações do tenant
-- Ou como dropdown no header antes do botão "Atualizar"
-
----
-
-## 4. Preview Mode
-
-### Checklist de Implementação
-
-| Item | Status | Descrição |
-|------|--------|-----------|
-| Filtro de dados | A fazer | Tenants filtrados por workspaces do target |
-| Hook usePreviewGuard | Existente | Bloquear ações de mutação |
-| Banner visual | Existente (AppLayout) | Banner âmbar já aparece |
-| Botões de ação | A verificar | Desabilitar "Atualizar" se mutação |
-
-### Ações Permitidas no Preview
-- Visualizar análise
-- Navegar entre categorias
-- Ver detalhes de insights
-
-### Ações Bloqueadas (se houver futuras mutações)
-- Criar agendamentos de análise
-- Exportar relatórios (se envolver escrita)
-
----
-
-## Detalhes Técnicos
-
-### Mudanças na Edge Function
-
-```typescript
-// Estrutura modular
-interface CollectorResult {
-  insights: M365Insight[];
-  errors?: string[];
-}
-
-async function collectAdminInsights(accessToken: string): Promise<CollectorResult> {
-  const insights: M365Insight[] = [];
-  const errors: string[] = [];
-  
-  // ADM-001: Excesso de Global Admins
-  const roleRes = await fetch(
-    'https://graph.microsoft.com/v1.0/directoryRoles?$filter=displayName eq \'Global Administrator\'',
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  // ... lógica de verificação
-  
-  return { insights, errors };
-}
-```
-
-### Novo Componente TenantSelector
-
-```typescript
-interface TenantSelectorProps {
-  tenants: Array<{ id: string; displayName: string; domain: string }>;
-  selectedId: string;
-  onSelect: (tenantId: string) => void;
-  loading?: boolean;
-  disabled?: boolean; // Para preview mode
-}
-```
-
-### Atualização do Hook useM365SecurityPosture
-
-Adicionar parâmetro opcional para workspaces:
-```typescript
-interface UseM365SecurityPostureOptions {
-  tenantRecordId: string;
-  workspaceIds?: string[]; // Para filtro interno se necessário
-  dateFrom?: string;
-  dateTo?: string;
-}
-```
-
----
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/functions/m365-security-posture/index.ts` | Modificar | Expandir com coletores modulares |
-| `src/pages/m365/M365PosturePage.tsx` | Modificar | Adicionar filtro workspace + seletor tenant |
-| `src/components/m365/posture/TenantSelector.tsx` | Criar | Dropdown de seleção de tenant |
-| `src/components/m365/posture/index.ts` | Modificar | Exportar TenantSelector |
-| `src/hooks/useM365SecurityPosture.ts` | Modificar | Pequenos ajustes se necessário |
-
----
-
-## Ordem de Implementação
-
-1. **Edge Function** - Expandir verificações (base de dados)
-2. **Filtro Workspace** - Garantir isolamento de dados
-3. **Seletor de Tenant** - UX para múltiplos tenants
-4. **Preview Mode** - Verificar e ajustar bloqueios
-
----
+4. **Exibicao**: UI atual ja suporta multiplos insights
+   - Cards de categoria mostrarao mais itens
+   - Breakdown de severidade mais detalhado
 
 ## Resultado Esperado
 
-- 6+ verificações de segurança ativas (vs 1 atual)
-- Dados filtrados corretamente por workspace do usuário
-- Usuários com múltiplos tenants podem alternar facilmente
-- Preview Mode funciona sem expor dados de outros workspaces
+- **Antes**: 7 verificacoes, cobertura limitada
+- **Depois**: 30+ verificacoes cobrindo todas as 6 categorias
+- Score mais preciso e representativo
+- Dashboard rico com insights acionaveis por categoria
