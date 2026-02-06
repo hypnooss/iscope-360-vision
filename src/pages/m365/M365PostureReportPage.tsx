@@ -332,7 +332,7 @@ interface EnvironmentMetrics {
   appRegistrationsCount: number;
   storageUsedGB: number;
   storageTotalGB: number;
-  loginCountries: Array<{ country: string; count: number }>;
+  loginCountries: Array<{ country: string; success: number; fail: number; count?: number }>;
 }
 
 interface PostureData {
@@ -690,10 +690,18 @@ export default function M365PostureReportPage() {
                                 const code = normalizeCountryCode(c.country);
                                 const name = getCountryName(code || c.country);
                                 const flagCode = code.toLowerCase();
+                                // Check if new format (success/fail) or old format (count)
+                                const hasNewFormat = typeof c.success === 'number';
+                                const countDisplay = hasNewFormat 
+                                  ? `(${c.success}/${c.fail})`
+                                  : c.count ? `(${c.count})` : '';
                                 return (
                                   <span key={idx} className="inline-flex items-center gap-1.5">
                                     <span className={`fi fi-${flagCode} rounded-sm`} style={{ fontSize: '1rem' }} />
                                     <span>{name}</span>
+                                    {countDisplay && (
+                                      <span className="text-muted-foreground text-xs">{countDisplay}</span>
+                                    )}
                                   </span>
                                 );
                               })}

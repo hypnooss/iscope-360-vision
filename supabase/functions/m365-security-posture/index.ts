@@ -75,7 +75,7 @@ interface EnvironmentMetrics {
   appRegistrationsCount: number;
   storageUsedGB: number;
   storageTotalGB: number;
-  loginCountries: Array<{ country: string; count: number }>;
+  loginCountries: Array<{ country: string; success: number; fail: number }>;
 }
 
 async function collectEnvironmentMetrics(accessToken: string): Promise<EnvironmentMetrics> {
@@ -202,22 +202,29 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
   try {
     const { data: signIns } = await graphFetchSafe(
       accessToken,
-      '/auditLogs/signIns?$select=location&$top=500',
+      '/auditLogs/signIns?$select=location,status&$top=500',
       { beta: true }
     );
     if (signIns?.value) {
-      const countries = new Map<string, number>();
+      const countries = new Map<string, { success: number; fail: number }>();
       signIns.value.forEach((s: any) => {
         const country = s.location?.countryOrRegion;
         if (country) {
-          countries.set(country, (countries.get(country) || 0) + 1);
+          const current = countries.get(country) || { success: 0, fail: 0 };
+          // errorCode 0 = success, any other = failure
+          if (s.status?.errorCode === 0) {
+            current.success++;
+          } else {
+            current.fail++;
+          }
+          countries.set(country, current);
         }
       });
       metrics.loginCountries = Array.from(countries.entries())
-        .map(([country, count]) => ({ country, count }))
-        .sort((a, b) => b.count - a.count)
+        .map(([country, counts]) => ({ country, success: counts.success, fail: counts.fail }))
+        .sort((a, b) => (b.success + b.fail) - (a.success + a.fail))
         .slice(0, 5);
-      console.log(`[collectEnvironmentMetrics] Login countries: ${metrics.loginCountries.map(c => c.country).join(', ')}`);
+      console.log(`[collectEnvironmentMetrics] Login countries: ${metrics.loginCountries.map(c => `${c.country}(${c.success}/${c.fail})`).join(', ')}`);
     }
   } catch (e) {
     console.error('[collectEnvironmentMetrics] Sign-in logs failed:', e);
