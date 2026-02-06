@@ -847,6 +847,7 @@ export type Database = {
           client_id: string
           completed_at: string | null
           created_at: string | null
+          environment_metrics: Json | null
           errors: Json | null
           id: string
           insights: Json | null
@@ -863,6 +864,7 @@ export type Database = {
           client_id: string
           completed_at?: string | null
           created_at?: string | null
+          environment_metrics?: Json | null
           errors?: Json | null
           id?: string
           insights?: Json | null
@@ -879,6 +881,7 @@ export type Database = {
           client_id?: string
           completed_at?: string | null
           created_at?: string | null
+          environment_metrics?: Json | null
           errors?: Json | null
           id?: string
           insights?: Json | null
