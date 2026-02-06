@@ -1,297 +1,213 @@
 
-Plano v2 — Refatoração do Módulo Microsoft 365 (Revisado com melhorias arquiteturais)
-Visão Geral
+# Plano: Expandir Verificações, Filtro por Workspace, Seletor de Tenant e Preview Mode
 
-Transformar o módulo M365 de uma estrutura centrada em produtos técnicos (Entra ID, Exchange) para um modelo híbrido centrado em categorias de risco, mantendo o contexto do produto para a remediação.
+## Visão Geral
 
-Objetivos:
+Este plano cobre 4 melhorias no módulo M365 Postura de Segurança:
 
-Descoberta por risco (executivo)
+1. **Expandir verificações** na Edge Function (mais insights de segurança)
+2. **Filtro por Workspace** para respeitar dados do usuário (Preview Mode incluso)
+3. **Seletor de Tenant** para alternar entre múltiplos tenants conectados
+4. **Preview Mode** aplicado corretamente na página
 
-Correção por produto (técnico)
+---
 
-Score consolidado
+## 1. Expandir Verificações na Edge Function
 
-Linguagem simples estilo relatório de compliance
+### Verificações a Implementar
 
-Guia de correção passo-a-passo
+| Código | Categoria | Descrição | Endpoint Graph API |
+|--------|-----------|-----------|-------------------|
+| **ADM-001** | admin_privileges | Excesso de Global Admins (>5) | `/directoryRoles/.../members` |
+| **ADM-002** | admin_privileges | Admins sem MFA | Combina roles + MFA status |
+| **AUT-001** | auth_access | Security Defaults desabilitados | `/policies/identitySecurityDefaultsEnforcementPolicy` |
+| **APP-001** | apps_integrations | Credenciais de apps expirando em 30 dias | `/applications` + passwordCredentials |
+| **APP-002** | apps_integrations | Credenciais de apps expiradas | `/applications` + passwordCredentials |
+| **EXO-001** | email_exchange | Regras de redirecionamento externo | `/users/{id}/mailFolders/inbox/messageRules` |
 
-Estado Atual vs Estado Desejado
+### Arquitetura Modular
 
-(sem alterações — arquitetura proposta está correta)
+A Edge Function será reestruturada com coletores paralelos:
 
-Fases de Implementação
-✅ Fase 1: Modelo de Dados Unificado (Fundação) — CONCLUÍDA
-Arquivos criados:
-- src/types/m365Insights.ts
+```text
+m365-security-posture
+├── Autenticação (decrypt + token)
+├── Promise.allSettled([
+│   ├── collectIdentityInsights()      → IDT-001 (MFA)
+│   ├── collectAdminInsights()         → ADM-001, ADM-002
+│   ├── collectAuthInsights()          → AUT-001
+│   ├── collectAppsInsights()          → APP-001, APP-002
+│   └── collectExchangeInsights()      → EXO-001
+│   ])
+└── Consolidação + Score
+```
 
-✅ Fase 2: Edge Function Consolidada (AJUSTADA) — CONCLUÍDA
-Arquivos criados:
-- supabase/functions/m365-security-posture/index.ts
-- src/hooks/useM365SecurityPosture.ts
+Cada coletor:
+- Retorna `{ insights: M365Insight[], errors?: string[] }`
+- Falha parcial não quebra toda a análise
+- Logs detalhados para debugging
 
-⏳ Fase 3: Nova Estrutura de Navegação — PRÓXIMA
+---
 
-Objetivo: Criar um modelo de dados único que suporte todos os insights M365 com informações completas de remediação.
+## 2. Filtro por Workspace (+ Preview Mode)
 
-👉 Status: arquitetura excelente, manter.
+### Problema Atual
+A página `M365PosturePage.tsx` busca qualquer tenant `connected` sem filtrar por workspace do usuário.
 
-1.1 Novo Tipo TypeScript: M365Insight
-🔵 Melhoria adicionada:
+### Solução
+Aplicar o padrão já usado em `FirewallListPage` e `ExternalDomainListPage`:
 
-Adicionar origem do dado (Graph vs PowerShell) + suporte a histórico.
+```typescript
+// Em M365PosturePage.tsx
+const { isPreviewMode, previewTarget } = usePreview();
 
-Versão ajustada:
-export type InsightSource =
-  | 'graph'
-  | 'exchange_powershell'
-  | 'mixed';
+// Ao buscar tenants:
+const workspaceIds = isPreviewMode && previewTarget?.workspaces
+  ? previewTarget.workspaces.map(w => w.id)
+  : null;
 
-export interface M365Insight {
-  id: string;
-  code: string;
+let tenantsQuery = supabase
+  .from('m365_tenants')
+  .select('id, display_name, tenant_domain, client_id')
+  .eq('connection_status', 'connected');
 
-  category: M365RiskCategory;
-  product: M365Product;
-  severity: M365Severity;
+if (workspaceIds && workspaceIds.length > 0) {
+  tenantsQuery = tenantsQuery.in('client_id', workspaceIds);
+}
+```
 
-  titulo: string;
-  descricaoExecutiva: string;
-  riscoTecnico: string;
-  impactoNegocio: string;
+### Arquivos Afetados
+- `src/pages/m365/M365PosturePage.tsx`
+- `src/hooks/useM365SecurityPosture.ts` (adicionar dependência de workspaces)
 
-  scoreImpacto: number;
-  status: 'pass' | 'fail' | 'warning';
+---
 
-  evidencias: unknown[];
-  affectedCount: number;
+## 3. Seletor de Tenant
 
-  endpointUsado: string;
+### Componente: `TenantSelector`
 
-  // 🔵 NOVO → origem da coleta
-  source: InsightSource;
+Um dropdown no header da página para alternar entre tenants conectados:
 
-  remediacao: RemediationGuide;
+```text
+┌────────────────────────────────────────────┐
+│  ▼ Tenant: Contoso Corp (contoso.com)      │
+├────────────────────────────────────────────┤
+│    ✓ Contoso Corp (contoso.com)            │
+│      Fabrikam Inc (fabrikam.com)           │
+│      Acme Corp (acme.onmicrosoft.com)      │
+└────────────────────────────────────────────┘
+```
 
-  detectedAt: string;
+### Comportamento
+1. Carregar todos os tenants conectados do(s) workspace(s) do usuário
+2. Exibir tenant selecionado no header (ao lado do Score Gauge)
+3. Ao trocar, atualizar `tenantRecordId` e refazer análise
+4. URL param `?tenant=uuid` para deep-link
 
-  // 🔵 NOVO → histórico/tendência futura
-  previousStatus?: 'pass' | 'fail' | 'warning';
+### Localização na UI
+- Dentro do card de Score, ao lado das informações do tenant
+- Ou como dropdown no header antes do botão "Atualizar"
+
+---
+
+## 4. Preview Mode
+
+### Checklist de Implementação
+
+| Item | Status | Descrição |
+|------|--------|-----------|
+| Filtro de dados | A fazer | Tenants filtrados por workspaces do target |
+| Hook usePreviewGuard | Existente | Bloquear ações de mutação |
+| Banner visual | Existente (AppLayout) | Banner âmbar já aparece |
+| Botões de ação | A verificar | Desabilitar "Atualizar" se mutação |
+
+### Ações Permitidas no Preview
+- Visualizar análise
+- Navegar entre categorias
+- Ver detalhes de insights
+
+### Ações Bloqueadas (se houver futuras mutações)
+- Criar agendamentos de análise
+- Exportar relatórios (se envolver escrita)
+
+---
+
+## Detalhes Técnicos
+
+### Mudanças na Edge Function
+
+```typescript
+// Estrutura modular
+interface CollectorResult {
+  insights: M365Insight[];
+  errors?: string[];
 }
 
-Motivo
-
-Exchange não é 100% coberto pelo Graph
-
-facilita debug
-
-prepara terreno para histórico
-
-1.2 Blueprints no banco
-
-👉 manter
-
-🟢 Boa prática adicional
-
-Adicionar:
-
-first_seen_at
-last_seen_at
-
-
-Para tracking de risco recorrente.
-
-⚠️ Fase 2: Edge Function Consolidada (AJUSTADA)
-
-Objetivo: Retornar todos os insights organizados.
-
-🔴 Mudança importante
-
-❌ NÃO implementar lógica inteira numa função monolítica gigante
-✅ Implementar modular internamente
-
-2.1 Nova Edge Function: m365-security-posture
-Estrutura recomendada:
-await Promise.all([
-  collectIdentityInsights(),
-  collectAuthInsights(),
-  collectPrivilegeInsights(),
-  collectAppsInsights(),
-  collectExchangeInsights(),
-  collectThreatInsights()
-]);
-
-Motivo
-
-paraleliza
-
-evita timeout
-
-facilita manutenção
-
-falha parcial não quebra tudo
-
-melhora performance
-
-🔵 NOVO — Cache recomendado
-
-Adicionar cache por tenant:
-
-duração: 5–15 min
-
-evita estourar limites Graph
-
-melhora UX
-
-🔵 NOVO — Snapshots históricos
-
-Criar:
-
-m365_posture_snapshots
-m365_insight_history
-
-
-Para:
-
-tendência
-
-evolução do score
-
-relatórios mensais
-
-comparação “antes/depois”
-
-Valor de negócio:
-
-Executivos valorizam MUITO evolução, não só estado atual.
-
-2.2 Mapeamento de Verificações
-
-👉 manter lista
-
-🟡 Atenção técnica importante
-
-Alguns checks NÃO podem usar Graph apenas:
-
-Necessário PowerShell (Exchange):
-
-SMTP AUTH
-
-POP/IMAP
-
-AntiPhish/SafeLinks
-
-Mailbox permissions
-
-Transport rules
-
-Usar:
-Exchange Online PowerShell module
-
-Marcar esses insights como:
-
-source: 'exchange_powershell'
-
-✅ Fase 3: Nova Estrutura de Navegação
-
-👉 layout proposto está excelente — manter.
-
-Categoria + Produto visível = modelo híbrido perfeito.
-
-Sem alterações.
-
-⚠️ Fase 4: Cálculo de Score (MELHORADO)
-Problema do algoritmo atual
-
-Penalidade fixa por severidade não escala bem:
-
-1 usuário sem MFA ≠ 500 usuários
-
-tenants grandes ficam injustos
-
-🔵 Novo algoritmo recomendado
-function calculatePenalty(insight: M365Insight) {
-  const severityWeight = {
-    critical: 15,
-    high: 8,
-    medium: 4,
-    low: 2,
-    info: 0
-  }[insight.severity];
-
-  const impactScale = Math.log10(insight.affectedCount + 1) + 1;
-
-  return severityWeight * insight.scoreImpacto * impactScale;
+async function collectAdminInsights(accessToken: string): Promise<CollectorResult> {
+  const insights: M365Insight[] = [];
+  const errors: string[] = [];
+  
+  // ADM-001: Excesso de Global Admins
+  const roleRes = await fetch(
+    'https://graph.microsoft.com/v1.0/directoryRoles?$filter=displayName eq \'Global Administrator\'',
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  // ... lógica de verificação
+  
+  return { insights, errors };
 }
+```
 
-score = 100 - sum(penalties)
+### Novo Componente TenantSelector
 
-Benefícios
+```typescript
+interface TenantSelectorProps {
+  tenants: Array<{ id: string; displayName: string; domain: string }>;
+  selectedId: string;
+  onSelect: (tenantId: string) => void;
+  loading?: boolean;
+  disabled?: boolean; // Para preview mode
+}
+```
 
-✔ proporcional
-✔ escalável
-✔ mais justo
-✔ mais profissional
+### Atualização do Hook useM365SecurityPosture
 
-⚠️ Permissões Graph API (AJUSTE DE SEGURANÇA)
-Remover
+Adicionar parâmetro opcional para workspaces:
+```typescript
+interface UseM365SecurityPostureOptions {
+  tenantRecordId: string;
+  workspaceIds?: string[]; // Para filtro interno se necessário
+  dateFrom?: string;
+  dateTo?: string;
+}
+```
 
-❌ Policy.ReadWrite.ConditionalAccess
+---
 
-Usar apenas
-Policy.Read.All
+## Arquivos a Criar/Modificar
 
-Motivo
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `supabase/functions/m365-security-posture/index.ts` | Modificar | Expandir com coletores modulares |
+| `src/pages/m365/M365PosturePage.tsx` | Modificar | Adicionar filtro workspace + seletor tenant |
+| `src/components/m365/posture/TenantSelector.tsx` | Criar | Dropdown de seleção de tenant |
+| `src/components/m365/posture/index.ts` | Modificar | Exportar TenantSelector |
+| `src/hooks/useM365SecurityPosture.ts` | Modificar | Pequenos ajustes se necessário |
 
-princípio do menor privilégio
+---
 
-menos fricção no consent
+## Ordem de Implementação
 
-melhor segurança SaaS
+1. **Edge Function** - Expandir verificações (base de dados)
+2. **Filtro Workspace** - Garantir isolamento de dados
+3. **Seletor de Tenant** - UX para múltiplos tenants
+4. **Preview Mode** - Verificar e ajustar bloqueios
 
-🔵 NOVO — Fase 5: Histórico & Tendências
+---
 
-Adicionar:
+## Resultado Esperado
 
-Funcionalidades:
-
-score ao longo do tempo
-
-gráfico de tendência
-
-“+15% melhoria no último mês”
-
-novos riscos vs riscos resolvidos
-
-Tabelas:
-m365_posture_snapshots
-m365_insight_history
-
-Valor:
-
-Transforma o produto em:
-👉 auditoria contínua (não só scanner pontual)
-
-Cronograma Ajustado
-Fase	Escopo	Tempo
-1	Modelo de dados	2h
-2	Edge modular + cache	10h
-3	UI	8h
-4	Score inteligente	2h
-5	Histórico & tendências	4h
-Total		~26–28h
-✅ Veredito Final
-
-Plano original: excelente
-Com ajustes: nível produto enterprise
-
-Arquitetura final agora possui:
-✔ modelo híbrido
-✔ dados unificados
-✔ modularidade
-✔ histórico
-✔ score justo
-✔ Graph + PowerShell
-✔ UX executiva
-
-👉 pronto para escalar como produto comercial sério.
+- 6+ verificações de segurança ativas (vs 1 atual)
+- Dados filtrados corretamente por workspace do usuário
+- Usuários com múltiplos tenants podem alternar facilmente
+- Preview Mode funciona sem expor dados de outros workspaces
