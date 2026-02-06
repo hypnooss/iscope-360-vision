@@ -1,195 +1,106 @@
 
 
-# Plano: Exibir Nomes de Países por Extenso na Origem Auth
+# Plano: Exibir Contagem de Autenticações por País (Sucesso/Falha)
 
-## Problema Identificado
+## Objetivo
 
-Os emojis de bandeira (`🇧🇷`, `🇺🇸`) **não estão renderizando** neste ambiente - aparecem como texto "BR US LU PL RU". Isso pode ocorrer por:
-- Fonte CSS que não suporta emojis de bandeira
-- Sistema operacional sem suporte a Regional Indicator Symbols
-- Alguma limitação do ambiente de renderização
+Alterar a exibição de "Origem Auth" para mostrar as quantidades de autenticações bem-sucedidas e falhas por país:
 
-## Solução
-
-Exibir os **nomes completos dos países** (com ou sem bandeira), garantindo:
-1. Nome por extenso (ex: "Brasil", "Estados Unidos")
-2. Espaçamento adequado entre países múltiplos
-3. Fallback robusto se bandeira não renderizar
-
-## Alterações
-
-### 1. Criar mapa de código ISO → nome do país
-
-```tsx
-function getCountryName(countryCode: string): string {
-  const codeToName: Record<string, string> = {
-    'BR': 'Brasil',
-    'US': 'Estados Unidos',
-    'PT': 'Portugal',
-    'GB': 'Reino Unido',
-    'DE': 'Alemanha',
-    'FR': 'França',
-    'ES': 'Espanha',
-    'IT': 'Itália',
-    'NL': 'Países Baixos',
-    'CA': 'Canadá',
-    'AU': 'Austrália',
-    'JP': 'Japão',
-    'CN': 'China',
-    'IN': 'Índia',
-    'MX': 'México',
-    'AR': 'Argentina',
-    'CL': 'Chile',
-    'CO': 'Colômbia',
-    'PE': 'Peru',
-    'RU': 'Rússia',
-    'PL': 'Polônia',
-    'LU': 'Luxemburgo',
-    // ... outros países
-  };
-  
-  const code = countryCode.toUpperCase();
-  return codeToName[code] || code; // Fallback para o código se não encontrar
-}
+**Formato esperado:**
+```
+🇧🇷 Brasil (150/12), 🇺🇸 Estados Unidos (45/3), 🇱🇺 Luxemburgo (20/0)
 ```
 
-### 2. Atualizar formatação da Origem Auth
+Onde: `(sucesso/falha)`
 
-```tsx
-// Antes (linha 606-608)
-value={envMetrics.loginCountries.slice(0, 5).map(c => getCountryFlag(c.country)).join(' ')}
+---
 
-// Depois - exibir bandeira + nome por extenso, separados por vírgula
-value={envMetrics.loginCountries.slice(0, 5)
-  .map(c => {
-    const code = normalizeCountryCode(c.country);
-    const flag = getCountryFlag(c.country);
-    const name = getCountryName(code);
-    return `${flag} ${name}`;
-  })
-  .join(', ')
-}
+## Alterações Necessárias
+
+### 1. Edge Function: Modificar estrutura de dados
+
+**Arquivo:** `supabase/functions/m365-security-posture/index.ts`
+
+Alterar a interface e a coleta para separar sucesso e falha:
+
+```typescript
+// Antes (linha 78)
+loginCountries: Array<{ country: string; count: number }>;
+
+// Depois
+loginCountries: Array<{ country: string; success: number; fail: number }>;
 ```
 
-### 3. Resultado Visual Esperado
+Modificar a lógica de coleta (linhas 201-224):
 
-```
-ORIGEM AUTH    🇧🇷 Brasil, 🇺🇸 Estados Unidos, 🇱🇺 Luxemburgo, 🇵🇱 Polônia, 🇷🇺 Rússia
+```typescript
+// Antes: busca apenas location
+'/auditLogs/signIns?$select=location&$top=500'
+
+// Depois: busca location + status
+'/auditLogs/signIns?$select=location,status&$top=500'
 ```
 
-Se as bandeiras não renderizarem:
-```
-ORIGEM AUTH    Brasil, Estados Unidos, Luxemburgo, Polônia, Rússia
+E a contagem:
+
+```typescript
+// Antes
+const countries = new Map<string, number>();
+signIns.value.forEach((s: any) => {
+  const country = s.location?.countryOrRegion;
+  if (country) {
+    countries.set(country, (countries.get(country) || 0) + 1);
+  }
+});
+
+// Depois
+const countries = new Map<string, { success: number; fail: number }>();
+signIns.value.forEach((s: any) => {
+  const country = s.location?.countryOrRegion;
+  if (country) {
+    const current = countries.get(country) || { success: 0, fail: 0 };
+    // errorCode 0 = sucesso, qualquer outro = falha
+    if (s.status?.errorCode === 0) {
+      current.success++;
+    } else {
+      current.fail++;
+    }
+    countries.set(country, current);
+  }
+});
 ```
 
 ---
 
-## Arquivo a Modificar
+### 2. Frontend: Atualizar exibição
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/m365/M365PostureReportPage.tsx` | Adicionar `getCountryName()` e atualizar formatação da Origem Auth |
+**Arquivo:** `src/pages/m365/M365PostureReportPage.tsx`
 
----
-
-## Detalhes Técnicos
-
-### Função getCountryName
-
-Adicionar após a função `getCountryFlag` (linha ~235):
-
-```tsx
-function getCountryName(countryCode: string): string {
-  const codeToName: Record<string, string> = {
-    'BR': 'Brasil',
-    'US': 'Estados Unidos',
-    'PT': 'Portugal',
-    'GB': 'Reino Unido',
-    'UK': 'Reino Unido',
-    'DE': 'Alemanha',
-    'FR': 'França',
-    'ES': 'Espanha',
-    'IT': 'Itália',
-    'NL': 'Países Baixos',
-    'CA': 'Canadá',
-    'AU': 'Austrália',
-    'JP': 'Japão',
-    'CN': 'China',
-    'IN': 'Índia',
-    'MX': 'México',
-    'AR': 'Argentina',
-    'CL': 'Chile',
-    'CO': 'Colômbia',
-    'PE': 'Peru',
-    'RU': 'Rússia',
-    'ZA': 'África do Sul',
-    'IE': 'Irlanda',
-    'CH': 'Suíça',
-    'SE': 'Suécia',
-    'NO': 'Noruega',
-    'DK': 'Dinamarca',
-    'FI': 'Finlândia',
-    'BE': 'Bélgica',
-    'AT': 'Áustria',
-    'PL': 'Polônia',
-    'CZ': 'Tchéquia',
-    'KR': 'Coreia do Sul',
-    'SG': 'Singapura',
-    'HK': 'Hong Kong',
-    'TW': 'Taiwan',
-    'IL': 'Israel',
-    'AE': 'Emirados Árabes',
-    'SA': 'Arábia Saudita',
-    'NZ': 'Nova Zelândia',
-    'EG': 'Egito',
-    'TR': 'Turquia',
-    'GR': 'Grécia',
-    'UA': 'Ucrânia',
-    'RO': 'Romênia',
-    'HU': 'Hungria',
-    'TH': 'Tailândia',
-    'VN': 'Vietnã',
-    'PH': 'Filipinas',
-    'ID': 'Indonésia',
-    'MY': 'Malásia',
-    'NG': 'Nigéria',
-    'KE': 'Quênia',
-    'MA': 'Marrocos',
-    'UY': 'Uruguai',
-    'PY': 'Paraguai',
-    'EC': 'Equador',
-    'VE': 'Venezuela',
-    'BO': 'Bolívia',
-    'CR': 'Costa Rica',
-    'PA': 'Panamá',
-    'PR': 'Porto Rico',
-    'DO': 'República Dominicana',
-    'CU': 'Cuba',
-    'GT': 'Guatemala',
-    'HN': 'Honduras',
-    'SV': 'El Salvador',
-    'NI': 'Nicarágua',
-    'JM': 'Jamaica',
-    'LU': 'Luxemburgo',
-  };
-  
-  const code = countryCode.toUpperCase();
-  return codeToName[code] || code;
-}
-```
-
-### Atualização da Origem Auth (linhas 604-610)
+Atualizar a renderização da Origem Auth (linhas 684-704):
 
 ```tsx
 <DetailRow 
   label="Origem Auth" 
   value={envMetrics.loginCountries && envMetrics.loginCountries.length > 0 
-    ? envMetrics.loginCountries.slice(0, 5).map(c => {
-        const code = normalizeCountryCode(c.country);
-        const flag = getCountryFlag(c.country);
-        const name = getCountryName(code || c.country);
-        return `${flag} ${name}`;
-      }).join(', ')
+    ? (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {envMetrics.loginCountries.slice(0, 5).map((c, idx) => {
+          const code = normalizeCountryCode(c.country);
+          const name = getCountryName(code || c.country);
+          const flagCode = code.toLowerCase();
+          // Formato: [flag] Nome (sucesso/falha)
+          return (
+            <span key={idx} className="inline-flex items-center gap-1.5">
+              <span className={`fi fi-${flagCode} rounded-sm`} style={{ fontSize: '1rem' }} />
+              <span>{name}</span>
+              <span className="text-muted-foreground text-xs">
+                ({c.success}/{c.fail})
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    )
     : 'N/A'
   }
 />
@@ -197,13 +108,75 @@ function getCountryName(countryCode: string): string {
 
 ---
 
-## Consideração sobre Pack de Ícones
+### 3. Atualizar tipos TypeScript (se necessário)
 
-Não é necessário instalar um pack de ícones externo. O problema é que emojis de bandeira (Regional Indicator Symbols) dependem do sistema operacional e fonte do navegador. A solução de exibir o **nome por extenso** garante que a informação seja sempre legível, independentemente do suporte a emojis.
+**Arquivo:** `src/types/m365Insights.ts` (verificar se existe definição)
 
-Se desejarmos garantir 100% de renderização das bandeiras no futuro, podemos considerar:
-- **flag-icons** (biblioteca CSS com SVGs)
-- **CDN de bandeiras** (flagcdn.com)
+Garantir que o tipo reflita a nova estrutura:
 
-Mas para o momento, nome por extenso resolve o problema de usabilidade.
+```typescript
+interface EnvironmentMetrics {
+  // ... outros campos
+  loginCountries: Array<{ 
+    country: string; 
+    success: number; 
+    fail: number; 
+  }>;
+}
+```
+
+---
+
+## Resumo de Arquivos a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/m365-security-posture/index.ts` | Alterar estrutura de loginCountries para incluir success/fail |
+| `src/pages/m365/M365PostureReportPage.tsx` | Atualizar exibição para mostrar `(sucesso/falha)` |
+| `src/types/m365Insights.ts` | Atualizar interface (se aplicável) |
+
+---
+
+## Resultado Visual Esperado
+
+```
+ORIGEM AUTH    🇧🇷 Brasil (150/12), 🇺🇸 Estados Unidos (45/3), 🇱🇺 Luxemburgo (20/0)
+```
+
+- Primeiro número: autenticações bem-sucedidas
+- Segundo número: tentativas falhas
+- Ordenação mantida pelo total (sucesso + falha) decrescente
+
+---
+
+## Detalhes Técnicos
+
+### Inicialização da estrutura (edge function)
+
+```typescript
+loginCountries: [],  // Array<{ country: string; success: number; fail: number }>
+```
+
+### Ordenação por total
+
+```typescript
+metrics.loginCountries = Array.from(countries.entries())
+  .map(([country, counts]) => ({ country, success: counts.success, fail: counts.fail }))
+  .sort((a, b) => (b.success + b.fail) - (a.success + a.fail))
+  .slice(0, 5);
+```
+
+### Backward Compatibility
+
+Para garantir compatibilidade com dados antigos que já estão no banco, o frontend pode verificar:
+
+```tsx
+// Se ainda existir o formato antigo (só count), exibir só o count
+const hasNewFormat = typeof c.success === 'number';
+if (hasNewFormat) {
+  return `(${c.success}/${c.fail})`;
+} else {
+  return `(${c.count || 0})`;  // fallback para formato antigo
+}
+```
 
