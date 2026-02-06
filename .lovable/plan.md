@@ -1,174 +1,234 @@
 
+# Plano: Adaptar Layout do Relatorio M365 ao Padrao Command Center
 
-# Plano: Reorganizar Gestao de Tenants M365
+## Resumo
 
-## Resumo das Mudancas
+Refatorar a pagina `M365PostureReportPage.tsx` para seguir o mesmo padrao visual "Command Center" utilizado nos relatorios de Dominio Externo e Firewall, mantendo o gauge atual (`M365ScoreGauge`) que possui estilo escuro com arco e shadow.
 
-O objetivo e centralizar a gestao de tenants em uma unica tela, permitindo ao cliente administrar seus tenants e iniciar analises diretamente do card, eliminando a tela de "Analise" separada.
+## Comparacao Visual
 
-## Mudancas no Menu de Navegacao
-
-### Antes
+### Layout Atual M365
 ```
-Microsoft 365
-├── Dashboard            <-- REMOVER
-├── Análise              <-- REMOVER
-├── Execuções
-├── Relatórios
-├── Entra ID
-└── Conexão com Tenant   <-- RENOMEAR para "Tenants"
-```
-
-### Depois
-```
-Microsoft 365
-├── Tenants        <-- NOVO NOME
-├── Execuções
-├── Relatórios
-└── Entra ID              
+┌──────────────────────────────────────────────────────────────────┐
+│ Header simples com botao Voltar + titulo                         │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌────────────────────┐  ┌────────────────────────────────────────┤
+│ │ Card com Gauge     │  │ Card: Resumo por Severidade           │
+│ │ + Badge            │  │ (grid 5 colunas de mini-cards)        │
+│ └────────────────────┘  └────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────────┤
+│ Card: Categorias (grid 4 colunas de M365CategoryCard)            │
+├──────────────────────────────────────────────────────────────────┤
+│ Card: Verificacoes                                               │
+│   Tabs: Problemas | Conformes                                    │
+│   Lista de M365InsightCard                                       │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
+### Layout Novo (Padrao Command Center)
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Breadcrumb                                                       │
+├──────────────────────────────────────────────────────────────────┤
+│ Header: "Analise de Conformidade" | Data | [PDF] [Reanalisar]   │
+├──────────────────────────────────────────────────────────────────┤
+│ ╔════════════════════════════════════════════════════════════════╗
+│ ║              COMMAND CENTER HEADER                            ║
+│ ║  ─────────────────────────────────────────────────────────────║
+│ ║                    TENANT DISPLAY NAME                        ║
+│ ║              ═══════════════════════                          ║
+│ ║                                                               ║
+│ ║  ┌──────────────────────┐  │  Workspace: ACME Corp            ║
+│ ║  │                      │  │  Dominio: contoso.onmicrosoft.com║
+│ ║  │   M365ScoreGauge     │  │  Data: 15/01/2026 14:30          ║
+│ ║  │   (manter atual)     │  │  ────────────────────────────────║
+│ ║  │                      │  │  Criticos:    ● 3                ║
+│ ║  └──────────────────────┘  │  Alta:        ● 5                ║
+│ ║                            │  Media:       ○ 8                ║
+│ ║  [Total] [Passou] [Falha]  │  Baixa:       ○ 12               ║
+│ ╚════════════════════════════════════════════════════════════════╝
+├──────────────────────────────────────────────────────────────────┤
+│ Banner: X problemas criticos encontrados (se houver)             │
+├──────────────────────────────────────────────────────────────────┤
+│ "Verificacoes por Categoria"                                     │
+│ ┌─────────────────────────────────────────────────────────────── │
+│ │ CategorySection: Identidades (colapsavel)                     │
+│ │   └─ M365InsightCard, M365InsightCard...                      │
+│ │ CategorySection: Autenticacao e Acesso                        │
+│ │   └─ M365InsightCard, M365InsightCard...                      │
+│ │ ...                                                           │
+│ └─────────────────────────────────────────────────────────────── │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Elementos a Manter/Adaptar
+
+### Manter (do M365 atual)
+- **M365ScoreGauge**: Gauge estilizado com fundo escuro, arco claro e shadow (conforme solicitado)
+- **M365InsightCard**: Cards de insight com expansao, remediation dialog, etc.
+- **M365RemediationDialog**: Dialog com passos de correcao
+
+### Adaptar para Padrao Command Center
+1. **MiniStat**: Reutilizar componente inline (Total/Aprovadas/Falhas)
+2. **DetailRow**: Reutilizar para exibir detalhes do tenant no painel direito
+3. **Command Center Container**: Fundo gradiente escuro com grid pattern
+4. **CategorySection estilo M365**: Criar `M365CategorySection` com cabecalho colapsavel
+
+### Remover/Substituir
+- Cards separados de Gauge e Severity Breakdown (consolidar no Command Center)
+- Card de Categorias com grid de M365CategoryCard (substituir por sections colapsaveis)
+- Tabs Problemas/Conformes (mover para dentro de cada CategorySection ou remover)
 
 ## Arquivos a Modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/layout/AppLayout.tsx` | Remover item "Analise", renomear "Conexao com Tenant" para "Tenants" |
-| `src/App.tsx` | Remover rota `/scope-m365/analysis` e import do `M365AnalysisPage` |
-| `src/pages/m365/TenantConnectionPage.tsx` | Atualizar titulo/breadcrumb para "Tenants" |
-| `src/components/m365/TenantStatusCard.tsx` | Redesenhar para layout full-width com novas infos |
-| `src/pages/m365/M365AnalysisPage.tsx` | Pode ser removido (arquivo nao mais usado) |
-
-## Novo Design do Card de Tenant
-
-O card atual ocupa metade da tela (grid 2 colunas). O novo layout ocupara a largura total com as informacoes organizadas horizontalmente:
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🏢 Contoso Corp                                                    ● Conectado         │
-│    contoso.onmicrosoft.com                                                              │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                         │
-│  Workspace          Última Análise              Score         Agendamento              │
-│  ─────────────      ──────────────────          ─────         ────────────────────      │
-│  ACME Corp          15/01/2026 14:30 (há 2h)    72%           Semanal (Dom 03:00)      │
-│                                                                                         │
-│  [Testar] [Editar] [Permissões] [Desconectar] [Excluir]                 [🔍 Analisar]  │
-│                                                                                         │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Elementos adicionados ao card:**
-- **Workspace**: Nome do workspace vinculado ao tenant (ja existe no card, mas sera destacado)
-- **Ultima Analise**: Data/hora da ultima analise de postura (buscar de `m365_posture_history`)
-- **Score**: Score da ultima analise completada
-- **Agendamento**: Futuro - mostrara "Nao configurado" por enquanto (placeholder para funcionalidade futura)
-- **Botao Analisar**: Inicia analise de postura diretamente do card (mesma logica do `M365AnalysisPage`)
+| `src/pages/m365/M365PostureReportPage.tsx` | Refatorar layout completo |
+| `src/components/m365/posture/M365CategorySection.tsx` | Criar (novo) - secao colapsavel |
+| `src/components/m365/posture/index.ts` | Exportar novo componente |
 
 ## Detalhes Tecnicos
 
-### 1. Modificar TenantStatusCard.tsx
+### 1. Command Center Header
 
-```typescript
-// Adicionar props para analise
-interface TenantStatusCardProps {
-  tenant: TenantConnection;
-  onTest: (tenantId: string) => Promise<...>;
-  onDisconnect: (tenantId: string) => Promise<...>;
-  onDelete: (tenantId: string) => Promise<...>;
-  onUpdatePermissions?: (tenantId: string) => void;
-  onEdit?: (tenantId: string) => void;
-  onAnalyze?: (tenantId: string) => void;  // NOVA PROP
-  lastAnalysis?: {                          // NOVA PROP
-    score: number | null;
-    status: string;
-    created_at: string;
-  } | null;
-  isAnalyzing?: boolean;                    // NOVA PROP
-}
-```
-
-### 2. Buscar Ultima Analise na TenantConnectionPage
-
-A pagina `TenantConnectionPage.tsx` buscara a ultima analise de cada tenant:
-
-```typescript
-// Fetch last analysis for each tenant
-const { data: analysisHistory } = useQuery({
-  queryKey: ['m365-tenant-analyses'],
-  queryFn: async () => {
-    const tenantIds = tenants.map(t => t.id);
-    const { data } = await supabase
-      .from('m365_posture_history')
-      .select('tenant_record_id, score, status, created_at')
-      .in('tenant_record_id', tenantIds)
-      .eq('status', 'completed')
-      .order('created_at', { ascending: false });
-    return data;
-  },
-  enabled: tenants.length > 0,
-});
-```
-
-### 3. Trigger de Analise no Card
-
-O botao "Analisar" chamara a mesma Edge Function `trigger-m365-posture-analysis`:
-
-```typescript
-const handleAnalyze = async (tenantId: string) => {
-  const { data, error } = await supabase.functions.invoke('trigger-m365-posture-analysis', {
-    body: { tenant_record_id: tenantId },
-  });
-  // Mostrar toast e redirecionar para execucoes se sucesso
-};
-```
-
-### 4. Layout do Grid na Pagina
-
-Mudar de `grid-cols-2` para `grid-cols-1`:
+Adicionar ao `M365PostureReportPage.tsx` o mesmo container usado em Firewall/ExternalDomain:
 
 ```tsx
-// Antes
-<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+// Container com gradiente escuro e grid pattern
+<div 
+  className="relative overflow-hidden rounded-2xl border border-primary/20"
+  style={{
+    background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
+  }}
+>
+  {/* Grid pattern overlay */}
+  <div 
+    className="absolute inset-0 opacity-30 pointer-events-none"
+    style={{
+      backgroundImage: `...`,
+      backgroundSize: "32px 32px"
+    }}
+  />
+  
+  <div className="relative p-8">
+    {/* Identification Strip */}
+    <div className="text-center mb-8">
+      <h2 className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-foreground uppercase">
+        {displayInfo.tenant_name}
+      </h2>
+      <div className="h-0.5 w-48 mx-auto mt-3 bg-gradient-to-r from-transparent via-primary to-transparent" />
+    </div>
 
-// Depois
-<div className="grid grid-cols-1 gap-4">
+    {/* Two-Column Layout */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+      {/* Left: M365ScoreGauge + MiniStats */}
+      {/* Right: DetailRows com info do tenant e severidades */}
+    </div>
+  </div>
+</div>
 ```
 
-## Modificacoes no AppLayout.tsx
+### 2. Painel Esquerdo (Score + Stats)
 
-Linha 123-134, atualizar `knownModuleNavConfigs['scope_m365']`:
+```tsx
+<div className="flex flex-col items-center justify-center">
+  <div className="relative">
+    <div 
+      className="absolute inset-0 blur-3xl opacity-20"
+      style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
+    />
+    {/* MANTER o M365ScoreGauge atual */}
+    <M365ScoreGauge score={reportData.score} classification={reportData.classification} size="lg" />
+  </div>
 
-```typescript
-'scope_m365': {
-  icon: Cloud,
-  color: 'text-blue-500',
-  items: [
-    { label: 'Dashboard', href: '/scope-m365/dashboard', icon: LayoutDashboard },
-    // REMOVER: { label: 'Análise', href: '/scope-m365/analysis', icon: Shield },
-    { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
-    { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
-    { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
-    { label: 'Tenants', href: '/scope-m365/tenant-connection', icon: Building }, // RENOMEADO
-  ],
-},
+  {/* MiniStats inline */}
+  <div className="flex gap-3 mt-6">
+    <MiniStat value={totalChecks} label="Total" variant="primary" />
+    <MiniStat value={passedCount} label="Aprovadas" variant="success" />
+    <MiniStat value={failedCount} label="Falhas" variant="destructive" />
+  </div>
+</div>
 ```
 
-## Modificacoes no App.tsx
+### 3. Painel Direito (Detalhes + Severidades)
 
-Remover:
-- Linha 41: `const M365AnalysisPage = lazy(...)`
-- Linha 103: `<Route path="/scope-m365/analysis" element={<M365AnalysisPage />} />`
+```tsx
+<div className="flex flex-col justify-center lg:border-l lg:border-border/30 lg:pl-8">
+  <DetailRow label="Workspace" value={displayInfo.client_name || 'N/A'} />
+  <DetailRow label="Dominio" value={displayInfo.tenant_domain || 'N/A'} highlight />
+  <DetailRow label="Data" value={format(new Date(reportData.created_at), "dd/MM/yyyy 'as' HH:mm", { locale: ptBR })} />
+  <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-2" />
+  {/* Severidades com indicadores visuais */}
+  <DetailRow 
+    label="Criticos" 
+    value={`${summary.critical} ${summary.critical === 1 ? 'problema' : 'problemas'}`}
+    indicator={summary.critical > 0 ? "error" : "success"}
+  />
+  <DetailRow 
+    label="Alta" 
+    value={`${summary.high} ${summary.high === 1 ? 'problema' : 'problemas'}`}
+    indicator={summary.high > 0 ? "error" : "success"}
+  />
+  <DetailRow label="Media" value={`${summary.medium}`} />
+  <DetailRow label="Baixa" value={`${summary.low}`} />
+</div>
+```
 
-## Preview Mode
+### 4. Novo Componente M365CategorySection
 
-O botao "Analisar" respeitara o `usePreviewGuard()` para bloquear acao em modo preview.
+Criar `src/components/m365/posture/M365CategorySection.tsx` baseado no `CategorySection.tsx`:
+
+```tsx
+interface M365CategorySectionProps {
+  category: string; // Ex: "identities", "auth_access"
+  label: string;    // Ex: "Identidades", "Autenticacao e Acesso"
+  insights: M365Insight[];
+  index: number;
+}
+
+// Cabecalho colapsavel com:
+// - Icone e nome da categoria
+// - Badge de contagem de verificacoes
+// - Badges de severidade (criticos, altos)
+// - Percentual de conformidade
+// - Chevron expand/collapse
+
+// Conteudo expandido:
+// - Lista de M365InsightCard
+```
+
+### 5. Layout das Categorias
+
+Substituir o grid atual de cards por sections colapsaveis:
+
+```tsx
+<div className="space-y-4">
+  <h2 className="text-xl font-semibold text-foreground mb-4">
+    Verificacoes por Categoria
+  </h2>
+  {categories.map((cat, index) => (
+    <M365CategorySection
+      key={cat.category}
+      category={cat.category}
+      label={CATEGORY_LABELS[cat.category]}
+      insights={insights.filter(i => i.category === cat.category)}
+      index={index}
+    />
+  ))}
+</div>
+```
+
+## Componentes Inline a Adicionar
+
+Os componentes `MiniStat` e `DetailRow` serao adicionados inline no arquivo (mesmo padrao do Dashboard.tsx e ExternalDomainAnalysisReportPage.tsx).
 
 ## Resultado Esperado
 
-- Menu mais limpo sem item "Analise" separado
-- Tela de Tenants como hub central de gestao
-- Cards full-width com mais informacoes visiveis
-- Acao de analisar acessivel diretamente do card
-- Preparado para adicionar agendamento no futuro
-
+- Header Command Center identico ao de Firewall/External Domain
+- Gauge M365 mantido (estilo escuro com shadow)
+- Informacoes do tenant organizadas em DetailRows
+- Severidades visiveis no painel direito
+- Categorias em sections colapsaveis (nao mais cards em grid)
+- Insights agrupados dentro de cada categoria
+- Banner de alertas criticos (padrao existente)
+- Botoes PDF e Reanalisar no header (preparado para implementacao futura)
