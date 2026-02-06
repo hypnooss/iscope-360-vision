@@ -1,9 +1,9 @@
 
-# Plano: Expor Campos de Metadados nas Regras de Compliance
+# Plano: Adaptar Visualização de Fluxo de Análise
 
 ## Objetivo
 
-Tornar os campos `technical_risk`, `business_impact` e `api_endpoint` visíveis e editáveis na interface de administração de templates, além de exibi-los nos relatórios de compliance.
+Transformar os cards da aba **Fluxo de Análise** em previews do relatório real, exibindo as informações cadastradas (Risco Técnico, Impacto no Negócio, Endpoint, etc.) em dois estados: **Sucesso** e **Falha**.
 
 ---
 
@@ -11,183 +11,259 @@ Tornar os campos `technical_risk`, `business_impact` e `api_endpoint` visíveis 
 
 | Componente | Status |
 |------------|--------|
-| `ComplianceRulesTable.tsx` | Campos existentes no formulário (linhas 531-563) |
-| `TemplateRulesManagement.tsx` | Campos **não existem** no formulário |
-| `ComplianceCard.tsx` | **Não exibe** Risco Técnico e Impacto no Negócio |
-| Edge Function `agent-task-result` | **Não inclui** os campos no output |
-| Banco de dados | Colunas criadas na migração anterior |
+| `ComplianceRuleBasic` | NÃO inclui campos `technical_risk`, `business_impact`, `api_endpoint` |
+| `RuleFlowCard` em `BlueprintFlowVisualization.tsx` | Layout técnico focado em avaliação e parses |
+| `ComplianceCard.tsx` | Layout do relatório real com seções expandidas |
 
 ---
 
 ## Alterações Necessárias
 
-### 1. Atualizar `TemplateRulesManagement.tsx`
+### 1. Atualizar `ComplianceRuleBasic` em `src/types/complianceRule.ts`
 
-Adicionar os campos novos ao formulário de criação/edição de regras:
+Incluir os campos de metadados no tipo simplificado:
 
-**Form State (linha ~103-116):**
 ```typescript
-const [formData, setFormData] = useState({
-  // ... campos existentes ...
-  technical_risk: '',
-  business_impact: '',
-  api_endpoint: '',
-});
-```
-
-**Reset Form (linha ~142-157):**
-```typescript
-const resetForm = () => {
-  setFormData({
-    // ... campos existentes ...
-    technical_risk: '',
-    business_impact: '',
-    api_endpoint: '',
-  });
-};
-```
-
-**Open Dialog Edit (linha ~159-179):**
-```typescript
-setFormData({
-  // ... campos existentes ...
-  technical_risk: rule.technical_risk || '',
-  business_impact: rule.business_impact || '',
-  api_endpoint: rule.api_endpoint || '',
-});
-```
-
-**Handle Save (linha ~199-254):**
-```typescript
-const ruleData = {
-  // ... campos existentes ...
-  technical_risk: formData.technical_risk || null,
-  business_impact: formData.business_impact || null,
-  api_endpoint: formData.api_endpoint || null,
-};
-```
-
-**Formulário UI (após linha ~535):**
-```tsx
-{/* Novos campos: Risco Técnico e Impacto no Negócio */}
-<div className="grid grid-cols-2 gap-4">
-  <div className="space-y-2">
-    <Label htmlFor="technical_risk">Risco Técnico</Label>
-    <Textarea
-      id="technical_risk"
-      value={formData.technical_risk}
-      onChange={(e) => setFormData({ ...formData, technical_risk: e.target.value })}
-      placeholder="Descreva o risco técnico caso esta regra falhe..."
-      rows={2}
-    />
-  </div>
-  <div className="space-y-2">
-    <Label htmlFor="business_impact">Impacto no Negócio</Label>
-    <Textarea
-      id="business_impact"
-      value={formData.business_impact}
-      onChange={(e) => setFormData({ ...formData, business_impact: e.target.value })}
-      placeholder="Descreva o impacto no negócio se não corrigido..."
-      rows={2}
-    />
-  </div>
-</div>
-
-<div className="space-y-2">
-  <Label htmlFor="api_endpoint">Endpoint da API</Label>
-  <Input
-    id="api_endpoint"
-    value={formData.api_endpoint}
-    onChange={(e) => setFormData({ ...formData, api_endpoint: e.target.value })}
-    placeholder="Ex: /api/v2/cmdb/system/global"
-  />
-</div>
-```
-
-**View Dialog (após linha ~591):**
-Adicionar exibição dos novos campos no dialog de visualização.
-
----
-
-### 2. Atualizar Edge Function `agent-task-result`
-
-**Interface ComplianceRule (linha ~38-51):**
-```typescript
-interface ComplianceRule {
-  // ... campos existentes ...
+export interface ComplianceRuleBasic {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  category: string;
+  severity: string;
+  weight: number;
+  evaluation_logic: Record<string, any>;
+  is_active: boolean;
+  // Campos adicionados
+  recommendation: string | null;
+  pass_description: string | null;
+  fail_description: string | null;
   technical_risk: string | null;
   business_impact: string | null;
   api_endpoint: string | null;
 }
 ```
 
-**Interface ComplianceCheck (linha ~74-88):**
-```typescript
-interface ComplianceCheck {
-  // ... campos existentes ...
-  technicalRisk?: string;
-  businessImpact?: string;
+---
+
+### 2. Reescrever `RuleFlowCard` em `BlueprintFlowVisualization.tsx`
+
+Criar um novo layout que simula o relatório real com toggle de estado:
+
+**Header do Card:**
+- Código da regra + Nome
+- Badge de severidade (com cores condicionais)
+- Toggle para alternar entre SUCESSO e FALHA
+
+**Corpo do Card (colapsável):**
+
+| Estado | Conteúdo |
+|--------|----------|
+| SUCESSO (pass) | Ícone verde, badge neutra, mensagem de sucesso (`pass_description`) |
+| FALHA (fail) | Ícone vermelho, badge colorida, recomendação + seções completas |
+
+**Seções Expandidas (apenas no estado FALHA):**
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ [Endpoint consultado] (admin only)                          │
+│   GET /api/v2/cmdb/system/ha                                │
+├─────────────────────────────────────────────────────────────┤
+│ ANÁLISE EFETUADA                                            │
+│   Verifica se há múltiplas interfaces de heartbeat...       │
+├─────────────────────────────────────────────────────────────┤
+│ RISCO TÉCNICO                                               │
+│   Com apenas uma interface de heartbeat, uma falha...       │
+├─────────────────────────────────────────────────────────────┤
+│ IMPACTO NO NEGÓCIO                                          │
+│   Split-brain causa queda total da rede: ambos os...        │
+├─────────────────────────────────────────────────────────────┤
+│ EVIDÊNCIAS (placeholder)                                    │
+│   [Dados coletados em runtime pelo agente]                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. Estrutura do Novo Card
+
+```tsx
+function RulePreviewCard({ rule }: { rule: ComplianceRule }) {
+  const [previewState, setPreviewState] = useState<'pass' | 'fail'>('fail');
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const statusConfig = {
+    pass: { 
+      icon: CheckCircle, 
+      className: 'status-pass', 
+      label: 'Aprovado',
+      message: rule.pass_description || 'Configuração conforme esperado'
+    },
+    fail: { 
+      icon: XCircle, 
+      className: 'status-fail', 
+      label: 'Falha',
+      message: rule.fail_description || 'Configuração fora do esperado'
+    },
+  };
+  
+  const config = statusConfig[previewState];
+  const StatusIcon = config.icon;
+  
+  // Só mostra seções de risco quando em estado de falha
+  const showRiskSections = previewState === 'fail';
+
+  return (
+    <div className="glass-card rounded-lg p-4">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          <div className={cn("p-2 rounded-lg border", config.className)}>
+            <StatusIcon className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono font-semibold">{rule.code}</code>
+              <span className="text-muted-foreground">•</span>
+              <span className="font-medium">{rule.name}</span>
+              <SeverityBadge severity={rule.severity} status={previewState} />
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              {config.message}
+            </p>
+          </div>
+        </div>
+        
+        {/* Toggle Sucesso/Falha */}
+        <div className="flex items-center gap-2">
+          <Button 
+            size="sm" 
+            variant={previewState === 'pass' ? 'default' : 'outline'}
+            onClick={() => setPreviewState('pass')}
+          >
+            Sucesso
+          </Button>
+          <Button 
+            size="sm" 
+            variant={previewState === 'fail' ? 'destructive' : 'outline'}
+            onClick={() => setPreviewState('fail')}
+          >
+            Falha
+          </Button>
+        </div>
+      </div>
+      
+      {/* Recomendação (apenas em falha) */}
+      {showRiskSections && rule.recommendation && (
+        <p className="text-xs text-primary mt-2 flex items-center gap-1">
+          <ChevronRight className="w-3 h-3" />
+          {rule.recommendation}
+        </p>
+      )}
+      
+      {/* Expandir detalhes */}
+      <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+        <CollapsibleTrigger className="w-full mt-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Ver detalhes do card</span>
+            {isExpanded ? <ChevronDown /> : <ChevronRight />}
+          </div>
+        </CollapsibleTrigger>
+        
+        <CollapsibleContent>
+          <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
+            
+            {/* Endpoint consultado (admin only) */}
+            {rule.api_endpoint && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <ExternalLink className="w-3 h-3" />
+                <span>Endpoint: <code>{rule.api_endpoint}</code></span>
+              </div>
+            )}
+            
+            {/* ANÁLISE EFETUADA */}
+            {rule.description && (
+              <Section title="ANÁLISE EFETUADA" icon={FileText}>
+                {rule.description}
+              </Section>
+            )}
+            
+            {/* RISCO TÉCNICO (apenas em falha) */}
+            {showRiskSections && rule.technical_risk && (
+              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
+                {rule.technical_risk}
+              </Section>
+            )}
+            
+            {/* IMPACTO NO NEGÓCIO (apenas em falha) */}
+            {showRiskSections && rule.business_impact && (
+              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
+                {rule.business_impact}
+              </Section>
+            )}
+            
+            {/* Placeholder para evidências */}
+            <Section title="EVIDÊNCIAS COLETADAS" icon={FileText}>
+              <span className="text-muted-foreground italic">
+                [Dados coletados em runtime pelo agente]
+              </span>
+            </Section>
+            
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
 }
 ```
 
-**Query de busca das regras:**
-Incluir os novos campos na query (já são retornados pois usamos `select('*')`).
-
-**Criação do check (linha ~3329-3342):**
-```typescript
-checks.push({
-  // ... campos existentes ...
-  technicalRisk: rule.technical_risk || undefined,
-  businessImpact: rule.business_impact || undefined,
-});
-```
-
 ---
 
-### 3. Atualizar `ComplianceCard.tsx`
+### 4. Diagrama Visual
 
-Adicionar exibição de Risco Técnico e Impacto no Negócio no conteúdo expandido:
+```text
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  [✓] ha-003 • Heartbeat HA Redundante         [Crítico]   [Sucesso] [Falha]  │
+│      Múltiplas interfaces de heartbeat configuradas                          │
+│                                                                               │
+│      ▶ Ver detalhes do card                                                  │
+└───────────────────────────────────────────────────────────────────────────────┘
 
-```tsx
-{/* RISCO TÉCNICO - visível para todos quando falha */}
-{check.technicalRisk && check.status !== 'pass' && (
-  <div className="space-y-2">
-    <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-      <AlertTriangle className="w-3 h-3 text-warning" />
-      RISCO TÉCNICO
-    </h5>
-    <div className="bg-warning/10 rounded-md p-3 border border-warning/30">
-      <p className="text-sm text-foreground">{check.technicalRisk}</p>
-    </div>
-  </div>
-)}
+                    ▼ (toggle para Falha)
 
-{/* IMPACTO NO NEGÓCIO - visível para todos quando falha */}
-{check.businessImpact && check.status !== 'pass' && (
-  <div className="space-y-2">
-    <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-      <Building2 className="w-3 h-3 text-destructive" />
-      IMPACTO NO NEGÓCIO
-    </h5>
-    <div className="bg-destructive/10 rounded-md p-3 border border-destructive/30">
-      <p className="text-sm text-foreground">{check.businessImpact}</p>
-    </div>
-  </div>
-)}
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  [✗] ha-003 • Heartbeat HA Redundante         [Crítico]   [Sucesso] [Falha]  │
+│      Apenas uma interface de heartbeat - sem redundância                     │
+│      → Configure múltiplas interfaces de heartbeat para evitar split-brain   │
+│                                                                               │
+│      ▼ Ver detalhes do card                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │ Endpoint: GET /api/v2/monitor/system/ha-peer                            │ │
+│  ├─────────────────────────────────────────────────────────────────────────┤ │
+│  │ ANÁLISE EFETUADA                                                        │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Verifica se há múltiplas interfaces de heartbeat configuradas...   │ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  ├─────────────────────────────────────────────────────────────────────────┤ │
+│  │ RISCO TÉCNICO                                                           │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Com apenas uma interface de heartbeat, uma falha nesse link pode   │ │ │
+│  │ │ causar split-brain, onde ambos os firewalls assumem papel primário.│ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  ├─────────────────────────────────────────────────────────────────────────┤ │
+│  │ IMPACTO NO NEGÓCIO                                                      │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Split-brain causa queda total da rede: ambos os firewalls respondem│ │ │
+│  │ │ pelo mesmo IP, corrompendo tabelas ARP, derrubando sessões ativas. │ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  ├─────────────────────────────────────────────────────────────────────────┤ │
+│  │ EVIDÊNCIAS COLETADAS                                                    │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ [Dados coletados em runtime pelo agente]                            │ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Estrutura da Seção Expandida (Padronizada)
-
-| Seção | Visibilidade | Condição de Exibição |
-|-------|--------------|----------------------|
-| Endpoint consultado | Super Admin / Super Suporte | Sempre (se preenchido) |
-| ANÁLISE EFETUADA | Todos | Sempre (se houver details/description) |
-| RISCO TÉCNICO | Todos | Apenas se status != pass |
-| IMPACTO NO NEGÓCIO | Todos | Apenas se status != pass |
-| EVIDÊNCIAS COLETADAS | Todos | Sempre (se houver evidence) |
-| Dados brutos (JSON) | Super Admin / Super Suporte | Sempre (se houver rawData) |
 
 ---
 
@@ -195,67 +271,14 @@ Adicionar exibição de Risco Técnico e Impacto no Negócio no conteúdo expand
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/admin/TemplateRulesManagement.tsx` | Adicionar campos technical_risk, business_impact, api_endpoint ao formulário |
-| `src/components/ComplianceCard.tsx` | Adicionar seções Risco Técnico e Impacto no Negócio |
-| `supabase/functions/agent-task-result/index.ts` | Incluir campos nos tipos e no output |
-
----
-
-## Fluxo de Dados
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                    ADMINISTRAÇÃO (Templates)                        │
-├─────────────────────────────────────────────────────────────────────┤
-│  Editar Regra                                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ Risco Técnico: [textarea]                                    │   │
-│  │ Impacto no Negócio: [textarea]                               │   │
-│  │ Endpoint da API: [input]                                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                           │                                         │
-│                           ▼                                         │
-│              compliance_rules (DB)                                  │
-└─────────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     EDGE FUNCTION                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│  agent-task-result                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ 1. Busca regras do DB (inclui technical_risk, etc.)         │   │
-│  │ 2. Avalia dados coletados                                    │   │
-│  │ 3. Monta ComplianceCheck com campos novos                    │   │
-│  │ 4. Salva report_data no histórico                            │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                       RELATÓRIO                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│  ComplianceCard                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ [Header com status e severidade]                             │   │
-│  │                                                               │   │
-│  │ ▼ Expandido (quando falha):                                  │   │
-│  │   ├─ Endpoint consultado (admin only)                        │   │
-│  │   ├─ ANÁLISE EFETUADA                                        │   │
-│  │   ├─ RISCO TÉCNICO                                           │   │
-│  │   ├─ IMPACTO NO NEGÓCIO                                      │   │
-│  │   ├─ EVIDÊNCIAS COLETADAS                                    │   │
-│  │   └─ Dados brutos JSON (admin only)                          │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| `src/types/complianceRule.ts` | Adicionar campos ao `ComplianceRuleBasic` |
+| `src/components/admin/BlueprintFlowVisualization.tsx` | Reescrever `RuleFlowCard` com preview de estados |
 
 ---
 
 ## Benefícios
 
-- Administrador pode customizar textos sem depender de código
-- Dados estáticos (riscos, impactos) são gerenciados via UI
-- Dados dinâmicos (evidências, status) são coletados pelo agente
-- Separação clara entre configuração e execução
-- Relatórios mais informativos para o usuário final
+- Administrador visualiza exatamente como o card aparecerá no relatório
+- Toggle permite verificar mensagens de sucesso e falha
+- Campos de Risco Técnico e Impacto são visíveis no contexto correto
+- Facilita revisão e ajuste de textos antes da publicação
