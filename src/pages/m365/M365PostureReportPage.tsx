@@ -234,6 +234,85 @@ function getCountryFlag(countryInput: string): string {
   return '🌍';
 }
 
+// Get full country name from ISO code
+function getCountryName(countryCode: string): string {
+  const codeToName: Record<string, string> = {
+    'BR': 'Brasil',
+    'US': 'Estados Unidos',
+    'PT': 'Portugal',
+    'GB': 'Reino Unido',
+    'UK': 'Reino Unido',
+    'DE': 'Alemanha',
+    'FR': 'França',
+    'ES': 'Espanha',
+    'IT': 'Itália',
+    'NL': 'Países Baixos',
+    'CA': 'Canadá',
+    'AU': 'Austrália',
+    'JP': 'Japão',
+    'CN': 'China',
+    'IN': 'Índia',
+    'MX': 'México',
+    'AR': 'Argentina',
+    'CL': 'Chile',
+    'CO': 'Colômbia',
+    'PE': 'Peru',
+    'RU': 'Rússia',
+    'ZA': 'África do Sul',
+    'IE': 'Irlanda',
+    'CH': 'Suíça',
+    'SE': 'Suécia',
+    'NO': 'Noruega',
+    'DK': 'Dinamarca',
+    'FI': 'Finlândia',
+    'BE': 'Bélgica',
+    'AT': 'Áustria',
+    'PL': 'Polônia',
+    'CZ': 'Tchéquia',
+    'KR': 'Coreia do Sul',
+    'SG': 'Singapura',
+    'HK': 'Hong Kong',
+    'TW': 'Taiwan',
+    'IL': 'Israel',
+    'AE': 'Emirados Árabes',
+    'SA': 'Arábia Saudita',
+    'NZ': 'Nova Zelândia',
+    'EG': 'Egito',
+    'TR': 'Turquia',
+    'GR': 'Grécia',
+    'UA': 'Ucrânia',
+    'RO': 'Romênia',
+    'HU': 'Hungria',
+    'TH': 'Tailândia',
+    'VN': 'Vietnã',
+    'PH': 'Filipinas',
+    'ID': 'Indonésia',
+    'MY': 'Malásia',
+    'NG': 'Nigéria',
+    'KE': 'Quênia',
+    'MA': 'Marrocos',
+    'UY': 'Uruguai',
+    'PY': 'Paraguai',
+    'EC': 'Equador',
+    'VE': 'Venezuela',
+    'BO': 'Bolívia',
+    'CR': 'Costa Rica',
+    'PA': 'Panamá',
+    'PR': 'Porto Rico',
+    'DO': 'República Dominicana',
+    'CU': 'Cuba',
+    'GT': 'Guatemala',
+    'HN': 'Honduras',
+    'SV': 'El Salvador',
+    'NI': 'Nicarágua',
+    'JM': 'Jamaica',
+    'LU': 'Luxemburgo',
+  };
+  
+  const code = countryCode.toUpperCase();
+  return codeToName[code] || code;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -604,7 +683,11 @@ export default function M365PostureReportPage() {
                       <DetailRow 
                         label="Origem Auth" 
                         value={envMetrics.loginCountries && envMetrics.loginCountries.length > 0 
-                          ? envMetrics.loginCountries.slice(0, 5).map(c => getCountryFlag(c.country)).join(' ')
+                          ? envMetrics.loginCountries.slice(0, 5).map(c => {
+                              const code = normalizeCountryCode(c.country);
+                              const name = getCountryName(code || c.country);
+                              return name;
+                            }).join(', ')
                           : 'N/A'
                         }
                       />
