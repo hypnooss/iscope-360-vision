@@ -135,6 +135,9 @@ export type Database = {
           activation_code: string | null
           activation_code_expires_at: string | null
           agent_version: string | null
+          capabilities: Json | null
+          certificate_public_key: string | null
+          certificate_thumbprint: string | null
           client_id: string | null
           config_fetched_at: string | null
           config_updated_at: string | null
@@ -150,6 +153,9 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           agent_version?: string | null
+          capabilities?: Json | null
+          certificate_public_key?: string | null
+          certificate_thumbprint?: string | null
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
@@ -165,6 +171,9 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           agent_version?: string | null
+          capabilities?: Json | null
+          certificate_public_key?: string | null
+          certificate_thumbprint?: string | null
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
@@ -950,6 +959,48 @@ export type Database = {
         }
         Relationships: []
       }
+      m365_tenant_agents: {
+        Row: {
+          agent_id: string
+          created_at: string | null
+          enabled: boolean | null
+          id: string
+          tenant_record_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string | null
+          enabled?: boolean | null
+          id?: string
+          tenant_record_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string | null
+          enabled?: boolean | null
+          id?: string
+          tenant_record_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tenant_agents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_tenant_agents_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_tenant_permissions: {
         Row: {
           created_at: string
@@ -1656,6 +1707,7 @@ export type Database = {
         | "snmp_query"
         | "ping_check"
         | "external_domain_analysis"
+        | "m365_powershell"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       device_category:
         | "firewall"
@@ -1828,6 +1880,7 @@ export const Constants = {
         "snmp_query",
         "ping_check",
         "external_domain_analysis",
+        "m365_powershell",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       device_category: [

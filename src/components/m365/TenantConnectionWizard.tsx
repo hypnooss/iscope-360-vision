@@ -34,7 +34,10 @@ import {
   AlertCircle,
   Info,
   ExternalLink,
-  Key
+  Key,
+  Server,
+  Download,
+  Terminal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -49,17 +52,28 @@ interface Client {
   name: string;
 }
 
+interface Agent {
+  id: string;
+  name: string;
+  certificate_thumbprint: string | null;
+  certificate_public_key: string | null;
+  capabilities: string[] | null;
+  last_seen: string | null;
+  client_id: string | null;
+}
+
 interface ConnectionResult {
   status: 'success' | 'partial' | 'error';
   missingPermissions: string[];
   errorMessage?: string;
 }
 
-type WizardStep = 'client' | 'tenant' | 'authorize' | 'result';
+type WizardStep = 'client' | 'tenant' | 'agent' | 'authorize' | 'result';
 
 const STEPS: { key: WizardStep; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: 'client', label: 'Cliente', icon: Building },
   { key: 'tenant', label: 'Tenant', icon: Globe },
+  { key: 'agent', label: 'Agent', icon: Server },
   { key: 'authorize', label: 'Autorizar', icon: Shield },
 ];
 
@@ -81,6 +95,11 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
   const [verifying, setVerifying] = useState(false);
   const [connectionResult, setConnectionResult] = useState<ConnectionResult | null>(null);
   
+  // Agent selection for PowerShell
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [loadingAgents, setLoadingAgents] = useState(false);
+  
   useEffect(() => {
     if (open) {
       fetchClients();
@@ -99,8 +118,47 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       setWaitingForAuth(false);
       setVerifying(false);
       setConnectionResult(null);
+      setSelectedAgentId('');
+      setAgents([]);
     }
   }, [open]);
+
+  // Fetch agents when client is selected
+  useEffect(() => {
+    if (selectedClientId) {
+      fetchAgents(selectedClientId);
+    }
+  }, [selectedClientId]);
+
+  const fetchAgents = async (clientId: string) => {
+    setLoadingAgents(true);
+    try {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, certificate_thumbprint, certificate_public_key, capabilities, last_seen, client_id')
+        .eq('client_id', clientId)
+        .eq('revoked', false)
+        .order('name');
+
+      if (error) throw error;
+      
+      // Filter to only show agents with M365 certificate capability
+      const m365Agents = (data || []).filter(
+        agent => agent.certificate_thumbprint && 
+          (agent.capabilities as unknown as string[] | null)?.includes('m365_powershell')
+      ).map(agent => ({
+        ...agent,
+        capabilities: agent.capabilities as unknown as string[] | null,
+      }));
+      
+      setAgents(m365Agents);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      setAgents([]);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
 
   // Listen for messages from popup window
   useEffect(() => {
@@ -181,11 +239,40 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         return !!selectedClientId;
       case 'tenant':
         return !!tenantId.trim();
+      case 'agent':
+        return true; // Agent step is optional
       case 'authorize':
         return true;
       default:
         return false;
     }
+  };
+
+  const downloadCertificate = () => {
+    const agent = agents.find(a => a.id === selectedAgentId);
+    if (!agent?.certificate_public_key) {
+      toast({
+        title: 'Certificado não disponível',
+        description: 'O agent selecionado não possui certificado público disponível.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const blob = new Blob([agent.certificate_public_key], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `iscope-agent-${agent.name.replace(/\s+/g, '-').toLowerCase()}.crt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Certificado baixado',
+      description: 'Faça upload do arquivo .crt no Azure App Registration.',
+    });
   };
 
   const handleAuthorize = async () => {
@@ -207,7 +294,25 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
 
       if (tenantError) throw tenantError;
 
-      // 2. Write initial audit log
+      // 2. Link agent to tenant if selected
+      if (selectedAgentId) {
+        const { error: linkError } = await supabase
+          .from('m365_tenant_agents')
+          .insert({
+            tenant_record_id: tenant.id,
+            agent_id: selectedAgentId,
+            enabled: true,
+          });
+
+        if (linkError) {
+          console.warn('Failed to link agent to tenant:', linkError);
+          // Don't fail the whole process, just log warning
+        } else {
+          console.log(`[TenantConnectionWizard] Agent ${selectedAgentId} linked to tenant ${tenant.id}`);
+        }
+      }
+
+      // 3. Write initial audit log
       await supabase.from('m365_audit_logs').insert({
         tenant_record_id: tenant.id,
         client_id: selectedClientId,
@@ -216,6 +321,7 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
         action_details: {
           tenant_id: tenantId.trim(),
           connection_method: 'multi_tenant_app',
+          agent_id: selectedAgentId || null,
         },
       });
 
@@ -470,6 +576,135 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
                     <p>
                       Você pode encontrar o Tenant ID no Azure Portal, ou usar o domínio 
                       principal do tenant (ex: contoso.onmicrosoft.com).
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case 'agent':
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Agent para Análise Avançada (Opcional)</Label>
+              <p className="text-sm text-muted-foreground">
+                Para análises via PowerShell (Transport Rules, DLP, Audit Logs avançados), 
+                selecione um Agent e configure o certificado no Azure.
+              </p>
+            </div>
+
+            {loadingAgents ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : agents.length === 0 ? (
+              <Card className="bg-muted/30 border-dashed border-border/50">
+                <CardContent className="py-6 text-center">
+                  <Terminal className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Nenhum agent com suporte a PowerShell disponível.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Instale um agent com a versão mais recente para habilitar análises avançadas.
+                    Você pode pular esta etapa e usar apenas a Graph API.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um agent (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Pular (usar apenas Graph API)</SelectItem>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-2">
+                          <Server className="w-4 h-4" />
+                          {agent.name}
+                          <span className="text-xs text-muted-foreground">
+                            ({agent.certificate_thumbprint?.substring(0, 8)}...)
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedAgentId && (
+                  <Card className="bg-primary/5 border-primary/20">
+                    <CardContent className="py-4 space-y-4">
+                      <div className="flex items-start gap-3">
+                        <Shield className="w-5 h-5 text-primary mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-sm">Configurar Certificado no Azure</h4>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Para habilitar análises via PowerShell, você precisa fazer upload do 
+                            certificado do agent no Azure App Registration.
+                          </p>
+                        </div>
+                      </div>
+
+                      <ol className="text-sm text-muted-foreground space-y-2 pl-2">
+                        <li className="flex items-start gap-2">
+                          <span className="font-medium text-foreground">1.</span>
+                          Baixe o certificado público do agent abaixo
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="font-medium text-foreground">2.</span>
+                          No Azure Portal, vá em <strong>App Registrations</strong> → iScope 360
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="font-medium text-foreground">3.</span>
+                          Em <strong>Certificates & Secrets</strong>, clique em <strong>Upload certificate</strong>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="font-medium text-foreground">4.</span>
+                          Faça upload do arquivo .crt baixado
+                        </li>
+                      </ol>
+
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={downloadCertificate}
+                        className="w-full gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        Baixar Certificado (.crt)
+                      </Button>
+
+                      <div className="flex items-start gap-2 pt-2 border-t border-border/30">
+                        <Info className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-muted-foreground">
+                          Thumbprint: <code className="font-mono bg-muted px-1 rounded">
+                            {agents.find(a => a.id === selectedAgentId)?.certificate_thumbprint}
+                          </code>
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
+
+            <Card className="bg-muted/30 border border-border/50">
+              <CardContent className="py-3">
+                <div className="flex gap-2 items-start">
+                  <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <div className="text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">Análises via PowerShell</p>
+                    <ul className="mt-1 space-y-1 text-xs">
+                      <li>• Transport Rules (Exchange)</li>
+                      <li>• DLP Policies</li>
+                      <li>• Advanced Audit Logs</li>
+                      <li>• Message Trace</li>
+                    </ul>
+                    <p className="mt-2 text-xs">
+                      A maioria das análises funciona sem PowerShell via Graph API.
                     </p>
                   </div>
                 </div>
