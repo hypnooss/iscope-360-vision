@@ -291,6 +291,8 @@ export type Database = {
       }
       compliance_rules: {
         Row: {
+          api_endpoint: string | null
+          business_impact: string | null
           category: string
           code: string
           created_at: string
@@ -304,10 +306,13 @@ export type Database = {
           pass_description: string | null
           recommendation: string | null
           severity: Database["public"]["Enums"]["rule_severity"]
+          technical_risk: string | null
           updated_at: string
           weight: number
         }
         Insert: {
+          api_endpoint?: string | null
+          business_impact?: string | null
           category: string
           code: string
           created_at?: string
@@ -321,10 +326,13 @@ export type Database = {
           pass_description?: string | null
           recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
+          technical_risk?: string | null
           updated_at?: string
           weight?: number
         }
         Update: {
+          api_endpoint?: string | null
+          business_impact?: string | null
           category?: string
           code?: string
           created_at?: string
@@ -338,6 +346,7 @@ export type Database = {
           pass_description?: string | null
           recommendation?: string | null
           severity?: Database["public"]["Enums"]["rule_severity"]
+          technical_risk?: string | null
           updated_at?: string
           weight?: number
         }

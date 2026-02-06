@@ -31,6 +31,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, CheckCircle, Loader2, Search, Filter, Copy, Eye } from 'lucide-react';
+import { ComplianceRuleDB, RuleSeverity } from '@/types/complianceRule';
 
 interface DeviceType {
   id: string;
@@ -39,27 +40,13 @@ interface DeviceType {
   code: string;
 }
 
-interface ComplianceRule {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  recommendation: string | null;
-  pass_description: string | null;
-  fail_description: string | null;
-  evaluation_logic: Record<string, any>;
-  device_type_id: string;
-  is_active: boolean;
-  created_at: string;
+// Extend base type with optional device_types relation
+interface ComplianceRule extends ComplianceRuleDB {
   device_types?: DeviceType;
 }
 
 type DeviceCategory = 'firewall' | 'cloud' | 'external';
 type DbDeviceCategory = 'firewall' | 'router' | 'switch' | 'server' | 'wlc' | 'other';
-type RuleSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 const categoryToDbCategory: Record<DeviceCategory, DbDeviceCategory> = {
   firewall: 'firewall',

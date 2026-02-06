@@ -27,6 +27,7 @@ import { Shield, Cloud, Globe, Loader2, Plus, Package } from 'lucide-react';
 import { DeviceTypeCard } from '@/components/admin/DeviceTypeCard';
 import { toast } from 'sonner';
 import * as LucideIcons from 'lucide-react';
+import { ComplianceRuleDB } from '@/types/complianceRule';
 
 type DeviceCategory = 'firewall' | 'cloud' | 'external';
 type DbDeviceCategory = 'firewall' | 'router' | 'switch' | 'server' | 'wlc' | 'other';
@@ -61,22 +62,8 @@ interface Blueprint {
   created_at: string;
 }
 
-interface ComplianceRule {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  recommendation: string | null;
-  pass_description: string | null;
-  fail_description: string | null;
-  evaluation_logic: Record<string, any>;
-  device_type_id: string;
-  is_active: boolean;
-  created_at: string;
-}
+// Using centralized type from @/types/complianceRule
+type ComplianceRule = ComplianceRuleDB;
 
 const categoryToDbCategory: Record<DeviceCategory, DbDeviceCategory> = {
   firewall: 'firewall',

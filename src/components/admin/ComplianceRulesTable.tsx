@@ -49,6 +49,9 @@ interface ComplianceRule {
   device_type_id: string;
   is_active: boolean;
   created_at: string;
+  technical_risk: string | null;
+  business_impact: string | null;
+  api_endpoint: string | null;
 }
 
 const SEVERITY_OPTIONS: { value: string; label: string; color: string }[] = [
@@ -108,6 +111,9 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
     fail_description: '',
     evaluation_logic: '{}',
     is_active: true,
+    technical_risk: '',
+    business_impact: '',
+    api_endpoint: '',
   });
 
   const getSeverityBadge = (severity: string) => {
@@ -132,6 +138,9 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
       fail_description: '',
       evaluation_logic: '{}',
       is_active: true,
+      technical_risk: '',
+      business_impact: '',
+      api_endpoint: '',
     });
     setSelectedRule(null);
   };
@@ -155,6 +164,9 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
       fail_description: rule.fail_description || '',
       evaluation_logic: JSON.stringify(rule.evaluation_logic, null, 2),
       is_active: rule.is_active,
+      technical_risk: rule.technical_risk || '',
+      business_impact: rule.business_impact || '',
+      api_endpoint: rule.api_endpoint || '',
     });
     setDialogOpen(true);
   };
@@ -202,6 +214,9 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
             fail_description: formData.fail_description || null,
             evaluation_logic: parsedLogic,
             is_active: formData.is_active,
+            technical_risk: formData.technical_risk || null,
+            business_impact: formData.business_impact || null,
+            api_endpoint: formData.api_endpoint || null,
           })
           .eq('id', selectedRule.id);
 
@@ -223,6 +238,9 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
             evaluation_logic: parsedLogic,
             device_type_id: deviceTypeId,
             is_active: formData.is_active,
+            technical_risk: formData.technical_risk || null,
+            business_impact: formData.business_impact || null,
+            api_endpoint: formData.api_endpoint || null,
           });
 
         if (error) throw error;
@@ -510,6 +528,40 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
                 </div>
               </div>
 
+              {/* Novos campos: Risco Técnico e Impacto no Negócio */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="technical_risk">Risco Técnico</Label>
+                  <Textarea
+                    id="technical_risk"
+                    value={formData.technical_risk}
+                    onChange={(e) => setFormData({ ...formData, technical_risk: e.target.value })}
+                    placeholder="Descreva o risco técnico caso esta regra falhe..."
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="business_impact">Impacto no Negócio</Label>
+                  <Textarea
+                    id="business_impact"
+                    value={formData.business_impact}
+                    onChange={(e) => setFormData({ ...formData, business_impact: e.target.value })}
+                    placeholder="Descreva o impacto no negócio se não corrigido..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="api_endpoint">Endpoint da API</Label>
+                <Input
+                  id="api_endpoint"
+                  value={formData.api_endpoint}
+                  onChange={(e) => setFormData({ ...formData, api_endpoint: e.target.value })}
+                  placeholder="Ex: /api/v2/cmdb/system/global"
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="evaluation_logic">Lógica de Avaliação (JSON)</Label>
                 <Textarea
@@ -581,16 +633,39 @@ export function ComplianceRulesTable({ deviceTypeId, rules, onRefresh }: Props) 
                 {selectedRule?.pass_description && (
                   <div>
                     <Label className="text-xs text-muted-foreground">Quando Passa</Label>
-                    <p className="text-sm text-green-600">{selectedRule.pass_description}</p>
+                    <p className="text-sm text-primary">{selectedRule.pass_description}</p>
                   </div>
                 )}
                 {selectedRule?.fail_description && (
                   <div>
                     <Label className="text-xs text-muted-foreground">Quando Falha</Label>
-                    <p className="text-sm text-red-600">{selectedRule.fail_description}</p>
+                    <p className="text-sm text-destructive">{selectedRule.fail_description}</p>
                   </div>
                 )}
               </div>
+
+              {/* Novos campos: Risco Técnico e Impacto no Negócio */}
+              <div className="grid grid-cols-2 gap-4">
+                {selectedRule?.technical_risk && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Risco Técnico</Label>
+                    <p className="text-sm">{selectedRule.technical_risk}</p>
+                  </div>
+                )}
+                {selectedRule?.business_impact && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Impacto no Negócio</Label>
+                    <p className="text-sm">{selectedRule.business_impact}</p>
+                  </div>
+                )}
+              </div>
+
+              {selectedRule?.api_endpoint && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Endpoint da API</Label>
+                  <code className="text-xs bg-muted px-2 py-1 rounded">{selectedRule.api_endpoint}</code>
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs text-muted-foreground">Lógica de Avaliação</Label>

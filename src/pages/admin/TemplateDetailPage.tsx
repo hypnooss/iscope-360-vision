@@ -16,6 +16,7 @@ import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow'
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
 import { TemplateRulesManagement } from '@/components/admin/TemplateRulesManagement';
 import { TemplateBlueprintsManagement } from '@/components/admin/TemplateBlueprintsManagement';
+import { ComplianceRuleDB } from '@/types/complianceRule';
 
 // Map device codes to icons
 const deviceIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -43,22 +44,8 @@ interface Blueprint {
   created_at: string;
 }
 
-interface ComplianceRule {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  recommendation: string | null;
-  pass_description: string | null;
-  fail_description: string | null;
-  evaluation_logic: Record<string, any>;
-  device_type_id: string;
-  is_active: boolean;
-  created_at: string;
-}
+// Using centralized type from @/types/complianceRule
+type ComplianceRule = ComplianceRuleDB;
 
 export default function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
