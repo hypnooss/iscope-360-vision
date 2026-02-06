@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, ReactNode } from 'react';
+import 'flag-icons/css/flag-icons.min.css';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -73,7 +74,7 @@ function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
 
 interface DetailRowProps {
   label: string;
-  value: string | number;
+  value: string | number | ReactNode;
   subValue?: string;
   indicator?: "success" | "warning" | "error";
   highlight?: boolean;
@@ -683,12 +684,21 @@ export default function M365PostureReportPage() {
                       <DetailRow 
                         label="Origem Auth" 
                         value={envMetrics.loginCountries && envMetrics.loginCountries.length > 0 
-                          ? envMetrics.loginCountries.slice(0, 5).map(c => {
-                              const code = normalizeCountryCode(c.country);
-                              const flag = getCountryFlag(c.country);
-                              const name = getCountryName(code || c.country);
-                              return `${flag} ${name}`;
-                            }).join(', ')
+                          ? (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              {envMetrics.loginCountries.slice(0, 5).map((c, idx) => {
+                                const code = normalizeCountryCode(c.country);
+                                const name = getCountryName(code || c.country);
+                                const flagCode = code.toLowerCase();
+                                return (
+                                  <span key={idx} className="inline-flex items-center gap-1.5">
+                                    <span className={`fi fi-${flagCode} rounded-sm`} style={{ fontSize: '1rem' }} />
+                                    <span>{name}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )
                           : 'N/A'
                         }
                       />
