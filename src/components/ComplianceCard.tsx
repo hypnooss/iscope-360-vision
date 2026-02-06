@@ -1,5 +1,5 @@
 import { ComplianceCheck, ComplianceStatus } from '@/types/compliance';
-import { CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown, Code, FileText, ExternalLink } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown, Code, FileText, ExternalLink, Building2, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -89,7 +89,9 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
   const hasEvidence = !!check.evidence && check.evidence.length > 0;
   const hasDetails = !!check.details || !!check.description;
   const hasAdminDetails = canViewAdminDetails && (!!check.apiEndpoint || !!check.rawData);
-  const canExpand = hasDetails || hasEvidence || hasAdminDetails || !!check.recommendation;
+  const hasTechnicalRisk = !!check.technicalRisk && normalizedStatus !== 'pass';
+  const hasBusinessImpact = !!check.businessImpact && normalizedStatus !== 'pass';
+  const canExpand = hasDetails || hasEvidence || hasAdminDetails || !!check.recommendation || hasTechnicalRisk || hasBusinessImpact;
 
   return (
     <div 
@@ -163,6 +165,32 @@ export function ComplianceCard({ check, onClick, variant = 'default', categoryCo
               </h5>
               <div className="bg-muted/30 rounded-md p-3 border border-border/30">
                 <p className="text-sm text-foreground whitespace-pre-line">{check.details || check.description}</p>
+              </div>
+            </div>
+          )}
+
+          {/* RISCO TÉCNICO - visível para todos quando não passa */}
+          {check.technicalRisk && normalizedStatus !== 'pass' && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <ShieldAlert className="w-3 h-3 text-warning" />
+                RISCO TÉCNICO
+              </h5>
+              <div className="bg-warning/10 rounded-md p-3 border border-warning/30">
+                <p className="text-sm text-foreground whitespace-pre-line">{check.technicalRisk}</p>
+              </div>
+            </div>
+          )}
+
+          {/* IMPACTO NO NEGÓCIO - visível para todos quando não passa */}
+          {check.businessImpact && normalizedStatus !== 'pass' && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Building2 className="w-3 h-3 text-destructive" />
+                IMPACTO NO NEGÓCIO
+              </h5>
+              <div className="bg-destructive/10 rounded-md p-3 border border-destructive/30">
+                <p className="text-sm text-foreground whitespace-pre-line">{check.businessImpact}</p>
               </div>
             </div>
           )}

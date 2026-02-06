@@ -112,6 +112,9 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
     fail_description: '',
     evaluation_logic: '{}',
     is_active: true,
+    technical_risk: '',
+    business_impact: '',
+    api_endpoint: '',
   });
 
   useEffect(() => {
@@ -152,6 +155,9 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
       fail_description: '',
       evaluation_logic: '{}',
       is_active: true,
+      technical_risk: '',
+      business_impact: '',
+      api_endpoint: '',
     });
     setSelectedRule(null);
   };
@@ -171,6 +177,9 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
         fail_description: rule.fail_description || '',
         evaluation_logic: JSON.stringify(rule.evaluation_logic, null, 2),
         is_active: rule.is_active,
+        technical_risk: rule.technical_risk || '',
+        business_impact: rule.business_impact || '',
+        api_endpoint: rule.api_endpoint || '',
       });
     } else {
       resetForm();
@@ -192,6 +201,9 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
       fail_description: rule.fail_description || '',
       evaluation_logic: JSON.stringify(rule.evaluation_logic, null, 2),
       is_active: false,
+      technical_risk: rule.technical_risk || '',
+      business_impact: rule.business_impact || '',
+      api_endpoint: rule.api_endpoint || '',
     });
     setDialogOpen(true);
   };
@@ -225,6 +237,9 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
         evaluation_logic: parsedLogic,
         is_active: formData.is_active,
         device_type_id: deviceTypeId,
+        technical_risk: formData.technical_risk || null,
+        business_impact: formData.business_impact || null,
+        api_endpoint: formData.api_endpoint || null,
       };
 
       if (selectedRule) {
@@ -544,6 +559,41 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
                 className="font-mono text-xs"
               />
             </div>
+            
+            {/* Novos campos: Risco Técnico e Impacto no Negócio */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="technical_risk">Risco Técnico</Label>
+                <Textarea
+                  id="technical_risk"
+                  value={formData.technical_risk}
+                  onChange={(e) => setFormData({ ...formData, technical_risk: e.target.value })}
+                  placeholder="Descreva o risco técnico caso esta regra falhe..."
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="business_impact">Impacto no Negócio</Label>
+                <Textarea
+                  id="business_impact"
+                  value={formData.business_impact}
+                  onChange={(e) => setFormData({ ...formData, business_impact: e.target.value })}
+                  placeholder="Descreva o impacto no negócio se não corrigido..."
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="api_endpoint">Endpoint da API</Label>
+              <Input
+                id="api_endpoint"
+                value={formData.api_endpoint}
+                onChange={(e) => setFormData({ ...formData, api_endpoint: e.target.value })}
+                placeholder="Ex: /api/v2/cmdb/system/global"
+              />
+            </div>
+            
             <div className="flex items-center justify-between">
               <Label htmlFor="is_active">Ativo</Label>
               <Switch
@@ -591,6 +641,24 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
                 <Label className="text-muted-foreground">Descrição</Label>
                 <p>{selectedRule.description || '-'}</p>
               </div>
+              
+              {/* Novos campos de metadados */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Risco Técnico</Label>
+                  <p className="text-sm">{selectedRule.technical_risk || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Impacto no Negócio</Label>
+                  <p className="text-sm">{selectedRule.business_impact || '-'}</p>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-muted-foreground">Endpoint da API</Label>
+                <p className="font-mono text-xs">{selectedRule.api_endpoint || '-'}</p>
+              </div>
+              
               <div>
                 <Label className="text-muted-foreground">Lógica de Avaliação</Label>
                 <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-48">
