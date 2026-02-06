@@ -38,3 +38,18 @@ verify_jwt = false
 
 [functions.m365-security-posture]
 verify_jwt = false
+
+[functions.m365-check-intune]
+verify_jwt = false
+
+[functions.m365-check-pim]
+verify_jwt = false
+
+[functions.m365-check-sharepoint]
+verify_jwt = false
+
+[functions.m365-check-teams]
+verify_jwt = false
+
+[functions.m365-check-defender]
+verify_jwt = false

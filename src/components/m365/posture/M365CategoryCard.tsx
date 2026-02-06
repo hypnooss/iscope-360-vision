@@ -9,7 +9,12 @@ import {
   Mail, 
   AlertTriangle,
   ChevronRight,
-  LucideIcon
+  LucideIcon,
+  Smartphone,
+  ShieldCheck,
+  HardDrive,
+  MessageSquare,
+  Shield
 } from 'lucide-react';
 import { M365RiskCategory, CATEGORY_LABELS, CATEGORY_ICONS } from '@/types/m365Insights';
 
@@ -34,6 +39,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
   AppWindow,
   Mail,
   AlertTriangle,
+  Smartphone,
+  ShieldCheck,
+  HardDrive,
+  MessageSquare,
+  Shield,
 };
 
 const CATEGORY_COLORS: Record<M365RiskCategory, { bg: string; border: string; icon: string }> = {
@@ -66,6 +76,31 @@ const CATEGORY_COLORS: Record<M365RiskCategory, { bg: string; border: string; ic
     bg: 'bg-rose-500/10',
     border: 'border-rose-500/30',
     icon: 'text-rose-400',
+  },
+  intune_devices: {
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30',
+    icon: 'text-emerald-400',
+  },
+  pim_governance: {
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/30',
+    icon: 'text-orange-400',
+  },
+  sharepoint_onedrive: {
+    bg: 'bg-teal-500/10',
+    border: 'border-teal-500/30',
+    icon: 'text-teal-400',
+  },
+  teams_collaboration: {
+    bg: 'bg-indigo-500/10',
+    border: 'border-indigo-500/30',
+    icon: 'text-indigo-400',
+  },
+  defender_security: {
+    bg: 'bg-pink-500/10',
+    border: 'border-pink-500/30',
+    icon: 'text-pink-400',
   },
 };
 

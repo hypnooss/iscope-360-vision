@@ -18,7 +18,12 @@ export type M365RiskCategory =
   | 'admin_privileges'     // Privilégios Administrativos  
   | 'apps_integrations'    // Aplicações & Integrações
   | 'email_exchange'       // Email & Exchange
-  | 'threats_activity';    // Ameaças & Atividades Suspeitas
+  | 'threats_activity'     // Ameaças & Atividades Suspeitas
+  | 'intune_devices'       // Intune & Dispositivos
+  | 'pim_governance'       // PIM & Governança
+  | 'sharepoint_onedrive'  // SharePoint & OneDrive
+  | 'teams_collaboration'  // Teams & Colaboração
+  | 'defender_security';   // Defender & DLP
 
 /**
  * Produtos Microsoft afetados
@@ -65,6 +70,11 @@ export const CATEGORY_LABELS: Record<M365RiskCategory, string> = {
   apps_integrations: 'Aplicações & Integrações',
   email_exchange: 'Email & Exchange',
   threats_activity: 'Ameaças & Atividades Suspeitas',
+  intune_devices: 'Intune & Dispositivos',
+  pim_governance: 'PIM & Governança',
+  sharepoint_onedrive: 'SharePoint & OneDrive',
+  teams_collaboration: 'Teams & Colaboração',
+  defender_security: 'Defender & DLP',
 };
 
 export const CATEGORY_ICONS: Record<M365RiskCategory, string> = {
@@ -74,6 +84,11 @@ export const CATEGORY_ICONS: Record<M365RiskCategory, string> = {
   apps_integrations: 'Blocks',
   email_exchange: 'Mail',
   threats_activity: 'AlertTriangle',
+  intune_devices: 'Smartphone',
+  pim_governance: 'ShieldCheck',
+  sharepoint_onedrive: 'HardDrive',
+  teams_collaboration: 'MessageSquare',
+  defender_security: 'Shield',
 };
 
 export const CATEGORY_COLORS: Record<M365RiskCategory, string> = {
@@ -83,6 +98,11 @@ export const CATEGORY_COLORS: Record<M365RiskCategory, string> = {
   apps_integrations: 'cyan',
   email_exchange: 'indigo',
   threats_activity: 'red',
+  intune_devices: 'green',
+  pim_governance: 'orange',
+  sharepoint_onedrive: 'teal',
+  teams_collaboration: 'violet',
+  defender_security: 'rose',
 };
 
 export const PRODUCT_LABELS: Record<M365Product, string> = {
@@ -444,6 +464,11 @@ export function groupInsightsByCategory(
     apps_integrations: [],
     email_exchange: [],
     threats_activity: [],
+    intune_devices: [],
+    pim_governance: [],
+    sharepoint_onedrive: [],
+    teams_collaboration: [],
+    defender_security: [],
   };
   
   for (const insight of insights) {

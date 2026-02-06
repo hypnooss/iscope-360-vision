@@ -1736,7 +1736,7 @@ Deno.serve(async (req) => {
     const { access_token } = await tokenRes.json();
     const now = new Date().toISOString();
 
-    console.log(`[m365-security-posture] Running 6 collectors in parallel (30+ checks)...`);
+    console.log(`[m365-security-posture] Running 11 collectors in parallel (60+ checks)...`);
 
     // Run all collectors in parallel with timeout protection
     const timeoutPromise = (promise: Promise<CollectorResult>, name: string, timeoutMs = 25000): Promise<CollectorResult> => {
@@ -1748,13 +1748,43 @@ Deno.serve(async (req) => {
       ]).catch(e => ({ insights: [], errors: [String(e)] }));
     };
 
+    // Call sub-functions for new categories
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    const callSubFunction = async (functionName: string): Promise<CollectorResult> => {
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({ access_token, now }),
+        });
+        if (!res.ok) {
+          return { insights: [], errors: [`${functionName}: ${res.status} ${res.statusText}`] };
+        }
+        return await res.json();
+      } catch (e) {
+        return { insights: [], errors: [`${functionName}: ${String(e)}`] };
+      }
+    };
+
     const results = await Promise.all([
+      // Original inline collectors
       timeoutPromise(collectIdentityInsights(access_token, now), 'Identity'),
       timeoutPromise(collectAdminInsights(access_token, now), 'Admin'),
       timeoutPromise(collectAuthInsights(access_token, now), 'Auth'),
       timeoutPromise(collectAppsInsights(access_token, now), 'Apps'),
       timeoutPromise(collectExchangeInsights(access_token, now), 'Exchange'),
       timeoutPromise(collectThreatsInsights(access_token, now), 'Threats'),
+      // New modular collectors via sub-functions
+      timeoutPromise(callSubFunction('m365-check-intune'), 'Intune', 30000),
+      timeoutPromise(callSubFunction('m365-check-pim'), 'PIM', 30000),
+      timeoutPromise(callSubFunction('m365-check-sharepoint'), 'SharePoint', 30000),
+      timeoutPromise(callSubFunction('m365-check-teams'), 'Teams', 30000),
+      timeoutPromise(callSubFunction('m365-check-defender'), 'Defender', 30000),
     ]);
 
     // Consolidate results
@@ -1768,8 +1798,12 @@ Deno.serve(async (req) => {
 
     console.log(`[m365-security-posture] Collected ${allInsights.length} insights, ${allErrors.length} errors`);
 
-    // Calculate category scores
-    const categories = ['identities', 'auth_access', 'admin_privileges', 'apps_integrations', 'email_exchange', 'threats_activity'];
+    // Calculate category scores - now with 11 categories
+    const categories = [
+      'identities', 'auth_access', 'admin_privileges', 'apps_integrations', 
+      'email_exchange', 'threats_activity', 'intune_devices', 'pim_governance',
+      'sharepoint_onedrive', 'teams_collaboration', 'defender_security'
+    ];
     const categoryLabels: Record<string, string> = {
       identities: 'Identidades',
       auth_access: 'Autenticação & Acesso',
@@ -1777,6 +1811,11 @@ Deno.serve(async (req) => {
       apps_integrations: 'Aplicações & Integrações',
       email_exchange: 'Email & Exchange',
       threats_activity: 'Ameaças & Atividades',
+      intune_devices: 'Intune & Dispositivos',
+      pim_governance: 'PIM & Governança',
+      sharepoint_onedrive: 'SharePoint & OneDrive',
+      teams_collaboration: 'Teams & Colaboração',
+      defender_security: 'Defender & DLP',
     };
 
     const categoryBreakdown = categories.map(cat => {
@@ -1795,7 +1834,7 @@ Deno.serve(async (req) => {
         criticalCount,
         highCount,
       };
-    });
+    }).filter(cat => cat.count > 0); // Only return categories with insights
 
     // Calculate overall score
     const totalPenalty = allInsights.reduce((sum, i) => sum + (i.status === 'fail' ? i.scoreImpacto : 0), 0);
