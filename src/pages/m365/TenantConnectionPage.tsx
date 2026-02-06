@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -8,7 +9,7 @@ import { useTenantConnection, TenantConnection } from '@/hooks/useTenantConnecti
 import { TenantStatusCard } from '@/components/m365/TenantStatusCard';
 import { TenantConnectionWizard } from '@/components/m365/TenantConnectionWizard';
 import { TenantEditDialog } from '@/components/m365/TenantEditDialog';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,6 +23,13 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+interface LastAnalysis {
+  tenant_record_id: string;
+  score: number | null;
+  status: string;
+  created_at: string;
+}
+
 export default function TenantConnectionPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
@@ -31,6 +39,50 @@ export default function TenantConnectionPage() {
   const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant, updateTenant } = useTenantConnection();
   const [showWizard, setShowWizard] = useState(false);
   const [editingTenant, setEditingTenant] = useState<TenantConnection | null>(null);
+  const [analyzingTenants, setAnalyzingTenants] = useState<Set<string>>(new Set());
+
+  // Fetch last completed analysis for each tenant
+  const tenantIds = useMemo(() => tenants.map(t => t.id), [tenants]);
+  
+  const { data: analysisHistory, refetch: refetchAnalyses } = useQuery({
+    queryKey: ['m365-tenant-analyses', tenantIds],
+    queryFn: async () => {
+      if (tenantIds.length === 0) return [];
+      
+      // Get latest completed analysis for each tenant
+      const { data, error } = await supabase
+        .from('m365_posture_history')
+        .select('tenant_record_id, score, status, created_at')
+        .in('tenant_record_id', tenantIds)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching analysis history:', error);
+        return [];
+      }
+
+      // Return only the most recent analysis per tenant
+      const latestByTenant = new Map<string, LastAnalysis>();
+      for (const record of data || []) {
+        if (!latestByTenant.has(record.tenant_record_id)) {
+          latestByTenant.set(record.tenant_record_id, record);
+        }
+      }
+      
+      return Array.from(latestByTenant.values());
+    },
+    enabled: tenantIds.length > 0,
+  });
+
+  // Create a map for quick lookup
+  const analysisMap = useMemo(() => {
+    const map = new Map<string, LastAnalysis>();
+    for (const analysis of analysisHistory || []) {
+      map.set(analysis.tenant_record_id, analysis);
+    }
+    return map;
+  }, [analysisHistory]);
 
   // Handle OAuth callback via postMessage from popup
   useEffect(() => {
@@ -200,7 +252,7 @@ export default function TenantConnectionPage() {
       const state = btoa(JSON.stringify(statePayload));
 
       // Build Admin Consent URL
-      const callbackUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/m365-oauth-callback`;
+      const callbackUrl = `https://akbosdbyheezghieiefz.supabase.co/functions/v1/m365-oauth-callback`;
       const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenant.tenant_id}/adminconsent`);
       adminConsentUrl.searchParams.set('client_id', configData.app_id);
       adminConsentUrl.searchParams.set('redirect_uri', callbackUrl);
@@ -251,6 +303,10 @@ export default function TenantConnectionPage() {
     return result;
   };
 
+  const handleAnalyzeComplete = () => {
+    refetchAnalyses();
+  };
+
   if (authLoading) return null;
 
   const connectedTenants = tenants.filter(t => t.connection_status === 'connected' || t.connection_status === 'partial');
@@ -261,16 +317,16 @@ export default function TenantConnectionPage() {
     <AppLayout>
       <div className="p-6 lg:p-8">
         <PageBreadcrumb items={[
-          { label: 'Microsoft 365', href: '/scope-m365' },
-          { label: 'Conexão com Tenant' },
+          { label: 'Microsoft 365', href: '/scope-m365/tenant-connection' },
+          { label: 'Tenants' },
         ]} />
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Conexão com Tenant</h1>
+            <h1 className="text-2xl font-bold text-foreground">Tenants Microsoft 365</h1>
             <p className="text-muted-foreground">
-              Gerencie as conexões dos tenants Microsoft 365 para todos os submódulos
+              Gerencie os tenants, inicie análises e acompanhe a postura de segurança
             </p>
           </div>
           <Button onClick={() => setShowWizard(true)} className="gap-2">
@@ -298,15 +354,23 @@ export default function TenantConnectionPage() {
 
         {/* Tenants List */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
             {[1, 2].map((i) => (
               <Card key={i} className="glass-card">
-                <CardHeader>
-                  <Skeleton className="h-5 w-40" />
-                  <Skeleton className="h-4 w-60" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-8 w-24" />
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <Skeleton className="h-12 w-12 rounded-lg" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="h-4 w-60" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -336,7 +400,7 @@ export default function TenantConnectionPage() {
                   <h2 className="text-lg font-semibold">Tenants Conectados</h2>
                   <Badge variant="secondary">{connectedTenants.length}</Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   {connectedTenants.map((tenant) => (
                     <TenantStatusCard
                       key={tenant.id}
@@ -346,6 +410,9 @@ export default function TenantConnectionPage() {
                       onDelete={handleDelete}
                       onUpdatePermissions={handleUpdatePermissions}
                       onEdit={handleEdit}
+                      lastAnalysis={analysisMap.get(tenant.id) || null}
+                      isAnalyzing={analyzingTenants.has(tenant.id)}
+                      onAnalyzeComplete={handleAnalyzeComplete}
                     />
                   ))}
                 </div>
@@ -360,7 +427,7 @@ export default function TenantConnectionPage() {
                   <h2 className="text-lg font-semibold">Aguardando Consentimento</h2>
                   <Badge variant="secondary">{pendingTenants.length}</Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   {pendingTenants.map((tenant) => (
                     <TenantStatusCard
                       key={tenant.id}
@@ -369,6 +436,7 @@ export default function TenantConnectionPage() {
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
+                      lastAnalysis={analysisMap.get(tenant.id) || null}
                     />
                   ))}
                 </div>
@@ -383,7 +451,7 @@ export default function TenantConnectionPage() {
                   <h2 className="text-lg font-semibold text-muted-foreground">Desconectados</h2>
                   <Badge variant="outline">{disconnectedTenants.length}</Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-60">
+                <div className="space-y-4 opacity-60">
                   {disconnectedTenants.map((tenant) => (
                     <TenantStatusCard
                       key={tenant.id}
@@ -392,6 +460,7 @@ export default function TenantConnectionPage() {
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
+                      lastAnalysis={analysisMap.get(tenant.id) || null}
                     />
                   ))}
                 </div>
