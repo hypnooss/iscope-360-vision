@@ -190,12 +190,13 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
     const { data: appsCount } = await graphFetchSafe(accessToken, '/applications/$count', { consistency: true });
     metrics.appRegistrationsCount = typeof appsCount === 'number' ? appsCount : 0;
 
-    // Enterprise apps (service principals) - excluding Microsoft internal apps
-    // Microsoft's tenant ID: f8cdef31-a31e-4b4a-93e4-5f571e91255a
+    // Enterprise apps (service principals) - matching Azure Portal "Enterprise Applications" view
+    // Filter: servicePrincipalType eq 'Application' (excludes ManagedIdentity)
+    // AND appOwnerOrganizationId ne Microsoft's tenant (excludes Microsoft internal apps)
     const msftTenantId = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a';
     const { data: spCount } = await graphFetchSafe(
       accessToken, 
-      `/servicePrincipals/$count?$filter=appOwnerOrganizationId ne ${msftTenantId}`, 
+      `/servicePrincipals/$count?$filter=servicePrincipalType eq 'Application' and appOwnerOrganizationId ne ${msftTenantId}`, 
       { consistency: true }
     );
     metrics.enterpriseAppsCount = typeof spCount === 'number' ? spCount : 0;
