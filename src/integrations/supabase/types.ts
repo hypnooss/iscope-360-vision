@@ -135,6 +135,7 @@ export type Database = {
           activation_code: string | null
           activation_code_expires_at: string | null
           agent_version: string | null
+          azure_certificate_key_id: string | null
           capabilities: Json | null
           certificate_public_key: string | null
           certificate_thumbprint: string | null
@@ -153,6 +154,7 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           agent_version?: string | null
+          azure_certificate_key_id?: string | null
           capabilities?: Json | null
           certificate_public_key?: string | null
           certificate_thumbprint?: string | null
@@ -171,6 +173,7 @@ export type Database = {
           activation_code?: string | null
           activation_code_expires_at?: string | null
           agent_version?: string | null
+          azure_certificate_key_id?: string | null
           capabilities?: Json | null
           certificate_public_key?: string | null
           certificate_thumbprint?: string | null
@@ -824,9 +827,11 @@ export type Database = {
       m365_global_config: {
         Row: {
           app_id: string
+          app_object_id: string | null
           client_secret_encrypted: string
           created_at: string
           created_by: string | null
+          home_tenant_id: string | null
           id: string
           last_validated_at: string | null
           updated_at: string
@@ -836,9 +841,11 @@ export type Database = {
         }
         Insert: {
           app_id: string
+          app_object_id?: string | null
           client_secret_encrypted: string
           created_at?: string
           created_by?: string | null
+          home_tenant_id?: string | null
           id?: string
           last_validated_at?: string | null
           updated_at?: string
@@ -848,9 +855,11 @@ export type Database = {
         }
         Update: {
           app_id?: string
+          app_object_id?: string | null
           client_secret_encrypted?: string
           created_at?: string
           created_by?: string | null
+          home_tenant_id?: string | null
           id?: string
           last_validated_at?: string | null
           updated_at?: string
