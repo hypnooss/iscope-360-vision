@@ -622,7 +622,7 @@ export default function M365PostureReportPage() {
                       </div>
 
                       {/* Mini Stats Row */}
-                      <div className="flex gap-3 mt-6">
+                      <div className="flex gap-3 mt-14">
                         <MiniStat value={totalChecks} label="Total" variant="primary" />
                         <MiniStat value={passedCount} label="Aprovadas" variant="success" />
                         <MiniStat value={failedCount} label="Falhas" variant="destructive" />

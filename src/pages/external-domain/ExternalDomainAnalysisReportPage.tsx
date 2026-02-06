@@ -722,7 +722,7 @@ export default function ExternalDomainAnalysisReportPage() {
                         </div>
 
                         {/* Mini Stats Row */}
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-14">
                           <MiniStat value={report.totalChecks} label="Total" variant="primary" />
                           <MiniStat value={report.passed} label="Aprovadas" variant="success" />
                           <MiniStat value={report.failed} label="Falhas" variant="destructive" />
