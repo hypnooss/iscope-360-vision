@@ -1,259 +1,234 @@
 
-# Plano: Migrar Guia de Correções para Banco de Dados
+# Plano: Preencher Guia de Correções e Ajustar PDF
 
-## Objetivo
+## Situação Atual
 
-Migrar os textos do "Guia de Correções" do arquivo hardcoded (`explanatoryContent.ts`) para o banco de dados, permitindo edição via interface administrativa sem necessidade de alterações no código.
+### Banco de Dados (`rule_correction_guides`)
+| Status | Quantidade | Regras |
+|--------|------------|--------|
+| Com guia completo | 17 | DKIM-001, DKIM-002, DMARC-001/002/003, SPF-001/002/003, MX-001/002, DNS-001/002/003/004/005/006 |
+| Sem guia | 6 | DKIM-003, DMARC-004/005/006, MX-003/004/005 |
 
----
-
-## Análise da Situação Atual
-
-### Estrutura do `EXPLANATORY_CONTENT` (arquivo `.ts`)
-
-| Campo | Tipo | Exemplo |
-|-------|------|---------|
-| `friendlyTitle` | string | "Proteção contra emails falsos (DMARC)" |
-| `whatIs` | string | "Sistema que protege seu domínio..." |
-| `whyMatters` | string | "Sem DMARC, qualquer pessoa pode..." |
-| `impacts` | string[] | ["Clientes podem receber...", "Perda de confiança..."] |
-| `howToFix` | string[] | ["Acesse o painel DNS...", "Adicione registro TXT..."] |
-| `difficulty` | 'low' \| 'medium' \| 'high' | "low" |
-| `timeEstimate` | string | "15 min" |
-| `providerExamples` | string[] (opcional) | ["Cloudflare", "Registro.br"] |
-
-### Cobertura Atual
-
-- **23 regras** no banco (template Domínio Externo)
-- **~17 regras** com conteúdo no `EXPLANATORY_CONTENT`
-- **~6 regras** faltando: DKIM-003, DMARC-004/005/006, MX-003/004/005
+### PDF (`ExternalDomainPDF.tsx`)
+- Já recebe `correctionGuides` como prop
+- Já implementa `getGuideContent()` com fallback para `explanatoryContent.ts`
+- Busca dados em `ExternalDomainAnalysisReportPage.tsx`
 
 ---
 
-## Alterações Necessárias
+## Etapa 1: Preencher Textos Faltantes (6 regras)
 
-### 1. Criar Nova Tabela no Banco de Dados
-
+### DKIM-003 - Redundância DKIM
 ```sql
-CREATE TABLE rule_correction_guides (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
-  -- Referência à regra
-  rule_id UUID NOT NULL REFERENCES compliance_rules(id) ON DELETE CASCADE,
-  
-  -- Textos do guia
-  friendly_title TEXT,
-  what_is TEXT,
-  why_matters TEXT,
-  impacts JSONB DEFAULT '[]'::jsonb,          -- Array de strings
-  how_to_fix JSONB DEFAULT '[]'::jsonb,       -- Array de strings
-  provider_examples JSONB DEFAULT '[]'::jsonb, -- Array de strings (opcional)
-  
-  -- Metadados
-  difficulty TEXT CHECK (difficulty IN ('low', 'medium', 'high')) DEFAULT 'medium',
-  time_estimate TEXT DEFAULT '30 min',
-  
-  -- Controle
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  
-  UNIQUE(rule_id)
-);
-
--- RLS Policies
-ALTER TABLE rule_correction_guides ENABLE ROW LEVEL SECURITY;
-
--- Super admins podem gerenciar
-CREATE POLICY "Super admins can manage guides"
-  ON rule_correction_guides FOR ALL
-  USING (has_role(auth.uid(), 'super_admin'));
-
--- Usuários podem visualizar
-CREATE POLICY "Users can view guides"
-  ON rule_correction_guides FOR SELECT
-  USING (true);
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'Múltiplos seletores DKIM',
+  'Ter mais de um seletor DKIM configurado para garantir continuidade caso um precise ser rotacionado.',
+  'Com apenas um seletor DKIM, a rotação de chaves pode causar falhas temporárias na autenticação de emails.',
+  '["Interrupção na autenticação durante rotação de chaves", "Emails podem falhar verificação DKIM temporariamente", "Dificuldade em migrar para novas chaves"]'::jsonb,
+  '["Acesse o painel do seu provedor de email (Google Workspace, Microsoft 365)", "Gere um segundo seletor DKIM com nome diferente (ex: google2, selector2)", "Adicione o novo registro DKIM no DNS mantendo o anterior ativo", "Teste ambos os seletores antes de desativar o antigo"]'::jsonb,
+  'medium',
+  '45 min',
+  '["Google Workspace", "Microsoft 365", "Zoho Mail"]'::jsonb
+FROM compliance_rules WHERE code = 'DKIM-003' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
 ```
 
----
-
-### 2. Migrar Dados Existentes
-
-Inserir os dados do `EXPLANATORY_CONTENT` na nova tabela:
-
+### DMARC-004 - Cobertura DMARC Total
 ```sql
--- Exemplo para DMARC-001
 INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
-SELECT 
-  cr.id,
-  'Proteção contra emails falsos (DMARC)',
-  'Sistema que protege seu domínio contra envio de emails falsos por terceiros.',
-  'Sem DMARC, qualquer pessoa pode enviar emails fingindo ser sua empresa...',
-  '["Clientes podem receber emails fraudulentos", "Perda de confiança", ...]'::jsonb,
-  '["Acesse o painel DNS...", "Adicione registro TXT...", ...]'::jsonb,
+SELECT id,
+  'Cobertura total do DMARC',
+  'Configurar o DMARC para que 100% dos emails passem pela verificação (pct=100).',
+  'Com cobertura parcial, apenas uma porcentagem dos emails é verificada, deixando brechas para ataques.',
+  '["Emails fraudulentos podem passar sem verificação", "Proteção incompleta contra phishing", "Falsa sensação de segurança"]'::jsonb,
+  '["Acesse o registro DMARC no seu DNS", "Localize o parâmetro pct= (se existir)", "Remova o parâmetro pct ou altere para pct=100", "Valor padrão já é 100%, então remover é suficiente"]'::jsonb,
+  'low',
+  '10 min',
+  '["Cloudflare", "Registro.br", "GoDaddy"]'::jsonb
+FROM compliance_rules WHERE code = 'DMARC-004' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+```
+
+### DMARC-005 - Alinhamento SPF Estrito
+```sql
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'Alinhamento SPF rigoroso',
+  'Exigir que o domínio do envelope (Return-Path) seja idêntico ao domínio do From, não apenas do mesmo domínio pai.',
+  'Alinhamento relaxado permite que subdomínios passem pela verificação, o que pode ser explorado por atacantes.',
+  '["Subdomínios não autorizados podem passar na verificação", "Menor proteção contra spoofing sofisticado", "Possível exploração via subdomínios"]'::jsonb,
+  '["Edite o registro DMARC no DNS", "Adicione ou altere o parâmetro aspf=s (strict)", "Exemplo: v=DMARC1; p=reject; aspf=s; adkim=s", "Teste antes para garantir que emails legítimos não serão bloqueados"]'::jsonb,
   'low',
   '15 min',
-  '["Cloudflare", "Registro.br", "GoDaddy", "Microsoft 365"]'::jsonb
-FROM compliance_rules cr
-WHERE cr.code = 'DMARC-001'
-  AND cr.device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+  '["Cloudflare", "Registro.br", "GoDaddy"]'::jsonb
+FROM compliance_rules WHERE code = 'DMARC-005' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+```
+
+### DMARC-006 - Alinhamento DKIM Estrito
+```sql
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'Alinhamento DKIM rigoroso',
+  'Exigir que o domínio na assinatura DKIM seja idêntico ao domínio do From, não apenas do mesmo domínio pai.',
+  'Alinhamento relaxado permite que emails assinados por subdomínios passem, reduzindo a eficácia da proteção.',
+  '["Assinaturas de subdomínios podem validar emails do domínio principal", "Menor granularidade na verificação", "Possível bypass via subdomínios comprometidos"]'::jsonb,
+  '["Edite o registro DMARC no DNS", "Adicione ou altere o parâmetro adkim=s (strict)", "Exemplo: v=DMARC1; p=reject; aspf=s; adkim=s", "Verifique se todos os emails legítimos usam DKIM do domínio correto"]'::jsonb,
+  'low',
+  '15 min',
+  '["Cloudflare", "Registro.br", "GoDaddy"]'::jsonb
+FROM compliance_rules WHERE code = 'DMARC-006' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+```
+
+### MX-003 - Prioridades MX Configuradas
+```sql
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'Prioridades dos servidores de email',
+  'Cada registro MX tem uma prioridade que define a ordem de tentativa de entrega de emails.',
+  'Sem prioridades corretas, emails podem ser enviados para servidores errados ou backup antes do principal.',
+  '["Emails podem ir para servidor secundário desnecessariamente", "Sobrecarga no servidor de backup", "Atrasos na entrega de emails"]'::jsonb,
+  '["Acesse o painel DNS do seu domínio", "Verifique os registros MX existentes", "Configure prioridades diferentes (10, 20, 30, etc.)", "Menor número = maior prioridade (servidor principal deve ter menor valor)"]'::jsonb,
+  'low',
+  '15 min',
+  '["Cloudflare", "Registro.br", "GoDaddy"]'::jsonb
+FROM compliance_rules WHERE code = 'MX-003' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+```
+
+### MX-004 - MX Aponta para Hostname
+```sql
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'MX deve apontar para hostname',
+  'Registros MX devem apontar para nomes de host (FQDN), nunca diretamente para endereços IP.',
+  'Apontar MX para IP viola as especificações de email (RFC) e pode causar problemas de entrega.',
+  '["Violação das especificações de email (RFC 5321)", "Alguns servidores podem rejeitar emails", "Problemas de compatibilidade com serviços de email"]'::jsonb,
+  '["Verifique se seus registros MX apontam para IPs", "Crie registros A para os servidores de email", "Altere os MX para apontar para hostnames (ex: mail.seudominio.com.br)", "Nunca use IPs diretamente em registros MX"]'::jsonb,
+  'low',
+  '20 min',
+  '["Cloudflare", "Registro.br", "GoDaddy"]'::jsonb
+FROM compliance_rules WHERE code = 'MX-004' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
+```
+
+### MX-005 - Contato Administrativo DNS
+```sql
+INSERT INTO rule_correction_guides (rule_id, friendly_title, what_is, why_matters, impacts, how_to_fix, difficulty, time_estimate, provider_examples)
+SELECT id,
+  'Email de contato no DNS',
+  'O registro SOA contém um email de contato administrativo para o domínio.',
+  'Este email é usado para notificações importantes sobre o domínio, como problemas de DNS ou segurança.',
+  '["Não receber alertas críticos sobre o domínio", "Dificuldade de contato em caso de problemas", "Pode afetar resolução de disputas de domínio"]'::jsonb,
+  '["Verifique o registro SOA do seu domínio", "O campo RNAME/contact deve conter um email válido", "Formato: admin.seudominio.com.br (@ é substituído por ponto)", "Contate seu provedor DNS se precisar alterar"]'::jsonb,
+  'low',
+  '15 min',
+  '["Cloudflare", "Registro.br", "AWS Route 53"]'::jsonb
+FROM compliance_rules WHERE code = 'MX-005' AND device_type_id = (SELECT id FROM device_types WHERE code = 'external_domain');
 ```
 
 ---
 
-### 3. Adicionar Nova Aba no TemplateDetailPage
+## Etapa 2: Verificar Integração PDF
 
-**Arquivo:** `src/pages/admin/TemplateDetailPage.tsx`
-
-Adicionar nova aba "Guia de Correções":
-
-```tsx
-<TabsTrigger value="guides" className="gap-2">
-  <BookOpen className="w-4 h-4" />
-  Guia de Correções
-  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-    {guidesCount}
-  </Badge>
-</TabsTrigger>
-
-<TabsContent value="guides" className="mt-6">
-  <CorrectionGuidesManagement deviceTypeId={id!} />
-</TabsContent>
-```
-
----
-
-### 4. Criar Componente de Gerenciamento
-
-**Novo arquivo:** `src/components/admin/CorrectionGuidesManagement.tsx`
-
-Interface para gerenciar os textos do guia:
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Guia de Correções                                            [Nova Entrada]│
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Regra         │ Título Amigável            │ Dificuldade │ Tempo │ Ações   │
-├────────────────┼────────────────────────────┼─────────────┼───────┼─────────┤
-│  DMARC-001     │ Proteção contra emails...  │ Baixa       │ 15min │ [✏️][🗑️]│
-│  DMARC-002     │ Política DMARC permissiva  │ Baixa       │ 10min │ [✏️][🗑️]│
-│  SPF-001       │ Lista de servidores...     │ Baixa       │ 15min │ [✏️][🗑️]│
-│  DNS-001       │ (sem guia configurado)     │ -           │ -     │ [➕]    │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Diálogo de Edição:**
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Editar Guia de Correção - DMARC-001                                    [X] │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Título Amigável *                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ Proteção contra emails falsos (DMARC)                               │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  O que é *                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ Sistema que protege seu domínio contra envio de emails falsos...   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  Por que importa *                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ Sem DMARC, qualquer pessoa pode enviar emails fingindo ser...      │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  Impactos Possíveis (um por linha)                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ Clientes podem receber emails fraudulentos em seu nome             │    │
-│  │ Perda de confiança e danos à reputação                             │    │
-│  │ Emails legítimos podem ir para spam                                │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  Como Corrigir (passos numerados, um por linha)                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │ Acesse o painel DNS do seu domínio                                 │    │
-│  │ Adicione um novo registro do tipo TXT                              │    │
-│  │ Nome: _dmarc.seudominio.com.br                                     │    │
-│  │ Valor: v=DMARC1; p=none; rua=mailto:admin@...                      │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-│  │ Dificuldade     │  │ Tempo Estimado  │  │ Exemplos de Provedores      │  │
-│  │ [▼ Baixa    ]   │  │ [ 15 min     ]  │  │ Cloudflare, Registro.br,... │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-│                                                                             │
-│                                             [Cancelar]  [Salvar]            │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 5. Atualizar Componente do PDF
-
-**Arquivo:** `src/components/pdf/ExternalDomainPDF.tsx`
-
-Alterar para buscar dados do banco em vez do arquivo hardcoded:
+O código já está correto! Em `ExternalDomainPDF.tsx`:
 
 ```typescript
-// Antes (hardcoded)
-import { getExplanatoryContent } from './data/explanatoryContent';
-
-// Depois (do banco)
-const { data: correctionGuides } = useQuery({
-  queryKey: ['correction-guides', deviceTypeId],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from('rule_correction_guides')
-      .select('*, compliance_rules!inner(code)')
-      .eq('compliance_rules.device_type_id', deviceTypeId);
-    return data;
-  },
-});
-
-// Helper para buscar guia por código da regra
-const getGuideContent = (ruleCode: string) => {
-  const guide = correctionGuides?.find(g => g.compliance_rules.code === ruleCode);
-  if (guide) {
+// Helper já implementado corretamente
+const getGuideContent = (
+  ruleId: string,
+  correctionGuides: CorrectionGuideData[] | undefined,
+  fallbackName?: string,
+  fallbackDescription?: string,
+  fallbackRecommendation?: string
+): ExplanatoryContent => {
+  // Primeiro tenta buscar no banco
+  const dbGuide = correctionGuides?.find(g => g.rule_code === ruleId);
+  
+  if (dbGuide && dbGuide.friendly_title) {
     return {
-      friendlyTitle: guide.friendly_title || rule.name,
-      whatIs: guide.what_is || rule.description,
-      whyMatters: guide.why_matters || '',
-      impacts: guide.impacts || [],
-      howToFix: guide.how_to_fix || [rule.recommendation],
-      difficulty: guide.difficulty || 'medium',
-      timeEstimate: guide.time_estimate || '30 min',
+      friendlyTitle: dbGuide.friendly_title || fallbackName || ruleId,
+      whatIs: dbGuide.what_is || fallbackDescription,
+      whyMatters: dbGuide.why_matters || '...',
+      impacts: dbGuide.impacts || [],
+      howToFix: dbGuide.how_to_fix || [],
+      difficulty: dbGuide.difficulty || 'medium',
+      timeEstimate: dbGuide.time_estimate || '30 min',
+      providerExamples: dbGuide.provider_examples || undefined,
     };
   }
-  // Fallback para regras sem guia
-  return getExplanatoryContent(ruleCode, rule.name, rule.description, rule.recommendation);
+  
+  // Fallback para arquivo hardcoded
+  return getExplanatoryContent(ruleId, fallbackName, fallbackDescription, fallbackRecommendation);
 };
 ```
 
+E em `ExternalDomainAnalysisReportPage.tsx`:
+
+```typescript
+// Já busca os guias do banco antes de gerar o PDF
+const { data: correctionGuides } = useQuery({
+  queryKey: ['correction-guides-pdf', deviceTypeId],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from('rule_correction_guides')
+      .select('*, compliance_rules!inner(code, device_type_id)')
+      .eq('compliance_rules.device_type_id', deviceTypeId);
+    return data?.map(g => ({
+      rule_code: g.compliance_rules.code,
+      friendly_title: g.friendly_title,
+      ...
+    }));
+  },
+});
+```
+
 ---
 
-### 6. Manter Fallback para Compatibilidade
-
-O arquivo `explanatoryContent.ts` será mantido como **fallback** para regras que ainda não têm guia no banco. Isso garante compatibilidade durante a migração.
-
----
-
-## Arquivos a Criar/Modificar
+## Arquivos a Modificar
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/migrations/xxx_create_rule_correction_guides.sql` | **Criar** tabela + migrar dados |
-| `src/components/admin/CorrectionGuidesManagement.tsx` | **Criar** componente de gerenciamento |
-| `src/pages/admin/TemplateDetailPage.tsx` | **Modificar** - adicionar nova aba |
-| `src/components/pdf/ExternalDomainPDF.tsx` | **Modificar** - buscar do banco |
-| `src/integrations/supabase/types.ts` | Auto-atualizado pelo Supabase |
+| `supabase/migrations/xxx_populate_correction_guides.sql` | **Criar** - Inserir os 7 guias faltantes |
+
+**Nenhuma alteração de código necessária** - a integração já está pronta.
 
 ---
 
-## Benefícios
+## Resultado Esperado
 
-- Administradores podem editar textos do Guia de Correções sem depender de desenvolvedores
-- Novos templates (ex: FortiGate, SonicWall) podem ter seus próprios guias
-- Manutenção centralizada no banco de dados
-- Interface amigável para edição de textos complexos (impactos, passos de correção)
-- Fallback automático para regras sem guia configurado
+### Antes
+- 17 de 23 regras com guia configurado (74%)
+- 6 regras usando fallback do `explanatoryContent.ts`
+
+### Depois
+- 23 de 23 regras com guia configurado (100%)
+- PDF usará exclusivamente dados do banco de dados
+- Administradores podem editar todos os textos via interface
+
+---
+
+## Seção Técnica
+
+### Estrutura da Tabela `rule_correction_guides`
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `friendly_title` | text | Título amigável para o PDF |
+| `what_is` | text | Seção "O que é" |
+| `why_matters` | text | Seção "Por que importa" |
+| `impacts` | jsonb[] | Lista de impactos possíveis |
+| `how_to_fix` | jsonb[] | Passos para correção |
+| `provider_examples` | jsonb[] | Exemplos de provedores (opcional) |
+| `difficulty` | text | 'low', 'medium', 'high' |
+| `time_estimate` | text | Tempo estimado (ex: "15 min") |
+
+### Fluxo de Dados
+```text
+[Administração > Templates > Guia de Correções]
+                    ↓
+         [rule_correction_guides]
+                    ↓
+  [ExternalDomainAnalysisReportPage.tsx]
+         (useQuery → correctionGuides)
+                    ↓
+      [ExternalDomainPDF.tsx]
+       (getGuideContent → prioriza banco)
+                    ↓
+         [PDFExplanatoryCard]
+```
