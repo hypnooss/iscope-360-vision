@@ -313,6 +313,79 @@ ensure_user() {
 
 ensure_dirs() {
   mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope-agent"
+  mkdir -p "$STATE_DIR/certs"
+}
+
+generate_m365_certificate() {
+  local cert_dir="$STATE_DIR/certs"
+  local cert_file="$cert_dir/m365.crt"
+  local key_file="$cert_dir/m365.key"
+  local thumbprint_file="$cert_dir/thumbprint.txt"
+  
+  if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]]; then
+    echo "Certificado M365 já existe, pulando geração..."
+    return
+  fi
+  
+  echo "Gerando certificado X.509 para autenticação M365 PowerShell..."
+  
+  # Verificar se openssl está disponível
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "Aviso: openssl não encontrado. Instalando..."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y openssl || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y openssl || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y openssl || true
+    fi
+  fi
+  
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "Aviso: openssl não disponível. Pulando geração de certificado M365."
+    echo "Para habilitar análises M365 via PowerShell, instale openssl e reinstale o agent."
+    return
+  fi
+  
+  # Gerar certificado auto-assinado válido por 2 anos
+  local hostname
+  hostname="\$(hostname -s 2>/dev/null || echo 'agent')"
+  
+  openssl req -x509 \\
+    -newkey rsa:2048 \\
+    -keyout "$key_file" \\
+    -out "$cert_file" \\
+    -sha256 \\
+    -days 730 \\
+    -nodes \\
+    -subj "/CN=iScope-Agent-\${hostname}/O=iScope 360" 2>/dev/null
+  
+  if [[ ! -f "$cert_file" ]]; then
+    echo "Aviso: Falha ao gerar certificado M365."
+    return
+  fi
+  
+  # Permissões restritas na chave privada
+  chmod 600 "$key_file"
+  chmod 644 "$cert_file"
+  
+  # Calcular e salvar thumbprint SHA1 (formato Azure)
+  local thumbprint
+  thumbprint="\$(openssl x509 -in "$cert_file" -noout -fingerprint -sha1 2>/dev/null | \\
+    sed 's/SHA1 Fingerprint=//' | sed 's/://g')"
+  
+  if [[ -n "$thumbprint" ]]; then
+    echo "$thumbprint" > "$thumbprint_file"
+    echo "Certificado M365 gerado com sucesso!"
+    echo "  Thumbprint: $thumbprint"
+    echo "  Certificado: $cert_file"
+    echo "  Chave privada: $key_file (600)"
+  fi
+  
+  # Ajustar permissões para o usuário do serviço
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$cert_dir" || true
+  fi
 }
 
 stop_service_if_exists() {
@@ -505,6 +578,7 @@ main() {
   install_amass
   ensure_user
   ensure_dirs
+  generate_m365_certificate
   download_release
   setup_venv
   write_env_file
@@ -516,6 +590,13 @@ main() {
   echo "Instalado com sucesso!"
   echo "Verificar status: systemctl status \${SERVICE_NAME} --no-pager"
   echo "Ver logs:       journalctl -u \${SERVICE_NAME} -f --no-pager"
+  
+  # Mostrar informações do certificado M365 se existir
+  if [[ -f "$STATE_DIR/certs/thumbprint.txt" ]]; then
+    echo ""
+    echo "Certificado M365 disponível para análises via PowerShell."
+    echo "Thumbprint: \$(cat "$STATE_DIR/certs/thumbprint.txt")"
+  fi
 }
 
 main "$@"

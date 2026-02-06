@@ -148,9 +148,22 @@ serve(async (req) => {
   try {
     // Parse request body
     const body = await req.json();
-    const { activation_code } = body;
+    const { 
+      activation_code, 
+      certificate_thumbprint, 
+      certificate_public_key,
+      capabilities 
+    } = body;
 
     console.log(`[register-agent] Registration attempt with code: ${activation_code?.substring(0, 4)}... (attempt ${count}/${RATE_LIMIT_MAX_ATTEMPTS})`);
+    
+    if (certificate_thumbprint) {
+      console.log(`[register-agent] Certificate thumbprint provided: ${certificate_thumbprint.substring(0, 8)}...`);
+    }
+    
+    if (capabilities && Array.isArray(capabilities)) {
+      console.log(`[register-agent] Capabilities: ${capabilities.join(", ")}`);
+    }
 
     if (!activation_code || typeof activation_code !== "string") {
       console.log("[register-agent] Missing or invalid activation_code");
@@ -237,15 +250,31 @@ serve(async (req) => {
 
     console.log("[register-agent] Tokens generated successfully");
 
-    // Step 5: Update agent with jwt_secret and clear activation code
+    // Step 5: Update agent with jwt_secret, certificate info, capabilities and clear activation code
+    const updateData: Record<string, any> = {
+      jwt_secret: jwtSecret,
+      activation_code: null,
+      activation_code_expires_at: null,
+      last_seen: new Date().toISOString(),
+    };
+    
+    // Add certificate info if provided
+    if (certificate_thumbprint && typeof certificate_thumbprint === "string") {
+      updateData.certificate_thumbprint = certificate_thumbprint;
+    }
+    
+    if (certificate_public_key && typeof certificate_public_key === "string") {
+      updateData.certificate_public_key = certificate_public_key;
+    }
+    
+    // Add capabilities if provided
+    if (capabilities && Array.isArray(capabilities)) {
+      updateData.capabilities = capabilities;
+    }
+    
     const { error: updateError } = await supabase
       .from("agents")
-      .update({
-        jwt_secret: jwtSecret,
-        activation_code: null,
-        activation_code_expires_at: null,
-        last_seen: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", agent.id);
 
     if (updateError) {

@@ -2,6 +2,69 @@ import os
 import jwt
 import time
 import sys
+from pathlib import Path
+
+
+# Certificate paths for M365 PowerShell authentication
+CERT_DIR = Path("/var/lib/iscope-agent/certs")
+THUMBPRINT_FILE = CERT_DIR / "thumbprint.txt"
+CERT_FILE = CERT_DIR / "m365.crt"
+
+
+def get_certificate_thumbprint():
+    """Read certificate thumbprint from file if available."""
+    if THUMBPRINT_FILE.exists():
+        return THUMBPRINT_FILE.read_text().strip()
+    return None
+
+
+def get_certificate_public_key():
+    """Read certificate public key (PEM content) for upload to Azure."""
+    if CERT_FILE.exists():
+        return CERT_FILE.read_text().strip()
+    return None
+
+
+def get_agent_capabilities():
+    """Detect available capabilities on this agent."""
+    import shutil
+    
+    capabilities = ["http"]  # Always available
+    
+    # Check SSH (paramiko)
+    try:
+        import paramiko
+        capabilities.append("ssh")
+    except ImportError:
+        pass
+    
+    # Check SNMP
+    try:
+        import pysnmp
+        capabilities.append("snmp")
+    except ImportError:
+        pass
+    
+    # Check DNS
+    try:
+        import dns.resolver
+        capabilities.append("dns")
+    except ImportError:
+        pass
+    
+    # Check Amass
+    if shutil.which("amass") or Path("/usr/local/bin/amass").exists():
+        capabilities.append("amass")
+    
+    # Check PowerShell
+    if shutil.which("pwsh"):
+        capabilities.append("powershell")
+        
+        # Check M365 certificate
+        if CERT_FILE.exists() and THUMBPRINT_FILE.exists():
+            capabilities.append("m365_powershell")
+    
+    return capabilities
 
 
 class AuthManager:
@@ -38,10 +101,24 @@ class AuthManager:
 
         self.logger.info("Registrando agent no backend")
 
+        # Collect certificate info and capabilities
+        thumbprint = get_certificate_thumbprint()
+        public_key = get_certificate_public_key()
+        capabilities = get_agent_capabilities()
+        
+        self.logger.info(f"Capabilities detectadas: {capabilities}")
+        if thumbprint:
+            self.logger.info(f"Certificado M365 encontrado: {thumbprint[:8]}...")
+
         try:
             response = self.api.post(
                 "/register-agent",
-                json={"activation_code": activation_code}
+                json={
+                    "activation_code": activation_code,
+                    "certificate_thumbprint": thumbprint,
+                    "certificate_public_key": public_key,
+                    "capabilities": capabilities,
+                }
             )
         except RuntimeError as e:
             msg = str(e)
