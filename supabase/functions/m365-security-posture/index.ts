@@ -59,6 +59,174 @@ async function graphFetchSafe(accessToken: string, endpoint: string, options: { 
   }
 }
 
+// ========== ENVIRONMENT METRICS ==========
+
+interface EnvironmentMetrics {
+  authType: 'cloud_only' | 'hybrid' | 'federated';
+  totalUsers: number;
+  activeUsers: number;
+  disabledUsers: number;
+  guestUsers: number;
+  mfaEnabledPercent: number;
+  conditionalAccessEnabled: boolean;
+  conditionalAccessPoliciesCount: number;
+  securityDefaultsEnabled: boolean;
+  enterpriseAppsCount: number;
+  appRegistrationsCount: number;
+  storageUsedGB: number;
+  storageTotalGB: number;
+  loginCountries: Array<{ country: string; count: number }>;
+}
+
+async function collectEnvironmentMetrics(accessToken: string): Promise<EnvironmentMetrics> {
+  const metrics: EnvironmentMetrics = {
+    authType: 'cloud_only',
+    totalUsers: 0,
+    activeUsers: 0,
+    disabledUsers: 0,
+    guestUsers: 0,
+    mfaEnabledPercent: 0,
+    conditionalAccessEnabled: false,
+    conditionalAccessPoliciesCount: 0,
+    securityDefaultsEnabled: false,
+    enterpriseAppsCount: 0,
+    appRegistrationsCount: 0,
+    storageUsedGB: 0,
+    storageTotalGB: 0,
+    loginCountries: [],
+  };
+
+  console.log('[collectEnvironmentMetrics] Starting collection...');
+
+  // 1. Organization info (detect Hybrid/Federation)
+  try {
+    const { data: orgData } = await graphFetchSafe(accessToken, '/organization');
+    if (orgData?.value?.[0]) {
+      const org = orgData.value[0];
+      if (org.onPremisesSyncEnabled) {
+        metrics.authType = 'hybrid';
+        console.log('[collectEnvironmentMetrics] Detected hybrid auth (AD Connect)');
+      }
+      // Check for federation via verified domains
+      const { data: domainsData } = await graphFetchSafe(accessToken, '/domains');
+      if (domainsData?.value) {
+        const federated = domainsData.value.some((d: any) => d.authenticationType === 'Federated');
+        if (federated) {
+          metrics.authType = 'federated';
+          console.log('[collectEnvironmentMetrics] Detected federated auth');
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] Organization check failed:', e);
+  }
+
+  // 2. User counts
+  try {
+    // Total users
+    const { data: totalCount } = await graphFetchSafe(accessToken, '/users/$count', { consistency: true });
+    metrics.totalUsers = typeof totalCount === 'number' ? totalCount : 0;
+    console.log(`[collectEnvironmentMetrics] Total users: ${metrics.totalUsers}`);
+
+    // Active users
+    const { data: activeCount } = await graphFetchSafe(accessToken, '/users/$count?$filter=accountEnabled eq true', { consistency: true });
+    metrics.activeUsers = typeof activeCount === 'number' ? activeCount : 0;
+
+    // Guest users
+    const { data: guestCount } = await graphFetchSafe(accessToken, "/users/$count?$filter=userType eq 'Guest'", { consistency: true });
+    metrics.guestUsers = typeof guestCount === 'number' ? guestCount : 0;
+
+    // Disabled = total - active
+    metrics.disabledUsers = Math.max(0, metrics.totalUsers - metrics.activeUsers);
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] User count failed:', e);
+  }
+
+  // 3. MFA Status (from authentication methods report)
+  try {
+    const { data: mfaData } = await graphFetchSafe(accessToken, '/reports/authenticationMethods/userRegistrationDetails?$top=999', { consistency: true });
+    if (mfaData?.value) {
+      const users = mfaData.value;
+      const withMfa = users.filter((u: any) => {
+        const methods = u.methodsRegistered || [];
+        return methods.includes('microsoftAuthenticatorPush') || 
+               methods.includes('softwareOneTimePasscode') || 
+               methods.includes('phoneAuthentication');
+      });
+      metrics.mfaEnabledPercent = users.length > 0 
+        ? Math.round((withMfa.length / users.length) * 100) 
+        : 0;
+      console.log(`[collectEnvironmentMetrics] MFA enabled: ${metrics.mfaEnabledPercent}%`);
+    }
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] MFA check failed:', e);
+  }
+
+  // 4. Conditional Access policies
+  try {
+    const { data: caData } = await graphFetchSafe(accessToken, '/identity/conditionalAccess/policies');
+    if (caData?.value) {
+      const enabledPolicies = caData.value.filter((p: any) => p.state === 'enabled');
+      metrics.conditionalAccessEnabled = enabledPolicies.length > 0;
+      metrics.conditionalAccessPoliciesCount = enabledPolicies.length;
+      console.log(`[collectEnvironmentMetrics] CA policies: ${enabledPolicies.length}`);
+    }
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] CA check failed:', e);
+  }
+
+  // 5. Security Defaults
+  try {
+    const { data: secDefaults } = await graphFetchSafe(accessToken, '/policies/identitySecurityDefaultsEnforcementPolicy');
+    metrics.securityDefaultsEnabled = secDefaults?.isEnabled === true;
+    console.log(`[collectEnvironmentMetrics] Security defaults: ${metrics.securityDefaultsEnabled}`);
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] Security defaults check failed:', e);
+  }
+
+  // 6. Applications count
+  try {
+    // App registrations
+    const { data: appsCount } = await graphFetchSafe(accessToken, '/applications/$count', { consistency: true });
+    metrics.appRegistrationsCount = typeof appsCount === 'number' ? appsCount : 0;
+
+    // Enterprise apps (service principals)
+    const { data: spCount } = await graphFetchSafe(accessToken, '/servicePrincipals/$count', { consistency: true });
+    metrics.enterpriseAppsCount = typeof spCount === 'number' ? spCount : 0;
+    console.log(`[collectEnvironmentMetrics] Apps: ${metrics.appRegistrationsCount} registrations, ${metrics.enterpriseAppsCount} enterprise`);
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] Apps count failed:', e);
+  }
+
+  // 7. Sign-in countries (requires Azure AD P1/P2)
+  try {
+    const { data: signIns } = await graphFetchSafe(
+      accessToken,
+      '/auditLogs/signIns?$select=location&$top=500',
+      { beta: true }
+    );
+    if (signIns?.value) {
+      const countries = new Map<string, number>();
+      signIns.value.forEach((s: any) => {
+        const country = s.location?.countryOrRegion;
+        if (country) {
+          countries.set(country, (countries.get(country) || 0) + 1);
+        }
+      });
+      metrics.loginCountries = Array.from(countries.entries())
+        .map(([country, count]) => ({ country, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+      console.log(`[collectEnvironmentMetrics] Login countries: ${metrics.loginCountries.map(c => c.country).join(', ')}`);
+    }
+  } catch (e) {
+    console.error('[collectEnvironmentMetrics] Sign-in logs failed:', e);
+  }
+
+  console.log('[collectEnvironmentMetrics] Collection complete');
+  return metrics;
+}
+
 // ========== IDENTITY COLLECTOR (IDT-001 to IDT-006) ==========
 
 async function collectIdentityInsights(accessToken: string, now: string): Promise<CollectorResult> {
@@ -1798,6 +1966,10 @@ Deno.serve(async (req) => {
 
     console.log(`[m365-security-posture] Collected ${allInsights.length} insights, ${allErrors.length} errors`);
 
+    // Collect environment metrics in parallel
+    const environmentMetrics = await collectEnvironmentMetrics(access_token);
+    console.log(`[m365-security-posture] Environment metrics collected`);
+
     // Calculate category scores - now with 11 categories
     const categories = [
       'identities', 'auth_access', 'admin_privileges', 'apps_integrations', 
@@ -1861,6 +2033,7 @@ Deno.serve(async (req) => {
       summary,
       categoryBreakdown,
       insights: allInsights,
+      environmentMetrics,
       errors: allErrors.length > 0 ? allErrors : undefined,
       tenant: { 
         id: tenant.tenant_id, 

@@ -158,6 +158,7 @@ Deno.serve(async (req) => {
             summary: result.summary,
             category_breakdown: result.categoryBreakdown,
             insights: result.insights,
+            environment_metrics: result.environmentMetrics || null,
             errors: result.errors ? { errors: result.errors } : null,
           })
           .eq('id', historyRecord.id);

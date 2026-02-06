@@ -68,42 +68,52 @@ function MiniStat({ value, label, variant = "default" }: MiniStatProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DetailRow: Structured info row with label and value
+// DetailRow: Structured info row with label and value + subValue support
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DetailRowProps {
   label: string;
   value: string | number;
-  indicator?: "success" | "error";
+  subValue?: string;
+  indicator?: "success" | "warning" | "error";
   highlight?: boolean;
 }
 
-function DetailRow({ label, value, indicator, highlight }: DetailRowProps) {
+function DetailRow({ label, value, subValue, indicator, highlight }: DetailRowProps) {
+  const indicatorStyles = {
+    success: "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]",
+    warning: "bg-amber-400 shadow-[0_0_6px_hsl(38_92%_50%/0.5)]",
+    error: "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]",
+  };
+
   return (
     <div className="group">
       <div className="flex items-start gap-3 py-2">
         <span className="text-xs text-muted-foreground w-24 flex-shrink-0 uppercase tracking-wide pt-0.5">
           {label}
         </span>
-        <div className="flex-1 min-w-0 flex items-center">
-          {indicator && (
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center">
+            {indicator && (
+              <span 
+                className={cn(
+                  "inline-block w-2 h-2 rounded-full mr-2",
+                  indicatorStyles[indicator]
+                )} 
+              />
+            )}
             <span 
               className={cn(
-                "inline-block w-2 h-2 rounded-full mr-2",
-                indicator === "success" 
-                  ? "bg-emerald-400 shadow-[0_0_6px_hsl(142_76%_60%/0.5)]" 
-                  : "bg-rose-400 shadow-[0_0_6px_hsl(0_72%_60%/0.5)]"
-              )} 
-            />
+                "text-sm font-medium",
+                highlight ? "text-primary" : "text-foreground"
+              )}
+            >
+              {value}
+            </span>
+          </div>
+          {subValue && (
+            <div className="text-xs text-muted-foreground mt-0.5">{subValue}</div>
           )}
-          <span 
-            className={cn(
-              "text-sm font-medium",
-              highlight ? "text-primary" : "text-foreground"
-            )}
-          >
-            {value}
-          </span>
         </div>
       </div>
       <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" />
@@ -112,8 +122,39 @@ function DetailRow({ label, value, indicator, highlight }: DetailRowProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Country flag helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getCountryFlag(countryCode: string): string {
+  const flags: Record<string, string> = {
+    'BR': '🇧🇷', 'US': '🇺🇸', 'PT': '🇵🇹', 'GB': '🇬🇧', 'UK': '🇬🇧',
+    'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹', 'NL': '🇳🇱',
+    'CA': '🇨🇦', 'AU': '🇦🇺', 'JP': '🇯🇵', 'CN': '🇨🇳', 'IN': '🇮🇳',
+    'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪',
+  };
+  return flags[countryCode?.toUpperCase()] || '🌍';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
+
+interface EnvironmentMetrics {
+  authType: 'cloud_only' | 'hybrid' | 'federated';
+  totalUsers: number;
+  activeUsers: number;
+  disabledUsers: number;
+  guestUsers: number;
+  mfaEnabledPercent: number;
+  conditionalAccessEnabled: boolean;
+  conditionalAccessPoliciesCount: number;
+  securityDefaultsEnabled: boolean;
+  enterpriseAppsCount: number;
+  appRegistrationsCount: number;
+  storageUsedGB: number;
+  storageTotalGB: number;
+  loginCountries: Array<{ country: string; count: number }>;
+}
 
 interface PostureData {
   id: string;
@@ -122,6 +163,7 @@ interface PostureData {
   summary: any;
   category_breakdown: any[];
   insights: any[];
+  environment_metrics: EnvironmentMetrics | null;
   created_at: string;
   tenant_record_id: string;
   client_id: string;
@@ -155,7 +197,7 @@ export default function M365PostureReportPage() {
 
       const { data, error } = await supabase
         .from('m365_posture_history')
-        .select('id, score, classification, summary, category_breakdown, insights, created_at, tenant_record_id, client_id')
+        .select('id, score, classification, summary, category_breakdown, insights, environment_metrics, created_at, tenant_record_id, client_id')
         .eq('id', reportId)
         .eq('status', 'completed')
         .maybeSingle();
@@ -163,7 +205,13 @@ export default function M365PostureReportPage() {
       if (error) throw error;
       if (!data) throw new Error('Report not found');
 
-      return data as PostureData;
+      // Parse environment metrics from insights if stored there
+      const rawData = data as any;
+      
+      return {
+        ...rawData,
+        environment_metrics: rawData.environment_metrics || null,
+      } as PostureData;
     },
     enabled: !!reportId && !!user,
   });
@@ -224,35 +272,69 @@ export default function M365PostureReportPage() {
   // Critical count for banner
   const criticalCount = insights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length;
 
-  // Extract environment metrics from insights
-  const environmentMetrics = useMemo(() => {
-    const metrics = {
+  // Use environment metrics from API or fallback to parsing insights
+  const envMetrics = useMemo((): EnvironmentMetrics => {
+    // If we have environment_metrics from the API, use it
+    if (reportData?.environment_metrics) {
+      return reportData.environment_metrics;
+    }
+    
+    // Fallback: extract from insights (for older reports)
+    const fallback: EnvironmentMetrics = {
+      authType: 'cloud_only',
       totalUsers: 0,
-      totalAdmins: 0,
-      totalGuests: 0,
+      activeUsers: 0,
+      disabledUsers: 0,
+      guestUsers: 0,
+      mfaEnabledPercent: 0,
+      conditionalAccessEnabled: false,
+      conditionalAccessPoliciesCount: 0,
+      securityDefaultsEnabled: false,
+      enterpriseAppsCount: 0,
+      appRegistrationsCount: 0,
+      storageUsedGB: 0,
+      storageTotalGB: 0,
+      loginCountries: [],
     };
     
     insights.forEach((insight: any) => {
-      // IDT-001: "X de Y usuário(s) sem MFA" → Y = total de usuários
+      // IDT-001: "X de Y usuário(s) sem MFA" → Y = total de usuários, calculate MFA %
       if (insight.id === 'IDT-001') {
-        const match = insight.descricaoExecutiva?.match(/de (\d+) usuário/);
-        if (match) metrics.totalUsers = parseInt(match[1], 10);
+        const match = insight.descricaoExecutiva?.match(/(\d+) de (\d+) usuário/);
+        if (match) {
+          const withoutMfa = parseInt(match[1], 10);
+          const total = parseInt(match[2], 10);
+          fallback.totalUsers = total;
+          fallback.activeUsers = total;
+          fallback.mfaEnabledPercent = total > 0 ? Math.round(((total - withoutMfa) / total) * 100) : 0;
+        }
       }
       
-      // IDT-003 ou IDT-004: guests
+      // IDT-003 ou IDT-004: guests count
       if (insight.id === 'IDT-003' || insight.id === 'IDT-004') {
         const count = insight.affectedCount || 0;
-        if (count > metrics.totalGuests) metrics.totalGuests = count;
+        if (count > fallback.guestUsers) fallback.guestUsers = count;
       }
       
-      // ADM-003: usuários privilegiados
+      // IDT-006: disabled users
+      if (insight.id === 'IDT-006') {
+        fallback.disabledUsers = insight.affectedCount || 0;
+      }
+      
+      // ADM-003: privileged users count
       if (insight.id === 'ADM-003') {
-        metrics.totalAdmins = insight.affectedCount || 0;
+        // This is privileged users, not global admins
+      }
+      
+      // AUT-001: Check for CA policies
+      if (insight.id === 'AUT-001') {
+        fallback.conditionalAccessEnabled = insight.status === 'pass';
+        fallback.conditionalAccessPoliciesCount = insight.affectedCount || 0;
       }
     });
     
-    return metrics;
-  }, [insights]);
+    return fallback;
+  }, [reportData, insights]);
 
   if (authLoading || moduleLoading || isLoading) {
     return (
@@ -369,53 +451,66 @@ export default function M365PostureReportPage() {
                       </div>
                     </div>
 
-                    {/* Right Panel: Environment + Severity */}
+                    {/* Right Panel: Environment Info */}
                     <div className="flex flex-col justify-center lg:border-l lg:border-border/30 lg:pl-8">
-                      {/* Identification */}
-                      <DetailRow label="Workspace" value={displayInfo.client_name || 'N/A'} />
+                      {/* Identity Block */}
                       <DetailRow label="Domínio" value={displayInfo.tenant_domain || 'N/A'} highlight />
                       <DetailRow 
-                        label="Data" 
-                        value={format(new Date(reportData.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} 
+                        label="Tipo Auth" 
+                        value={
+                          envMetrics.authType === 'hybrid' ? 'Hybrid (AD Connect)' :
+                          envMetrics.authType === 'federated' ? 'Federation (ADFS)' :
+                          'Cloud Only'
+                        } 
                       />
                       
                       <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
                       
-                      {/* Environment Metrics */}
+                      {/* Users Block */}
                       <DetailRow 
                         label="Usuários" 
-                        value={environmentMetrics.totalUsers > 0 ? environmentMetrics.totalUsers : 'N/A'} 
+                        value={envMetrics.activeUsers > 0 ? `${envMetrics.activeUsers} ativos` : 'N/A'}
+                        subValue={envMetrics.activeUsers > 0 
+                          ? `${envMetrics.disabledUsers} inativos, ${envMetrics.guestUsers} guests`
+                          : undefined
+                        }
                       />
                       <DetailRow 
-                        label="Admins" 
-                        value={environmentMetrics.totalAdmins > 0 ? environmentMetrics.totalAdmins : 'N/A'} 
-                      />
-                      <DetailRow 
-                        label="Guests" 
-                        value={environmentMetrics.totalGuests > 0 ? environmentMetrics.totalGuests : 'N/A'} 
+                        label="Aplicações" 
+                        value={envMetrics.enterpriseAppsCount > 0 || envMetrics.appRegistrationsCount > 0
+                          ? `Enterprise: ${envMetrics.enterpriseAppsCount} | Apps: ${envMetrics.appRegistrationsCount}`
+                          : 'N/A'
+                        }
                       />
                       
                       <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
                       
-                      {/* Severity breakdown */}
+                      {/* Security Block */}
                       <DetailRow 
-                        label="Críticos" 
-                        value={`${summary.critical} ${summary.critical === 1 ? 'problema' : 'problemas'}`}
-                        indicator={summary.critical > 0 ? "error" : "success"}
+                        label="MFA" 
+                        value={`${envMetrics.mfaEnabledPercent}% habilitado`}
+                        indicator={envMetrics.mfaEnabledPercent >= 80 ? "success" : envMetrics.mfaEnabledPercent >= 50 ? "warning" : "error"}
                       />
                       <DetailRow 
-                        label="Alta" 
-                        value={`${summary.high} ${summary.high === 1 ? 'problema' : 'problemas'}`}
-                        indicator={summary.high > 0 ? "error" : "success"}
+                        label="Cond. Access" 
+                        value={envMetrics.conditionalAccessEnabled 
+                          ? `✓ ${envMetrics.conditionalAccessPoliciesCount} política(s) ativa(s)` 
+                          : '✗ Não configurado'}
+                        indicator={envMetrics.conditionalAccessEnabled ? "success" : "error"}
                       />
-                      <DetailRow 
-                        label="Média" 
-                        value={`${summary.medium} ${summary.medium === 1 ? 'problema' : 'problemas'}`}
-                      />
-                      <DetailRow 
-                        label="Baixa" 
-                        value={`${summary.low} ${summary.low === 1 ? 'problema' : 'problemas'}`}
-                      />
+                      
+                      {/* Login Countries (if available) */}
+                      {envMetrics.loginCountries && envMetrics.loginCountries.length > 0 && (
+                        <>
+                          <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent my-3" />
+                          <DetailRow 
+                            label="Top Países" 
+                            value={envMetrics.loginCountries.slice(0, 3).map(c => 
+                              `${getCountryFlag(c.country)} ${c.country}`
+                            ).join(' ')}
+                          />
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
