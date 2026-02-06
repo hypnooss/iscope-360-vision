@@ -1,94 +1,46 @@
 
 
-# Plano: Corrigir Bandeiras de Países no ORIGEM AUTH
+# Plano: Correções no Relatório M365
 
-## Problema Identificado
+## Alterações Identificadas
 
-O Microsoft Graph API retorna o **nome completo do país** em `location.countryOrRegion` (ex: "Brazil", "United States"), mas a função `getCountryFlag` espera um **código ISO de 2 letras** (ex: "BR", "US").
+### 1. Alterar "Análise de Postura" para "Análise de Compliance"
 
-Por isso as bandeiras não estão aparecendo - a função não encontra match e retorna o globo genérico 🌍, ou os dados estão chegando como código mas sem correspondência.
+**Arquivo**: `src/pages/m365/M365PostureReportPage.tsx`
+
+**Linha 479**: Alterar o título
+
+```tsx
+// Antes
+<h1 className="text-3xl font-bold text-foreground mb-2">Análise de Postura</h1>
+
+// Depois
+<h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
+```
 
 ---
 
-## Solução
+### 2. Corrigir Exibição das Bandeiras de Países
 
-### 1. Criar mapeamento completo de nome para código ISO
+**Diagnóstico**: Os dados estão corretos no banco (`BR`, `US`), mas o código atual está gerando os emojis corretamente via Unicode. O problema identificado na imagem mostra "BR US" como texto - isso indica que os emojis de bandeira estão sendo gerados mas talvez não renderizando corretamente.
 
-Adicionar um mapa de conversão de nomes de países (como retornado pelo Graph) para códigos ISO:
+**Possíveis causas**:
+1. O navegador/SO não suporta flag emojis (raro)
+2. Há alguma transformação de texto que remove os emojis
+3. A fonte CSS não suporta emojis
 
-```tsx
-// Mapear nome do país → código ISO
-function normalizeCountryCode(country: string): string {
-  // Se já é código ISO de 2 letras
-  if (country.length === 2 && /^[A-Z]{2}$/i.test(country)) {
-    return country.toUpperCase();
-  }
-  
-  // Mapa de nomes comuns → códigos ISO
-  const nameToCode: Record<string, string> = {
-    'brazil': 'BR',
-    'brasil': 'BR',
-    'united states': 'US',
-    'usa': 'US',
-    'portugal': 'PT',
-    'united kingdom': 'GB',
-    'germany': 'DE',
-    'deutschland': 'DE',
-    'france': 'FR',
-    'spain': 'ES',
-    'españa': 'ES',
-    'italy': 'IT',
-    'italia': 'IT',
-    'netherlands': 'NL',
-    'canada': 'CA',
-    'australia': 'AU',
-    'japan': 'JP',
-    'china': 'CN',
-    'india': 'IN',
-    'mexico': 'MX',
-    'méxico': 'MX',
-    'argentina': 'AR',
-    'chile': 'CL',
-    'colombia': 'CO',
-    'peru': 'PE',
-    'perú': 'PE',
-    // ... mais países conforme necessário
-  };
-  
-  return nameToCode[country.toLowerCase()] || country.slice(0, 2).toUpperCase();
-}
-```
-
-### 2. Atualizar função getCountryFlag
+**Solução**: Adicionar uma verificação explícita e garantir que os códigos ISO de 2 letras sejam processados corretamente. Também vamos adicionar um fallback visual mais robusto:
 
 ```tsx
 function getCountryFlag(countryInput: string): string {
-  // Normalizar para código ISO
+  if (!countryInput) return '🌍';
+  
   const code = normalizeCountryCode(countryInput);
   
-  const flags: Record<string, string> = {
-    'BR': '🇧🇷', 'US': '🇺🇸', 'PT': '🇵🇹', 'GB': '🇬🇧', 'UK': '🇬🇧',
-    'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹', 'NL': '🇳🇱',
-    'CA': '🇨🇦', 'AU': '🇦🇺', 'JP': '🇯🇵', 'CN': '🇨🇳', 'IN': '🇮🇳',
-    'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪',
-  };
-  
-  return flags[code] || '🌍';
-}
-```
-
-### 3. (Alternativa) Usar biblioteca de bandeiras via Unicode
-
-Os emojis de bandeira são formados por **Regional Indicator Symbols**. Podemos gerar dinamicamente:
-
-```tsx
-function getCountryFlag(countryCode: string): string {
-  const code = normalizeCountryCode(countryCode);
-  
-  // Converter código ISO para emoji de bandeira
-  // 'BR' → 🇧🇷 (B=127463, R=127479)
-  if (code.length === 2) {
-    const codePoints = [...code.toUpperCase()].map(
+  // Validar que temos um código de 2 letras válido
+  if (code.length === 2 && /^[A-Z]{2}$/.test(code)) {
+    // Generate flag emoji using Unicode Regional Indicator Symbols
+    const codePoints = [...code].map(
       char => 0x1F1E6 - 65 + char.charCodeAt(0)
     );
     return String.fromCodePoint(...codePoints);
@@ -98,23 +50,32 @@ function getCountryFlag(countryCode: string): string {
 }
 ```
 
-Este método gera bandeiras para **qualquer** país automaticamente!
+**Teste alternativo**: Se as bandeiras ainda não aparecerem após a correção, pode ser um problema de renderização do sistema. Nesse caso, podemos:
+- Usar uma biblioteca de ícones de bandeiras (ex: `flag-icons`)
+- Usar imagens de bandeiras do CDN (ex: `flagcdn.com`)
 
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/m365/M365PostureReportPage.tsx` | Atualizar `getCountryFlag` para normalizar nomes de países e gerar bandeiras dinamicamente |
+| `src/pages/m365/M365PostureReportPage.tsx` | Linha 479: "Análise de Postura" → "Análise de Compliance" |
+| `src/pages/m365/M365PostureReportPage.tsx` | Ajustar `getCountryFlag` para garantir validação de código ISO |
 
 ---
 
 ## Resultado Esperado
 
-```
-ORIGEM AUTH    🇧🇷 🇺🇸 🇵🇹 🇩🇪 🇫🇷
-```
+- **Título**: "Análise de Compliance" em vez de "Análise de Postura"
+- **Origem Auth**: 🇧🇷 🇺🇸 (bandeiras de emoji em vez de texto "BR US")
 
-Com a solução de Unicode dinâmico, qualquer código de país será convertido automaticamente para sua bandeira correspondente.
+---
+
+## Nota sobre Enterprise Apps vs App Registrations
+
+Para referência futura no sistema, pode-se adicionar um tooltip explicativo:
+
+- **Enterprise Applications (Service Principals)**: Apps de terceiros autorizados no tenant (Microsoft 365, integrações SaaS, conectores)
+- **App Registrations**: Apps desenvolvidos internamente pela organização
 
