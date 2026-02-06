@@ -1,54 +1,81 @@
 
-# Plano: Corrigir Limite Máximo do $top para Sign-Ins
+# Plano: Filtrar Apenas Aplicativos Empresariais (Excluir Apps Microsoft)
 
-## Problema Identificado
+## Problema Atual
 
-A Microsoft Graph API para `auditLogs/signIns` tem um **limite máximo de 999** para o parâmetro `$top`:
+A API `/servicePrincipals/$count` retorna **todos** os Service Principals, incluindo:
+- Apps de sistema Microsoft (Azure AD, Office 365, Graph, etc.)
+- Conectores internos do Azure
+- Apps empresariais reais (terceiros + internos)
 
-> "$top accepts a minimum value of 1 and a maximum value of 999 (inclusive)"
-
-Quando solicitamos `$top=1077` (359 usuários × 3), a API ignora o valor e não retorna os dados esperados, resultando em `loginCountries: []`.
+No caso da Nexta: **330 total**, mas apenas **~47** são aplicativos empresariais relevantes.
 
 ## Solução
 
-Ajustar o limite máximo de 5000 para **999** na fórmula de cálculo.
+Filtrar Service Principals para excluir apps da Microsoft usando o campo `appOwnerOrganizationId`.
 
-### Alteração no Código
+### Critério de Filtro
+
+Apps da Microsoft têm `appOwnerOrganizationId` = `f8cdef31-a31e-4b4a-93e4-5f571e91255a` (ID do tenant Microsoft).
+
+Para contar apenas apps empresariais:
+```
+/servicePrincipals/$count?$filter=appOwnerOrganizationId ne f8cdef31-a31e-4b4a-93e4-5f571e91255a
+```
+
+---
+
+## Alteração no Código
 
 **Arquivo:** `supabase/functions/m365-security-posture/index.ts`
 
-**Linha 204 - Antes:**
+### Antes (linhas 193-195)
 ```typescript
-const signInSampleSize = Math.min(Math.max(metrics.activeUsers * 3, 500), 5000);
+// Enterprise apps (service principals)
+const { data: spCount } = await graphFetchSafe(accessToken, '/servicePrincipals/$count', { consistency: true });
+metrics.enterpriseAppsCount = typeof spCount === 'number' ? spCount : 0;
 ```
 
-**Depois:**
+### Depois
 ```typescript
-// Microsoft Graph signIns API has a maximum $top limit of 999
-const signInSampleSize = Math.min(Math.max(metrics.activeUsers * 3, 500), 999);
-```
-
-### Adicionar Log de Debug
-
-Para diagnosticar problemas futuros, adicionar um log caso a resposta não contenha dados:
-
-```typescript
-const { data: signIns, error: signInsError } = await graphFetchSafe(
-  accessToken,
-  `/auditLogs/signIns?$select=location,status&$top=${signInSampleSize}`,
-  { beta: true }
+// Enterprise apps (service principals) - excluding Microsoft internal apps
+// Microsoft's tenant ID: f8cdef31-a31e-4b4a-93e4-5f571e91255a
+const msftTenantId = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a';
+const { data: spCount } = await graphFetchSafe(
+  accessToken, 
+  `/servicePrincipals/$count?$filter=appOwnerOrganizationId ne ${msftTenantId}`, 
+  { consistency: true }
 );
-
-if (signInsError) {
-  console.error('[collectEnvironmentMetrics] Sign-in fetch error:', signInsError);
-}
-
-if (signIns?.value) {
-  // ... processamento existente
-} else {
-  console.warn('[collectEnvironmentMetrics] Sign-in data is empty or missing .value');
-}
+metrics.enterpriseAppsCount = typeof spCount === 'number' ? spCount : 0;
 ```
+
+---
+
+## Atualizar Label no Frontend
+
+**Arquivo:** `src/pages/m365/M365PostureReportPage.tsx`
+
+### Antes (linha 660)
+```tsx
+? `Enterprise: ${envMetrics.enterpriseAppsCount} | Apps: ${envMetrics.appRegistrationsCount}`
+```
+
+### Depois
+```tsx
+? `Empresariais: ${envMetrics.enterpriseAppsCount} | Apps: ${envMetrics.appRegistrationsCount}`
+```
+
+---
+
+## Resultado Esperado
+
+**Antes:** `Enterprise: 330 | Apps: 6`
+
+**Depois:** `Empresariais: 47 | Apps: 6`
+
+Onde:
+- **Empresariais: 47** = Apps de terceiros + apps internos autorizados no tenant (excluindo Microsoft)
+- **Apps: 6** = App Registrations criados pela própria organização
 
 ---
 
@@ -56,26 +83,14 @@ if (signIns?.value) {
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/m365-security-posture/index.ts` | Alterar limite máximo de 5000 para 999 e adicionar logs de debug |
+| `supabase/functions/m365-security-posture/index.ts` | Adicionar filtro `appOwnerOrganizationId ne f8cdef31-...` na contagem de Service Principals |
+| `src/pages/m365/M365PostureReportPage.tsx` | Alterar label "Enterprise" para "Empresariais" |
 
 ---
 
-## Nova Fórmula
+## Nota Técnica
 
-```
-eventos = min(max(activeUsers × 3, 500), 999)
-```
-
-| Usuários Ativos | Fórmula (×3) | Valor Final |
-|-----------------|--------------|-------------|
-| 50              | 150          | **500** (mínimo) |
-| 200             | 600          | **600** |
-| 300             | 900          | **900** |
-| 359             | 1077         | **999** (máximo) |
-| 500+            | 1500+        | **999** (máximo) |
-
----
-
-## Nota sobre Paginação
-
-Para ambientes maiores que necessitem de mais de 999 eventos, seria necessário implementar paginação usando `@odata.nextLink`. Isso pode ser uma melhoria futura, mas para a maioria dos casos de uso, 999 eventos recentes são representativos o suficiente para a análise de origem de autenticação.
+O filtro OData `ne` (not equals) exclui todos os apps onde o `appOwnerOrganizationId` é o tenant da Microsoft. Isso deixa apenas:
+- Apps de terceiros (Zoom, Slack, Salesforce, etc.)
+- Apps empresariais personalizados
+- Integrações autorizadas pelo administrador
