@@ -389,6 +389,9 @@ export interface M365PostureResponse {
   /** Cache info */
   cached?: boolean;
   cachedAt?: string;
+  
+  /** Errors during collection (partial failures) */
+  errors?: string[];
 }
 
 // ============================================================
