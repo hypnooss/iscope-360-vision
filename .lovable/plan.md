@@ -1,263 +1,174 @@
 
-# Plano: Modelo Assíncrono de Análise M365 (Padrão Firewall/Domínio Externo)
 
-## Problema Identificado
+# Plano: Reorganizar Gestao de Tenants M365
 
-A análise M365 atual funciona em **tempo real sincronamente**:
-1. Usuário clica "Atualizar" 
-2. Edge Function executa 57+ verificações via Graph API
-3. Resposta demora 30-60s (ou timeout)
-4. Sem histórico persistido
-5. Performance comprometida na experiência do usuário
+## Resumo das Mudancas
 
-## Solução Proposta
+O objetivo e centralizar a gestao de tenants em uma unica tela, permitindo ao cliente administrar seus tenants e iniciar analises diretamente do card, eliminando a tela de "Analise" separada.
 
-Migrar para o modelo assíncrono já usado em **Domínio Externo** e **Firewall**:
+## Mudancas no Menu de Navegacao
 
+### Antes
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│ Tela de Análise │     │  Edge Function   │     │ Tabela de Histórico │
-│ (Iniciar)       │ ──> │  (Trigger Task)  │ ──> │ m365_posture_history│
-└─────────────────┘     └──────────────────┘     └─────────────────────┘
-         │                                                 │
-         v                                                 v
-┌─────────────────┐                            ┌─────────────────────┐
-│ Tela Execuções  │ <────── polling ──────────>│ Tela de Relatórios  │
-│ (Monitorar)     │                            │ (Visualizar)        │
-└─────────────────┘                            └─────────────────────┘
+Microsoft 365
+├── Dashboard            <-- REMOVER
+├── Análise              <-- REMOVER
+├── Execuções
+├── Relatórios
+├── Entra ID
+└── Conexão com Tenant   <-- RENOMEAR para "Tenants"
 ```
 
----
-
-## Arquitetura de Páginas
-
-### Páginas a Criar
-
-| Página | Arquivo | Descrição |
-|--------|---------|-----------|
-| **Análise M365** | `M365AnalysisPage.tsx` | Tela inicial para selecionar tenant e iniciar análise |
-| **Execuções M365** | `M365ExecutionsPage.tsx` | Monitoramento de tarefas em andamento |
-| **Relatórios M365** | `M365ReportsPage.tsx` | Histórico de análises com seletor de versão |
-| **Relatório Detalhe** | `M365PostureReportPage.tsx` | Visualização do relatório (refatorar da atual) |
-
-### Fluxo do Usuário
-
-1. **Análise M365**: Usuário seleciona tenant e clica "Iniciar Análise"
-2. **Execuções M365**: Tarefa aparece como "Pendente" → "Executando" → "Concluída"
-3. **Relatórios M365**: Usuário acessa histórico e visualiza relatórios
-
----
-
-## Banco de Dados
-
-### Nova Tabela: `m365_posture_history`
-
-```sql
-CREATE TABLE m365_posture_history (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_record_id UUID NOT NULL REFERENCES m365_tenants(id) ON DELETE CASCADE,
-  client_id UUID NOT NULL REFERENCES clients(id),
-  score INTEGER NOT NULL,
-  classification TEXT NOT NULL,
-  summary JSONB NOT NULL,
-  category_breakdown JSONB NOT NULL,
-  insights JSONB NOT NULL,
-  errors JSONB,
-  analyzed_by UUID REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE INDEX idx_m365_posture_history_tenant ON m365_posture_history(tenant_record_id);
-CREATE INDEX idx_m365_posture_history_client ON m365_posture_history(client_id);
-CREATE INDEX idx_m365_posture_history_created ON m365_posture_history(created_at DESC);
+### Depois
+```
+Microsoft 365
+├── Tenants        <-- NOVO NOME
+├── Execuções
+├── Relatórios
+└── Entra ID              
 ```
 
-### Novo Tipo de Tarefa
 
-Adicionar ao enum `agent_task_type`:
-```sql
-ALTER TYPE agent_task_type ADD VALUE 'm365_posture_analysis';
+## Arquivos a Modificar
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/layout/AppLayout.tsx` | Remover item "Analise", renomear "Conexao com Tenant" para "Tenants" |
+| `src/App.tsx` | Remover rota `/scope-m365/analysis` e import do `M365AnalysisPage` |
+| `src/pages/m365/TenantConnectionPage.tsx` | Atualizar titulo/breadcrumb para "Tenants" |
+| `src/components/m365/TenantStatusCard.tsx` | Redesenhar para layout full-width com novas infos |
+| `src/pages/m365/M365AnalysisPage.tsx` | Pode ser removido (arquivo nao mais usado) |
+
+## Novo Design do Card de Tenant
+
+O card atual ocupa metade da tela (grid 2 colunas). O novo layout ocupara a largura total com as informacoes organizadas horizontalmente:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🏢 Contoso Corp                                                    ● Conectado         │
+│    contoso.onmicrosoft.com                                                              │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                         │
+│  Workspace          Última Análise              Score         Agendamento              │
+│  ─────────────      ──────────────────          ─────         ────────────────────      │
+│  ACME Corp          15/01/2026 14:30 (há 2h)    72%           Semanal (Dom 03:00)      │
+│                                                                                         │
+│  [Testar] [Editar] [Permissões] [Desconectar] [Excluir]                 [🔍 Analisar]  │
+│                                                                                         │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Nota**: Como a análise M365 não usa agent local (usa Graph API direto), precisamos de uma abordagem diferente. A Edge Function será a "executora", e usaremos uma tabela de jobs ou chamaremos diretamente.
+**Elementos adicionados ao card:**
+- **Workspace**: Nome do workspace vinculado ao tenant (ja existe no card, mas sera destacado)
+- **Ultima Analise**: Data/hora da ultima analise de postura (buscar de `m365_posture_history`)
+- **Score**: Score da ultima analise completada
+- **Agendamento**: Futuro - mostrara "Nao configurado" por enquanto (placeholder para funcionalidade futura)
+- **Botao Analisar**: Inicia analise de postura diretamente do card (mesma logica do `M365AnalysisPage`)
 
----
+## Detalhes Tecnicos
 
-## Edge Functions
-
-### 1. `trigger-m365-posture-analysis` (Nova)
-
-Dispara a análise e cria registro na tabela de jobs/histórico com status "pending":
+### 1. Modificar TenantStatusCard.tsx
 
 ```typescript
-// Fluxo:
-1. Receber tenant_record_id
-2. Verificar se já existe análise pendente (prevenir duplicatas)
-3. Criar registro em m365_posture_history com status 'pending'
-4. Chamar m365-security-posture em background
-5. Retornar job_id imediatamente
-```
-
-**Alternativa (mais simples)**: A Edge Function `m365-security-posture` já faz a coleta - só precisa **persistir** o resultado na nova tabela.
-
-### 2. `m365-security-posture` (Modificar)
-
-Adicionar opção para persistir resultado:
-
-```typescript
-// Novo parâmetro: persist_result: boolean
-if (persist_result) {
-  // Salvar em m365_posture_history
-  await supabase.from('m365_posture_history').insert({
-    tenant_record_id,
-    client_id,
-    score,
-    classification,
-    summary,
-    category_breakdown: categoryBreakdown,
-    insights,
-    errors,
-    analyzed_by: user_id,
-  });
+// Adicionar props para analise
+interface TenantStatusCardProps {
+  tenant: TenantConnection;
+  onTest: (tenantId: string) => Promise<...>;
+  onDisconnect: (tenantId: string) => Promise<...>;
+  onDelete: (tenantId: string) => Promise<...>;
+  onUpdatePermissions?: (tenantId: string) => void;
+  onEdit?: (tenantId: string) => void;
+  onAnalyze?: (tenantId: string) => void;  // NOVA PROP
+  lastAnalysis?: {                          // NOVA PROP
+    score: number | null;
+    status: string;
+    created_at: string;
+  } | null;
+  isAnalyzing?: boolean;                    // NOVA PROP
 }
 ```
 
----
+### 2. Buscar Ultima Analise na TenantConnectionPage
 
-## Componentes de UI
+A pagina `TenantConnectionPage.tsx` buscara a ultima analise de cada tenant:
 
-### M365AnalysisPage.tsx
-
-```
-┌────────────────────────────────────────────────────────┐
-│  Análise de Postura de Segurança                       │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│  Selecione o Tenant:                                   │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ ▼ Contoso Corp (contoso.onmicrosoft.com)        │  │
-│  │   Fabrikam Inc (fabrikam.com)                   │  │
-│  │   Acme Corp (acme.onmicrosoft.com)              │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  [Última análise: 15/01/2026 às 14:30 - Score: 72%]    │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                 🔒 Iniciar Análise               │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  Nota: A análise pode levar alguns minutos.            │
-│  Acompanhe o progresso em "Execuções".                 │
-│                                                        │
-└────────────────────────────────────────────────────────┘
+```typescript
+// Fetch last analysis for each tenant
+const { data: analysisHistory } = useQuery({
+  queryKey: ['m365-tenant-analyses'],
+  queryFn: async () => {
+    const tenantIds = tenants.map(t => t.id);
+    const { data } = await supabase
+      .from('m365_posture_history')
+      .select('tenant_record_id, score, status, created_at')
+      .in('tenant_record_id', tenantIds)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false });
+    return data;
+  },
+  enabled: tenants.length > 0,
+});
 ```
 
-### M365ExecutionsPage.tsx
+### 3. Trigger de Analise no Card
 
-Seguir exatamente o padrão de `ExternalDomainExecutionsPage.tsx`:
-- Cards de estatísticas (Total, Pendentes, Executando, Concluídas, Falhas)
-- Tabela com status em tempo real (polling 10s)
-- Filtros por período e status
-- Detalhes da execução em modal
+O botao "Analisar" chamara a mesma Edge Function `trigger-m365-posture-analysis`:
 
-### M365ReportsPage.tsx
-
-Seguir exatamente o padrão de `ExternalDomainReportsPage.tsx`:
-- Filtro por workspace/tenant
-- Tabela agrupada por tenant
-- Seletor de versão da análise (dropdown de datas)
-- Botões Ver e Exportar PDF
-
----
-
-## Navegação
-
-### Menu M365 Atualizado
-
-```
-Microsoft 365
-├── Dashboard
-├── Análise          <── Nova (iniciar análise)
-├── Execuções        <── Nova (monitorar)
-├── Relatórios       <── Nova (histórico)
-├── Entra ID
-│   ├── Security Insights
-│   └── Application Insights
-├── Exchange Online
-└── Conexão de Tenant
+```typescript
+const handleAnalyze = async (tenantId: string) => {
+  const { data, error } = await supabase.functions.invoke('trigger-m365-posture-analysis', {
+    body: { tenant_record_id: tenantId },
+  });
+  // Mostrar toast e redirecionar para execucoes se sucesso
+};
 ```
 
----
+### 4. Layout do Grid na Pagina
 
-## Arquivos a Criar/Modificar
+Mudar de `grid-cols-2` para `grid-cols-1`:
 
-### Criar
+```tsx
+// Antes
+<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/pages/m365/M365AnalysisPage.tsx` | Tela de iniciar análise |
-| `src/pages/m365/M365ExecutionsPage.tsx` | Monitoramento de execuções |
-| `src/pages/m365/M365ReportsPage.tsx` | Histórico de relatórios |
-| `src/pages/m365/M365PostureReportPage.tsx` | Visualização do relatório |
-| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Trigger da análise |
-| Migration SQL para `m365_posture_history` | Tabela de histórico |
+// Depois
+<div className="grid grid-cols-1 gap-4">
+```
 
-### Modificar
+## Modificacoes no AppLayout.tsx
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/m365-security-posture/index.ts` | Adicionar persistência |
-| `src/App.tsx` | Adicionar novas rotas |
-| `src/components/layout/AppLayout.tsx` | Atualizar menu M365 |
-| `supabase/config.toml` | Registrar nova Edge Function |
+Linha 123-134, atualizar `knownModuleNavConfigs['scope_m365']`:
 
-### Deprecar (manter temporariamente)
+```typescript
+'scope_m365': {
+  icon: Cloud,
+  color: 'text-blue-500',
+  items: [
+    { label: 'Dashboard', href: '/scope-m365/dashboard', icon: LayoutDashboard },
+    // REMOVER: { label: 'Análise', href: '/scope-m365/analysis', icon: Shield },
+    { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
+    { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
+    { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
+    { label: 'Tenants', href: '/scope-m365/tenant-connection', icon: Building }, // RENOMEADO
+  ],
+},
+```
 
-| Arquivo | Status |
-|---------|--------|
-| `src/pages/m365/M365PosturePage.tsx` | Será substituída pelo novo fluxo |
+## Modificacoes no App.tsx
 
----
+Remover:
+- Linha 41: `const M365AnalysisPage = lazy(...)`
+- Linha 103: `<Route path="/scope-m365/analysis" element={<M365AnalysisPage />} />`
 
-## Considerações sobre Preview Mode
+## Preview Mode
 
-Todas as novas páginas seguirão o padrão existente:
-- Filtro por `previewTarget.workspaces` ao buscar dados
-- `usePreviewGuard()` para bloquear ação "Iniciar Análise"
-- Banner visual já existente no AppLayout
-
----
-
-## Ordem de Implementação
-
-1. **Criar tabela** `m365_posture_history` (migration SQL)
-2. **Modificar** `m365-security-posture` para persistir resultados
-3. **Criar** `trigger-m365-posture-analysis` (opcional, se quiser async completo)
-4. **Criar** `M365AnalysisPage.tsx` (selecionar tenant e iniciar)
-5. **Criar** `M365ReportsPage.tsx` (listar histórico)
-6. **Criar** `M365PostureReportPage.tsx` (visualizar relatório - refatorar atual)
-7. **Criar** `M365ExecutionsPage.tsx` (se usar modelo de jobs)
-8. **Atualizar** rotas e navegação
-
----
-
-## Benefícios da Mudança
-
-| Aspecto | Antes (Tempo Real) | Depois (Assíncrono) |
-|---------|-------------------|---------------------|
-| **Performance** | Bloqueio de 30-60s | Retorno imediato |
-| **Histórico** | Sem persistência | Snapshots completos |
-| **Comparação** | Impossível | Tendência de score |
-| **UX** | Ansiedade de espera | Acompanhamento claro |
-| **Timeout** | Risco de falha | Retry automático |
-| **Seleção de Tenant** | No mesmo lugar | Tela dedicada |
-
----
+O botao "Analisar" respeitara o `usePreviewGuard()` para bloquear acao em modo preview.
 
 ## Resultado Esperado
 
-- Fluxo idêntico ao de Domínio Externo e Firewall
-- Histórico persistido com todas as análises
-- Performance melhorada sem bloqueio de UI
-- Seleção clara de tenant antes de iniciar
-- Possibilidade futura de agendamento automático
+- Menu mais limpo sem item "Analise" separado
+- Tela de Tenants como hub central de gestao
+- Cards full-width com mais informacoes visiveis
+- Acao de analisar acessivel diretamente do card
+- Preparado para adicionar agendamento no futuro
+
