@@ -119,17 +119,118 @@ function DetailRow({ label, value, subValue, indicator, highlight }: DetailRowPr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Country flag helper
+// Country flag helper with name-to-ISO normalization
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getCountryFlag(countryCode: string): string {
-  const flags: Record<string, string> = {
-    'BR': '🇧🇷', 'US': '🇺🇸', 'PT': '🇵🇹', 'GB': '🇬🇧', 'UK': '🇬🇧',
-    'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹', 'NL': '🇳🇱',
-    'CA': '🇨🇦', 'AU': '🇦🇺', 'JP': '🇯🇵', 'CN': '🇨🇳', 'IN': '🇮🇳',
-    'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪',
+function normalizeCountryCode(country: string): string {
+  if (!country) return '';
+  
+  // If already a 2-letter ISO code
+  if (country.length === 2 && /^[A-Z]{2}$/i.test(country)) {
+    return country.toUpperCase();
+  }
+  
+  // Map common country names to ISO codes (Microsoft Graph returns full names)
+  const nameToCode: Record<string, string> = {
+    'brazil': 'BR',
+    'brasil': 'BR',
+    'united states': 'US',
+    'usa': 'US',
+    'portugal': 'PT',
+    'united kingdom': 'GB',
+    'uk': 'GB',
+    'germany': 'DE',
+    'deutschland': 'DE',
+    'france': 'FR',
+    'spain': 'ES',
+    'españa': 'ES',
+    'italy': 'IT',
+    'italia': 'IT',
+    'netherlands': 'NL',
+    'canada': 'CA',
+    'australia': 'AU',
+    'japan': 'JP',
+    'china': 'CN',
+    'india': 'IN',
+    'mexico': 'MX',
+    'méxico': 'MX',
+    'argentina': 'AR',
+    'chile': 'CL',
+    'colombia': 'CO',
+    'peru': 'PE',
+    'perú': 'PE',
+    'russia': 'RU',
+    'south africa': 'ZA',
+    'ireland': 'IE',
+    'switzerland': 'CH',
+    'sweden': 'SE',
+    'norway': 'NO',
+    'denmark': 'DK',
+    'finland': 'FI',
+    'belgium': 'BE',
+    'austria': 'AT',
+    'poland': 'PL',
+    'czech republic': 'CZ',
+    'czechia': 'CZ',
+    'south korea': 'KR',
+    'korea': 'KR',
+    'singapore': 'SG',
+    'hong kong': 'HK',
+    'taiwan': 'TW',
+    'israel': 'IL',
+    'united arab emirates': 'AE',
+    'uae': 'AE',
+    'saudi arabia': 'SA',
+    'new zealand': 'NZ',
+    'egypt': 'EG',
+    'turkey': 'TR',
+    'greece': 'GR',
+    'ukraine': 'UA',
+    'romania': 'RO',
+    'hungary': 'HU',
+    'thailand': 'TH',
+    'vietnam': 'VN',
+    'philippines': 'PH',
+    'indonesia': 'ID',
+    'malaysia': 'MY',
+    'nigeria': 'NG',
+    'kenya': 'KE',
+    'morocco': 'MA',
+    'uruguay': 'UY',
+    'paraguay': 'PY',
+    'ecuador': 'EC',
+    'venezuela': 'VE',
+    'bolivia': 'BO',
+    'costa rica': 'CR',
+    'panama': 'PA',
+    'puerto rico': 'PR',
+    'dominican republic': 'DO',
+    'cuba': 'CU',
+    'guatemala': 'GT',
+    'honduras': 'HN',
+    'el salvador': 'SV',
+    'nicaragua': 'NI',
+    'jamaica': 'JM',
   };
-  return flags[countryCode?.toUpperCase()] || '🌍';
+  
+  return nameToCode[country.toLowerCase()] || '';
+}
+
+function getCountryFlag(countryInput: string): string {
+  if (!countryInput) return '🌍';
+  
+  const code = normalizeCountryCode(countryInput);
+  
+  // Generate flag emoji dynamically using Unicode Regional Indicator Symbols
+  // 'BR' → 🇧🇷 (B=0x1F1E7, R=0x1F1F7)
+  if (code.length === 2) {
+    const codePoints = [...code.toUpperCase()].map(
+      char => 0x1F1E6 - 65 + char.charCodeAt(0)
+    );
+    return String.fromCodePoint(...codePoints);
+  }
+  
+  return '🌍';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
