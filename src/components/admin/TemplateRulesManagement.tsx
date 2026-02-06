@@ -110,6 +110,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
     recommendation: '',
     pass_description: '',
     fail_description: '',
+    not_found_description: '',
     evaluation_logic: '{}',
     is_active: true,
     technical_risk: '',
@@ -153,6 +154,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
       recommendation: '',
       pass_description: '',
       fail_description: '',
+      not_found_description: '',
       evaluation_logic: '{}',
       is_active: true,
       technical_risk: '',
@@ -175,6 +177,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
         recommendation: rule.recommendation || '',
         pass_description: rule.pass_description || '',
         fail_description: rule.fail_description || '',
+        not_found_description: rule.not_found_description || '',
         evaluation_logic: JSON.stringify(rule.evaluation_logic, null, 2),
         is_active: rule.is_active,
         technical_risk: rule.technical_risk || '',
@@ -199,6 +202,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
       recommendation: rule.recommendation || '',
       pass_description: rule.pass_description || '',
       fail_description: rule.fail_description || '',
+      not_found_description: rule.not_found_description || '',
       evaluation_logic: JSON.stringify(rule.evaluation_logic, null, 2),
       is_active: false,
       technical_risk: rule.technical_risk || '',
@@ -234,6 +238,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
         recommendation: formData.recommendation || null,
         pass_description: formData.pass_description || null,
         fail_description: formData.fail_description || null,
+        not_found_description: formData.not_found_description || null,
         evaluation_logic: parsedLogic,
         is_active: formData.is_active,
         device_type_id: deviceTypeId,
@@ -526,7 +531,7 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
                 rows={2}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="pass_description">Mensagem de Sucesso</Label>
                 <Textarea
@@ -546,6 +551,19 @@ export function TemplateRulesManagement({ deviceTypeId, onRefresh }: Props) {
                   placeholder="Exibida quando a regra falha"
                   rows={2}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="not_found_description">Mensagem Não Encontrado</Label>
+                <Textarea
+                  id="not_found_description"
+                  value={formData.not_found_description}
+                  onChange={(e) => setFormData({ ...formData, not_found_description: e.target.value })}
+                  placeholder="Ex: Nenhum servidor RADIUS configurado"
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Exibida quando o recurso não está configurado
+                </p>
               </div>
             </div>
             <div className="space-y-2">

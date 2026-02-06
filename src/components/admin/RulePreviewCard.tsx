@@ -11,7 +11,7 @@ import {
   Building2, 
   ExternalLink,
   Layers,
-  Database
+  MinusCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -20,6 +20,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { ComplianceRuleBasic } from '@/types/complianceRule';
+
+type PreviewState = 'pass' | 'fail' | 'not_found';
 
 // Severity colors
 const SEVERITY_COLORS: Record<string, string> = {
@@ -80,10 +82,16 @@ interface RulePreviewCardProps {
 }
 
 export function RulePreviewCard({ rule }: RulePreviewCardProps) {
-  const [previewState, setPreviewState] = useState<'pass' | 'fail'>('fail');
+  const [previewState, setPreviewState] = useState<PreviewState>('fail');
   const [isExpanded, setIsExpanded] = useState(false);
   
-  const statusConfig = {
+  const statusConfig: Record<PreviewState, {
+    icon: typeof CheckCircle;
+    iconClass: string;
+    bgClass: string;
+    label: string;
+    message: string;
+  }> = {
     pass: { 
       icon: CheckCircle, 
       iconClass: 'text-primary',
@@ -97,6 +105,13 @@ export function RulePreviewCard({ rule }: RulePreviewCardProps) {
       bgClass: 'bg-rose-500/10 border-rose-500/30',
       label: 'Falha',
       message: rule.fail_description || 'Configuração fora do esperado'
+    },
+    not_found: { 
+      icon: MinusCircle, 
+      iconClass: 'text-muted-foreground',
+      bgClass: 'bg-muted/50 border-border',
+      label: 'Não Encontrado',
+      message: rule.not_found_description || 'Recurso não configurado neste ambiente'
     },
   };
   
@@ -153,7 +168,7 @@ export function RulePreviewCard({ rule }: RulePreviewCardProps) {
             </div>
           </div>
           
-          {/* Toggle Sucesso/Falha */}
+          {/* Toggle Sucesso/Falha/N/A */}
           <div className="flex items-center gap-1 flex-shrink-0">
             <Button 
               size="sm" 
@@ -173,6 +188,14 @@ export function RulePreviewCard({ rule }: RulePreviewCardProps) {
               onClick={() => setPreviewState('fail')}
             >
               Falha
+            </Button>
+            <Button 
+              size="sm" 
+              variant={previewState === 'not_found' ? 'secondary' : 'outline'}
+              className="h-7 px-2 text-xs"
+              onClick={() => setPreviewState('not_found')}
+            >
+              N/A
             </Button>
           </div>
         </div>
