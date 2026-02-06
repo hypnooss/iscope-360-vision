@@ -1,4 +1,4 @@
-export { M365ScoreGauge } from './M365ScoreGauge';
+// M365ScoreGauge deprecated - use ScoreGauge from '@/components/ScoreGauge' instead
 export { M365CategoryCard } from './M365CategoryCard';
 export { M365InsightCard } from './M365InsightCard';
 export { M365RemediationDialog } from './M365RemediationDialog';

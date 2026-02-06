@@ -8,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
-import { M365ScoreGauge } from '@/components/m365/posture/M365ScoreGauge';
+import { ScoreGauge } from '@/components/ScoreGauge';
 import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { Loader2, ArrowLeft, AlertTriangle, FileDown, RefreshCw, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
@@ -614,16 +614,15 @@ export default function M365PostureReportPage() {
                           className="absolute inset-0 blur-3xl opacity-20"
                           style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
                         />
-                        {/* Keep the M365ScoreGauge (dark style with shadow) */}
-                        <M365ScoreGauge 
+                        {/* Unified ScoreGauge with premium design */}
+                        <ScoreGauge 
                           score={reportData.score} 
-                          classification={reportData.classification as any} 
                           size="lg" 
                         />
                       </div>
 
                       {/* Mini Stats Row */}
-                      <div className="flex gap-3 mt-14">
+                      <div className="flex gap-3 mt-6">
                         <MiniStat value={totalChecks} label="Total" variant="primary" />
                         <MiniStat value={passedCount} label="Aprovadas" variant="success" />
                         <MiniStat value={failedCount} label="Falhas" variant="destructive" />

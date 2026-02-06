@@ -18,12 +18,12 @@ import {
   Lock
 } from 'lucide-react';
 import { 
-  M365ScoreGauge, 
   M365CategoryCard, 
   M365SeverityBreakdown,
   M365InsightCard,
   TenantSelector
 } from '@/components/m365/posture';
+import { ScoreGauge } from '@/components/ScoreGauge';
 import { useM365SecurityPosture } from '@/hooks/useM365SecurityPosture';
 import { 
   M365RiskCategory, 
@@ -260,9 +260,8 @@ export default function M365PosturePage() {
                 <div className="flex flex-col lg:flex-row items-center gap-8">
                   {/* Score Gauge */}
                   <div className="flex-shrink-0">
-                    <M365ScoreGauge
+                    <ScoreGauge
                       score={data?.score ?? 0}
-                      classification={data?.classification ?? 'critical'}
                       size="lg"
                       loading={isLoading}
                     />
