@@ -65,6 +65,14 @@ export function M365ScoreGauge({
         height={config.size}
         className="transform -rotate-90"
       >
+        {/* Dark center background */}
+        <circle
+          cx={config.size / 2}
+          cy={config.size / 2}
+          r={radius - config.strokeWidth / 2}
+          fill="hsl(220 18% 10%)"
+        />
+        
         {/* Background ring */}
         <circle
           cx={config.size / 2}
