@@ -200,9 +200,13 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
 
   // 7. Sign-in countries (requires Azure AD P1/P2)
   try {
+    // Calculate dynamic sample size based on active users (min 500, max 5000)
+    const signInSampleSize = Math.min(Math.max(metrics.activeUsers * 3, 500), 5000);
+    console.log(`[collectEnvironmentMetrics] Sign-in sample size: ${signInSampleSize} (based on ${metrics.activeUsers} active users)`);
+    
     const { data: signIns } = await graphFetchSafe(
       accessToken,
-      '/auditLogs/signIns?$select=location,status&$top=500',
+      `/auditLogs/signIns?$select=location,status&$top=${signInSampleSize}`,
       { beta: true }
     );
     if (signIns?.value) {
