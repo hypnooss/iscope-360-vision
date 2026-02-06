@@ -1,140 +1,120 @@
 
 
-# Plano: Correções no Layout do Relatório M365
+# Plano: Corrigir Bandeiras de Países no ORIGEM AUTH
 
-## Problemas Identificados
+## Problema Identificado
 
-Com base na imagem e feedback:
+O Microsoft Graph API retorna o **nome completo do país** em `location.countryOrRegion` (ex: "Brazil", "United States"), mas a função `getCountryFlag` espera um **código ISO de 2 letras** (ex: "BR", "US").
 
-1. **Gauge sem fundo escuro**: O `M365ScoreGauge` não possui mais o fundo escuro no centro
-2. **Espaçamento insuficiente**: Entre o gauge e os cards MiniStats ainda precisa de mais espaço (mt-10 → mt-12 ou mais)
-3. **Símbolos ✓/✗ no COND. ACCESS**: Remover esses símbolos do valor
-4. **ORIGEM AUTH não exibido**: Os países com bandeiras não estão aparecendo (mesmo quando disponíveis)
-5. **Linhas duplas de separação**: O `DetailRow` já tem uma linha, e há também divisores manuais, causando linhas duplicadas
+Por isso as bandeiras não estão aparecendo - a função não encontra match e retorna o globo genérico 🌍, ou os dados estão chegando como código mas sem correspondência.
 
 ---
 
-## Soluções
+## Solução
 
-### 1. Restaurar Fundo Escuro no M365ScoreGauge
+### 1. Criar mapeamento completo de nome para código ISO
 
-**Arquivo**: `src/components/m365/posture/M365ScoreGauge.tsx`
-
-Adicionar um círculo de fundo escuro dentro do SVG:
+Adicionar um mapa de conversão de nomes de países (como retornado pelo Graph) para códigos ISO:
 
 ```tsx
-{/* Dark center background */}
-<circle
-  cx={config.size / 2}
-  cy={config.size / 2}
-  r={radius - config.strokeWidth}
-  fill="hsl(220 18% 10%)"
-/>
-```
-
----
-
-### 2. Aumentar Espaçamento entre Gauge e MiniStats
-
-**Arquivo**: `src/pages/m365/M365PostureReportPage.tsx`
-
-Linha 447: Mudar `mt-10` para `mt-12` ou `mt-14`
-
-```tsx
-<div className="flex gap-3 mt-14">
-```
-
----
-
-### 3. Remover Símbolos ✓/✗ do COND. ACCESS
-
-**Arquivo**: `src/pages/m365/M365PostureReportPage.tsx`
-
-Linhas 494-500: Remover os símbolos do valor
-
-```tsx
-// Antes
-value={envMetrics.conditionalAccessEnabled 
-  ? `✓ ${envMetrics.conditionalAccessPoliciesCount} política(s) ativa(s)` 
-  : '✗ Não configurado'}
-
-// Depois
-value={envMetrics.conditionalAccessEnabled 
-  ? `${envMetrics.conditionalAccessPoliciesCount} política(s) ativa(s)` 
-  : 'Não configurado'}
-```
-
----
-
-### 4. Corrigir Exibição dos Países (ORIGEM AUTH)
-
-**Arquivo**: `src/pages/m365/M365PostureReportPage.tsx`
-
-Renomear o label de "Top Países" para "Origem Auth" e garantir exibição:
-
-```tsx
-<DetailRow 
-  label="Origem Auth" 
-  value={envMetrics.loginCountries.slice(0, 5).map(c => 
-    `${getCountryFlag(c.country)}`
-  ).join(' ')}
-/>
-```
-
-Caso não haja dados, mostrar "N/A" em vez de ocultar completamente.
-
----
-
-### 5. Remover Linhas Duplas de Separação
-
-O problema: `DetailRow` já renderiza uma linha após cada item (linha 119), e também há divisores manuais entre blocos (linhas 467, 486, 505).
-
-**Solução**: Remover a linha automática do `DetailRow` e manter apenas os divisores manuais entre blocos lógicos.
-
-**Arquivo**: `src/pages/m365/M365PostureReportPage.tsx`
-
-Modificar o componente `DetailRow` para NÃO renderizar a linha:
-
-```tsx
-function DetailRow({ label, value, subValue, indicator, highlight }: DetailRowProps) {
-  // ... existing code ...
+// Mapear nome do país → código ISO
+function normalizeCountryCode(country: string): string {
+  // Se já é código ISO de 2 letras
+  if (country.length === 2 && /^[A-Z]{2}$/i.test(country)) {
+    return country.toUpperCase();
+  }
   
-  return (
-    <div className="group">
-      <div className="flex items-start gap-3 py-2">
-        {/* ... content ... */}
-      </div>
-      {/* REMOVER esta linha: */}
-      {/* <div className="h-px bg-gradient-to-r from-border/50 via-border/20 to-transparent" /> */}
-    </div>
-  );
+  // Mapa de nomes comuns → códigos ISO
+  const nameToCode: Record<string, string> = {
+    'brazil': 'BR',
+    'brasil': 'BR',
+    'united states': 'US',
+    'usa': 'US',
+    'portugal': 'PT',
+    'united kingdom': 'GB',
+    'germany': 'DE',
+    'deutschland': 'DE',
+    'france': 'FR',
+    'spain': 'ES',
+    'españa': 'ES',
+    'italy': 'IT',
+    'italia': 'IT',
+    'netherlands': 'NL',
+    'canada': 'CA',
+    'australia': 'AU',
+    'japan': 'JP',
+    'china': 'CN',
+    'india': 'IN',
+    'mexico': 'MX',
+    'méxico': 'MX',
+    'argentina': 'AR',
+    'chile': 'CL',
+    'colombia': 'CO',
+    'peru': 'PE',
+    'perú': 'PE',
+    // ... mais países conforme necessário
+  };
+  
+  return nameToCode[country.toLowerCase()] || country.slice(0, 2).toUpperCase();
 }
 ```
 
+### 2. Atualizar função getCountryFlag
+
+```tsx
+function getCountryFlag(countryInput: string): string {
+  // Normalizar para código ISO
+  const code = normalizeCountryCode(countryInput);
+  
+  const flags: Record<string, string> = {
+    'BR': '🇧🇷', 'US': '🇺🇸', 'PT': '🇵🇹', 'GB': '🇬🇧', 'UK': '🇬🇧',
+    'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹', 'NL': '🇳🇱',
+    'CA': '🇨🇦', 'AU': '🇦🇺', 'JP': '🇯🇵', 'CN': '🇨🇳', 'IN': '🇮🇳',
+    'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪',
+  };
+  
+  return flags[code] || '🌍';
+}
+```
+
+### 3. (Alternativa) Usar biblioteca de bandeiras via Unicode
+
+Os emojis de bandeira são formados por **Regional Indicator Symbols**. Podemos gerar dinamicamente:
+
+```tsx
+function getCountryFlag(countryCode: string): string {
+  const code = normalizeCountryCode(countryCode);
+  
+  // Converter código ISO para emoji de bandeira
+  // 'BR' → 🇧🇷 (B=127463, R=127479)
+  if (code.length === 2) {
+    const codePoints = [...code.toUpperCase()].map(
+      char => 0x1F1E6 - 65 + char.charCodeAt(0)
+    );
+    return String.fromCodePoint(...codePoints);
+  }
+  
+  return '🌍';
+}
+```
+
+Este método gera bandeiras para **qualquer** país automaticamente!
+
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/m365/posture/M365ScoreGauge.tsx` | Adicionar círculo de fundo escuro no centro |
-| `src/pages/m365/M365PostureReportPage.tsx` | Aumentar espaçamento, remover ✓/✗, fix países, remover linhas duplas |
+| `src/pages/m365/M365PostureReportPage.tsx` | Atualizar `getCountryFlag` para normalizar nomes de países e gerar bandeiras dinamicamente |
 
 ---
 
-## Layout Final Esperado (Painel Direito)
+## Resultado Esperado
 
 ```
-DOMÍNIO        aggroupbr.onmicrosoft.com
-TIPO AUTH      Cloud Only
-───────────────────────────────────────
-USUÁRIOS       436 ativos
-               72 inativos, 119 guests
-APLICAÇÕES     Enterprise: 45 | Apps: 23
-───────────────────────────────────────
-MFA            ● 45% habilitado
-COND. ACCESS   ● Não configurado
-───────────────────────────────────────
-ORIGEM AUTH    🇧🇷 🇺🇸 🇵🇹
+ORIGEM AUTH    🇧🇷 🇺🇸 🇵🇹 🇩🇪 🇫🇷
 ```
+
+Com a solução de Unicode dinâmico, qualquer código de país será convertido automaticamente para sua bandeira correspondente.
 
