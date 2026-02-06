@@ -1,238 +1,263 @@
 
-# Plano: Expansao Massiva para 60+ Verificacoes M365
+# Plano: Modelo Assíncrono de Análise M365 (Padrão Firewall/Domínio Externo)
 
-## Situacao Atual
+## Problema Identificado
 
-A Edge Function `m365-security-posture` possui **34 verificacoes** distribuidas em 6 categorias:
-- **Identidades (IDT)**: 6 checks
-- **Admin Privileges (ADM)**: 6 checks  
-- **Auth Access (AUT)**: 7 checks
-- **Apps Integrations (APP)**: 7 checks
-- **Email Exchange (EXO)**: 5 checks
-- **Threats Activity (THR)**: 5 checks
+A análise M365 atual funciona em **tempo real sincronamente**:
+1. Usuário clica "Atualizar" 
+2. Edge Function executa 57+ verificações via Graph API
+3. Resposta demora 30-60s (ou timeout)
+4. Sem histórico persistido
+5. Performance comprometida na experiência do usuário
 
-## Novas Verificacoes Disponiveis via Graph API
+## Solução Proposta
 
-Baseado na pesquisa, existem **muitos endpoints adicionais** que podemos explorar:
-
----
-
-### Categoria: Intune e Dispositivos (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| INT-001 | Dispositivos nao-compliance | `/deviceManagement/managedDevices?$filter=complianceState eq 'noncompliant'` | DeviceManagementManagedDevices.Read.All |
-| INT-002 | Dispositivos sem encriptacao | `/deviceManagement/managedDevices?$select=isEncrypted` | DeviceManagementManagedDevices.Read.All |
-| INT-003 | Dispositivos com jailbreak/root | `/deviceManagement/managedDevices?$filter=jailBroken eq 'True'` | DeviceManagementManagedDevices.Read.All |
-| INT-004 | Dispositivos com SO desatualizado | `/deviceManagement/managedDevices?$select=osVersion` | DeviceManagementManagedDevices.Read.All |
-| INT-005 | Politicas de compliance ausentes | `/deviceManagement/deviceCompliancePolicies` | DeviceManagementConfiguration.Read.All |
-| INT-006 | Apps nao-gerenciados em dispositivos | `/deviceManagement/detectedApps` | DeviceManagementApps.Read.All |
-
----
-
-### Categoria: SharePoint e OneDrive (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| SPO-001 | Sites com compartilhamento externo | `/sites?$select=sharingCapability` | Sites.Read.All |
-| SPO-002 | Links de compartilhamento anonimos | `/sites/{id}/permissions` ou `/drives/{id}/root/permissions` | Sites.Read.All |
-| SPO-003 | Sites sensiveis sem protecao | `/sites?$filter=sensitivity eq null` | Sites.Read.All |
-| SPO-004 | OneDrive com compartilhamento amplo | `/users/{id}/drive/root/permissions` | Files.Read.All |
-
----
-
-### Categoria: Teams e Colaboracao (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| TMS-001 | Teams com guests | `/groups?$filter=groupTypes/any(c:c eq 'Unified')&$expand=members` | Group.Read.All |
-| TMS-002 | Teams publicos | `/teams?$filter=visibility eq 'public'` | Team.ReadBasic.All |
-| TMS-003 | Teams sem owner | `/groups/{id}/owners` | Group.Read.All |
-| TMS-004 | Canais privados com externos | `/teams/{id}/channels?$filter=membershipType eq 'private'` | Channel.ReadBasic.All |
-
----
-
-### Categoria: Privileged Identity Management - PIM (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| PIM-001 | Roles elegiveis nao usadas | `/roleManagement/directory/roleEligibilityScheduleInstances` | RoleEligibilitySchedule.Read.Directory |
-| PIM-002 | Ativacoes de role recentes | `/roleManagement/directory/roleAssignmentScheduleInstances` | RoleAssignmentSchedule.Read.Directory |
-| PIM-003 | Roles sem politica de aprovacao | `/policies/roleManagementPolicies` | RoleManagementPolicy.Read.Directory |
-| PIM-004 | Usuarios com roles permanentes vs elegiveis | Comparacao de roleAssignments | RoleManagement.Read.Directory |
-
----
-
-### Categoria: Defender for Office 365 (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| DEF-001 | Safe Links desabilitado | `/security/threatAssessmentRequests` | ThreatAssessment.Read.All |
-| DEF-002 | Safe Attachments desabilitado | Security & Compliance PowerShell* | N/A (requer PowerShell) |
-| DEF-003 | Anti-phishing policy gaps | `/security/threatAssessmentRequests` | ThreatAssessment.Read.All |
-| DEF-004 | Attack simulation results | `/security/attackSimulation/simulations` | AttackSimulation.Read.All |
-| DEF-005 | Usuarios que cairam em phishing simulado | `/security/attackSimulation/simulations/{id}/report` | AttackSimulation.Read.All |
-
----
-
-### Categoria: Information Protection e DLP (Nova)
-
-| Codigo | Verificacao | Endpoint | Permissao |
-|--------|-------------|----------|-----------|
-| DLP-001 | Sensitivity labels definidos | `/informationProtection/policy/labels` | InformationProtectionPolicy.Read |
-| DLP-002 | DLP policies configuradas | Microsoft Purview API* | N/A (requer Purview) |
-| DLP-003 | Labels nao utilizados | Analise de uso de labels | InformationProtectionPolicy.Read |
-
----
-
-### Expansao das Categorias Existentes
-
-#### Identidades (IDT) - Adicoes
-
-| Codigo | Verificacao | Endpoint |
-|--------|-------------|----------|
-| IDT-007 | Usuarios sincronizados do AD sem cloud-only | `/users?$filter=onPremisesSyncEnabled eq true` |
-| IDT-008 | Usuarios com licencas atribuidas diretamente (vs grupo) | `/users/{id}/licenseDetails` |
-| IDT-009 | Grupos dinamicos com regras arriscadas | `/groups?$filter=membershipRule ne null` |
-| IDT-010 | Usuarios com manager nao definido | `/users?$filter=manager eq null` |
-
-#### Admin Privileges (ADM) - Adicoes
-
-| Codigo | Verificacao | Endpoint |
-|--------|-------------|----------|
-| ADM-007 | Emergency access accounts verificacao | Busca por contas "break glass" |
-| ADM-008 | Roles custom criadas | `/roleManagement/directory/roleDefinitions?$filter=isBuiltIn eq false` |
-| ADM-009 | Admins sem revisao de acesso configurada | `/identityGovernance/accessReviews/definitions` |
-
-#### Auth Access (AUT) - Adicoes
-
-| Codigo | Verificacao | Endpoint |
-|--------|-------------|----------|
-| AUT-008 | Named Locations configuradas | `/identity/conditionalAccess/namedLocations` |
-| AUT-009 | Politicas de CA em modo report-only | `/identity/conditionalAccess/policies?$filter=state eq 'enabledForReportingButNotEnforced'` |
-| AUT-010 | Session controls em CA | Analise de sessionControls em policies |
-| AUT-011 | Continuous Access Evaluation (CAE) | `/identity/conditionalAccess/policies` com strictLocation |
-
-#### Apps Integrations (APP) - Adicoes
-
-| Codigo | Verificacao | Endpoint |
-|--------|-------------|----------|
-| APP-008 | Apps com reply URLs suspeitas | `/applications?$select=replyUrls` |
-| APP-009 | Apps multi-tenant | `/applications?$filter=signInAudience eq 'AzureADMultipleOrgs'` |
-| APP-010 | Apps com homepage URLs | `/applications?$select=web` |
-
----
-
-## Arquitetura Proposta
-
-Devido ao limite de tamanho do bundle, a implementacao sera:
-
-### Opcao A: Coletores Inline Otimizados
-Manter tudo em uma unica Edge Function com coletores inline compactos.
-
-**Pros**: Simplicidade, uma unica chamada
-**Contras**: Risco de timeout com muitas verificacoes
-
-### Opcao B: Edge Functions Modulares (Recomendada)
-Dividir em Edge Functions especializadas:
+Migrar para o modelo assíncrono já usado em **Domínio Externo** e **Firewall**:
 
 ```
-supabase/functions/
-├── m365-security-posture/index.ts      # Orquestrador
-├── m365-check-identity/index.ts        # IDT-001 a IDT-010
-├── m365-check-admin/index.ts           # ADM-001 a ADM-009
-├── m365-check-auth/index.ts            # AUT-001 a AUT-011
-├── m365-check-apps/index.ts            # APP-001 a APP-010
-├── m365-check-exchange/index.ts        # EXO-001 a EXO-005
-├── m365-check-threats/index.ts         # THR-001 a THR-005
-├── m365-check-intune/index.ts          # INT-001 a INT-006 (NOVO)
-├── m365-check-sharepoint/index.ts      # SPO-001 a SPO-004 (NOVO)
-├── m365-check-teams/index.ts           # TMS-001 a TMS-004 (NOVO)
-├── m365-check-pim/index.ts             # PIM-001 a PIM-004 (NOVO)
-└── m365-check-defender/index.ts        # DEF-001 a DEF-005 (NOVO)
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│ Tela de Análise │     │  Edge Function   │     │ Tabela de Histórico │
+│ (Iniciar)       │ ──> │  (Trigger Task)  │ ──> │ m365_posture_history│
+└─────────────────┘     └──────────────────┘     └─────────────────────┘
+         │                                                 │
+         v                                                 v
+┌─────────────────┐                            ┌─────────────────────┐
+│ Tela Execuções  │ <────── polling ──────────>│ Tela de Relatórios  │
+│ (Monitorar)     │                            │ (Visualizar)        │
+└─────────────────┘                            └─────────────────────┘
 ```
 
-O orquestrador chama todas as functions em paralelo e consolida.
+---
+
+## Arquitetura de Páginas
+
+### Páginas a Criar
+
+| Página | Arquivo | Descrição |
+|--------|---------|-----------|
+| **Análise M365** | `M365AnalysisPage.tsx` | Tela inicial para selecionar tenant e iniciar análise |
+| **Execuções M365** | `M365ExecutionsPage.tsx` | Monitoramento de tarefas em andamento |
+| **Relatórios M365** | `M365ReportsPage.tsx` | Histórico de análises com seletor de versão |
+| **Relatório Detalhe** | `M365PostureReportPage.tsx` | Visualização do relatório (refatorar da atual) |
+
+### Fluxo do Usuário
+
+1. **Análise M365**: Usuário seleciona tenant e clica "Iniciar Análise"
+2. **Execuções M365**: Tarefa aparece como "Pendente" → "Executando" → "Concluída"
+3. **Relatórios M365**: Usuário acessa histórico e visualiza relatórios
 
 ---
 
-## Permissoes Graph API Adicionais Necessarias
+## Banco de Dados
 
-Para as novas verificacoes, o App Registration precisara de:
+### Nova Tabela: `m365_posture_history`
 
-| Permissao | Uso |
-|-----------|-----|
-| DeviceManagementManagedDevices.Read.All | Intune devices |
-| DeviceManagementConfiguration.Read.All | Compliance policies |
-| Sites.Read.All | SharePoint sites |
-| Files.Read.All | OneDrive permissions |
-| Team.ReadBasic.All | Teams info |
-| Channel.ReadBasic.All | Channels info |
-| RoleEligibilitySchedule.Read.Directory | PIM eligible roles |
-| RoleManagementPolicy.Read.Directory | PIM policies |
-| AttackSimulation.Read.All | Defender simulations |
-| InformationProtectionPolicy.Read | Sensitivity labels |
+```sql
+CREATE TABLE m365_posture_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_record_id UUID NOT NULL REFERENCES m365_tenants(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id),
+  score INTEGER NOT NULL,
+  classification TEXT NOT NULL,
+  summary JSONB NOT NULL,
+  category_breakdown JSONB NOT NULL,
+  insights JSONB NOT NULL,
+  errors JSONB,
+  analyzed_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 
----
+CREATE INDEX idx_m365_posture_history_tenant ON m365_posture_history(tenant_record_id);
+CREATE INDEX idx_m365_posture_history_client ON m365_posture_history(client_id);
+CREATE INDEX idx_m365_posture_history_created ON m365_posture_history(created_at DESC);
+```
 
-## Ordem de Implementacao
+### Novo Tipo de Tarefa
 
-### Fase 1: Intune (6 checks)
-Mais facil de implementar, alto valor para compliance de dispositivos.
+Adicionar ao enum `agent_task_type`:
+```sql
+ALTER TYPE agent_task_type ADD VALUE 'm365_posture_analysis';
+```
 
-### Fase 2: PIM (4 checks)
-Muito importante para Zero Trust e least privilege.
-
-### Fase 3: SharePoint/OneDrive (4 checks)
-Data protection e compartilhamento.
-
-### Fase 4: Teams (4 checks)
-Colaboracao e guests.
-
-### Fase 5: Defender + DLP (8 checks)
-Alguns dependem de licencas especificas.
+**Nota**: Como a análise M365 não usa agent local (usa Graph API direto), precisamos de uma abordagem diferente. A Edge Function será a "executora", e usaremos uma tabela de jobs ou chamaremos diretamente.
 
 ---
 
-## Verificacoes Finais por Categoria
+## Edge Functions
 
-| Categoria | Atual | Novas | Total |
-|-----------|-------|-------|-------|
-| Identidades | 6 | 4 | 10 |
-| Admin Privileges | 6 | 3 | 9 |
-| Auth Access | 7 | 4 | 11 |
-| Apps Integrations | 7 | 3 | 10 |
-| Email Exchange | 5 | 0 | 5 |
-| Threats Activity | 5 | 0 | 5 |
-| **Intune (NOVO)** | 0 | 6 | 6 |
-| **SharePoint (NOVO)** | 0 | 4 | 4 |
-| **Teams (NOVO)** | 0 | 4 | 4 |
-| **PIM (NOVO)** | 0 | 4 | 4 |
-| **Defender (NOVO)** | 0 | 5 | 5 |
-| **TOTAL** | **34** | **37** | **73** |
+### 1. `trigger-m365-posture-analysis` (Nova)
+
+Dispara a análise e cria registro na tabela de jobs/histórico com status "pending":
+
+```typescript
+// Fluxo:
+1. Receber tenant_record_id
+2. Verificar se já existe análise pendente (prevenir duplicatas)
+3. Criar registro em m365_posture_history com status 'pending'
+4. Chamar m365-security-posture em background
+5. Retornar job_id imediatamente
+```
+
+**Alternativa (mais simples)**: A Edge Function `m365-security-posture` já faz a coleta - só precisa **persistir** o resultado na nova tabela.
+
+### 2. `m365-security-posture` (Modificar)
+
+Adicionar opção para persistir resultado:
+
+```typescript
+// Novo parâmetro: persist_result: boolean
+if (persist_result) {
+  // Salvar em m365_posture_history
+  await supabase.from('m365_posture_history').insert({
+    tenant_record_id,
+    client_id,
+    score,
+    classification,
+    summary,
+    category_breakdown: categoryBreakdown,
+    insights,
+    errors,
+    analyzed_by: user_id,
+  });
+}
+```
+
+---
+
+## Componentes de UI
+
+### M365AnalysisPage.tsx
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Análise de Postura de Segurança                       │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│  Selecione o Tenant:                                   │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ ▼ Contoso Corp (contoso.onmicrosoft.com)        │  │
+│  │   Fabrikam Inc (fabrikam.com)                   │  │
+│  │   Acme Corp (acme.onmicrosoft.com)              │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  [Última análise: 15/01/2026 às 14:30 - Score: 72%]    │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │                 🔒 Iniciar Análise               │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  Nota: A análise pode levar alguns minutos.            │
+│  Acompanhe o progresso em "Execuções".                 │
+│                                                        │
+└────────────────────────────────────────────────────────┘
+```
+
+### M365ExecutionsPage.tsx
+
+Seguir exatamente o padrão de `ExternalDomainExecutionsPage.tsx`:
+- Cards de estatísticas (Total, Pendentes, Executando, Concluídas, Falhas)
+- Tabela com status em tempo real (polling 10s)
+- Filtros por período e status
+- Detalhes da execução em modal
+
+### M365ReportsPage.tsx
+
+Seguir exatamente o padrão de `ExternalDomainReportsPage.tsx`:
+- Filtro por workspace/tenant
+- Tabela agrupada por tenant
+- Seletor de versão da análise (dropdown de datas)
+- Botões Ver e Exportar PDF
+
+---
+
+## Navegação
+
+### Menu M365 Atualizado
+
+```
+Microsoft 365
+├── Dashboard
+├── Análise          <── Nova (iniciar análise)
+├── Execuções        <── Nova (monitorar)
+├── Relatórios       <── Nova (histórico)
+├── Entra ID
+│   ├── Security Insights
+│   └── Application Insights
+├── Exchange Online
+└── Conexão de Tenant
+```
 
 ---
 
 ## Arquivos a Criar/Modificar
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/functions/m365-security-posture/index.ts` | Refatorar como orquestrador |
-| `supabase/functions/m365-check-intune/index.ts` | Criar (INT-001 a INT-006) |
-| `supabase/functions/m365-check-sharepoint/index.ts` | Criar (SPO-001 a SPO-004) |
-| `supabase/functions/m365-check-teams/index.ts` | Criar (TMS-001 a TMS-004) |
-| `supabase/functions/m365-check-pim/index.ts` | Criar (PIM-001 a PIM-004) |
-| `supabase/functions/m365-check-defender/index.ts` | Criar (DEF-001 a DEF-005) |
-| `src/types/m365Insights.ts` | Adicionar novas categorias |
-| `src/pages/m365/M365PosturePage.tsx` | Adicionar cards das novas categorias |
+### Criar
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/pages/m365/M365AnalysisPage.tsx` | Tela de iniciar análise |
+| `src/pages/m365/M365ExecutionsPage.tsx` | Monitoramento de execuções |
+| `src/pages/m365/M365ReportsPage.tsx` | Histórico de relatórios |
+| `src/pages/m365/M365PostureReportPage.tsx` | Visualização do relatório |
+| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Trigger da análise |
+| Migration SQL para `m365_posture_history` | Tabela de histórico |
+
+### Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/m365-security-posture/index.ts` | Adicionar persistência |
+| `src/App.tsx` | Adicionar novas rotas |
+| `src/components/layout/AppLayout.tsx` | Atualizar menu M365 |
+| `supabase/config.toml` | Registrar nova Edge Function |
+
+### Deprecar (manter temporariamente)
+
+| Arquivo | Status |
+|---------|--------|
+| `src/pages/m365/M365PosturePage.tsx` | Será substituída pelo novo fluxo |
+
+---
+
+## Considerações sobre Preview Mode
+
+Todas as novas páginas seguirão o padrão existente:
+- Filtro por `previewTarget.workspaces` ao buscar dados
+- `usePreviewGuard()` para bloquear ação "Iniciar Análise"
+- Banner visual já existente no AppLayout
+
+---
+
+## Ordem de Implementação
+
+1. **Criar tabela** `m365_posture_history` (migration SQL)
+2. **Modificar** `m365-security-posture` para persistir resultados
+3. **Criar** `trigger-m365-posture-analysis` (opcional, se quiser async completo)
+4. **Criar** `M365AnalysisPage.tsx` (selecionar tenant e iniciar)
+5. **Criar** `M365ReportsPage.tsx` (listar histórico)
+6. **Criar** `M365PostureReportPage.tsx` (visualizar relatório - refatorar atual)
+7. **Criar** `M365ExecutionsPage.tsx` (se usar modelo de jobs)
+8. **Atualizar** rotas e navegação
+
+---
+
+## Benefícios da Mudança
+
+| Aspecto | Antes (Tempo Real) | Depois (Assíncrono) |
+|---------|-------------------|---------------------|
+| **Performance** | Bloqueio de 30-60s | Retorno imediato |
+| **Histórico** | Sem persistência | Snapshots completos |
+| **Comparação** | Impossível | Tendência de score |
+| **UX** | Ansiedade de espera | Acompanhamento claro |
+| **Timeout** | Risco de falha | Retry automático |
+| **Seleção de Tenant** | No mesmo lugar | Tela dedicada |
 
 ---
 
 ## Resultado Esperado
 
-- **Antes**: 34 verificacoes em 6 categorias
-- **Depois**: 73 verificacoes em 11 categorias
-- Cobertura completa do ambiente M365
-- Score muito mais preciso e representativo
-- Dashboard com visibilidade de Intune, SharePoint, Teams, PIM
-- Posicao competitiva com ferramentas como Microsoft Secure Score
+- Fluxo idêntico ao de Domínio Externo e Firewall
+- Histórico persistido com todas as análises
+- Performance melhorada sem bloqueio de UI
+- Seleção clara de tenant antes de iniciar
+- Possibilidade futura de agendamento automático
