@@ -657,7 +657,7 @@ export default function M365PostureReportPage() {
                       <DetailRow 
                         label="Aplicações" 
                         value={envMetrics.enterpriseAppsCount > 0 || envMetrics.appRegistrationsCount > 0
-                          ? `Enterprise: ${envMetrics.enterpriseAppsCount} | Apps: ${envMetrics.appRegistrationsCount}`
+                          ? `Empresariais: ${envMetrics.enterpriseAppsCount} | Apps: ${envMetrics.appRegistrationsCount}`
                           : 'N/A'
                         }
                       />

@@ -190,8 +190,14 @@ async function collectEnvironmentMetrics(accessToken: string): Promise<Environme
     const { data: appsCount } = await graphFetchSafe(accessToken, '/applications/$count', { consistency: true });
     metrics.appRegistrationsCount = typeof appsCount === 'number' ? appsCount : 0;
 
-    // Enterprise apps (service principals)
-    const { data: spCount } = await graphFetchSafe(accessToken, '/servicePrincipals/$count', { consistency: true });
+    // Enterprise apps (service principals) - excluding Microsoft internal apps
+    // Microsoft's tenant ID: f8cdef31-a31e-4b4a-93e4-5f571e91255a
+    const msftTenantId = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a';
+    const { data: spCount } = await graphFetchSafe(
+      accessToken, 
+      `/servicePrincipals/$count?$filter=appOwnerOrganizationId ne ${msftTenantId}`, 
+      { consistency: true }
+    );
     metrics.enterpriseAppsCount = typeof spCount === 'number' ? spCount : 0;
     console.log(`[collectEnvironmentMetrics] Apps: ${metrics.appRegistrationsCount} registrations, ${metrics.enterpriseAppsCount} enterprise`);
   } catch (e) {
