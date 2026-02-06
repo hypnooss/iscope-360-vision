@@ -67,14 +67,11 @@ function DynamicCategoryIcon({ name, className, style }: { name: string; classNa
   return <IconComponent className={className} style={style} />;
 }
 
-// Category order for display
-const CATEGORY_ORDER = [
-  'Segurança DNS',
-  'Infraestrutura de Email',
-  'Autenticação de Email - SPF',
-  'Autenticação de Email - DKIM',
-  'Autenticação de Email - DMARC',
-];
+// Helper to get category display order from configs
+function getCategoryDisplayOrder(categoryConfigs: CategoryConfig[] | undefined, categoryName: string): number {
+  const config = categoryConfigs?.find(c => c.name === categoryName);
+  return config?.display_order ?? 999;
+}
 
 // Category Section Component
 interface AdminCategorySectionProps {
@@ -168,19 +165,20 @@ export function BlueprintFlowVisualization({ blueprint, rules, hideSummary, devi
     return map;
   }, [rules]);
   
-  // Get sorted categories (predefined order first, then alphabetically)
+  // Get sorted categories based on display_order from database
   const sortedCategories = useMemo(() => {
     const categories = Object.keys(rulesByCategory);
     return categories.sort((a, b) => {
-      const indexA = CATEGORY_ORDER.indexOf(a);
-      const indexB = CATEGORY_ORDER.indexOf(b);
+      const orderA = getCategoryDisplayOrder(categoryConfigs, a);
+      const orderB = getCategoryDisplayOrder(categoryConfigs, b);
       
-      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-      if (indexA !== -1) return -1;
-      if (indexB !== -1) return 1;
+      // If both have explicit order, use it
+      if (orderA !== orderB) return orderA - orderB;
+      
+      // Fallback to alphabetical
       return a.localeCompare(b);
     });
-  }, [rulesByCategory]);
+  }, [rulesByCategory, categoryConfigs]);
   
   // Count active rules
   const activeRulesCount = useMemo(() => {
