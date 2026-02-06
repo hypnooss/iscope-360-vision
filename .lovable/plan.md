@@ -1,268 +1,212 @@
 
-# Plano: Adaptar Visualização de Fluxo de Análise
+# Plano: Adicionar Estado "Não Encontrado" aos Cards de Preview
 
 ## Objetivo
 
-Transformar os cards da aba **Fluxo de Análise** em previews do relatório real, exibindo as informações cadastradas (Risco Técnico, Impacto no Negócio, Endpoint, etc.) em dois estados: **Sucesso** e **Falha**.
+Adicionar um terceiro estado (**Não Encontrado** / `not_found`) aos cards de preview de regras na aba Fluxo de Análise, para representar situações onde os dados simplesmente não existem (ex: nenhum servidor RADIUS configurado).
 
 ---
 
-## Situação Atual
+## Contexto
 
-| Componente | Status |
-|------------|--------|
-| `ComplianceRuleBasic` | NÃO inclui campos `technical_risk`, `business_impact`, `api_endpoint` |
-| `RuleFlowCard` em `BlueprintFlowVisualization.tsx` | Layout técnico focado em avaliação e parses |
-| `ComplianceCard.tsx` | Layout do relatório real com seções expandidas |
+| Status | Significado | Exemplo |
+|--------|-------------|---------|
+| `pass` | Configuração correta e segura | LDAP configurado com LDAPS |
+| `fail` | Configuração insegura ou incorreta | LDAP configurado sem criptografia |
+| `not_found` | Recurso não configurado/utilizado | Nenhum servidor RADIUS encontrado |
+
+O status `not_found` **não é um erro de segurança** — indica apenas que o recurso não está em uso naquele ambiente.
 
 ---
 
 ## Alterações Necessárias
 
-### 1. Atualizar `ComplianceRuleBasic` em `src/types/complianceRule.ts`
+### 1. Adicionar Coluna no Banco de Dados
 
-Incluir os campos de metadados no tipo simplificado:
+```sql
+ALTER TABLE compliance_rules 
+ADD COLUMN not_found_description TEXT;
 
+COMMENT ON COLUMN compliance_rules.not_found_description IS 
+  'Mensagem exibida quando os dados para avaliação não são encontrados (recurso não configurado)';
+```
+
+---
+
+### 2. Atualizar Tipos TypeScript
+
+**`src/types/complianceRule.ts`:**
 ```typescript
+export interface ComplianceRuleDB {
+  // ... campos existentes ...
+  not_found_description: string | null;
+}
+
 export interface ComplianceRuleBasic {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  severity: string;
-  weight: number;
-  evaluation_logic: Record<string, any>;
-  is_active: boolean;
-  // Campos adicionados
-  recommendation: string | null;
-  pass_description: string | null;
-  fail_description: string | null;
-  technical_risk: string | null;
-  business_impact: string | null;
-  api_endpoint: string | null;
+  // ... campos existentes ...
+  not_found_description: string | null;
 }
 ```
 
 ---
 
-### 2. Reescrever `RuleFlowCard` em `BlueprintFlowVisualization.tsx`
+### 3. Atualizar Formulário de Edição
 
-Criar um novo layout que simula o relatório real com toggle de estado:
+**`src/components/admin/TemplateRulesManagement.tsx`:**
 
-**Header do Card:**
-- Código da regra + Nome
-- Badge de severidade (com cores condicionais)
-- Toggle para alternar entre SUCESSO e FALHA
-
-**Corpo do Card (colapsável):**
-
-| Estado | Conteúdo |
-|--------|----------|
-| SUCESSO (pass) | Ícone verde, badge neutra, mensagem de sucesso (`pass_description`) |
-| FALHA (fail) | Ícone vermelho, badge colorida, recomendação + seções completas |
-
-**Seções Expandidas (apenas no estado FALHA):**
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ [Endpoint consultado] (admin only)                          │
-│   GET /api/v2/cmdb/system/ha                                │
-├─────────────────────────────────────────────────────────────┤
-│ ANÁLISE EFETUADA                                            │
-│   Verifica se há múltiplas interfaces de heartbeat...       │
-├─────────────────────────────────────────────────────────────┤
-│ RISCO TÉCNICO                                               │
-│   Com apenas uma interface de heartbeat, uma falha...       │
-├─────────────────────────────────────────────────────────────┤
-│ IMPACTO NO NEGÓCIO                                          │
-│   Split-brain causa queda total da rede: ambos os...        │
-├─────────────────────────────────────────────────────────────┤
-│ EVIDÊNCIAS (placeholder)                                    │
-│   [Dados coletados em runtime pelo agente]                  │
-└─────────────────────────────────────────────────────────────┘
+Adicionar campo ao form state:
+```typescript
+const [formData, setFormData] = useState({
+  // ... campos existentes ...
+  not_found_description: '',
+});
 ```
 
----
-
-### 3. Estrutura do Novo Card
-
+Adicionar campo no formulário UI (ao lado de pass/fail descriptions):
 ```tsx
-function RulePreviewCard({ rule }: { rule: ComplianceRule }) {
-  const [previewState, setPreviewState] = useState<'pass' | 'fail'>('fail');
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  const statusConfig = {
-    pass: { 
-      icon: CheckCircle, 
-      className: 'status-pass', 
-      label: 'Aprovado',
-      message: rule.pass_description || 'Configuração conforme esperado'
-    },
-    fail: { 
-      icon: XCircle, 
-      className: 'status-fail', 
-      label: 'Falha',
-      message: rule.fail_description || 'Configuração fora do esperado'
-    },
-  };
-  
-  const config = statusConfig[previewState];
-  const StatusIcon = config.icon;
-  
-  // Só mostra seções de risco quando em estado de falha
-  const showRiskSections = previewState === 'fail';
-
-  return (
-    <div className="glass-card rounded-lg p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-3">
-          <div className={cn("p-2 rounded-lg border", config.className)}>
-            <StatusIcon className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <code className="text-sm font-mono font-semibold">{rule.code}</code>
-              <span className="text-muted-foreground">•</span>
-              <span className="font-medium">{rule.name}</span>
-              <SeverityBadge severity={rule.severity} status={previewState} />
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {config.message}
-            </p>
-          </div>
-        </div>
-        
-        {/* Toggle Sucesso/Falha */}
-        <div className="flex items-center gap-2">
-          <Button 
-            size="sm" 
-            variant={previewState === 'pass' ? 'default' : 'outline'}
-            onClick={() => setPreviewState('pass')}
-          >
-            Sucesso
-          </Button>
-          <Button 
-            size="sm" 
-            variant={previewState === 'fail' ? 'destructive' : 'outline'}
-            onClick={() => setPreviewState('fail')}
-          >
-            Falha
-          </Button>
-        </div>
-      </div>
-      
-      {/* Recomendação (apenas em falha) */}
-      {showRiskSections && rule.recommendation && (
-        <p className="text-xs text-primary mt-2 flex items-center gap-1">
-          <ChevronRight className="w-3 h-3" />
-          {rule.recommendation}
-        </p>
-      )}
-      
-      {/* Expandir detalhes */}
-      <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-        <CollapsibleTrigger className="w-full mt-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Ver detalhes do card</span>
-            {isExpanded ? <ChevronDown /> : <ChevronRight />}
-          </div>
-        </CollapsibleTrigger>
-        
-        <CollapsibleContent>
-          <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
-            
-            {/* Endpoint consultado (admin only) */}
-            {rule.api_endpoint && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <ExternalLink className="w-3 h-3" />
-                <span>Endpoint: <code>{rule.api_endpoint}</code></span>
-              </div>
-            )}
-            
-            {/* ANÁLISE EFETUADA */}
-            {rule.description && (
-              <Section title="ANÁLISE EFETUADA" icon={FileText}>
-                {rule.description}
-              </Section>
-            )}
-            
-            {/* RISCO TÉCNICO (apenas em falha) */}
-            {showRiskSections && rule.technical_risk && (
-              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
-                {rule.technical_risk}
-              </Section>
-            )}
-            
-            {/* IMPACTO NO NEGÓCIO (apenas em falha) */}
-            {showRiskSections && rule.business_impact && (
-              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
-                {rule.business_impact}
-              </Section>
-            )}
-            
-            {/* Placeholder para evidências */}
-            <Section title="EVIDÊNCIAS COLETADAS" icon={FileText}>
-              <span className="text-muted-foreground italic">
-                [Dados coletados em runtime pelo agente]
-              </span>
-            </Section>
-            
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
-  );
-}
+<div className="space-y-2">
+  <Label htmlFor="not_found_description">Mensagem Não Encontrado</Label>
+  <Input
+    id="not_found_description"
+    value={formData.not_found_description}
+    onChange={(e) => setFormData({ ...formData, not_found_description: e.target.value })}
+    placeholder="Ex: Nenhum servidor RADIUS configurado"
+  />
+  <p className="text-xs text-muted-foreground">
+    Exibida quando o recurso não está configurado/em uso
+  </p>
+</div>
 ```
 
 ---
 
-### 4. Diagrama Visual
+### 4. Atualizar RulePreviewCard
+
+**`src/components/admin/RulePreviewCard.tsx`:**
+
+Adicionar terceiro estado ao toggle:
+```typescript
+const [previewState, setPreviewState] = useState<'pass' | 'fail' | 'not_found'>('fail');
+
+const statusConfig = {
+  pass: { 
+    icon: CheckCircle, 
+    iconClass: 'text-primary',
+    bgClass: 'bg-primary/10 border-primary/30',
+    label: 'Aprovado',
+    message: rule.pass_description || 'Configuração conforme esperado'
+  },
+  fail: { 
+    icon: XCircle, 
+    iconClass: 'text-rose-400',
+    bgClass: 'bg-rose-500/10 border-rose-500/30',
+    label: 'Falha',
+    message: rule.fail_description || 'Configuração fora do esperado'
+  },
+  not_found: { 
+    icon: HelpCircle, // ou MinusCircle
+    iconClass: 'text-muted-foreground',
+    bgClass: 'bg-muted/50 border-border',
+    label: 'Não Encontrado',
+    message: rule.not_found_description || 'Recurso não configurado neste ambiente'
+  },
+};
+```
+
+Adicionar terceiro botão no toggle:
+```tsx
+<div className="flex items-center gap-1 flex-shrink-0">
+  <Button 
+    size="sm" 
+    variant={previewState === 'pass' ? 'default' : 'outline'}
+    className="h-7 px-2 text-xs"
+    onClick={() => setPreviewState('pass')}
+  >
+    Sucesso
+  </Button>
+  <Button 
+    size="sm" 
+    variant={previewState === 'fail' ? 'destructive' : 'outline'}
+    className="h-7 px-2 text-xs"
+    onClick={() => setPreviewState('fail')}
+  >
+    Falha
+  </Button>
+  <Button 
+    size="sm" 
+    variant={previewState === 'not_found' ? 'secondary' : 'outline'}
+    className="h-7 px-2 text-xs"
+    onClick={() => setPreviewState('not_found')}
+  >
+    N/A
+  </Button>
+</div>
+```
+
+Ajustar lógica de exibição:
+- Seções de Risco Técnico e Impacto: **apenas em `fail`**
+- Badge de severidade: **cores neutras em `pass` e `not_found`**
+- Recomendação: **apenas em `fail`**
+
+---
+
+### 5. Diagrama Visual dos 3 Estados
 
 ```text
-┌───────────────────────────────────────────────────────────────────────────────┐
-│  [✓] ha-003 • Heartbeat HA Redundante         [Crítico]   [Sucesso] [Falha]  │
-│      Múltiplas interfaces de heartbeat configuradas                          │
-│                                                                               │
-│      ▶ Ver detalhes do card                                                  │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Estado: SUCESSO                                                            │
+│  [✓] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
+│      Servidores RADIUS configurados com timeout adequado                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-                    ▼ (toggle para Falha)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Estado: FALHA                                                              │
+│  [✗] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
+│      Servidores RADIUS com timeout excessivo ou configuração insegura       │
+│      → Reduza o timeout e configure servidores redundantes                  │
+│                                                                             │
+│      ▼ Ver detalhes do card                                                 │
+│      ┌─────────────────────────────────────────────────────────────────┐    │
+│      │ RISCO TÉCNICO: ...                                              │    │
+│      │ IMPACTO NO NEGÓCIO: ...                                         │    │
+│      └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────┐
-│  [✗] ha-003 • Heartbeat HA Redundante         [Crítico]   [Sucesso] [Falha]  │
-│      Apenas uma interface de heartbeat - sem redundância                     │
-│      → Configure múltiplas interfaces de heartbeat para evitar split-brain   │
-│                                                                               │
-│      ▼ Ver detalhes do card                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐ │
-│  │ Endpoint: GET /api/v2/monitor/system/ha-peer                            │ │
-│  ├─────────────────────────────────────────────────────────────────────────┤ │
-│  │ ANÁLISE EFETUADA                                                        │ │
-│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
-│  │ │ Verifica se há múltiplas interfaces de heartbeat configuradas...   │ │ │
-│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
-│  ├─────────────────────────────────────────────────────────────────────────┤ │
-│  │ RISCO TÉCNICO                                                           │ │
-│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
-│  │ │ Com apenas uma interface de heartbeat, uma falha nesse link pode   │ │ │
-│  │ │ causar split-brain, onde ambos os firewalls assumem papel primário.│ │ │
-│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
-│  ├─────────────────────────────────────────────────────────────────────────┤ │
-│  │ IMPACTO NO NEGÓCIO                                                      │ │
-│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
-│  │ │ Split-brain causa queda total da rede: ambos os firewalls respondem│ │ │
-│  │ │ pelo mesmo IP, corrompendo tabelas ARP, derrubando sessões ativas. │ │ │
-│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
-│  ├─────────────────────────────────────────────────────────────────────────┤ │
-│  │ EVIDÊNCIAS COLETADAS                                                    │ │
-│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
-│  │ │ [Dados coletados em runtime pelo agente]                            │ │ │
-│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
-│  └─────────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Estado: NÃO ENCONTRADO                                                     │
+│  [?] auth-002 • Servidor RADIUS Configurado    [Médio]  [Sucesso][Falha][N/A]│
+│      Nenhum servidor RADIUS configurado neste ambiente                      │
+│                                                                             │
+│      (Sem seções de risco - não é uma falha de segurança)                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 6. Popular Mensagens Existentes
+
+Após criar a coluna, popular as mensagens para regras que fazem sentido ter estado "não encontrado":
+
+```sql
+-- Autenticação
+UPDATE compliance_rules SET not_found_description = 'Nenhum servidor LDAP configurado' 
+WHERE code = 'auth-001';
+
+UPDATE compliance_rules SET not_found_description = 'Nenhum servidor RADIUS configurado' 
+WHERE code = 'auth-002';
+
+UPDATE compliance_rules SET not_found_description = 'Nenhum agente FSSO configurado' 
+WHERE code = 'auth-003';
+
+UPDATE compliance_rules SET not_found_description = 'Nenhum provedor SAML configurado' 
+WHERE code = 'auth-004';
+
+-- VPN
+UPDATE compliance_rules SET not_found_description = 'Nenhum túnel VPN IPsec configurado' 
+WHERE code = 'vpn-001';
+
+-- HA (não aplicável - HA desabilitado é diferente de não encontrado)
+-- Firmware, Licenciamento, etc. - não têm estado "não encontrado"
 ```
 
 ---
@@ -271,14 +215,16 @@ function RulePreviewCard({ rule }: { rule: ComplianceRule }) {
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/types/complianceRule.ts` | Adicionar campos ao `ComplianceRuleBasic` |
-| `src/components/admin/BlueprintFlowVisualization.tsx` | Reescrever `RuleFlowCard` com preview de estados |
+| Migração SQL | Adicionar coluna `not_found_description` |
+| `src/types/complianceRule.ts` | Adicionar campo aos tipos |
+| `src/components/admin/TemplateRulesManagement.tsx` | Adicionar campo ao formulário |
+| `src/components/admin/RulePreviewCard.tsx` | Adicionar terceiro estado ao toggle |
 
 ---
 
 ## Benefícios
 
-- Administrador visualiza exatamente como o card aparecerá no relatório
-- Toggle permite verificar mensagens de sucesso e falha
-- Campos de Risco Técnico e Impacto são visíveis no contexto correto
-- Facilita revisão e ajuste de textos antes da publicação
+- Clareza na diferenciação entre **falha de segurança** e **recurso não utilizado**
+- Relatórios mais precisos que não geram falsos alertas
+- Administrador pode customizar mensagem para cada cenário
+- Consistência com o status `unknown` já existente no `ComplianceCard`
