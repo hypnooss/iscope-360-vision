@@ -156,7 +156,19 @@ Adicionar suporte para dois tipos de executor:
 
 ---
 
-## Proximos Passos
+## Status de Implementação
 
-Apos aprovacao, iniciar pela **Fase 1** (migracao do schema) para estabelecer a estrutura, seguida da **Fase 2** (M365) que representa a maior violacao atual da regra.
+### ✅ Fase 1: Infraestrutura (CONCLUÍDO)
+- [x] Enum `blueprint_executor_type` criado: `agent`, `edge_function`, `hybrid`
+- [x] Coluna `executor_type` adicionada em `device_blueprints`
+- [x] Tabela `blueprint_step_templates` criada para templates reutilizáveis
+
+### ✅ Fase 2: M365 para Banco (CONCLUÍDO)
+- [x] Blueprint "M365 - Postura de Segurança" criado com 39 steps Graph API
+- [x] 59 regras de compliance já existentes no banco (IDT, ADM, AUT, APP, EXO, THR, INT, PIM, SPO, TMS, DEF)
+- [x] 11 categorias de regras criadas
+- [x] Edge Function `m365-security-posture` refatorada para ler steps do banco
+
+### 🔲 Fase 3: Migrar Subdomain Enum (PENDENTE)
+### 🔲 Fase 4: Unificar Avaliação (PENDENTE)
 
