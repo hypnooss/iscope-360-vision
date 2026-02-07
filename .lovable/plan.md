@@ -1,188 +1,118 @@
 
 
-# Regra Arquitetural: Toda Coleta no Banco de Dados
+# Plano: Limpeza de Dados Mockados e Fluxo Visual em Templates
 
-## Regra Fundamental
+## Descobertas da Auditoria de Dados Mockados
 
-**"Qualquer tipo de coleta de dados DEVE estar configurado em um template (device_type) e armazenado no banco de dados. Nenhuma logica de coleta pode existir hardcoded em Edge Functions ou codigo."**
+### Arquivos que podem ser removidos (codigo morto):
 
----
+| Arquivo | Motivo |
+|---------|--------|
+| `src/data/mockCompliance.ts` | Nao esta sendo importado em nenhum lugar do codigo |
 
-## Estado Atual (Violacoes)
+### Arquivos de preview (opcional manter):
 
-### 1. Microsoft 365 (`m365-security-posture`)
-- **2.081 linhas** de codigo com 57+ verificacoes hardcoded
-- Endpoints da Graph API embutidos diretamente nas funcoes
-- Logica de avaliacao dispersa em funcoes como `collectIdentityInsights()`, `collectAuthInsights()`, etc.
-- **Nenhum blueprint** existe para M365
+| Arquivo | Status |
+|---------|--------|
+| `src/pages/preview/FirewallReportPreview.tsx` | Pagina de preview de design - dados mock sao esperados |
+| `src/pages/preview/DomainReportPreview.tsx` | Pagina de preview de design - dados mock sao esperados |
 
-### 2. Dominio Externo (`subdomain-enum`)  
-- **813 linhas** com 9 APIs de enumeracao hardcoded (crt.sh, HackerTarget, AlienVault, etc.)
-- Endpoints e logica de consulta embutidos
-- Blueprint existe para DNS (7 steps via Agent), mas coleta de subdomains via Edge Function esta fora
+### Fallback com plano de migracao:
 
-### 3. Mapeamento `sourceKeyToEndpoint`
-- **Linha 357-422** do `agent-task-result` contem mapeamento hardcoded de source_key para endpoints
-- Deveria vir do banco de dados
+| Arquivo | Status |
+|---------|--------|
+| `src/components/pdf/data/explanatoryContent.ts` | Ja tem fallback para banco (rule_correction_guides). O conteudo hardcoded so e usado quando nao existe no banco |
 
 ---
 
-## Arquitetura Proposta
+## Nova Funcionalidade: Fluxo Visual do Template
 
-### Novo Campo na Tabela `device_blueprints`
+### Objetivo
 
-Adicionar suporte para dois tipos de executor:
+Adicionar um diagrama visual horizontal entre o titulo da pagina de Templates e a tabela, mostrando como os templates funcionam no sistema.
 
-| Campo | Valor | Descricao |
-|-------|-------|-----------|
-| `executor` | `agent` | Steps executados pelo Python Agent (atual) |
-| `executor` | `edge_function` | Steps executados por Edge Function |
+### Componente: TemplatePipelineFlow
 
-### Estrutura do `collection_steps` Unificada
-
-```json
-{
-  "steps": [
-    {
-      "id": "users_count",
-      "executor": "edge_function",
-      "runtime": "graph_api",
-      "config": {
-        "endpoint": "/users/$count",
-        "method": "GET",
-        "headers": { "ConsistencyLevel": "eventual" },
-        "api_version": "v1.0"
-      }
-    },
-    {
-      "id": "mfa_status",
-      "executor": "edge_function", 
-      "runtime": "graph_api",
-      "config": {
-        "endpoint": "/reports/authenticationMethods/userRegistrationDetails",
-        "method": "GET",
-        "params": { "$top": "999" },
-        "api_version": "v1.0"
-      }
-    },
-    {
-      "id": "exchange_transport_rules",
-      "executor": "agent",
-      "runtime": "powershell",
-      "config": {
-        "module": "ExchangeOnlineManagement",
-        "command": "Get-TransportRule",
-        "auth": "certificate"
-      }
-    }
-  ]
-}
-```
-
-### Fluxo de Execucao
+Sera criado um novo componente `TemplatePipelineFlow.tsx` que exibe:
 
 ```text
-+------------------+     +-------------------+     +------------------+
-|   Trigger        |     |   Orchestrator    |     |   Executores     |
-|   Analysis       | --> |   Edge Function   | --> |                  |
-+------------------+     +-------------------+     +------------------+
-                                |                         |
-                                v                         v
-                         Le blueprint do BD        +------+------+
-                                |                  |             |
-                                v                  v             v
-                         Para cada step:     Agent Steps   Edge Steps
-                                |            (Python)      (Deno)
-                                |                |             |
-                                v                v             v
-                         Agrupa por tipo    http_request   graph_api
-                                             ssh_command    rest_api
-                                             powershell     dns_lookup
++-------------------+     +-------------------+     +-------------------+     +-------------------+     +-------------------+
+|     BLUEPRINT     |     |      REGRAS       |     |      PARSES       |     | FLUXO DE ANALISE  |     |   VISUALIZACAO    |
+|-------------------|     |-------------------|     |-------------------|     |-------------------|     |-------------------|
+| Coleta de dados   | --> | Avaliacao de      | --> | Traducao dos      | --> | Organizacao por   | --> | Apresentacao ao   |
+| do dispositivo    |     | conformidade      |     | dados tecnicos    |     | categorias        |     | cliente           |
++-------------------+     +-------------------+     +-------------------+     +-------------------+     +-------------------+
 ```
+
+### Design do Componente
+
+- Fundo sutil com gradiente (similar ao header de relatorios)
+- 5 caixas conectadas por setas
+- Cada caixa com:
+  - Icone representativo
+  - Titulo da etapa
+  - Breve descricao
+- Cores consistentes com a identidade visual do sistema
+- Responsivo: em mobile, as caixas empilham verticalmente
+
+### Estrutura das Etapas
+
+1. **Blueprints** (icone: FileCode)
+   - "Define os steps de coleta de dados do dispositivo"
+   
+2. **Regras** (icone: CheckCircle)
+   - "Avalia os dados coletados contra criterios de conformidade"
+   
+3. **Parses** (icone: Code2)
+   - "Traduz termos tecnicos para linguagem amigavel"
+   
+4. **Fluxo de Analise** (icone: Workflow)
+   - "Organiza regras em categorias para o relatorio"
+   
+5. **Visualizacao** (icone: Settings)
+   - "Define ordem e aparencia das categorias no relatorio"
 
 ---
 
-## Plano de Implementacao
-
-### Fase 1: Infraestrutura (Banco de Dados)
+## Arquivos a Modificar
 
 | Arquivo | Acao |
 |---------|------|
-| Migration SQL | Adicionar campo `executor_type` em `device_blueprints` (enum: 'agent', 'edge_function', 'hybrid') |
-| Migration SQL | Adicionar tabela `blueprint_step_templates` para reutilizacao de configuracoes comuns |
+| `src/data/mockCompliance.ts` | Remover arquivo (codigo morto) |
+| `src/components/admin/TemplatePipelineFlow.tsx` | Criar novo componente |
+| `src/pages/admin/TemplatesPage.tsx` | Adicionar componente entre titulo e tabela |
 
-### Fase 2: Migrar M365 para Banco
+---
 
-| Arquivo | Acao |
-|---------|------|
-| Migration SQL | Criar blueprint "M365 - Postura de Seguranca" com 57+ steps |
-| Migration SQL | Popular `collection_steps` com todos os endpoints da Graph API |
-| Edge Function | Refatorar `m365-security-posture` para ler steps do banco e executar dinamicamente |
+## Implementacao Tecnica
 
-### Fase 3: Migrar Subdomain Enum
+### 1. Remover mockCompliance.ts
 
-| Arquivo | Acao |
-|---------|------|
-| Migration SQL | Adicionar steps de `edge_function` ao blueprint External Domain |
-| Edge Function | Refatorar `subdomain-enum` para ser um executor generico |
+Simplesmente deletar o arquivo, pois nao e utilizado.
 
-### Fase 4: Unificar Avaliacao
+### 2. Criar TemplatePipelineFlow.tsx
 
-| Arquivo | Acao |
-|---------|------|
-| Edge Function | Criar `evaluate-compliance` generico que le regras do banco |
-| Remover | Eliminar mapeamento `sourceKeyToEndpoint` hardcoded |
+```tsx
+// Componente visual com 5 etapas conectadas
+// Usa icones do Lucide
+// Gradiente de fundo similar aos headers de relatorio
+// Setas SVG entre as etapas
+// Layout flex com gap apropriado
+// Responsivo com wrap em mobile
+```
+
+### 3. Integrar na TemplatesPage
+
+Inserir o componente entre:
+- "Gerencie os templates de dispositivos disponiveis no sistema"
+- A tabela de templates
 
 ---
 
 ## Beneficios
 
-1. **Administracao via UI**: Adicionar/editar verificacoes M365 sem deploy de codigo
-2. **Consistencia**: Mesmo fluxo para todos os templates (Firewall, M365, Dominio)
-3. **Auditoria**: Historico de mudancas nas regras de coleta
-4. **Flexibilidade**: Suporte a coletas hibridas (Agent + Edge Function)
-5. **Testabilidade**: Preview de verificacoes antes de ativar
-
----
-
-## Estimativa
-
-| Fase | Complexidade | Impacto |
-|------|--------------|---------|
-| Fase 1 | Baixa | Estrutura base |
-| Fase 2 | Alta | M365 funcional via banco |
-| Fase 3 | Media | Dominio Externo completo |
-| Fase 4 | Media | Unificacao final |
-
----
-
-## Status de Implementação
-
-### ✅ Fase 1: Infraestrutura (CONCLUÍDO)
-- [x] Enum `blueprint_executor_type` criado: `agent`, `edge_function`, `hybrid`
-- [x] Coluna `executor_type` adicionada em `device_blueprints`
-- [x] Tabela `blueprint_step_templates` criada para templates reutilizáveis
-
-### ✅ Fase 2: M365 para Banco (CONCLUÍDO)
-- [x] Blueprint "M365 - Postura de Segurança" criado com 39 steps Graph API
-- [x] 59 regras de compliance já existentes no banco (IDT, ADM, AUT, APP, EXO, THR, INT, PIM, SPO, TMS, DEF)
-- [x] 11 categorias de regras criadas
-- [x] Edge Function `m365-security-posture` refatorada para ler steps do banco
-
-### ✅ Fase 3: Migrar Subdomain Enum (CONCLUÍDO)
-- [x] Blueprint External Domain atualizado para `hybrid` com 18 steps totais
-- [x] 7 steps `agent` (DNS queries via Python Agent)
-- [x] 11 steps `edge_function` (APIs de enumeração de subdomínios)
-- [x] Phase 1: APIs premium (SecurityTrails, VirusTotal) executadas sequencialmente
-- [x] Phase 2: APIs gratuitas (crt.sh, HackerTarget, etc.) executadas em paralelo
-- [x] Edge Function `subdomain-enum` refatorada para ler steps do banco
-- [x] Response parsers unificados em estrutura data-driven
-
-### ✅ Fase 4: Unificar Avaliação (CONCLUÍDO)
-- [x] Tabela `source_key_endpoints` criada para mapeamento dinâmico
-- [x] Mapeamentos de FortiGate, SonicWall e External Domain populados
-- [x] Função `loadSourceKeyEndpoints` criada para carregar do banco com cache
-- [x] `processComplianceRules` refatorado para receber mapeamentos como parâmetro
-- [x] Eliminado o objeto `sourceKeyToEndpoint` hardcoded (66 linhas removidas)
-- [x] RLS policies aplicadas na nova tabela
+1. **Educacional**: Administradores entendem o pipeline completo
+2. **Navegacao**: Cada etapa pode ser clicavel para ir a aba correspondente
+3. **Consistencia visual**: Usa a mesma linguagem de design do sistema
+4. **Orientacao**: Novo administradores entendem rapidamente a arquitetura
 
