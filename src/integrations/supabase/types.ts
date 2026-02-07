@@ -139,6 +139,7 @@ export type Database = {
           capabilities: Json | null
           certificate_public_key: string | null
           certificate_thumbprint: string | null
+          check_components: boolean
           client_id: string | null
           config_fetched_at: string | null
           config_updated_at: string | null
@@ -158,6 +159,7 @@ export type Database = {
           capabilities?: Json | null
           certificate_public_key?: string | null
           certificate_thumbprint?: string | null
+          check_components?: boolean
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
@@ -177,6 +179,7 @@ export type Database = {
           capabilities?: Json | null
           certificate_public_key?: string | null
           certificate_thumbprint?: string | null
+          check_components?: boolean
           client_id?: string | null
           config_fetched_at?: string | null
           config_updated_at?: string | null
