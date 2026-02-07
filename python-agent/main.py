@@ -89,10 +89,21 @@ class AgentApp:
         if result.get('check_components'):
             self.logger.info("Backend solicitou verificação de componentes")
             try:
-                from agent.components import ensure_system_components
-                ensure_system_components(self.logger)
+                # Create flag file for the pre-start script (runs as root)
+                flag_file = Path("/var/lib/iscope-agent/check_components.flag")
+                flag_file.touch()
+                self.logger.info("Flag de verificação criada. Solicitando restart...")
+                
+                # Request service restart - the systemd ExecStartPre will run check-deps.sh as root
+                import subprocess
+                subprocess.run(
+                    ['systemctl', 'restart', 'iscope-agent'],
+                    capture_output=True,
+                    timeout=30
+                )
+                # Note: this process will be terminated by the restart
             except Exception as e:
-                self.logger.warning(f"Erro ao verificar componentes: {e}")
+                self.logger.warning(f"Erro ao solicitar verificação de componentes: {e}")
 
         # Check for available updates
         if result.get('update_available') and result.get('update_info'):
