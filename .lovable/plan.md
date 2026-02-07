@@ -1,172 +1,196 @@
 
 
-# Plano: Adicionar Botão de Cancelar Tasks M365
+# Plano: Corrigir Execução de Tasks M365 PowerShell
 
-## Contexto
+## Problema Identificado
 
-A página de Execuções M365 já exibe as tasks PowerShell, mas não permite cancelar tasks que estão em execução ou pendentes. Outras páginas do sistema (External Domain Executions, Firewall Task Executions) já possuem essa funcionalidade implementada.
+O agent recebe a task M365, mas com **0 steps** porque:
+
+1. A função SQL `rpc_get_agent_tasks` retorna `blueprint = '{"steps": []}'` (vazio) para tasks M365
+2. O payload contém os dados corretos (`module`, `commands`, `app_id`, etc.)
+3. O executor `powershell` existe no agent, mas não está registrado no `TaskExecutor`
+
+**Logs do problema:**
+```
+Executando tarefa 26ca8244-91a3-4c2f-bf9e-c489d26de1a2 com 0 steps
+status=completed, tempo=18ms, completed=0, failed=0
+```
 
 ---
 
 ## Solução
 
-Replicar o padrão de cancelamento de tasks já existente no projeto para a aba **Tasks PowerShell** da página `M365ExecutionsPage`.
+Duas correções necessárias:
+
+### 1. Registrar Executor PowerShell no Agent Python
+
+**Arquivo:** `python-agent/agent/tasks.py`
+
+Adicionar o `PowerShellExecutor` na lista de executors:
+
+```python
+from agent.executors.powershell import PowerShellExecutor
+
+# Dentro de __init__:
+self._executors = {
+    'http_request': HTTPRequestExecutor(logger),
+    'http_session': HTTPSessionExecutor(logger),
+    'ssh_command': SSHExecutor(logger),
+    'snmp_query': SNMPExecutor(logger),
+    'dns_query': DNSQueryExecutor(logger),
+    'amass': AmassExecutor(logger),
+    'powershell': PowerShellExecutor(logger),  # ADICIONAR
+}
+```
+
+### 2. Modificar Função SQL para Gerar Step PowerShell
+
+**Arquivo:** Nova migration SQL
+
+A função `rpc_get_agent_tasks` precisa transformar o `payload` das tasks M365 em um step válido:
+
+```sql
+-- Para tasks M365, converter payload em step
+json_build_object(
+  'steps', json_build_array(
+    json_build_object(
+      'id', 'powershell_exec',
+      'type', 'powershell',
+      'params', json_build_object(
+        'module', t.payload->>'module',
+        'commands', t.payload->'commands',
+        'app_id', cred.azure_app_id,
+        'tenant_id', mt.tenant_id,
+        'organization', t.payload->>'organization'
+      )
+    )
+  )
+) as blueprint
+```
 
 ---
 
-## Arquivo a Modificar
+## Fluxo Corrigido
+
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│  ANTES (com problema)                                                      │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Edge Function → cria task com payload.commands                            │
+│       ↓                                                                    │
+│  rpc_get_agent_tasks → retorna blueprint = {"steps": []}  ← VAZIO         │
+│       ↓                                                                    │
+│  Agent → task.steps = []  → 0 steps executados                            │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  DEPOIS (corrigido)                                                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Edge Function → cria task com payload.commands                            │
+│       ↓                                                                    │
+│  rpc_get_agent_tasks → converte payload em step powershell                │
+│       ↓                                                                    │
+│  Agent → task.steps = [{type: "powershell", params: {...}}]               │
+│       ↓                                                                    │
+│  PowerShellExecutor → executa Connect-ExchangeOnline + comandos           │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/pages/m365/M365ExecutionsPage.tsx` | Adicionar funcionalidade de cancelamento de tasks |
+| `python-agent/agent/tasks.py` | Registrar `PowerShellExecutor` |
+| `supabase/migrations/*.sql` | Atualizar `rpc_get_agent_tasks` para gerar steps M365 |
 
 ---
 
 ## Mudanças Detalhadas
 
-### 1. Novos Imports
+### Python Agent - `tasks.py`
 
-Adicionar imports necessários:
-- `useMutation`, `useQueryClient` do `@tanstack/react-query`
-- `AlertDialog` e componentes relacionados do `@/components/ui/alert-dialog`
-- `Ban` icon do `lucide-react`
-- `toast` do `sonner`
+```python
+# Linha 15: Adicionar import
+from agent.executors.powershell import PowerShellExecutor
 
-### 2. Novos Estados
-
-```typescript
-const [cancelOpen, setCancelOpen] = useState(false);
-const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
-const queryClient = useQueryClient();
+# Linha 42-50: Adicionar executor
+self._executors = {
+    'http_request': HTTPRequestExecutor(logger),
+    'http_session': HTTPSessionExecutor(logger),
+    'ssh_command': SSHExecutor(logger),
+    'snmp_query': SNMPExecutor(logger),
+    'dns_query': DNSQueryExecutor(logger),
+    'amass': AmassExecutor(logger),
+    'powershell': PowerShellExecutor(logger),
+}
 ```
 
-### 3. Mutation de Cancelamento
+### SQL Migration - `rpc_get_agent_tasks`
 
-```typescript
-const cancelMutation = useMutation({
-  mutationFn: async (taskId: string) => {
-    const { error } = await supabase
-      .from('agent_tasks')
-      .update({
-        status: 'cancelled',
-        completed_at: new Date().toISOString(),
-        error_message: 'Cancelada pelo usuário'
-      })
-      .eq('id', taskId)
-      .in('status', ['pending', 'running']);
-    
-    if (error) throw error;
-  },
-  onSuccess: async () => {
-    toast.success('Tarefa cancelada com sucesso');
-    await queryClient.invalidateQueries({ queryKey: ['m365-agent-tasks'] });
-    
-    // Atualiza detalhes abertos se for a mesma task
-    setSelectedTask(prev => {
-      if (!prev || prev.id !== taskToCancel?.id) return prev;
-      return {
-        ...prev,
-        status: 'cancelled',
-        completed_at: new Date().toISOString(),
-        error_message: prev.error_message || 'Cancelada pelo usuário'
-      };
-    });
-    setCancelOpen(false);
-    setTaskToCancel(null);
-  },
-  onError: (e: any) => {
-    toast.error('Erro ao cancelar tarefa', { description: e?.message });
-  }
-});
+Modificar o bloco M365 para:
 
-const requestCancel = (task: AgentTask) => {
-  setTaskToCancel(task);
-  setCancelOpen(true);
-};
+```sql
+-- M365 Tenant tasks
+SELECT
+  t.id,
+  t.task_type,
+  t.target_id,
+  t.target_type,
+  t.payload,
+  t.priority,
+  t.expires_at,
+  json_build_object(
+    'id', mt.id,
+    'type', 'm365_tenant',
+    'tenant_id', mt.tenant_id,
+    'tenant_domain', mt.tenant_domain,
+    'display_name', mt.display_name,
+    'credentials', json_build_object(
+      'azure_app_id', cred.azure_app_id,
+      'auth_type', cred.auth_type,
+      'certificate_thumbprint', COALESCE(cred.certificate_thumbprint, a.certificate_thumbprint)
+    )
+  ) as target,
+  -- Gerar step dinâmico a partir do payload
+  json_build_object(
+    'steps', json_build_array(
+      json_build_object(
+        'id', COALESCE(t.payload->>'test_type', 'powershell_exec'),
+        'type', 'powershell',
+        'params', json_build_object(
+          'module', COALESCE(t.payload->>'module', 'ExchangeOnline'),
+          'commands', COALESCE(t.payload->'commands', '[]'::json),
+          'app_id', cred.azure_app_id,
+          'tenant_id', mt.tenant_id,
+          'organization', t.payload->>'organization'
+        )
+      )
+    )
+  ) as blueprint
+FROM ...
 ```
-
-### 4. Botão de Cancelar na Tabela de Tasks
-
-Na coluna "Ações" da tabela de Tasks PowerShell, adicionar botão de cancelar:
-
-```typescript
-<TableCell className="text-right flex items-center justify-end gap-1">
-  {(task.status === 'pending' || task.status === 'running') && (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => requestCancel(task)}
-      disabled={cancelMutation.isPending}
-      title="Cancelar tarefa"
-    >
-      <Ban className="w-4 h-4 text-destructive" />
-    </Button>
-  )}
-  <Button variant="ghost" size="icon" onClick={() => openTaskDetails(task)}>
-    <Eye className="w-4 h-4" />
-  </Button>
-</TableCell>
-```
-
-### 5. Dialog de Confirmação
-
-Adicionar no final do componente, antes do fechamento de `</div>`:
-
-```typescript
-<AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
-  <AlertDialogContent>
-    <AlertDialogHeader>
-      <AlertDialogTitle>Encerrar execução?</AlertDialogTitle>
-      <AlertDialogDescription>
-        Isso marcará a tarefa como <span className="font-medium">cancelada</span>. 
-        Se o agent já estiver executando, ele pode ainda terminar o step atual, 
-        mas a execução ficará registrada como encerrada.
-      </AlertDialogDescription>
-    </AlertDialogHeader>
-    <AlertDialogFooter>
-      <AlertDialogCancel onClick={() => setTaskToCancel(null)}>
-        Voltar
-      </AlertDialogCancel>
-      <AlertDialogAction
-        onClick={() => {
-          if (!taskToCancel) return;
-          cancelMutation.mutate(taskToCancel.id);
-        }}
-        disabled={!taskToCancel || cancelMutation.isPending}
-      >
-        {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
-      </AlertDialogAction>
-    </AlertDialogFooter>
-  </AlertDialogContent>
-</AlertDialog>
-```
-
----
-
-## UI Esperada
-
-Na tabela de Tasks PowerShell, ao lado do botão de visualizar (olho), aparecerá um botão vermelho de cancelar para tasks com status `pending` ou `running`:
-
-```text
-┌───────────────────────────────────────────────────────────────────────────┐
-│ Tenant       │ Agente       │ Tipo       │ Status     │ Duração │ Ações   │
-├───────────────────────────────────────────────────────────────────────────┤
-│ BRASILUX ... │ TASCHIBRA-ID │ PowerShell │ Executando │ 7.2m    │ 🚫 👁   │
-└───────────────────────────────────────────────────────────────────────────┘
-                                                          ↑    ↑
-                                                     Cancelar  Ver
-```
-
-Ao clicar em cancelar, aparece diálogo de confirmação.
 
 ---
 
 ## Resultado Esperado
 
-1. Botão de cancelar (ícone `Ban`) aparece em tasks com status `pending` ou `running`
-2. Ao clicar, abre diálogo de confirmação
-3. Ao confirmar, task é atualizada para `status = 'cancelled'`
-4. Toast de sucesso/erro é exibido
-5. Lista é automaticamente recarregada
-6. Se o diálogo de detalhes estiver aberto, o status é atualizado em tempo real
+1. **Agent recebe a task** com 1 step do tipo `powershell`
+2. **PowerShellExecutor** é chamado com os parâmetros corretos
+3. **Executa os comandos** Exchange Online (`Get-EXOMailbox`, `Get-OrganizationConfig`)
+4. **Retorna resultados** via `agent-task-result`
+5. **Página de Execuções** mostra resultado da task
+
+**Log esperado após correção:**
+```
+Executando tarefa ... com 1 steps (progressive=True)
+Executing PowerShell ExchangeOnline commands: ['test_connection', 'organization_config']
+PowerShell execution successful, 2 results
+Tarefa ... finalizada: status=completed, tempo=...ms, completed=1, failed=0
+```
 
