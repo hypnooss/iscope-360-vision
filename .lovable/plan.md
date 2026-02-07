@@ -1,32 +1,78 @@
 
 
-# Adicionar submódulos ao menu do Microsoft 365
+# Seletor de Tenant Global no Modulo Microsoft 365
 
 ## Problema
-O menu lateral do módulo Microsoft 365 mostra apenas 4 itens (Tenants, Execuções, Relatórios, Entra ID), mas faltam os submódulos **Exchange Online** e **Postura de Segurança** que já possuem páginas e rotas criadas.
+Atualmente, apenas a pagina "Postura de Seguranca" possui um seletor de tenant. As demais paginas (Entra ID, Exchange Online, e subpaginas como Security Insights, Application Insights, Analysis) pegam automaticamente o primeiro tenant conectado, sem permitir que o Super Admin escolha qual tenant deseja visualizar.
 
-## Solução
-Adicionar os dois itens faltantes na configuração de navegação do M365 em `src/components/layout/AppLayout.tsx`.
+## Solucao
 
-## Alteração
+Criar um **hook centralizado** (`useM365TenantSelector`) que gerencia a selecao de tenant e persiste a escolha via URL (`?tenant=ID`). Todas as paginas do modulo M365 passarao a usar esse hook + o componente `TenantSelector` ja existente.
 
-**Arquivo:** `src/components/layout/AppLayout.tsx`
+## Arquivos a Criar
 
-Na seção `scope_m365` (linhas 123-132), adicionar:
-- **Postura de Segurança** apontando para `/scope-m365/posture` (ícone: ShieldCheck)
-- **Exchange Online** apontando para `/scope-m365/exchange-online` (ícone: Mail/Monitor)
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/hooks/useM365TenantSelector.ts` | Hook centralizado que carrega tenants, gerencia selecao via searchParams e expoe tenant selecionado |
 
-O menu ficará assim:
-1. Tenants
-2. Postura de Segurança
-3. Entra ID
-4. Exchange Online
-5. Execuções
-6. Relatórios
+## Arquivos a Modificar
 
-Os itens de "produto" (Postura, Entra ID, Exchange) ficam agrupados no meio, e os operacionais (Execuções, Relatórios) ficam ao final.
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/pages/m365/ExchangeOnlinePage.tsx` | Substituir logica de "primeiro tenant" pelo hook + adicionar TenantSelector no header |
+| `src/pages/m365/EntraIdPage.tsx` | Idem |
+| `src/pages/m365/EntraIdAnalysisPage.tsx` | Idem |
+| `src/pages/m365/EntraIdSecurityInsightsPage.tsx` | Idem |
+| `src/pages/m365/EntraIdApplicationInsightsPage.tsx` | Idem |
+| `src/pages/m365/M365PosturePage.tsx` | Refatorar para usar o hook centralizado (remover logica duplicada) |
 
-## Detalhes Técnicos
-- Importar o ícone `Mail` do lucide-react (para Exchange Online)
-- Reordenar os itens do array `items` dentro de `knownModuleNavConfigs['scope_m365']`
-- Também atualizar o `isActiveRoute` para que subpáginas do Entra ID (como `/scope-m365/entra-id/security-insights`) marquem o item "Entra ID" como ativo, usando `startsWith` em vez de igualdade exata
+## Detalhes Tecnicos
+
+### Hook `useM365TenantSelector`
+
+```typescript
+export function useM365TenantSelector() {
+  // 1. Carrega tenants conectados (status 'connected' ou 'partial')
+  // 2. Filtra por workspaces do preview mode
+  // 3. Le tenant da URL (?tenant=ID)
+  // 4. Se nao ha parametro, seleciona o primeiro e atualiza URL
+  // 5. Retorna:
+  return {
+    tenants,           // TenantOption[]
+    selectedTenantId,  // string | null
+    selectedTenant,    // TenantOption | null
+    selectTenant,      // (id: string) => void (atualiza URL)
+    loading,           // boolean
+  };
+}
+```
+
+### Padrao de Uso nas Paginas
+
+Cada pagina substituira:
+```typescript
+// ANTES
+const { tenants, loading: tenantsLoading, hasConnectedTenant } = useTenantConnection();
+const connectedTenant = tenants.find(t => t.connection_status === 'connected' || ...);
+```
+
+Por:
+```typescript
+// DEPOIS
+const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
+```
+
+E adicionara o componente `TenantSelector` no header de cada pagina:
+```tsx
+<TenantSelector
+  tenants={tenants}
+  selectedId={selectedTenantId}
+  onSelect={selectTenant}
+  loading={tenantsLoading}
+/>
+```
+
+### Persistencia da Selecao
+
+A selecao e mantida via `useSearchParams` (query string `?tenant=UUID`). Ao navegar entre subpaginas do M365, se o parametro `tenant` ja estiver na URL, ele sera preservado. Se nao, o hook seleciona automaticamente o primeiro tenant disponivel.
+
