@@ -179,7 +179,7 @@ async function uploadCertificateToAzure(
       
       // Check for common errors
       if (patchResponse.status === 403) {
-        return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.OwnedBy permission is granted.' };
+        return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.All permission is granted.' };
       }
       
       return { success: false, error: `Failed to add certificate: ${patchResponse.status}` };

@@ -31,7 +31,7 @@ const RECOMMENDED_PERMISSIONS = [
 
 // Certificate Upload - only tested if app_object_id is provided
 const CERTIFICATE_PERMISSIONS = [
-  'Application.ReadWrite.OwnedBy',
+  'Application.ReadWrite.All',
 ];
 
 // ============= AES-256-GCM Decryption =============
@@ -127,7 +127,7 @@ async function testPermission(accessToken: string, permission: string, appObject
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
-      case 'Application.ReadWrite.OwnedBy': {
+      case 'Application.ReadWrite.All': {
         // Test certificate upload permission by trying to read the app's keyCredentials
         if (!appObjectId) {
           console.log(`Permission ${permission}: skipped (no app_object_id provided)`);

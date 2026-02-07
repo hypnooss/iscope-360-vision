@@ -96,14 +96,14 @@ export default function SettingsPage() {
     { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
     { name: 'Mail.Read', granted: false, type: 'recommended' },
     // Certificate Upload
-    { name: 'Application.ReadWrite.OwnedBy', granted: false, type: 'recommended' },
+    { name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
   ];
 
   // Group permissions by module for display
   const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All'];
   const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
   const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
-  const certificatePermissions = ['Application.ReadWrite.OwnedBy'];
+  const certificatePermissions = ['Application.ReadWrite.All'];
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -839,7 +839,7 @@ export default function SettingsPage() {
                           <li className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-gray-400" />
                             <code className="text-xs bg-background px-1.5 py-0.5 rounded text-muted-foreground">
-                              Application.ReadWrite.OwnedBy
+                              Application.ReadWrite.All
                             </code>
                           </li>
                         )}
