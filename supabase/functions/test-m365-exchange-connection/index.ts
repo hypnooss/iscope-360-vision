@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
       })
       .eq('target_id', tenant_record_id)
       .eq('target_type', 'm365_tenant')
-      .eq('task_type', 'm365_exchange_test')
+      .eq('task_type', 'm365_powershell') // Use existing enum value
       .in('status', ['pending', 'running'])
       .lt('expires_at', now);
 
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
       .select('id, status, expires_at')
       .eq('target_id', tenant_record_id)
       .eq('target_type', 'm365_tenant')
-      .eq('task_type', 'm365_exchange_test')
+      .eq('task_type', 'm365_powershell') // Use existing enum value
       .in('status', ['pending', 'running'])
       .gt('expires_at', now)
       .maybeSingle();
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .insert({
         agent_id: agent.id,
-        task_type: 'm365_exchange_test',
+        task_type: 'm365_powershell', // Use existing enum value
         target_id: tenant_record_id,
         target_type: 'm365_tenant',
         status: 'pending',
