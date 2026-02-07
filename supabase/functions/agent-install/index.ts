@@ -21,7 +21,7 @@ API_BASE_URL="${API_BASE_URL}"
 RELEASE_BASE_URL="${RELEASE_BASE_URL}"
 
 ACTIVATION_CODE=""
-VERSION="latest"
+AGENT_VERSION="latest"
 POLL_INTERVAL="60"
 
 PYTHON_BIN=""
@@ -82,7 +82,7 @@ parse_args() {
       --activation-code)
         ACTIVATION_CODE="\${2:-}"; shift 2 ;;
       --version)
-        VERSION="\${2:-}"; shift 2 ;;
+        AGENT_VERSION="\${2:-}"; shift 2 ;;
       --poll-interval)
         POLL_INTERVAL="\${2:-}"; shift 2 ;;
       --install-dir)
@@ -543,10 +543,10 @@ uninstall_all() {
 
 download_release() {
   local file
-  if [[ "$VERSION" == "latest" ]]; then
+  if [[ "$AGENT_VERSION" == "latest" ]]; then
     file="iscope-agent-latest.tar.gz"
   else
-    file="iscope-agent-\${VERSION}.tar.gz"
+    file="iscope-agent-\${AGENT_VERSION}.tar.gz"
   fi
 
   local url
