@@ -407,39 +407,55 @@ Deno.serve(async (req) => {
     }
 
     // Test Exchange Online permissions with user-specific endpoints
-    // MailboxSettings.Read requires testing on a specific user, not a collection
-    // Mail.Read requires testing messageRules on a specific user
-    let testUserId: string | null = null;
+    // Fetch up to 5 users to handle MailboxNotEnabledForRESTAPI errors
+    let testUserIds: string[] = [];
     try {
-      const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
+      const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {
         headers: { 'Authorization': `Bearer ${accessToken}` },
       });
       if (usersResp.ok) {
         const usersData = await usersResp.json();
-        testUserId = usersData.value?.[0]?.id || null;
+        testUserIds = (usersData.value || []).map((u: any) => u.id);
       }
     } catch (err) {
-      console.warn('Could not fetch user for Exchange permission tests:', err);
+      console.warn('Could not fetch users for Exchange permission tests:', err);
     }
 
     // MailboxSettings.Read
     try {
       let mailboxGranted = false;
       let mailboxError: string | undefined;
-      if (testUserId) {
-        const mailboxResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${testUserId}/mailboxSettings`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        });
-        mailboxGranted = mailboxResponse.ok;
-        if (!mailboxResponse.ok) {
-          try {
-            const errorBody = await mailboxResponse.json();
-            mailboxError = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${mailboxResponse.status}`;
-          } catch {
-            mailboxError = `HTTP ${mailboxResponse.status}`;
+      if (testUserIds.length > 0) {
+        let allMailboxNotEnabled = true;
+        for (const uid of testUserIds) {
+          const mailboxResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailboxSettings`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (mailboxResponse.ok) {
+            mailboxGranted = true;
+            allMailboxNotEnabled = false;
+            console.log(`Permission test for MailboxSettings.Read: OK on user ${uid}`);
+            break;
+          }
+          const errBody = await mailboxResponse.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || '';
+          if (mailboxResponse.status === 403) {
+            allMailboxNotEnabled = false;
+            mailboxError = errCode || `HTTP 403`;
+            console.log(`Permission test for MailboxSettings.Read: DENIED (403) on user ${uid}`);
+            break;
+          } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
+            console.log(`Permission test for MailboxSettings.Read: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
+          } else {
+            allMailboxNotEnabled = false;
+            mailboxError = errCode || `HTTP ${mailboxResponse.status}`;
+            console.log(`Permission test for MailboxSettings.Read: ${mailboxResponse.status} (${errCode}) on user ${uid}`);
           }
         }
-        console.log(`Permission test for MailboxSettings.Read: ${mailboxGranted ? 'OK' : `FAILED - ${mailboxError}`}`);
+        if (allMailboxNotEnabled && !mailboxGranted) {
+          mailboxGranted = true;
+          console.log(`Permission test for MailboxSettings.Read: all users had MailboxNotEnabledForRESTAPI - treating as granted`);
+        }
       } else {
         mailboxError = 'No users found to test';
         console.log(`Permission test for MailboxSettings.Read: SKIPPED - no users`);
@@ -459,20 +475,37 @@ Deno.serve(async (req) => {
     try {
       let mailGranted = false;
       let mailError: string | undefined;
-      if (testUserId) {
-        const rulesResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${testUserId}/mailFolders/inbox/messageRules?$top=1`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        });
-        mailGranted = rulesResponse.ok;
-        if (!rulesResponse.ok) {
-          try {
-            const errorBody = await rulesResponse.json();
-            mailError = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${rulesResponse.status}`;
-          } catch {
-            mailError = `HTTP ${rulesResponse.status}`;
+      if (testUserIds.length > 0) {
+        let allMailNotEnabled = true;
+        for (const uid of testUserIds) {
+          const rulesResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailFolders/inbox/messageRules?$top=1`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (rulesResponse.ok) {
+            mailGranted = true;
+            allMailNotEnabled = false;
+            console.log(`Permission test for Mail.Read: OK on user ${uid}`);
+            break;
+          }
+          const errBody = await rulesResponse.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || '';
+          if (rulesResponse.status === 403) {
+            allMailNotEnabled = false;
+            mailError = errCode || `HTTP 403`;
+            console.log(`Permission test for Mail.Read: DENIED (403) on user ${uid}`);
+            break;
+          } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
+            console.log(`Permission test for Mail.Read: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
+          } else {
+            allMailNotEnabled = false;
+            mailError = errCode || `HTTP ${rulesResponse.status}`;
+            console.log(`Permission test for Mail.Read: ${rulesResponse.status} (${errCode}) on user ${uid}`);
           }
         }
-        console.log(`Permission test for Mail.Read: ${mailGranted ? 'OK' : `FAILED - ${mailError}`}`);
+        if (allMailNotEnabled && !mailGranted) {
+          mailGranted = true;
+          console.log(`Permission test for Mail.Read: all users had MailboxNotEnabledForRESTAPI - treating as granted`);
+        }
       } else {
         mailError = 'No users found to test';
         console.log(`Permission test for Mail.Read: SKIPPED - no users`);

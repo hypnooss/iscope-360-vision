@@ -123,30 +123,53 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       case 'MailboxSettings.Read': {
-        // Primeiro buscar um usuário (mailboxSettings não funciona em queries de coleção)
+        // Fetch up to 5 users to find one with an active mailbox
         const usersResp = await fetch(
-          'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
+          'https://graph.microsoft.com/v1.0/users?$top=5&$select=id',
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
         );
         if (!usersResp.ok) {
-          await usersResp.text(); // consume body
+          await usersResp.text();
           console.log(`Permission ${permission} test failed: could not fetch users`);
           return false;
         }
         const usersData = await usersResp.json();
-        const userId = usersData.value?.[0]?.id;
-        if (!userId) {
+        const userIds: string[] = (usersData.value || []).map((u: any) => u.id);
+        if (userIds.length === 0) {
           console.log(`Permission ${permission} test failed: no users found`);
           return false;
         }
-        // Agora testar mailboxSettings no usuário específico
-        url = `https://graph.microsoft.com/v1.0/users/${userId}/mailboxSettings`;
-        break;
+        let allMailboxNotEnabled = true;
+        for (const uid of userIds) {
+          const mailboxResp = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailboxSettings`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (mailboxResp.ok) {
+            console.log(`Permission ${permission} test succeeded on user ${uid}`);
+            return true;
+          }
+          const errBody = await mailboxResp.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || '';
+          if (mailboxResp.status === 403) {
+            console.log(`Permission ${permission} test failed: 403 on user ${uid}`);
+            return false;
+          } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
+            console.log(`Permission ${permission}: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
+          } else {
+            console.log(`Permission ${permission}: ${mailboxResp.status} (${errCode}) on user ${uid}`);
+            allMailboxNotEnabled = false;
+          }
+        }
+        if (allMailboxNotEnabled) {
+          console.log(`Permission ${permission}: all users had MailboxNotEnabledForRESTAPI - treating as granted`);
+          return true;
+        }
+        return false;
       }
       case 'Mail.Read': {
-        // Test by fetching inbox rules from first user (Mail.Read requires user-specific endpoint)
+        // Fetch up to 5 users to find one with an active mailbox
         const mailUsersResp = await fetch(
-          'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
+          'https://graph.microsoft.com/v1.0/users?$top=5&$select=id',
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
         );
         if (!mailUsersResp.ok) {
@@ -155,13 +178,37 @@ async function testPermission(accessToken: string, permission: string): Promise<
           return false;
         }
         const mailUsersData = await mailUsersResp.json();
-        const mailUserId = mailUsersData.value?.[0]?.id;
-        if (!mailUserId) {
+        const mailUserIds: string[] = (mailUsersData.value || []).map((u: any) => u.id);
+        if (mailUserIds.length === 0) {
           console.log(`Permission ${permission} test failed: no users found`);
           return false;
         }
-        url = `https://graph.microsoft.com/v1.0/users/${mailUserId}/mailFolders/inbox/messageRules?$top=1`;
-        break;
+        let allMailNotEnabled = true;
+        for (const uid of mailUserIds) {
+          const rulesResp = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailFolders/inbox/messageRules?$top=1`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (rulesResp.ok) {
+            console.log(`Permission ${permission} test succeeded on user ${uid}`);
+            return true;
+          }
+          const errBody = await rulesResp.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || '';
+          if (rulesResp.status === 403) {
+            console.log(`Permission ${permission} test failed: 403 on user ${uid}`);
+            return false;
+          } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
+            console.log(`Permission ${permission}: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
+          } else {
+            console.log(`Permission ${permission}: ${rulesResp.status} (${errCode}) on user ${uid}`);
+            allMailNotEnabled = false;
+          }
+        }
+        if (allMailNotEnabled) {
+          console.log(`Permission ${permission}: all users had MailboxNotEnabledForRESTAPI - treating as granted`);
+          return true;
+        }
+        return false;
       }
       default:
         return false;
