@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
 import { cn } from '@/lib/utils';
@@ -12,9 +12,11 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer } from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer, Ban } from 'lucide-react';
+import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -103,8 +105,11 @@ export default function M365ExecutionsPage() {
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
+  const queryClient = useQueryClient();
 
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -305,6 +310,48 @@ export default function M365ExecutionsPage() {
   const openTaskDetails = (task: AgentTask) => {
     setSelectedTask(task);
     setTaskDetailsOpen(true);
+  };
+
+  // Cancel mutation for agent tasks
+  const cancelMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase
+        .from('agent_tasks')
+        .update({
+          status: 'cancelled' as const,
+          completed_at: new Date().toISOString(),
+          error_message: 'Cancelada pelo usuário'
+        })
+        .eq('id', taskId)
+        .in('status', ['pending', 'running']);
+      
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Tarefa cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['m365-agent-tasks'] });
+      
+      // Update details dialog if open
+      setSelectedTask(prev => {
+        if (!prev || prev.id !== taskToCancel?.id) return prev;
+        return {
+          ...prev,
+          status: 'cancelled' as const,
+          completed_at: new Date().toISOString(),
+          error_message: prev.error_message || 'Cancelada pelo usuário'
+        };
+      });
+      setCancelOpen(false);
+      setTaskToCancel(null);
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao cancelar tarefa', { description: e?.message });
+    }
+  });
+
+  const requestCancel = (task: AgentTask) => {
+    setTaskToCancel(task);
+    setCancelOpen(true);
   };
 
   const getDuration = (exec: { started_at: string | null; completed_at: string | null }) => {
@@ -596,9 +643,22 @@ export default function M365ExecutionsPage() {
                               {formatDistanceToNow(new Date(task.created_at), { locale: ptBR, addSuffix: true })}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" onClick={() => openTaskDetails(task)}>
-                                <Eye className="w-4 h-4" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                {(task.status === 'pending' || task.status === 'running') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => requestCancel(task)}
+                                    disabled={cancelMutation.isPending}
+                                    title="Cancelar tarefa"
+                                  >
+                                    <Ban className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                )}
+                                <Button variant="ghost" size="icon" onClick={() => openTaskDetails(task)}>
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -798,6 +858,34 @@ export default function M365ExecutionsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Cancel Confirmation Dialog */}
+        <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Encerrar execução?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a tarefa como <span className="font-medium">cancelada</span>. 
+                Se o agent já estiver executando, ele pode ainda terminar o step atual, 
+                mas a execução ficará registrada como encerrada.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setTaskToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!taskToCancel) return;
+                  cancelMutation.mutate(taskToCancel.id);
+                }}
+                disabled={!taskToCancel || cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
