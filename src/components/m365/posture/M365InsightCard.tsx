@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Wrench,
   ExternalLink,
   Users
@@ -119,11 +120,12 @@ export function M365InsightCard({ insight }: M365InsightCardProps) {
           {insight.affectedCount > 0 && isFailed && (
             <button
               type="button"
-              className="flex items-center gap-2 text-sm text-muted-foreground mb-3 hover:text-foreground transition-colors cursor-pointer group"
+              className="flex items-center gap-2 text-sm text-amber-400 mb-3 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
               onClick={() => setShowAffected(true)}
             >
               <Users className="w-4 h-4" />
-              <span className="group-hover:underline">{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
+              <span>{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           )}
 
