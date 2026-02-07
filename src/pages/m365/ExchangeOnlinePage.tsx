@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
-import { useTenantConnection } from '@/hooks/useTenantConnection';
+import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { useExchangeOnlineInsights } from '@/hooks/useExchangeOnlineInsights';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExoInsightSummaryCards } from '@/components/m365/exchange/ExoInsightSummaryCards';
 import { ExoInsightCategorySection } from '@/components/m365/exchange/ExoInsightCategorySection';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { 
   Mail, 
   RefreshCw, 
@@ -28,13 +29,8 @@ export default function ExchangeOnlinePage() {
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
   
-  const { tenants, loading: tenantsLoading, hasConnectedTenant } = useTenantConnection();
+  const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const [hasInitialized, setHasInitialized] = useState(false);
-
-  // Get the first connected tenant
-  const connectedTenant = tenants.find(t => 
-    t.connection_status === 'connected' || t.connection_status === 'partial'
-  );
 
   const { 
     insights, 
@@ -45,7 +41,7 @@ export default function ExchangeOnlinePage() {
     errorCode,
     refresh 
   } = useExchangeOnlineInsights({
-    tenantRecordId: connectedTenant?.id || null,
+    tenantRecordId: selectedTenantId,
   });
 
   // Auth redirects
@@ -61,13 +57,13 @@ export default function ExchangeOnlinePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Auto-refresh on mount when tenant is available
+  // Auto-refresh when tenant changes
   useEffect(() => {
-    if (connectedTenant && !hasInitialized && !insightsLoading) {
+    if (selectedTenantId && !tenantsLoading) {
       setHasInitialized(true);
       refresh();
     }
-  }, [connectedTenant, hasInitialized, insightsLoading, refresh]);
+  }, [selectedTenantId, tenantsLoading]);
 
   if (authLoading) return null;
 
@@ -81,7 +77,7 @@ export default function ExchangeOnlinePage() {
   };
 
   // No tenant connected
-  if (!tenantsLoading && !hasConnectedTenant) {
+  if (!tenantsLoading && tenants.length === 0) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
@@ -149,44 +145,31 @@ export default function ExchangeOnlinePage() {
           </Button>
         </div>
 
-        {/* Tenant Info */}
-        {tenantsLoading ? (
-          <Card className="mb-6">
-            <CardContent className="py-4">
-              <Skeleton className="h-5 w-48" />
-            </CardContent>
-          </Card>
-        ) : connectedTenant && (
-          <Card className="mb-6 border-primary/20 bg-primary/5">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      Tenant: {connectedTenant.display_name || connectedTenant.tenant_domain}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Cliente: {connectedTenant.client.name}
-                    </p>
+        {/* Tenant Selector */}
+        <Card className="mb-6 border-primary/20 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <TenantSelector
+                tenants={tenants}
+                selectedId={selectedTenantId}
+                onSelect={selectTenant}
+                loading={tenantsLoading}
+              />
+              <div className="flex items-center gap-3">
+                {analyzedAt && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>
+                      Analisado em {format(new Date(analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {analyzedAt && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span>
-                        Analisado em {format(new Date(analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
-                      </span>
-                    </div>
-                  )}
-                  <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                    Conectado
-                  </Badge>
-                </div>
+                )}
+                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                  Conectado
+                </Badge>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Summary Cards */}
         <div className="mb-8">
@@ -220,31 +203,11 @@ export default function ExchangeOnlinePage() {
         {/* Insights by Category */}
         {!insightsLoading && !error && insights.length > 0 && (
           <div className="space-y-6">
-            <ExoInsightCategorySection 
-              category="mail_flow" 
-              insights={insightsByCategory.mail_flow}
-              defaultOpen={true}
-            />
-            <ExoInsightCategorySection 
-              category="mailbox_access" 
-              insights={insightsByCategory.mailbox_access}
-              defaultOpen={true}
-            />
-            <ExoInsightCategorySection 
-              category="security_policies" 
-              insights={insightsByCategory.security_policies}
-              defaultOpen={true}
-            />
-            <ExoInsightCategorySection 
-              category="security_hygiene" 
-              insights={insightsByCategory.security_hygiene}
-              defaultOpen={true}
-            />
-            <ExoInsightCategorySection 
-              category="governance" 
-              insights={insightsByCategory.governance}
-              defaultOpen={true}
-            />
+            <ExoInsightCategorySection category="mail_flow" insights={insightsByCategory.mail_flow} defaultOpen={true} />
+            <ExoInsightCategorySection category="mailbox_access" insights={insightsByCategory.mailbox_access} defaultOpen={true} />
+            <ExoInsightCategorySection category="security_policies" insights={insightsByCategory.security_policies} defaultOpen={true} />
+            <ExoInsightCategorySection category="security_hygiene" insights={insightsByCategory.security_hygiene} defaultOpen={true} />
+            <ExoInsightCategorySection category="governance" insights={insightsByCategory.governance} defaultOpen={true} />
           </div>
         )}
 

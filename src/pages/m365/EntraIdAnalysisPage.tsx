@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
-import { useTenantConnection } from '@/hooks/useTenantConnection';
+import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { ScoreGauge } from '@/components/ScoreGauge';
@@ -11,7 +11,7 @@ import { CategorySection } from '@/components/CategorySection';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { EntraIdComplianceReport } from '@/types/entraIdCompliance';
@@ -32,7 +32,7 @@ export default function EntraIdAnalysisPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const { tenants, loading: tenantsLoading, hasConnectedTenant } = useTenantConnection();
+  const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   
   const [report, setReport] = useState<EntraIdComplianceReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,38 +50,29 @@ export default function EntraIdAnalysisPage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  const connectedTenants = tenants.filter(t => 
-    t.connection_status === 'connected' || t.connection_status === 'partial'
-  );
+  // Reset report when tenant changes
+  useEffect(() => {
+    setReport(null);
+  }, [selectedTenantId]);
 
   const runAnalysis = async () => {
-    if (connectedTenants.length === 0) {
+    if (!selectedTenantId) {
       toast({
-        title: 'Nenhum tenant conectado',
-        description: 'Conecte um tenant Microsoft 365 primeiro.',
+        title: 'Nenhum tenant selecionado',
+        description: 'Selecione um tenant Microsoft 365 primeiro.',
         variant: 'destructive',
       });
       return;
     }
-
-    const tenantRecordId = connectedTenants[0].id;
     
     setAnalyzing(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('Sessão não encontrada');
-      }
-
       const { data, error } = await supabase.functions.invoke('entra-id-compliance', {
-        body: { tenant_record_id: tenantRecordId },
+        body: { tenant_record_id: selectedTenantId },
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setReport({
         ...data,
@@ -107,7 +98,7 @@ export default function EntraIdAnalysisPage() {
   if (authLoading) return null;
 
   // Show blocking message if no tenant is connected
-  if (!tenantsLoading && !hasConnectedTenant) {
+  if (!tenantsLoading && tenants.length === 0) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
@@ -176,35 +167,22 @@ export default function EntraIdAnalysisPage() {
           </div>
         </div>
 
-        {/* Tenant Info */}
-        {tenantsLoading ? (
-          <Card className="mb-6">
-            <CardContent className="py-4">
-              <Skeleton className="h-5 w-48" />
-            </CardContent>
-          </Card>
-        ) : connectedTenants.length > 0 && (
-          <Card className="mb-6 border-primary/20 bg-primary/5">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-5 h-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      Tenant: {connectedTenants[0].display_name || connectedTenants[0].tenant_domain}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Cliente: {connectedTenants[0].client.name}
-                    </p>
-                  </div>
-                </div>
-                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                  Conectado
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Tenant Selector */}
+        <Card className="mb-6 border-primary/20 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <TenantSelector
+                tenants={tenants}
+                selectedId={selectedTenantId}
+                onSelect={selectTenant}
+                loading={tenantsLoading}
+              />
+              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                Conectado
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Initial State - No Report Yet */}
         {!report && !analyzing && (
@@ -262,7 +240,6 @@ export default function EntraIdAnalysisPage() {
 
             {/* Score and Stats */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Score Gauge */}
               <Card className="lg:col-span-1">
                 <CardContent className="py-8 flex flex-col items-center">
                   <ScoreGauge score={report.overallScore} />
@@ -272,36 +249,11 @@ export default function EntraIdAnalysisPage() {
                 </CardContent>
               </Card>
 
-              {/* Stat Cards */}
               <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard
-                  title="Total"
-                  value={report.totalChecks}
-                  icon={CheckCircle2}
-                  variant="default"
-                  delay={0}
-                />
-                <StatCard
-                  title="Aprovadas"
-                  value={report.passed}
-                  icon={CheckCircle2}
-                  variant="success"
-                  delay={0.1}
-                />
-                <StatCard
-                  title="Falhas"
-                  value={report.failed}
-                  icon={XCircle}
-                  variant="destructive"
-                  delay={0.2}
-                />
-                <StatCard
-                  title="Alertas"
-                  value={report.warnings}
-                  icon={AlertCircle}
-                  variant="warning"
-                  delay={0.3}
-                />
+                <StatCard title="Total" value={report.totalChecks} icon={CheckCircle2} variant="default" delay={0} />
+                <StatCard title="Aprovadas" value={report.passed} icon={CheckCircle2} variant="success" delay={0.1} />
+                <StatCard title="Falhas" value={report.failed} icon={XCircle} variant="destructive" delay={0.2} />
+                <StatCard title="Alertas" value={report.warnings} icon={AlertCircle} variant="warning" delay={0.3} />
               </div>
             </div>
 
@@ -343,11 +295,7 @@ export default function EntraIdAnalysisPage() {
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Verificações por Categoria</h2>
               {report.categories.map((category, index) => (
-                <CategorySection 
-                  key={category.name} 
-                  category={category} 
-                  index={index} 
-                />
+                <CategorySection key={category.name} category={category} index={index} />
               ))}
             </div>
           </div>
