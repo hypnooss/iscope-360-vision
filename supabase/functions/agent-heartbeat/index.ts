@@ -40,6 +40,64 @@ interface HeartbeatErrorResponse {
 }
 
 /**
+ * Decrypt secret using AES-256-GCM
+ * Supports legacy XOR format for backwards compatibility
+ */
+async function decryptSecret(encrypted: string): Promise<string> {
+  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!encryptionKey) {
+    throw new Error('M365_ENCRYPTION_KEY not configured');
+  }
+
+  // AES-GCM format: iv:ciphertext (hex encoded)
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ciphertextHex] = encrypted.split(':');
+      const iv = new Uint8Array(ivHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+      const ciphertext = new Uint8Array(ciphertextHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+      
+      // Derive 256-bit key from encryption key using SHA-256
+      const keyMaterial = new TextEncoder().encode(encryptionKey);
+      const keyHash = await crypto.subtle.digest('SHA-256', keyMaterial);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyHash,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        ciphertext
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      throw new Error('Failed to decrypt secret (AES-GCM)');
+    }
+  }
+
+  // Legacy XOR format (base64 encoded)
+  try {
+    const data = atob(encrypted);
+    let result = '';
+    for (let i = 0; i < data.length; i++) {
+      result += String.fromCharCode(
+        data.charCodeAt(i) ^ encryptionKey.charCodeAt(i % encryptionKey.length)
+      );
+    }
+    return result;
+  } catch (error) {
+    console.error('Legacy decryption failed:', error);
+    throw new Error('Failed to decrypt secret (legacy)');
+  }
+}
+
+/**
  * Compare semantic versions (e.g., "1.0.0" vs "1.1.0")
  * Returns: -1 if a < b, 0 if a == b, 1 if a > b
  */
@@ -112,24 +170,8 @@ async function uploadAgentCertificate(
       return null;
     }
 
-    // Decrypt client secret
-    const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
-    if (!encryptionKey) {
-      console.error('M365_ENCRYPTION_KEY not set');
-      return null;
-    }
-
-    // Simple XOR decryption (same as used in other M365 functions)
-    const decryptSecret = (encrypted: string): string => {
-      const data = atob(encrypted);
-      let result = '';
-      for (let i = 0; i < data.length; i++) {
-        result += String.fromCharCode(data.charCodeAt(i) ^ encryptionKey.charCodeAt(i % encryptionKey.length));
-      }
-      return result;
-    };
-
-    const clientSecret = decryptSecret(globalConfig.client_secret_encrypted);
+    // Decrypt client secret using the shared AES-GCM function
+    const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
 
     // Get access token for Microsoft Graph
     const tokenResponse = await fetch(
