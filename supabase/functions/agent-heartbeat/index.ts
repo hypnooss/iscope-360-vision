@@ -201,102 +201,73 @@ async function uploadAgentCertificate(
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Format certificate for Azure (remove headers and newlines)
-    let certBase64 = publicKey
+    // Format certificate for Azure (remove headers and ALL whitespace including newlines)
+    const certBase64 = publicKey
       .replace(/-----BEGIN CERTIFICATE-----/g, '')
       .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\\s+/g, '');
+      .replace(/\s+/g, '');  // CORRETO: remove espaços, tabs, quebras de linha
 
-    // Upload certificate to Azure App Registration
-    const keyCredential = {
+    // Use PATCH approach directly (addKey requires proof JWT which is complex)
+    // Get current key credentials first
+    const getAppResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      }
+    );
+
+    if (!getAppResponse.ok) {
+      console.error('Failed to get app credentials:', await getAppResponse.text());
+      return null;
+    }
+
+    const appData = await getAppResponse.json();
+    const existingKeys = appData.keyCredentials || [];
+
+    // Add new key credential
+    const newKey = {
       type: 'AsymmetricX509Cert',
       usage: 'Verify',
       key: certBase64,
       displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
+      startDateTime: new Date().toISOString(),
+      endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
     };
 
-    const uploadResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}/addKey`,
+    const patchResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
       {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          keyCredential,
-          passwordCredential: null,
-          proof: null, // Not required for app-only auth
+          keyCredentials: [...existingKeys, newKey],
         }),
       }
     );
 
-    // If addKey fails, try PATCH approach
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.log(`addKey failed (${uploadResponse.status}), trying PATCH approach: ${errorText}`);
-      
-      // Get current key credentials
-      const getAppResponse = await fetch(
-        `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
-        {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        }
-      );
-
-      if (!getAppResponse.ok) {
-        console.error('Failed to get app credentials:', await getAppResponse.text());
-        return null;
-      }
-
-      const appData = await getAppResponse.json();
-      const existingKeys = appData.keyCredentials || [];
-
-      // Add new key
-      const newKey = {
-        type: 'AsymmetricX509Cert',
-        usage: 'Verify',
-        key: certBase64,
-        displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
-        startDateTime: new Date().toISOString(),
-        endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
-      };
-
-      const patchResponse = await fetch(
-        `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            keyCredentials: [...existingKeys, newKey],
-          }),
-        }
-      );
-
-      if (!patchResponse.ok) {
-        console.error('Failed to patch app credentials:', await patchResponse.text());
-        return null;
-      }
-
-      // Generate a key ID based on thumbprint
-      const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
-      
-      // Update agent record with certificate info
-      await supabase
-        .from('agents')
-        .update({
-          certificate_thumbprint: thumbprint,
-          certificate_public_key: publicKey,
-          azure_certificate_key_id: keyId,
-        })
-        .eq('id', agentId);
-
-      console.log(`Certificate uploaded via PATCH for agent ${agentId}, keyId: ${keyId}`);
-      return keyId;
+    if (!patchResponse.ok) {
+      console.error('Failed to patch app credentials:', await patchResponse.text());
+      return null;
     }
+
+    // Generate a key ID based on thumbprint
+    const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+
+    // Update agent record with certificate info
+    await supabase
+      .from('agents')
+      .update({
+        certificate_thumbprint: thumbprint,
+        certificate_public_key: publicKey,
+        azure_certificate_key_id: keyId,
+      })
+      .eq('id', agentId);
+
+    console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
+    return keyId;
 
     // Parse response from addKey
     const uploadData = await uploadResponse.json();
