@@ -29,6 +29,11 @@ const RECOMMENDED_PERMISSIONS = [
   'Mail.Read',
 ];
 
+// Certificate Upload - only tested if app_object_id is provided
+const CERTIFICATE_PERMISSIONS = [
+  'Application.ReadWrite.OwnedBy',
+];
+
 // ============= AES-256-GCM Decryption =============
 
 async function getEncryptionKey(): Promise<CryptoKey> {
@@ -93,7 +98,7 @@ async function decryptSecret(encrypted: string): Promise<string> {
   }
 }
 
-async function testPermission(accessToken: string, permission: string): Promise<boolean> {
+async function testPermission(accessToken: string, permission: string, appObjectId?: string): Promise<boolean> {
   try {
     let url = '';
     
@@ -122,6 +127,31 @@ async function testPermission(accessToken: string, permission: string): Promise<
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
+      case 'Application.ReadWrite.OwnedBy': {
+        // Test certificate upload permission by trying to read the app's keyCredentials
+        if (!appObjectId) {
+          console.log(`Permission ${permission}: skipped (no app_object_id provided)`);
+          return false;
+        }
+        url = `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=id,keyCredentials`;
+        const certResponse = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        if (certResponse.ok) {
+          await certResponse.text(); // Consume body
+          console.log(`Permission ${permission} test succeeded`);
+          return true;
+        }
+        const certErrorText = await certResponse.text();
+        if (certResponse.status === 403) {
+          console.log(`Permission ${permission} test failed: 403 Forbidden - permission not granted`);
+        } else if (certResponse.status === 404) {
+          console.log(`Permission ${permission} test failed: 404 Not Found - invalid App Object ID`);
+        } else {
+          console.log(`Permission ${permission} test failed (${certResponse.status}): ${certErrorText.substring(0, 200)}`);
+        }
+        return false;
+      }
       case 'MailboxSettings.Read': {
         // Fetch up to 5 users to find one with an active mailbox
         const usersResp = await fetch(
@@ -239,7 +269,8 @@ async function testPermission(accessToken: string, permission: string): Promise<
 async function validatePermissions(
   tenantId: string,
   appId: string,
-  clientSecret: string
+  clientSecret: string,
+  appObjectId?: string
 ): Promise<PermissionStatus[]> {
   console.log('Getting access token for tenant:', tenantId);
   
@@ -280,6 +311,18 @@ async function validatePermissions(
     const granted = await testPermission(accessToken, permission);
     results.push({ name: permission, granted, type: 'recommended' });
     console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+  }
+
+  // Only test certificate permissions if app_object_id is provided
+  if (appObjectId) {
+    console.log('Testing certificate upload permissions with app_object_id:', appObjectId);
+    for (const permission of CERTIFICATE_PERMISSIONS) {
+      const granted = await testPermission(accessToken, permission, appObjectId);
+      results.push({ name: permission, granted, type: 'recommended' });
+      console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+    }
+  } else {
+    console.log('Skipping certificate permissions test (no app_object_id provided)');
   }
 
   return results;
@@ -392,8 +435,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if tenant_id was passed via body (manual call) or use saved one (cron)
+    // Check if tenant_id and app_object_id were passed via body (manual call) or use saved one (cron)
     let tenantId = configData.validation_tenant_id;
+    let appObjectId = configData.app_object_id;
     
     try {
       const body = await req.json();
@@ -413,9 +457,14 @@ Deno.serve(async (req) => {
           console.log('Saved tenant_id for future automatic validations');
         }
       }
+      // Also accept app_object_id from body for manual validation
+      if (body.app_object_id) {
+        appObjectId = body.app_object_id;
+        console.log('App Object ID received from request body:', appObjectId);
+      }
     } catch {
       // Empty body is OK for automatic cron calls
-      console.log('No body provided, using saved tenant_id');
+      console.log('No body provided, using saved tenant_id and app_object_id');
     }
 
     if (!tenantId) {
@@ -430,12 +479,12 @@ Deno.serve(async (req) => {
     const clientSecret = await decryptSecret(configData.client_secret_encrypted);
     const previousPermissions = configData.validated_permissions || [];
 
-    console.log('Validating permissions for app:', appId);
+    console.log('Validating permissions for app:', appId, appObjectId ? `with app_object_id: ${appObjectId}` : '(no app_object_id)');
 
     // Validar permissões
     let newPermissions: PermissionStatus[];
     try {
-      newPermissions = await validatePermissions(tenantId, appId, clientSecret);
+      newPermissions = await validatePermissions(tenantId, appId, clientSecret, appObjectId);
     } catch (error) {
       console.error('Failed to validate permissions:', error);
       
