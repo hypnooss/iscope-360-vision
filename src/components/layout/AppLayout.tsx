@@ -479,19 +479,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             Configurações
           </Link>
           <Link
-            to="/collections"
-            onClick={() => setMobileMenuOpen(false)}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              location.pathname === '/collections'
-                ? 'bg-warning/20 text-warning font-medium'
-                : 'text-warning/80 hover:bg-warning/10'
-            )}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Coletas
-          </Link>
-          <Link
             to="/templates"
             onClick={() => setMobileMenuOpen(false)}
             className={cn(
