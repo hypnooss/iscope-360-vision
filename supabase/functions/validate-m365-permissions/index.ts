@@ -143,10 +143,26 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = `https://graph.microsoft.com/v1.0/users/${userId}/mailboxSettings`;
         break;
       }
-      case 'Mail.Read':
-        // Test by fetching inbox rules from first user
-        url = 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id';
+      case 'Mail.Read': {
+        // Test by fetching inbox rules from first user (Mail.Read requires user-specific endpoint)
+        const mailUsersResp = await fetch(
+          'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        if (!mailUsersResp.ok) {
+          await mailUsersResp.text();
+          console.log(`Permission ${permission} test failed: could not fetch users`);
+          return false;
+        }
+        const mailUsersData = await mailUsersResp.json();
+        const mailUserId = mailUsersData.value?.[0]?.id;
+        if (!mailUserId) {
+          console.log(`Permission ${permission} test failed: no users found`);
+          return false;
+        }
+        url = `https://graph.microsoft.com/v1.0/users/${mailUserId}/mailFolders/inbox/messageRules?$top=1`;
         break;
+      }
       default:
         return false;
     }
