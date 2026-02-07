@@ -1,112 +1,107 @@
 
+# Plano: Substituir Application.ReadWrite.OwnedBy por Application.ReadWrite.All
 
-# Plano: Corrigir Erro de Sintaxe e Verificar Permissões do Azure
+## Resumo
 
-## Problema 1: Código Duplicado (BOOT_ERROR)
-
-O arquivo `agent-heartbeat/index.ts` contém código duplicado após um `return`, causando o erro de sintaxe:
-
-```
-SyntaxError: Identifier 'keyId' has already been declared at line 174
-```
-
-### Código Problemático (Linhas 257-287)
-
-```typescript
-// Linha 257: PRIMEIRA declaração
-const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
-
-// ... código de update ...
-
-console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
-return keyId;  // Linha 270: RETURN
-
-// CÓDIGO MORTO ABAIXO (deveria ter sido removido)
-// Parse response from addKey
-const uploadData = await uploadResponse.json();
-const keyId = uploadData.keyId || ...;  // Linha 274: SEGUNDA declaração (ERRO!)
-```
+Atualizar a validação e monitoramento de permissões M365 para usar `Application.ReadWrite.All` em vez de `Application.ReadWrite.OwnedBy`, refletindo a nova configuração no Azure.
 
 ---
 
-## Problema 2: Permissão do Azure
-
-O log mostra:
-```json
-{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}}
-```
-
-A permissão `Application.ReadWrite.OwnedBy` só funciona se:
-1. O App Registration foi criado pelo próprio app (improvável)
-2. Ou foi explicitamente adicionado como owner
-
-**Solução alternativa**: Usar a permissão `Application.ReadWrite.All` que é mais ampla, ou adicionar o app como owner do próprio registro.
-
----
-
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-heartbeat/index.ts` | Remover código duplicado (linhas 272-287) |
+| `supabase/functions/validate-m365-permissions/index.ts` | Atualizar permissão no array e no switch case |
+| `src/pages/admin/SettingsPage.tsx` | Atualizar permissão nos arrays e na UI |
+| `supabase/functions/register-agent/index.ts` | Atualizar mensagem de erro |
 
 ---
 
-## Mudança Necessária
+## Mudanças Detalhadas
 
-### Remover código morto (Linhas 272-287)
+### 1. Edge Function `validate-m365-permissions/index.ts`
 
-O bloco abaixo deve ser **removido completamente**:
-
+**Linha 34** - Atualizar array de permissões:
 ```typescript
-// REMOVER: Este código está após um return e nunca executa
-// Parse response from addKey
-const uploadData = await uploadResponse.json();
-const keyId = uploadData.keyId || `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+// ANTES
+const CERTIFICATE_PERMISSIONS = [
+  'Application.ReadWrite.OwnedBy',
+];
 
-// Update agent record with certificate info
-await supabase
-  .from('agents')
-  .update({
-    certificate_thumbprint: thumbprint,
-    certificate_public_key: publicKey,
-    azure_certificate_key_id: keyId,
-  })
-  .eq('id', agentId);
+// DEPOIS
+const CERTIFICATE_PERMISSIONS = [
+  'Application.ReadWrite.All',
+];
+```
 
-console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
-return keyId;
+**Linhas 130-153** - Atualizar case no switch:
+```typescript
+// ANTES
+case 'Application.ReadWrite.OwnedBy': {
+
+// DEPOIS
+case 'Application.ReadWrite.All': {
 ```
 
 ---
 
-## Sobre a Permissão do Azure
+### 2. Frontend `SettingsPage.tsx`
 
-Após corrigir o erro de sintaxe, o próximo passo é resolver a permissão. Opções:
+**Linha 99** - Atualizar permissão inicial:
+```typescript
+// ANTES
+{ name: 'Application.ReadWrite.OwnedBy', granted: false, type: 'recommended' },
 
-| Opção | Descrição | Recomendação |
-|-------|-----------|--------------|
-| A | Adicionar app como Owner do próprio App Registration no Azure Portal | Simples, não requer permissão extra |
-| B | Usar `Application.ReadWrite.All` em vez de `Application.ReadWrite.OwnedBy` | Mais ampla, pode ser overkill |
+// DEPOIS
+{ name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
+```
 
-**Recomendo Opção A**: No Azure Portal, vá em App registrations > InfraScope 360 > Owners > Add owners > adicione o próprio Service Principal do app.
+**Linha 106** - Atualizar array de agrupamento:
+```typescript
+// ANTES
+const certificatePermissions = ['Application.ReadWrite.OwnedBy'];
+
+// DEPOIS
+const certificatePermissions = ['Application.ReadWrite.All'];
+```
+
+**Linha 842** - Atualizar texto exibido na UI:
+```typescript
+// ANTES
+Application.ReadWrite.OwnedBy
+
+// DEPOIS
+Application.ReadWrite.All
+```
+
+---
+
+### 3. Edge Function `register-agent/index.ts`
+
+**Linha 182** - Atualizar mensagem de erro:
+```typescript
+// ANTES
+return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.OwnedBy permission is granted.' };
+
+// DEPOIS
+return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.All permission is granted.' };
+```
+
+---
+
+## Impacto
+
+- **Validação**: A permissão `Application.ReadWrite.All` será testada no lugar de `OwnedBy`
+- **Monitoramento**: Alertas de permissões ausentes refletirão a nova permissão
+- **UI**: A página de configurações mostrará `Application.ReadWrite.All` na seção de Upload de Certificados
+- **Mensagens de Erro**: Orientações sobre permissões faltantes mencionarão a permissão correta
 
 ---
 
 ## Resultado Esperado
 
-Após a correção:
+Após o deploy:
 
-1. Edge function inicia sem erro de sintaxe
-2. Heartbeat processa normalmente
-3. Se permissão estiver correta, certificado é registrado no Azure
-4. `azure_certificate_key_id` é salvo no banco
-
----
-
-## Verificação
-
-1. **Logs da Edge Function** - não deve mais mostrar "Identifier 'keyId' has already been declared"
-2. **Logs do Agent** - não deve mais mostrar "BOOT_ERROR"
-3. Após ajuste de permissão no Azure, verificar se certificado aparece no App Registration
-
+1. A validação de permissões testará `Application.ReadWrite.All`
+2. A UI mostrará o nome correto da permissão
+3. O próximo heartbeat do agent (que já está configurado para usar PATCH) deve conseguir fazer upload do certificado com sucesso
