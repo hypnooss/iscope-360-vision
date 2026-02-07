@@ -1,9 +1,14 @@
+import { useMemo, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Users, Mail, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Users, Info, Download, FileText } from 'lucide-react';
 import { M365Insight, SEVERITY_LABELS } from '@/types/m365Insights';
 import { cn } from '@/lib/utils';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { M365AffectedEntitiesPDF } from '@/components/pdf/M365AffectedEntitiesPDF';
 
 interface M365AffectedEntitiesDialogProps {
   insight: M365Insight;
@@ -19,20 +24,78 @@ const SEVERITY_BADGE: Record<string, string> = {
   info: 'bg-muted/50 text-muted-foreground border-muted',
 };
 
+function exportCSV(insight: M365Insight, detailKeys: string[]) {
+  const headers = ['Nome', 'Identificador', ...detailKeys];
+  const rows = insight.affectedEntities.map(e => [
+    e.displayName,
+    e.userPrincipalName || e.email || '',
+    ...detailKeys.map(k => String(e.details?.[k] ?? ''))
+  ]);
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+  ].join('\n');
+
+  const BOM = '\uFEFF';
+  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${sanitizePDFFilename(insight.code)}-entidades-${getPDFDateString()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function M365AffectedEntitiesDialog({ insight, open, onOpenChange }: M365AffectedEntitiesDialogProps) {
   const remaining = insight.affectedCount - insight.affectedEntities.length;
+  const { downloadPDF, isGenerating } = usePDFDownload();
+
+  const detailKeys = useMemo(() => {
+    const keys = new Set<string>();
+    insight.affectedEntities.forEach(e => {
+      if (e.details) Object.keys(e.details).forEach(k => keys.add(k));
+    });
+    return Array.from(keys);
+  }, [insight.affectedEntities]);
+
+  const handleExportCSV = useCallback(() => {
+    exportCSV(insight, detailKeys);
+  }, [insight, detailKeys]);
+
+  const handleExportPDF = useCallback(async () => {
+    const doc = <M365AffectedEntitiesPDF insight={insight} detailKeys={detailKeys} />;
+    const filename = `${sanitizePDFFilename(insight.code)}-entidades-${getPDFDateString()}`;
+    await downloadPDF(doc, filename);
+  }, [insight, detailKeys, downloadPDF]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <div className="flex items-center gap-2 mb-1">
-            <Badge variant="outline" className="text-xs font-mono">{insight.code}</Badge>
-            <Badge className={cn('text-xs border', SEVERITY_BADGE[insight.severity])}>
-              {SEVERITY_LABELS[insight.severity]}
-            </Badge>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="outline" className="text-xs font-mono">{insight.code}</Badge>
+                <Badge className={cn('text-xs border', SEVERITY_BADGE[insight.severity])}>
+                  {SEVERITY_LABELS[insight.severity]}
+                </Badge>
+              </div>
+              <DialogTitle className="text-base">{insight.titulo}</DialogTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <Download className="w-4 h-4 mr-1.5" />
+                CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={isGenerating}>
+                <FileText className="w-4 h-4 mr-1.5" />
+                {isGenerating ? 'Gerando...' : 'PDF'}
+              </Button>
+            </div>
           </div>
-          <DialogTitle className="text-base">{insight.titulo}</DialogTitle>
         </DialogHeader>
 
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
@@ -40,34 +103,33 @@ export function M365AffectedEntitiesDialog({ insight, open, onOpenChange }: M365
           <span>{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
         </div>
 
-        <ScrollArea className="max-h-[360px] pr-2">
-          <div className="space-y-2">
-            {insight.affectedEntities.map((entity) => (
-              <div
-                key={entity.id}
-                className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/30"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="text-sm font-medium text-foreground truncate">{entity.displayName}</p>
-                  {entity.userPrincipalName && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Mail className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{entity.userPrincipalName}</span>
-                    </div>
-                  )}
-                  {entity.details && Object.keys(entity.details).length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {Object.entries(entity.details).map(([key, value]) => (
-                        <Badge key={key} variant="secondary" className="text-[10px] font-normal">
-                          {key}: {String(value)}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+        <ScrollArea className="max-h-[420px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Identificador</TableHead>
+                {detailKeys.map(key => (
+                  <TableHead key={key} className="capitalize">{key}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {insight.affectedEntities.map((entity) => (
+                <TableRow key={entity.id}>
+                  <TableCell className="font-medium">{entity.displayName}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {entity.userPrincipalName || entity.email || '—'}
+                  </TableCell>
+                  {detailKeys.map(key => (
+                    <TableCell key={key} className="text-xs">
+                      {entity.details?.[key] != null ? String(entity.details[key]) : '—'}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </ScrollArea>
 
         {remaining > 0 && (
