@@ -231,7 +231,7 @@ async function uploadAgentCertificate(
       key: certBase64,
       displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
       startDateTime: new Date().toISOString(),
-      endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
+      endDateTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year (Azure max)
     };
 
     const patchResponse = await fetch(
