@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +12,24 @@ const corsHeaders = {
 interface SubdomainEnumRequest {
   domain: string;
   timeout?: number;
+  blueprint_steps?: BlueprintStep[];
+}
+
+interface BlueprintStep {
+  id: string;
+  executor: string;
+  runtime: string;
+  phase?: number;
+  priority?: number;
+  config: {
+    name: string;
+    url_template: string;
+    method: string;
+    headers?: Record<string, string>;
+    response_parser: string;
+    requires_api_key?: boolean;
+    api_key_env?: string;
+  };
 }
 
 interface SubdomainEntry {
@@ -55,10 +73,6 @@ interface DoHResponse {
   Answer?: DoHAnswer[];
 }
 
-/**
- * Resolve a hostname using DNS-over-HTTPS (Cloudflare primary, Google fallback).
- * Returns array of IP addresses (A records = type 1, AAAA records = type 28).
- */
 async function resolveDNS(hostname: string, timeout = 5000): Promise<string[]> {
   const providers = [
     `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`,
@@ -83,7 +97,6 @@ async function resolveDNS(hostname: string, timeout = 5000): Promise<string[]> {
 
       if (data.Answer) {
         for (const answer of data.Answer) {
-          // Type 1 = A record, Type 28 = AAAA record
           if (answer.type === 1 || answer.type === 28) {
             ips.push(answer.data);
           }
@@ -92,7 +105,6 @@ async function resolveDNS(hostname: string, timeout = 5000): Promise<string[]> {
 
       return ips;
     } catch {
-      // Try next provider
       continue;
     }
   }
@@ -100,9 +112,6 @@ async function resolveDNS(hostname: string, timeout = 5000): Promise<string[]> {
   return [];
 }
 
-/**
- * Resolve multiple subdomains in parallel with concurrency limit.
- */
 async function resolveSubdomains(
   subdomains: Map<string, { sources: string[] }>,
   maxConcurrent = 20,
@@ -111,7 +120,6 @@ async function resolveSubdomains(
   const entries = Array.from(subdomains.entries());
   const results: SubdomainEntry[] = [];
 
-  // Process in batches
   for (let i = 0; i < entries.length; i += maxConcurrent) {
     const batch = entries.slice(i, i + maxConcurrent);
     const batchResults = await Promise.all(
@@ -132,57 +140,59 @@ async function resolveSubdomains(
 }
 
 // ============================================
-// Subdomain Discovery APIs
+// Validation Helper
 // ============================================
 
-/**
- * Validate if a subdomain is valid for the given domain.
- */
 function isValidSubdomain(subdomain: string, domain: string): boolean {
   if (!subdomain || !domain) return false;
   
   const cleanSub = subdomain.toLowerCase().trim();
   const cleanDomain = domain.toLowerCase().trim();
   
-  // Must end with the domain
   if (!cleanSub.endsWith(cleanDomain)) return false;
-  
-  // Must not be the domain itself
   if (cleanSub === cleanDomain) return false;
-  
-  // Basic validation: only alphanumeric, hyphens, and dots
   if (!/^[a-z0-9.-]+$/.test(cleanSub)) return false;
-  
-  // No double dots or leading/trailing dots
   if (cleanSub.includes('..') || cleanSub.startsWith('.') || cleanSub.endsWith('.')) return false;
   
   return true;
 }
 
-/**
- * Query crt.sh Certificate Transparency logs.
- */
-async function queryCrtsh(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://crt.sh/?q=%25.${domain}&output=json`;
-  const subdomains = new Set<string>();
+// ============================================
+// Response Parsers (Data-driven from blueprint)
+// ============================================
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+type ResponseParser = (data: unknown, domain: string) => Set<string>;
 
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+const responseParsers: Record<string, ResponseParser> = {
+  securitytrails: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as { subdomains?: string[] };
+    for (const sub of typedData.subdomains || []) {
+      const fullSubdomain = `${sub}.${domain}`.toLowerCase();
+      if (isValidSubdomain(fullSubdomain, domain)) {
+        subdomains.add(fullSubdomain);
+      }
+    }
+    return subdomains;
+  },
 
-    if (!response.ok) return subdomains;
+  virustotal: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as { data?: Array<{ id?: string }> };
+    for (const item of typedData.data || []) {
+      const subdomain = item.id?.toLowerCase();
+      if (subdomain && isValidSubdomain(subdomain, domain)) {
+        subdomains.add(subdomain);
+      }
+    }
+    return subdomains;
+  },
 
-    const data = await response.json();
-    
-    for (const cert of data) {
+  crtsh: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as Array<{ name_value?: string }>;
+    for (const cert of typedData) {
       const nameValue = cert.name_value || '';
-      // Split by newline (wildcard certs may have multiple names)
       for (const name of nameValue.split('\n')) {
         const cleaned = name.trim().toLowerCase().replace(/^\*\./, '');
         if (isValidSubdomain(cleaned, domain)) {
@@ -190,32 +200,12 @@ async function queryCrtsh(domain: string, timeout: number): Promise<Set<string>>
         }
       }
     }
-  } catch (e) {
-    console.log(`crt.sh error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query HackerTarget API (100 free requests/day).
- */
-async function queryHackerTarget(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://api.hackertarget.com/hostsearch/?q=${domain}`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const text = await response.text();
-    
-    // Format: subdomain,ip
+  hackertarget: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const text = data as string;
     for (const line of text.trim().split('\n')) {
       if (line.includes(',')) {
         const subdomain = line.split(',')[0].trim().toLowerCase();
@@ -224,69 +214,24 @@ async function queryHackerTarget(domain: string, timeout: number): Promise<Set<s
         }
       }
     }
-  } catch (e) {
-    console.log(`hackertarget error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query AlienVault OTX passive DNS.
- */
-async function queryAlienVault(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://otx.alienvault.com/api/v1/indicators/domain/${domain}/passive_dns`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const data = await response.json();
-    
-    for (const record of data.passive_dns || []) {
+  alienvault: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as { passive_dns?: Array<{ hostname?: string }> };
+    for (const record of typedData.passive_dns || []) {
       const hostname = (record.hostname || '').trim().toLowerCase();
       if (isValidSubdomain(hostname, domain)) {
         subdomains.add(hostname);
       }
     }
-  } catch (e) {
-    console.log(`alienvault error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query RapidDNS.io for subdomains.
- */
-async function queryRapidDNS(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://rapiddns.io/subdomain/${domain}?full=1`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const text = await response.text();
-    
-    // Parse HTML response - subdomains are in <td> tags
+  rapiddns: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const text = data as string;
     const pattern = new RegExp(`<td>([a-zA-Z0-9.-]+\\.${domain.replace(/\./g, '\\.')})</td>`, 'gi');
     let match;
     while ((match = pattern.exec(text)) !== null) {
@@ -295,114 +240,42 @@ async function queryRapidDNS(domain: string, timeout: number): Promise<Set<strin
         subdomains.add(name);
       }
     }
-  } catch (e) {
-    console.log(`rapiddns error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query ThreatMiner API for subdomains.
- */
-async function queryThreatMiner(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://api.threatminer.org/v2/domain.php?q=${domain}&rt=5`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const data = await response.json();
-    
-    if (data.status_code === '200') {
-      for (const subdomain of data.results || []) {
+  threatminer: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as { status_code?: string; results?: string[] };
+    if (typedData.status_code === '200') {
+      for (const subdomain of typedData.results || []) {
         const name = subdomain.trim().toLowerCase();
         if (isValidSubdomain(name, domain)) {
           subdomains.add(name);
         }
       }
     }
-  } catch (e) {
-    console.log(`threatminer error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query URLScan.io for subdomains (100 requests/day free).
- */
-async function queryURLScan(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://urlscan.io/api/v1/search/?q=domain:${domain}`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const data = await response.json();
-    
-    for (const result of data.results || []) {
+  urlscan: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as { results?: Array<{ task?: { domain?: string } }> };
+    for (const result of typedData.results || []) {
       const pageDomain = (result.task?.domain || '').trim().toLowerCase();
       if (isValidSubdomain(pageDomain, domain)) {
         subdomains.add(pageDomain);
       }
     }
-  } catch (e) {
-    console.log(`urlscan error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query Wayback Machine CDX API for historical subdomains.
- */
-async function queryWayback(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://web.archive.org/cdx/search/cdx?url=*.${domain}/*&output=json&fl=original&collapse=urlkey`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const text = await response.text();
-    if (!text.trim()) return subdomains;
-
-    const data = JSON.parse(text);
-    
-    // Skip header row
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
+  wayback: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as string[][];
+    for (let i = 1; i < typedData.length; i++) {
+      const row = typedData[i];
       if (!row) continue;
-      
       const urlStr = Array.isArray(row) ? row[0] : row;
-      // Extract domain from URL: https://subdomain.domain.com/path -> subdomain.domain.com
       const match = /https?:\/\/([^/]+)/.exec(urlStr);
       if (match) {
         const hostname = match[1].split(':')[0].toLowerCase();
@@ -411,35 +284,13 @@ async function queryWayback(domain: string, timeout: number): Promise<Set<string
         }
       }
     }
-  } catch (e) {
-    console.log(`wayback error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query CertSpotter API for certificate transparency data.
- */
-async function queryCertSpotter(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://api.certspotter.com/v1/issuances?domain=${domain}&include_subdomains=true&expand=dns_names`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const data = await response.json();
-    
-    for (const cert of data) {
+  certspotter: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as Array<{ dns_names?: string[] }>;
+    for (const cert of typedData) {
       for (const name of cert.dns_names || []) {
         const cleaned = name.trim().toLowerCase().replace(/^\*\./, '');
         if (isValidSubdomain(cleaned, domain)) {
@@ -447,234 +298,217 @@ async function queryCertSpotter(domain: string, timeout: number): Promise<Set<st
         }
       }
     }
-  } catch (e) {
-    console.log(`certspotter error: ${e}`);
-  }
+    return subdomains;
+  },
 
-  return subdomains;
-}
-
-/**
- * Query JLDC Anubis API for subdomains.
- */
-async function queryJLDC(domain: string, timeout: number): Promise<Set<string>> {
-  const url = `https://jldc.me/anubis/subdomains/${domain}`;
-  const subdomains = new Set<string>();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iScope/1.0)' },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return subdomains;
-
-    const data = await response.json();
-    
-    for (const subdomain of data) {
+  jldc: (data: unknown, domain: string) => {
+    const subdomains = new Set<string>();
+    const typedData = data as string[];
+    for (const subdomain of typedData) {
       const name = subdomain.trim().toLowerCase();
       if (isValidSubdomain(name, domain)) {
         subdomains.add(name);
       }
     }
-  } catch (e) {
-    console.log(`jldc error: ${e}`);
-  }
+    return subdomains;
+  },
+};
 
-  return subdomains;
-}
+// ============================================
+// Dynamic API Executor (Blueprint-driven)
+// ============================================
 
-/**
- * Query SecurityTrails API for subdomains (PRIMARY SOURCE).
- * Requires API key stored in SECURITYTRAILS_API_KEY env variable.
- */
-async function querySecurityTrails(domain: string, timeout: number): Promise<Set<string>> {
-  const apiKey = Deno.env.get('SECURITYTRAILS_API_KEY');
+async function executeApiStep(
+  step: BlueprintStep,
+  domain: string,
+  timeout: number
+): Promise<{ name: string; subdomains: Set<string>; error?: string }> {
+  const { config } = step;
   const subdomains = new Set<string>();
 
-  if (!apiKey) {
-    console.log('[securitytrails] API key not configured, skipping');
-    return subdomains;
+  // Check if API key is required
+  if (config.requires_api_key && config.api_key_env) {
+    const apiKey = Deno.env.get(config.api_key_env);
+    if (!apiKey) {
+      console.log(`[${config.name}] API key not configured (${config.api_key_env}), skipping`);
+      return { name: config.name, subdomains, error: 'API key not configured' };
+    }
   }
 
-  const url = `https://api.securitytrails.com/v1/domain/${domain}/subdomains`;
+  // Build URL from template
+  const url = config.url_template.replace(/{domain}/g, encodeURIComponent(domain));
+
+  // Build headers (replace API key placeholders)
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(config.headers || {})) {
+    if (value.startsWith('{{') && value.endsWith('}}')) {
+      const envVar = value.slice(2, -2);
+      const envValue = Deno.env.get(envVar);
+      if (envValue) {
+        headers[key] = envValue;
+      }
+    } else {
+      headers[key] = value;
+    }
+  }
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const response = await fetch(url, {
-      headers: {
-        'APIKEY': apiKey,
-        'Accept': 'application/json',
-      },
+      method: config.method || 'GET',
+      headers,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.log(`[securitytrails] API returned ${response.status}`);
-      return subdomains;
+      console.log(`[${config.name}] API returned ${response.status}`);
+      return { name: config.name, subdomains, error: `HTTP ${response.status}` };
     }
 
-    const data = await response.json();
-    
-    // SecurityTrails returns { subdomains: ["www", "mail", ...], endpoint: "/v1/..." }
-    for (const sub of data.subdomains || []) {
-      const fullSubdomain = `${sub}.${domain}`.toLowerCase();
-      if (isValidSubdomain(fullSubdomain, domain)) {
-        subdomains.add(fullSubdomain);
+    // Parse response based on content type
+    const contentType = response.headers.get('content-type') || '';
+    let data: unknown;
+
+    if (config.response_parser === 'hackertarget' || config.response_parser === 'rapiddns') {
+      data = await response.text();
+    } else if (config.response_parser === 'wayback') {
+      const text = await response.text();
+      if (!text.trim()) {
+        return { name: config.name, subdomains };
       }
+      data = JSON.parse(text);
+    } else {
+      data = await response.json();
     }
 
-    console.log(`[securitytrails] Found ${subdomains.size} subdomains`);
-  } catch (e) {
-    console.log(`[securitytrails] Error: ${e}`);
-  }
-
-  return subdomains;
-}
-
-/**
- * Query VirusTotal API for subdomains (COMPLEMENTARY SOURCE).
- * Uses the domain relationships endpoint to find subdomains.
- * Requires API key stored in VIRUSTOTAL_API_KEY env variable.
- */
-async function queryVirusTotal(domain: string, timeout: number): Promise<Set<string>> {
-  const apiKey = Deno.env.get('VIRUSTOTAL_API_KEY');
-  const subdomains = new Set<string>();
-
-  if (!apiKey) {
-    console.log('[virustotal] API key not configured, skipping');
-    return subdomains;
-  }
-
-  const url = `https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=100`;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(url, {
-      headers: {
-        'x-apikey': apiKey,
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.log(`[virustotal] API returned ${response.status}`);
-      return subdomains;
-    }
-
-    const data = await response.json();
-    
-    // VirusTotal returns { data: [{ id: "subdomain.domain.com", ... }] }
-    for (const item of data.data || []) {
-      const subdomain = item.id?.toLowerCase();
-      if (subdomain && isValidSubdomain(subdomain, domain)) {
-        subdomains.add(subdomain);
+    // Use the appropriate parser
+    const parser = responseParsers[config.response_parser];
+    if (parser) {
+      const parsed = parser(data, domain);
+      for (const sub of parsed) {
+        subdomains.add(sub);
       }
+    } else {
+      console.log(`[${config.name}] Unknown parser: ${config.response_parser}`);
     }
 
-    console.log(`[virustotal] Found ${subdomains.size} subdomains`);
+    console.log(`[${config.name}] Found ${subdomains.size} subdomains`);
+    return { name: config.name, subdomains };
   } catch (e) {
-    console.log(`[virustotal] Error: ${e}`);
+    console.log(`[${config.name}] Error: ${e}`);
+    return { name: config.name, subdomains, error: String(e) };
   }
-
-  return subdomains;
 }
 
 // ============================================
-// Main Enumeration Function
+// Blueprint Loader
 // ============================================
 
-async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<SubdomainEnumResponse> {
+async function loadBlueprintSteps(): Promise<BlueprintStep[]> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  const { data: blueprint, error } = await supabase
+    .from('device_blueprints')
+    .select('collection_steps')
+    .eq('is_active', true)
+    .eq('device_type_id', (
+      await supabase
+        .from('device_types')
+        .select('id')
+        .eq('code', 'external_domain')
+        .eq('is_active', true)
+        .single()
+    ).data?.id)
+    .single();
+
+  if (error || !blueprint) {
+    console.log('[subdomain-enum] Failed to load blueprint:', error);
+    return [];
+  }
+
+  const steps = (blueprint.collection_steps as { steps?: BlueprintStep[] })?.steps || [];
+  
+  // Filter only edge_function steps with subdomain_api runtime
+  return steps.filter(
+    (step: BlueprintStep) => step.executor === 'edge_function' && step.runtime === 'subdomain_api'
+  );
+}
+
+// ============================================
+// Main Enumeration Function (Blueprint-driven)
+// ============================================
+
+async function enumerateSubdomains(
+  domain: string, 
+  apiTimeout = 15000,
+  blueprintSteps?: BlueprintStep[]
+): Promise<SubdomainEnumResponse> {
   const startTime = Date.now();
   const allSubdomains = new Map<string, { sources: string[] }>();
   const sourcesUsed: string[] = [];
   const errors: string[] = [];
 
-  // Clean domain
   const cleanDomain = domain.toLowerCase().trim().replace(/^https?:\/\//, '').split('/')[0];
-
   console.log(`[subdomain-enum] Starting enumeration for ${cleanDomain}`);
+
+  // Load steps from blueprint if not provided
+  const steps = blueprintSteps || await loadBlueprintSteps();
+  
+  if (steps.length === 0) {
+    console.log('[subdomain-enum] No subdomain API steps found in blueprint');
+    errors.push('No subdomain enumeration steps configured in blueprint');
+  }
+
+  // Separate steps by phase
+  const phase1Steps = steps.filter(s => s.phase === 1).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+  const phase2Steps = steps.filter(s => s.phase === 2 || !s.phase);
+
+  console.log(`[subdomain-enum] Phase 1: ${phase1Steps.length} premium APIs, Phase 2: ${phase2Steps.length} free APIs`);
 
   // ======================================
   // PHASE 1: Premium APIs (Sequential)
   // ======================================
-
-  // 1.1 SecurityTrails (Primary)
-  try {
-    const securityTrailsSubs = await querySecurityTrails(cleanDomain, apiTimeout);
-    if (securityTrailsSubs.size > 0) {
-      sourcesUsed.push(`securitytrails (${securityTrailsSubs.size})`);
-      for (const sub of securityTrailsSubs) {
-        allSubdomains.set(sub, { sources: ['securitytrails'] });
+  for (const step of phase1Steps) {
+    try {
+      const result = await executeApiStep(step, cleanDomain, apiTimeout);
+      
+      if (result.error && !result.error.includes('API key not configured')) {
+        errors.push(`${result.name}: ${result.error}`);
       }
-      console.log(`[subdomain-enum] SecurityTrails found ${securityTrailsSubs.size} subdomains`);
-    }
-  } catch (e) {
-    errors.push(`securitytrails: ${e}`);
-    console.log(`[subdomain-enum] SecurityTrails error: ${e}`);
-  }
 
-  // 1.2 VirusTotal (Complementary)
-  try {
-    const virusTotalSubs = await queryVirusTotal(cleanDomain, apiTimeout);
-    if (virusTotalSubs.size > 0) {
-      sourcesUsed.push(`virustotal (${virusTotalSubs.size})`);
-      for (const sub of virusTotalSubs) {
-        if (allSubdomains.has(sub)) {
-          const existing = allSubdomains.get(sub)!;
-          if (!existing.sources.includes('virustotal')) {
-            existing.sources.push('virustotal');
+      if (result.subdomains.size > 0) {
+        sourcesUsed.push(`${result.name} (${result.subdomains.size})`);
+        for (const sub of result.subdomains) {
+          if (allSubdomains.has(sub)) {
+            const existing = allSubdomains.get(sub)!;
+            if (!existing.sources.includes(result.name)) {
+              existing.sources.push(result.name);
+            }
+          } else {
+            allSubdomains.set(sub, { sources: [result.name] });
           }
-        } else {
-          allSubdomains.set(sub, { sources: ['virustotal'] });
         }
       }
-      console.log(`[subdomain-enum] VirusTotal found ${virusTotalSubs.size} subdomains`);
+    } catch (e) {
+      errors.push(`${step.config.name}: ${e}`);
     }
-  } catch (e) {
-    errors.push(`virustotal: ${e}`);
-    console.log(`[subdomain-enum] VirusTotal error: ${e}`);
   }
 
   // ======================================
-  // PHASE 2: Free APIs (Complementary)
+  // PHASE 2: Free APIs (Parallel)
   // ======================================
-  const apiQueries = [
-    { name: 'crt.sh', fn: () => queryCrtsh(cleanDomain, apiTimeout) },
-    { name: 'hackertarget', fn: () => queryHackerTarget(cleanDomain, apiTimeout) },
-    { name: 'alienvault', fn: () => queryAlienVault(cleanDomain, apiTimeout) },
-    { name: 'rapiddns', fn: () => queryRapidDNS(cleanDomain, apiTimeout) },
-    { name: 'threatminer', fn: () => queryThreatMiner(cleanDomain, apiTimeout) },
-    { name: 'urlscan', fn: () => queryURLScan(cleanDomain, apiTimeout) },
-    { name: 'wayback', fn: () => queryWayback(cleanDomain, apiTimeout) },
-    { name: 'certspotter', fn: () => queryCertSpotter(cleanDomain, apiTimeout) },
-    { name: 'jldc', fn: () => queryJLDC(cleanDomain, apiTimeout) },
-  ];
+  const phase2Results = await Promise.allSettled(
+    phase2Steps.map(step => executeApiStep(step, cleanDomain, apiTimeout))
+  );
 
-  const results = await Promise.allSettled(apiQueries.map(async (api) => {
-    try {
-      const subs = await api.fn();
-      return { name: api.name, subdomains: subs };
-    } catch (e) {
-      return { name: api.name, error: String(e), subdomains: new Set<string>() };
-    }
-  }));
-
-  // Process results (merge with SecurityTrails)
-  for (const result of results) {
+  for (const result of phase2Results) {
     if (result.status === 'fulfilled') {
-      const { name, subdomains, error } = result.value as { name: string; subdomains: Set<string>; error?: string };
+      const { name, subdomains, error } = result.value;
       
       if (error) {
         errors.push(`${name}: ${error}`);
@@ -701,13 +535,12 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
 
   console.log(`[subdomain-enum] Found ${allSubdomains.size} unique subdomains from ${sourcesUsed.length} sources`);
 
-  // Limit DNS resolution to avoid timeout (max ~200 subdomains for 30s edge function limit)
+  // Limit DNS resolution
   const maxResolutions = 200;
   let subdomainsToResolve = allSubdomains;
   
   if (allSubdomains.size > maxResolutions) {
-    console.log(`[subdomain-enum] Limiting DNS resolution to ${maxResolutions} subdomains (found ${allSubdomains.size})`);
-    // Take first N entries
+    console.log(`[subdomain-enum] Limiting DNS resolution to ${maxResolutions} subdomains`);
     const entries = Array.from(allSubdomains.entries()).slice(0, maxResolutions);
     subdomainsToResolve = new Map(entries);
   }
@@ -716,7 +549,7 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
   console.log(`[subdomain-enum] Resolving ${subdomainsToResolve.size} subdomains via DoH...`);
   const resolvedSubdomains = await resolveSubdomains(subdomainsToResolve, 25, 3000);
 
-  // Add any remaining subdomains that weren't resolved (mark as is_alive: false)
+  // Add remaining unresolved subdomains
   if (allSubdomains.size > maxResolutions) {
     const resolvedSet = new Set(resolvedSubdomains.map(s => s.subdomain));
     for (const [sub, data] of allSubdomains.entries()) {
@@ -731,7 +564,6 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
     }
   }
 
-  // Sort results
   resolvedSubdomains.sort((a, b) => a.subdomain.localeCompare(b.subdomain));
 
   const aliveCount = resolvedSubdomains.filter(s => s.is_alive).length;
@@ -757,13 +589,11 @@ async function enumerateSubdomains(domain: string, apiTimeout = 15000): Promise<
 // HTTP Handler
 // ============================================
 
-serve(async (req: Request) => {
-  // Handle CORS preflight
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Only accept POST
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -781,12 +611,12 @@ serve(async (req: Request) => {
       );
     }
 
-    // Default API timeout (15s to leave room for DNS resolution)
     const timeout = (body.timeout || 15) * 1000;
     
     console.log(`[subdomain-enum] Request for domain: ${body.domain}`);
     
-    const result = await enumerateSubdomains(body.domain, timeout);
+    // Accept optional blueprint_steps for direct invocation
+    const result = await enumerateSubdomains(body.domain, timeout, body.blueprint_steps);
 
     return new Response(
       JSON.stringify(result),
