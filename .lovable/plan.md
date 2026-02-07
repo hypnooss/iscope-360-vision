@@ -1,90 +1,162 @@
 
 
-# Corrigir Exibição do Template M365 sem Blueprint
+# Regra Arquitetural: Toda Coleta no Banco de Dados
 
-## Problema Identificado
+## Regra Fundamental
 
-A página `TemplateDetailPage.tsx` exige um blueprint ativo para renderizar as abas "Visualização" e "Fluxo de Análise". Quando não há blueprint, exibe a mensagem "Configure um blueprint ativo para organizar categorias".
+**"Qualquer tipo de coleta de dados DEVE estar configurado em um template (device_type) e armazenado no banco de dados. Nenhuma logica de coleta pode existir hardcoded em Edge Functions ou codigo."**
 
-O M365 foi projetado para não usar blueprints (a coleta é feita via Graph API direta, não via agent com steps de coleta). Portanto, a lógica precisa ser ajustada para permitir visualização de categorias e regras mesmo sem blueprint.
+---
 
-## Dados no Banco
+## Estado Atual (Violacoes)
 
-Os dados estão corretos:
-- 11 categorias em `rule_categories`
-- 57 regras em `compliance_rules`
-- 0 blueprints (esperado para M365)
+### 1. Microsoft 365 (`m365-security-posture`)
+- **2.081 linhas** de codigo com 57+ verificacoes hardcoded
+- Endpoints da Graph API embutidos diretamente nas funcoes
+- Logica de avaliacao dispersa em funcoes como `collectIdentityInsights()`, `collectAuthInsights()`, etc.
+- **Nenhum blueprint** existe para M365
 
-## Solução
+### 2. Dominio Externo (`subdomain-enum`)  
+- **813 linhas** com 9 APIs de enumeracao hardcoded (crt.sh, HackerTarget, AlienVault, etc.)
+- Endpoints e logica de consulta embutidos
+- Blueprint existe para DNS (7 steps via Agent), mas coleta de subdomains via Edge Function esta fora
 
-Modificar a lógica de renderização das abas para:
+### 3. Mapeamento `sourceKeyToEndpoint`
+- **Linha 357-422** do `agent-task-result` contem mapeamento hardcoded de source_key para endpoints
+- Deveria vir do banco de dados
 
-1. **Aba "Visualização"**: Mostrar `DraggableCategoryFlow` se houver regras OU categorias configuradas (independente de blueprint)
-2. **Aba "Fluxo de Análise"**: Manter exigência de blueprint (faz sentido apenas para templates que usam agent com steps de coleta)
-3. Passar um blueprint "vazio" virtual para o `DraggableCategoryFlow` quando não houver blueprint real
+---
 
-## Detalhes Tecnicos
+## Arquitetura Proposta
 
-### Arquivo: `src/pages/admin/TemplateDetailPage.tsx`
+### Novo Campo na Tabela `device_blueprints`
 
-#### Mudanca 1: Criar blueprint virtual para M365
+Adicionar suporte para dois tipos de executor:
 
-Adicionar logica para criar um blueprint "vazio" quando nao houver blueprints:
+| Campo | Valor | Descricao |
+|-------|-------|-----------|
+| `executor` | `agent` | Steps executados pelo Python Agent (atual) |
+| `executor` | `edge_function` | Steps executados por Edge Function |
 
-```typescript
-// Virtual blueprint for templates without blueprints (like M365)
-const virtualBlueprint: Blueprint = {
-  id: 'virtual',
-  name: 'Virtual Blueprint',
-  description: null,
-  device_type_id: id!,
-  version: '1.0',
-  collection_steps: { steps: [] },
-  is_active: false,
-  created_at: new Date().toISOString(),
-};
+### Estrutura do `collection_steps` Unificada
 
-const blueprintForVisualization = activeBlueprint || (rules.length > 0 ? virtualBlueprint : null);
+```json
+{
+  "steps": [
+    {
+      "id": "users_count",
+      "executor": "edge_function",
+      "runtime": "graph_api",
+      "config": {
+        "endpoint": "/users/$count",
+        "method": "GET",
+        "headers": { "ConsistencyLevel": "eventual" },
+        "api_version": "v1.0"
+      }
+    },
+    {
+      "id": "mfa_status",
+      "executor": "edge_function", 
+      "runtime": "graph_api",
+      "config": {
+        "endpoint": "/reports/authenticationMethods/userRegistrationDetails",
+        "method": "GET",
+        "params": { "$top": "999" },
+        "api_version": "v1.0"
+      }
+    },
+    {
+      "id": "exchange_transport_rules",
+      "executor": "agent",
+      "runtime": "powershell",
+      "config": {
+        "module": "ExchangeOnlineManagement",
+        "command": "Get-TransportRule",
+        "auth": "certificate"
+      }
+    }
+  ]
+}
 ```
 
-#### Mudanca 2: Ajustar renderizacao da aba "Visualizacao"
+### Fluxo de Execucao
 
-Alterar a condicao de renderizacao:
-
-De:
-```typescript
-{activeBlueprint ? (
-  <DraggableCategoryFlow ... />
-) : (
-  <div>Configure um blueprint...</div>
-)}
+```text
++------------------+     +-------------------+     +------------------+
+|   Trigger        |     |   Orchestrator    |     |   Executores     |
+|   Analysis       | --> |   Edge Function   | --> |                  |
++------------------+     +-------------------+     +------------------+
+                                |                         |
+                                v                         v
+                         Le blueprint do BD        +------+------+
+                                |                  |             |
+                                v                  v             v
+                         Para cada step:     Agent Steps   Edge Steps
+                                |            (Python)      (Deno)
+                                |                |             |
+                                v                v             v
+                         Agrupa por tipo    http_request   graph_api
+                                             ssh_command    rest_api
+                                             powershell     dns_lookup
 ```
 
-Para:
-```typescript
-{blueprintForVisualization ? (
-  <DraggableCategoryFlow 
-    blueprint={blueprintForVisualization}
-    ...
-  />
-) : (
-  <div>Nenhuma regra de compliance configurada...</div>
-)}
-```
+---
 
-#### Mudanca 3: Manter aba "Fluxo de Analise" inalterada
+## Plano de Implementacao
 
-A aba "Fluxo de Analise" continua exigindo `activeBlueprint` pois mostra os steps de coleta que so fazem sentido para templates que usam agent.
-
-### Resultado Esperado
-
-- **M365**: Mostrara as 11 categorias e 57 regras na aba "Visualizacao", permitindo gerenciamento completo
-- **Firewall/Dominio Externo**: Comportamento inalterado (continua exigindo blueprint para aba "Visualizacao")
-- **Aba "Fluxo de Analise"**: Continua mostrando "Nenhum blueprint ativo" para M365 (correto, pois M365 nao usa agent)
-
-## Arquivos
+### Fase 1: Infraestrutura (Banco de Dados)
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/admin/TemplateDetailPage.tsx` | Ajustar logica de renderizacao para suportar templates sem blueprints |
+| Migration SQL | Adicionar campo `executor_type` em `device_blueprints` (enum: 'agent', 'edge_function', 'hybrid') |
+| Migration SQL | Adicionar tabela `blueprint_step_templates` para reutilizacao de configuracoes comuns |
+
+### Fase 2: Migrar M365 para Banco
+
+| Arquivo | Acao |
+|---------|------|
+| Migration SQL | Criar blueprint "M365 - Postura de Seguranca" com 57+ steps |
+| Migration SQL | Popular `collection_steps` com todos os endpoints da Graph API |
+| Edge Function | Refatorar `m365-security-posture` para ler steps do banco e executar dinamicamente |
+
+### Fase 3: Migrar Subdomain Enum
+
+| Arquivo | Acao |
+|---------|------|
+| Migration SQL | Adicionar steps de `edge_function` ao blueprint External Domain |
+| Edge Function | Refatorar `subdomain-enum` para ser um executor generico |
+
+### Fase 4: Unificar Avaliacao
+
+| Arquivo | Acao |
+|---------|------|
+| Edge Function | Criar `evaluate-compliance` generico que le regras do banco |
+| Remover | Eliminar mapeamento `sourceKeyToEndpoint` hardcoded |
+
+---
+
+## Beneficios
+
+1. **Administracao via UI**: Adicionar/editar verificacoes M365 sem deploy de codigo
+2. **Consistencia**: Mesmo fluxo para todos os templates (Firewall, M365, Dominio)
+3. **Auditoria**: Historico de mudancas nas regras de coleta
+4. **Flexibilidade**: Suporte a coletas hibridas (Agent + Edge Function)
+5. **Testabilidade**: Preview de verificacoes antes de ativar
+
+---
+
+## Estimativa
+
+| Fase | Complexidade | Impacto |
+|------|--------------|---------|
+| Fase 1 | Baixa | Estrutura base |
+| Fase 2 | Alta | M365 funcional via banco |
+| Fase 3 | Media | Dominio Externo completo |
+| Fase 4 | Media | Unificacao final |
+
+---
+
+## Proximos Passos
+
+Apos aprovacao, iniciar pela **Fase 1** (migracao do schema) para estabelecer a estrutura, seguida da **Fase 2** (M365) que representa a maior violacao atual da regra.
 
