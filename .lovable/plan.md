@@ -1,98 +1,304 @@
 
-# Plano: Corrigir Conflito de Variavel VERSION com /etc/os-release
+# Plano: Refatorar Modal de Detalhes do Agent para Pagina Dedicada
 
-## Problema
+## Resumo
 
-Ao executar `--update`, o script tenta baixar `iscope-agent-8.10.tar.gz` em vez de `iscope-agent-latest.tar.gz`.
-
-A causa raiz: o script usa `source /etc/os-release` para detectar a versao do sistema operacional. Isso sobrescreve a variavel `VERSION` (que era "latest") com o valor de `VERSION` do arquivo `/etc/os-release` (ex: "8.10" no Oracle Linux 8.10).
-
-## Causa Raiz
-
-Linha 446-448:
-```bash
-source /etc/os-release
-rhel_version="${VERSION_ID%%.*}"
-```
-
-O `source /etc/os-release` importa **todas** as variaveis do arquivo, incluindo `VERSION`, que colide com a variavel local do script.
-
-## Solucao
-
-Usar um subshell ou renomear a variavel do script para evitar colisao. A abordagem mais segura e renomear a variavel do script de `VERSION` para `AGENT_VERSION`.
+O modal atual de detalhes do agent esta sobrecarregado com muitas informacoes. Este plano cria uma pagina dedicada `/agents/:id` que oferece mais espaco para exibir todas as informacoes do agent, incluindo dados de certificado M365 que atualmente nao sao visiveis.
 
 ---
 
-## Arquivos a Modificar
+## Arquitetura da Pagina
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `supabase/functions/agent-install/index.ts` | Renomear `VERSION` para `AGENT_VERSION` em todo o script |
-
----
-
-## Alteracoes Detalhadas
-
-### 1. Declaracao da variavel (linha 24)
-
-```bash
-# Antes
-VERSION="latest"
-
-# Depois  
-AGENT_VERSION="latest"
-```
-
-### 2. Parse de argumentos (linha 85)
-
-```bash
-# Antes
---version)
-  VERSION="${2:-}"; shift 2 ;;
-
-# Depois
---version)
-  AGENT_VERSION="${2:-}"; shift 2 ;;
-```
-
-### 3. Funcao download_release (linhas 546-549)
-
-```bash
-# Antes
-if [[ "$VERSION" == "latest" ]]; then
-  file="iscope-agent-latest.tar.gz"
-else
-  file="iscope-agent-${VERSION}.tar.gz"
-fi
-
-# Depois
-if [[ "$AGENT_VERSION" == "latest" ]]; then
-  file="iscope-agent-latest.tar.gz"
-else
-  file="iscope-agent-${AGENT_VERSION}.tar.gz"
-fi
+```text
++-------------------------------------------------------+
+|  Breadcrumb: Agents > [Nome do Agent]                 |
++-------------------------------------------------------+
+|                                                       |
+|  +------------------+  +----------------------------+ |
+|  |   Status Card    |  |    Informacoes Gerais     | |
+|  |   - Online/Off   |  |    - Nome, Cliente        | |
+|  |   - Versao       |  |    - Criado em, Last seen | |
+|  |                  |  |    - Agent ID             | |
+|  +------------------+  +----------------------------+ |
+|                                                       |
+|  +--------------------------------------------------+ |
+|  |              Certificado M365                    | |
+|  |  - Thumbprint                                    | |
+|  |  - Azure Key ID (se registrado)                  | |
+|  |  - Status do registro                            | |
+|  |  - Botao baixar certificado publico              | |
+|  +--------------------------------------------------+ |
+|                                                       |
+|  +--------------------------------------------------+ |
+|  |              Capabilities                        | |
+|  |  [Tag1] [Tag2] [Tag3]                           | |
+|  +--------------------------------------------------+ |
+|                                                       |
+|  +--------------------------------------------------+ |
+|  |           Codigo de Ativacao                     | |
+|  |  - Codigo atual (se existir)                     | |
+|  |  - Botao gerar novo codigo                       | |
+|  |  - Instrucoes de instalacao                      | |
+|  +--------------------------------------------------+ |
+|                                                       |
+|  +--------------------------------------------------+ |
+|  |              Acoes                               | |
+|  |  [Verificar Componentes] [Revogar] [Deletar]    | |
+|  +--------------------------------------------------+ |
+|                                                       |
++-------------------------------------------------------+
 ```
 
 ---
 
-## Por que essa abordagem
+## Arquivos a Criar/Modificar
 
-| Abordagem | Pros | Contras |
-|-----------|------|---------|
-| Renomear para AGENT_VERSION | Simples, claro, evita colisoes | Pequena mudanca em multiplos lugares |
-| Usar subshell `(source ...)` | Nao muda nome da variavel | Mais complexo, facil de esquecer |
-| Salvar/restaurar VERSION | Funciona | Feio e propenso a erros |
-
-Renomear e a solucao mais limpa e idiomatica para scripts bash.
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| `src/pages/AgentDetailPage.tsx` | **NOVO** | Pagina de detalhes do agent |
+| `src/App.tsx` | Modificar | Adicionar rota `/agents/:id` |
+| `src/pages/AgentsPage.tsx` | Modificar | Alterar botao Eye para navegar em vez de abrir modal |
 
 ---
 
-## Teste Esperado
+## Implementacao Detalhada
 
-Apos a correcao:
+### 1. Nova Pagina: `src/pages/AgentDetailPage.tsx`
 
-```bash
-curl -fsSL .../agent-install | sudo bash -s -- --update
+Estrutura da pagina:
+
+```tsx
+export default function AgentDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
+  // Fetch agent data with all certificate fields
+  const { data: agent, isLoading } = useQuery({
+    queryKey: ['agent', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agents')
+        .select(`
+          *,
+          clients!client_id(name)
+        `)
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    }
+  });
+  
+  // ... restante da implementacao
+}
 ```
 
-Devera baixar `iscope-agent-latest.tar.gz` corretamente.
+### 2. Secoes da Pagina
+
+**Header com Breadcrumb e Acoes**
+- Breadcrumb: Agents > [Nome]
+- Botao Voltar
+- Status badge (Online/Offline/Revogado)
+
+**Card de Status**
+- Status visual grande
+- Versao do agent
+- Ultimo heartbeat
+
+**Card de Informacoes Gerais**
+- Nome
+- Cliente associado
+- Data de criacao
+- Agent ID (copiavel)
+
+**Card de Certificado M365** (NOVA SECAO)
+- Thumbprint do certificado
+- Chave publica (botao download)
+- Azure Key ID (se registrado no Azure)
+- Status do registro:
+  - "Pendente" - tem certificado mas nao tem azure_key_id
+  - "Registrado" - tem azure_key_id
+  - "Sem certificado" - nenhum certificado gerado
+
+**Card de Capabilities**
+- Lista de capabilities como badges
+- Ex: `http_request`, `ssh`, `m365_powershell`, etc.
+
+**Card de Codigo de Ativacao**
+- Codigo atual (se pendente)
+- Botao gerar novo codigo
+- Instrucoes de instalacao (componente existente)
+
+**Card de Acoes**
+- Verificar Componentes
+- Revogar Agent
+- Deletar Agent (so se revogado)
+
+### 3. Modificar App.tsx
+
+Adicionar nova rota:
+
+```tsx
+// Lazy load
+const AgentDetailPage = lazy(() => import("./pages/AgentDetailPage"));
+
+// Na secao de rotas
+<Route path="/agents/:id" element={<AgentDetailPage />} />
+```
+
+### 4. Modificar AgentsPage.tsx
+
+Alterar botao de detalhes para navegar:
+
+```tsx
+// Antes
+<Button onClick={() => handleViewDetails(agent)}>
+  <Eye className="w-4 h-4" />
+</Button>
+
+// Depois
+<Button onClick={() => navigate(`/agents/${agent.id}`)}>
+  <Eye className="w-4 h-4" />
+</Button>
+```
+
+Remover:
+- Estado `detailsDialogOpen`
+- Estado `selectedAgent`
+- Funcao `handleViewDetails`
+- Dialog de detalhes (todo o bloco)
+- Estados relacionados: `newActivationCode`, `generatingCode`, `checkingComponents`
+
+Manter os dialogs que sao usados de forma independente:
+- `AlertDialog` de revogacao
+- `Dialog` de delecao
+
+---
+
+## Campos do Agent a Exibir
+
+| Campo | Localizacao na Pagina | Notas |
+|-------|----------------------|-------|
+| `name` | Header + Info | Nome do agent |
+| `id` | Info | UUID copiavel |
+| `client_id` / `client_name` | Info | Cliente associado |
+| `created_at` | Info | Data de criacao |
+| `last_seen` | Status | Ultimo heartbeat |
+| `agent_version` | Status | Versao instalada |
+| `revoked` | Status | Badge de status |
+| `capabilities` | Capabilities | Array de strings |
+| `certificate_thumbprint` | Certificado | Thumbprint SHA-1 |
+| `certificate_public_key` | Certificado | PEM (download) |
+| `azure_certificate_key_id` | Certificado | ID no Azure AD |
+| `activation_code` | Ativacao | Codigo pendente |
+| `activation_code_expires_at` | Ativacao | Expiracao |
+| `check_components` | Acoes | Flag de verificacao |
+
+---
+
+## Design Visual
+
+- Layout responsivo com grid 2 colunas em desktop, 1 coluna em mobile
+- Cards com estilo `glass-card` existente
+- Badges coloridos para status e capabilities
+- Icones consistentes com resto do sistema
+- Botoes de acao com confirmacao (AlertDialog)
+
+---
+
+## Fluxo de Navegacao
+
+```text
+/agents
+  |
+  +-- Click Eye icon --> /agents/:id (AgentDetailPage)
+  |                        |
+  |                        +-- Click Voltar --> /agents
+  |                        |
+  |                        +-- Revogar --> AlertDialog --> /agents
+  |                        |
+  |                        +-- Deletar --> Dialog --> /agents
+  |
+  +-- Click Bot icon --> Dialog (instrucoes - manter)
+  |
+  +-- Click Ban icon --> AlertDialog (revogar - manter)
+```
+
+---
+
+## Secao Tecnica
+
+### Query do Agent com Join
+
+```sql
+SELECT 
+  agents.*,
+  clients.name as client_name
+FROM agents
+LEFT JOIN clients ON agents.client_id = clients.id
+WHERE agents.id = :id
+```
+
+No Supabase:
+
+```typescript
+const { data } = await supabase
+  .from('agents')
+  .select('*, clients!client_id(name)')
+  .eq('id', id)
+  .single();
+```
+
+### Download do Certificado Publico
+
+```typescript
+const downloadCertificate = () => {
+  if (!agent?.certificate_public_key) return;
+  
+  const blob = new Blob([agent.certificate_public_key], { 
+    type: 'application/x-pem-file' 
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${agent.name.replace(/\s+/g, '-')}-cert.pem`;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+```
+
+### Tipo Agent Atualizado
+
+```typescript
+interface Agent {
+  id: string;
+  name: string;
+  client_id: string | null;
+  created_at: string;
+  last_seen: string | null;
+  revoked: boolean;
+  activation_code: string | null;
+  activation_code_expires_at: string | null;
+  agent_version: string | null;
+  capabilities: string[] | null;
+  certificate_thumbprint: string | null;
+  certificate_public_key: string | null;
+  azure_certificate_key_id: string | null;
+  check_components: boolean;
+  clients?: { name: string } | null;
+}
+```
+
+---
+
+## Vantagens da Refatoracao
+
+| Aspecto | Antes (Modal) | Depois (Pagina) |
+|---------|---------------|-----------------|
+| Espaco | Limitado (~500px) | Tela completa |
+| Informacoes | Parciais | Todas visiveis |
+| Certificado | Nao visivel | Card dedicado |
+| Capabilities | Nao visivel | Card dedicado |
+| URL | Nao compartilhavel | Compartilhavel |
+| UX | Scroll no modal | Layout organizado |
