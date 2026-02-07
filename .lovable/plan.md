@@ -1,104 +1,26 @@
 
 
-# Plano: Corrigir Execução de Tasks M365 PowerShell
+# Plano: Corrigir Formato do Certificado para Exchange Online
 
 ## Problema Identificado
 
-O agent recebe a task M365, mas com **0 steps** porque:
+O PowerShell `Connect-ExchangeOnline` com o parâmetro `-CertificateFilePath` espera um arquivo **PFX (PKCS#12)** que contém certificado + chave privada em um único arquivo. Atualmente, o agente gera:
 
-1. A função SQL `rpc_get_agent_tasks` retorna `blueprint = '{"steps": []}'` (vazio) para tasks M365
-2. O payload contém os dados corretos (`module`, `commands`, `app_id`, etc.)
-3. O executor `powershell` existe no agent, mas não está registrado no `TaskExecutor`
+- `/var/lib/iscope-agent/certs/m365.crt` (certificado público)
+- `/var/lib/iscope-agent/certs/m365.key` (chave privada)
 
-**Logs do problema:**
+Mas o PowerShell não consegue usar arquivos separados:
 ```
-Executando tarefa 26ca8244-91a3-4c2f-bf9e-c489d26de1a2 com 0 steps
-status=completed, tempo=18ms, completed=0, failed=0
+The certificate certificate does not have a private key.
 ```
 
 ---
 
 ## Solução
 
-Duas correções necessárias:
-
-### 1. Registrar Executor PowerShell no Agent Python
-
-**Arquivo:** `python-agent/agent/tasks.py`
-
-Adicionar o `PowerShellExecutor` na lista de executors:
-
-```python
-from agent.executors.powershell import PowerShellExecutor
-
-# Dentro de __init__:
-self._executors = {
-    'http_request': HTTPRequestExecutor(logger),
-    'http_session': HTTPSessionExecutor(logger),
-    'ssh_command': SSHExecutor(logger),
-    'snmp_query': SNMPExecutor(logger),
-    'dns_query': DNSQueryExecutor(logger),
-    'amass': AmassExecutor(logger),
-    'powershell': PowerShellExecutor(logger),  # ADICIONAR
-}
-```
-
-### 2. Modificar Função SQL para Gerar Step PowerShell
-
-**Arquivo:** Nova migration SQL
-
-A função `rpc_get_agent_tasks` precisa transformar o `payload` das tasks M365 em um step válido:
-
-```sql
--- Para tasks M365, converter payload em step
-json_build_object(
-  'steps', json_build_array(
-    json_build_object(
-      'id', 'powershell_exec',
-      'type', 'powershell',
-      'params', json_build_object(
-        'module', t.payload->>'module',
-        'commands', t.payload->'commands',
-        'app_id', cred.azure_app_id,
-        'tenant_id', mt.tenant_id,
-        'organization', t.payload->>'organization'
-      )
-    )
-  )
-) as blueprint
-```
-
----
-
-## Fluxo Corrigido
-
-```text
-┌────────────────────────────────────────────────────────────────────────────┐
-│  ANTES (com problema)                                                      │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Edge Function → cria task com payload.commands                            │
-│       ↓                                                                    │
-│  rpc_get_agent_tasks → retorna blueprint = {"steps": []}  ← VAZIO         │
-│       ↓                                                                    │
-│  Agent → task.steps = []  → 0 steps executados                            │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────────────────┐
-│  DEPOIS (corrigido)                                                        │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Edge Function → cria task com payload.commands                            │
-│       ↓                                                                    │
-│  rpc_get_agent_tasks → converte payload em step powershell                │
-│       ↓                                                                    │
-│  Agent → task.steps = [{type: "powershell", params: {...}}]               │
-│       ↓                                                                    │
-│  PowerShellExecutor → executa Connect-ExchangeOnline + comandos           │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
+Modificar dois arquivos para:
+1. Gerar arquivo `.pfx` durante a criação do certificado
+2. Usar o `.pfx` no PowerShellExecutor com a senha correta
 
 ---
 
@@ -106,89 +28,124 @@ json_build_object(
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `python-agent/agent/tasks.py` | Registrar `PowerShellExecutor` |
-| `supabase/migrations/*.sql` | Atualizar `rpc_get_agent_tasks` para gerar steps M365 |
+| `python-agent/check-deps.sh` | Adicionar geração do arquivo `.pfx` |
+| `python-agent/agent/executors/powershell.py` | Usar `.pfx` e incluir `-CertificatePassword` |
 
 ---
 
 ## Mudanças Detalhadas
 
-### Python Agent - `tasks.py`
+### 1. `check-deps.sh` - Gerar PFX
+
+Após gerar os arquivos `.crt` e `.key`, adicionar:
+
+```bash
+# Generate PFX file (for PowerShell compatibility)
+# Use empty password for simplicity (protected by file permissions)
+openssl pkcs12 \
+    -export \
+    -out "$CERT_DIR/m365.pfx" \
+    -inkey "$CERT_DIR/m365.key" \
+    -in "$CERT_DIR/m365.crt" \
+    -passout pass: 2>/dev/null
+
+if [[ -f "$CERT_DIR/m365.pfx" ]]; then
+    chmod 600 "$CERT_DIR/m365.pfx"
+    log "Arquivo PFX gerado para PowerShell"
+fi
+```
+
+O arquivo terá senha vazia (protegido por permissões de arquivo), simplificando o uso.
+
+### 2. `powershell.py` - Usar PFX
+
+Atualizar a constante do caminho e adicionar `-CertificatePassword`:
 
 ```python
-# Linha 15: Adicionar import
-from agent.executors.powershell import PowerShellExecutor
+# Constantes atualizadas
+PFX_FILE = CERT_DIR / "m365.pfx"
 
-# Linha 42-50: Adicionar executor
-self._executors = {
-    'http_request': HTTPRequestExecutor(logger),
-    'http_session': HTTPSessionExecutor(logger),
-    'ssh_command': SSHExecutor(logger),
-    'snmp_query': SNMPExecutor(logger),
-    'dns_query': DNSQueryExecutor(logger),
-    'amass': AmassExecutor(logger),
-    'powershell': PowerShellExecutor(logger),
+# Comando de conexão atualizado
+MODULES = {
+    "ExchangeOnline": {
+        "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
+        "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword (ConvertTo-SecureString -String "" -AsPlainText -Force) -Organization "{organization}" -ShowBanner:$false',
+        "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
+    },
+    "MicrosoftGraph": {
+        "import": "Import-Module Microsoft.Graph.Authentication -ErrorAction Stop",
+        "connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -TenantId "{tenant_id}" -NoWelcome',
+        "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
+    },
 }
 ```
 
-### SQL Migration - `rpc_get_agent_tasks`
+E atualizar `_build_script` para usar `PFX_FILE`:
 
-Modificar o bloco M365 para:
-
-```sql
--- M365 Tenant tasks
-SELECT
-  t.id,
-  t.task_type,
-  t.target_id,
-  t.target_type,
-  t.payload,
-  t.priority,
-  t.expires_at,
-  json_build_object(
-    'id', mt.id,
-    'type', 'm365_tenant',
-    'tenant_id', mt.tenant_id,
-    'tenant_domain', mt.tenant_domain,
-    'display_name', mt.display_name,
-    'credentials', json_build_object(
-      'azure_app_id', cred.azure_app_id,
-      'auth_type', cred.auth_type,
-      'certificate_thumbprint', COALESCE(cred.certificate_thumbprint, a.certificate_thumbprint)
-    )
-  ) as target,
-  -- Gerar step dinâmico a partir do payload
-  json_build_object(
-    'steps', json_build_array(
-      json_build_object(
-        'id', COALESCE(t.payload->>'test_type', 'powershell_exec'),
-        'type', 'powershell',
-        'params', json_build_object(
-          'module', COALESCE(t.payload->>'module', 'ExchangeOnline'),
-          'commands', COALESCE(t.payload->'commands', '[]'::json),
-          'app_id', cred.azure_app_id,
-          'tenant_id', mt.tenant_id,
-          'organization', t.payload->>'organization'
-        )
-      )
-    )
-  ) as blueprint
-FROM ...
+```python
+module_config["connect"].format(
+    app_id=app_id,
+    cert_path=str(self.PFX_FILE),  # Usar PFX em vez de CRT
+    tenant_id=tenant_id,
+    organization=organization
+)
 ```
+
+---
+
+## Fluxo Após Correção
+
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│  GERAÇÃO DO CERTIFICADO (check-deps.sh)                                    │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  openssl req → m365.crt + m365.key                                        │
+│       ↓                                                                    │
+│  openssl pkcs12 -export → m365.pfx (cert+key combinados)                  │
+│       ↓                                                                    │
+│  chmod 600 m365.pfx (protegido por permissões)                            │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  EXECUÇÃO POWERSHELL (PowerShellExecutor)                                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Connect-ExchangeOnline                                                    │
+│    -AppId "xxx"                                                            │
+│    -CertificateFilePath "/var/lib/iscope-agent/certs/m365.pfx"            │
+│    -CertificatePassword (ConvertTo-SecureString "" -AsPlainText -Force)   │
+│    -Organization "contoso.onmicrosoft.com"                                 │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Ação Manual Necessária
+
+Após aplicar as mudanças, o operador precisa:
+
+1. **Regenerar o certificado** no servidor do agente:
+   ```bash
+   sudo touch /var/lib/iscope-agent/check_components.flag
+   sudo systemctl restart iscope-agent
+   ```
+
+2. **Verificar geração do PFX**:
+   ```bash
+   ls -la /var/lib/iscope-agent/certs/
+   # Deve mostrar: m365.crt, m365.key, m365.pfx, m365.thumbprint
+   ```
+
+3. **Reenviar thumbprint** para o Azure (se necessário, caso o certificado tenha sido regerado)
 
 ---
 
 ## Resultado Esperado
 
-1. **Agent recebe a task** com 1 step do tipo `powershell`
-2. **PowerShellExecutor** é chamado com os parâmetros corretos
-3. **Executa os comandos** Exchange Online (`Get-EXOMailbox`, `Get-OrganizationConfig`)
-4. **Retorna resultados** via `agent-task-result`
-5. **Página de Execuções** mostra resultado da task
-
-**Log esperado após correção:**
 ```
-Executando tarefa ... com 1 steps (progressive=True)
 Executing PowerShell ExchangeOnline commands: ['test_connection', 'organization_config']
 PowerShell execution successful, 2 results
 Tarefa ... finalizada: status=completed, tempo=...ms, completed=1, failed=0
