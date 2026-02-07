@@ -1,304 +1,161 @@
 
-# Plano: Refatorar Modal de Detalhes do Agent para Pagina Dedicada
 
-## Resumo
+# Plano: Corrigir DecryptSecret no Agent-Heartbeat
 
-O modal atual de detalhes do agent esta sobrecarregado com muitas informacoes. Este plano cria uma pagina dedicada `/agents/:id` que oferece mais espaco para exibir todas as informacoes do agent, incluindo dados de certificado M365 que atualmente nao sao visiveis.
+## Problema Identificado
 
----
+O edge function `agent-heartbeat` usa uma versão **obsoleta** da função `decryptSecret`:
 
-## Arquitetura da Pagina
+```typescript
+// Versão atual (ERRADA) - só suporta XOR/base64
+const decryptSecret = (encrypted: string): string => {
+  const data = atob(encrypted);  // FALHA: formato é "iv:ciphertext" hex
+  ...
+}
+```
+
+O segredo está armazenado no formato **AES-256-GCM** (`iv:ciphertext` em hexadecimal), mas a função espera **base64**.
+
+**Erro nos logs:**
+```
+InvalidCharacterError: Failed to decode base64
+    at atob (ext:deno_web/05_base64.js:28:12)
+    at decryptSecret
+```
+
+## Fluxo do Problema
 
 ```text
-+-------------------------------------------------------+
-|  Breadcrumb: Agents > [Nome do Agent]                 |
-+-------------------------------------------------------+
-|                                                       |
-|  +------------------+  +----------------------------+ |
-|  |   Status Card    |  |    Informacoes Gerais     | |
-|  |   - Online/Off   |  |    - Nome, Cliente        | |
-|  |   - Versao       |  |    - Criado em, Last seen | |
-|  |                  |  |    - Agent ID             | |
-|  +------------------+  +----------------------------+ |
-|                                                       |
-|  +--------------------------------------------------+ |
-|  |              Certificado M365                    | |
-|  |  - Thumbprint                                    | |
-|  |  - Azure Key ID (se registrado)                  | |
-|  |  - Status do registro                            | |
-|  |  - Botao baixar certificado publico              | |
-|  +--------------------------------------------------+ |
-|                                                       |
-|  +--------------------------------------------------+ |
-|  |              Capabilities                        | |
-|  |  [Tag1] [Tag2] [Tag3]                           | |
-|  +--------------------------------------------------+ |
-|                                                       |
-|  +--------------------------------------------------+ |
-|  |           Codigo de Ativacao                     | |
-|  |  - Codigo atual (se existir)                     | |
-|  |  - Botao gerar novo codigo                       | |
-|  |  - Instrucoes de instalacao                      | |
-|  +--------------------------------------------------+ |
-|                                                       |
-|  +--------------------------------------------------+ |
-|  |              Acoes                               | |
-|  |  [Verificar Componentes] [Revogar] [Deletar]    | |
-|  +--------------------------------------------------+ |
-|                                                       |
-+-------------------------------------------------------+
+1. Agent envia heartbeat com certificado
+2. agent-heartbeat tenta fazer upload para Azure
+3. Busca client_secret_encrypted da m365_global_config
+4. Chama decryptSecret() com "iv:ciphertext"
+5. decryptSecret() tenta atob() em string hex
+6. ERRO: "Failed to decode base64"
+7. Upload falha, certificado não é salvo
 ```
 
 ---
 
-## Arquivos a Criar/Modificar
+## Solução
 
-| Arquivo | Acao | Descricao |
-|---------|------|-----------|
-| `src/pages/AgentDetailPage.tsx` | **NOVO** | Pagina de detalhes do agent |
-| `src/App.tsx` | Modificar | Adicionar rota `/agents/:id` |
-| `src/pages/AgentsPage.tsx` | Modificar | Alterar botao Eye para navegar em vez de abrir modal |
+Atualizar a função `decryptSecret` no `agent-heartbeat` para usar a mesma implementação das outras edge functions que suporta **AES-256-GCM**.
 
 ---
 
-## Implementacao Detalhada
+## Arquivo a Modificar
 
-### 1. Nova Pagina: `src/pages/AgentDetailPage.tsx`
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/agent-heartbeat/index.ts` | Substituir `decryptSecret` pela versão AES-GCM |
 
-Estrutura da pagina:
+---
 
-```tsx
-export default function AgentDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  
-  // Fetch agent data with all certificate fields
-  const { data: agent, isLoading } = useQuery({
-    queryKey: ['agent', id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('agents')
-        .select(`
-          *,
-          clients!client_id(name)
-        `)
-        .eq('id', id)
-        .single();
+## Código Atualizado
+
+Substituir as linhas 122-130 (função inline) por uma função completa:
+
+```typescript
+// Decrypt secret using AES-256-GCM
+// Supports legacy XOR format for backwards compatibility
+async function decryptSecret(encrypted: string): Promise<string> {
+  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!encryptionKey) {
+    throw new Error('M365_ENCRYPTION_KEY not configured');
+  }
+
+  // AES-GCM format: iv:ciphertext (hex encoded)
+  if (encrypted.includes(':')) {
+    try {
+      const [ivHex, ciphertextHex] = encrypted.split(':');
+      const iv = new Uint8Array(ivHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+      const ciphertext = new Uint8Array(ciphertextHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
       
-      if (error) throw error;
-      return data;
+      // Derive 256-bit key from encryption key using SHA-256
+      const keyMaterial = new TextEncoder().encode(encryptionKey);
+      const keyHash = await crypto.subtle.digest('SHA-256', keyMaterial);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyHash,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        ciphertext
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error('AES-GCM decryption failed:', error);
+      throw new Error('Failed to decrypt secret (AES-GCM)');
     }
-  });
-  
-  // ... restante da implementacao
-}
-```
+  }
 
-### 2. Secoes da Pagina
-
-**Header com Breadcrumb e Acoes**
-- Breadcrumb: Agents > [Nome]
-- Botao Voltar
-- Status badge (Online/Offline/Revogado)
-
-**Card de Status**
-- Status visual grande
-- Versao do agent
-- Ultimo heartbeat
-
-**Card de Informacoes Gerais**
-- Nome
-- Cliente associado
-- Data de criacao
-- Agent ID (copiavel)
-
-**Card de Certificado M365** (NOVA SECAO)
-- Thumbprint do certificado
-- Chave publica (botao download)
-- Azure Key ID (se registrado no Azure)
-- Status do registro:
-  - "Pendente" - tem certificado mas nao tem azure_key_id
-  - "Registrado" - tem azure_key_id
-  - "Sem certificado" - nenhum certificado gerado
-
-**Card de Capabilities**
-- Lista de capabilities como badges
-- Ex: `http_request`, `ssh`, `m365_powershell`, etc.
-
-**Card de Codigo de Ativacao**
-- Codigo atual (se pendente)
-- Botao gerar novo codigo
-- Instrucoes de instalacao (componente existente)
-
-**Card de Acoes**
-- Verificar Componentes
-- Revogar Agent
-- Deletar Agent (so se revogado)
-
-### 3. Modificar App.tsx
-
-Adicionar nova rota:
-
-```tsx
-// Lazy load
-const AgentDetailPage = lazy(() => import("./pages/AgentDetailPage"));
-
-// Na secao de rotas
-<Route path="/agents/:id" element={<AgentDetailPage />} />
-```
-
-### 4. Modificar AgentsPage.tsx
-
-Alterar botao de detalhes para navegar:
-
-```tsx
-// Antes
-<Button onClick={() => handleViewDetails(agent)}>
-  <Eye className="w-4 h-4" />
-</Button>
-
-// Depois
-<Button onClick={() => navigate(`/agents/${agent.id}`)}>
-  <Eye className="w-4 h-4" />
-</Button>
-```
-
-Remover:
-- Estado `detailsDialogOpen`
-- Estado `selectedAgent`
-- Funcao `handleViewDetails`
-- Dialog de detalhes (todo o bloco)
-- Estados relacionados: `newActivationCode`, `generatingCode`, `checkingComponents`
-
-Manter os dialogs que sao usados de forma independente:
-- `AlertDialog` de revogacao
-- `Dialog` de delecao
-
----
-
-## Campos do Agent a Exibir
-
-| Campo | Localizacao na Pagina | Notas |
-|-------|----------------------|-------|
-| `name` | Header + Info | Nome do agent |
-| `id` | Info | UUID copiavel |
-| `client_id` / `client_name` | Info | Cliente associado |
-| `created_at` | Info | Data de criacao |
-| `last_seen` | Status | Ultimo heartbeat |
-| `agent_version` | Status | Versao instalada |
-| `revoked` | Status | Badge de status |
-| `capabilities` | Capabilities | Array de strings |
-| `certificate_thumbprint` | Certificado | Thumbprint SHA-1 |
-| `certificate_public_key` | Certificado | PEM (download) |
-| `azure_certificate_key_id` | Certificado | ID no Azure AD |
-| `activation_code` | Ativacao | Codigo pendente |
-| `activation_code_expires_at` | Ativacao | Expiracao |
-| `check_components` | Acoes | Flag de verificacao |
-
----
-
-## Design Visual
-
-- Layout responsivo com grid 2 colunas em desktop, 1 coluna em mobile
-- Cards com estilo `glass-card` existente
-- Badges coloridos para status e capabilities
-- Icones consistentes com resto do sistema
-- Botoes de acao com confirmacao (AlertDialog)
-
----
-
-## Fluxo de Navegacao
-
-```text
-/agents
-  |
-  +-- Click Eye icon --> /agents/:id (AgentDetailPage)
-  |                        |
-  |                        +-- Click Voltar --> /agents
-  |                        |
-  |                        +-- Revogar --> AlertDialog --> /agents
-  |                        |
-  |                        +-- Deletar --> Dialog --> /agents
-  |
-  +-- Click Bot icon --> Dialog (instrucoes - manter)
-  |
-  +-- Click Ban icon --> AlertDialog (revogar - manter)
-```
-
----
-
-## Secao Tecnica
-
-### Query do Agent com Join
-
-```sql
-SELECT 
-  agents.*,
-  clients.name as client_name
-FROM agents
-LEFT JOIN clients ON agents.client_id = clients.id
-WHERE agents.id = :id
-```
-
-No Supabase:
-
-```typescript
-const { data } = await supabase
-  .from('agents')
-  .select('*, clients!client_id(name)')
-  .eq('id', id)
-  .single();
-```
-
-### Download do Certificado Publico
-
-```typescript
-const downloadCertificate = () => {
-  if (!agent?.certificate_public_key) return;
-  
-  const blob = new Blob([agent.certificate_public_key], { 
-    type: 'application/x-pem-file' 
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${agent.name.replace(/\s+/g, '-')}-cert.pem`;
-  link.click();
-  URL.revokeObjectURL(url);
-};
-```
-
-### Tipo Agent Atualizado
-
-```typescript
-interface Agent {
-  id: string;
-  name: string;
-  client_id: string | null;
-  created_at: string;
-  last_seen: string | null;
-  revoked: boolean;
-  activation_code: string | null;
-  activation_code_expires_at: string | null;
-  agent_version: string | null;
-  capabilities: string[] | null;
-  certificate_thumbprint: string | null;
-  certificate_public_key: string | null;
-  azure_certificate_key_id: string | null;
-  check_components: boolean;
-  clients?: { name: string } | null;
+  // Legacy XOR format (base64 encoded)
+  try {
+    const data = atob(encrypted);
+    let result = '';
+    for (let i = 0; i < data.length; i++) {
+      result += String.fromCharCode(
+        data.charCodeAt(i) ^ encryptionKey.charCodeAt(i % encryptionKey.length)
+      );
+    }
+    return result;
+  } catch (error) {
+    console.error('Legacy decryption failed:', error);
+    throw new Error('Failed to decrypt secret (legacy)');
+  }
 }
 ```
 
 ---
 
-## Vantagens da Refatoracao
+## Ajustar a Função uploadAgentCertificate
 
-| Aspecto | Antes (Modal) | Depois (Pagina) |
-|---------|---------------|-----------------|
-| Espaco | Limitado (~500px) | Tela completa |
-| Informacoes | Parciais | Todas visiveis |
-| Certificado | Nao visivel | Card dedicado |
-| Capabilities | Nao visivel | Card dedicado |
-| URL | Nao compartilhavel | Compartilhavel |
-| UX | Scroll no modal | Layout organizado |
+A função `uploadAgentCertificate` também precisa ser ajustada para usar a versão assíncrona:
+
+**Antes:**
+```typescript
+const clientSecret = decryptSecret(globalConfig.client_secret_encrypted);
+```
+
+**Depois:**
+```typescript
+const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
+```
+
+E remover a função inline `decryptSecret` que está dentro de `uploadAgentCertificate`.
+
+---
+
+## Resultado Esperado
+
+Após a correção:
+
+1. Agent envia heartbeat com certificado
+2. `decryptSecret()` detecta formato AES-GCM (contém `:`)
+3. Decripta usando AES-256-GCM
+4. Obtém access token do Azure
+5. Upload do certificado para o App Registration
+6. Salva no banco: `certificate_thumbprint`, `certificate_public_key`, `azure_certificate_key_id`
+7. Retorna `azure_certificate_key_id` para o agent
+
+---
+
+## Verificação
+
+Após deploy, verificar:
+
+1. Logs do edge function não mostram mais erros de base64
+2. Query no banco mostra certificado registrado:
+   ```sql
+   SELECT certificate_thumbprint, azure_certificate_key_id 
+   FROM agents WHERE name = 'PRECISIO-AZ'
+   ```
+3. No Azure Portal: App Registration mostra nova chave de certificado
+
