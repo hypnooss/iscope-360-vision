@@ -362,22 +362,9 @@ Deno.serve(async (req) => {
       { permission: 'AuditLog.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1' },
       { permission: 'Policy.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy' },
       { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
-      // Exchange Online
-      { permission: 'MailboxSettings.Read', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id,mailboxSettings' },
-      { permission: 'Mail.Read', endpoint: 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id' },
     ];
 
-    // Test Directory.Read.All with fallback strategy
-    const directoryResult = await testDirectoryPermission();
-    console.log(`Permission test for Directory.Read.All: ${directoryResult.granted ? 'OK' : 'FAILED'} ${directoryResult.error ? `- ${directoryResult.error}` : ''}`);
-    permissionResults.push({
-      name: 'Directory.Read.All',
-      granted: directoryResult.granted,
-      required: true,
-      error: directoryResult.error,
-    });
-
-    // Test other permissions
+    // Test other permissions (generic endpoint tests)
     for (const test of permissionTests) {
       try {
         const testResponse = await fetch(test.endpoint, {
@@ -417,6 +404,88 @@ Deno.serve(async (req) => {
           error: String(err),
         });
       }
+    }
+
+    // Test Exchange Online permissions with user-specific endpoints
+    // MailboxSettings.Read requires testing on a specific user, not a collection
+    // Mail.Read requires testing messageRules on a specific user
+    let testUserId: string | null = null;
+    try {
+      const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      if (usersResp.ok) {
+        const usersData = await usersResp.json();
+        testUserId = usersData.value?.[0]?.id || null;
+      }
+    } catch (err) {
+      console.warn('Could not fetch user for Exchange permission tests:', err);
+    }
+
+    // MailboxSettings.Read
+    try {
+      let mailboxGranted = false;
+      let mailboxError: string | undefined;
+      if (testUserId) {
+        const mailboxResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${testUserId}/mailboxSettings`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        mailboxGranted = mailboxResponse.ok;
+        if (!mailboxResponse.ok) {
+          try {
+            const errorBody = await mailboxResponse.json();
+            mailboxError = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${mailboxResponse.status}`;
+          } catch {
+            mailboxError = `HTTP ${mailboxResponse.status}`;
+          }
+        }
+        console.log(`Permission test for MailboxSettings.Read: ${mailboxGranted ? 'OK' : `FAILED - ${mailboxError}`}`);
+      } else {
+        mailboxError = 'No users found to test';
+        console.log(`Permission test for MailboxSettings.Read: SKIPPED - no users`);
+      }
+      permissionResults.push({
+        name: 'MailboxSettings.Read',
+        granted: mailboxGranted,
+        required: true,
+        error: mailboxError,
+      });
+    } catch (err) {
+      console.error('Permission test failed for MailboxSettings.Read:', err);
+      permissionResults.push({ name: 'MailboxSettings.Read', granted: false, required: true, error: String(err) });
+    }
+
+    // Mail.Read
+    try {
+      let mailGranted = false;
+      let mailError: string | undefined;
+      if (testUserId) {
+        const rulesResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${testUserId}/mailFolders/inbox/messageRules?$top=1`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        mailGranted = rulesResponse.ok;
+        if (!rulesResponse.ok) {
+          try {
+            const errorBody = await rulesResponse.json();
+            mailError = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${rulesResponse.status}`;
+          } catch {
+            mailError = `HTTP ${rulesResponse.status}`;
+          }
+        }
+        console.log(`Permission test for Mail.Read: ${mailGranted ? 'OK' : `FAILED - ${mailError}`}`);
+      } else {
+        mailError = 'No users found to test';
+        console.log(`Permission test for Mail.Read: SKIPPED - no users`);
+      }
+      permissionResults.push({
+        name: 'Mail.Read',
+        granted: mailGranted,
+        required: true,
+        error: mailError,
+      });
+    } catch (err) {
+      console.error('Permission test failed for Mail.Read:', err);
+      permissionResults.push({ name: 'Mail.Read', granted: false, required: true, error: String(err) });
     }
 
     console.log('Permission test results:', JSON.stringify(permissionResults));
