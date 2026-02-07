@@ -1,55 +1,73 @@
 
 
-# Tornar "itens afetados" visivelmente clicavel nos cards de Postura M365
+# Detalhamento Tabular de Itens Afetados com Exportacao CSV e PDF
 
-## Problema
-O botao "X item(ns) afetado(s)" ja existe no codigo (`M365InsightCard.tsx`, linhas 119-128), mas visualmente parece texto estatico. O usuario nao percebe que pode clicar porque nao ha indicacao visual suficiente (sublinhado, cor diferente, icone de clique).
+## Objetivo
+Transformar o dialog de itens afetados de uma lista de cards para uma visao tabular profissional, com colunas estruturadas e opcoes de exportacao em CSV e PDF, seguindo os padroes visuais do sistema.
 
-## Solucao
+## Mudancas
 
-Melhorar a aparencia do indicador de itens afetados para tornar claro que e um elemento interativo, adicionando:
-- Sublinhado permanente (nao apenas no hover)
-- Cor mais destacada (ex: `text-foreground` em vez de `text-muted-foreground`)
-- Icone de seta ou chevron indicando acao
-- Estilo de "link" ao inves de texto passivo
+### 1. Reescrever `M365AffectedEntitiesDialog.tsx`
+Substituir a lista de cards por uma tabela usando os componentes `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` ja existentes no projeto.
 
-## Arquivo a Modificar
+**Colunas da tabela:**
+- Nome (displayName)
+- Identificador (userPrincipalName ou email)
+- Detalhes (colunas dinamicas extraidas de `entity.details`)
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/components/m365/posture/M365InsightCard.tsx` | Alterar estilo do botao de "itens afetados" para parecer um link clicavel |
+**Adicoes:**
+- Botao "Exportar CSV" no header do dialog
+- Botao "Exportar PDF" no header do dialog (usando `usePDFDownload`)
+- Mensagem de "e mais X entidades" quando `affectedCount > affectedEntities.length`
+- Dialog ampliado para `max-w-4xl` para acomodar a tabela
+
+### 2. Criar `M365AffectedEntitiesPDF.tsx`
+Novo componente PDF usando `@react-pdf/renderer` seguindo o design system existente (`pdfStyles.ts`):
+- Cabecalho com codigo do insight, severidade e titulo
+- Tabela com as mesmas colunas da versao web
+- Rodape padrao do sistema (`PDFFooter`)
+- Usa `colors`, `typography`, `spacing` do design system
+
+### 3. Exportar novo componente
+Atualizar `src/components/pdf/index.ts` para exportar o novo PDF.
 
 ## Detalhes Tecnicos
 
-Na linha 120-127 do `M365InsightCard.tsx`, alterar o `<button>` de:
+### Logica de Colunas Dinamicas
+Os `details` de cada entidade podem variar por insight (ex: `state`, `created`, `lastSignIn`). O sistema detectara automaticamente todas as chaves unicas presentes nas entidades e criara colunas dinamicas:
 
-```tsx
-<button
-  type="button"
-  className="flex items-center gap-2 text-sm text-muted-foreground mb-3 hover:text-foreground transition-colors cursor-pointer group"
-  onClick={() => setShowAffected(true)}
->
-  <Users className="w-4 h-4" />
-  <span className="group-hover:underline">...</span>
-</button>
+```typescript
+const detailKeys = useMemo(() => {
+  const keys = new Set<string>();
+  insight.affectedEntities.forEach(e => {
+    if (e.details) Object.keys(e.details).forEach(k => keys.add(k));
+  });
+  return Array.from(keys);
+}, [insight.affectedEntities]);
 ```
 
-Para um estilo mais explicito com sublinhado permanente, cor de link e icone de chevron:
+### Exportacao CSV
+Funcao utilitaria que gera um arquivo CSV com BOM UTF-8 para compatibilidade com Excel:
 
-```tsx
-<button
-  type="button"
-  className="flex items-center gap-2 text-sm text-amber-400 mb-3 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
-  onClick={() => setShowAffected(true)}
->
-  <Users className="w-4 h-4" />
-  <span>{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
-  <ChevronRight className="w-3.5 h-3.5" />
-</button>
+```typescript
+function exportCSV(insight: M365Insight, detailKeys: string[]) {
+  const headers = ['Nome', 'Identificador', ...detailKeys];
+  const rows = insight.affectedEntities.map(e => [
+    e.displayName,
+    e.userPrincipalName || e.email || '',
+    ...detailKeys.map(k => String(e.details?.[k] ?? ''))
+  ]);
+  // Gera blob com BOM e dispara download
+}
 ```
 
-Isso garante que:
-1. O texto tenha sublinhado permanente (como um link)
-2. Use cor `amber-400` que se destaca do texto normal cinza
-3. Tenha um icone de seta indicando que ha mais conteudo
-4. O cursor pointer ja existe e continuara funcionando
+### PDF
+Usa `usePDFDownload` (hook ja existente) para gerar o PDF a partir do componente `M365AffectedEntitiesPDF`, seguindo o padrao de cores e tipografia de `pdfStyles.ts`.
+
+## Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| `src/components/m365/posture/M365AffectedEntitiesDialog.tsx` | Reescrever com tabela + botoes de exportacao |
+| `src/components/pdf/M365AffectedEntitiesPDF.tsx` | Criar componente PDF para entidades afetadas |
+| `src/components/pdf/index.ts` | Adicionar exportacao do novo componente |
