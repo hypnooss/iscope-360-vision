@@ -34,7 +34,6 @@ interface M365Config {
   validationTenantId: string | null;
   // Azure certificate upload config
   appObjectId: string | null;
-  homeTenantId: string | null;
   hasAzureConfig: boolean;
 }
 
@@ -54,7 +53,6 @@ export default function SettingsPage() {
     lastValidatedAt: null,
     validationTenantId: null,
     appObjectId: null,
-    homeTenantId: null,
     hasAzureConfig: false,
   });
   const [newAppId, setNewAppId] = useState('');
@@ -62,7 +60,6 @@ export default function SettingsPage() {
   const [tenantIdForValidation, setTenantIdForValidation] = useState('');
   // Azure certificate upload config
   const [newAppObjectId, setNewAppObjectId] = useState('');
-  const [newHomeTenantId, setNewHomeTenantId] = useState('');
   
   // Agent settings
   const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
@@ -432,15 +429,11 @@ export default function SettingsPage() {
               lastValidatedAt: retryData.last_validated_at || null,
               validationTenantId: retryData.validation_tenant_id || null,
               appObjectId: retryData.app_object_id || null,
-              homeTenantId: retryData.home_tenant_id || null,
               hasAzureConfig: retryData.has_azure_config || false,
             });
             setNewAppId(retryData.app_id);
             if (retryData.app_object_id) {
               setNewAppObjectId(retryData.app_object_id);
-            }
-            if (retryData.home_tenant_id) {
-              setNewHomeTenantId(retryData.home_tenant_id);
             }
             if (retryData.validation_tenant_id) {
               setTenantIdForValidation(retryData.validation_tenant_id);
@@ -449,7 +442,7 @@ export default function SettingsPage() {
           }
         }
         
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
       } else if (data?.configured && data?.app_id) {
         setM365Config({
           appId: data.app_id,
@@ -460,27 +453,23 @@ export default function SettingsPage() {
           lastValidatedAt: data.last_validated_at || null,
           validationTenantId: data.validation_tenant_id || null,
           appObjectId: data.app_object_id || null,
-          homeTenantId: data.home_tenant_id || null,
           hasAzureConfig: data.has_azure_config || false,
         });
         setNewAppId(data.app_id);
         if (data.app_object_id) {
           setNewAppObjectId(data.app_object_id);
         }
-        if (data.home_tenant_id) {
-          setNewHomeTenantId(data.home_tenant_id);
-        }
         // Restore tenant ID if we have a saved one
         if (data.validation_tenant_id) {
           setTenantIdForValidation(data.validation_tenant_id);
         }
       } else {
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
+        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
         setNewAppId('');
       }
     } catch (error) {
       console.error('Error:', error);
-      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, homeTenantId: null, hasAzureConfig: false });
+      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
     } finally {
       setLoading(false);
     }
@@ -569,7 +558,7 @@ export default function SettingsPage() {
           app_id: newAppId.trim(),
           client_secret: newClientSecret.trim() || undefined,
           app_object_id: newAppObjectId.trim() || undefined,
-          home_tenant_id: newHomeTenantId.trim() || undefined,
+          home_tenant_id: tenantIdForValidation.trim() || undefined,
         },
       });
 
@@ -895,29 +884,6 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                {/* Home Tenant ID - for certificate upload */}
-                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                  <div>
-                    <h4 className="font-medium text-sm">Home Tenant ID (para Upload de Certificados)</h4>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Tenant ID onde o App Registration foi criado. Necessário para upload automático de certificados dos Agents.
-                    </p>
-                  </div>
-                  <div className="max-w-md">
-                    <Label htmlFor="homeTenantId" className="sr-only">Home Tenant ID</Label>
-                    <Input
-                      id="homeTenantId"
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      value={newHomeTenantId}
-                      onChange={(e) => setNewHomeTenantId(e.target.value)}
-                    />
-                    {m365Config.homeTenantId && (
-                      <p className="text-xs text-green-600 font-mono mt-1">
-                        Configurado: {m365Config.homeTenantId.substring(0, 8)}...
-                      </p>
-                    )}
-                  </div>
-                </div>
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveM365Config} disabled={saving}>
