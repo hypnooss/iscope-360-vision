@@ -1,14 +1,13 @@
 import { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
-import { useTenantConnection } from '@/hooks/useTenantConnection';
+import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { 
   Shield, 
   Users, 
@@ -19,13 +18,15 @@ import {
   RefreshCw,
   Link as LinkIcon
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 
 export default function EntraIdPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
   
-  const { tenants, loading: tenantsLoading, hasConnectedTenant } = useTenantConnection();
+  const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -41,10 +42,8 @@ export default function EntraIdPage() {
 
   if (authLoading) return null;
 
-  const connectedTenants = tenants.filter(t => t.connection_status === 'connected' || t.connection_status === 'partial');
-
   // Show blocking message if no tenant is connected
-  if (!tenantsLoading && !hasConnectedTenant) {
+  if (!tenantsLoading && tenants.length === 0) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
@@ -105,42 +104,29 @@ export default function EntraIdPage() {
           </Button>
         </div>
 
-        {/* Tenant Info */}
-        {tenantsLoading ? (
-          <Card className="mb-6">
-            <CardContent className="py-4">
-              <Skeleton className="h-5 w-48" />
-            </CardContent>
-          </Card>
-        ) : connectedTenants.length > 0 && (
-          <Card className="mb-6 border-primary/20 bg-primary/5">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-5 h-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      Tenant: {connectedTenants[0].display_name || connectedTenants[0].tenant_domain}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Cliente: {connectedTenants[0].client.name}
-                    </p>
-                  </div>
-                </div>
-                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                  Conectado
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Tenant Selector */}
+        <Card className="mb-6 border-primary/20 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <TenantSelector
+                tenants={tenants}
+                selectedId={selectedTenantId}
+                onSelect={selectTenant}
+                loading={tenantsLoading}
+              />
+              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                Conectado
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Security Analysis - Main Feature */}
           <Card 
             className="glass-card hover:shadow-lg transition-shadow cursor-pointer group border-primary/30"
-            onClick={() => navigate('/scope-m365/entra-id/analysis')}
+            onClick={() => navigate(`/scope-m365/entra-id/analysis?tenant=${selectedTenantId}`)}
           >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -164,7 +150,7 @@ export default function EntraIdPage() {
           {/* Security Insights */}
           <Card 
             className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => navigate('/scope-m365/entra-id/security-insights')}
+            onClick={() => navigate(`/scope-m365/entra-id/security-insights?tenant=${selectedTenantId}`)}
           >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -230,7 +216,7 @@ export default function EntraIdPage() {
           {/* Applications */}
           <Card 
             className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => navigate('/scope-m365/entra-id/applications')}
+            onClick={() => navigate(`/scope-m365/entra-id/applications?tenant=${selectedTenantId}`)}
           >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">

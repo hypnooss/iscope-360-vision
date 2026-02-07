@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { usePreviewGuard } from '@/hooks/usePreviewGuard';
+import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
@@ -30,27 +31,15 @@ import {
   CATEGORY_LABELS,
   groupInsightsByCategory 
 } from '@/types/m365Insights';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-
-interface TenantOption {
-  id: string;
-  displayName: string;
-  domain: string;
-}
 
 export default function M365PosturePage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
-  const { isPreviewMode, previewTarget } = usePreview();
+  const { isPreviewMode } = usePreview();
   const { isBlocked, showBlockedMessage } = usePreviewGuard();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { toast } = useToast();
   
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
-  const [tenantRecordId, setTenantRecordId] = useState<string | null>(null);
-  const [loadingTenants, setLoadingTenants] = useState(true);
+  const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
 
   const { 
     data, 
@@ -58,7 +47,7 @@ export default function M365PosturePage() {
     error, 
     refetch 
   } = useM365SecurityPosture({ 
-    tenantRecordId: tenantRecordId || '' 
+    tenantRecordId: selectedTenantId || '' 
   });
 
   // Auth and module access check
@@ -74,86 +63,12 @@ export default function M365PosturePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Load tenants with workspace filtering (respects Preview Mode)
-  const loadTenants = useCallback(async () => {
-    if (!user) return;
-
-    setLoadingTenants(true);
-    try {
-      // Determine workspace IDs for filtering
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
-
-      let query = supabase
-        .from('m365_tenants')
-        .select('id, display_name, tenant_domain, client_id')
-        .eq('connection_status', 'connected');
-
-      // Apply workspace filter in Preview Mode
-      if (workspaceIds && workspaceIds.length > 0) {
-        query = query.in('client_id', workspaceIds);
-      }
-
-      const { data: tenantsData, error: tenantsError } = await query;
-
-      if (tenantsError) {
-        console.error('Error loading tenants:', tenantsError);
-        toast({
-          title: 'Erro ao carregar tenants',
-          description: tenantsError.message,
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const tenantOptions: TenantOption[] = (tenantsData || []).map(t => ({
-        id: t.id,
-        displayName: t.display_name || 'Tenant M365',
-        domain: t.tenant_domain || '',
-      }));
-
-      setTenants(tenantOptions);
-
-      // Set initial tenant from URL or first available
-      const paramTenantId = searchParams.get('tenant');
-      if (paramTenantId && tenantOptions.some(t => t.id === paramTenantId)) {
-        setTenantRecordId(paramTenantId);
-      } else if (tenantOptions.length > 0) {
-        setTenantRecordId(tenantOptions[0].id);
-        // Update URL without navigation
-        if (!paramTenantId) {
-          setSearchParams({ tenant: tenantOptions[0].id }, { replace: true });
-        }
-      } else {
-        // No tenants available
-        toast({
-          title: 'Nenhum tenant conectado',
-          description: 'Conecte um tenant Microsoft 365 para continuar.',
-          variant: 'destructive',
-        });
-      }
-    } finally {
-      setLoadingTenants(false);
-    }
-  }, [user, isPreviewMode, previewTarget, searchParams, setSearchParams, toast]);
-
-  useEffect(() => {
-    loadTenants();
-  }, [loadTenants]);
-
-  // Handle tenant selection
-  const handleTenantSelect = useCallback((newTenantId: string) => {
-    setTenantRecordId(newTenantId);
-    setSearchParams({ tenant: newTenantId });
-  }, [setSearchParams]);
-
   // Trigger analysis when tenant changes
   useEffect(() => {
-    if (tenantRecordId && !loadingTenants) {
+    if (selectedTenantId && !tenantsLoading) {
       refetch();
     }
-  }, [tenantRecordId, loadingTenants, refetch]);
+  }, [selectedTenantId, tenantsLoading, refetch]);
 
   // Handle refresh with Preview Mode guard
   const handleRefresh = useCallback(() => {
@@ -164,7 +79,7 @@ export default function M365PosturePage() {
     refetch();
   }, [isBlocked, showBlockedMessage, refetch]);
 
-  if (authLoading || loadingTenants) {
+  if (authLoading || tenantsLoading) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8 flex items-center justify-center min-h-[60vh]">
@@ -175,7 +90,6 @@ export default function M365PosturePage() {
   }
 
   const groupedInsights = data?.insights ? groupInsightsByCategory(data.insights) : null;
-  const selectedTenant = tenants.find(t => t.id === tenantRecordId);
 
   return (
     <AppLayout>
@@ -204,7 +118,7 @@ export default function M365PosturePage() {
             </Button>
             <Button 
               onClick={handleRefresh} 
-              disabled={isLoading || !tenantRecordId}
+              disabled={isLoading || !selectedTenantId}
               variant={isBlocked ? 'outline' : 'default'}
             >
               {isBlocked && <Lock className="w-4 h-4 mr-2" />}
@@ -230,7 +144,7 @@ export default function M365PosturePage() {
         )}
 
         {/* No tenants state */}
-        {tenants.length === 0 && !loadingTenants && (
+        {tenants.length === 0 && (
           <Card className="glass-card">
             <CardContent className="p-12 text-center">
               <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -258,7 +172,6 @@ export default function M365PosturePage() {
             <Card className="glass-card overflow-hidden">
               <div className="bg-gradient-to-br from-card via-card to-muted/20 p-6 lg:p-8">
                 <div className="flex flex-col lg:flex-row items-center gap-8">
-                  {/* Score Gauge */}
                   <div className="flex-shrink-0">
                     <ScoreGauge
                       score={data?.score ?? 0}
@@ -267,13 +180,12 @@ export default function M365PosturePage() {
                     />
                   </div>
 
-                  {/* Tenant Info & Selector */}
                   <div className="flex-1 text-center lg:text-left">
                     <div className="mb-4">
                       <TenantSelector
                         tenants={tenants}
-                        selectedId={tenantRecordId}
-                        onSelect={handleTenantSelect}
+                        selectedId={selectedTenantId}
+                        onSelect={selectTenant}
                         loading={isLoading}
                         disabled={isBlocked}
                       />
@@ -301,7 +213,6 @@ export default function M365PosturePage() {
                     )}
                   </div>
 
-                  {/* Severity Breakdown */}
                   <div className="w-full lg:w-auto lg:min-w-[400px]">
                     <M365SeverityBreakdown
                       summary={data?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 }}
