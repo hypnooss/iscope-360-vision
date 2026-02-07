@@ -268,23 +268,6 @@ async function uploadAgentCertificate(
 
     console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
     return keyId;
-
-    // Parse response from addKey
-    const uploadData = await uploadResponse.json();
-    const keyId = uploadData.keyId || `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
-
-    // Update agent record with certificate info
-    await supabase
-      .from('agents')
-      .update({
-        certificate_thumbprint: thumbprint,
-        certificate_public_key: publicKey,
-        azure_certificate_key_id: keyId,
-      })
-      .eq('id', agentId);
-
-    console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
-    return keyId;
   } catch (error) {
     console.error('Error uploading certificate:', error);
     return null;
