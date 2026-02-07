@@ -178,6 +178,21 @@ export default function TemplateDetailPage() {
   const categories = [...new Set(rules.map(r => r.category))];
   const stepsCount = activeBlueprint?.collection_steps?.steps?.length || 0;
 
+  // Virtual blueprint for templates without blueprints (like M365 that uses Graph API directly)
+  const virtualBlueprint: Blueprint = {
+    id: 'virtual',
+    name: 'Virtual Blueprint',
+    description: null,
+    device_type_id: id!,
+    version: '1.0',
+    collection_steps: { steps: [] },
+    is_active: false,
+    created_at: new Date().toISOString(),
+  };
+
+  // Use virtual blueprint for visualization when there are rules but no active blueprint
+  const blueprintForVisualization = activeBlueprint || (rules.length > 0 ? virtualBlueprint : null);
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
@@ -304,9 +319,9 @@ export default function TemplateDetailPage() {
           </TabsContent>
 
           <TabsContent value="organize" className="mt-6">
-            {activeBlueprint ? (
+            {blueprintForVisualization ? (
               <DraggableCategoryFlow
-                blueprint={activeBlueprint}
+                blueprint={blueprintForVisualization}
                 rules={rules}
                 hideSummary
                 deviceTypeId={id}
@@ -315,14 +330,14 @@ export default function TemplateDetailPage() {
             ) : (
               <div className="text-center py-12 border border-dashed border-border/50 rounded-lg">
                 <Settings className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground">Configure um blueprint ativo para organizar categorias</p>
+                <p className="text-muted-foreground">Nenhuma regra de compliance configurada</p>
                 <Button 
                   variant="outline" 
                   className="mt-4"
-                  onClick={() => setActiveTab('blueprints')}
+                  onClick={() => setActiveTab('rules')}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Criar Blueprint
+                  Criar Regra
                 </Button>
               </div>
             )}
