@@ -40,60 +40,65 @@ interface HeartbeatErrorResponse {
 }
 
 /**
+ * Convert hex string to Uint8Array
+ */
+function fromHex(hex: string): Uint8Array {
+  const matches = hex.match(/.{1,2}/g);
+  if (!matches) return new Uint8Array();
+  return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
+}
+
+/**
+ * Get encryption key from M365_ENCRYPTION_KEY (64-char hex = 32 bytes)
+ */
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex) {
+    throw new Error('M365_ENCRYPTION_KEY not configured');
+  }
+  
+  // Convert hex string directly to bytes (no hashing needed)
+  const keyBytes = fromHex(keyHex);
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes.buffer as ArrayBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+}
+
+/**
  * Decrypt secret using AES-256-GCM
- * Supports legacy XOR format for backwards compatibility
+ * Supports legacy base64 format for backwards compatibility
  */
 async function decryptSecret(encrypted: string): Promise<string> {
-  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
-  if (!encryptionKey) {
-    throw new Error('M365_ENCRYPTION_KEY not configured');
+  // Legacy format (no colon) - try base64
+  if (!encrypted.includes(':')) {
+    try {
+      return atob(encrypted);
+    } catch {
+      return encrypted;
+    }
   }
 
   // AES-GCM format: iv:ciphertext (hex encoded)
-  if (encrypted.includes(':')) {
-    try {
-      const [ivHex, ciphertextHex] = encrypted.split(':');
-      const iv = new Uint8Array(ivHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
-      const ciphertext = new Uint8Array(ciphertextHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
-      
-      // Derive 256-bit key from encryption key using SHA-256
-      const keyMaterial = new TextEncoder().encode(encryptionKey);
-      const keyHash = await crypto.subtle.digest('SHA-256', keyMaterial);
-      
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyHash,
-        { name: 'AES-GCM' },
-        false,
-        ['decrypt']
-      );
-      
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        ciphertext
-      );
-      
-      return new TextDecoder().decode(decrypted);
-    } catch (error) {
-      console.error('AES-GCM decryption failed:', error);
-      throw new Error('Failed to decrypt secret (AES-GCM)');
-    }
-  }
-
-  // Legacy XOR format (base64 encoded)
   try {
-    const data = atob(encrypted);
-    let result = '';
-    for (let i = 0; i < data.length; i++) {
-      result += String.fromCharCode(
-        data.charCodeAt(i) ^ encryptionKey.charCodeAt(i % encryptionKey.length)
-      );
-    }
-    return result;
+    const [ivHex, ciphertextHex] = encrypted.split(':');
+    const iv = fromHex(ivHex);
+    const ciphertext = fromHex(ciphertextHex);
+    const key = await getEncryptionKey();
+
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      key,
+      ciphertext.buffer as ArrayBuffer
+    );
+
+    return new TextDecoder().decode(decrypted);
   } catch (error) {
-    console.error('Legacy decryption failed:', error);
-    throw new Error('Failed to decrypt secret (legacy)');
+    console.error('AES-GCM decryption failed:', error);
+    throw new Error('Failed to decrypt secret');
   }
 }
 
