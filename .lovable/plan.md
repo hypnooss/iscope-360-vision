@@ -1,37 +1,55 @@
 
 
-# Adicionar visualizacao de itens afetados nos cards de Postura M365
+# Tornar "itens afetados" visivelmente clicavel nos cards de Postura M365
 
 ## Problema
-Os cards de postura M365 mostram "X itens afetados" mas nao permitem clicar para ver quais sao. O modelo de dados ja possui `affectedEntities: AffectedEntity[]` com `displayName`, `userPrincipalName` e `details`, mas nao ha UI para exibi-los.
+O botao "X item(ns) afetado(s)" ja existe no codigo (`M365InsightCard.tsx`, linhas 119-128), mas visualmente parece texto estatico. O usuario nao percebe que pode clicar porque nao ha indicacao visual suficiente (sublinhado, cor diferente, icone de clique).
 
 ## Solucao
 
-Criar um dialog para listar as entidades afetadas e tornar o texto "X itens afetados" clicavel no card.
+Melhorar a aparencia do indicador de itens afetados para tornar claro que e um elemento interativo, adicionando:
+- Sublinhado permanente (nao apenas no hover)
+- Cor mais destacada (ex: `text-foreground` em vez de `text-muted-foreground`)
+- Icone de seta ou chevron indicando acao
+- Estilo de "link" ao inves de texto passivo
 
-## Arquivos
+## Arquivo a Modificar
 
-| Arquivo | Acao |
-|---------|------|
-| `src/components/m365/posture/M365AffectedEntitiesDialog.tsx` | **Criar** - Dialog com lista de entidades afetadas |
-| `src/components/m365/posture/M365InsightCard.tsx` | **Modificar** - Tornar "itens afetados" clicavel para abrir o dialog |
-| `src/components/m365/posture/index.ts` | **Modificar** - Exportar novo componente |
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/m365/posture/M365InsightCard.tsx` | Alterar estilo do botao de "itens afetados" para parecer um link clicavel |
 
 ## Detalhes Tecnicos
 
-### M365AffectedEntitiesDialog
+Na linha 120-127 do `M365InsightCard.tsx`, alterar o `<button>` de:
 
-Dialog que recebe o `M365Insight` e exibe:
-- Header com codigo, severidade e titulo do insight
-- Lista scrollavel das entidades afetadas (`affectedEntities`)
-- Cada entidade mostra `displayName`, `userPrincipalName` e badges com `details`
-- Mensagem de "e mais X entidade(s)" caso `affectedCount > affectedEntities.length`
-- Segue o mesmo padrao visual do `InsightDetailDialog` e `ExoInsightDetailDialog` ja existentes
+```tsx
+<button
+  type="button"
+  className="flex items-center gap-2 text-sm text-muted-foreground mb-3 hover:text-foreground transition-colors cursor-pointer group"
+  onClick={() => setShowAffected(true)}
+>
+  <Users className="w-4 h-4" />
+  <span className="group-hover:underline">...</span>
+</button>
+```
 
-### M365InsightCard
+Para um estilo mais explicito com sublinhado permanente, cor de link e icone de chevron:
 
-Modificar a secao de "itens afetados" (linhas 117-122) para:
-- Tornar o bloco clicavel (cursor pointer, hover state)
-- Ao clicar, abrir o `M365AffectedEntitiesDialog`
-- Adicionar estado `showAffected` para controlar a abertura do dialog
+```tsx
+<button
+  type="button"
+  className="flex items-center gap-2 text-sm text-amber-400 mb-3 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
+  onClick={() => setShowAffected(true)}
+>
+  <Users className="w-4 h-4" />
+  <span>{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
+  <ChevronRight className="w-3.5 h-3.5" />
+</button>
+```
 
+Isso garante que:
+1. O texto tenha sublinhado permanente (como um link)
+2. Use cor `amber-400` que se destaca do texto normal cinza
+3. Tenha um icone de seta indicando que ha mais conteudo
+4. O cursor pointer ja existe e continuara funcionando
