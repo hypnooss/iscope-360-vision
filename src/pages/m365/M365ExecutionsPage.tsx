@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Eye, Search, Cloud } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -31,6 +32,22 @@ interface PostureHistory {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+interface AgentTask {
+  id: string;
+  agent_id: string;
+  task_type: string;
+  target_id: string;
+  target_type: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
+  payload: any;
+  result: any;
+  error_message: string | null;
+  execution_time_ms: number | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -54,17 +71,40 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
     color: 'bg-red-500/20 text-red-500 border-red-500/30',
     icon: <XCircle className="w-3 h-3" />,
   },
+  timeout: {
+    label: 'Timeout',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+    icon: <Timer className="w-3 h-3" />,
+  },
+  cancelled: {
+    label: 'Cancelada',
+    color: 'bg-gray-500/20 text-gray-500 border-gray-500/30',
+    icon: <XCircle className="w-3 h-3" />,
+  },
+};
+
+const taskTypeConfig: Record<string, { label: string; color: string }> = {
+  m365_powershell: {
+    label: 'PowerShell',
+    color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
+  },
+  m365_graph_api: {
+    label: 'Graph API',
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+  },
 };
 
 export default function M365ExecutionsPage() {
+  const [activeTab, setActiveTab] = useState<string>('posture');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('24h');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExecution, setSelectedExecution] = useState<PostureHistory | null>(null);
+  const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
 
   const { isPreviewMode, previewTarget } = usePreview();
-  const queryClient = useQueryClient();
 
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -78,13 +118,57 @@ export default function M365ExecutionsPage() {
     }
   };
 
-  const { data: executions = [], isLoading, refetch } = useQuery({
-    queryKey: ['m365-posture-history', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
+  const workspaceIds = isPreviewMode && previewTarget?.workspaces
+    ? previewTarget.workspaces.map(w => w.id)
+    : null;
+
+  // Fetch tenants for lookup
+  const { data: tenants = [] } = useQuery({
+    queryKey: ['m365-tenants-lookup', workspaceIds],
+    queryFn: async () => {
+      let query = supabase
+        .from('m365_tenants')
+        .select('id, tenant_domain, display_name, client_id');
+      
+      if (workspaceIds && workspaceIds.length > 0) {
+        query = query.in('client_id', workspaceIds);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Fetch clients for lookup
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients-lookup'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Fetch agents for lookup
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents-lookup'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Posture History Query
+  const { data: executions = [], isLoading: isLoadingPosture, refetch: refetchPosture } = useQuery({
+    queryKey: ['m365-posture-history', statusFilter, timeFilter, workspaceIds],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
 
       let query = supabase
         .from('m365_posture_history')
@@ -112,39 +196,61 @@ export default function M365ExecutionsPage() {
     },
   });
 
-  // Fetch tenants for lookup
-  const { data: tenants = [] } = useQuery({
-    queryKey: ['m365-tenants-lookup'],
+  // Agent Tasks Query
+  const { data: agentTasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useQuery({
+    queryKey: ['m365-agent-tasks', statusFilter, timeFilter, tenants],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('m365_tenants')
-        .select('id, tenant_domain, display_name');
+      const startTime = getTimeFilterDate();
+      const tenantIds = tenants.map(t => t.id);
+      
+      if (tenantIds.length === 0) return [];
+
+      let query = supabase
+        .from('agent_tasks')
+        .select('id, agent_id, task_type, target_id, target_type, status, payload, result, error_message, execution_time_ms, created_at, started_at, completed_at')
+        .eq('target_type', 'm365_tenant')
+        .in('target_id', tenantIds)
+        .gte('created_at', startTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter as AgentTask['status']);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      return (data || []) as AgentTask[];
+    },
+    enabled: tenants.length > 0,
+    refetchInterval: (query) => {
+      const data = query.state.data as AgentTask[] | undefined;
+      const hasActive = data?.some(t => t.status === 'running' || t.status === 'pending');
+      return hasActive ? 5000 : false;
     },
   });
 
-  // Fetch clients for lookup
-  const { data: clients = [] } = useQuery({
-    queryKey: ['clients-lookup'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('id, name');
-      if (error) throw error;
-      return data || [];
-    },
-  });
+  const hasActivePosture = executions.some(e => e.status === 'running' || e.status === 'pending');
+  const hasActiveTasks = agentTasks.some(t => t.status === 'running' || t.status === 'pending');
+  const hasActive = hasActivePosture || hasActiveTasks;
 
-  const hasActiveTasks = executions.some(e => e.status === 'running' || e.status === 'pending');
-
-  const stats = useMemo(() => ({
+  const postureStats = useMemo(() => ({
     total: executions.length,
     pending: executions.filter(e => e.status === 'pending').length,
     running: executions.filter(e => e.status === 'running').length,
     completed: executions.filter(e => e.status === 'completed').length,
     failed: executions.filter(e => e.status === 'failed').length,
   }), [executions]);
+
+  const taskStats = useMemo(() => ({
+    total: agentTasks.length,
+    pending: agentTasks.filter(t => t.status === 'pending').length,
+    running: agentTasks.filter(t => t.status === 'running').length,
+    completed: agentTasks.filter(t => t.status === 'completed').length,
+    failed: agentTasks.filter(t => t.status === 'failed' || t.status === 'timeout' || t.status === 'cancelled').length,
+  }), [agentTasks]);
+
+  const stats = activeTab === 'posture' ? postureStats : taskStats;
 
   const getTenantLabel = (tenantId: string) => {
     const tenant = tenants.find(t => t.id === tenantId);
@@ -154,6 +260,17 @@ export default function M365ExecutionsPage() {
   const getClientName = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
     return client?.name || 'N/A';
+  };
+
+  const getAgentName = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    return agent?.name || agentId.slice(0, 8) + '...';
+  };
+
+  const getClientFromTenant = (tenantId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return 'N/A';
+    return getClientName(tenant.client_id);
   };
 
   const filteredExecutions = executions.filter(exec => {
@@ -168,12 +285,29 @@ export default function M365ExecutionsPage() {
     );
   });
 
+  const filteredTasks = agentTasks.filter(task => {
+    if (!searchTerm) return true;
+    const tenant = tenants.find(t => t.id === task.target_id);
+    const agent = agents.find(a => a.id === task.agent_id);
+    const s = searchTerm.toLowerCase();
+    return (
+      tenant?.display_name?.toLowerCase().includes(s) ||
+      tenant?.tenant_domain?.toLowerCase().includes(s) ||
+      agent?.name?.toLowerCase().includes(s)
+    );
+  });
+
   const openDetails = (execution: PostureHistory) => {
     setSelectedExecution(execution);
     setDetailsOpen(true);
   };
 
-  const getDuration = (exec: PostureHistory) => {
+  const openTaskDetails = (task: AgentTask) => {
+    setSelectedTask(task);
+    setTaskDetailsOpen(true);
+  };
+
+  const getDuration = (exec: { started_at: string | null; completed_at: string | null }) => {
     if (!exec.started_at) return '-';
     const end = exec.completed_at ? new Date(exec.completed_at) : new Date();
     const start = new Date(exec.started_at);
@@ -182,6 +316,16 @@ export default function M365ExecutionsPage() {
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
   };
+
+  const handleRefresh = () => {
+    if (activeTab === 'posture') {
+      refetchPosture();
+    } else {
+      refetchTasks();
+    }
+  };
+
+  const isLoading = activeTab === 'posture' ? isLoadingPosture : isLoadingTasks;
 
   return (
     <AppLayout>
@@ -194,188 +338,284 @@ export default function M365ExecutionsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Execuções de Análise</h1>
-            <p className="text-muted-foreground">Monitore as análises de postura de segurança M365</p>
+            <p className="text-muted-foreground">Monitore as análises de postura e tasks do agente M365</p>
           </div>
-          <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
-            {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}
+          <Button onClick={handleRefresh} variant="outline" size="sm">
+            <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
+            {hasActive ? 'Atualizando...' : 'Atualizar'}
           </Button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Activity className="w-8 h-8 text-primary" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.total}</p>
-                  <p className="text-xs text-muted-foreground">Total</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Clock className="w-8 h-8 text-yellow-500" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.pending}</p>
-                  <p className="text-xs text-muted-foreground">Pendentes</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Loader2 className="w-8 h-8 text-blue-500" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.running}</p>
-                  <p className="text-xs text-muted-foreground">Executando</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-8 h-8 text-green-500" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.completed}</p>
-                  <p className="text-xs text-muted-foreground">Concluídas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <XCircle className="w-8 h-8 text-red-500" />
-                <div>
-                  <p className="text-2xl font-bold">{stats.failed}</p>
-                  <p className="text-xs text-muted-foreground">Falhas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="posture" className="gap-2">
+              <Cloud className="w-4 h-4" />
+              Análises de Postura
+              {postureStats.total > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                  {postureStats.total}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="tasks" className="gap-2">
+              <Terminal className="w-4 h-4" />
+              Tasks PowerShell
+              {taskStats.total > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                  {taskStats.total}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Filters */}
-        <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por tenant ou workspace..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Activity className="w-8 h-8 text-primary" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.total}</p>
+                    <p className="text-xs text-muted-foreground">Total</p>
+                  </div>
                 </div>
-              </div>
-              <Select value={timeFilter} onValueChange={setTimeFilter}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="Período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1h">Última hora</SelectItem>
-                  <SelectItem value="6h">Últimas 6 horas</SelectItem>
-                  <SelectItem value="12h">Últimas 12 horas</SelectItem>
-                  <SelectItem value="24h">Últimas 24 horas</SelectItem>
-                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="pending">Pendentes</SelectItem>
-                  <SelectItem value="running">Executando</SelectItem>
-                  <SelectItem value="completed">Concluídas</SelectItem>
-                  <SelectItem value="failed">Falhas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Clock className="w-8 h-8 text-yellow-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.pending}</p>
+                    <p className="text-xs text-muted-foreground">Pendentes</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-8 h-8 text-blue-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.running}</p>
+                    <p className="text-xs text-muted-foreground">Executando</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-8 h-8 text-green-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.completed}</p>
+                    <p className="text-xs text-muted-foreground">Concluídas</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <XCircle className="w-8 h-8 text-red-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.failed}</p>
+                    <p className="text-xs text-muted-foreground">Falhas</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-        {/* Executions Table */}
-        <Card className="glass-card">
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          {/* Filters */}
+          <Card className="glass-card mt-4">
+            <CardContent className="p-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder={activeTab === 'posture' ? "Buscar por tenant ou workspace..." : "Buscar por tenant ou agente..."}
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                <Select value={timeFilter} onValueChange={setTimeFilter}>
+                  <SelectTrigger className="w-full md:w-[180px]">
+                    <SelectValue placeholder="Período" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1h">Última hora</SelectItem>
+                    <SelectItem value="6h">Últimas 6 horas</SelectItem>
+                    <SelectItem value="12h">Últimas 12 horas</SelectItem>
+                    <SelectItem value="24h">Últimas 24 horas</SelectItem>
+                    <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full md:w-[180px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="pending">Pendentes</SelectItem>
+                    <SelectItem value="running">Executando</SelectItem>
+                    <SelectItem value="completed">Concluídas</SelectItem>
+                    <SelectItem value="failed">Falhas</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ) : filteredExecutions.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Cloud className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhuma execução encontrada</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tenant</TableHead>
-                    <TableHead>Workspace</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead>Duração</TableHead>
-                    <TableHead>Criado em</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredExecutions.map(exec => {
-                    const config = statusConfig[exec.status] || statusConfig.pending;
-                    return (
-                      <TableRow key={exec.id}>
-                        <TableCell className="font-medium">
-                          {getTenantLabel(exec.tenant_record_id)}
-                        </TableCell>
-                        <TableCell>{getClientName(exec.client_id)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={cn('gap-1', config.color)}>
-                            {config.icon}
-                            {config.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {exec.status === 'completed' && exec.score !== null ? (
-                            <Badge className={exec.score >= 70 ? 'bg-green-500/20 text-green-500' : 'bg-orange-500/20 text-orange-500'}>
-                              {exec.score}%
-                            </Badge>
-                          ) : '-'}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {getDuration(exec)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDistanceToNow(new Date(exec.created_at), { locale: ptBR, addSuffix: true })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => openDetails(exec)}>
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
+            </CardContent>
+          </Card>
+
+          {/* Posture Tab Content */}
+          <TabsContent value="posture" className="mt-4">
+            <Card className="glass-card">
+              <CardContent className="p-0">
+                {isLoadingPosture ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredExecutions.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Cloud className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma análise de postura encontrada</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>Workspace</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Score</TableHead>
+                        <TableHead>Duração</TableHead>
+                        <TableHead>Criado em</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredExecutions.map(exec => {
+                        const config = statusConfig[exec.status] || statusConfig.pending;
+                        return (
+                          <TableRow key={exec.id}>
+                            <TableCell className="font-medium">
+                              {getTenantLabel(exec.tenant_record_id)}
+                            </TableCell>
+                            <TableCell>{getClientName(exec.client_id)}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={cn('gap-1', config.color)}>
+                                {config.icon}
+                                {config.label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {exec.status === 'completed' && exec.score !== null ? (
+                                <Badge className={exec.score >= 70 ? 'bg-green-500/20 text-green-500' : 'bg-orange-500/20 text-orange-500'}>
+                                  {exec.score}%
+                                </Badge>
+                              ) : '-'}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {getDuration(exec)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatDistanceToNow(new Date(exec.created_at), { locale: ptBR, addSuffix: true })}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" onClick={() => openDetails(exec)}>
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Details Dialog */}
+          {/* Tasks Tab Content */}
+          <TabsContent value="tasks" className="mt-4">
+            <Card className="glass-card">
+              <CardContent className="p-0">
+                {isLoadingTasks ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredTasks.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Terminal className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma task PowerShell encontrada</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>Agente</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Duração</TableHead>
+                        <TableHead>Criado em</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredTasks.map(task => {
+                        const config = statusConfig[task.status] || statusConfig.pending;
+                        const typeConfig = taskTypeConfig[task.task_type] || { label: task.task_type, color: 'bg-muted text-muted-foreground' };
+                        return (
+                          <TableRow key={task.id}>
+                            <TableCell className="font-medium">
+                              {getTenantLabel(task.target_id)}
+                            </TableCell>
+                            <TableCell>{getAgentName(task.agent_id)}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={cn('gap-1', typeConfig.color)}>
+                                <Terminal className="w-3 h-3" />
+                                {typeConfig.label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={cn('gap-1', config.color)}>
+                                {config.icon}
+                                {config.label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {task.execution_time_ms 
+                                ? `${(task.execution_time_ms / 1000).toFixed(1)}s`
+                                : getDuration(task)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatDistanceToNow(new Date(task.created_at), { locale: ptBR, addSuffix: true })}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" onClick={() => openTaskDetails(task)}>
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Posture Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
           <DialogContent className="max-w-2xl max-h-[80vh]">
             <DialogHeader>
-              <DialogTitle>Detalhes da Execução</DialogTitle>
+              <DialogTitle>Detalhes da Análise de Postura</DialogTitle>
             </DialogHeader>
             {selectedExecution && (
               <ScrollArea className="max-h-[60vh] pr-4">
@@ -453,6 +693,103 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground mb-2">Erros</p>
                       <pre className="p-3 bg-destructive/10 rounded text-xs overflow-auto max-h-40">
                         {JSON.stringify(selectedExecution.errors, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Task Details Dialog */}
+        <Dialog open={taskDetailsOpen} onOpenChange={setTaskDetailsOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Terminal className="w-5 h-5" />
+                Detalhes da Task PowerShell
+              </DialogTitle>
+            </DialogHeader>
+            {selectedTask && (
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tenant</p>
+                      <p className="font-medium">{getTenantLabel(selectedTask.target_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Workspace</p>
+                      <p className="font-medium">{getClientFromTenant(selectedTask.target_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Agente</p>
+                      <p className="font-medium">{getAgentName(selectedTask.agent_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tipo</p>
+                      <Badge variant="outline" className={cn('gap-1', taskTypeConfig[selectedTask.task_type]?.color)}>
+                        <Terminal className="w-3 h-3" />
+                        {taskTypeConfig[selectedTask.task_type]?.label || selectedTask.task_type}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <Badge variant="outline" className={cn('gap-1', statusConfig[selectedTask.status]?.color)}>
+                        {statusConfig[selectedTask.status]?.icon}
+                        {statusConfig[selectedTask.status]?.label}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Duração</p>
+                      <p className="font-medium">
+                        {selectedTask.execution_time_ms 
+                          ? `${(selectedTask.execution_time_ms / 1000).toFixed(2)}s`
+                          : getDuration(selectedTask)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Iniciado em</p>
+                      <p className="font-medium">
+                        {selectedTask.started_at
+                          ? format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Concluído em</p>
+                      <p className="font-medium">
+                        {selectedTask.completed_at
+                          ? format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedTask.payload && Object.keys(selectedTask.payload).length > 0 && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Payload (Comandos)</p>
+                      <pre className="p-3 bg-muted rounded text-xs overflow-auto max-h-40 font-mono">
+                        {JSON.stringify(selectedTask.payload, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {selectedTask.result && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Resultado</p>
+                      <pre className="p-3 bg-green-500/10 rounded text-xs overflow-auto max-h-60 font-mono">
+                        {JSON.stringify(selectedTask.result, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {selectedTask.error_message && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Erro</p>
+                      <pre className="p-3 bg-destructive/10 rounded text-xs overflow-auto max-h-40 text-destructive">
+                        {selectedTask.error_message}
                       </pre>
                     </div>
                   )}
