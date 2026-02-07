@@ -108,6 +108,9 @@ export default function AgentsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
+
+  // Check components
+  const [checkingComponents, setCheckingComponents] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
@@ -381,6 +384,27 @@ export default function AgentsPage() {
       toast.error("Erro ao deletar agent: " + error.message);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCheckComponents = async () => {
+    if (!selectedAgent) return;
+
+    setCheckingComponents(true);
+    try {
+      const { error } = await (supabase
+        .from("agents" as any)
+        .update({ check_components: true })
+        .eq("id", selectedAgent.id) as any);
+
+      if (error) throw error;
+
+      toast.success("Verificação de componentes agendada! O agent executará no próximo heartbeat.");
+      fetchData();
+    } catch (error: any) {
+      toast.error("Erro ao agendar verificação: " + error.message);
+    } finally {
+      setCheckingComponents(false);
     }
   };
 
@@ -754,6 +778,33 @@ export default function AgentsPage() {
                         <AgentInstallInstructions
                           activationCode={(newActivationCode?.code || selectedAgent.activation_code) as string}
                         />
+                      </div>
+                    )}
+
+                    {/* Check Components Button */}
+                    {selectedAgent.last_seen && (
+                      <div className="pt-4 border-t border-border/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label>Componentes do Sistema</Label>
+                            <p className="text-sm text-muted-foreground">
+                              Verifica e instala PowerShell, módulos M365 e certificados
+                            </p>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={handleCheckComponents} 
+                            disabled={checkingComponents}
+                          >
+                            {checkingComponents ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            Verificar
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>

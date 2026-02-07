@@ -31,6 +31,7 @@ interface HeartbeatSuccessResponse {
   update_available: boolean;
   update_info?: UpdateInfo;
   azure_certificate_key_id?: string;
+  check_components?: boolean;
 }
 
 interface HeartbeatErrorResponse {
@@ -425,14 +426,18 @@ serve(async (req: Request) => {
 
     // Process certificate upload if provided
     let azureCertificateKeyId: string | null = null;
-    if (body.certificate_public_key && body.certificate_thumbprint) {
-      // Check if agent already has certificate registered
-      const { data: agentData } = await supabase
-        .from('agents')
-        .select('azure_certificate_key_id')
-        .eq('id', agentId)
-        .single();
+    let checkComponents = false;
+    
+    // Fetch agent data (certificate and check_components flag) in a single query
+    const { data: agentData } = await supabase
+      .from('agents')
+      .select('azure_certificate_key_id, check_components')
+      .eq('id', agentId)
+      .single();
 
+    checkComponents = agentData?.check_components || false;
+
+    if (body.certificate_public_key && body.certificate_thumbprint) {
       if (!agentData?.azure_certificate_key_id) {
         console.log(`Agent ${agentId} has pending certificate, uploading to Azure...`);
         azureCertificateKeyId = await uploadAgentCertificate(
@@ -445,6 +450,15 @@ serve(async (req: Request) => {
         azureCertificateKeyId = agentData.azure_certificate_key_id;
         console.log(`Agent ${agentId} already has certificate registered: ${azureCertificateKeyId}`);
       }
+    }
+
+    // Reset check_components flag after reading it
+    if (checkComponents) {
+      await supabase
+        .from('agents')
+        .update({ check_components: false })
+        .eq('id', agentId);
+      console.log(`Reset check_components flag for agent ${agentId}`);
     }
 
     // Check for available updates
@@ -477,6 +491,11 @@ serve(async (req: Request) => {
     // Include certificate key ID if available
     if (azureCertificateKeyId) {
       response.azure_certificate_key_id = azureCertificateKeyId;
+    }
+
+    // Include check_components flag if set
+    if (checkComponents) {
+      response.check_components = true;
     }
 
     // Include update info if available

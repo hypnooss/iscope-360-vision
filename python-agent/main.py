@@ -85,6 +85,15 @@ class AgentApp:
             f"next={next_interval}s"
         )
 
+        # Check if component verification was requested
+        if result.get('check_components'):
+            self.logger.info("Backend solicitou verificação de componentes")
+            try:
+                from agent.components import ensure_system_components
+                ensure_system_components(self.logger)
+            except Exception as e:
+                self.logger.warning(f"Erro ao verificar componentes: {e}")
+
         # Check for available updates
         if result.get('update_available') and result.get('update_info'):
             self.logger.info("Atualização disponível detectada")
