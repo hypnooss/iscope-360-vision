@@ -1,76 +1,196 @@
 
-# Plano: Corrigir Formato de Data do Certificado no Azure
 
-## Problema Identificado
+# Plano: Vincular Agent a Tenant M365 Existente
 
-Os logs mostram claramente o erro:
-```json
-{"error":{"code":"KeyCredentialsInvalidEndDate","message":"Key credential end date is invalid."}}
-```
+## Contexto
 
-**Causa raiz**: O Azure limita a validade máxima de certificados a **1 ano** a partir da data de início. O código atual define 730 dias (2 anos), que é rejeitado.
+Atualmente, a vinculação de Agent a um Tenant M365 só é possível durante a criação do tenant no wizard. Não há opção para gerenciar essa vinculação em tenants já cadastrados.
 
-### Código Problemático (linha 234)
-```typescript
-endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
-```
+### Estrutura Existente
+- **Tabela `m365_tenant_agents`**: Já existe e relaciona tenants com agents (N:N)
+- **TenantConnectionWizard**: Já possui lógica para vincular agent durante criação
+- **TenantEditDialog**: Componente de edição simples (nome e domínio apenas)
+- **TenantStatusCard**: Card que exibe informações do tenant
 
 ---
 
-## Solução
+## Solução Proposta
 
-Reduzir a validade do certificado de 2 anos para **1 ano** (365 dias ou menos).
+Adicionar uma seção de **vinculação de Agent** no diálogo de edição do tenant (`TenantEditDialog`), exibindo apenas agents do mesmo workspace.
 
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-heartbeat/index.ts` | Alterar validade para 365 dias |
+| `src/components/m365/TenantEditDialog.tsx` | Adicionar seção de seleção/remoção de agent |
+| `src/hooks/useTenantConnection.ts` | Adicionar funções para buscar e gerenciar agents vinculados |
 
 ---
 
-## Mudança Necessária
+## Mudanças Detalhadas
 
-### Linha 234 - Alterar período de validade
+### 1. Hook `useTenantConnection.ts`
 
-**Antes:**
+**Adicionar novas funções:**
+
 ```typescript
-endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
+// Buscar agent vinculado ao tenant
+const fetchLinkedAgent = async (tenantRecordId: string): Promise<{
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  enabled: boolean;
+} | null>
+
+// Vincular agent ao tenant
+const linkAgent = async (tenantRecordId: string, agentId: string): Promise<{ success: boolean; error?: string }>
+
+// Desvincular agent do tenant
+const unlinkAgent = async (tenantRecordId: string): Promise<{ success: boolean; error?: string }>
 ```
 
-**Depois:**
-```typescript
-endDateTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year (Azure max)
-```
-
 ---
 
-## Impacto
+### 2. Componente `TenantEditDialog.tsx`
 
-- O certificado será válido por 1 ano em vez de 2
-- O upload para o Azure será aceito
-- `azure_certificate_key_id` será salvo no banco
-- Agent parará de enviar "Certificado pendente" nos heartbeats
+**Adicionar:**
 
----
+1. **Estado para agents disponíveis e agent vinculado**
+   - Lista de agents do mesmo workspace (client_id)
+   - Agent atualmente vinculado (se houver)
 
-## Consideração Futura
+2. **Buscar agents do workspace ao abrir**
+   ```typescript
+   useEffect(() => {
+     if (tenant && open) {
+       // Buscar agents do mesmo workspace
+       const fetchAgents = async () => {
+         const { data } = await supabase
+           .from('agents')
+           .select('id, name, certificate_thumbprint, azure_certificate_key_id')
+           .eq('client_id', tenant.client.id)
+           .eq('revoked', false)
+           .order('name');
+         setAvailableAgents(data || []);
+       };
 
-Os certificados precisarão ser renovados anualmente. Pode-se implementar:
-1. Alerta quando certificado estiver próximo de expirar (ex: 30 dias antes)
-2. Renovação automática do certificado pelo agent
-
----
-
-## Verificação
-
-1. **Logs da Edge Function** - não deve mais mostrar "KeyCredentialsInvalidEndDate"
-2. **Azure Portal** - App Registration deve mostrar o certificado registrado
-3. **Banco de dados:**
-   ```sql
-   SELECT name, certificate_thumbprint, azure_certificate_key_id 
-   FROM agents WHERE name = 'PRECISIO-AZ';
+       // Buscar agent vinculado
+       const fetchLinked = async () => {
+         const { data } = await supabase
+           .from('m365_tenant_agents')
+           .select('id, agent_id, enabled, agents(name, certificate_thumbprint)')
+           .eq('tenant_record_id', tenant.id)
+           .maybeSingle();
+         setLinkedAgent(data);
+       };
+     }
+   }, [tenant, open]);
    ```
-4. **Logs do Agent** - não deve mais mostrar "Certificado pendente detectado"
+
+3. **UI para selecionar/remover agent**
+   - Select com agents disponíveis (filtrados por client_id)
+   - Exibir thumbprint e status do certificado Azure
+   - Botão para vincular/desvincular
+
+4. **Lógica de salvar**
+   - Atualizar vinculação quando salvar
+
+---
+
+## UI Proposta no TenantEditDialog
+
+```text
+┌─────────────────────────────────────────────┐
+│  Editar Tenant                              │
+├─────────────────────────────────────────────┤
+│                                             │
+│  Tenant ID                                  │
+│  ┌───────────────────────────────────────┐  │
+│  │ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  │  │
+│  └───────────────────────────────────────┘  │
+│  ⓘ O Tenant ID não pode ser alterado.      │
+│                                             │
+│  Nome de Exibição                           │
+│  ┌───────────────────────────────────────┐  │
+│  │ Contoso Corporation                   │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  Domínio do Tenant                          │
+│  ┌───────────────────────────────────────┐  │
+│  │ contoso.onmicrosoft.com               │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  ─────────────────────────────────────────  │
+│                                             │
+│  🖥️ Agent para Análise PowerShell          │
+│                                             │
+│  Agent Vinculado                            │
+│  ┌───────────────────────────────────────┐  │
+│  │ PRECISIO-AZ              ▼            │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  ⓘ Certificado registrado no Azure:        │
+│     agent-bf518fcd-27FA1C0F                 │
+│                                             │
+│  ─────────────────────────────────────────  │
+│                                             │
+│  Cliente Associado                          │
+│  ┌───────────────────────────────────────┐  │
+│  │ PRECISIO                              │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+├─────────────────────────────────────────────┤
+│                    [Cancelar]  [Salvar]     │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## Regras de Negócio
+
+1. **Filtro de Agents**
+   - Apenas agents com `client_id` igual ao `client.id` do tenant
+   - Apenas agents não revogados (`revoked = false`)
+
+2. **Indicadores Visuais**
+   - Agents com `azure_certificate_key_id` preenchido mostram badge "Certificado OK"
+   - Agents sem certificado Azure mostram badge "Certificado Pendente"
+
+3. **Vinculação**
+   - Um tenant pode ter apenas um agent vinculado por vez
+   - Ao selecionar um novo agent, substitui o anterior
+   - Opção "Nenhum" remove a vinculação
+
+---
+
+## Fluxo de Dados
+
+```text
+┌──────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
+│  TenantEditDialog│ ──► │ m365_tenant_agents  │ ◄── │     agents      │
+│                  │     │                     │     │                 │
+│  - Seleciona     │     │  - tenant_record_id │     │  - client_id    │
+│    agent         │     │  - agent_id         │     │  - certificate  │
+│                  │     │  - enabled          │     │  - azure_key_id │
+└──────────────────┘     └─────────────────────┘     └─────────────────┘
+         │                        │
+         │                        │
+         ▼                        ▼
+   Filtro: agents onde       Relacionamento
+   client_id = tenant.client.id
+```
+
+---
+
+## Resultado Esperado
+
+Após a implementação:
+
+1. Ao clicar em "Editar" no card do tenant, o diálogo mostrará a seção de vinculação de agent
+2. O dropdown listará apenas agents do mesmo workspace
+3. Agents com certificado Azure registrado terão indicação visual
+4. Ao salvar, a vinculação será criada/atualizada na tabela `m365_tenant_agents`
+5. A vinculação permitirá que análises PowerShell usem o certificado do agent
+
