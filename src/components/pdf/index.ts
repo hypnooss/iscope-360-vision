@@ -1,6 +1,7 @@
 // PDF Documents
 export { ExternalDomainPDF } from './ExternalDomainPDF';
 export { FirewallPDF } from './FirewallPDF';
+export { M365AffectedEntitiesPDF } from './M365AffectedEntitiesPDF';
 
 // Sections
 export * from './sections';
