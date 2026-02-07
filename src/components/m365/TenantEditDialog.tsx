@@ -10,48 +10,143 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, Monitor, CheckCircle2, AlertCircle } from 'lucide-react';
 import { TenantConnection } from '@/hooks/useTenantConnection';
+import { supabase } from '@/integrations/supabase/client';
+
+interface Agent {
+  id: string;
+  name: string;
+  certificate_thumbprint: string | null;
+  azure_certificate_key_id: string | null;
+}
+
+interface LinkedAgent {
+  id: string;
+  agent_id: string;
+  enabled: boolean;
+  agents: Agent | null;
+}
 
 interface TenantEditDialogProps {
   tenant: TenantConnection | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => Promise<{ success: boolean; error?: string }>;
+  onLinkAgent?: (tenantId: string, agentId: string) => Promise<{ success: boolean; error?: string }>;
+  onUnlinkAgent?: (tenantId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-export function TenantEditDialog({ tenant, open, onOpenChange, onSave }: TenantEditDialogProps) {
+export function TenantEditDialog({ 
+  tenant, 
+  open, 
+  onOpenChange, 
+  onSave,
+  onLinkAgent,
+  onUnlinkAgent,
+}: TenantEditDialogProps) {
   const [displayName, setDisplayName] = useState('');
   const [tenantDomain, setTenantDomain] = useState('');
   const [saving, setSaving] = useState(false);
+  
+  // Agent linking state
+  const [availableAgents, setAvailableAgents] = useState<Agent[]>([]);
+  const [linkedAgent, setLinkedAgent] = useState<LinkedAgent | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('none');
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   useEffect(() => {
     if (tenant && open) {
       setDisplayName(tenant.display_name || '');
       setTenantDomain(tenant.tenant_domain || '');
+      fetchAgentsData();
     }
   }, [tenant, open]);
+
+  const fetchAgentsData = async () => {
+    if (!tenant) return;
+
+    setLoadingAgents(true);
+    try {
+      // Fetch available agents from the same workspace
+      const { data: agents } = await supabase
+        .from('agents')
+        .select('id, name, certificate_thumbprint, azure_certificate_key_id')
+        .eq('client_id', tenant.client.id)
+        .eq('revoked', false)
+        .order('name');
+
+      setAvailableAgents(agents || []);
+
+      // Fetch currently linked agent
+      const { data: linked } = await supabase
+        .from('m365_tenant_agents')
+        .select(`
+          id,
+          agent_id,
+          enabled,
+          agents(id, name, certificate_thumbprint, azure_certificate_key_id)
+        `)
+        .eq('tenant_record_id', tenant.id)
+        .maybeSingle();
+
+      setLinkedAgent(linked as LinkedAgent | null);
+      setSelectedAgentId(linked?.agent_id || 'none');
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!tenant) return;
     
     setSaving(true);
+    
+    // Save tenant info
     const result = await onSave(tenant.id, {
       display_name: displayName.trim() || null,
       tenant_domain: tenantDomain.trim() || null,
     });
-    setSaving(false);
 
-    if (result.success) {
-      onOpenChange(false);
+    if (!result.success) {
+      setSaving(false);
+      return;
     }
+
+    // Handle agent linking changes
+    const currentLinkedId = linkedAgent?.agent_id || 'none';
+    
+    if (selectedAgentId !== currentLinkedId) {
+      if (selectedAgentId === 'none' && onUnlinkAgent) {
+        await onUnlinkAgent(tenant.id);
+      } else if (selectedAgentId !== 'none' && onLinkAgent) {
+        await onLinkAgent(tenant.id, selectedAgentId);
+      }
+    }
+
+    setSaving(false);
+    onOpenChange(false);
   };
 
   const isConnected = tenant?.connection_status === 'connected' || tenant?.connection_status === 'partial';
+  
+  const selectedAgent = availableAgents.find(a => a.id === selectedAgentId);
+  const hasCertificate = selectedAgent?.azure_certificate_key_id;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Editar Tenant</DialogTitle>
           <DialogDescription>
@@ -98,6 +193,89 @@ export function TenantEditDialog({ tenant, open, onOpenChange, onSave }: TenantE
               </p>
             )}
           </div>
+
+          <Separator className="my-4" />
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">Agent para Análise PowerShell</Label>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="agent-select" className="text-xs text-muted-foreground">
+                Agent Vinculado
+              </Label>
+              
+              {loadingAgents ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando agents...
+                </div>
+              ) : availableAgents.length === 0 ? (
+                <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+                  Nenhum agent disponível neste workspace.
+                </div>
+              ) : (
+                <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                  <SelectTrigger id="agent-select">
+                    <SelectValue placeholder="Selecione um agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">Nenhum</span>
+                    </SelectItem>
+                    {availableAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{agent.name}</span>
+                          {agent.azure_certificate_key_id ? (
+                            <Badge variant="outline" className="text-xs bg-success/10 text-success border-success/30">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Cert OK
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Pendente
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {selectedAgentId !== 'none' && selectedAgent && (
+                <div className="rounded-md bg-muted/30 p-3 space-y-1">
+                  {hasCertificate ? (
+                    <div className="flex items-start gap-2 text-xs">
+                      <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                      <div>
+                        <p className="font-medium text-success">Certificado registrado no Azure</p>
+                        <p className="text-muted-foreground font-mono">
+                          {selectedAgent.azure_certificate_key_id}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2 text-xs">
+                      <AlertCircle className="h-4 w-4 text-warning mt-0.5" />
+                      <div>
+                        <p className="font-medium text-warning">Certificado pendente</p>
+                        <p className="text-muted-foreground">
+                          O agent ainda não registrou o certificado no Azure.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Separator className="my-4" />
 
           <div className="space-y-2">
             <Label>Cliente Associado</Label>
