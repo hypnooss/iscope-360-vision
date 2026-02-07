@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { M365Insight, SEVERITY_LABELS, PRODUCT_LABELS } from '@/types/m365Insights';
 import { M365RemediationDialog } from './M365RemediationDialog';
+import { M365AffectedEntitiesDialog } from './M365AffectedEntitiesDialog';
 
 interface M365InsightCardProps {
   insight: M365Insight;
@@ -63,6 +64,7 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string }
 export function M365InsightCard({ insight }: M365InsightCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showRemediation, setShowRemediation] = useState(false);
+  const [showAffected, setShowAffected] = useState(false);
 
   const severityConfig = SEVERITY_CONFIG[insight.severity];
   const statusConfig = STATUS_CONFIG[insight.status];
@@ -115,10 +117,14 @@ export function M365InsightCard({ insight }: M365InsightCardProps) {
 
           {/* Affected count */}
           {insight.affectedCount > 0 && isFailed && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+            <button
+              type="button"
+              className="flex items-center gap-2 text-sm text-muted-foreground mb-3 hover:text-foreground transition-colors cursor-pointer group"
+              onClick={() => setShowAffected(true)}
+            >
               <Users className="w-4 h-4" />
-              <span>{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
-            </div>
+              <span className="group-hover:underline">{insight.affectedCount} {insight.affectedCount === 1 ? 'item afetado' : 'itens afetados'}</span>
+            </button>
           )}
 
           {/* Expandable section */}
@@ -185,6 +191,12 @@ export function M365InsightCard({ insight }: M365InsightCardProps) {
         insight={insight}
         open={showRemediation}
         onOpenChange={setShowRemediation}
+      />
+
+      <M365AffectedEntitiesDialog
+        insight={insight}
+        open={showAffected}
+        onOpenChange={setShowAffected}
       />
     </>
   );
