@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.trigger-m365-posture-analysis]
 verify_jwt = false
+
+[functions.test-m365-exchange-connection]
+verify_jwt = false

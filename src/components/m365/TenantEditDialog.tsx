@@ -19,9 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Monitor, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, Monitor, CheckCircle2, AlertCircle, Play, Mail } from 'lucide-react';
 import { TenantConnection } from '@/hooks/useTenantConnection';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 interface Agent {
   id: string;
@@ -63,6 +64,9 @@ export function TenantEditDialog({
   const [linkedAgent, setLinkedAgent] = useState<LinkedAgent | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('none');
   const [loadingAgents, setLoadingAgents] = useState(false);
+  
+  // Exchange test state
+  const [testingExchange, setTestingExchange] = useState(false);
 
   useEffect(() => {
     if (tenant && open) {
@@ -139,10 +143,56 @@ export function TenantEditDialog({
     onOpenChange(false);
   };
 
+  const handleTestExchangeConnection = async () => {
+    if (!tenant) return;
+    
+    setTestingExchange(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('test-m365-exchange-connection', {
+        body: { tenant_record_id: tenant.id }
+      });
+
+      if (error) {
+        toast({
+          title: 'Erro ao iniciar teste',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (data.success) {
+        toast({
+          title: 'Teste iniciado',
+          description: `Task ${data.task_id} criada. O agent ${data.agent?.name} irá processar em breve.`,
+        });
+      } else {
+        toast({
+          title: 'Não foi possível iniciar',
+          description: data.error || data.message,
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      console.error('Exchange test error:', err);
+      toast({
+        title: 'Erro',
+        description: err.message || 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setTestingExchange(false);
+    }
+  };
+
   const isConnected = tenant?.connection_status === 'connected' || tenant?.connection_status === 'partial';
   
   const selectedAgent = availableAgents.find(a => a.id === selectedAgentId);
   const hasCertificate = selectedAgent?.azure_certificate_key_id;
+  
+  // Can test Exchange if there's a linked agent with certificate
+  const canTestExchange = linkedAgent?.agents?.azure_certificate_key_id && isConnected;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -154,7 +204,7 @@ export function TenantEditDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
           <div className="space-y-2">
             <Label htmlFor="tenant-id">Tenant ID</Label>
             <Input
@@ -274,6 +324,55 @@ export function TenantEditDialog({
               )}
             </div>
           </div>
+
+          {/* Exchange Online Test Section */}
+          {linkedAgent && (
+            <>
+              <Separator className="my-4" />
+              
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-medium">Testar Conexão Exchange Online</Label>
+                </div>
+                
+                <div className="rounded-md border bg-muted/20 p-3 space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Teste a autenticação CBA (Certificate-Based Authentication) com o Exchange Online 
+                    usando o agent vinculado.
+                  </p>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestExchangeConnection}
+                    disabled={!canTestExchange || testingExchange}
+                    className="w-full"
+                  >
+                    {testingExchange ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Iniciando teste...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Testar Connect-ExchangeOnline
+                      </>
+                    )}
+                  </Button>
+                  
+                  {!canTestExchange && linkedAgent && (
+                    <p className="text-xs text-warning">
+                      {!linkedAgent.agents?.azure_certificate_key_id 
+                        ? 'Aguarde o agent registrar o certificado no Azure.'
+                        : 'O tenant precisa estar conectado para testar.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           <Separator className="my-4" />
 
