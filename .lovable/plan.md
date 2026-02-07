@@ -1,22 +1,23 @@
 
+# Plano: Exibir Tasks M365 na Página de Execuções
 
-# Plano: Vincular Agent a Tenant M365 Existente
+## Problema Identificado
 
-## Contexto
+A task de teste de conexão Exchange Online foi criada com sucesso:
+- **ID**: `ea2bde86-6e1c-47f3-a21d-caab7b544675`
+- **Status**: `running`
+- **target_type**: `m365_tenant`
 
-Atualmente, a vinculação de Agent a um Tenant M365 só é possível durante a criação do tenant no wizard. Não há opção para gerenciar essa vinculação em tenants já cadastrados.
-
-### Estrutura Existente
-- **Tabela `m365_tenant_agents`**: Já existe e relaciona tenants com agents (N:N)
-- **TenantConnectionWizard**: Já possui lógica para vincular agent durante criação
-- **TenantEditDialog**: Componente de edição simples (nome e domínio apenas)
-- **TenantStatusCard**: Card que exibe informações do tenant
+Porém, a página **Microsoft 365 > Execuções** busca dados da tabela `m365_posture_history` (análises de postura), não da tabela `agent_tasks`. Isso significa que tasks de agent para tenants M365 não são exibidas.
 
 ---
 
 ## Solução Proposta
 
-Adicionar uma seção de **vinculação de Agent** no diálogo de edição do tenant (`TenantEditDialog`), exibindo apenas agents do mesmo workspace.
+Refatorar a página `M365ExecutionsPage` para exibir **ambos os tipos de execuções**:
+
+1. **Análises de Postura** (da tabela `m365_posture_history`) - execuções existentes
+2. **Tasks de Agent** (da tabela `agent_tasks` com `target_type = 'm365_tenant'`) - testes PowerShell/Exchange
 
 ---
 
@@ -24,163 +25,130 @@ Adicionar uma seção de **vinculação de Agent** no diálogo de edição do te
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/m365/TenantEditDialog.tsx` | Adicionar seção de seleção/remoção de agent |
-| `src/hooks/useTenantConnection.ts` | Adicionar funções para buscar e gerenciar agents vinculados |
+| `src/pages/m365/M365ExecutionsPage.tsx` | Adicionar busca e exibição de `agent_tasks` com `target_type = 'm365_tenant'` |
 
 ---
 
 ## Mudanças Detalhadas
 
-### 1. Hook `useTenantConnection.ts`
+### 1. Adicionar Query para Agent Tasks
 
-**Adicionar novas funções:**
+Criar uma segunda query para buscar tasks do agent:
 
 ```typescript
-// Buscar agent vinculado ao tenant
-const fetchLinkedAgent = async (tenantRecordId: string): Promise<{
-  id: string;
-  agent_id: string;
-  agent_name: string;
-  enabled: boolean;
-} | null>
+const { data: agentTasks = [] } = useQuery({
+  queryKey: ['m365-agent-tasks', timeFilter, statusFilter, workspaceIds],
+  queryFn: async () => {
+    // Buscar tenant IDs acessíveis
+    const { data: tenants } = await supabase
+      .from('m365_tenants')
+      .select('id')
+      .in('client_id', workspaceIds);
 
-// Vincular agent ao tenant
-const linkAgent = async (tenantRecordId: string, agentId: string): Promise<{ success: boolean; error?: string }>
+    const tenantIds = (tenants || []).map(t => t.id);
+    if (tenantIds.length === 0) return [];
 
-// Desvincular agent do tenant
-const unlinkAgent = async (tenantRecordId: string): Promise<{ success: boolean; error?: string }>
+    // Buscar tasks com target_type = 'm365_tenant'
+    let query = supabase
+      .from('agent_tasks')
+      .select('id, agent_id, task_type, target_id, target_type, status, payload, result, error_message, execution_time_ms, created_at, started_at, completed_at')
+      .eq('target_type', 'm365_tenant')
+      .in('target_id', tenantIds)
+      .gte('created_at', startTime.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+});
 ```
 
 ---
 
-### 2. Componente `TenantEditDialog.tsx`
+### 2. Adicionar Tabs para Separar Tipos
 
-**Adicionar:**
-
-1. **Estado para agents disponíveis e agent vinculado**
-   - Lista de agents do mesmo workspace (client_id)
-   - Agent atualmente vinculado (se houver)
-
-2. **Buscar agents do workspace ao abrir**
-   ```typescript
-   useEffect(() => {
-     if (tenant && open) {
-       // Buscar agents do mesmo workspace
-       const fetchAgents = async () => {
-         const { data } = await supabase
-           .from('agents')
-           .select('id, name, certificate_thumbprint, azure_certificate_key_id')
-           .eq('client_id', tenant.client.id)
-           .eq('revoked', false)
-           .order('name');
-         setAvailableAgents(data || []);
-       };
-
-       // Buscar agent vinculado
-       const fetchLinked = async () => {
-         const { data } = await supabase
-           .from('m365_tenant_agents')
-           .select('id, agent_id, enabled, agents(name, certificate_thumbprint)')
-           .eq('tenant_record_id', tenant.id)
-           .maybeSingle();
-         setLinkedAgent(data);
-       };
-     }
-   }, [tenant, open]);
-   ```
-
-3. **UI para selecionar/remover agent**
-   - Select com agents disponíveis (filtrados por client_id)
-   - Exibir thumbprint e status do certificado Azure
-   - Botão para vincular/desvincular
-
-4. **Lógica de salvar**
-   - Atualizar vinculação quando salvar
-
----
-
-## UI Proposta no TenantEditDialog
+Usar `Tabs` do Radix para separar visualizações:
 
 ```text
-┌─────────────────────────────────────────────┐
-│  Editar Tenant                              │
-├─────────────────────────────────────────────┤
-│                                             │
-│  Tenant ID                                  │
-│  ┌───────────────────────────────────────┐  │
-│  │ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  │  │
-│  └───────────────────────────────────────┘  │
-│  ⓘ O Tenant ID não pode ser alterado.      │
-│                                             │
-│  Nome de Exibição                           │
-│  ┌───────────────────────────────────────┐  │
-│  │ Contoso Corporation                   │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  Domínio do Tenant                          │
-│  ┌───────────────────────────────────────┐  │
-│  │ contoso.onmicrosoft.com               │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  ─────────────────────────────────────────  │
-│                                             │
-│  🖥️ Agent para Análise PowerShell          │
-│                                             │
-│  Agent Vinculado                            │
-│  ┌───────────────────────────────────────┐  │
-│  │ PRECISIO-AZ              ▼            │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  ⓘ Certificado registrado no Azure:        │
-│     agent-bf518fcd-27FA1C0F                 │
-│                                             │
-│  ─────────────────────────────────────────  │
-│                                             │
-│  Cliente Associado                          │
-│  ┌───────────────────────────────────────┐  │
-│  │ PRECISIO                              │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-├─────────────────────────────────────────────┤
-│                    [Cancelar]  [Salvar]     │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Execuções de Análise                                       │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐ ┌──────────────────┐                  │
+│  │ Análises Postura │ │ Tasks PowerShell │                  │
+│  └──────────────────┘ └──────────────────┘                  │
+│                                                             │
+│  [ Stats Cards ]                                            │
+│                                                             │
+│  [ Filters ]                                                │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Tenant   │ Tipo          │ Status    │ Resultado │ Data ││
+│  ├─────────────────────────────────────────────────────────┤│
+│  │ BRASILUX │ Exchange Test │ Running   │    -      │ 2m   ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Regras de Negócio
+### 3. Exibir Detalhes da Task
 
-1. **Filtro de Agents**
-   - Apenas agents com `client_id` igual ao `client.id` do tenant
-   - Apenas agents não revogados (`revoked = false`)
+Ao clicar em uma task PowerShell, mostrar:
+- **Payload**: Comandos enviados (`Get-EXOMailbox`, `Get-OrganizationConfig`)
+- **Result**: Saída dos comandos (quando concluído)
+- **Error**: Mensagem de erro (se falhou)
+- **Duração**: Tempo de execução
 
-2. **Indicadores Visuais**
-   - Agents com `azure_certificate_key_id` preenchido mostram badge "Certificado OK"
-   - Agents sem certificado Azure mostram badge "Certificado Pendente"
+---
 
-3. **Vinculação**
-   - Um tenant pode ter apenas um agent vinculado por vez
-   - Ao selecionar um novo agent, substitui o anterior
-   - Opção "Nenhum" remove a vinculação
+### 4. Indicadores de Tipo de Task
+
+Adicionar badges para diferenciar tipos:
+
+| Task Type | Badge |
+|-----------|-------|
+| `m365_powershell` | `PowerShell` (roxo) |
+| `m365_graph_api` | `Graph API` (azul) |
 
 ---
 
 ## Fluxo de Dados
 
 ```text
-┌──────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
-│  TenantEditDialog│ ──► │ m365_tenant_agents  │ ◄── │     agents      │
-│                  │     │                     │     │                 │
-│  - Seleciona     │     │  - tenant_record_id │     │  - client_id    │
-│    agent         │     │  - agent_id         │     │  - certificate  │
-│                  │     │  - enabled          │     │  - azure_key_id │
-└──────────────────┘     └─────────────────────┘     └─────────────────┘
-         │                        │
-         │                        │
-         ▼                        ▼
-   Filtro: agents onde       Relacionamento
-   client_id = tenant.client.id
+┌──────────────────────────┐
+│  M365ExecutionsPage      │
+├──────────────────────────┤
+│                          │
+│  Tab: Análises Postura   │──► m365_posture_history
+│                          │
+│  Tab: Tasks PowerShell   │──► agent_tasks
+│       └─ target_type =   │    WHERE target_type = 'm365_tenant'
+│          'm365_tenant'   │
+│                          │
+└──────────────────────────┘
 ```
+
+---
+
+## Detalhes Técnicos
+
+### Mapeamento de Status
+
+Os status de `agent_tasks` são compatíveis com `m365_posture_history`:
+- `pending` / `running` / `completed` / `failed` (ambos usam)
+- `timeout` / `cancelled` (exclusivo de agent_tasks)
+
+### Lookup de Recursos
+
+- **Tenant**: Buscar nome via `m365_tenants.display_name`
+- **Agent**: Buscar nome via `agents.name`
+- **Workspace**: Já disponível via `m365_tenants.client_id` -> `clients.name`
 
 ---
 
@@ -188,9 +156,12 @@ const unlinkAgent = async (tenantRecordId: string): Promise<{ success: boolean; 
 
 Após a implementação:
 
-1. Ao clicar em "Editar" no card do tenant, o diálogo mostrará a seção de vinculação de agent
-2. O dropdown listará apenas agents do mesmo workspace
-3. Agents com certificado Azure registrado terão indicação visual
-4. Ao salvar, a vinculação será criada/atualizada na tabela `m365_tenant_agents`
-5. A vinculação permitirá que análises PowerShell usem o certificado do agent
+1. A página **Execuções M365** terá duas abas:
+   - **Análises de Postura**: Lista de `m365_posture_history` (comportamento atual)
+   - **Tasks de Agent**: Lista de `agent_tasks` com `target_type = 'm365_tenant'`
 
+2. A task de teste Exchange (`ea2bde86-...`) aparecerá na aba **Tasks de Agent**
+
+3. Será possível ver o status, resultado e erros de cada task
+
+4. O auto-refresh funcionará para tasks `running` ou `pending`
