@@ -1,67 +1,32 @@
 
 
-# Correção: Mail.Read e MailboxSettings.Read mostram "Pendente" incorretamente
+# Adicionar submódulos ao menu do Microsoft 365
 
-## Problema Raiz
+## Problema
+O menu lateral do módulo Microsoft 365 mostra apenas 4 itens (Tenants, Execuções, Relatórios, Entra ID), mas faltam os submódulos **Exchange Online** e **Postura de Segurança** que já possuem páginas e rotas criadas.
 
-Os logs revelam o erro real:
-```
-MailboxNotEnabledForRESTAPI
-```
+## Solução
+Adicionar os dois itens faltantes na configuração de navegação do M365 em `src/components/layout/AppLayout.tsx`.
 
-Isso acontece porque o teste pega o **primeiro usuário** da lista (`$top=1`), e esse usuário nao tem mailbox Exchange habilitada (pode ser conta de servico, shared mailbox, ou usuario sem licenca Exchange). O erro 404 com `MailboxNotEnabledForRESTAPI` **nao significa falta de permissao** — significa que a permissao esta concedida mas o usuario testado nao tem mailbox.
+## Alteração
 
-A logica correta seria:
-- **403 Forbidden** = permissao NAO concedida
-- **404 MailboxNotEnabledForRESTAPI** = permissao concedida, usuario sem mailbox
+**Arquivo:** `src/components/layout/AppLayout.tsx`
 
-## Solucao
+Na seção `scope_m365` (linhas 123-132), adicionar:
+- **Postura de Segurança** apontando para `/scope-m365/posture` (ícone: ShieldCheck)
+- **Exchange Online** apontando para `/scope-m365/exchange-online` (ícone: Mail/Monitor)
 
-Modificar os testes de `MailboxSettings.Read` e `Mail.Read` em **3 edge functions** para:
+O menu ficará assim:
+1. Tenants
+2. Postura de Segurança
+3. Entra ID
+4. Exchange Online
+5. Execuções
+6. Relatórios
 
-1. Tentar o primeiro usuario
-2. Se receber `MailboxNotEnabledForRESTAPI`, tentar mais usuarios (ate 5)
-3. Se TODOS os usuarios retornarem `MailboxNotEnabledForRESTAPI`, considerar a permissao como **concedida** (pois o erro nao e 403)
-4. Somente marcar como "nao concedida" se receber 403 (Forbidden)
+Os itens de "produto" (Postura, Entra ID, Exchange) ficam agrupados no meio, e os operacionais (Execuções, Relatórios) ficam ao final.
 
-## Arquivos a Modificar
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/validate-m365-connection/index.ts` | Atualizar testes de MailboxSettings.Read e Mail.Read |
-| `supabase/functions/validate-m365-permissions/index.ts` | Mesma logica para o cron de validacao |
-| `supabase/functions/m365-oauth-callback/index.ts` | Mesma logica para o callback OAuth |
-
-## Logica do Teste (Pseudocodigo)
-
-```text
-Para MailboxSettings.Read e Mail.Read:
-
-1. Buscar ate 5 usuarios: GET /users?$top=5&$select=id
-2. Para cada usuario:
-   a. Testar endpoint (mailboxSettings ou messageRules)
-   b. Se 200 → permissao concedida (parar)
-   c. Se 404 com MailboxNotEnabledForRESTAPI → continuar proximo usuario
-   d. Se 403 → permissao NAO concedida (parar)
-3. Se todos usuarios deram MailboxNotEnabledForRESTAPI:
-   → Considerar permissao CONCEDIDA (erro e de mailbox, nao de permissao)
-```
-
-## Detalhes Tecnicos
-
-### validate-m365-connection/index.ts (linhas 288-331)
-
-Substituir os blocos `MailboxSettings.Read` e `Mail.Read` para:
-- Buscar 5 usuarios em vez de 1
-- Iterar tentando cada usuario
-- Analisar o corpo da resposta de erro para identificar `MailboxNotEnabledForRESTAPI`
-- Se todos falharem com esse erro, marcar como `granted = true`
-
-### validate-m365-permissions/index.ts
-
-Aplicar a mesma logica nos casos `MailboxSettings.Read` e `Mail.Read` do switch/case da funcao `testPermission`.
-
-### m365-oauth-callback/index.ts
-
-Aplicar a mesma logica no loop de teste de permissoes do callback OAuth.
-
+## Detalhes Técnicos
+- Importar o ícone `Mail` do lucide-react (para Exchange Online)
+- Reordenar os itens do array `items` dentro de `knownModuleNavConfigs['scope_m365']`
+- Também atualizar o `isActiveRoute` para que subpáginas do Entra ID (como `/scope-m365/entra-id/security-insights`) marquem o item "Entra ID" como ativo, usando `startsWith` em vez de igualdade exata
