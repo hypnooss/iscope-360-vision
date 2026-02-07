@@ -169,6 +169,14 @@ Adicionar suporte para dois tipos de executor:
 - [x] 11 categorias de regras criadas
 - [x] Edge Function `m365-security-posture` refatorada para ler steps do banco
 
-### 🔲 Fase 3: Migrar Subdomain Enum (PENDENTE)
+### ✅ Fase 3: Migrar Subdomain Enum (CONCLUÍDO)
+- [x] Blueprint External Domain atualizado para `hybrid` com 18 steps totais
+- [x] 7 steps `agent` (DNS queries via Python Agent)
+- [x] 11 steps `edge_function` (APIs de enumeração de subdomínios)
+- [x] Phase 1: APIs premium (SecurityTrails, VirusTotal) executadas sequencialmente
+- [x] Phase 2: APIs gratuitas (crt.sh, HackerTarget, etc.) executadas em paralelo
+- [x] Edge Function `subdomain-enum` refatorada para ler steps do banco
+- [x] Response parsers unificados em estrutura data-driven
+
 ### 🔲 Fase 4: Unificar Avaliação (PENDENTE)
 
