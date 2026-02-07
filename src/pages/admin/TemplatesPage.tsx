@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { TemplatePipelineFlow } from '@/components/admin/TemplatePipelineFlow';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -295,6 +296,8 @@ export default function TemplatesPage() {
             Novo Template
           </Button>
         </div>
+
+        <TemplatePipelineFlow />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
