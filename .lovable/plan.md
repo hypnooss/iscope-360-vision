@@ -1,107 +1,76 @@
 
-# Plano: Substituir Application.ReadWrite.OwnedBy por Application.ReadWrite.All
+# Plano: Corrigir Formato de Data do Certificado no Azure
 
-## Resumo
+## Problema Identificado
 
-Atualizar a validação e monitoramento de permissões M365 para usar `Application.ReadWrite.All` em vez de `Application.ReadWrite.OwnedBy`, refletindo a nova configuração no Azure.
+Os logs mostram claramente o erro:
+```json
+{"error":{"code":"KeyCredentialsInvalidEndDate","message":"Key credential end date is invalid."}}
+```
+
+**Causa raiz**: O Azure limita a validade máxima de certificados a **1 ano** a partir da data de início. O código atual define 730 dias (2 anos), que é rejeitado.
+
+### Código Problemático (linha 234)
+```typescript
+endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
+```
 
 ---
 
-## Arquivos a Modificar
+## Solução
+
+Reduzir a validade do certificado de 2 anos para **1 ano** (365 dias ou menos).
+
+---
+
+## Arquivo a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/validate-m365-permissions/index.ts` | Atualizar permissão no array e no switch case |
-| `src/pages/admin/SettingsPage.tsx` | Atualizar permissão nos arrays e na UI |
-| `supabase/functions/register-agent/index.ts` | Atualizar mensagem de erro |
+| `supabase/functions/agent-heartbeat/index.ts` | Alterar validade para 365 dias |
 
 ---
 
-## Mudanças Detalhadas
+## Mudança Necessária
 
-### 1. Edge Function `validate-m365-permissions/index.ts`
+### Linha 234 - Alterar período de validade
 
-**Linha 34** - Atualizar array de permissões:
+**Antes:**
 ```typescript
-// ANTES
-const CERTIFICATE_PERMISSIONS = [
-  'Application.ReadWrite.OwnedBy',
-];
-
-// DEPOIS
-const CERTIFICATE_PERMISSIONS = [
-  'Application.ReadWrite.All',
-];
+endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
 ```
 
-**Linhas 130-153** - Atualizar case no switch:
+**Depois:**
 ```typescript
-// ANTES
-case 'Application.ReadWrite.OwnedBy': {
-
-// DEPOIS
-case 'Application.ReadWrite.All': {
-```
-
----
-
-### 2. Frontend `SettingsPage.tsx`
-
-**Linha 99** - Atualizar permissão inicial:
-```typescript
-// ANTES
-{ name: 'Application.ReadWrite.OwnedBy', granted: false, type: 'recommended' },
-
-// DEPOIS
-{ name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
-```
-
-**Linha 106** - Atualizar array de agrupamento:
-```typescript
-// ANTES
-const certificatePermissions = ['Application.ReadWrite.OwnedBy'];
-
-// DEPOIS
-const certificatePermissions = ['Application.ReadWrite.All'];
-```
-
-**Linha 842** - Atualizar texto exibido na UI:
-```typescript
-// ANTES
-Application.ReadWrite.OwnedBy
-
-// DEPOIS
-Application.ReadWrite.All
-```
-
----
-
-### 3. Edge Function `register-agent/index.ts`
-
-**Linha 182** - Atualizar mensagem de erro:
-```typescript
-// ANTES
-return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.OwnedBy permission is granted.' };
-
-// DEPOIS
-return { success: false, error: 'Permission denied. Ensure Application.ReadWrite.All permission is granted.' };
+endDateTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year (Azure max)
 ```
 
 ---
 
 ## Impacto
 
-- **Validação**: A permissão `Application.ReadWrite.All` será testada no lugar de `OwnedBy`
-- **Monitoramento**: Alertas de permissões ausentes refletirão a nova permissão
-- **UI**: A página de configurações mostrará `Application.ReadWrite.All` na seção de Upload de Certificados
-- **Mensagens de Erro**: Orientações sobre permissões faltantes mencionarão a permissão correta
+- O certificado será válido por 1 ano em vez de 2
+- O upload para o Azure será aceito
+- `azure_certificate_key_id` será salvo no banco
+- Agent parará de enviar "Certificado pendente" nos heartbeats
 
 ---
 
-## Resultado Esperado
+## Consideração Futura
 
-Após o deploy:
+Os certificados precisarão ser renovados anualmente. Pode-se implementar:
+1. Alerta quando certificado estiver próximo de expirar (ex: 30 dias antes)
+2. Renovação automática do certificado pelo agent
 
-1. A validação de permissões testará `Application.ReadWrite.All`
-2. A UI mostrará o nome correto da permissão
-3. O próximo heartbeat do agent (que já está configurado para usar PATCH) deve conseguir fazer upload do certificado com sucesso
+---
+
+## Verificação
+
+1. **Logs da Edge Function** - não deve mais mostrar "KeyCredentialsInvalidEndDate"
+2. **Azure Portal** - App Registration deve mostrar o certificado registrado
+3. **Banco de dados:**
+   ```sql
+   SELECT name, certificate_thumbprint, azure_certificate_key_id 
+   FROM agents WHERE name = 'PRECISIO-AZ';
+   ```
+4. **Logs do Agent** - não deve mais mostrar "Certificado pendente detectado"
