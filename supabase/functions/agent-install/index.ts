@@ -388,6 +388,143 @@ generate_m365_certificate() {
   fi
 }
 
+install_powershell() {
+  echo "Instalando PowerShell Core..."
+  
+  local os_id
+  os_id="$(detect_os)"
+  
+  # Pular se pwsh já estiver instalado
+  if command -v pwsh >/dev/null 2>&1; then
+    echo "PowerShell já instalado: $(pwsh --version 2>&1 | head -1)"
+    install_m365_modules
+    return
+  fi
+  
+  case "$os_id" in
+    ubuntu)
+      # Instalar pré-requisitos
+      apt-get install -y wget apt-transport-https software-properties-common || true
+      
+      # Registrar Microsoft repo
+      source /etc/os-release
+      local deb_url="https://packages.microsoft.com/config/ubuntu/\${VERSION_ID}/packages-microsoft-prod.deb"
+      
+      # Fallback para versões mais antigas
+      if ! wget -q "\$deb_url" -O /tmp/packages-microsoft-prod.deb 2>/dev/null; then
+        deb_url="https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb"
+        wget -q "\$deb_url" -O /tmp/packages-microsoft-prod.deb || true
+      fi
+      
+      if [[ -f /tmp/packages-microsoft-prod.deb ]]; then
+        dpkg -i /tmp/packages-microsoft-prod.deb || true
+        rm -f /tmp/packages-microsoft-prod.deb
+        apt-get update || true
+        apt-get install -y powershell || true
+      fi
+      ;;
+      
+    debian)
+      apt-get install -y wget apt-transport-https software-properties-common || true
+      
+      # Registrar Microsoft repo para Debian
+      source /etc/os-release
+      wget -q "https://packages.microsoft.com/config/debian/\${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb 2>/dev/null || \\
+      wget -q "https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb || true
+      
+      if [[ -f /tmp/packages-microsoft-prod.deb ]]; then
+        dpkg -i /tmp/packages-microsoft-prod.deb || true
+        rm -f /tmp/packages-microsoft-prod.deb
+        apt-get update || true
+        apt-get install -y powershell || true
+      fi
+      ;;
+      
+    rhel|centos|rocky|almalinux|ol)
+      # Detectar versão major do RHEL/CentOS
+      local rhel_version="8"
+      if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        rhel_version="\${VERSION_ID%%.*}"
+      fi
+      
+      # Registrar Microsoft repo
+      curl -sSL "https://packages.microsoft.com/config/rhel/\${rhel_version}/prod.repo" | tee /etc/yum.repos.d/microsoft-prod.repo >/dev/null 2>&1 || \\
+      curl -sSL "https://packages.microsoft.com/config/rhel/8/prod.repo" | tee /etc/yum.repos.d/microsoft-prod.repo >/dev/null 2>&1 || true
+      
+      # Instalar PowerShell
+      if command -v dnf >/dev/null 2>&1; then
+        dnf install -y powershell || true
+      else
+        yum install -y powershell || true
+      fi
+      ;;
+      
+    *)
+      echo "Aviso: Distribuição \$os_id não suportada para instalação automática do PowerShell."
+      echo "Instale manualmente: https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux"
+      return
+      ;;
+  esac
+  
+  if command -v pwsh >/dev/null 2>&1; then
+    echo "PowerShell instalado: \$(pwsh --version 2>&1 | head -1)"
+    install_m365_modules
+  else
+    echo "Aviso: Falha ao instalar PowerShell. Funcionalidades M365 via PowerShell não estarão disponíveis."
+  fi
+}
+
+install_m365_modules() {
+  echo "Instalando módulos PowerShell para M365..."
+  
+  if ! command -v pwsh >/dev/null 2>&1; then
+    echo "Aviso: PowerShell não disponível. Pulando instalação de módulos M365."
+    return
+  fi
+  
+  # Instalar módulos globalmente
+  pwsh -NoProfile -NonInteractive -Command '
+    \$ErrorActionPreference = "Continue"
+    \$ProgressPreference = "SilentlyContinue"
+    
+    # Configurar PSGallery como trusted
+    try {
+      Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+    } catch {
+      Write-Host "Aviso: Não foi possível configurar PSGallery como trusted"
+    }
+    
+    # Instalar ExchangeOnlineManagement
+    if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement -ErrorAction SilentlyContinue)) {
+      Write-Host "Instalando ExchangeOnlineManagement..."
+      try {
+        Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber -ErrorAction Stop
+        Write-Host "ExchangeOnlineManagement instalado com sucesso!"
+      } catch {
+        Write-Host "Aviso: Falha ao instalar ExchangeOnlineManagement: \$(\$_.Exception.Message)"
+      }
+    } else {
+      Write-Host "ExchangeOnlineManagement já instalado"
+    }
+    
+    # Instalar Microsoft.Graph.Authentication
+    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication -ErrorAction SilentlyContinue)) {
+      Write-Host "Instalando Microsoft.Graph.Authentication..."
+      try {
+        Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber -ErrorAction Stop
+        Write-Host "Microsoft.Graph.Authentication instalado com sucesso!"
+      } catch {
+        Write-Host "Aviso: Falha ao instalar Microsoft.Graph.Authentication: \$(\$_.Exception.Message)"
+      }
+    } else {
+      Write-Host "Microsoft.Graph.Authentication já instalado"
+    }
+    
+    Write-Host "Verificação de módulos M365 concluída."
+  ' || echo "Aviso: Falha ao instalar módulos PowerShell M365."
+}
+
 stop_service_if_exists() {
   if systemctl list-unit-files | grep -q "^\${SERVICE_NAME}\\.service"; then
     systemctl stop "$SERVICE_NAME" || true
@@ -576,6 +713,7 @@ main() {
 
   install_deps
   install_amass
+  install_powershell
   ensure_user
   ensure_dirs
   generate_m365_certificate

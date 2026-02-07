@@ -1,4 +1,5 @@
 from agent.version import get_version
+from agent.auth import get_certificate_thumbprint, get_certificate_public_key, CERT_FILE
 
 
 class AgentStopped(Exception):
@@ -11,19 +12,57 @@ class AgentHeartbeat:
         self.state = state
         self.logger = logger
 
+    def _get_pending_certificate(self):
+        """Check if there's a certificate that needs to be uploaded to Azure."""
+        # No certificate file exists
+        if not CERT_FILE.exists():
+            return None
+        
+        # Certificate already registered in Azure
+        if self.state.data.get("azure_certificate_key_id"):
+            return None
+        
+        thumbprint = get_certificate_thumbprint()
+        public_key = get_certificate_public_key()
+        
+        if thumbprint and public_key:
+            self.logger.info(f"Certificado pendente detectado: {thumbprint[:8]}...")
+            return {
+                "certificate_thumbprint": thumbprint,
+                "certificate_public_key": public_key
+            }
+        
+        return None
+
     def send(self, status="running", version=None):
         if version is None:
             version = get_version()
         self.logger.info(f"Enviando heartbeat (v{version})")
 
         try:
+            # Build heartbeat payload
+            payload = {
+                "status": status,
+                "agent_version": version
+            }
+            
+            # Include pending certificate if exists
+            pending_cert = self._get_pending_certificate()
+            if pending_cert:
+                payload.update(pending_cert)
+                self.logger.info("Incluindo certificado no heartbeat para upload ao Azure")
+            
             response = self.api.post(
                 "/agent-heartbeat",
-                json={
-                    "status": status,
-                    "agent_version": version
-                }
+                json=payload
             )
+            
+            # Check if certificate was registered
+            if pending_cert and response.get("azure_certificate_key_id"):
+                self.state.data["azure_certificate_key_id"] = response["azure_certificate_key_id"]
+                self.state.save()
+                self.logger.info(f"Certificado registrado no Azure: {response['azure_certificate_key_id']}")
+            
             return response
 
         except RuntimeError as e:
