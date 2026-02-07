@@ -36,7 +36,7 @@ export default function TenantConnectionPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant, updateTenant } = useTenantConnection();
+  const { tenants, loading, refetch, testConnection, disconnectTenant, deleteTenant, updateTenant, linkAgent, unlinkAgent } = useTenantConnection();
   const [showWizard, setShowWizard] = useState(false);
   const [editingTenant, setEditingTenant] = useState<TenantConnection | null>(null);
   const [analyzingTenants, setAnalyzingTenants] = useState<Set<string>>(new Set());
@@ -485,6 +485,8 @@ export default function TenantConnectionPage() {
           open={!!editingTenant}
           onOpenChange={(open) => !open && setEditingTenant(null)}
           onSave={handleSaveEdit}
+          onLinkAgent={linkAgent}
+          onUnlinkAgent={unlinkAgent}
         />
       </div>
     </AppLayout>

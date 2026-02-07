@@ -310,6 +310,110 @@ export function useTenantConnection() {
     fetchTenants();
   }, [user, isPreviewMode, previewTarget]);
 
+  const fetchLinkedAgent = async (tenantRecordId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('m365_tenant_agents')
+        .select(`
+          id,
+          agent_id,
+          enabled,
+          agents(id, name, certificate_thumbprint, azure_certificate_key_id)
+        `)
+        .eq('tenant_record_id', tenantRecordId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    } catch (err: any) {
+      console.error('Error fetching linked agent:', err);
+      return null;
+    }
+  };
+
+  const fetchAvailableAgents = async (clientId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, certificate_thumbprint, azure_certificate_key_id')
+        .eq('client_id', clientId)
+        .eq('revoked', false)
+        .order('name');
+
+      if (error) throw error;
+      return data || [];
+    } catch (err: any) {
+      console.error('Error fetching available agents:', err);
+      return [];
+    }
+  };
+
+  const linkAgent = async (tenantRecordId: string, agentId: string) => {
+    try {
+      // First, remove any existing link
+      await supabase
+        .from('m365_tenant_agents')
+        .delete()
+        .eq('tenant_record_id', tenantRecordId);
+
+      // Create new link
+      const { error } = await supabase
+        .from('m365_tenant_agents')
+        .insert({
+          tenant_record_id: tenantRecordId,
+          agent_id: agentId,
+          enabled: true,
+        });
+
+      if (error) throw error;
+
+      // Log audit
+      const tenant = tenants.find(t => t.id === tenantRecordId);
+      if (tenant) {
+        await supabase.from('m365_audit_logs').insert({
+          tenant_record_id: tenantRecordId,
+          client_id: tenant.client.id,
+          user_id: user?.id,
+          action: 'agent_linked',
+          action_details: { agent_id: agentId },
+        });
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error linking agent:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  const unlinkAgent = async (tenantRecordId: string) => {
+    try {
+      const { error } = await supabase
+        .from('m365_tenant_agents')
+        .delete()
+        .eq('tenant_record_id', tenantRecordId);
+
+      if (error) throw error;
+
+      // Log audit
+      const tenant = tenants.find(t => t.id === tenantRecordId);
+      if (tenant) {
+        await supabase.from('m365_audit_logs').insert({
+          tenant_record_id: tenantRecordId,
+          client_id: tenant.client.id,
+          user_id: user?.id,
+          action: 'agent_unlinked',
+          action_details: {},
+        });
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error unlinking agent:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   return {
     tenants,
     loading,
@@ -320,6 +424,10 @@ export function useTenantConnection() {
     testConnection,
     updateTenant,
     fetchTenantPermissions,
+    fetchLinkedAgent,
+    fetchAvailableAgents,
+    linkAgent,
+    unlinkAgent,
     hasConnectedTenant: tenants.some(t => t.connection_status === 'connected' || t.connection_status === 'partial'),
   };
 }
