@@ -1,149 +1,67 @@
 
-# Implementação: Upload Automático de Certificados via Graph API
 
-## Resumo
+# Correção: Mail.Read e MailboxSettings.Read mostram "Pendente" incorretamente
 
-Vou implementar a automação completa do upload de certificados dos agents para o Azure App Registration. Isso elimina a necessidade de upload manual pelo usuário, tornando a configuração de agents para M365 PowerShell completamente transparente.
+## Problema Raiz
 
----
+Os logs revelam o erro real:
+```
+MailboxNotEnabledForRESTAPI
+```
 
-## Arquivos a Criar/Modificar
+Isso acontece porque o teste pega o **primeiro usuário** da lista (`$top=1`), e esse usuário nao tem mailbox Exchange habilitada (pode ser conta de servico, shared mailbox, ou usuario sem licenca Exchange). O erro 404 com `MailboxNotEnabledForRESTAPI` **nao significa falta de permissao** — significa que a permissao esta concedida mas o usuario testado nao tem mailbox.
 
-### 1. Migração de Banco de Dados
-**Criar:** `supabase/migrations/[timestamp]_add_azure_certificate_config.sql`
+A logica correta seria:
+- **403 Forbidden** = permissao NAO concedida
+- **404 MailboxNotEnabledForRESTAPI** = permissao concedida, usuario sem mailbox
 
-- Adicionar `app_object_id` e `home_tenant_id` à tabela `m365_global_config`
-- Adicionar `azure_certificate_key_id` à tabela `agents` para rastrear a chave registrada no Azure
+## Solucao
 
-### 2. Atualizar Edge Functions
+Modificar os testes de `MailboxSettings.Read` e `Mail.Read` em **3 edge functions** para:
 
-**Modificar:** `supabase/functions/register-agent/index.ts`
-- Após salvar o agent, chamar a lógica de upload do certificado no Azure
-- Usar Graph API para adicionar o certificado ao App Registration
-- Tratar erros sem falhar o registro do agent
+1. Tentar o primeiro usuario
+2. Se receber `MailboxNotEnabledForRESTAPI`, tentar mais usuarios (ate 5)
+3. Se TODOS os usuarios retornarem `MailboxNotEnabledForRESTAPI`, considerar a permissao como **concedida** (pois o erro nao e 403)
+4. Somente marcar como "nao concedida" se receber 403 (Forbidden)
 
-**Modificar:** `supabase/functions/get-m365-config/index.ts`
-- Retornar os novos campos `app_object_id` e `home_tenant_id`
+## Arquivos a Modificar
 
-**Modificar:** `supabase/functions/update-m365-config/index.ts`
-- Aceitar e salvar os novos campos `app_object_id` e `home_tenant_id`
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/validate-m365-connection/index.ts` | Atualizar testes de MailboxSettings.Read e Mail.Read |
+| `supabase/functions/validate-m365-permissions/index.ts` | Mesma logica para o cron de validacao |
+| `supabase/functions/m365-oauth-callback/index.ts` | Mesma logica para o callback OAuth |
 
-### 3. Atualizar Interface de Configuração
-
-**Modificar:** `src/pages/admin/SettingsPage.tsx`
-- Adicionar campos para **App Object ID** e **Home Tenant ID**
-- Adicionar instruções para o administrador encontrar esses IDs no Azure Portal
-- Adicionar indicador de permissão `Application.ReadWrite.OwnedBy`
-
-### 4. Atualizar Tipos TypeScript
-
-**Modificar:** `src/integrations/supabase/types.ts`
-- Atualizar tipos para incluir os novos campos
-
----
-
-## Fluxo Técnico do Upload Automático
+## Logica do Teste (Pseudocodigo)
 
 ```text
-Agent Registration
-       │
-       ▼
-┌──────────────────────────┐
-│  register-agent          │
-│  Salva certificado local │
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────┐
-│  Verifica se m365_global_config tem:                     │
-│  - app_object_id                                         │
-│  - home_tenant_id                                        │
-│  - client_secret_encrypted                               │
-└──────────┬───────────────────────────────────────────────┘
-           │
-           ▼ (se configurado)
-┌──────────────────────────────────────────────────────────┐
-│  1. Obter access_token para Graph API                    │
-│     POST https://login.microsoftonline.com/{home}/token  │
-│     scope: https://graph.microsoft.com/.default          │
-│                                                          │
-│  2. GET /applications/{object_id}?$select=keyCredentials │
-│     (buscar certificados existentes)                     │
-│                                                          │
-│  3. PATCH /applications/{object_id}                      │
-│     keyCredentials: [...existing, newCert]               │
-│                                                          │
-│  4. Atualizar agents.azure_certificate_key_id            │
-└──────────────────────────────────────────────────────────┘
-           │
-           ▼
-    Agent registrado com certificado no Azure
+Para MailboxSettings.Read e Mail.Read:
+
+1. Buscar ate 5 usuarios: GET /users?$top=5&$select=id
+2. Para cada usuario:
+   a. Testar endpoint (mailboxSettings ou messageRules)
+   b. Se 200 → permissao concedida (parar)
+   c. Se 404 com MailboxNotEnabledForRESTAPI → continuar proximo usuario
+   d. Se 403 → permissao NAO concedida (parar)
+3. Se todos usuarios deram MailboxNotEnabledForRESTAPI:
+   → Considerar permissao CONCEDIDA (erro e de mailbox, nao de permissao)
 ```
 
----
+## Detalhes Tecnicos
 
-## Campos de Interface (Admin Settings)
+### validate-m365-connection/index.ts (linhas 288-331)
 
-Na aba **Microsoft 365**, adicionar seção "Configuração Avançada para Agents":
+Substituir os blocos `MailboxSettings.Read` e `Mail.Read` para:
+- Buscar 5 usuarios em vez de 1
+- Iterar tentando cada usuario
+- Analisar o corpo da resposta de erro para identificar `MailboxNotEnabledForRESTAPI`
+- Se todos falharem com esse erro, marcar como `granted = true`
 
-| Campo | Descrição |
-|-------|-----------|
-| App Object ID | Object ID do App Registration (não confundir com App ID) |
-| Home Tenant ID | Tenant ID onde o App foi criado |
+### validate-m365-permissions/index.ts
 
-Com instruções:
-1. Azure Portal → App Registrations → iScope 360
-2. Copiar **Object ID** (diferente do Application ID)
-3. Copiar **Directory (tenant) ID**
-4. Adicionar permissão `Application.ReadWrite.OwnedBy` e conceder Admin Consent
+Aplicar a mesma logica nos casos `MailboxSettings.Read` e `Mail.Read` do switch/case da funcao `testPermission`.
 
----
+### m365-oauth-callback/index.ts
 
-## Tratamento de Erros
+Aplicar a mesma logica no loop de teste de permissoes do callback OAuth.
 
-| Cenário | Comportamento |
-|---------|---------------|
-| Config M365 incompleta | Agent registra normalmente, log de warning |
-| Permissão faltando | Agent registra, log de erro, certificado não sobe |
-| Erro de rede | Agent registra, retry pode ser manual |
-| Certificado duplicado | Ignora, continua |
-
-O registro do agent **nunca** falha por causa do upload de certificado.
-
----
-
-## Seção Técnica
-
-### Graph API Call
-
-```http
-PATCH https://graph.microsoft.com/v1.0/applications/{object-id}
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "keyCredentials": [
-    // ... certificados existentes (buscar primeiro com GET) ...
-    {
-      "type": "AsymmetricX509Cert",
-      "usage": "Verify",
-      "key": "MIIDYDCCAkigAwIBAgIQ...", // Base64 do certificado
-      "displayName": "iScope-Agent-NomeDoAgent-abc12345",
-      "startDateTime": "2026-02-06T00:00:00Z",
-      "endDateTime": "2028-02-06T00:00:00Z"
-    }
-  ]
-}
-```
-
-### Permissão Necessária no Azure
-
-| Permissão | Tipo |
-|-----------|------|
-| `Application.ReadWrite.OwnedBy` | Application |
-
-Esta permissão permite que o app modifique a si mesmo (adicionar certificados).
-
-### Decriptografia do Client Secret
-
-A função já usa AES-256-GCM para decriptar o `client_secret_encrypted`. O mesmo será usado para autenticar no Graph API.
