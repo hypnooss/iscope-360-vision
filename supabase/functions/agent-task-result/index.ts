@@ -354,72 +354,67 @@ function evaluateCondition(
   return null;
 }
 
-// Mapeamento de source_key para endpoint de API (FortiGate, SonicWall, genérico)
-const sourceKeyToEndpoint: Record<string, string> = {
-  // FortiGate endpoints
-  'system_global': '/api/v2/cmdb/system/global',
-  'system_interface': '/api/v2/cmdb/system/interface',
-  'system_status': '/api/v2/monitor/system/status',
-  'system_firmware': '/api/v2/monitor/system/firmware',
-  'webui_state': '/api/v2/monitor/system/webui-state',
-  'firewall_policy': '/api/v2/cmdb/firewall/policy',
-  'firewall_address': '/api/v2/cmdb/firewall/address',
-  'vpn_ipsec': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
-  'vpn_ipsec_phase1': '/api/v2/cmdb/vpn.ipsec/phase1-interface',
-  'vpn_ssl_settings': '/api/v2/cmdb/vpn.ssl/settings',
-  'log_settings': '/api/v2/cmdb/log/setting',
-  'log_syslogd': '/api/v2/cmdb/log.syslogd/setting',
-  'antivirus_profile': '/api/v2/cmdb/antivirus/profile',
-  'webfilter_profile': '/api/v2/cmdb/webfilter/profile',
-  'ips_sensor': '/api/v2/cmdb/ips/sensor',
-  'dnsfilter_profile': '/api/v2/cmdb/dnsfilter/profile',
-  'system_ha': '/api/v2/cmdb/system/ha',
-  'system_admin': '/api/v2/cmdb/system/admin',
-  'license_status': '/api/v2/monitor/license/status',
-  'forticare_status': '/api/v2/monitor/system/forticare',
-  // Logging endpoints
-  'log_setting': '/api/v2/cmdb/log/setting',
-  'log_fortianalyzer': '/api/v2/cmdb/log.fortianalyzer/setting',
-  'log_fortiguard': '/api/v2/cmdb/log.fortiguard/setting',
-  // Automation endpoints for backup
-  'system_automation_stitch': '/api/v2/cmdb/system/automation-stitch',
-  'system_automation_trigger': '/api/v2/cmdb/system/automation-trigger',
-  'system_automation_action': '/api/v2/cmdb/system/automation-action',
-  // Authentication endpoints
-  'user_ldap': '/api/v2/cmdb/user/ldap',
-  'user_radius': '/api/v2/cmdb/user/radius',
-  'user_fsso': '/api/v2/cmdb/user/fsso',
-  'user_saml': '/api/v2/cmdb/user/saml',
-  // SonicWall endpoints
-  'version': '/api/sonicos/version',
-  'interfaces': '/api/sonicos/interfaces/ipv4',
-  'zones': '/api/sonicos/zones',
-  'access_rules': '/api/sonicos/access-rules/ipv4',
-  'nat_policies': '/api/sonicos/nat-policies/ipv4',
-  'address_objects': '/api/sonicos/address-objects/ipv4',
-  'service_objects': '/api/sonicos/service-objects',
-  'content_filter': '/api/sonicos/content-filter',
-  'gateway_antivirus': '/api/sonicos/gateway-anti-virus',
-  'intrusion_prevention': '/api/sonicos/intrusion-prevention',
-  'vpn_policies': '/api/sonicos/vpn/policies',
-  'ssl_vpn': '/api/sonicos/ssl-vpn',
-  'high_availability': '/api/sonicos/high-availability',
-  'administration': '/api/sonicos/administration',
-  'log_settings_sonic': '/api/sonicos/log/settings',
+// Cache para mapeamentos de source_key -> endpoint carregados do banco
+// Será populado dinamicamente no processamento de cada task
+let sourceKeyEndpointCache: Map<string, Record<string, string>> = new Map();
 
-  // External Domain (DNS)
-  'ns_records': 'DNS Query (NS)',
-  'soa_record': 'DNS Query (SOA)',
-  'dnssec_status': 'DNS Query (DNSSEC)',
-  'spf_record': 'DNS Query (SPF/TXT)',
-  'dmarc_record': 'DNS Query (DMARC/TXT)',
-  'dkim_records': 'DNS Query (DKIM/TXT)',
-  'mx_records': 'DNS Query (MX)',
-  'subdomain_enum': 'Amass (Subdomain Enumeration)',
-
-  // Fallback
+// Fallback para quando não há dados no banco (compatibilidade)
+const defaultSourceKeyToEndpoint: Record<string, string> = {
   'default': 'API do dispositivo'
 };
+
+/**
+ * Carrega mapeamentos de source_key para endpoint do banco de dados
+ * Retorna um objeto { source_key: endpoint_label } para o device_type especificado
+ */
+async function loadSourceKeyEndpoints(
+  supabase: ReturnType<typeof createClient>,
+  deviceTypeId: string
+): Promise<Record<string, string>> {
+  // Check cache first
+  if (sourceKeyEndpointCache.has(deviceTypeId)) {
+    return sourceKeyEndpointCache.get(deviceTypeId)!;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('source_key_endpoints')
+      .select('source_key, endpoint_label, endpoint_url')
+      .eq('device_type_id', deviceTypeId)
+      .eq('is_active', true);
+
+    if (error) {
+      console.error('Failed to load source key endpoints:', error);
+      return defaultSourceKeyToEndpoint;
+    }
+
+    const mapping: Record<string, string> = { ...defaultSourceKeyToEndpoint };
+    for (const row of data || []) {
+      // Prefer endpoint_url if available, otherwise use endpoint_label
+      mapping[row.source_key] = row.endpoint_url || row.endpoint_label;
+    }
+
+    // Cache for subsequent calls
+    sourceKeyEndpointCache.set(deviceTypeId, mapping);
+    console.log(`Loaded ${data?.length || 0} source key endpoints for device type ${deviceTypeId}`);
+
+    return mapping;
+  } catch (e) {
+    console.error('Error loading source key endpoints:', e);
+    return defaultSourceKeyToEndpoint;
+  }
+}
+
+/**
+ * Obtém o endpoint para um source_key específico
+ * Usa o cache carregado ou fallback para o padrão
+ */
+function getEndpointForSourceKey(
+  sourceKeyToEndpoint: Record<string, string>,
+  sourceKey: string
+): string {
+  return sourceKeyToEndpoint[sourceKey] || sourceKeyToEndpoint['default'] || 'API do dispositivo';
+}
 
 // ============================================
 // Evidence Formatters (ported from fortigate-compliance)
@@ -2543,21 +2538,22 @@ function formatExternalDomainEvidence(stepId: string, sourceData: unknown): Evid
 
 function processComplianceRules(
   rawData: Record<string, unknown>,
-  rules: ComplianceRule[]
+  rules: ComplianceRule[],
+  sourceKeyToEndpoint: Record<string, string> = defaultSourceKeyToEndpoint
 ): ComplianceResult {
   const checks: ComplianceCheck[] = [];
   
   for (const rule of rules) {
     const logic = normalizeEvaluationLogic(rule.evaluation_logic);
     
-    // Mapear endpoint da API - tratar regras com múltiplos source_keys
-    let apiEndpoint = sourceKeyToEndpoint[logic.source_key] || sourceKeyToEndpoint['default'];
+    // Mapear endpoint da API - usando mapeamento carregado do banco
+    let apiEndpoint = getEndpointForSourceKey(sourceKeyToEndpoint, logic.source_key);
     
     // Para regras com alt_source_key (como log-002), listar ambos endpoints
     if (logic.alt_source_key) {
-      const altEndpoint = sourceKeyToEndpoint[logic.alt_source_key];
-      if (altEndpoint) {
-        const primaryEndpoint = sourceKeyToEndpoint[logic.source_key] || '';
+      const altEndpoint = getEndpointForSourceKey(sourceKeyToEndpoint, logic.alt_source_key);
+      if (altEndpoint && altEndpoint !== 'API do dispositivo') {
+        const primaryEndpoint = getEndpointForSourceKey(sourceKeyToEndpoint, logic.source_key);
         apiEndpoint = [primaryEndpoint, altEndpoint].filter(Boolean).join(' | ');
       }
     }
@@ -3895,10 +3891,13 @@ serve(async (req: Request) => {
       }
 
       if (deviceTypeId) {
+        // Load source key endpoint mappings from database
+        const endpointMappings = await loadSourceKeyEndpoints(supabase, deviceTypeId);
+
         // Fetch compliance rules for this device type
         const { data: rules } = await supabase
           .from('compliance_rules')
-          .select('id, code, name, category, severity, description, recommendation, pass_description, fail_description, weight, evaluation_logic')
+          .select('id, code, name, category, severity, description, recommendation, pass_description, fail_description, weight, evaluation_logic, technical_risk, business_impact, api_endpoint')
           .eq('device_type_id', deviceTypeId)
           .eq('is_active', true)
           .order('category')
@@ -3908,7 +3907,7 @@ serve(async (req: Request) => {
           console.log(
             `Processing ${rules.length} compliance rules for ${task.target_type} (device type ${deviceTypeId})`
           );
-          complianceResult = processComplianceRules(rawData, rules as ComplianceRule[]);
+          complianceResult = processComplianceRules(rawData, rules as ComplianceRule[], endpointMappings);
 
           // Store raw data for debugging/auditing (only for legacy mode)
           // In progressive mode, raw data is already in task_step_results
