@@ -98,12 +98,15 @@ export default function SettingsPage() {
     // Exchange Online
     { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
     { name: 'Mail.Read', granted: false, type: 'recommended' },
+    // Certificate Upload
+    { name: 'Application.ReadWrite.OwnedBy', granted: false, type: 'recommended' },
   ];
 
   // Group permissions by module for display
   const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All'];
   const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
   const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
+  const certificatePermissions = ['Application.ReadWrite.OwnedBy'];
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -485,15 +488,18 @@ export default function SettingsPage() {
 
   const validatePermissions = async () => {
     if (!tenantIdForValidation.trim()) {
-      toast.error('Informe o Tenant ID para validar as permissões');
+      toast.error('Informe o Tenant ID para validar a configuração');
       return;
     }
 
     setValidatingPermissions(true);
     try {
-      // Call the validate-m365-permissions edge function
+      // Call the validate-m365-permissions edge function with app_object_id for certificate validation
       const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
-        body: { tenant_id: tenantIdForValidation }
+        body: { 
+          tenant_id: tenantIdForValidation,
+          app_object_id: newAppObjectId.trim() || undefined,
+        }
       });
 
       // Handle function errors (but check if response has useful data)
@@ -726,34 +732,54 @@ export default function SettingsPage() {
 
                   {/* Validation Section */}
                   {m365Config.isConfigured && (
-                    <div className="flex items-end gap-3 p-3 bg-background rounded-lg border">
-                      <div className="flex-1 space-y-1">
-                        <Label htmlFor="tenantValidation" className="text-xs">Tenant ID para Validação</Label>
-                        <Input
-                          id="tenantValidation"
-                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                          value={tenantIdForValidation}
-                          onChange={(e) => setTenantIdForValidation(e.target.value)}
-                          className="h-8 text-sm"
-                        />
+                    <div className="p-3 bg-background rounded-lg border space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground">Configuração para Validação e Monitoramento</p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="tenantValidation" className="text-xs">Tenant ID</Label>
+                          <Input
+                            id="tenantValidation"
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            value={tenantIdForValidation}
+                            onChange={(e) => setTenantIdForValidation(e.target.value)}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="appObjectIdValidation" className="text-xs">
+                            App Object ID <span className="text-muted-foreground">(opcional)</span>
+                          </Label>
+                          <Input
+                            id="appObjectIdValidation"
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            value={newAppObjectId}
+                            onChange={(e) => setNewAppObjectId(e.target.value)}
+                            className="h-8 text-sm"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Para validar upload automático de certificados
+                          </p>
+                        </div>
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={validatePermissions}
-                        disabled={validatingPermissions || !tenantIdForValidation.trim()}
-                      >
-                        {validatingPermissions ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <ShieldCheck className="w-4 h-4 mr-2" />
-                        )}
-                        Validar Permissões
-                      </Button>
+                      <div className="flex justify-end">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={validatePermissions}
+                          disabled={validatingPermissions || !tenantIdForValidation.trim()}
+                        >
+                          {validatingPermissions ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-4 h-4 mr-2" />
+                          )}
+                          Validar Configuração
+                        </Button>
+                      </div>
                     </div>
                   )}
 
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-4">
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
                       <ul className="text-sm space-y-1">
@@ -805,6 +831,34 @@ export default function SettingsPage() {
                           ))}
                       </ul>
                     </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
+                      <ul className="text-sm space-y-1">
+                        {m365Config.permissions
+                          .filter(p => certificatePermissions.includes(p.name))
+                          .map(perm => (
+                            <li key={perm.name} className="flex items-center gap-2">
+                              <span 
+                                className={`w-2 h-2 rounded-full ${
+                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
+                                }`}
+                              />
+                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
+                            </li>
+                          ))}
+                        {!m365Config.permissions.some(p => certificatePermissions.includes(p.name)) && (
+                          <li className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-gray-400" />
+                            <code className="text-xs bg-background px-1.5 py-0.5 rounded text-muted-foreground">
+                              Application.ReadWrite.OwnedBy
+                            </code>
+                          </li>
+                        )}
+                      </ul>
+                      <p className="text-[10px] text-muted-foreground">
+                        Requer App Object ID
+                      </p>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     ⚠️ Lembre-se de conceder "Admin consent" para todas as permissões após adicioná-las.
@@ -841,75 +895,27 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                {/* Azure Certificate Auto-Upload Configuration */}
-                <div className="bg-muted/50 rounded-lg p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-sm flex items-center gap-2">
-                        Configuração de Upload Automático de Certificados
-                        {m365Config.hasAzureConfig ? (
-                          <Badge variant="default" className="bg-green-600 text-xs">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Configurado
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">
-                            Opcional
-                          </Badge>
-                        )}
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Permite que certificados de agents sejam registrados automaticamente no Azure App Registration via Graph API.
-                      </p>
-                    </div>
+                {/* Home Tenant ID - for certificate upload */}
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <div>
+                    <h4 className="font-medium text-sm">Home Tenant ID (para Upload de Certificados)</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tenant ID onde o App Registration foi criado. Necessário para upload automático de certificados dos Agents.
+                    </p>
                   </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="appObjectId">App Object ID</Label>
-                      <Input
-                        id="appObjectId"
-                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                        value={newAppObjectId}
-                        onChange={(e) => setNewAppObjectId(e.target.value)}
-                      />
-                      {m365Config.appObjectId && (
-                        <p className="text-xs text-green-600 font-mono">
-                          Configurado: {m365Config.appObjectId.substring(0, 8)}...
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Object ID do App Registration (diferente do App ID). Encontrado em: Azure Portal → App Registrations → Seu App → Overview → Object ID
+                  <div className="max-w-md">
+                    <Label htmlFor="homeTenantId" className="sr-only">Home Tenant ID</Label>
+                    <Input
+                      id="homeTenantId"
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      value={newHomeTenantId}
+                      onChange={(e) => setNewHomeTenantId(e.target.value)}
+                    />
+                    {m365Config.homeTenantId && (
+                      <p className="text-xs text-green-600 font-mono mt-1">
+                        Configurado: {m365Config.homeTenantId.substring(0, 8)}...
                       </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="homeTenantId">Home Tenant ID</Label>
-                      <Input
-                        id="homeTenantId"
-                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                        value={newHomeTenantId}
-                        onChange={(e) => setNewHomeTenantId(e.target.value)}
-                      />
-                      {m365Config.homeTenantId && (
-                        <p className="text-xs text-green-600 font-mono">
-                          Configurado: {m365Config.homeTenantId.substring(0, 8)}...
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Tenant ID onde o App Registration foi criado. Encontrado em: Azure Portal → Microsoft Entra ID → Overview → Tenant ID
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-background rounded-lg p-3 border border-border/50">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <p className="font-medium text-foreground">Pré-requisito: Permissão no Azure</p>
-                        <p>Para habilitar o upload automático de certificados, adicione a permissão <code className="bg-muted px-1 py-0.5 rounded">Application.ReadWrite.OwnedBy</code> no App Registration e conceda Admin Consent.</p>
-                        <p>Esta permissão permite que o app adicione certificados a si mesmo sem acesso a outros apps.</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
