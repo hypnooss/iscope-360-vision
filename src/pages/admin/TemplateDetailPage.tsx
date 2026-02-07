@@ -52,7 +52,7 @@ export default function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, role, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('organize');
+  const [activeTab, setActiveTab] = useState('blueprints');
 
   // Access control - only super_admin and super_suporte
   useEffect(() => {
@@ -256,14 +256,6 @@ export default function TemplateDetailPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="organize" className="gap-2">
-              <Settings className="w-4 h-4" />
-              Visualização
-            </TabsTrigger>
-            <TabsTrigger value="flow" className="gap-2">
-              <Workflow className="w-4 h-4" />
-              Fluxo de Análise
-            </TabsTrigger>
             <TabsTrigger value="blueprints" className="gap-2">
               <FileCode className="w-4 h-4" />
               Blueprints
@@ -285,6 +277,14 @@ export default function TemplateDetailPage() {
                 {parsesCount}
               </Badge>
             </TabsTrigger>
+            <TabsTrigger value="flow" className="gap-2">
+              <Workflow className="w-4 h-4" />
+              Fluxo de Análise
+            </TabsTrigger>
+            <TabsTrigger value="organize" className="gap-2">
+              <Settings className="w-4 h-4" />
+              Visualização
+            </TabsTrigger>
             <TabsTrigger value="guides" className="gap-2">
               <BookOpen className="w-4 h-4" />
               Guia de Correções
@@ -293,6 +293,25 @@ export default function TemplateDetailPage() {
               </Badge>
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="blueprints" className="mt-6">
+            <TemplateBlueprintsManagement
+              deviceTypeId={id!}
+              deviceTypeName={template.name}
+              onRefresh={refetchBlueprints}
+            />
+          </TabsContent>
+
+          <TabsContent value="rules" className="mt-6">
+            <TemplateRulesManagement
+              deviceTypeId={id!}
+              onRefresh={refetchRules}
+            />
+          </TabsContent>
+
+          <TabsContent value="parses" className="mt-6">
+            <ParsesManagement deviceTypeId={id!} />
+          </TabsContent>
 
           <TabsContent value="flow" className="mt-6">
             {activeBlueprint ? (
@@ -341,25 +360,6 @@ export default function TemplateDetailPage() {
                 </Button>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="blueprints" className="mt-6">
-            <TemplateBlueprintsManagement
-              deviceTypeId={id!}
-              deviceTypeName={template.name}
-              onRefresh={refetchBlueprints}
-            />
-          </TabsContent>
-
-          <TabsContent value="rules" className="mt-6">
-            <TemplateRulesManagement
-              deviceTypeId={id!}
-              onRefresh={refetchRules}
-            />
-          </TabsContent>
-
-          <TabsContent value="parses" className="mt-6">
-            <ParsesManagement deviceTypeId={id!} />
           </TabsContent>
 
           <TabsContent value="guides" className="mt-6">
