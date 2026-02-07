@@ -305,6 +305,22 @@ generate_certificate() {
     chmod 600 "$CERT_DIR/m365.key"
     chmod 644 "$CERT_DIR/m365.crt"
     
+    # Generate PFX file (for PowerShell compatibility)
+    # Use empty password for simplicity (protected by file permissions)
+    openssl pkcs12 \
+        -export \
+        -out "$CERT_DIR/m365.pfx" \
+        -inkey "$CERT_DIR/m365.key" \
+        -in "$CERT_DIR/m365.crt" \
+        -passout pass: 2>/dev/null
+    
+    if [[ -f "$CERT_DIR/m365.pfx" ]]; then
+        chmod 600 "$CERT_DIR/m365.pfx"
+        log "Arquivo PFX gerado para PowerShell"
+    else
+        log_error "Falha ao gerar arquivo PFX"
+    fi
+    
     # Calculate and save SHA1 thumbprint (Azure format)
     local thumbprint
     thumbprint="$(openssl x509 -in "$CERT_DIR/m365.crt" -noout -fingerprint -sha1 2>/dev/null | \

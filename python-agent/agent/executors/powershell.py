@@ -21,13 +21,15 @@ class PowerShellExecutor(BaseExecutor):
     CERT_DIR = Path("/var/lib/iscope-agent/certs")
     CERT_FILE = CERT_DIR / "m365.crt"
     KEY_FILE = CERT_DIR / "m365.key"
+    PFX_FILE = CERT_DIR / "m365.pfx"
     THUMBPRINT_FILE = CERT_DIR / "thumbprint.txt"
     
     # Supported modules and their connection commands
+    # PFX file is used for PowerShell compatibility (contains cert + private key)
     MODULES = {
         "ExchangeOnline": {
             "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
-            "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -Organization "{organization}" -ShowBanner:$false',
+            "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword (ConvertTo-SecureString -String "" -AsPlainText -Force) -Organization "{organization}" -ShowBanner:$false',
             "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
         },
         "MicrosoftGraph": {
@@ -65,12 +67,13 @@ class PowerShellExecutor(BaseExecutor):
         if not pwsh:
             errors.append("PowerShell Core (pwsh) not found. Install with: sudo apt install -y powershell")
         
-        # Check certificate
-        if not self.CERT_FILE.exists():
-            errors.append(f"Certificate not found: {self.CERT_FILE}")
-        
-        if not self.KEY_FILE.exists():
-            errors.append(f"Private key not found: {self.KEY_FILE}")
+        # Check PFX certificate (required for PowerShell)
+        if not self.PFX_FILE.exists():
+            # Fallback: check if CRT/KEY exist (PFX might need regeneration)
+            if self.CERT_FILE.exists() and self.KEY_FILE.exists():
+                errors.append(f"PFX file not found: {self.PFX_FILE}. Run 'sudo touch /var/lib/iscope-agent/check_components.flag && sudo systemctl restart iscope-agent' to regenerate")
+            else:
+                errors.append(f"Certificate files not found in {self.CERT_DIR}")
         
         if errors:
             return {"error": "; ".join(errors), "prerequisite_check": False}
@@ -121,7 +124,7 @@ class PowerShellExecutor(BaseExecutor):
             "# Connect",
             module_config["connect"].format(
                 app_id=app_id,
-                cert_path=str(self.CERT_FILE),
+                cert_path=str(self.PFX_FILE),
                 tenant_id=tenant_id,
                 organization=organization
             ),
@@ -266,8 +269,8 @@ class PowerShellExecutor(BaseExecutor):
     def is_available(cls) -> bool:
         """Check if PowerShell executor is available on this system."""
         pwsh = shutil.which("pwsh")
-        cert_exists = cls.CERT_FILE.exists() and cls.KEY_FILE.exists()
-        return pwsh is not None and cert_exists
+        pfx_exists = cls.PFX_FILE.exists()
+        return pwsh is not None and pfx_exists
     
     @classmethod
     def get_capabilities(cls) -> List[str]:
@@ -277,7 +280,7 @@ class PowerShellExecutor(BaseExecutor):
         if shutil.which("pwsh"):
             capabilities.append("powershell")
             
-            if cls.CERT_FILE.exists() and cls.KEY_FILE.exists():
+            if cls.PFX_FILE.exists():
                 capabilities.append("m365_powershell")
         
         return capabilities
