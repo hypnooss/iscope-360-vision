@@ -1474,6 +1474,47 @@ export type Database = {
           },
         ]
       }
+      source_key_endpoints: {
+        Row: {
+          created_at: string | null
+          device_type_id: string
+          endpoint_label: string
+          endpoint_url: string | null
+          id: string
+          is_active: boolean | null
+          source_key: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_type_id: string
+          endpoint_label: string
+          endpoint_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          source_key: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_type_id?: string
+          endpoint_label?: string
+          endpoint_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          source_key?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_key_endpoints_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_alerts: {
         Row: {
           alert_type: string

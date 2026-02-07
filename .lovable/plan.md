@@ -178,5 +178,11 @@ Adicionar suporte para dois tipos de executor:
 - [x] Edge Function `subdomain-enum` refatorada para ler steps do banco
 - [x] Response parsers unificados em estrutura data-driven
 
-### 🔲 Fase 4: Unificar Avaliação (PENDENTE)
+### ✅ Fase 4: Unificar Avaliação (CONCLUÍDO)
+- [x] Tabela `source_key_endpoints` criada para mapeamento dinâmico
+- [x] Mapeamentos de FortiGate, SonicWall e External Domain populados
+- [x] Função `loadSourceKeyEndpoints` criada para carregar do banco com cache
+- [x] `processComplianceRules` refatorado para receber mapeamentos como parâmetro
+- [x] Eliminado o objeto `sourceKeyToEndpoint` hardcoded (66 linhas removidas)
+- [x] RLS policies aplicadas na nova tabela
 
