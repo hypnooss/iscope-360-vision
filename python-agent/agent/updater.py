@@ -7,7 +7,8 @@ Flow:
 3. Verify checksum
 4. Extract and validate contents
 5. Replace current installation
-6. Signal systemd to restart
+6. Ensure system components are installed
+7. Signal systemd to restart
 """
 
 import hashlib
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import requests
+
+from agent.components import ensure_system_components
 
 
 class AutoUpdater:
@@ -87,9 +90,12 @@ class AutoUpdater:
             # 7. Reinstalar dependências se requirements mudou
             self._update_dependencies()
 
+            # 8. Verificar e instalar componentes do sistema
+            ensure_system_components(self.logger)
+
             self.logger.info(f"Update para {version} concluído com sucesso")
 
-            # 8. Solicitar restart
+            # 9. Solicitar restart
             self._request_restart()
 
             return True
