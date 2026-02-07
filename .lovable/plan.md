@@ -1,266 +1,218 @@
 
-# Plano: Suporte Completo a PowerShell no Agent
+# Plano: AutoUpdater com Verificacao e Instalacao Automatica de Componentes
 
-## Situacao Atual
+## Resumo
 
-### O que ja esta pronto:
-
-| Componente | Status | Descricao |
-|------------|--------|-----------|
-| `PowerShellExecutor` | OK | Executor completo em `python-agent/agent/executors/powershell.py` |
-| `auth.py` | OK | Detecta `pwsh`, certificado, e reporta `m365_powershell` nas capabilities |
-| `register-agent` | OK | Recebe `certificate_public_key` e faz upload para Azure automaticamente |
-| Geracao de certificado | OK | `generate_m365_certificate()` no script de instalacao |
-
-### O que falta:
-
-| Componente | Status | Problema |
-|------------|--------|----------|
-| Instalacao do `pwsh` | AUSENTE | Script nao instala PowerShell Core |
-| Modulos M365 | AUSENTE | `ExchangeOnlineManagement` e `Microsoft.Graph.Authentication` nao sao instalados |
-| Geracao de cert em `--update` | PARCIAL | A funcao existe mas precisa garantir execucao mesmo em update |
-| Upload de cert em agents existentes | NAO TRATADO | Agents ja registrados precisam enviar certificado via heartbeat |
+Modificar o AutoUpdater para que, apos atualizar os arquivos Python, verifique automaticamente quais componentes do sistema estao faltando e os instale. Isso sera feito de forma generica, permitindo adicionar novos componentes no futuro sem precisar alterar a versao do agent.
 
 ---
 
-## Solucao Proposta
+## Arquitetura Proposta
 
-### 1. Atualizar Script de Instalacao (`agent-install/index.ts`)
-
-Adicionar nova funcao `install_powershell()` que:
-- Detecta a distribuicao Linux
-- Instala PowerShell Core 7.x
-- Instala os modulos `ExchangeOnlineManagement` e `Microsoft.Graph.Authentication`
+O AutoUpdater tera um novo metodo `_ensure_system_components()` que executa apos `_update_dependencies()`:
 
 ```text
-Distribuicoes Suportadas:
-- Ubuntu/Debian: via Microsoft repo
-- RHEL/CentOS/OracleLinux 8+: via Microsoft repo
-```
-
-### 2. Garantir Geracao de Certificado em `--update`
-
-A funcao `generate_m365_certificate()` ja existe no script, mas precisa ser garantida:
-- Criar certificado se nao existir (ja faz isso)
-- Nao sobrescrever se ja existe (ja faz isso)
-
-A chamada ja esta em `main()` na linha 581, entao nenhuma mudanca e necessaria aqui.
-
-### 3. Mecanismo de Upload de Certificado via Heartbeat
-
-Para agents ja registrados que ganharem certificado apos o update:
-- Agent detecta que tem certificado mas `azure_certificate_key_id` nao esta no estado
-- Agent envia certificado no heartbeat
-- Backend (heartbeat) recebe e faz upload para Azure
-
----
-
-## Alteracoes Detalhadas
-
-### Arquivo 1: `supabase/functions/agent-install/index.ts`
-
-**Adicionar funcao `install_powershell()` (nova)**
-
-```bash
-install_powershell() {
-  echo "Instalando PowerShell Core..."
-  
-  local os_id
-  os_id="$(detect_os)"
-  
-  # Pular se pwsh ja estiver instalado
-  if command -v pwsh >/dev/null 2>&1; then
-    echo "PowerShell ja instalado: $(pwsh --version)"
-    install_m365_modules
-    return
-  fi
-  
-  case "$os_id" in
-    ubuntu|debian)
-      # Instalar pre-requisitos
-      apt-get install -y wget apt-transport-https software-properties-common
-      
-      # Registrar Microsoft repo
-      source /etc/os-release
-      wget -q "https://packages.microsoft.com/config/$ID/$VERSION_ID/packages-microsoft-prod.deb"
-      dpkg -i packages-microsoft-prod.deb
-      rm packages-microsoft-prod.deb
-      apt-get update
-      
-      # Instalar PowerShell
-      apt-get install -y powershell
-      ;;
-      
-    rhel|centos|rocky|almalinux|ol)
-      # Registrar Microsoft repo
-      curl -sSL https://packages.microsoft.com/config/rhel/8/prod.repo | tee /etc/yum.repos.d/microsoft-prod.repo
-      
-      # Instalar PowerShell
-      dnf install -y powershell || yum install -y powershell
-      ;;
-      
-    *)
-      echo "Aviso: Distribuicao $os_id nao suportada para instalacao automatica do PowerShell."
-      echo "Instale manualmente: https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux"
-      return
-      ;;
-  esac
-  
-  if command -v pwsh >/dev/null 2>&1; then
-    echo "PowerShell instalado: $(pwsh --version)"
-    install_m365_modules
-  else
-    echo "Aviso: Falha ao instalar PowerShell. Funcionalidades M365 via PowerShell nao estarao disponiveis."
-  fi
-}
-```
-
-**Adicionar funcao `install_m365_modules()` (nova)**
-
-```bash
-install_m365_modules() {
-  echo "Instalando modulos PowerShell para M365..."
-  
-  # Instalar modulos globalmente
-  pwsh -NoProfile -NonInteractive -Command '
-    $ProgressPreference = "SilentlyContinue"
-    
-    # Configurar PSGallery como trusted
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    
-    # Instalar ExchangeOnlineManagement
-    if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
-      Write-Host "Instalando ExchangeOnlineManagement..."
-      Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber
-    } else {
-      Write-Host "ExchangeOnlineManagement ja instalado"
-    }
-    
-    # Instalar Microsoft.Graph.Authentication
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-      Write-Host "Instalando Microsoft.Graph.Authentication..."
-      Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber
-    } else {
-      Write-Host "Microsoft.Graph.Authentication ja instalado"
-    }
-    
-    Write-Host "Modulos M365 instalados com sucesso!"
-  '
-}
-```
-
-**Atualizar funcao `main()` para incluir PowerShell**
-
-Adicionar chamada `install_powershell` apos `install_amass`:
-
-```bash
-main() {
-  # ... codigo existente ...
-  
-  install_deps
-  install_amass
-  install_powershell   # <-- NOVO
-  ensure_user
-  ensure_dirs
-  generate_m365_certificate
-  # ... resto ...
-}
+check_and_update()
+    |
+    v
+1. Download pacote
+2. Verificar checksum
+3. Extrair e validar
+4. Backup atual
+5. Substituir arquivos
+6. Atualizar dependencias pip
+7. **NOVO: Verificar e instalar componentes do sistema**
+8. Solicitar restart
 ```
 
 ---
 
-### Arquivo 2: `python-agent/agent/heartbeat.py`
+## Sistema de Componentes
 
-**Adicionar envio de certificado no heartbeat (se ainda nao enviado)**
-
-O agent precisara verificar:
-1. Tem certificado local?
-2. Certificado ja foi enviado para Azure? (verificar `azure_certificate_key_id` no estado)
-3. Se nao, enviar no heartbeat
-
-```python
-# Adicionar ao heartbeat
-def get_pending_certificate():
-    """Check if there's a certificate that needs to be uploaded."""
-    from agent.auth import get_certificate_thumbprint, get_certificate_public_key, CERT_FILE
-    
-    if not CERT_FILE.exists():
-        return None
-    
-    # Ja tem certificado registrado no Azure?
-    if self.state.data.get("azure_certificate_key_id"):
-        return None
-    
-    thumbprint = get_certificate_thumbprint()
-    public_key = get_certificate_public_key()
-    
-    if thumbprint and public_key:
-        return {
-            "certificate_thumbprint": thumbprint,
-            "certificate_public_key": public_key
-        }
-    
-    return None
-```
-
----
-
-### Arquivo 3: `supabase/functions/agent-heartbeat/index.ts`
-
-**Adicionar suporte para receber certificado no heartbeat**
-
-Se o heartbeat incluir `certificate_public_key`, fazer upload para Azure:
-
-```typescript
-// No body do heartbeat
-const { certificate_thumbprint, certificate_public_key, capabilities } = body;
-
-// Se certificado foi enviado e agent nao tem azure_certificate_key_id
-if (certificate_public_key && !agent.azure_certificate_key_id) {
-  // Disparar upload assíncrono (nao bloquear heartbeat)
-  uploadCertificateAsync(agentId, certificate_thumbprint, certificate_public_key);
-}
-```
-
----
-
-### Arquivo 4: `python-agent/agent/version.py`
-
-**Atualizar versao do agent**
-
-```python
-__version__ = "1.2.0"  # Antes: 1.1.1
-```
-
----
-
-## Fluxo Completo
+Cada componente tera:
+- **check**: Funcao para verificar se esta instalado
+- **install**: Funcao para instalar (comandos bash)
 
 ```text
-1. Admin publica nova versao (1.2.0) com PowerShell
+Componentes Suportados (v1.2.1):
++-------------------+------------------------+-------------------------+
+| Componente        | Verificacao            | Instalacao              |
++-------------------+------------------------+-------------------------+
+| PowerShell Core   | which pwsh             | Microsoft repos         |
+| Modulos M365      | pwsh -c Get-Module ... | Install-Module ...      |
+| Certificado M365  | /var/lib/.../m365.crt  | openssl req -x509 ...   |
+| Amass             | which amass            | Download GitHub release |
++-------------------+------------------------+-------------------------+
+```
+
+---
+
+## Detalhes da Implementacao
+
+### Arquivo: `python-agent/agent/updater.py`
+
+**Adicionar novo metodo `_ensure_system_components()`**
+
+Este metodo sera chamado apos `_update_dependencies()` e executara scripts bash para verificar e instalar componentes ausentes:
+
+```python
+def _ensure_system_components(self) -> None:
+    """Check and install missing system components."""
+    self.logger.info("Verificando componentes do sistema...")
+    
+    components = [
+        ("PowerShell", self._check_powershell, self._install_powershell),
+        ("Modulos M365", self._check_m365_modules, self._install_m365_modules),
+        ("Certificado M365", self._check_m365_certificate, self._generate_m365_certificate),
+    ]
+    
+    for name, check_fn, install_fn in components:
+        if not check_fn():
+            self.logger.info(f"Componente ausente: {name}. Instalando...")
+            try:
+                install_fn()
+                self.logger.info(f"{name} instalado com sucesso")
+            except Exception as e:
+                self.logger.warning(f"Falha ao instalar {name}: {e}")
+```
+
+**Metodos de verificacao:**
+
+```python
+def _check_powershell(self) -> bool:
+    """Check if PowerShell is installed."""
+    return shutil.which("pwsh") is not None
+
+def _check_m365_modules(self) -> bool:
+    """Check if M365 PowerShell modules are installed."""
+    if not self._check_powershell():
+        return True  # Skip if no PowerShell
+    
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-Command", 
+         "if (Get-Module -ListAvailable ExchangeOnlineManagement) { exit 0 } else { exit 1 }"],
+        capture_output=True
+    )
+    return result.returncode == 0
+
+def _check_m365_certificate(self) -> bool:
+    """Check if M365 certificate exists."""
+    cert_file = Path("/var/lib/iscope-agent/certs/m365.crt")
+    return cert_file.exists()
+```
+
+**Metodos de instalacao:**
+
+Os metodos de instalacao executarao comandos bash usando `subprocess.run()`. Como o updater roda como root (via systemd), tera permissao para instalar pacotes.
+
+```python
+def _install_powershell(self) -> None:
+    """Install PowerShell Core based on OS detection."""
+    # Detectar OS
+    os_id = self._detect_os()
+    
+    if os_id in ("ubuntu", "debian"):
+        # Usar apt-get
+        subprocess.run(["apt-get", "install", "-y", "wget", "apt-transport-https"], ...)
+        # Registrar Microsoft repo e instalar
+        ...
+    elif os_id in ("rhel", "centos", "rocky", "almalinux", "ol"):
+        # Usar dnf/yum
+        ...
+
+def _install_m365_modules(self) -> None:
+    """Install M365 PowerShell modules."""
+    subprocess.run([
+        "pwsh", "-NoProfile", "-NonInteractive", "-Command",
+        "Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber; "
+        "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber"
+    ], ...)
+
+def _generate_m365_certificate(self) -> None:
+    """Generate M365 certificate using openssl."""
+    cert_dir = Path("/var/lib/iscope-agent/certs")
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    
+    subprocess.run([
+        "openssl", "req", "-x509",
+        "-newkey", "rsa:2048",
+        "-keyout", str(cert_dir / "m365.key"),
+        "-out", str(cert_dir / "m365.crt"),
+        "-sha256", "-days", "730", "-nodes",
+        "-subj", f"/CN=iScope-Agent-{hostname}/O=iScope 360"
+    ], ...)
+    
+    # Calcular e salvar thumbprint
+    ...
+```
+
+---
+
+### Atualizacao do fluxo em `check_and_update()`
+
+```python
+def check_and_update(self, update_info: Dict[str, Any]) -> bool:
+    # ... codigo existente ate linha 88 ...
+    
+    # 7. Reinstalar dependencias pip
+    self._update_dependencies()
+    
+    # 8. NOVO: Verificar e instalar componentes do sistema
+    self._ensure_system_components()
+    
+    self.logger.info(f"Update para {version} concluido com sucesso")
+    
+    # 9. Solicitar restart
+    self._request_restart()
+    
+    return True
+```
+
+---
+
+### Arquivo: `python-agent/agent/version.py`
+
+Atualizar versao para 1.2.1:
+
+```python
+__version__ = "1.2.1"
+```
+
+---
+
+## Consideracoes de Seguranca
+
+1. **Execucao como root**: O agent roda como usuario `iscope`, mas o systemd tem `CAP_SYS_ADMIN`. Para instalar pacotes, precisamos que a instalacao de componentes seja feita com privilegios elevados.
+
+2. **Solucao**: O metodo `_ensure_system_components()` verificara se tem permissao para instalar (uid 0). Se nao tiver, apenas logara um aviso.
+
+---
+
+## Fluxo Completo Apos Implementacao
+
+```text
+1. Admin publica versao 1.2.1
    |
    v
-2. Agents recebem update_available no heartbeat
+2. Agent recebe update_available no heartbeat
    |
    v
-3. AutoUpdater baixa e instala nova versao
+3. AutoUpdater baixa e atualiza arquivos Python
    |
    v
-4. Script de instalacao executa --update:
-   - install_powershell() instala pwsh e modulos
-   - generate_m365_certificate() cria certificado (se nao existir)
+4. AutoUpdater executa _ensure_system_components():
+   - Verifica PowerShell -> Instala se ausente
+   - Verifica Modulos M365 -> Instala se ausente
+   - Verifica Certificado -> Gera se ausente
    |
    v
-5. Agent reinicia e faz heartbeat
+5. Agent reinicia
    |
    v
-6. Heartbeat envia certificado (se ainda nao enviado)
+6. Heartbeat reporta capabilities atualizadas
    |
    v
-7. Backend faz upload do certificado para Azure
-   |
-   v
-8. Agent esta pronto para executar PowerShell M365!
+7. Certificado enviado no heartbeat (se pendente)
 ```
 
 ---
@@ -269,24 +221,35 @@ __version__ = "1.2.0"  # Antes: 1.1.1
 
 | Arquivo | Acao |
 |---------|------|
-| `supabase/functions/agent-install/index.ts` | Adicionar `install_powershell()` e `install_m365_modules()` |
-| `python-agent/agent/heartbeat.py` | Enviar certificado pendente no heartbeat |
-| `supabase/functions/agent-heartbeat/index.ts` | Receber e processar certificado do heartbeat |
-| `python-agent/agent/version.py` | Atualizar para 1.2.0 |
+| `python-agent/agent/updater.py` | Adicionar `_ensure_system_components()` e metodos auxiliares |
+| `python-agent/agent/version.py` | Atualizar para 1.2.1 |
 
 ---
 
-## Proxima Acao do Usuario
+## Extensibilidade Futura
 
-Apos aprovacao e implementacao:
+A estrutura de componentes permite adicionar novos facilmente:
 
-1. Gerar release `iscope-agent-1.2.0.tar.gz` do python-agent
-2. Upload para bucket `agent-releases`
-3. Em Administracao > Configuracoes > Agents:
-   - Definir versao 1.2.0
-   - Fazer upload do pacote
-4. Aguardar agents receberem update automatico (proximo heartbeat)
-5. Verificar na lista de agents que:
-   - `agent_version` = 1.2.0
-   - `capabilities` inclui `powershell` e `m365_powershell`
-   - `certificate_thumbprint` esta preenchido
+```python
+# Para adicionar novo componente no futuro:
+components = [
+    ("PowerShell", self._check_powershell, self._install_powershell),
+    ("Modulos M365", self._check_m365_modules, self._install_m365_modules),
+    ("Certificado M365", self._check_m365_certificate, self._generate_m365_certificate),
+    # Novos componentes:
+    ("Docker", self._check_docker, self._install_docker),
+    ("Kubectl", self._check_kubectl, self._install_kubectl),
+]
+```
+
+---
+
+## Proximos Passos Apos Aprovacao
+
+1. Implementar as alteracoes no `updater.py`
+2. Atualizar versao para 1.2.1
+3. Gerar release `iscope-agent-1.2.1.tar.gz`
+4. Upload para bucket `agent-releases`
+5. Publicar via Admin > Configuracoes > Agents
+6. Aguardar agents atualizarem automaticamente
+7. Verificar que capabilities agora incluem `powershell` e `m365_powershell`
