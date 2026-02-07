@@ -45,6 +45,7 @@ import {
   Bot,
   Building,
   ShieldCheck,
+  Mail,
   Layers,
   Globe,
   Database,
@@ -125,9 +126,11 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-blue-500',
     items: [
       { label: 'Tenants', href: '/scope-m365/tenant-connection', icon: Building },
+      { label: 'Postura de Segurança', href: '/scope-m365/posture', icon: ShieldCheck },
+      { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
+      { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
       { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
-      { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
     ],
   },
   'scope_network': {
@@ -242,7 +245,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isActiveRoute = (href: string) => location.pathname === href;
+  const isActiveRoute = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');
   const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
 
   // Build module configs dynamically from effectiveUserModules (respects preview mode)
