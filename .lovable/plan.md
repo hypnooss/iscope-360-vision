@@ -1,255 +1,242 @@
 
-# Plano: AutoUpdater com Verificacao e Instalacao Automatica de Componentes
+# Plano: Flag de Verificacao de Componentes por Agent Individual
 
 ## Resumo
 
-Modificar o AutoUpdater para que, apos atualizar os arquivos Python, verifique automaticamente quais componentes do sistema estao faltando e os instale. Isso sera feito de forma generica, permitindo adicionar novos componentes no futuro sem precisar alterar a versao do agent.
+Implementar uma flag `check_components` individual por agent (em vez de global), permitindo que o administrador acione a verificacao de componentes de sistema especificamente para cada agent atraves de um botao no modal de detalhes.
 
 ---
 
-## Arquitetura Proposta
-
-O AutoUpdater tera um novo metodo `_ensure_system_components()` que executa apos `_update_dependencies()`:
+## Arquitetura
 
 ```text
-check_and_update()
-    |
-    v
-1. Download pacote
-2. Verificar checksum
-3. Extrair e validar
-4. Backup atual
-5. Substituir arquivos
-6. Atualizar dependencias pip
-7. **NOVO: Verificar e instalar componentes do sistema**
-8. Solicitar restart
+Modal Detalhes do Agent                    Backend (heartbeat)
+        |                                        |
+        | 1. Click "Verificar Componentes"       |
+        |--------------------------------------->|
+        |                                        |
+        | 2. UPDATE agents SET                   |
+        |    check_components = true             |
+        |                                        |
+        |                                        |
+Agent envia heartbeat                            |
+        |<---------------------------------------|
+        |                                        |
+        | 3. Response com check_components: true |
+        |--------------------------------------->|
+        |                                        |
+        | 4. Agent executa ensure_system_        |
+        |    components() e reseta flag          |
+        |                                        |
 ```
 
 ---
 
-## Sistema de Componentes
+## Implementacao
 
-Cada componente tera:
-- **check**: Funcao para verificar se esta instalado
-- **install**: Funcao para instalar (comandos bash)
+### 1. Migracao: Adicionar coluna `check_components` na tabela `agents`
 
-```text
-Componentes Suportados (v1.2.1):
-+-------------------+------------------------+-------------------------+
-| Componente        | Verificacao            | Instalacao              |
-+-------------------+------------------------+-------------------------+
-| PowerShell Core   | which pwsh             | Microsoft repos         |
-| Modulos M365      | pwsh -c Get-Module ... | Install-Module ...      |
-| Certificado M365  | /var/lib/.../m365.crt  | openssl req -x509 ...   |
-| Amass             | which amass            | Download GitHub release |
-+-------------------+------------------------+-------------------------+
+```sql
+ALTER TABLE agents 
+ADD COLUMN check_components boolean NOT NULL DEFAULT false;
 ```
 
 ---
 
-## Detalhes da Implementacao
+### 2. Backend: `supabase/functions/agent-heartbeat/index.ts`
 
-### Arquivo: `python-agent/agent/updater.py`
+**Adicionar campo na interface:**
 
-**Adicionar novo metodo `_ensure_system_components()`**
+```typescript
+// Linha ~24: Adicionar ao HeartbeatSuccessResponse
+interface HeartbeatSuccessResponse {
+  // ... campos existentes ...
+  check_components: boolean;  // NOVO
+}
+```
 
-Este metodo sera chamado apos `_update_dependencies()` e executara scripts bash para verificar e instalar componentes ausentes:
+**Buscar a flag do agent e resetar apos enviar:**
+
+```typescript
+// Apos linha ~430 (query do agent para certificado)
+// Atualizar query para incluir check_components
+const { data: agentData } = await supabase
+  .from('agents')
+  .select('azure_certificate_key_id, check_components')
+  .eq('id', agentId)
+  .single();
+
+const checkComponents = agentData?.check_components || false;
+
+// Se check_components esta true, resetar para false apos enviar
+if (checkComponents) {
+  await supabase
+    .from('agents')
+    .update({ check_components: false })
+    .eq('id', agentId);
+  console.log(`Reset check_components flag for agent ${agentId}`);
+}
+```
+
+**Incluir no response:**
+
+```typescript
+// Linha ~467: Adicionar ao response
+const response: HeartbeatSuccessResponse = {
+  // ... campos existentes ...
+  check_components: checkComponents,
+};
+```
+
+---
+
+### 3. Frontend: `src/pages/AgentsPage.tsx`
+
+**Adicionar estados para o botao:**
+
+```typescript
+// Apos linha ~110
+const [checkingComponents, setCheckingComponents] = useState(false);
+```
+
+**Adicionar handler para acionar verificacao:**
+
+```typescript
+const handleCheckComponents = async () => {
+  if (!selectedAgent) return;
+
+  setCheckingComponents(true);
+  try {
+    const { error } = await supabase
+      .from("agents")
+      .update({ check_components: true })
+      .eq("id", selectedAgent.id);
+
+    if (error) throw error;
+
+    toast.success("Verificacao de componentes agendada! O agent executara no proximo heartbeat.");
+    fetchData();
+  } catch (error: any) {
+    toast.error("Erro ao agendar verificacao: " + error.message);
+  } finally {
+    setCheckingComponents(false);
+  }
+};
+```
+
+**Adicionar botao no modal de detalhes (apos linha ~759, antes do fechamento da secao de codigo de ativacao):**
+
+```tsx
+{/* Botao de verificacao de componentes */}
+{!selectedAgent.revoked && selectedAgent.last_seen && (
+  <div className="pt-4 border-t border-border/50">
+    <div className="flex items-center justify-between">
+      <div>
+        <Label>Componentes do Sistema</Label>
+        <p className="text-sm text-muted-foreground">
+          Verifica e instala PowerShell, modulos M365 e certificados
+        </p>
+      </div>
+      <Button 
+        size="sm" 
+        variant="outline" 
+        onClick={handleCheckComponents} 
+        disabled={checkingComponents}
+      >
+        {checkingComponents ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : (
+          <RefreshCw className="w-4 h-4 mr-2" />
+        )}
+        Verificar Componentes
+      </Button>
+    </div>
+  </div>
+)}
+```
+
+---
+
+### 4. Agent: `python-agent/main.py`
+
+**Adicionar logica para reagir a flag (apos linha ~86):**
 
 ```python
-def _ensure_system_components(self) -> None:
-    """Check and install missing system components."""
-    self.logger.info("Verificando componentes do sistema...")
-    
-    components = [
-        ("PowerShell", self._check_powershell, self._install_powershell),
-        ("Modulos M365", self._check_m365_modules, self._install_m365_modules),
-        ("Certificado M365", self._check_m365_certificate, self._generate_m365_certificate),
-    ]
-    
-    for name, check_fn, install_fn in components:
-        if not check_fn():
-            self.logger.info(f"Componente ausente: {name}. Instalando...")
-            try:
-                install_fn()
-                self.logger.info(f"{name} instalado com sucesso")
-            except Exception as e:
-                self.logger.warning(f"Falha ao instalar {name}: {e}")
-```
-
-**Metodos de verificacao:**
-
-```python
-def _check_powershell(self) -> bool:
-    """Check if PowerShell is installed."""
-    return shutil.which("pwsh") is not None
-
-def _check_m365_modules(self) -> bool:
-    """Check if M365 PowerShell modules are installed."""
-    if not self._check_powershell():
-        return True  # Skip if no PowerShell
-    
-    result = subprocess.run(
-        ["pwsh", "-NoProfile", "-Command", 
-         "if (Get-Module -ListAvailable ExchangeOnlineManagement) { exit 0 } else { exit 1 }"],
-        capture_output=True
-    )
-    return result.returncode == 0
-
-def _check_m365_certificate(self) -> bool:
-    """Check if M365 certificate exists."""
-    cert_file = Path("/var/lib/iscope-agent/certs/m365.crt")
-    return cert_file.exists()
-```
-
-**Metodos de instalacao:**
-
-Os metodos de instalacao executarao comandos bash usando `subprocess.run()`. Como o updater roda como root (via systemd), tera permissao para instalar pacotes.
-
-```python
-def _install_powershell(self) -> None:
-    """Install PowerShell Core based on OS detection."""
-    # Detectar OS
-    os_id = self._detect_os()
-    
-    if os_id in ("ubuntu", "debian"):
-        # Usar apt-get
-        subprocess.run(["apt-get", "install", "-y", "wget", "apt-transport-https"], ...)
-        # Registrar Microsoft repo e instalar
-        ...
-    elif os_id in ("rhel", "centos", "rocky", "almalinux", "ol"):
-        # Usar dnf/yum
-        ...
-
-def _install_m365_modules(self) -> None:
-    """Install M365 PowerShell modules."""
-    subprocess.run([
-        "pwsh", "-NoProfile", "-NonInteractive", "-Command",
-        "Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber; "
-        "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber"
-    ], ...)
-
-def _generate_m365_certificate(self) -> None:
-    """Generate M365 certificate using openssl."""
-    cert_dir = Path("/var/lib/iscope-agent/certs")
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    
-    subprocess.run([
-        "openssl", "req", "-x509",
-        "-newkey", "rsa:2048",
-        "-keyout", str(cert_dir / "m365.key"),
-        "-out", str(cert_dir / "m365.crt"),
-        "-sha256", "-days", "730", "-nodes",
-        "-subj", f"/CN=iScope-Agent-{hostname}/O=iScope 360"
-    ], ...)
-    
-    # Calcular e salvar thumbprint
-    ...
+# Verificar componentes se solicitado pelo backend
+if result.get('check_components'):
+    self.logger.info("Backend solicitou verificacao de componentes")
+    from agent.components import ensure_system_components
+    try:
+        ensure_system_components(self.logger)
+    except Exception as e:
+        self.logger.warning(f"Erro ao verificar componentes: {e}")
 ```
 
 ---
 
-### Atualizacao do fluxo em `check_and_update()`
+### 5. Versao: `python-agent/agent/version.py`
 
 ```python
-def check_and_update(self, update_info: Dict[str, Any]) -> bool:
-    # ... codigo existente ate linha 88 ...
-    
-    # 7. Reinstalar dependencias pip
-    self._update_dependencies()
-    
-    # 8. NOVO: Verificar e instalar componentes do sistema
-    self._ensure_system_components()
-    
-    self.logger.info(f"Update para {version} concluido com sucesso")
-    
-    # 9. Solicitar restart
-    self._request_restart()
-    
-    return True
+__version__ = "1.2.2"
 ```
 
 ---
 
-### Arquivo: `python-agent/agent/version.py`
+## Fluxo de Uso
 
-Atualizar versao para 1.2.1:
-
-```python
-__version__ = "1.2.1"
-```
-
----
-
-## Consideracoes de Seguranca
-
-1. **Execucao como root**: O agent roda como usuario `iscope`, mas o systemd tem `CAP_SYS_ADMIN`. Para instalar pacotes, precisamos que a instalacao de componentes seja feita com privilegios elevados.
-
-2. **Solucao**: O metodo `_ensure_system_components()` verificara se tem permissao para instalar (uid 0). Se nao tiver, apenas logara um aviso.
+1. Admin abre modal de detalhes do agent
+2. Clica em "Verificar Componentes"
+3. Frontend faz UPDATE na tabela agents: `check_components = true`
+4. Agent recebe `check_components: true` no proximo heartbeat
+5. Agent executa `ensure_system_components()`:
+   - Instala PowerShell se ausente
+   - Instala modulos M365 se ausentes
+   - Gera certificado se ausente
+6. Backend reseta flag para `false` apos enviar no response
+7. Proximo heartbeat reporta capabilities e certificado
 
 ---
 
-## Fluxo Completo Apos Implementacao
+## Vantagens da Abordagem Individual
 
-```text
-1. Admin publica versao 1.2.1
-   |
-   v
-2. Agent recebe update_available no heartbeat
-   |
-   v
-3. AutoUpdater baixa e atualiza arquivos Python
-   |
-   v
-4. AutoUpdater executa _ensure_system_components():
-   - Verifica PowerShell -> Instala se ausente
-   - Verifica Modulos M365 -> Instala se ausente
-   - Verifica Certificado -> Gera se ausente
-   |
-   v
-5. Agent reinicia
-   |
-   v
-6. Heartbeat reporta capabilities atualizadas
-   |
-   v
-7. Certificado enviado no heartbeat (se pendente)
-```
+| Aspecto | Flag Global | Flag por Agent |
+|---------|-------------|----------------|
+| Controle | Todos de uma vez | Granular por agent |
+| Uso | Emergencia/deploy massivo | Troubleshooting individual |
+| Reset | Manual via SQL | Automatico apos execucao |
+| UI | Via Settings | Direto no modal do agent |
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Acao |
-|---------|------|
-| `python-agent/agent/updater.py` | Adicionar `_ensure_system_components()` e metodos auxiliares |
-| `python-agent/agent/version.py` | Atualizar para 1.2.1 |
+| Arquivo | Alteracao |
+|---------|-----------|
+| Migracao SQL | Adicionar coluna `check_components` |
+| `supabase/functions/agent-heartbeat/index.ts` | Ler e resetar flag, incluir no response |
+| `src/pages/AgentsPage.tsx` | Botao no modal de detalhes |
+| `python-agent/main.py` | Reagir a flag e chamar `ensure_system_components()` |
+| `python-agent/agent/version.py` | Atualizar para 1.2.2 |
 
 ---
 
-## Extensibilidade Futura
+## Secao Tecnica
 
-A estrutura de componentes permite adicionar novos facilmente:
+### Comportamento do Reset Automatico
 
-```python
-# Para adicionar novo componente no futuro:
-components = [
-    ("PowerShell", self._check_powershell, self._install_powershell),
-    ("Modulos M365", self._check_m365_modules, self._install_m365_modules),
-    ("Certificado M365", self._check_m365_certificate, self._generate_m365_certificate),
-    # Novos componentes:
-    ("Docker", self._check_docker, self._install_docker),
-    ("Kubectl", self._check_kubectl, self._install_kubectl),
-]
-```
+A flag e resetada para `false` pelo backend imediatamente apos incluir no response. Isso garante que:
+- O agent executa a verificacao apenas uma vez
+- Nao ha loop infinito de verificacoes
+- Se o agent falhar, o admin pode clicar novamente
 
----
+### Condicao de Exibicao do Botao
 
-## Proximos Passos Apos Aprovacao
+O botao so aparece se:
+- Agent nao esta revogado (`!selectedAgent.revoked`)
+- Agent ja se conectou pelo menos uma vez (`selectedAgent.last_seen`)
 
-1. Implementar as alteracoes no `updater.py`
-2. Atualizar versao para 1.2.1
-3. Gerar release `iscope-agent-1.2.1.tar.gz`
-4. Upload para bucket `agent-releases`
-5. Publicar via Admin > Configuracoes > Agents
-6. Aguardar agents atualizarem automaticamente
-7. Verificar que capabilities agora incluem `powershell` e `m365_powershell`
+Isso evita mostrar o botao para agents pendentes que ainda nao tem o codigo instalado.
+
+### Atualizacao do Types
+
+A coluna `check_components` sera adicionada ao banco e o tipo `agents` sera atualizado automaticamente apos a migracao.
