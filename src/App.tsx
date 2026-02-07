@@ -16,6 +16,7 @@ const ModuleSelectionPage = lazy(() => import("./pages/ModuleSelectionPage"));
 const GeneralDashboardPage = lazy(() => import("./pages/GeneralDashboardPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const AgentsPage = lazy(() => import("./pages/AgentsPage"));
+const AgentDetailPage = lazy(() => import("./pages/AgentDetailPage"));
 const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const AdministratorsPage = lazy(() => import("./pages/AdministratorsPage"));
 const SettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
@@ -121,6 +122,7 @@ const App = () => (
                   {/* Admin */}
                   <Route path="/users" element={<UsersPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
+                  <Route path="/agents/:id" element={<AgentDetailPage />} />
                   <Route path="/workspaces" element={<ClientsPage />} />
                   <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
                   <Route path="/administrators" element={<AdministratorsPage />} />
