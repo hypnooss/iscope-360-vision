@@ -13,7 +13,7 @@ from agent.executors.ssh import SSHExecutor
 from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
 from agent.executors.amass import AmassExecutor
-# SubdomainEnumExecutor removed - subdomain enumeration now runs server-side
+from agent.executors.powershell import PowerShellExecutor
 
 
 class TaskExecutor:
@@ -46,7 +46,7 @@ class TaskExecutor:
             'snmp_query': SNMPExecutor(logger),
             'dns_query': DNSQueryExecutor(logger),
             'amass': AmassExecutor(logger),
-            # subdomain_enum removed - now runs server-side in Edge Function
+            'powershell': PowerShellExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
