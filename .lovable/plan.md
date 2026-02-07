@@ -1,38 +1,46 @@
 
-# Plano: Corrigir Upload de Certificado para Azure
 
-## Problemas Identificados
+# Plano: Corrigir Erro de Sintaxe e Verificar Permissões do Azure
 
-### Problema 1: Regex Incorreto (Bug Crítico)
-O código tem um escape duplo no regex que impede a remoção de whitespace do certificado:
+## Problema 1: Código Duplicado (BOOT_ERROR)
+
+O arquivo `agent-heartbeat/index.ts` contém código duplicado após um `return`, causando o erro de sintaxe:
+
+```
+SyntaxError: Identifier 'keyId' has already been declared at line 174
+```
+
+### Código Problemático (Linhas 257-287)
 
 ```typescript
-// ERRADO (linha 208)
-.replace(/\\s+/g, '')  // Procura literal "\s+", não whitespace
+// Linha 257: PRIMEIRA declaração
+const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
 
-// CORRETO
-.replace(/\s+/g, '')   // Remove espaços, tabs, quebras de linha
-```
+// ... código de update ...
 
-**Consequência**: O Azure recebe o certificado com quebras de linha, resultando em:
-```json
-{"error":{"code":"Request_BadRequest","message":"Unexpected invalid input parameters."}}
-```
+console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
+return keyId;  // Linha 270: RETURN
 
-### Problema 2: addKey Requer Proof JWT
-O endpoint `addKey` requer um `proof` JWT assinado quando chamado via client credentials. Este é um mecanismo de segurança do Azure para evitar que aplicações adicionem suas próprias credenciais sem prova de posse.
-
-### Problema 3: PATCH Requer Permissão
-O fallback via PATCH requer a permissão `Application.ReadWrite.OwnedBy`:
-```json
-{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}}
+// CÓDIGO MORTO ABAIXO (deveria ter sido removido)
+// Parse response from addKey
+const uploadData = await uploadResponse.json();
+const keyId = uploadData.keyId || ...;  // Linha 274: SEGUNDA declaração (ERRO!)
 ```
 
 ---
 
-## Solução
+## Problema 2: Permissão do Azure
 
-Corrigir o regex e usar o endpoint PATCH diretamente (que é mais simples), mas garantir que a permissão `Application.ReadWrite.OwnedBy` esteja concedida no Azure.
+O log mostra:
+```json
+{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}}
+```
+
+A permissão `Application.ReadWrite.OwnedBy` só funciona se:
+1. O App Registration foi criado pelo próprio app (improvável)
+2. Ou foi explicitamente adicionado como owner
+
+**Solução alternativa**: Usar a permissão `Application.ReadWrite.All` que é mais ampla, ou adicionar o app como owner do próprio registro.
 
 ---
 
@@ -40,106 +48,48 @@ Corrigir o regex e usar o endpoint PATCH diretamente (que é mais simples), mas 
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-heartbeat/index.ts` | Corrigir regex e simplificar fluxo |
+| `supabase/functions/agent-heartbeat/index.ts` | Remover código duplicado (linhas 272-287) |
 
 ---
 
-## Mudanças Necessárias
+## Mudança Necessária
 
-### 1. Corrigir Regex (Linha 208)
+### Remover código morto (Linhas 272-287)
 
-**Antes:**
-```typescript
-let certBase64 = publicKey
-  .replace(/-----BEGIN CERTIFICATE-----/g, '')
-  .replace(/-----END CERTIFICATE-----/g, '')
-  .replace(/\\s+/g, '');  // BUG: escape duplo
-```
-
-**Depois:**
-```typescript
-let certBase64 = publicKey
-  .replace(/-----BEGIN CERTIFICATE-----/g, '')
-  .replace(/-----END CERTIFICATE-----/g, '')
-  .replace(/\s+/g, '');   // CORRETO: remove whitespace
-```
-
-### 2. Usar PATCH Diretamente (Simplificar)
-
-O endpoint `addKey` é mais complexo e requer proof JWT. Vamos usar PATCH diretamente, que funciona com a permissão `Application.ReadWrite.OwnedBy`:
+O bloco abaixo deve ser **removido completamente**:
 
 ```typescript
-async function uploadAgentCertificate(...) {
-  // ... (código de autenticação permanece igual)
-  
-  // Format certificate for Azure (remove headers and ALL whitespace)
-  const certBase64 = publicKey
-    .replace(/-----BEGIN CERTIFICATE-----/g, '')
-    .replace(/-----END CERTIFICATE-----/g, '')
-    .replace(/\s+/g, '');  // CORRETO: remove espaços e quebras de linha
+// REMOVER: Este código está após um return e nunca executa
+// Parse response from addKey
+const uploadData = await uploadResponse.json();
+const keyId = uploadData.keyId || `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
 
-  // Get current key credentials
-  const getAppResponse = await fetch(
-    `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
-    { headers: { 'Authorization': `Bearer ${accessToken}` } }
-  );
+// Update agent record with certificate info
+await supabase
+  .from('agents')
+  .update({
+    certificate_thumbprint: thumbprint,
+    certificate_public_key: publicKey,
+    azure_certificate_key_id: keyId,
+  })
+  .eq('id', agentId);
 
-  if (!getAppResponse.ok) {
-    console.error('Failed to get app credentials:', await getAppResponse.text());
-    return null;
-  }
-
-  const appData = await getAppResponse.json();
-  const existingKeys = appData.keyCredentials || [];
-
-  // Add new key credential
-  const newKey = {
-    type: 'AsymmetricX509Cert',
-    usage: 'Verify',
-    key: certBase64,
-    displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
-    startDateTime: new Date().toISOString(),
-    endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
-  };
-
-  const patchResponse = await fetch(
-    `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        keyCredentials: [...existingKeys, newKey],
-      }),
-    }
-  );
-
-  if (!patchResponse.ok) {
-    console.error('Failed to patch app credentials:', await patchResponse.text());
-    return null;
-  }
-
-  // ... (resto do código permanece igual)
-}
+console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
+return keyId;
 ```
 
 ---
 
-## Pré-Requisito: Permissão no Azure
+## Sobre a Permissão do Azure
 
-Para que o PATCH funcione, é necessário que a permissão `Application.ReadWrite.OwnedBy` esteja concedida ao App Registration no Azure.
+Após corrigir o erro de sintaxe, o próximo passo é resolver a permissão. Opções:
 
-### Verificar no Azure Portal:
-1. Ir para Azure AD > App registrations > InfraScope 360
-2. API permissions
-3. Verificar se `Application.ReadWrite.OwnedBy` está listada e com "Admin consent granted"
+| Opção | Descrição | Recomendação |
+|-------|-----------|--------------|
+| A | Adicionar app como Owner do próprio App Registration no Azure Portal | Simples, não requer permissão extra |
+| B | Usar `Application.ReadWrite.All` em vez de `Application.ReadWrite.OwnedBy` | Mais ampla, pode ser overkill |
 
-Se não estiver:
-1. Add a permission > Microsoft Graph > Application permissions
-2. Procurar por `Application.ReadWrite.OwnedBy`
-3. Adicionar e conceder admin consent
+**Recomendo Opção A**: No Azure Portal, vá em App registrations > InfraScope 360 > Owners > Add owners > adicione o próprio Service Principal do app.
 
 ---
 
@@ -147,22 +97,16 @@ Se não estiver:
 
 Após a correção:
 
-1. Regex corretamente remove quebras de linha do certificado
-2. Usa PATCH diretamente (mais confiável que addKey)
-3. Certificado é enviado em formato válido para o Azure
-4. Azure aceita e registra o certificado
-5. `azure_certificate_key_id` é salvo no banco
-6. Agent recebe confirmação e para de enviar "Certificado pendente"
+1. Edge function inicia sem erro de sintaxe
+2. Heartbeat processa normalmente
+3. Se permissão estiver correta, certificado é registrado no Azure
+4. `azure_certificate_key_id` é salvo no banco
 
 ---
 
 ## Verificação
 
-1. **Logs do Edge Function** - não deve mais mostrar "Request_BadRequest"
-2. **Azure Portal** - App Registration deve mostrar nova chave de certificado
-3. **Banco de dados:**
-   ```sql
-   SELECT name, certificate_thumbprint, azure_certificate_key_id 
-   FROM agents WHERE name = 'PRECISIO-AZ'
-   ```
-4. **Logs do Agent** - não deve mais mostrar "Certificado pendente detectado"
+1. **Logs da Edge Function** - não deve mais mostrar "Identifier 'keyId' has already been declared"
+2. **Logs do Agent** - não deve mais mostrar "BOOT_ERROR"
+3. Após ajuste de permissão no Azure, verificar se certificado aparece no App Registration
+
