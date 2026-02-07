@@ -102,8 +102,8 @@ parse_args() {
     esac
   done
 
-  if [[ "$UNINSTALL" -eq 0 ]] && [[ -z "$ACTIVATION_CODE" ]]; then
-    echo "Erro: --activation-code é obrigatório."
+  if [[ "$UNINSTALL" -eq 0 ]] && [[ "$UPDATE" -eq 0 ]] && [[ -z "$ACTIVATION_CODE" ]]; then
+    echo "Erro: --activation-code é obrigatório para instalação nova."
     exit 1
   fi
 }
