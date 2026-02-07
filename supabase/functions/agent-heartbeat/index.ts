@@ -10,6 +10,8 @@ const corsHeaders = {
 interface HeartbeatRequest {
   status: string;
   agent_version: string;
+  certificate_thumbprint?: string;
+  certificate_public_key?: string;
 }
 
 interface UpdateInfo {
@@ -28,6 +30,7 @@ interface HeartbeatSuccessResponse {
   has_pending_tasks: boolean;
   update_available: boolean;
   update_info?: UpdateInfo;
+  azure_certificate_key_id?: string;
 }
 
 interface HeartbeatErrorResponse {
@@ -75,6 +78,197 @@ async function updateAgentVersion(supabase: any, agentId: string, version: strin
       .eq('id', agentId);
   } catch (error) {
     console.error('Failed to update agent version:', error);
+  }
+}
+
+/**
+ * Upload agent certificate to Azure and update database
+ * Returns the Azure key ID if successful
+ */
+async function uploadAgentCertificate(
+  supabase: any,
+  agentId: string,
+  thumbprint: string,
+  publicKey: string
+): Promise<string | null> {
+  console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
+  
+  try {
+    // Get M365 global config for Azure credentials
+    const { data: globalConfig, error: configError } = await supabase
+      .from('m365_global_config')
+      .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
+      .limit(1)
+      .single();
+
+    if (configError || !globalConfig) {
+      console.log('M365 global config not found, skipping certificate upload');
+      return null;
+    }
+
+    if (!globalConfig.app_object_id || !globalConfig.home_tenant_id) {
+      console.log('M365 app_object_id or home_tenant_id not configured, skipping certificate upload');
+      return null;
+    }
+
+    // Decrypt client secret
+    const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+    if (!encryptionKey) {
+      console.error('M365_ENCRYPTION_KEY not set');
+      return null;
+    }
+
+    // Simple XOR decryption (same as used in other M365 functions)
+    const decryptSecret = (encrypted: string): string => {
+      const data = atob(encrypted);
+      let result = '';
+      for (let i = 0; i < data.length; i++) {
+        result += String.fromCharCode(data.charCodeAt(i) ^ encryptionKey.charCodeAt(i % encryptionKey.length));
+      }
+      return result;
+    };
+
+    const clientSecret = decryptSecret(globalConfig.client_secret_encrypted);
+
+    // Get access token for Microsoft Graph
+    const tokenResponse = await fetch(
+      `https://login.microsoftonline.com/${globalConfig.home_tenant_id}/oauth2/v2.0/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: globalConfig.app_id,
+          client_secret: clientSecret,
+          scope: 'https://graph.microsoft.com/.default',
+          grant_type: 'client_credentials',
+        }),
+      }
+    );
+
+    if (!tokenResponse.ok) {
+      console.error('Failed to get Azure access token:', await tokenResponse.text());
+      return null;
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Format certificate for Azure (remove headers and newlines)
+    let certBase64 = publicKey
+      .replace(/-----BEGIN CERTIFICATE-----/g, '')
+      .replace(/-----END CERTIFICATE-----/g, '')
+      .replace(/\\s+/g, '');
+
+    // Upload certificate to Azure App Registration
+    const keyCredential = {
+      type: 'AsymmetricX509Cert',
+      usage: 'Verify',
+      key: certBase64,
+      displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
+    };
+
+    const uploadResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}/addKey`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          keyCredential,
+          passwordCredential: null,
+          proof: null, // Not required for app-only auth
+        }),
+      }
+    );
+
+    // If addKey fails, try PATCH approach
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.log(`addKey failed (${uploadResponse.status}), trying PATCH approach: ${errorText}`);
+      
+      // Get current key credentials
+      const getAppResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!getAppResponse.ok) {
+        console.error('Failed to get app credentials:', await getAppResponse.text());
+        return null;
+      }
+
+      const appData = await getAppResponse.json();
+      const existingKeys = appData.keyCredentials || [];
+
+      // Add new key
+      const newKey = {
+        type: 'AsymmetricX509Cert',
+        usage: 'Verify',
+        key: certBase64,
+        displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
+        startDateTime: new Date().toISOString(),
+        endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
+      };
+
+      const patchResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            keyCredentials: [...existingKeys, newKey],
+          }),
+        }
+      );
+
+      if (!patchResponse.ok) {
+        console.error('Failed to patch app credentials:', await patchResponse.text());
+        return null;
+      }
+
+      // Generate a key ID based on thumbprint
+      const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+      
+      // Update agent record with certificate info
+      await supabase
+        .from('agents')
+        .update({
+          certificate_thumbprint: thumbprint,
+          certificate_public_key: publicKey,
+          azure_certificate_key_id: keyId,
+        })
+        .eq('id', agentId);
+
+      console.log(`Certificate uploaded via PATCH for agent ${agentId}, keyId: ${keyId}`);
+      return keyId;
+    }
+
+    // Parse response from addKey
+    const uploadData = await uploadResponse.json();
+    const keyId = uploadData.keyId || `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+
+    // Update agent record with certificate info
+    await supabase
+      .from('agents')
+      .update({
+        certificate_thumbprint: thumbprint,
+        certificate_public_key: publicKey,
+        azure_certificate_key_id: keyId,
+      })
+      .eq('id', agentId);
+
+    console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
+    return keyId;
+  } catch (error) {
+    console.error('Error uploading certificate:', error);
+    return null;
   }
 }
 
@@ -229,6 +423,30 @@ serve(async (req: Request) => {
     // Update agent version in database (fire and forget)
     await updateAgentVersion(supabase, agentId, agentVersion);
 
+    // Process certificate upload if provided
+    let azureCertificateKeyId: string | null = null;
+    if (body.certificate_public_key && body.certificate_thumbprint) {
+      // Check if agent already has certificate registered
+      const { data: agentData } = await supabase
+        .from('agents')
+        .select('azure_certificate_key_id')
+        .eq('id', agentId)
+        .single();
+
+      if (!agentData?.azure_certificate_key_id) {
+        console.log(`Agent ${agentId} has pending certificate, uploading to Azure...`);
+        azureCertificateKeyId = await uploadAgentCertificate(
+          supabase,
+          agentId,
+          body.certificate_thumbprint,
+          body.certificate_public_key
+        );
+      } else {
+        azureCertificateKeyId = agentData.azure_certificate_key_id;
+        console.log(`Agent ${agentId} already has certificate registered: ${azureCertificateKeyId}`);
+      }
+    }
+
     // Check for available updates
     const { data: updateSettings } = await supabase
       .from('system_settings')
@@ -243,7 +461,7 @@ serve(async (req: Request) => {
     // Compare versions to determine if update is available
     const updateAvailable = compareVersions(agentVersion, latestVersion) < 0;
 
-    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, latest=${latestVersion}, update=${updateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}`);
+    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, latest=${latestVersion}, update=${updateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
 
     // Build success response
     const response: HeartbeatSuccessResponse = {
@@ -255,6 +473,11 @@ serve(async (req: Request) => {
       has_pending_tasks: result.has_pending_tasks || false,
       update_available: updateAvailable,
     };
+
+    // Include certificate key ID if available
+    if (azureCertificateKeyId) {
+      response.azure_certificate_key_id = azureCertificateKeyId;
+    }
 
     // Include update info if available
     if (updateAvailable) {
