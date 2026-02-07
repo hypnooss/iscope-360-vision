@@ -274,6 +274,51 @@ export type Database = {
           },
         ]
       }
+      blueprint_step_templates: {
+        Row: {
+          category: string | null
+          code: string
+          created_at: string
+          default_config: Json
+          description: string | null
+          executor: Database["public"]["Enums"]["blueprint_executor_type"]
+          id: string
+          is_active: boolean
+          name: string
+          runtime: string
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          code: string
+          created_at?: string
+          default_config?: Json
+          description?: string | null
+          executor?: Database["public"]["Enums"]["blueprint_executor_type"]
+          id?: string
+          is_active?: boolean
+          name: string
+          runtime: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          code?: string
+          created_at?: string
+          default_config?: Json
+          description?: string | null
+          executor?: Database["public"]["Enums"]["blueprint_executor_type"]
+          id?: string
+          is_active?: boolean
+          name?: string
+          runtime?: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           created_at: string
@@ -381,6 +426,7 @@ export type Database = {
           created_at: string
           description: string | null
           device_type_id: string
+          executor_type: Database["public"]["Enums"]["blueprint_executor_type"]
           id: string
           is_active: boolean
           name: string
@@ -392,6 +438,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           device_type_id: string
+          executor_type?: Database["public"]["Enums"]["blueprint_executor_type"]
           id?: string
           is_active?: boolean
           name: string
@@ -403,6 +450,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           device_type_id?: string
+          executor_type?: Database["public"]["Enums"]["blueprint_executor_type"]
           id?: string
           is_active?: boolean
           name?: string
@@ -1718,6 +1766,7 @@ export type Database = {
         | "external_domain_analysis"
         | "m365_powershell"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
+      blueprint_executor_type: "agent" | "edge_function" | "hybrid"
       device_category:
         | "firewall"
         | "switch"
@@ -1892,6 +1941,7 @@ export const Constants = {
         "m365_powershell",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
+      blueprint_executor_type: ["agent", "edge_function", "hybrid"],
       device_category: [
         "firewall",
         "switch",
