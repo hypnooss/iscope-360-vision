@@ -1,38 +1,38 @@
 
+# Plano: Corrigir Upload de Certificado para Azure
 
-# Plano: Corrigir Derivação da Chave AES no Agent-Heartbeat
+## Problemas Identificados
 
-## Resumo
+### Problema 1: Regex Incorreto (Bug Crítico)
+O código tem um escape duplo no regex que impede a remoção de whitespace do certificado:
 
-A função `decryptSecret` no `agent-heartbeat` está tratando a chave `M365_ENCRYPTION_KEY` de forma incorreta, causando falha na descriptografia do `client_secret` necessário para autenticar com o Azure e fazer upload do certificado.
+```typescript
+// ERRADO (linha 208)
+.replace(/\\s+/g, '')  // Procura literal "\s+", não whitespace
+
+// CORRETO
+.replace(/\s+/g, '')   // Remove espaços, tabs, quebras de linha
+```
+
+**Consequência**: O Azure recebe o certificado com quebras de linha, resultando em:
+```json
+{"error":{"code":"Request_BadRequest","message":"Unexpected invalid input parameters."}}
+```
+
+### Problema 2: addKey Requer Proof JWT
+O endpoint `addKey` requer um `proof` JWT assinado quando chamado via client credentials. Este é um mecanismo de segurança do Azure para evitar que aplicações adicionem suas próprias credenciais sem prova de posse.
+
+### Problema 3: PATCH Requer Permissão
+O fallback via PATCH requer a permissão `Application.ReadWrite.OwnedBy`:
+```json
+{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}}
+```
 
 ---
 
-## Problema Identificado
+## Solução
 
-### Comparação das implementações
-
-| Edge Function | Código | Resultado |
-|--------------|--------|-----------|
-| `entra-id-security-insights` | `fromHex(keyHex)` - converte hex direto para bytes | **FUNCIONA** |
-| `agent-heartbeat` | `TextEncoder.encode()` + SHA-256 hash | **FALHA** |
-
-### Código Atual (ERRADO)
-
-```typescript
-// Linhas 59-61 do agent-heartbeat
-const keyMaterial = new TextEncoder().encode(encryptionKey);  // Trata hex como texto UTF-8
-const keyHash = await crypto.subtle.digest('SHA-256', keyMaterial);  // Hash desnecessário
-```
-
-### Código Correto (entra-id-security-insights)
-
-```typescript
-// A chave M365_ENCRYPTION_KEY já é hex de 64 chars (32 bytes)
-const keyBytes = fromHex(keyHex);  // Converte direto para bytes
-```
-
-A `M365_ENCRYPTION_KEY` é uma string hexadecimal de 64 caracteres que representa 32 bytes. Deve ser convertida diretamente para bytes, não tratada como texto UTF-8.
+Corrigir o regex e usar o endpoint PATCH diretamente (que é mais simples), mas garantir que a permissão `Application.ReadWrite.OwnedBy` esteja concedida no Azure.
 
 ---
 
@@ -40,107 +40,129 @@ A `M365_ENCRYPTION_KEY` é uma string hexadecimal de 64 caracteres que represent
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-heartbeat/index.ts` | Alinhar implementação com outras edge functions M365 |
+| `supabase/functions/agent-heartbeat/index.ts` | Corrigir regex e simplificar fluxo |
 
 ---
 
 ## Mudanças Necessárias
 
-### 1. Adicionar função `fromHex` (nova)
+### 1. Corrigir Regex (Linha 208)
 
+**Antes:**
 ```typescript
-function fromHex(hex: string): Uint8Array {
-  const matches = hex.match(/.{1,2}/g);
-  if (!matches) return new Uint8Array();
-  return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
-}
+let certBase64 = publicKey
+  .replace(/-----BEGIN CERTIFICATE-----/g, '')
+  .replace(/-----END CERTIFICATE-----/g, '')
+  .replace(/\\s+/g, '');  // BUG: escape duplo
 ```
 
-### 2. Adicionar função `getEncryptionKey` (nova)
+**Depois:**
+```typescript
+let certBase64 = publicKey
+  .replace(/-----BEGIN CERTIFICATE-----/g, '')
+  .replace(/-----END CERTIFICATE-----/g, '')
+  .replace(/\s+/g, '');   // CORRETO: remove whitespace
+```
+
+### 2. Usar PATCH Diretamente (Simplificar)
+
+O endpoint `addKey` é mais complexo e requer proof JWT. Vamos usar PATCH diretamente, que funciona com a permissão `Application.ReadWrite.OwnedBy`:
 
 ```typescript
-async function getEncryptionKey(): Promise<CryptoKey> {
-  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
-  if (!keyHex) {
-    throw new Error('M365_ENCRYPTION_KEY not configured');
-  }
+async function uploadAgentCertificate(...) {
+  // ... (código de autenticação permanece igual)
   
-  const keyBytes = fromHex(keyHex);
-  return await crypto.subtle.importKey(
-    'raw',
-    keyBytes.buffer as ArrayBuffer,
-    { name: 'AES-GCM' },
-    false,
-    ['decrypt']
+  // Format certificate for Azure (remove headers and ALL whitespace)
+  const certBase64 = publicKey
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');  // CORRETO: remove espaços e quebras de linha
+
+  // Get current key credentials
+  const getAppResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
+    { headers: { 'Authorization': `Bearer ${accessToken}` } }
   );
-}
-```
 
-### 3. Reescrever função `decryptSecret`
+  if (!getAppResponse.ok) {
+    console.error('Failed to get app credentials:', await getAppResponse.text());
+    return null;
+  }
 
-```typescript
-async function decryptSecret(encrypted: string): Promise<string> {
-  // Legacy format (no colon) - try base64
-  if (!encrypted.includes(':')) {
-    try {
-      return atob(encrypted);
-    } catch {
-      return encrypted;
+  const appData = await getAppResponse.json();
+  const existingKeys = appData.keyCredentials || [];
+
+  // Add new key credential
+  const newKey = {
+    type: 'AsymmetricX509Cert',
+    usage: 'Verify',
+    key: certBase64,
+    displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
+    startDateTime: new Date().toISOString(),
+    endDateTime: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString(), // 2 years
+  };
+
+  const patchResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        keyCredentials: [...existingKeys, newKey],
+      }),
     }
+  );
+
+  if (!patchResponse.ok) {
+    console.error('Failed to patch app credentials:', await patchResponse.text());
+    return null;
   }
-  
-  // AES-GCM format: iv:ciphertext (hex encoded)
-  try {
-    const [ivHex, ciphertextHex] = encrypted.split(':');
-    const iv = fromHex(ivHex);
-    const ciphertext = fromHex(ciphertextHex);
-    const key = await getEncryptionKey();
-    
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
-      key,
-      ciphertext.buffer as ArrayBuffer
-    );
-    
-    return new TextDecoder().decode(decrypted);
-  } catch (error) {
-    console.error('AES-GCM decryption failed:', error);
-    throw new Error('Failed to decrypt secret');
-  }
+
+  // ... (resto do código permanece igual)
 }
 ```
 
 ---
 
-## Impacto
+## Pré-Requisito: Permissão no Azure
 
-- **Agent**: Não precisa de atualização (continua v1.2.3)
-- **Edge Function**: Apenas `agent-heartbeat` será atualizado
-- **Deploy**: Automático após aprovação
+Para que o PATCH funcione, é necessário que a permissão `Application.ReadWrite.OwnedBy` esteja concedida ao App Registration no Azure.
+
+### Verificar no Azure Portal:
+1. Ir para Azure AD > App registrations > InfraScope 360
+2. API permissions
+3. Verificar se `Application.ReadWrite.OwnedBy` está listada e com "Admin consent granted"
+
+Se não estiver:
+1. Add a permission > Microsoft Graph > Application permissions
+2. Procurar por `Application.ReadWrite.OwnedBy`
+3. Adicionar e conceder admin consent
 
 ---
 
 ## Resultado Esperado
 
-Após deploy, o próximo heartbeat do agent (em até 60 segundos) deve:
+Após a correção:
 
-1. Enviar certificado pendente
-2. Edge function descriptografar `client_secret` com sucesso
-3. Autenticar com Azure AD
-4. Fazer upload do certificado para o App Registration
-5. Salvar `azure_certificate_key_id` no banco
-6. Retornar confirmação para o agent
+1. Regex corretamente remove quebras de linha do certificado
+2. Usa PATCH diretamente (mais confiável que addKey)
+3. Certificado é enviado em formato válido para o Azure
+4. Azure aceita e registra o certificado
+5. `azure_certificate_key_id` é salvo no banco
+6. Agent recebe confirmação e para de enviar "Certificado pendente"
 
 ---
 
 ## Verificação
 
-1. **Logs do Agent** - não deve mais mostrar "Certificado pendente"
-2. **Banco de dados:**
+1. **Logs do Edge Function** - não deve mais mostrar "Request_BadRequest"
+2. **Azure Portal** - App Registration deve mostrar nova chave de certificado
+3. **Banco de dados:**
    ```sql
    SELECT name, certificate_thumbprint, azure_certificate_key_id 
    FROM agents WHERE name = 'PRECISIO-AZ'
    ```
-3. **Azure Portal** - App Registration deve mostrar nova chave de certificado
-4. **Nova página de detalhes do Agent** - deve exibir o certificado registrado
-
+4. **Logs do Agent** - não deve mais mostrar "Certificado pendente detectado"
