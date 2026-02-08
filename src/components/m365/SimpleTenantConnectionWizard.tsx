@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePreview } from '@/contexts/PreviewContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PasswordInput } from '@/components/ui/password-input';
 import {
   Select,
   SelectContent,
@@ -28,8 +27,10 @@ import {
   Loader2,
   AlertCircle,
   Info,
-  Lock,
-  Mail
+  Mail,
+  Copy,
+  ExternalLink,
+  Clock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -44,7 +45,7 @@ interface Client {
   name: string;
 }
 
-type WizardStep = 'form' | 'connecting' | 'result';
+type WizardStep = 'form' | 'authenticating' | 'connecting' | 'result';
 
 interface ConnectionResult {
   success: boolean;
@@ -53,6 +54,15 @@ interface ConnectionResult {
   domain?: string;
   agentLinked?: boolean;
   error?: string;
+}
+
+interface DeviceCodeData {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+  tenantId: string;
 }
 
 export function SimpleTenantConnectionWizard({ 
@@ -69,7 +79,15 @@ export function SimpleTenantConnectionWizard({
   // Form data
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  
+  // Device Code data
+  const [deviceCodeData, setDeviceCodeData] = useState<DeviceCodeData | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [copied, setCopied] = useState(false);
+  
+  // Polling
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const expirationRef = useRef<NodeJS.Timeout | null>(null);
   
   // Result
   const [connectionResult, setConnectionResult] = useState<ConnectionResult | null>(null);
@@ -82,21 +100,61 @@ export function SimpleTenantConnectionWizard({
 
   useEffect(() => {
     if (!open) {
-      // Reset form when closing
-      setStep('form');
-      setSelectedClientId('');
-      setAdminEmail('');
-      setAdminPassword('');
-      setConnectionResult(null);
+      resetWizard();
     }
   }, [open]);
 
   useEffect(() => {
-    // Auto-select if only one client
     if (clients.length === 1 && !selectedClientId) {
       setSelectedClientId(clients[0].id);
     }
   }, [clients, selectedClientId]);
+
+  // Timer countdown
+  useEffect(() => {
+    if (step === 'authenticating' && timeRemaining > 0) {
+      expirationRef.current = setTimeout(() => {
+        setTimeRemaining(prev => prev - 1);
+      }, 1000);
+    }
+    
+    if (timeRemaining === 0 && step === 'authenticating') {
+      stopPolling();
+      setConnectionResult({
+        success: false,
+        error: 'Tempo de autenticação expirado. Tente novamente.',
+      });
+      setStep('result');
+    }
+
+    return () => {
+      if (expirationRef.current) {
+        clearTimeout(expirationRef.current);
+      }
+    };
+  }, [step, timeRemaining]);
+
+  const resetWizard = () => {
+    stopPolling();
+    setStep('form');
+    setSelectedClientId('');
+    setAdminEmail('');
+    setDeviceCodeData(null);
+    setTimeRemaining(0);
+    setCopied(false);
+    setConnectionResult(null);
+  };
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    if (expirationRef.current) {
+      clearTimeout(expirationRef.current);
+      expirationRef.current = null;
+    }
+  }, []);
 
   const fetchClients = async () => {
     setLoadingClients(true);
@@ -106,7 +164,6 @@ export function SimpleTenantConnectionWizard({
         .select('id, name')
         .order('name');
 
-      // Apply workspace filter if in preview mode
       if (isPreviewMode && previewTarget?.workspaces) {
         const workspaceIds = previewTarget.workspaces.map(w => w.id);
         if (workspaceIds.length > 0) {
@@ -124,64 +181,142 @@ export function SimpleTenantConnectionWizard({
     }
   };
 
-  const canConnect = () => {
+  const canStart = () => {
     return !!selectedClientId && 
            !!adminEmail.trim() && 
-           adminEmail.includes('@') && 
-           !!adminPassword.trim();
+           adminEmail.includes('@');
   };
 
-  const handleConnect = async () => {
-    if (!canConnect()) return;
+  const handleStart = async () => {
+    if (!canStart()) return;
 
-    setStep('connecting');
-    
     try {
       const { data, error } = await supabase.functions.invoke('connect-m365-tenant', {
         body: {
+          action: 'start',
           workspaceId: selectedClientId,
           adminEmail: adminEmail.trim(),
-          adminPassword: adminPassword,
         },
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       if (data.error) {
-        setConnectionResult({
-          success: false,
-          error: data.error,
+        toast({
+          title: "Erro",
+          description: data.error,
+          variant: "destructive",
         });
-        setStep('result');
         return;
       }
 
-      setConnectionResult({
-        success: true,
-        tenantRecordId: data.tenantRecordId,
-        displayName: data.displayName,
-        domain: data.domain,
-        agentLinked: data.agentLinked,
+      // Start authentication step
+      setDeviceCodeData({
+        device_code: data.device_code,
+        user_code: data.user_code,
+        verification_uri: data.verification_uri,
+        expires_in: data.expires_in,
+        interval: data.interval,
+        tenantId: data.tenantId,
       });
-      setStep('result');
-      
+      setTimeRemaining(data.expires_in);
+      setStep('authenticating');
+
+      // Start polling
+      startPolling(data.device_code, data.tenantId, data.interval);
+
     } catch (error: any) {
-      console.error('Error connecting tenant:', error);
-      setConnectionResult({
-        success: false,
-        error: error.message || 'Erro ao conectar o tenant.',
+      console.error('Error starting connection:', error);
+      toast({
+        title: "Erro",
+        description: error.message || 'Erro ao iniciar conexão.',
+        variant: "destructive",
       });
-      setStep('result');
+    }
+  };
+
+  const startPolling = (deviceCode: string, tenantId: string, interval: number) => {
+    const pollInterval = Math.max(interval, 5) * 1000; // At least 5 seconds
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('connect-m365-tenant', {
+          body: {
+            action: 'poll',
+            deviceCode: deviceCode,
+            tenantId: tenantId,
+            workspaceId: selectedClientId,
+          },
+        });
+
+        if (error) {
+          console.error('Poll error:', error);
+          return;
+        }
+
+        if (data.pending) {
+          // Still waiting for user
+          return;
+        }
+
+        if (data.expired || data.error) {
+          stopPolling();
+          setConnectionResult({
+            success: false,
+            error: data.error || 'Autenticação expirada.',
+          });
+          setStep('result');
+          return;
+        }
+
+        if (data.success) {
+          stopPolling();
+          setConnectionResult({
+            success: true,
+            tenantRecordId: data.tenantRecordId,
+            displayName: data.displayName,
+            domain: data.domain,
+            agentLinked: data.agentLinked,
+          });
+          setStep('result');
+        }
+
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }, pollInterval);
+  };
+
+  const handleCopyCode = async () => {
+    if (deviceCodeData?.user_code) {
+      await navigator.clipboard.writeText(deviceCodeData.user_code);
+      setCopied(true);
+      toast({
+        title: "Código copiado!",
+        description: "Cole o código na página da Microsoft.",
+      });
+      setTimeout(() => setCopied(false), 3000);
+    }
+  };
+
+  const handleOpenLink = () => {
+    if (deviceCodeData?.verification_uri) {
+      window.open(deviceCodeData.verification_uri, '_blank');
     }
   };
 
   const handleClose = () => {
+    stopPolling();
     if (connectionResult?.success) {
       onSuccess();
     }
     onOpenChange(false);
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const renderForm = () => (
@@ -235,7 +370,7 @@ export function SimpleTenantConnectionWizard({
         </div>
         <div className="relative flex justify-center text-xs uppercase">
           <span className="bg-background px-2 text-muted-foreground">
-            Credenciais do Administrador
+            Conta do Administrador
           </span>
         </div>
       </div>
@@ -255,39 +390,86 @@ export function SimpleTenantConnectionWizard({
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          O Tenant ID será detectado automaticamente pelo domínio do email.
+          Use o email de um Global Admin, Exchange Admin ou Security Admin.
         </p>
       </div>
 
-      {/* Admin Password */}
-      <div className="space-y-2">
-        <Label htmlFor="adminPassword">
-          <Lock className="w-4 h-4 inline mr-2" />
-          Senha
-        </Label>
-        <PasswordInput
-          id="adminPassword"
-          value={adminPassword}
-          onChange={(e) => setAdminPassword(e.target.value)}
-          placeholder="••••••••"
-          autoComplete="off"
-        />
-      </div>
-
-      {/* Security Notice */}
+      {/* Info Notice */}
       <Card className="bg-blue-500/5 border-blue-500/20">
         <CardContent className="py-3">
           <div className="flex gap-2 items-start">
             <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
             <div className="text-sm text-muted-foreground">
-              <p className="font-medium text-foreground mb-1">Segurança</p>
+              <p className="font-medium text-foreground mb-1">Como funciona?</p>
               <ul className="text-xs space-y-1">
-                <li>• Use credenciais de <strong>Global Admin</strong> ou <strong>Exchange Admin</strong></li>
-                <li>• A senha é usada uma única vez e <strong>nunca é armazenada</strong></li>
-                <li>• A conta não pode ter MFA habilitado (use uma conta de serviço)</li>
+                <li>• Você receberá um código para autenticar</li>
+                <li>• Acesse microsoft.com/devicelogin e digite o código</li>
+                <li>• Autentique-se com sua conta (MFA suportado!)</li>
+                <li>• A conexão será estabelecida automaticamente</li>
               </ul>
             </div>
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderAuthenticating = () => (
+    <div className="space-y-6">
+      {/* Code Display */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="py-6 text-center space-y-4">
+          <div>
+            <p className="text-sm text-muted-foreground mb-2">
+              Acesse o link abaixo e digite o código:
+            </p>
+            <div className="bg-background rounded-lg p-4 border border-border/50 inline-block">
+              <p className="text-3xl font-mono font-bold tracking-wider text-primary">
+                {deviceCodeData?.user_code}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyCode}
+              className="gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              {copied ? 'Copiado!' : 'Copiar código'}
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleOpenLink}
+              className="gap-2"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Abrir microsoft.com/devicelogin
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Timer and Status */}
+      <div className="flex items-center justify-center gap-2 text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-sm">Aguardando autenticação...</span>
+        <div className="flex items-center gap-1">
+          <Clock className="w-4 h-4" />
+          <span className="text-sm font-mono">{formatTime(timeRemaining)}</span>
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <Card className="bg-muted/30 border-muted">
+        <CardContent className="py-3">
+          <p className="text-xs text-muted-foreground text-center">
+            Após fazer login no link acima (incluindo MFA, se habilitado), 
+            esta tela atualizará automaticamente.
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -301,9 +483,9 @@ export function SimpleTenantConnectionWizard({
         </div>
       </div>
       <div className="text-center space-y-2">
-        <p className="font-medium">Conectando ao Microsoft 365...</p>
+        <p className="font-medium">Finalizando conexão...</p>
         <p className="text-sm text-muted-foreground">
-          Validando credenciais e configurando acesso
+          Configurando o tenant e permissões
         </p>
       </div>
     </div>
@@ -359,14 +541,16 @@ export function SimpleTenantConnectionWizard({
             Conectar Microsoft 365
           </DialogTitle>
           <DialogDescription>
-            {step === 'form' && 'Informe as credenciais de um administrador do tenant.'}
-            {step === 'connecting' && 'Aguarde enquanto estabelecemos a conexão...'}
+            {step === 'form' && 'Informe o email do administrador para iniciar a conexão.'}
+            {step === 'authenticating' && 'Autentique-se no link abaixo para continuar.'}
+            {step === 'connecting' && 'Finalizando configuração...'}
             {step === 'result' && (connectionResult?.success ? 'Tenant conectado com sucesso.' : 'Ocorreu um erro.')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
           {step === 'form' && renderForm()}
+          {step === 'authenticating' && renderAuthenticating()}
           {step === 'connecting' && renderConnecting()}
           {step === 'result' && renderResult()}
         </div>
@@ -378,14 +562,25 @@ export function SimpleTenantConnectionWizard({
                 Cancelar
               </Button>
               <Button 
-                onClick={handleConnect} 
-                disabled={!canConnect()}
+                onClick={handleStart} 
+                disabled={!canStart()}
                 className="gap-2"
               >
-                <Lock className="w-4 h-4" />
-                Conectar
+                Continuar
               </Button>
             </>
+          )}
+
+          {step === 'authenticating' && (
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                stopPolling();
+                setStep('form');
+              }}
+            >
+              Cancelar
+            </Button>
           )}
           
           {step === 'result' && (
@@ -393,7 +588,11 @@ export function SimpleTenantConnectionWizard({
               {!connectionResult?.success && (
                 <Button 
                   variant="outline" 
-                  onClick={() => setStep('form')}
+                  onClick={() => {
+                    setConnectionResult(null);
+                    setDeviceCodeData(null);
+                    setStep('form');
+                  }}
                 >
                   Tentar Novamente
                 </Button>
