@@ -1,95 +1,167 @@
 
-# Plano: Blueprint M365 PowerShell (Exchange + SharePoint)
+# Plano: Arquitetura Dual-Task para M365 (Graph API + Agent)
 
-## Contexto
+## Problema Identificado
 
-Criar um blueprint do tipo `agent` que utilize o executor PowerShell para coletar dados do Exchange Online e SharePoint Online via CBA (Certificate-Based Authentication).
+O `trigger-m365-posture-analysis` atualmente:
+1. Cria registro em `m365_posture_history`
+2. Chama `m365-security-posture` (que usa apenas Graph API)
+3. **Não cria tarefa para o agent** executar coletas PowerShell
 
-## Arquitetura
+O blueprint "M365 - Exchange & SharePoint (Agent)" foi criado mas nunca é acionado automaticamente.
 
-| Campo | Valor |
-|-------|-------|
-| **Nome** | M365 - Exchange & SharePoint (Agent) |
-| **Tipo de Executor** | `agent` |
-| **Template** | Microsoft 365 (m365) |
-| **Device Type ID** | `5d1a7095-2d7b-4541-873d-4b03c3d6122f` |
+## Solução Proposta
 
-## Steps de Coleta - Exchange Online
+Refatorar o fluxo de análise M365 para disparar **duas tarefas paralelas**:
 
-### 1. Configurações de Mailbox
-| Step ID | Comando PowerShell | Descrição |
-|---------|-------------------|-----------|
-| `exo_mailbox_forwarding` | `Get-Mailbox -ResultSize Unlimited \| Select DisplayName, ForwardingAddress, ForwardingSmtpAddress, DeliverToMailboxAndForward` | Encaminhamentos de e-mail |
-| `exo_inbox_rules` | `Get-InboxRule -Mailbox * -IncludeHidden` | Regras de inbox (redirecionamentos) |
-| `exo_cas_mailbox` | `Get-CASMailbox -ResultSize Unlimited \| Select Identity, ImapEnabled, PopEnabled, ActiveSyncEnabled, OWAEnabled, EwsEnabled` | Protocolos habilitados por mailbox |
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                trigger-m365-posture-analysis                     │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+           ┌───────────────┴───────────────┐
+           ▼                               ▼
+┌──────────────────────┐       ┌──────────────────────────────────┐
+│  m365-security-posture│       │      agent_tasks                 │
+│  (Graph API via Edge) │       │  (PowerShell via Agent)          │
+│                       │       │                                   │
+│  • 39 steps Graph     │       │  • 16 steps PowerShell           │
+│  • Identidades        │       │  • Exchange: Mailboxes, Rules    │
+│  • Auth, CA Policies  │       │  • SharePoint: Tenant, Sites     │
+│  • Risk Detections    │       │  • Coletas via CBA               │
+└──────────┬────────────┘       └──────────────┬────────────────────┘
+           │                                   │
+           │  Resultado imediato               │  Resultado async
+           ▼                                   ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     m365_posture_history                          │
+│                                                                   │
+│  • insights (Graph API)                                           │
+│  • agent_insights (PowerShell) ← NOVO CAMPO                      │
+│  • score combinado                                                │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-### 2. Políticas de Transporte
-| Step ID | Comando PowerShell | Descrição |
-|---------|-------------------|-----------|
-| `exo_transport_rules` | `Get-TransportRule \| Select Name, State, Priority, FromScope, SentTo, RedirectMessageTo, BlindCopyTo` | Regras de fluxo de e-mail |
-| `exo_connectors_inbound` | `Get-InboundConnector` | Conectores de entrada |
-| `exo_connectors_outbound` | `Get-OutboundConnector` | Conectores de saída |
-| `exo_remote_domains` | `Get-RemoteDomain \| Select DomainName, AllowedOOFType, AutoForwardEnabled, DeliveryReportEnabled` | Domínios remotos e auto-forward |
+## Alterações Necessárias
 
-### 3. Políticas Anti-Spam/Anti-Malware
-| Step ID | Comando PowerShell | Descrição |
-|---------|-------------------|-----------|
-| `exo_antispam_policy` | `Get-HostedContentFilterPolicy` | Políticas anti-spam |
-| `exo_antimalware_policy` | `Get-MalwareFilterPolicy` | Políticas anti-malware |
-| `exo_safe_attachments` | `Get-SafeAttachmentPolicy` | Políticas de anexos seguros (Defender) |
-| `exo_safe_links` | `Get-SafeLinksPolicy` | Políticas de links seguros (Defender) |
+### 1. Edge Function: `trigger-m365-posture-analysis/index.ts`
 
-### 4. Auditoria e Compliance
-| Step ID | Comando PowerShell | Descrição |
-|---------|-------------------|-----------|
-| `exo_audit_config` | `Get-AdminAuditLogConfig` | Configuração de log de auditoria |
-| `exo_retention_policies` | `Get-RetentionPolicy` | Políticas de retenção |
-| `exo_dlp_policies` | `Get-DlpPolicy` | Políticas de DLP |
-| `exo_journal_rules` | `Get-JournalRule` | Regras de journaling |
+Adicionar lógica para criar tarefa do agente:
 
-## Steps de Coleta - SharePoint Online
+```typescript
+// Após criar historyRecord...
 
-### 5. Sites e Configurações
-| Step ID | Comando PowerShell | Módulo | Descrição |
-|---------|-------------------|--------|-----------|
-| `spo_tenant_settings` | `Get-SPOTenant` | SharePointOnlinePowerShell | Configurações globais do tenant |
-| `spo_sites` | `Get-SPOSite -Limit All \| Select Url, Title, SharingCapability, ConditionalAccessPolicy, LockState` | SharePointOnlinePowerShell | Inventário de sites |
-| `spo_external_users` | `Get-SPOExternalUser -SiteUrl <cada site>` | SharePointOnlinePowerShell | Usuários externos por site |
+// 1. Verificar se tenant tem agent vinculado
+const { data: tenantAgent } = await supabaseAdmin
+  .from('m365_tenant_agents')
+  .select('agent_id')
+  .eq('tenant_record_id', tenant_record_id)
+  .eq('enabled', true)
+  .maybeSingle();
 
-### 6. Segurança e Compartilhamento
-| Step ID | Comando PowerShell | Descrição |
-|---------|-------------------|-----------|
-| `spo_sharing_capability` | `Get-SPOTenant \| Select SharingCapability, DefaultSharingLinkType, DefaultLinkPermission` | Configurações de compartilhamento |
-| `spo_access_control` | `Get-SPOTenant \| Select ConditionalAccessPolicy, LegacyAuthProtocolsEnabled, DisableCustomAppAuthentication` | Controles de acesso |
-
-## Estrutura JSON do Blueprint
-
-```json
-{
-  "steps": [
-    {
-      "id": "exo_mailbox_forwarding",
-      "type": "powershell",
-      "category": "Exchange - Mailbox",
-      "params": {
-        "module": "ExchangeOnline",
-        "commands": ["Get-Mailbox -ResultSize Unlimited | Select DisplayName, ForwardingAddress, ForwardingSmtpAddress, DeliverToMailboxAndForward | ConvertTo-Json -Depth 5"]
+// 2. Se tiver agent, criar task de PowerShell
+if (tenantAgent?.agent_id) {
+  const { data: agentTask } = await supabaseAdmin
+    .from('agent_tasks')
+    .insert({
+      agent_id: tenantAgent.agent_id,
+      task_type: 'm365_powershell',
+      target_id: tenant_record_id,
+      target_type: 'm365_tenant',
+      status: 'pending',
+      priority: 5,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      payload: {
+        analysis_id: historyRecord.id,  // Link com a análise
+        blueprint_type: 'exchange_sharepoint',
+        commands: [...] // Blueprint completo de 16 steps
       }
-    },
-    // ... outros steps
-  ]
+    })
+    .select('id')
+    .single();
+
+  console.log(`Agent task created: ${agentTask?.id}`);
+}
+
+// 3. Continuar com análise Graph API normalmente...
+EdgeRuntime.waitUntil(runAnalysis());
+```
+
+### 2. Banco de Dados: Nova coluna em `m365_posture_history`
+
+```sql
+ALTER TABLE m365_posture_history 
+ADD COLUMN agent_task_id uuid REFERENCES agent_tasks(id),
+ADD COLUMN agent_insights jsonb DEFAULT NULL,
+ADD COLUMN agent_status text DEFAULT NULL;
+```
+
+### 3. Edge Function: `agent-task-result/index.ts`
+
+Atualizar para persistir resultados em `m365_posture_history`:
+
+```typescript
+// Quando task é de tipo m365_tenant...
+if (task.target_type === 'm365_tenant' && task.payload?.analysis_id) {
+  // Atualizar m365_posture_history com os insights do agent
+  await supabase
+    .from('m365_posture_history')
+    .update({
+      agent_insights: processedInsights,
+      agent_status: result.status,
+    })
+    .eq('id', task.payload.analysis_id);
 }
 ```
 
-## Considerações
+### 4. RPC Function: `rpc_get_agent_tasks`
 
-1. **Autenticação**: Os steps usarão CBA com o certificado do agente
-2. **Módulos**: ExchangeOnlineManagement para Exchange, Microsoft.Online.SharePoint.PowerShell para SharePoint
-3. **Timeout**: Steps com -ResultSize Unlimited podem demorar em tenants grandes
-4. **Rate Limiting**: Adicionar throttling entre comandos se necessário
+Já está configurada corretamente para gerar steps a partir de blueprints M365. Verificado que funciona (tarefa `dcfdcbfe...` executou com sucesso).
 
-## Próximos Passos
+### 5. Frontend: `M365PosturePage.tsx`
 
-1. Inserir o blueprint no banco de dados
-2. Criar as regras de compliance correspondentes
-3. Testar a execução via agente
+Exibir insights combinados (Graph + Agent):
+
+```typescript
+// Combinar insights de ambas as fontes
+const allInsights = [
+  ...(postureData?.insights || []),           // Graph API
+  ...(postureData?.agent_insights || []),     // PowerShell/Agent
+];
+```
+
+## Fluxo de Execução Completo
+
+1. **Usuário clica "Analisar"** → `trigger-m365-posture-analysis`
+2. **Cria registro** em `m365_posture_history` com status `pending`
+3. **Verifica agent vinculado** em `m365_tenant_agents`
+4. **Se houver agent**:
+   - Cria `agent_task` com `target_type: m365_tenant`
+   - Payload inclui `analysis_id` para vincular
+5. **Executa análise Graph API** em background (Edge Function)
+6. **Agent processa task** quando disponível
+7. **agent-task-result** atualiza `m365_posture_history.agent_insights`
+8. **UI exibe resultados combinados**
+
+## Benefícios
+
+1. **Paralelismo**: Graph API e Agent executam simultaneamente
+2. **Independência**: Se agent não estiver disponível, Graph API ainda funciona
+3. **Rastreabilidade**: `analysis_id` liga tudo ao mesmo registro histórico
+4. **Escalabilidade**: Cada executor trabalha em seu domínio
+
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Adicionar criação de task do agent |
+| `supabase/functions/agent-task-result/index.ts` | Persistir insights em `m365_posture_history` |
+| Migração SQL | Adicionar colunas `agent_task_id`, `agent_insights`, `agent_status` |
+| `src/pages/m365/M365PosturePage.tsx` | Exibir insights combinados |
+| `src/hooks/useM365SecurityPosture.ts` | Buscar `agent_insights` também |
+
+## Considerações de Segurança
+
+- Task do agent usa CBA (Certificate-Based Auth) - já implementado
+- Dados coletados são armazenados em `task_step_results` com RLS
+- `m365_posture_history` já tem políticas RLS apropriadas
