@@ -39,7 +39,8 @@ export default function ExchangeOnlinePage() {
     loading: insightsLoading, 
     error,
     errorCode,
-    refresh 
+    refresh,
+    triggerAnalysis,
   } = useExchangeOnlineInsights({
     tenantRecordId: selectedTenantId,
   });
@@ -57,11 +58,10 @@ export default function ExchangeOnlinePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Auto-refresh when tenant changes
+  // Mark as initialized when tenant is selected (auto-fetch happens in hook)
   useEffect(() => {
     if (selectedTenantId && !tenantsLoading) {
       setHasInitialized(true);
-      refresh();
     }
   }, [selectedTenantId, tenantsLoading]);
 
@@ -135,13 +135,12 @@ export default function ExchangeOnlinePage() {
             </p>
           </div>
           <Button 
-            variant="outline" 
             className="gap-2"
-            onClick={refresh}
+            onClick={triggerAnalysis}
             disabled={insightsLoading}
           >
             <RefreshCw className={`w-4 h-4 ${insightsLoading ? 'animate-spin' : ''}`} />
-            Atualizar
+            {insightsLoading ? 'Analisando...' : 'Reanalisar'}
           </Button>
         </div>
 

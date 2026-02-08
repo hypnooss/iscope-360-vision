@@ -50,6 +50,7 @@ export default function M365PosturePage() {
     isLoading, 
     error, 
     refetch,
+    triggerAnalysis,
     agentInsights,
     agentStatus,
     isAgentPending,
@@ -70,21 +71,17 @@ export default function M365PosturePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Trigger analysis when tenant changes
-  useEffect(() => {
-    if (selectedTenantId && !tenantsLoading) {
-      refetch();
-    }
-  }, [selectedTenantId, tenantsLoading, refetch]);
+  // Fetch latest analysis from history when tenant changes (no auto-trigger)
+  // Analysis is now triggered only by user clicking "Atualizar" button
 
-  // Handle refresh with Preview Mode guard
-  const handleRefresh = useCallback(() => {
+  // Handle refresh with Preview Mode guard - now triggers full analysis
+  const handleRefresh = useCallback(async () => {
     if (isBlocked) {
       showBlockedMessage();
       return;
     }
-    refetch();
-  }, [isBlocked, showBlockedMessage, refetch]);
+    await triggerAnalysis();
+  }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
   if (authLoading || tenantsLoading) {
     return (
