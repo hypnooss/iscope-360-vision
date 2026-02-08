@@ -247,15 +247,36 @@ async function uploadCertificateToServicePrincipal(
     const startDate = new Date();
     const endDate = new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000);
 
-    // Create new key credential
+    // Convert thumbprint to base64 for customKeyIdentifier
+    // Azure expects the thumbprint as base64-encoded binary (from hex)
+    const thumbprintBytes = fromHex(sanitizedNewThumbprint || '');
+    const customKeyIdentifier = btoa(String.fromCharCode(...thumbprintBytes));
+
+    // Create new key credential with all required fields
+    // Azure requires: type, usage, key, customKeyIdentifier, displayName, startDateTime, endDateTime
     const newKeyCredential = {
       type: 'AsymmetricX509Cert',
       usage: 'Verify',
       key: certBase64,
+      customKeyIdentifier: customKeyIdentifier,
       displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
       startDateTime: startDate.toISOString(),
       endDateTime: endDate.toISOString(),
     };
+
+    console.log(`Adding certificate with displayName: ${newKeyCredential.displayName}, customKeyIdentifier length: ${customKeyIdentifier.length}`);
+
+    // Filter existing keys to only include writable properties
+    // Azure doesn't allow sending back keyId or thumbprint in PATCH
+    const cleanedExistingKeys = existingKeys.map((key: any) => ({
+      type: key.type,
+      usage: key.usage,
+      key: key.key,
+      customKeyIdentifier: key.customKeyIdentifier,
+      displayName: key.displayName,
+      startDateTime: key.startDateTime,
+      endDateTime: key.endDateTime,
+    }));
 
     // PATCH Service Principal with all certificates (existing + new)
     const patchResponse = await fetch(
@@ -267,7 +288,7 @@ async function uploadCertificateToServicePrincipal(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          keyCredentials: [...existingKeys, newKeyCredential],
+          keyCredentials: [...cleanedExistingKeys, newKeyCredential],
         }),
       }
     );
