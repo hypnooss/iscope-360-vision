@@ -87,6 +87,8 @@ export default function AgentDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [deleteCertDialogOpen, setDeleteCertDialogOpen] = useState(false);
+  const [deletingCert, setDeletingCert] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
@@ -320,6 +322,32 @@ export default function AgentDetailPage() {
     }
   };
 
+  const handleDeleteCertificate = async () => {
+    if (!agent) return;
+
+    setDeletingCert(true);
+    try {
+      const { error } = await (supabase
+        .from("agents" as any)
+        .update({
+          certificate_thumbprint: null,
+          certificate_public_key: null,
+          azure_certificate_key_id: null,
+        })
+        .eq("id", agent.id) as any);
+
+      if (error) throw error;
+
+      toast.success("Certificado removido! O agent gerará um novo certificado no próximo heartbeat.");
+      setDeleteCertDialogOpen(false);
+      refetch();
+    } catch (error: any) {
+      toast.error("Erro ao remover certificado: " + error.message);
+    } finally {
+      setDeletingCert(false);
+    }
+  };
+
   if (authLoading || !canAccessPage) return null;
 
   if (isLoading) {
@@ -540,12 +568,23 @@ export default function AgentDetailPage() {
                     </div>
                   )}
 
-                  {agent.certificate_public_key && (
-                    <Button variant="outline" size="sm" onClick={handleDownloadCertificate}>
-                      <Download className="w-4 h-4 mr-2" />
-                      Baixar Certificado Público (.pem)
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {agent.certificate_public_key && (
+                      <Button variant="outline" size="sm" onClick={handleDownloadCertificate}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Baixar Certificado Público (.pem)
+                      </Button>
+                    )}
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                      onClick={() => setDeleteCertDialogOpen(true)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Remover Certificado
                     </Button>
-                  )}
+                  </div>
                 </>
               )}
 
@@ -736,6 +775,43 @@ export default function AgentDetailPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Certificate Confirmation Dialog */}
+        <AlertDialog open={deleteCertDialogOpen} onOpenChange={setDeleteCertDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remover Certificado M365?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>
+                    Esta ação irá remover o certificado M365 deste agent. O agent precisará 
+                    gerar um novo certificado e registrá-lo no Azure AD novamente.
+                  </p>
+                  <p className="font-medium">
+                    Nota: Se o agent tiver tenants vinculados, eles perderão 
+                    a capacidade de executar análises via PowerShell até que um novo 
+                    certificado seja registrado.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteCertificate}
+                disabled={deletingCert}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletingCert ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                Remover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
