@@ -136,16 +136,39 @@ serve(async (req) => {
       );
     }
 
-    // If spObjectId not provided, we need to inform the user
-    // The connect-m365-tenant function should always provide it
+    // If spObjectId not provided, try to fetch it from the database
     if (!spObjectId) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Service Principal Object ID not provided. Use the simplified connection flow.",
-          code: "SP_OBJECT_ID_REQUIRED"
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.log('spObjectId not provided, fetching from database...');
+      const { data: creds, error: credsError } = await supabase
+        .from('m365_app_credentials')
+        .select('sp_object_id')
+        .eq('tenant_record_id', tenantRecordId)
+        .single();
+
+      if (credsError) {
+        console.error('Failed to fetch credentials:', credsError);
+        return new Response(
+          JSON.stringify({ 
+            error: "Não foi possível buscar credenciais do tenant.",
+            code: "CREDENTIALS_FETCH_ERROR"
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!creds?.sp_object_id) {
+        console.error('SP Object ID not found in database for tenant:', tenantRecordId);
+        return new Response(
+          JSON.stringify({ 
+            error: "Service Principal não encontrado. Reconecte o tenant para resolver.",
+            code: "SP_OBJECT_ID_NOT_FOUND"
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      spObjectId = creds.sp_object_id;
+      console.log('SP Object ID loaded from database:', spObjectId);
     }
     if (lastSeen < fiveMinutesAgo) {
       return new Response(
