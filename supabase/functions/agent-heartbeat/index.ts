@@ -578,8 +578,10 @@ serve(async (req: Request) => {
     }
     
     // Check if agent has linked tenants needing certificate registration
-    // This handles the case where new tenants are linked after the agent already uploaded its certificate
-    if (sanitizedAgentThumbprint && !sanitizedInputThumbprint) {
+    // This handles two cases:
+    // Case 1: Agent has thumbprint in DB but didn't send it (needs re-upload to new tenants)
+    // Case 2: Agent's DB thumbprint was cleared but has linked tenants (needs full re-registration)
+    if (!sanitizedInputThumbprint) {
       try {
         const { data: linkedTenants } = await supabase
           .from('m365_tenant_agents')
@@ -594,11 +596,20 @@ serve(async (req: Request) => {
         for (const link of linkedTenants || []) {
           const creds = link.m365_app_credentials;
           const sanitizedCredThumbprint = sanitizeThumbprint(creds?.certificate_thumbprint);
-          // If tenant has app_object_id but doesn't have this agent's certificate (comparing sanitized values)
-          if (creds?.app_object_id && sanitizedCredThumbprint !== sanitizedAgentThumbprint) {
-            requestCertificate = true;
-            console.log(`Agent ${agentId}: tenant needs certificate upload (app_object_id: ${creds.app_object_id?.substring(0, 8)}..., cred_thumbprint: ${sanitizedCredThumbprint?.substring(0, 8) || 'null'}, agent_thumbprint: ${sanitizedAgentThumbprint?.substring(0, 8)})`);
-            break;
+          
+          // Request certificate if:
+          // 1. Tenant has app_object_id (can register certificates)
+          // 2. AND either:
+          //    a. Tenant doesn't have a certificate registered
+          //    b. OR agent's DB thumbprint differs from tenant's (and agent has one)
+          if (creds?.app_object_id) {
+            const needsCert = !sanitizedCredThumbprint || 
+                              (sanitizedAgentThumbprint && sanitizedCredThumbprint !== sanitizedAgentThumbprint);
+            if (needsCert) {
+              requestCertificate = true;
+              console.log(`Agent ${agentId}: tenant needs certificate (app_object_id: ${creds.app_object_id?.substring(0, 8)}..., cred: ${sanitizedCredThumbprint?.substring(0, 8) || 'null'}, agent_db: ${sanitizedAgentThumbprint?.substring(0, 8) || 'null'})`);
+              break;
+            }
           }
         }
       } catch (err) {
