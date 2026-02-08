@@ -17,13 +17,14 @@ const REQUIRED_PERMISSIONS = [
   'Directory.Read.All',
   'Organization.Read.All',
   'Domain.Read.All',
+  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
 ];
 
 const RECOMMENDED_PERMISSIONS = [
   'Group.Read.All',
   'Application.Read.All',
   'Policy.Read.All',
-  'RoleManagement.Read.Directory',
+  'RoleManagement.Read.Directory', // Read-only role management
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',
@@ -174,6 +175,9 @@ async function testPermission(accessToken: string, permission: string, appObject
         break;
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
+        break;
+      case 'RoleManagement.ReadWrite.Directory':
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
         break;
       case 'Application.ReadWrite.All': {
         // Test certificate upload permission by trying to read the app's keyCredentials
