@@ -82,7 +82,7 @@ serve(async (req) => {
     // Fetch app credentials (for app_id)
     const { data: credentials, error: credError } = await supabase
       .from('m365_app_credentials')
-      .select('azure_app_id, certificate_thumbprint')
+      .select('azure_app_id')
       .eq('tenant_record_id', tenant_record_id)
       .single();
 
@@ -94,19 +94,12 @@ serve(async (req) => {
       );
     }
 
-    if (!credentials.certificate_thumbprint) {
-      return new Response(
-        JSON.stringify({ error: "Certificado não registrado. O admin do tenant precisa re-consentir as permissões." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Fetch linked agent
+    // Fetch linked agent with certificate
     const { data: tenantAgent, error: agentLinkError } = await supabase
       .from('m365_tenant_agents')
       .select(`
         agent_id,
-        agents(id, name, revoked)
+        agents(id, name, revoked, certificate_thumbprint)
       `)
       .eq('tenant_record_id', tenant_record_id)
       .eq('enabled', true)
@@ -128,6 +121,13 @@ serve(async (req) => {
       );
     }
 
+    if (!agent.certificate_thumbprint) {
+      return new Response(
+        JSON.stringify({ error: "Certificado não registrado no agent. Reconecte o tenant para gerar o certificado." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Build Exchange CBA verification command
     // This tests if the CBA connection works after Exchange.ManageAsApp is granted
     const verificationCommands = [
@@ -139,7 +139,7 @@ serve(async (req) => {
 
     console.log(`[setup-exchange-rbac] Creating CBA verification task for agent ${agent.id}`);
 
-    // Create agent task with CBA auth (uses certificate)
+    // Create agent task with CBA auth (uses certificate from agent)
     const { data: task, error: taskError } = await supabase
       .from('agent_tasks')
       .insert({
@@ -151,12 +151,12 @@ serve(async (req) => {
         payload: {
           type: 'exchange_cba_verification',
           module: 'ExchangeOnline',
-          auth_mode: 'cba', // Certificate-Based Authentication
+          auth_mode: 'cba',
           commands: verificationCommands,
           tenant_id: tenant.tenant_id,
           organization: tenant.tenant_domain,
           app_id: credentials.azure_app_id,
-          certificate_thumbprint: credentials.certificate_thumbprint,
+          certificate_thumbprint: agent.certificate_thumbprint,
         },
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       })
