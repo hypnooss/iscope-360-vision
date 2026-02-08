@@ -1,136 +1,175 @@
 
-# Plano: Corrigir Parsing de Dados do Agent M365
+# Plano: Correção da Coleta de Dados Exchange Online
 
-## Problema Identificado
+## Resumo do Problema
 
-Os dados do Agent estão sendo salvos corretamente na tabela `task_step_results`, mas estão em formato de **string JSON** em vez de objetos JavaScript. A função `processM365AgentInsights` espera arrays/objetos, não strings.
+A página Exchange Online exibe apenas **2 insights** (ambos do Agent). Os dados via Graph API **não estão sendo coletados** corretamente.
 
-### Evidência
+### Causa Raiz
 
-Dados salvos no banco:
-```json
-{
-    "exo_mailbox_forwarding": {
-        "data": "[{\"DisplayName\":\"Camila Favero\",\"PrimarySmtpAddress\":...}]",
-        "success": true
-    }
-}
+| Componente | Status | Problema |
+|------------|--------|----------|
+| Blueprint (step) | ⚠️ Incompleto | Só tem 1 step (`sample_users_for_mailbox`) que lista usuários, não coleta dados de Exchange |
+| Regras EXO-xxx | ❌ Inativas | Falta `source_key` no `evaluation_logic` - função `evaluateRule` ignora |
+| Edge Function | ❌ Incompleta | Tipos `count_threshold` e `informational` não implementados no switch/case |
+
+### Dados Coletados Atualmente
+
+```text
+Via Agent (PowerShell):     Via API (Graph):
+──────────────────────      ─────────────────
+✅ exo_mailbox_forwarding   ❌ Sem coleta real
+✅ exo_dkim_config          ❌ Step só lista usuários
+✅ exo_transport_rules      ❌ Sem endpoints de Exchange
+✅ exo_anti_phish_policy
+✅ exo_safe_links_policy
+✅ ...outros 5 steps
 ```
 
-O campo `data` é uma **string** (começa com aspas), não um array (que começaria com `[`).
+---
 
-### Código afetado (linha 156-158 de `agent-task-result/index.ts`)
-```typescript
-if (rawData['exo_mailbox_forwarding']) {
-    const data = extractStepData(rawData['exo_mailbox_forwarding']);
-    if (Array.isArray(data)) {  // ← Falha! data é uma string
+## Opções de Solução
+
+### Opção A: Focar Exchange no Agent (Recomendada)
+
+O PowerShell tem acesso mais completo aos dados do Exchange. A Graph API tem limitações:
+- Requer chamadas por usuário (N+1 queries)
+- Alguns endpoints não existem na Graph API
+- Permissões mais complexas
+
+**Ação**: Remover/desativar regras EXO da avaliação via API e manter apenas Agent.
+
+### Opção B: Implementar Coleta Completa via Graph API
+
+Adicionar steps e lógica de avaliação para coletar dados via API:
+1. Adicionar steps no blueprint para cada endpoint
+2. Implementar tipos de avaliação na Edge Function
+3. Atualizar `source_key` nas regras
+
+**Complexidade**: Alta (muitas chamadas N+1, timeouts prováveis)
+
+---
+
+## Implementação Recomendada (Opção A)
+
+### Fase 1: Remover step desnecessário do blueprint
+
+O step `sample_users_for_mailbox` não serve para nada atualmente, pois as regras EXO não estão funcionando.
+
+```sql
+-- Remover step que não gera insights
+UPDATE device_blueprints
+SET collection_steps = jsonb_set(
+  collection_steps,
+  '{steps}',
+  (SELECT jsonb_agg(step) 
+   FROM jsonb_array_elements(collection_steps->'steps') step 
+   WHERE step->>'id' != 'sample_users_for_mailbox')
+)
+WHERE id = '164ad4d2-35c6-46cd-9c70-bcd27b044b73';
 ```
 
-## Causa Raiz
+### Fase 2: Desativar regras EXO que dependem de Graph API
 
-O Agent Python retorna o output do PowerShell como string JSON (`| ConvertTo-Json`), e essa string está sendo salva diretamente sem parsing adicional.
-
-## Solução
-
-Atualizar a função `extractStepData` no `agent-task-result/index.ts` para fazer parse de strings JSON automaticamente. Isso garante compatibilidade com ambos os formatos (string JSON ou objeto nativo).
-
-### Código Atual
-```typescript
-function extractStepData(stepResult: unknown): unknown {
-  if (!stepResult) return null;
-  
-  if (typeof stepResult === 'object') {
-    const obj = stepResult as Record<string, unknown>;
-    if ('data' in obj && obj.data !== undefined) return obj.data;
-    if ('results' in obj && obj.results !== undefined) return obj.results;
-    if ('value' in obj && obj.value !== undefined) return obj.value;
-  }
-  
-  return stepResult;
-}
+```sql
+-- Desativar regras que não funcionam via API
+UPDATE compliance_rules
+SET is_active = false
+WHERE code IN ('EXO-001', 'EXO-002', 'EXO-003', 'EXO-004', 'EXO-005')
+  AND api_endpoint LIKE '/users%';
 ```
 
-### Código Corrigido
-```typescript
-function extractStepData(stepResult: unknown): unknown {
-  if (!stepResult) return null;
-  
-  if (typeof stepResult === 'object') {
-    const obj = stepResult as Record<string, unknown>;
-    let extracted: unknown = null;
-    
-    // Extract from common wrapper keys
-    if ('data' in obj && obj.data !== undefined) {
-      extracted = obj.data;
-    } else if ('results' in obj && obj.results !== undefined) {
-      extracted = obj.results;
-    } else if ('value' in obj && obj.value !== undefined) {
-      extracted = obj.value;
-    } else {
-      extracted = stepResult;
-    }
-    
-    // Parse JSON strings (PowerShell outputs JSON as string)
-    if (typeof extracted === 'string') {
-      try {
-        const parsed = JSON.parse(extracted);
-        return parsed;
-      } catch {
-        // Not valid JSON, return as-is
-        return extracted;
-      }
-    }
-    
-    return extracted;
-  }
-  
-  // Handle top-level string (might be JSON)
-  if (typeof stepResult === 'string') {
-    try {
-      return JSON.parse(stepResult);
-    } catch {
-      return stepResult;
-    }
-  }
-  
-  return stepResult;
-}
-```
+### Fase 3: Garantir que Agent gera mais insights
 
-## Impacto
+Atualmente o Agent gera apenas 2 insights. Verificar se o `processM365AgentInsights` está processando todos os dados coletados:
 
-Esta correção permite que:
-1. O Agent Python continue retornando dados como string JSON (sem modificações)
-2. A Edge Function faz o parse automaticamente
-3. Os insights M365 são gerados corretamente
-4. A tela de Exchange Online exibe os dados coletados
+**Dados coletados pelo Agent:**
+- `exo_mailbox_forwarding` → Insight de encaminhamento ✅
+- `exo_dkim_config` → Insight de DKIM ✅
+- `exo_transport_rules` → Deveria gerar insight ❌
+- `exo_anti_phish_policy` → Deveria gerar insight ❌
+- `exo_safe_links_policy` → Deveria gerar insight ❌
+- `exo_malware_filter_policy` → Deveria gerar insight ❌
+- `exo_hosted_content_filter` → Deveria gerar insight ❌
+- `exo_safe_attachment_policy` → Deveria gerar insight ❌
+- `exo_remote_domains` → Deveria gerar insight ❌
+- `exo_owa_mailbox_policy` → Deveria gerar insight ❌
+
+**Problema**: A função `processM365AgentInsights` em `agent-task-result/index.ts` só processa 2 tipos de dados.
+
+---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Atualizar função `extractStepData` para fazer parse de strings JSON |
+### 1. Edge Function `agent-task-result/index.ts`
+
+Expandir `processM365AgentInsights` para processar todos os dados do Exchange:
+
+| Step ID | Insight a Gerar |
+|---------|-----------------|
+| `exo_transport_rules` | Regras de transporte configuradas |
+| `exo_anti_phish_policy` | Política Anti-Phishing |
+| `exo_safe_links_policy` | Safe Links habilitado |
+| `exo_safe_attachment_policy` | Safe Attachments habilitado |
+| `exo_malware_filter_policy` | Filtro de malware |
+| `exo_hosted_content_filter` | Filtro de spam |
+| `exo_remote_domains` | Domínios remotos |
+| `exo_owa_mailbox_policy` | Política OWA |
+
+### 2. Migração SQL
+
+Limpar steps e regras não funcionais:
+
+```sql
+-- 1. Remover step não utilizado
+-- 2. Desativar regras EXO via API
+```
+
+---
 
 ## Fluxo Corrigido
 
 ```text
-Agent PowerShell → JSON string → task_step_results
-                                        ↓
-agent-task-result → extractStepData() → JSON.parse()
-                                        ↓
-                processM365AgentInsights() → Array de insights
-                                        ↓
-                m365_posture_history.agent_insights → 7+ insights
-                                        ↓
-                    ExchangeOnlinePage → Exibe insights ✓
+ANTES:
+┌─────────────────────────────────────────────────────────────────┐
+│ Edge Function (API)         Agent (PowerShell)                  │
+│ ─────────────────          ─────────────────────                │
+│ 1 step (sample_users)      10 steps (Exchange completo)        │
+│       ↓                           ↓                            │
+│ 0 insights                  2 insights                         │
+│       ↓                           ↓                            │
+│         └──────────────┬──────────┘                            │
+│                        ↓                                        │
+│              Exchange Online Page                               │
+│              (exibe 2 insights)                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+DEPOIS:
+┌─────────────────────────────────────────────────────────────────┐
+│ Edge Function (API)         Agent (PowerShell)                  │
+│ ─────────────────          ─────────────────────                │
+│ 0 steps (removido)         10 steps (Exchange completo)        │
+│       ↓                           ↓                            │
+│ N/A                         10+ insights (todos processados)   │
+│                                   ↓                            │
+│              Exchange Online Page                               │
+│              (exibe 10+ insights)                               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Validação
+---
 
-Após a correção:
-- `[processM365AgentInsights] Generated 7 insights from agent data` (ou mais)
-- A página Exchange Online exibirá:
-  - 7 mailboxes com encaminhamento
-  - 1 regra de transporte ativa
-  - Políticas anti-phishing configuradas
-  - Status DKIM por domínio
+## Benefícios
+
+1. **Mais insights**: De 2 para 10+ insights de Exchange
+2. **Dados mais completos**: PowerShell acessa APIs legadas não disponíveis via Graph
+3. **Menos complexidade**: Remove código não funcional
+4. **Performance**: Menos chamadas de API desnecessárias
+
+---
+
+## Ordem de Implementação
+
+1. Expandir `processM365AgentInsights` para todos os steps do Exchange
+2. Aplicar migração SQL para limpar blueprint e regras
+3. Testar nova análise e verificar 10+ insights na UI
