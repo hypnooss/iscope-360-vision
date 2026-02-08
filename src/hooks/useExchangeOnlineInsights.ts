@@ -84,12 +84,16 @@ export function useExchangeOnlineInsights({
             insight.category?.includes('exchange') ||
             insight.category?.includes('mail_flow') ||
             insight.category?.includes('mailbox') ||
+            insight.category?.includes('threats') ||
+            insight.id?.startsWith('exo_') ||
             insight.product === 'exchange'
         )
         .map((insight: any) => {
           // Map category to ExoInsightCategory
           let mappedCategory: ExoInsightCategory = 'mail_flow';
-          if (insight.category?.includes('mailbox') || insight.id?.includes('forwarding')) {
+          if (insight.category === 'threats') {
+            mappedCategory = 'security_policies';
+          } else if (insight.category?.includes('mailbox') || insight.id?.includes('forwarding')) {
             mappedCategory = 'mailbox_access';
           } else if (insight.id?.includes('dkim') || insight.id?.includes('dmarc') || insight.id?.includes('spf')) {
             mappedCategory = 'security_hygiene';
