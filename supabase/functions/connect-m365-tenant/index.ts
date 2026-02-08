@@ -61,10 +61,11 @@ async function initiateDeviceCodeFlow(tenantId: string, appId: string): Promise<
   return await response.json();
 }
 
-// Poll for token using device code (Public Client - no client_secret)
+// Poll for token using device code (Confidential Client with client_secret)
 async function pollForToken(
   tenantId: string, 
   appId: string, 
+  clientSecret: string,
   deviceCode: string
 ): Promise<{ 
   pending?: boolean; 
@@ -72,15 +73,13 @@ async function pollForToken(
   access_token?: string;
   error?: string;
 }> {
-  console.log(`[pollForToken] Polling as public client (no client_secret)`);
+  console.log(`[pollForToken] Polling as confidential client (with client_secret, length=${clientSecret.length})`);
   
   const params = new URLSearchParams();
   params.append('client_id', appId);
-  // No client_secret - using public client flow for Device Code
+  params.append('client_secret', clientSecret);
   params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
   params.append('device_code', deviceCode);
-  
-  console.log(`[pollForToken] Request params: client_id=${appId}, grant_type=device_code`);
   
   const response = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -112,6 +111,7 @@ async function pollForToken(
   }
 
   if (data.error) {
+    console.error(`[pollForToken] Azure error: ${data.error} - ${data.error_description}`);
     return { error: data.error_description || data.error };
   }
 
@@ -300,10 +300,22 @@ serve(async (req) => {
         );
       }
 
-      console.log(`[connect-m365-tenant] Polling for token (public client flow)...`);
+      console.log(`[connect-m365-tenant] Polling for token (confidential client)...`);
 
-      // No need to decrypt client_secret - using public client flow
-      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, deviceCode);
+      // Decrypt client secret for token request
+      let clientSecret: string;
+      try {
+        clientSecret = await decryptSecret(globalConfig.client_secret_encrypted, encryptionKey);
+        console.log(`[connect-m365-tenant] Client secret decrypted, length: ${clientSecret.length}`);
+      } catch (decryptError: any) {
+        console.error("[connect-m365-tenant] Failed to decrypt client secret:", decryptError.message);
+        return new Response(
+          JSON.stringify({ error: "Falha ao descriptografar credenciais" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, clientSecret, deviceCode);
 
       if (pollResult.pending) {
         return new Response(
