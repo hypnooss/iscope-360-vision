@@ -7,19 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// XOR encryption for secure credential transport (same as powershell executor)
-function xorEncrypt(text: string, key: string): string {
-  const keyBytes = new TextEncoder().encode(key);
-  const textBytes = new TextEncoder().encode(text);
-  const encrypted = new Uint8Array(textBytes.length);
-  
-  for (let i = 0; i < textBytes.length; i++) {
-    encrypted[i] = textBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-  
-  return btoa(String.fromCharCode(...encrypted));
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -53,16 +40,16 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { tenant_record_id, admin_email, admin_password } = body;
+    const { tenant_record_id } = body;
 
-    if (!tenant_record_id || !admin_email || !admin_password) {
+    if (!tenant_record_id) {
       return new Response(
-        JSON.stringify({ error: "Campos obrigatórios: tenant_record_id, admin_email, admin_password" }),
+        JSON.stringify({ error: "Campo obrigatório: tenant_record_id" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[setup-exchange-rbac] Starting RBAC setup for tenant ${tenant_record_id}`);
+    console.log(`[setup-exchange-rbac] Starting Exchange CBA verification for tenant ${tenant_record_id}`);
 
     // Fetch tenant info
     const { data: tenant, error: tenantError } = await supabase
@@ -85,10 +72,17 @@ serve(async (req) => {
       );
     }
 
-    // Fetch app credentials (for app_id and sp_object_id)
+    if (!tenant.tenant_domain) {
+      return new Response(
+        JSON.stringify({ error: "Domínio do tenant não configurado. Edite o tenant e adicione o domínio." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Fetch app credentials (for app_id)
     const { data: credentials, error: credError } = await supabase
       .from('m365_app_credentials')
-      .select('azure_app_id, sp_object_id')
+      .select('azure_app_id, certificate_thumbprint')
       .eq('tenant_record_id', tenant_record_id)
       .single();
 
@@ -100,9 +94,9 @@ serve(async (req) => {
       );
     }
 
-    if (!credentials.sp_object_id) {
+    if (!credentials.certificate_thumbprint) {
       return new Response(
-        JSON.stringify({ error: "Service Principal Object ID não encontrado. Reconecte o tenant." }),
+        JSON.stringify({ error: "Certificado não registrado. O admin do tenant precisa re-consentir as permissões." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -112,7 +106,7 @@ serve(async (req) => {
       .from('m365_tenant_agents')
       .select(`
         agent_id,
-        agents(id, name, jwt_secret, revoked)
+        agents(id, name, revoked)
       `)
       .eq('tenant_record_id', tenant_record_id)
       .eq('enabled', true)
@@ -134,25 +128,18 @@ serve(async (req) => {
       );
     }
 
-    // Encrypt credentials using agent's JWT secret as key
-    const encryptionKey = agent.jwt_secret || 'default-key-for-encryption';
-    const encryptedPassword = xorEncrypt(admin_password, encryptionKey);
-
-    // Build Exchange RBAC setup commands
-    const setupCommands = [
+    // Build Exchange CBA verification command
+    // This tests if the CBA connection works after Exchange.ManageAsApp is granted
+    const verificationCommands = [
       {
-        name: "register_service_principal",
-        command: `New-ServicePrincipal -AppId "${credentials.azure_app_id}" -ObjectId "${credentials.sp_object_id}" -DisplayName "iScope Security"`,
-      },
-      {
-        name: "assign_exchange_role",
-        command: `New-ManagementRoleAssignment -App "${credentials.azure_app_id}" -Role "Exchange Recipient Administrator"`,
+        name: "get_organization_config",
+        command: `Get-OrganizationConfig | Select-Object -Property Name, DisplayName | ConvertTo-Json -Compress`,
       },
     ];
 
-    console.log(`[setup-exchange-rbac] Creating task for agent ${agent.id}`);
+    console.log(`[setup-exchange-rbac] Creating CBA verification task for agent ${agent.id}`);
 
-    // Create agent task with credential-based auth
+    // Create agent task with CBA auth (uses certificate)
     const { data: task, error: taskError } = await supabase
       .from('agent_tasks')
       .insert({
@@ -162,17 +149,16 @@ serve(async (req) => {
         target_type: 'm365_tenant',
         priority: 10,
         payload: {
-          type: 'exchange_rbac_setup',
+          type: 'exchange_cba_verification',
           module: 'ExchangeOnline',
-          auth_mode: 'credential', // Uses admin credentials for initial setup
-          username: admin_email,
-          password_encrypted: encryptedPassword,
-          transport_key: encryptionKey,
-          commands: setupCommands,
+          auth_mode: 'cba', // Certificate-Based Authentication
+          commands: verificationCommands,
           tenant_id: tenant.tenant_id,
           organization: tenant.tenant_domain,
+          app_id: credentials.azure_app_id,
+          certificate_thumbprint: credentials.certificate_thumbprint,
         },
-        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       })
       .select('id')
       .single();
@@ -180,7 +166,7 @@ serve(async (req) => {
     if (taskError) {
       console.error("Task creation failed:", taskError);
       return new Response(
-        JSON.stringify({ error: "Erro ao criar tarefa de configuração." }),
+        JSON.stringify({ error: "Erro ao criar tarefa de verificação." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -189,14 +175,13 @@ serve(async (req) => {
 
     // Create audit log
     await supabase.from('m365_audit_logs').insert({
-      action: 'exchange_rbac_setup_initiated',
+      action: 'exchange_cba_verification_initiated',
       user_id: user.id,
       client_id: tenant.client_id,
       tenant_record_id: tenant_record_id,
       action_details: {
         task_id: task.id,
         agent_id: agent.id,
-        admin_email: admin_email,
       },
     });
 
@@ -204,7 +189,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         task_id: task.id,
-        message: "Configuração do Exchange RBAC iniciada. O agent processará a tarefa em breve.",
+        message: "Verificação do Exchange iniciada. O agent testará a conexão CBA em breve.",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
