@@ -94,15 +94,15 @@ check_powershell() {
 
 install_powershell_debian() {
     log "Instalando PowerShell no Debian/Ubuntu..."
-    
+
     apt-get update -y || true
     apt-get install -y wget apt-transport-https software-properties-common || true
-    
+
     # Get version for repo URL
     # shellcheck disable=SC1091
     . /etc/os-release
     local deb_url="https://packages.microsoft.com/config/${ID}/${VERSION_ID}/packages-microsoft-prod.deb"
-    
+
     # Fallback for older versions
     if ! wget -q "$deb_url" -O /tmp/packages-microsoft-prod.deb 2>/dev/null; then
         if [[ "$ID" == "ubuntu" ]]; then
@@ -112,33 +112,33 @@ install_powershell_debian() {
         fi
         wget -q "$deb_url" -O /tmp/packages-microsoft-prod.deb || return 1
     fi
-    
+
     dpkg -i /tmp/packages-microsoft-prod.deb || true
     rm -f /tmp/packages-microsoft-prod.deb
     apt-get update || true
     apt-get install -y powershell || return 1
-    
+
     return 0
 }
 
 install_powershell_rhel() {
     log "Instalando PowerShell no RHEL/CentOS..."
-    
+
     local rhel_version="${OS_VERSION:-8}"
-    
+
     # Register Microsoft repository
     curl -sSL "https://packages.microsoft.com/config/rhel/${rhel_version}/prod.repo" \
         -o /etc/yum.repos.d/microsoft-prod.repo 2>/dev/null || \
     curl -sSL "https://packages.microsoft.com/config/rhel/8/prod.repo" \
         -o /etc/yum.repos.d/microsoft-prod.repo 2>/dev/null || true
-    
+
     # Install PowerShell
     if command -v dnf >/dev/null 2>&1; then
         dnf install -y powershell || return 1
     else
         yum install -y powershell || return 1
     fi
-    
+
     return 0
 }
 
@@ -149,9 +149,9 @@ install_powershell() {
         log "PowerShell OK: $version"
         return 0
     fi
-    
+
     log "PowerShell ausente. Instalando..."
-    
+
     case "$OS_ID" in
         ubuntu|debian)
             install_powershell_debian
@@ -164,7 +164,7 @@ install_powershell() {
             return 1
             ;;
     esac
-    
+
     if check_powershell; then
         log "PowerShell instalado: $(pwsh --version 2>&1 | head -1)"
         return 0
@@ -183,7 +183,7 @@ check_m365_modules() {
         # Can't check modules without PowerShell
         return 0
     fi
-    
+
     pwsh -NoProfile -NonInteractive -Command '
         $eom = Get-Module -ListAvailable -Name ExchangeOnlineManagement -ErrorAction SilentlyContinue
         $mga = Get-Module -ListAvailable -Name Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
@@ -196,22 +196,22 @@ install_m365_modules() {
         log "PowerShell não disponível, pulando módulos M365"
         return 0
     fi
-    
+
     if check_m365_modules; then
         log "Módulos M365 OK"
         return 0
     fi
-    
+
     log "Instalando módulos M365..."
-    
+
     pwsh -NoProfile -NonInteractive -Command '
         $ErrorActionPreference = "Continue"
         $ProgressPreference = "SilentlyContinue"
-        
+
         try {
             Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
         } catch {}
-        
+
         if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement -ErrorAction SilentlyContinue)) {
             Write-Host "Instalando ExchangeOnlineManagement..."
             try {
@@ -221,7 +221,7 @@ install_m365_modules() {
                 Write-Host "Aviso: Falha ao instalar ExchangeOnlineManagement: $($_.Exception.Message)"
             }
         }
-        
+
         if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication -ErrorAction SilentlyContinue)) {
             Write-Host "Instalando Microsoft.Graph.Authentication..."
             try {
@@ -232,7 +232,7 @@ install_m365_modules() {
             }
         }
     ' 2>&1 | while read -r line; do log "  pwsh: $line"; done
-    
+
     if check_m365_modules; then
         log "Módulos M365 instalados com sucesso"
         return 0
@@ -247,7 +247,7 @@ install_m365_modules() {
 # ============================================================================
 
 check_certificate() {
-    [[ -f "$CERT_DIR/m365.crt" ]] && [[ -f "$CERT_DIR/m365.key" ]]
+    [[ -f "$CERT_DIR/m365.crt" ]] && [[ -f "$CERT_DIR/m365.key" ]] && [[ -f "$CERT_DIR/m365.pfx" ]]
 }
 
 generate_certificate() {
@@ -260,9 +260,9 @@ generate_certificate() {
             log "Certificado M365 expirando, regenerando..."
         fi
     fi
-    
+
     log "Gerando certificado M365..."
-    
+
     # Ensure openssl is available
     if ! command -v openssl >/dev/null 2>&1; then
         log "openssl não encontrado, instalando..."
@@ -274,37 +274,37 @@ generate_certificate() {
             yum install -y openssl || true
         fi
     fi
-    
+
     if ! command -v openssl >/dev/null 2>&1; then
         log_error "openssl não disponível"
         return 1
     fi
-    
+
     # Create certificate directory
     mkdir -p "$CERT_DIR"
-    
-    # Generate self-signed certificate valid for 2 years
+
+    # Generate self-signed certificate valid for 1 year (365 days - Azure limit)
     local hostname
     hostname="$(hostname -s 2>/dev/null || echo 'agent')"
-    
+
     openssl req -x509 \
         -newkey rsa:2048 \
         -keyout "$CERT_DIR/m365.key" \
         -out "$CERT_DIR/m365.crt" \
         -sha256 \
-        -days 730 \
+        -days 365 \
         -nodes \
         -subj "/CN=iScope-Agent-${hostname}/O=iScope 360" 2>/dev/null
-    
+
     if [[ ! -f "$CERT_DIR/m365.crt" ]]; then
         log_error "Falha ao gerar certificado"
         return 1
     fi
-    
+
     # Set secure permissions
     chmod 600 "$CERT_DIR/m365.key"
     chmod 644 "$CERT_DIR/m365.crt"
-    
+
     # Generate PFX file (for PowerShell compatibility)
     # Use empty password for simplicity (protected by file permissions)
     openssl pkcs12 \
@@ -313,29 +313,34 @@ generate_certificate() {
         -inkey "$CERT_DIR/m365.key" \
         -in "$CERT_DIR/m365.crt" \
         -passout pass: 2>/dev/null
-    
+
     if [[ -f "$CERT_DIR/m365.pfx" ]]; then
         chmod 600 "$CERT_DIR/m365.pfx"
         log "Arquivo PFX gerado para PowerShell"
     else
         log_error "Falha ao gerar arquivo PFX"
+        return 1
     fi
-    
-    # Calculate and save SHA1 thumbprint (Azure format)
+
+    # Calculate and save SHA1 thumbprint (Azure format - clean, no prefix, uppercase)
     local thumbprint
     thumbprint="$(openssl x509 -in "$CERT_DIR/m365.crt" -noout -fingerprint -sha1 2>/dev/null | \
-        sed 's/SHA1 Fingerprint=//' | sed 's/://g')"
-    
+        sed 's/.*=//' | tr -d ':')"
+
     if [[ -n "$thumbprint" ]]; then
         echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"
+        chmod 644 "$CERT_DIR/thumbprint.txt"
         log "Certificado gerado com thumbprint: $thumbprint"
+    else
+        log_error "Falha ao calcular thumbprint"
+        return 1
     fi
-    
+
     # Fix ownership for service user
     if id "$SERVICE_USER" >/dev/null 2>&1; then
         chown -R "$SERVICE_USER":"$SERVICE_USER" "$CERT_DIR" || true
     fi
-    
+
     return 0
 }
 
@@ -345,22 +350,22 @@ generate_certificate() {
 
 main() {
     local errors=0
-    
+
     # Install PowerShell
     if ! install_powershell; then
         ((errors++)) || true
     fi
-    
+
     # Install M365 modules (only if PowerShell is available)
     if ! install_m365_modules; then
         ((errors++)) || true
     fi
-    
+
     # Generate certificate
     if ! generate_certificate; then
         ((errors++)) || true
     fi
-    
+
     log "=========================================="
     if [[ $errors -eq 0 ]]; then
         log "Verificação concluída com sucesso"
@@ -368,7 +373,7 @@ main() {
         log "Verificação concluída com $errors erro(s)"
     fi
     log "=========================================="
-    
+
     # Always exit 0 to not block agent startup
     exit 0
 }
