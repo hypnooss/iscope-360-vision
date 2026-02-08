@@ -331,22 +331,23 @@ Deno.serve(async (req) => {
       console.warn('Could not decode token for logging:', decodeErr);
     }
 
-    // Test Graph API access using /domains endpoint (more resilient than /organization)
-    console.log('Testing Graph API access with /domains endpoint...');
+    // Test Graph API access using /organization endpoint
+    // Organization.Read.All is always granted via Admin Consent
+    console.log('Testing Graph API access with /organization endpoint...');
     
-    const fetchDomains = async () => {
-      return await fetch('https://graph.microsoft.com/v1.0/domains', {
+    const fetchOrganization = async () => {
+      return await fetch('https://graph.microsoft.com/v1.0/organization', {
         headers: { 'Authorization': `Bearer ${accessToken}` },
       });
     };
     
-    // Retry with exponential backoff: 5s, 10s, 15s (total 30s max wait)
+    // Retry with exponential backoff: 10s, 20s, 30s (total 60s max wait)
     const delays = [10000, 20000, 30000];
-    let domainsResponse = await fetchDomains();
+    let orgResponse = await fetchOrganization();
     let lastError: { code?: string; message?: string } = {};
 
-    for (let attempt = 0; !domainsResponse.ok && attempt < delays.length; attempt++) {
-      const errorText = await domainsResponse.text();
+    for (let attempt = 0; !orgResponse.ok && attempt < delays.length; attempt++) {
+      const errorText = await orgResponse.text();
       try {
         lastError = JSON.parse(errorText).error || { message: errorText };
       } catch {
@@ -354,7 +355,7 @@ Deno.serve(async (req) => {
       }
       
       console.error(`Graph API error (attempt ${attempt + 1}):`, {
-        status: domainsResponse.status,
+        status: orgResponse.status,
         code: lastError.code,
         message: lastError.message,
       });
@@ -362,18 +363,18 @@ Deno.serve(async (req) => {
       // Only retry on propagation-related errors
       if (lastError.code === 'Authorization_IdentityNotFound' || 
           lastError.code === 'Authorization_RequestDenied' ||
-          domainsResponse.status === 401 ||
-          domainsResponse.status === 403) {
+          orgResponse.status === 401 ||
+          orgResponse.status === 403) {
         console.log(`Waiting ${delays[attempt]/1000}s for Admin Consent propagation (attempt ${attempt + 2})...`);
         await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-        domainsResponse = await fetchDomains();
+        orgResponse = await fetchOrganization();
       } else {
         break; // Don't retry on other errors
       }
     }
 
-    if (!domainsResponse.ok) {
-      const finalErrorText = await domainsResponse.text();
+    if (!orgResponse.ok) {
+      const finalErrorText = await orgResponse.text();
       let finalError;
       try {
         finalError = JSON.parse(finalErrorText).error || { message: finalErrorText };
@@ -382,7 +383,7 @@ Deno.serve(async (req) => {
       }
       
       console.error('Graph API error (final):', {
-        status: domainsResponse.status,
+        status: orgResponse.status,
         code: finalError.code,
         message: finalError.message,
       });
@@ -396,28 +397,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const domainsData = await domainsResponse.json();
-    const domains = domainsData.value || [];
-    console.log('Domains retrieved:', domains.length);
+    const orgData = await orgResponse.json();
+    const organization = orgData.value?.[0];
+    console.log('Organization retrieved:', organization?.displayName);
     
-    // Extract primary domain and display name from domains
-    const defaultDomain = domains.find((d: any) => d.isDefault);
-    const initialDomain = domains.find((d: any) => d.isInitial);
-    const primaryDomain = defaultDomain?.id || initialDomain?.id || domains[0]?.id || null;
-    
-    // Try to get organization display name (optional, don't fail if unavailable)
-    let displayName = primaryDomain; // Fallback to domain
-    try {
-      const orgResponse = await fetch('https://graph.microsoft.com/v1.0/organization', {
-        headers: { 'Authorization': `Bearer ${accessToken}` },
-      });
-      if (orgResponse.ok) {
-        const orgData = await orgResponse.json();
-        displayName = orgData.value?.[0]?.displayName || primaryDomain;
-      }
-    } catch (orgErr) {
-      console.warn('Could not fetch organization name, using domain as fallback');
-    }
+    // Extract primary domain from organization's verified domains
+    const verifiedDomains = organization?.verifiedDomains || [];
+    const defaultDomain = verifiedDomains.find((d: any) => d.isDefault);
+    const initialDomain = verifiedDomains.find((d: any) => d.isInitial);
+    const primaryDomain = defaultDomain?.name || initialDomain?.name || verifiedDomains[0]?.name || null;
+    const displayName = organization?.displayName || primaryDomain;
 
     // Test permissions
     console.log('Testing permissions...');
