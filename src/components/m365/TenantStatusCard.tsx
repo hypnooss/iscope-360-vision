@@ -20,7 +20,8 @@ import {
   Play,
   Lock,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  Settings2
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -39,6 +40,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { ExchangeRbacSetupDialog } from './ExchangeRbacSetupDialog';
 // Permission categories organized by Microsoft product
 // Note: User.Read is a delegated permission, not applicable to Client Credentials flow
 const PERMISSION_CATEGORIES = {
@@ -118,6 +120,7 @@ export function TenantStatusCard({
   const [analyzing, setAnalyzing] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showExchangeRbacDialog, setShowExchangeRbacDialog] = useState(false);
   const [permissions, setPermissions] = useState<TenantPermission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
@@ -448,10 +451,23 @@ export function TenantStatusCard({
                 </Button>
               )}
               
+              {/* Exchange RBAC Setup Button - shown when Exchange permissions are missing */}
+              {(tenant.connection_status === 'connected' || tenant.connection_status === 'partial') && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowExchangeRbacDialog(true)}
+                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-500/10 border-border"
+                >
+                  <Settings2 className="w-3 h-3 mr-1" />
+                  Configurar Exchange
+                </Button>
+              )}
+              
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 border-border"
+                className="text-warning hover:text-warning hover:bg-warning/10 border-border"
                 onClick={() => setShowDisconnectDialog(true)}
                 disabled={tenant.connection_status === 'disconnected'}
               >
@@ -547,6 +563,17 @@ export function TenantStatusCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Exchange RBAC Setup Dialog */}
+      <ExchangeRbacSetupDialog
+        open={showExchangeRbacDialog}
+        onOpenChange={setShowExchangeRbacDialog}
+        tenantRecordId={tenant.id}
+        tenantDomain={tenant.tenant_domain || 'contoso.onmicrosoft.com'}
+        onSuccess={() => {
+          fetchPermissions();
+        }}
+      />
     </>
   );
 }

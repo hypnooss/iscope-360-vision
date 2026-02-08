@@ -418,43 +418,17 @@ serve(async (req) => {
 
         console.log(`[connect-m365-tenant] Agent ${workspaceAgent.id} linked to tenant`);
 
-        // Create Exchange RBAC setup task using Certificate-Based Auth
-        // The agent will use its certificate for PowerShell connection
-        const setupCommands = [
-          {
-            name: "register_service_principal",
-            command: `New-ServicePrincipal -AppId "${globalConfig.app_id}" -ObjectId "${spObjectId}" -DisplayName "iScope Security"`,
-          },
-          {
-            name: "assign_exchange_role",
-            command: `New-ManagementRoleAssignment -App "${globalConfig.app_id}" -Role "Exchange Recipient Administrator"`,
-          },
-        ];
-
-        const { error: taskError } = await supabase
-          .from('agent_tasks')
-          .insert({
-            agent_id: workspaceAgent.id,
-            task_type: 'm365_powershell',
-            target_id: tenant.id,
-            target_type: 'm365_tenant',
-            priority: 10,
-            payload: {
-              type: 'exchange_rbac_setup',
-              module: 'ExchangeOnline',
-              auth_mode: 'certificate', // Use CBA instead of credentials
-              commands: setupCommands,
-              tenant_id: orgInfo.tenantId,
-              organization: orgInfo.primaryDomain,
-            },
-            expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          });
-
-        if (taskError) {
-          console.warn("Exchange RBAC task creation failed:", taskError);
-        } else {
-          console.log(`[connect-m365-tenant] Exchange RBAC setup task created (CBA mode)`);
-        }
+        // Store SP Object ID in credentials for later RBAC setup
+        await supabase
+          .from('m365_app_credentials')
+          .update({ sp_object_id: spObjectId })
+          .eq('tenant_record_id', tenant.id);
+        
+        // Exchange RBAC setup is NOT done automatically here because:
+        // 1. CBA requires RBAC to be configured first (chicken-and-egg problem)
+        // 2. RBAC setup requires admin credentials which we don't have yet
+        // The user will configure Exchange RBAC via dedicated flow in TenantStatusCard
+        console.log(`[connect-m365-tenant] Exchange RBAC will be configured via dedicated setup flow`);
       }
 
       // Create audit log
