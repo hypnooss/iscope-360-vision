@@ -584,7 +584,7 @@ Deno.serve(async (req) => {
     } catch (error) {
       console.error('Failed to validate permissions:', error);
       
-      // Alerta M365 (TENANT HOME): deve ser visível apenas para super_admin e super_suporte
+      // Alerta M365: deve ser visível apenas para super_admin e super_suporte
       await Promise.all([
         createOrUpdateAlert(supabase, {
           alertType: 'm365_connection_failure',

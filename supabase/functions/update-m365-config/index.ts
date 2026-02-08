@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
 
     // Parse request body
     const body = await req.json();
-    const { app_id, client_secret, app_object_id, home_tenant_id } = body;
+    const { app_id, client_secret, app_object_id } = body;
 
     if (!app_id) {
       return new Response(
@@ -127,13 +127,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate home_tenant_id format if provided
-    if (home_tenant_id && !guidRegex.test(home_tenant_id)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid home_tenant_id format. Must be a valid GUID.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Validate encryption key is configured before proceeding
     const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
@@ -175,9 +168,6 @@ Deno.serve(async (req) => {
       if (app_object_id !== undefined) {
         updateData.app_object_id = app_object_id || null;
       }
-      if (home_tenant_id !== undefined) {
-        updateData.home_tenant_id = home_tenant_id || null;
-      }
 
       const { data, error } = await supabase
         .from('m365_global_config')
@@ -211,7 +201,6 @@ Deno.serve(async (req) => {
           created_by: user.id,
           updated_by: user.id,
           app_object_id: app_object_id || null,
-          home_tenant_id: home_tenant_id || null,
         })
         .select()
         .single();
@@ -234,7 +223,6 @@ Deno.serve(async (req) => {
         app_id_updated: true,
         client_secret_updated: !!client_secret,
         app_object_id_updated: app_object_id !== undefined,
-        home_tenant_id_updated: home_tenant_id !== undefined,
         encryption_method: 'AES-256-GCM',
         config_id: result.id,
       },
