@@ -63,9 +63,9 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     }
     
     // Check if Exchange Administrator role is assigned to this SP
-    // IMPORTANT: Microsoft Graph requires BOTH ConsistencyLevel: eventual header AND $count=true for advanced filters
+    // Use filter on principalId only (more reliable), then filter in code by roleDefinitionId
     const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$count=true&$filter=principalId eq '${spId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$count=true&$filter=principalId eq '${spId}'`,
       { 
         headers: { 
           'Authorization': `Bearer ${accessToken}`,
@@ -81,8 +81,12 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     }
     
     const roleData = await roleResponse.json();
-    const hasRole = (roleData.value?.length || 0) > 0;
-    console.log(`Exchange Admin Role test: ${hasRole ? 'assigned' : 'not assigned'}`);
+    // Filter for Exchange Administrator role in code
+    const hasRole = roleData.value?.some(
+      (assignment: { roleDefinitionId: string }) => 
+        assignment.roleDefinitionId === EXCHANGE_ADMIN_ROLE_TEMPLATE_ID
+    );
+    console.log(`Exchange Admin Role test: Total assignments: ${roleData.value?.length || 0}, hasExchangeAdmin: ${hasRole ? 'assigned' : 'not assigned'}`);
     return hasRole;
   } catch (error) {
     console.error('Error testing Exchange Admin Role:', error);
