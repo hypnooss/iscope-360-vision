@@ -41,6 +41,22 @@ interface HeartbeatErrorResponse {
 }
 
 /**
+ * Sanitize certificate thumbprint by removing prefixes, colons, and normalizing format
+ * Handles formats like "sha1 Fingerprint=AA:BB:CC:..." or "SHA1:AA:BB:CC:..."
+ */
+function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
+  if (!thumbprint) return null;
+  let clean = thumbprint.trim();
+  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
+  if (clean.includes('=')) {
+    clean = clean.split('=').pop() || clean;
+  }
+  // Remove colons (AA:BB:CC -> AABBCC)
+  clean = clean.replace(/:/g, '');
+  return clean.toUpperCase().trim();
+}
+
+/**
  * Convert hex string to Uint8Array
  */
 function fromHex(hex: string): Uint8Array {
@@ -320,11 +336,12 @@ async function uploadAgentCertificate(
       }
 
       if (uploadResults.length > 0) {
-        // Update agent record with certificate info
+        // Update agent record with certificate info (always use sanitized thumbprint)
+        const sanitizedThumbprint = sanitizeThumbprint(thumbprint);
         await supabase
           .from('agents')
           .update({
-            certificate_thumbprint: thumbprint,
+            certificate_thumbprint: sanitizedThumbprint,
             certificate_public_key: publicKey,
             azure_certificate_key_id: uploadResults.join(','),
           })
@@ -354,11 +371,12 @@ async function uploadAgentCertificate(
     );
 
     if (result.success && result.keyId) {
-      // Update agent record with certificate info
+      // Update agent record with certificate info (always use sanitized thumbprint)
+      const sanitizedThumbprint = sanitizeThumbprint(thumbprint);
       await supabase
         .from('agents')
         .update({
-          certificate_thumbprint: thumbprint,
+          certificate_thumbprint: sanitizedThumbprint,
           certificate_public_key: publicKey,
           azure_certificate_key_id: result.keyId,
         })
@@ -540,13 +558,17 @@ serve(async (req: Request) => {
 
     checkComponents = agentData?.check_components || false;
 
-    if (body.certificate_public_key && body.certificate_thumbprint) {
+    // Sanitize thumbprints for comparison
+    const sanitizedInputThumbprint = sanitizeThumbprint(body.certificate_thumbprint);
+    const sanitizedAgentThumbprint = sanitizeThumbprint(agentData?.certificate_thumbprint);
+    
+    if (body.certificate_public_key && sanitizedInputThumbprint) {
       if (!agentData?.azure_certificate_key_id) {
-        console.log(`Agent ${agentId} has pending certificate, uploading to Azure...`);
+        console.log(`Agent ${agentId} has pending certificate (thumbprint: ${sanitizedInputThumbprint?.substring(0, 8)}...), uploading to Azure...`);
         azureCertificateKeyId = await uploadAgentCertificate(
           supabase,
           agentId,
-          body.certificate_thumbprint,
+          sanitizedInputThumbprint, // Use sanitized thumbprint
           body.certificate_public_key
         );
       } else {
@@ -557,7 +579,7 @@ serve(async (req: Request) => {
     
     // Check if agent has linked tenants needing certificate registration
     // This handles the case where new tenants are linked after the agent already uploaded its certificate
-    if (agentData?.certificate_thumbprint && !body.certificate_thumbprint) {
+    if (sanitizedAgentThumbprint && !sanitizedInputThumbprint) {
       try {
         const { data: linkedTenants } = await supabase
           .from('m365_tenant_agents')
@@ -571,10 +593,11 @@ serve(async (req: Request) => {
         // Check if any linked tenant needs the certificate
         for (const link of linkedTenants || []) {
           const creds = link.m365_app_credentials;
-          // If tenant has app_object_id but doesn't have this agent's certificate
-          if (creds?.app_object_id && creds?.certificate_thumbprint !== agentData.certificate_thumbprint) {
+          const sanitizedCredThumbprint = sanitizeThumbprint(creds?.certificate_thumbprint);
+          // If tenant has app_object_id but doesn't have this agent's certificate (comparing sanitized values)
+          if (creds?.app_object_id && sanitizedCredThumbprint !== sanitizedAgentThumbprint) {
             requestCertificate = true;
-            console.log(`Agent ${agentId}: tenant needs certificate upload (app_object_id: ${creds.app_object_id?.substring(0, 8)}...)`);
+            console.log(`Agent ${agentId}: tenant needs certificate upload (app_object_id: ${creds.app_object_id?.substring(0, 8)}..., cred_thumbprint: ${sanitizedCredThumbprint?.substring(0, 8) || 'null'}, agent_thumbprint: ${sanitizedAgentThumbprint?.substring(0, 8)})`);
             break;
           }
         }
