@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -28,9 +29,7 @@ import {
   AlertCircle,
   Info,
   Mail,
-  Copy,
-  ExternalLink,
-  Clock
+  ExternalLink
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -45,24 +44,44 @@ interface Client {
   name: string;
 }
 
-type WizardStep = 'form' | 'authenticating' | 'connecting' | 'result';
+interface Agent {
+  id: string;
+  name: string;
+  client_id: string | null;
+}
+
+type WizardStep = 'form' | 'authenticating' | 'result';
 
 interface ConnectionResult {
   success: boolean;
+  partial?: boolean;
   tenantRecordId?: string;
   displayName?: string;
   domain?: string;
   agentLinked?: boolean;
+  missingPermissions?: string[];
   error?: string;
 }
 
-interface DeviceCodeData {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  expires_in: number;
-  interval: number;
-  tenantId: string;
+// Discover tenant ID from email domain using OpenID configuration
+async function discoverTenantId(domain: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://login.microsoftonline.com/${domain}/.well-known/openid-configuration`
+    );
+    if (!response.ok) {
+      console.warn('Could not discover tenant ID for domain:', domain);
+      return null;
+    }
+    const data = await response.json();
+    // Extract tenant ID from issuer URL: https://login.microsoftonline.com/{tenant_id}/v2.0
+    const issuer = data.issuer;
+    const match = issuer?.match(/https:\/\/login\.microsoftonline\.com\/([^/]+)\//);
+    return match ? match[1] : null;
+  } catch (err) {
+    console.error('Error discovering tenant ID:', err);
+    return null;
+  }
 }
 
 export function SimpleTenantConnectionWizard({ 
@@ -70,24 +89,21 @@ export function SimpleTenantConnectionWizard({
   onOpenChange, 
   onSuccess 
 }: SimpleTenantConnectionWizardProps) {
+  const { user } = useAuth();
   const { isPreviewMode, previewTarget } = usePreview();
   
   const [step, setStep] = useState<WizardStep>('form');
   const [clients, setClients] = useState<Client[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
+  const [agents, setAgents] = useState<Agent[]>([]);
   
   // Form data
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [adminEmail, setAdminEmail] = useState('');
   
-  // Device Code data
-  const [deviceCodeData, setDeviceCodeData] = useState<DeviceCodeData | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [copied, setCopied] = useState(false);
-  
-  // Polling
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  const expirationRef = useRef<NodeJS.Timeout | null>(null);
+  // Auth state
+  const [waitingForAuth, setWaitingForAuth] = useState(false);
+  const [pendingTenantRecordId, setPendingTenantRecordId] = useState<string | null>(null);
   
   // Result
   const [connectionResult, setConnectionResult] = useState<ConnectionResult | null>(null);
@@ -110,50 +126,62 @@ export function SimpleTenantConnectionWizard({
     }
   }, [clients, selectedClientId]);
 
-  // Timer countdown
+  // Fetch agents when client is selected
   useEffect(() => {
-    if (step === 'authenticating' && timeRemaining > 0) {
-      expirationRef.current = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
+    if (selectedClientId) {
+      fetchAgents(selectedClientId);
     }
-    
-    if (timeRemaining === 0 && step === 'authenticating') {
-      stopPolling();
-      setConnectionResult({
-        success: false,
-        error: 'Tempo de autenticação expirado. Tente novamente.',
-      });
-      setStep('result');
-    }
+  }, [selectedClientId]);
 
-    return () => {
-      if (expirationRef.current) {
-        clearTimeout(expirationRef.current);
+  // Listen for messages from popup window
+  useEffect(() => {
+    if (!waitingForAuth) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'm365-oauth-callback') return;
+      
+      const { success, partial, tenantId: msgTenantId, missingPermissions, error, errorDescription } = event.data;
+      
+      if (success && !partial) {
+        setConnectionResult({
+          success: true,
+          tenantRecordId: pendingTenantRecordId || undefined,
+          missingPermissions: [],
+        });
+        setStep('result');
+        setWaitingForAuth(false);
+      } else if (partial) {
+        setConnectionResult({
+          success: true,
+          partial: true,
+          tenantRecordId: pendingTenantRecordId || undefined,
+          missingPermissions: missingPermissions || [],
+        });
+        setStep('result');
+        setWaitingForAuth(false);
+      } else if (error) {
+        setConnectionResult({
+          success: false,
+          error: errorDescription || error || 'Ocorreu um erro durante a autorização.',
+        });
+        setStep('result');
+        setWaitingForAuth(false);
+        setPendingTenantRecordId(null);
       }
     };
-  }, [step, timeRemaining]);
 
-  const resetWizard = () => {
-    stopPolling();
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [waitingForAuth, pendingTenantRecordId]);
+
+  const resetWizard = useCallback(() => {
     setStep('form');
     setSelectedClientId('');
     setAdminEmail('');
-    setDeviceCodeData(null);
-    setTimeRemaining(0);
-    setCopied(false);
+    setWaitingForAuth(false);
+    setPendingTenantRecordId(null);
     setConnectionResult(null);
-  };
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-    if (expirationRef.current) {
-      clearTimeout(expirationRef.current);
-      expirationRef.current = null;
-    }
+    setAgents([]);
   }, []);
 
   const fetchClients = async () => {
@@ -181,6 +209,23 @@ export function SimpleTenantConnectionWizard({
     }
   };
 
+  const fetchAgents = async (clientId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, client_id')
+        .eq('client_id', clientId)
+        .eq('revoked', false)
+        .order('name');
+
+      if (error) throw error;
+      setAgents(data || []);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      setAgents([]);
+    }
+  };
+
   const canStart = () => {
     return !!selectedClientId && 
            !!adminEmail.trim() && 
@@ -190,40 +235,124 @@ export function SimpleTenantConnectionWizard({
   const handleStart = async () => {
     if (!canStart()) return;
 
+    setStep('authenticating');
+    setWaitingForAuth(true);
+
     try {
-      const { data, error } = await supabase.functions.invoke('connect-m365-tenant', {
-        body: {
-          action: 'start',
-          workspaceId: selectedClientId,
-          adminEmail: adminEmail.trim(),
-        },
-      });
-
-      if (error) throw error;
-
-      if (data.error) {
+      // 1. Discover tenant ID from email domain
+      const emailDomain = adminEmail.split('@')[1];
+      const tenantId = await discoverTenantId(emailDomain);
+      
+      if (!tenantId) {
         toast({
           title: "Erro",
-          description: data.error,
+          description: "Não foi possível descobrir o Tenant ID a partir do email. Verifique o domínio.",
           variant: "destructive",
         });
+        setStep('form');
+        setWaitingForAuth(false);
         return;
       }
 
-      // Start authentication step
-      setDeviceCodeData({
-        device_code: data.device_code,
-        user_code: data.user_code,
-        verification_uri: data.verification_uri,
-        expires_in: data.expires_in,
-        interval: data.interval,
-        tenantId: data.tenantId,
-      });
-      setTimeRemaining(data.expires_in);
-      setStep('authenticating');
+      // 2. Create pending tenant record
+      const { data: tenant, error: tenantError } = await supabase
+        .from('m365_tenants')
+        .insert({
+          client_id: selectedClientId,
+          tenant_id: tenantId,
+          tenant_domain: emailDomain,
+          connection_status: 'pending',
+          created_by: user?.id,
+        })
+        .select()
+        .single();
 
-      // Start polling
-      startPolling(data.device_code, data.tenantId, data.interval);
+      if (tenantError) {
+        console.error('Error creating tenant record:', tenantError);
+        throw new Error('Erro ao criar registro do tenant.');
+      }
+
+      setPendingTenantRecordId(tenant.id);
+
+      // 3. Link agent automatically (use first available agent for the workspace)
+      if (agents.length > 0) {
+        const { error: linkError } = await supabase
+          .from('m365_tenant_agents')
+          .insert({
+            tenant_record_id: tenant.id,
+            agent_id: agents[0].id,
+            enabled: true,
+          });
+
+        if (linkError) {
+          console.warn('Failed to auto-link agent:', linkError);
+        } else {
+          console.log(`Agent ${agents[0].name} auto-linked to tenant`);
+        }
+      }
+
+      // 4. Write initial audit log
+      await supabase.from('m365_audit_logs').insert({
+        tenant_record_id: tenant.id,
+        client_id: selectedClientId,
+        user_id: user?.id,
+        action: 'connect_initiated',
+        action_details: {
+          tenant_id: tenantId,
+          connection_method: 'admin_consent_simple',
+          admin_email: adminEmail,
+        },
+      });
+
+      // 5. Get the app ID from edge function
+      const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
+        body: {},
+      });
+
+      if (configError || !configData?.app_id) {
+        toast({
+          title: 'Configuração pendente',
+          description: 'O App ID do iScope 360 precisa ser configurado. Contate o administrador.',
+          variant: 'destructive',
+        });
+        setStep('form');
+        setWaitingForAuth(false);
+        return;
+      }
+
+      const appId = configData.app_id;
+
+      // 6. Build the state payload for the callback
+      const getAppBaseUrl = () => {
+        const publishedUrl = 'https://iscope360.lovable.app';
+        if (import.meta.env.DEV) {
+          return window.location.origin;
+        }
+        return publishedUrl;
+      };
+
+      const statePayload = {
+        tenant_record_id: tenant.id,
+        client_id: selectedClientId,
+        tenant_id: tenantId,
+        redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
+      };
+      const state = btoa(JSON.stringify(statePayload));
+
+      // 7. Build Admin Consent URL
+      const callbackUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/m365-oauth-callback`;
+      
+      const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenantId}/adminconsent`);
+      adminConsentUrl.searchParams.set('client_id', appId);
+      adminConsentUrl.searchParams.set('redirect_uri', callbackUrl);
+      adminConsentUrl.searchParams.set('state', state);
+
+      // 8. Open popup
+      window.open(
+        adminConsentUrl.toString(),
+        'microsoft_auth',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
 
     } catch (error: any) {
       console.error('Error starting connection:', error);
@@ -232,91 +361,16 @@ export function SimpleTenantConnectionWizard({
         description: error.message || 'Erro ao iniciar conexão.',
         variant: "destructive",
       });
-    }
-  };
-
-  const startPolling = (deviceCode: string, tenantId: string, interval: number) => {
-    const pollInterval = Math.max(interval, 5) * 1000; // At least 5 seconds
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('connect-m365-tenant', {
-          body: {
-            action: 'poll',
-            deviceCode: deviceCode,
-            tenantId: tenantId,
-            workspaceId: selectedClientId,
-          },
-        });
-
-        if (error) {
-          console.error('Poll error:', error);
-          return;
-        }
-
-        if (data.pending) {
-          // Still waiting for user
-          return;
-        }
-
-        if (data.expired || data.error) {
-          stopPolling();
-          setConnectionResult({
-            success: false,
-            error: data.error || 'Autenticação expirada.',
-          });
-          setStep('result');
-          return;
-        }
-
-        if (data.success) {
-          stopPolling();
-          setConnectionResult({
-            success: true,
-            tenantRecordId: data.tenantRecordId,
-            displayName: data.displayName,
-            domain: data.domain,
-            agentLinked: data.agentLinked,
-          });
-          setStep('result');
-        }
-
-      } catch (err) {
-        console.error('Polling error:', err);
-      }
-    }, pollInterval);
-  };
-
-  const handleCopyCode = async () => {
-    if (deviceCodeData?.user_code) {
-      await navigator.clipboard.writeText(deviceCodeData.user_code);
-      setCopied(true);
-      toast({
-        title: "Código copiado!",
-        description: "Cole o código na página da Microsoft.",
-      });
-      setTimeout(() => setCopied(false), 3000);
-    }
-  };
-
-  const handleOpenLink = () => {
-    if (deviceCodeData?.verification_uri) {
-      window.open(deviceCodeData.verification_uri, '_blank');
+      setStep('form');
+      setWaitingForAuth(false);
     }
   };
 
   const handleClose = () => {
-    stopPolling();
     if (connectionResult?.success) {
       onSuccess();
     }
     onOpenChange(false);
-  };
-
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const renderForm = () => (
@@ -390,7 +444,7 @@ export function SimpleTenantConnectionWizard({
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          Use o email de um Global Admin, Exchange Admin ou Security Admin.
+          Use o email de um Global Admin para conceder permissões.
         </p>
       </div>
 
@@ -402,9 +456,9 @@ export function SimpleTenantConnectionWizard({
             <div className="text-sm text-muted-foreground">
               <p className="font-medium text-foreground mb-1">Como funciona?</p>
               <ul className="text-xs space-y-1">
-                <li>• Você receberá um código para autenticar</li>
-                <li>• Acesse microsoft.com/devicelogin e digite o código</li>
-                <li>• Autentique-se com sua conta (MFA suportado!)</li>
+                <li>• Uma janela abrirá para você conceder permissões</li>
+                <li>• Faça login como Global Admin do tenant</li>
+                <li>• Clique em "Accept" para conceder as permissões</li>
                 <li>• A conexão será estabelecida automaticamente</li>
               </ul>
             </div>
@@ -416,78 +470,32 @@ export function SimpleTenantConnectionWizard({
 
   const renderAuthenticating = () => (
     <div className="space-y-6">
-      {/* Code Display */}
-      <Card className="border-primary/30 bg-primary/5">
-        <CardContent className="py-6 text-center space-y-4">
-          <div>
-            <p className="text-sm text-muted-foreground mb-2">
-              Acesse o link abaixo e digite o código:
-            </p>
-            <div className="bg-background rounded-lg p-4 border border-border/50 inline-block">
-              <p className="text-3xl font-mono font-bold tracking-wider text-primary">
-                {deviceCodeData?.user_code}
-              </p>
-            </div>
+      {/* Status */}
+      <div className="flex flex-col items-center justify-center py-8 space-y-4">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
-          
-          <div className="flex justify-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyCode}
-              className="gap-2"
-            >
-              <Copy className="w-4 h-4" />
-              {copied ? 'Copiado!' : 'Copiar código'}
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleOpenLink}
-              className="gap-2"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Abrir microsoft.com/devicelogin
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Timer and Status */}
-      <div className="flex items-center justify-center gap-2 text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        <span className="text-sm">Aguardando autenticação...</span>
-        <div className="flex items-center gap-1">
-          <Clock className="w-4 h-4" />
-          <span className="text-sm font-mono">{formatTime(timeRemaining)}</span>
+        </div>
+        <div className="text-center space-y-2">
+          <p className="font-medium">Aguardando autorização...</p>
+          <p className="text-sm text-muted-foreground">
+            Complete o processo na janela da Microsoft
+          </p>
         </div>
       </div>
 
-      {/* Instructions */}
+      {/* Helper card */}
       <Card className="bg-muted/30 border-muted">
         <CardContent className="py-3">
-          <p className="text-xs text-muted-foreground text-center">
-            Após fazer login no link acima (incluindo MFA, se habilitado), 
-            esta tela atualizará automaticamente.
-          </p>
+          <div className="flex gap-2 items-center justify-center">
+            <ExternalLink className="w-4 h-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
+              Após conceder as permissões, esta janela atualizará automaticamente.
+            </p>
+          </div>
         </CardContent>
       </Card>
-    </div>
-  );
-
-  const renderConnecting = () => (
-    <div className="flex flex-col items-center justify-center py-12 space-y-4">
-      <div className="relative">
-        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        </div>
-      </div>
-      <div className="text-center space-y-2">
-        <p className="font-medium">Finalizando conexão...</p>
-        <p className="text-sm text-muted-foreground">
-          Configurando o tenant e permissões
-        </p>
-      </div>
     </div>
   );
 
@@ -506,22 +514,26 @@ export function SimpleTenantConnectionWizard({
       
       <div className="text-center space-y-2">
         <p className="font-medium text-lg">
-          {connectionResult?.success ? 'Conexão Estabelecida!' : 'Falha na Conexão'}
+          {connectionResult?.success 
+            ? (connectionResult.partial ? 'Conexão Parcial' : 'Conexão Estabelecida!')
+            : 'Falha na Conexão'}
         </p>
         
         {connectionResult?.success ? (
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              <strong>{connectionResult.displayName}</strong>
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {connectionResult.domain}
-            </p>
-            {connectionResult.agentLinked && (
-              <p className="text-xs text-green-600">
-                ✓ Agent vinculado automaticamente
-              </p>
+            {connectionResult.partial && connectionResult.missingPermissions && connectionResult.missingPermissions.length > 0 && (
+              <div className="text-xs text-amber-600">
+                <p>Algumas permissões não foram concedidas:</p>
+                <ul className="mt-1">
+                  {connectionResult.missingPermissions.map(p => (
+                    <li key={p}>• {p}</li>
+                  ))}
+                </ul>
+              </div>
             )}
+            <p className="text-xs text-green-600">
+              ✓ Tenant conectado com sucesso
+            </p>
           </div>
         ) : (
           <p className="text-sm text-red-500">
@@ -542,8 +554,7 @@ export function SimpleTenantConnectionWizard({
           </DialogTitle>
           <DialogDescription>
             {step === 'form' && 'Informe o email do administrador para iniciar a conexão.'}
-            {step === 'authenticating' && 'Autentique-se no link abaixo para continuar.'}
-            {step === 'connecting' && 'Finalizando configuração...'}
+            {step === 'authenticating' && 'Complete a autorização na janela da Microsoft.'}
             {step === 'result' && (connectionResult?.success ? 'Tenant conectado com sucesso.' : 'Ocorreu um erro.')}
           </DialogDescription>
         </DialogHeader>
@@ -551,7 +562,6 @@ export function SimpleTenantConnectionWizard({
         <div className="py-4">
           {step === 'form' && renderForm()}
           {step === 'authenticating' && renderAuthenticating()}
-          {step === 'connecting' && renderConnecting()}
           {step === 'result' && renderResult()}
         </div>
 
@@ -575,7 +585,7 @@ export function SimpleTenantConnectionWizard({
             <Button 
               variant="outline" 
               onClick={() => {
-                stopPolling();
+                setWaitingForAuth(false);
                 setStep('form');
               }}
             >
@@ -590,7 +600,6 @@ export function SimpleTenantConnectionWizard({
                   variant="outline" 
                   onClick={() => {
                     setConnectionResult(null);
-                    setDeviceCodeData(null);
                     setStep('form');
                   }}
                 >

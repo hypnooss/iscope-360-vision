@@ -622,6 +622,26 @@ Deno.serve(async (req) => {
 
     console.log('Permission test results:', JSON.stringify(permissionResults));
 
+    // === Fetch Service Principal Object ID for Exchange RBAC setup via PowerShell ===
+    // This is critical for the setup-exchange-rbac edge function
+    console.log('Fetching Service Principal Object ID for Exchange RBAC setup...');
+    let spObjectId: string | null = null;
+    try {
+      const spResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id,displayName`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+      if (spResponse.ok) {
+        const spData = await spResponse.json();
+        spObjectId = spData.value?.[0]?.id || null;
+        console.log('Service Principal Object ID:', spObjectId);
+      } else {
+        console.warn('Could not fetch Service Principal:', await spResponse.text());
+      }
+    } catch (spErr) {
+      console.error('Error fetching Service Principal:', spErr);
+    }
+
     // === Attempt to assign Exchange Administrator role for PowerShell CBA ===
     // This is non-blocking - if it fails, Graph API features still work
     console.log('Attempting to assign Exchange Administrator role for PowerShell connectivity...');
@@ -671,12 +691,13 @@ Deno.serve(async (req) => {
       throw new Error('Failed to update tenant record');
     }
 
-    // Store credentials reference (using multi-tenant app)
+    // Store credentials reference (using multi-tenant app) with sp_object_id
     const { error: credError } = await supabase
       .from('m365_app_credentials')
       .upsert({
         tenant_record_id,
         azure_app_id: appId,
+        sp_object_id: spObjectId, // NEW: Save Service Principal Object ID for Exchange RBAC setup
         auth_type: 'multi_tenant_app',
         is_active: true,
         updated_at: new Date().toISOString(),
@@ -686,6 +707,8 @@ Deno.serve(async (req) => {
 
     if (credError) {
       console.error('Failed to store credentials:', credError);
+    } else if (spObjectId) {
+      console.log('Service Principal Object ID saved to database for Exchange RBAC setup');
     }
 
     // Enable Entra ID submodule
