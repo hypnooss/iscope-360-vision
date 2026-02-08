@@ -1,231 +1,265 @@
-# ✅ IMPLEMENTADO: Simplificação Radical do Fluxo M365
 
-**Status**: Concluído
 
-## Princípio Fundamental (Nova Regra)
+# Plano: Suporte a MFA via Device Code Flow
 
-> **O sistema deve fornecer o máximo de facilidade e automação para os usuários finais (considerar usuários finais como usuários sem experiência nenhuma ou muito pouca em infraestrutura)**
+## Problema
+O fluxo ROPC (Resource Owner Password Credentials) não suporta MFA - é uma limitação da Microsoft por design. Quando MFA está habilitado, o erro `AADSTS50076` é retornado.
 
----
+## Solução: Device Code Flow
 
-## Problemas Atuais
+O Device Code Flow é o único fluxo OAuth 2.0 que:
+- **Suporta MFA completamente**
+- Não requer popup/browser no servidor
+- O usuário autentica diretamente com a Microsoft
+- Funciona com qualquer política de segurança do tenant
 
-1. **Object ID do Service Principal** - Pedimos ao usuário para buscar manualmente, mas **já conseguimos obter automaticamente via Graph API** (código existe em `m365-oauth-callback/index.ts` linha 44-56)
-
-2. **Múltiplas credenciais/passos** - O usuário passa por Admin Consent E depois precisa fornecer credenciais de admin de novo
-
-3. **Tenant Home como pré-requisito** - Foi adicionado para facilitar mas criou mais complexidade
-
-4. **Fluxo fragmentado** - Graph API via OAuth + Exchange RBAC manual = confusão
-
----
-
-## Solução Proposta: Fluxo Unificado com Credenciais
-
-Se vamos pedir credenciais de Global Admin, fazemos **TUDO** com elas em um único passo:
+### Como Funciona
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    NOVO FLUXO SIMPLIFICADO                          │
+│                     DEVICE CODE FLOW                                │
 ├─────────────────────────────────────────────────────────────────────┤
-│ 1. Usuário informa Tenant ID + Credenciais de Global Admin          │
-│ 2. Sistema obtém token via Graph API (client credentials)           │
-│ 3. Sistema busca SP Object ID automaticamente                       │
-│ 4. Sistema cria task para Agent configurar Exchange RBAC            │
-│ 5. Conexão completa! ✅                                              │
+│ 1. Sistema solicita device_code à Microsoft                         │
+│ 2. Microsoft retorna: código + URL + tempo de expiração            │
+│ 3. UI exibe: "Acesse https://microsoft.com/devicelogin"            │
+│                "Digite o código: ABCD-1234"                        │
+│ 4. Usuário abre URL → autentica (com MFA) → digita código          │
+│ 5. Sistema faz polling → recebe token quando usuário completa      │
+│ 6. Fluxo continua automaticamente ✅                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Campos necessários do usuário:**
-- Tenant ID (auto-detectado pelo domínio, nao disponivel pra preenchimento, oculto seria o ideal)
-- Email do Global Admin
-- Senha do Global Admin
-
-**Campos que o SISTEMA obtém automaticamente:**
-- SP Object ID (via Graph API: `GET /servicePrincipals?$filter=appId eq '...'`)
-- Display Name da organização
-- Domínio primário
-
 ---
 
-## Mudanças Necessárias
+## Arquivos a Modificar
 
-### 1. `src/components/m365/TenantConnectionWizard.tsx`
+### 1. `supabase/functions/connect-m365-tenant/index.ts`
 
-Simplificar para apenas 3 etapas:
-1. **Cliente** - Qual workspace (mantém)
-2. **Conexão** - Tenant ID + Credenciais de Admin
-3. **Resultado** - Sucesso/Falha
+Substituir ROPC por Device Code Flow em duas etapas:
 
-Remover:
-- Etapa de "Agent" (será selecionado automaticamente do workspace)
-- Etapa de "Autorizar" (não precisa mais de popup OAuth separado)
-- Complexidade do Admin Consent via popup
-
-Adicionar:
-- Formulário unificado: Tenant ID + Email Admin + Senha Admin
-- Botão único: "Conectar"
-
-### 2. Nova Edge Function: `connect-m365-tenant/index.ts`
-
-Faz TUDO em uma única chamada:
-
+**Etapa 1 - Iniciar autenticação:**
 ```typescript
-// Recebe: tenantId, adminEmail, adminPassword, clientId (workspace)
+// POST /connect-m365-tenant com action: 'start'
+// Retorna: { user_code, verification_uri, device_code, expires_in }
 
-// 1. Validar se tenant já não existe para este workspace
-// 2. Obter App ID e Client Secret da configuração global
-// 3. Obter token via client credentials
-// 4. Validar permissões Graph API
-// 5. Buscar SP Object ID automaticamente
-// 6. Criar registro do tenant
-// 7. Vincular agent do workspace automaticamente
-// 8. Criar task de Exchange RBAC setup para o agent
-// 9. Retornar sucesso
-```
-
-### 3. Modificar `supabase/functions/setup-exchange-rbac/index.ts`
-
-- Remover necessidade de receber `spObjectId` do usuário
-- Obter o SP Object ID automaticamente dentro da função usando o token do tenant
-
-### 4. `src/components/m365/ExchangeRBACSetupCard.tsx`
-
-**Eliminar completamente ou simplificar drasticamente:**
-- Não precisa mais ser exibido para o usuário
-- A configuração acontece automaticamente no background
-
-### 5. Removals
-
-- Remover dependência de "Tenant Home" no fluxo principal
-- Remover popup de Admin Consent (substituído por credenciais diretas)
-- Remover formulário de Object ID manual
-
----
-
-## Fluxo Detalhado da Edge Function
-
-```typescript
-// connect-m365-tenant/index.ts
-
-async function handler(req) {
-  const { tenantId, adminEmail, adminPassword, workspaceId } = await req.json();
-  
-  // 1. Obter configuração global (App ID, Client Secret)
-  const globalConfig = await getGlobalConfig();
-  
-  // 2. Obter token para o tenant
-  const token = await getTokenForTenant(tenantId, globalConfig.appId, globalConfig.clientSecret);
-  
-  // 3. Buscar informações do tenant
-  const orgInfo = await fetchOrganizationInfo(token);
-  const spInfo = await fetchServicePrincipal(token, globalConfig.appId);
-  // spInfo.id = Object ID do Service Principal (automático!)
-  
-  // 4. Validar permissões
-  const permissions = await validatePermissions(token);
-  
-  // 5. Criar registro no banco
-  const tenant = await createTenantRecord({
-    workspaceId,
-    tenantId,
-    displayName: orgInfo.displayName,
-    domain: orgInfo.primaryDomain,
-    spObjectId: spInfo.id, // Armazenar para uso futuro
-  });
-  
-  // 6. Vincular agent automaticamente
-  const agent = await getWorkspaceAgent(workspaceId);
-  if (agent) {
-    await linkAgentToTenant(tenant.id, agent.id);
-  }
-  
-  // 7. Criar task de Exchange RBAC setup
-  if (agent) {
-    await createExchangeRbacTask(agent.id, {
-      tenantRecordId: tenant.id,
-      adminEmail,
-      adminPassword, // Criptografada para transporte
-      appId: globalConfig.appId,
-      spObjectId: spInfo.id, // Obtido automaticamente!
-    });
-  }
-  
-  return { success: true, tenantId: tenant.id };
+async function initiateDeviceCodeFlow(tenantId: string, appId: string) {
+  const response = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: appId,
+        scope: 'https://graph.microsoft.com/.default offline_access',
+      }),
+    }
+  );
+  return await response.json();
+  // Retorna: { device_code, user_code, verification_uri, expires_in, interval }
 }
 ```
 
----
+**Etapa 2 - Poll por token:**
+```typescript
+// POST /connect-m365-tenant com action: 'poll'
+// Retorna: { success: true, ... } ou { pending: true }
 
-## Interface do Usuário Simplificada
+async function pollForToken(tenantId: string, appId: string, deviceCode: string) {
+  const response = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: appId,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: deviceCode,
+      }),
+    }
+  );
+  
+  const data = await response.json();
+  
+  if (data.error === 'authorization_pending') {
+    return { pending: true };
+  }
+  if (data.error === 'expired_token') {
+    throw new Error('Tempo expirado. Tente novamente.');
+  }
+  
+  return { access_token: data.access_token };
+}
+```
+
+### 2. `src/components/m365/SimpleTenantConnectionWizard.tsx`
+
+Adicionar novo passo de autenticação com UI para exibir código:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Conectar Microsoft 365                        │
+│                  Autenticação Microsoft 365                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  Cliente: [Dropdown: Workspace selecionado]                      │
+│    ┌────────────────────────────────────────────────────┐        │
+│    │                                                    │        │
+│    │      Acesse:  microsoft.com/devicelogin           │        │
+│    │                                                    │        │
+│    │      Digite o código:                              │        │
+│    │                                                    │        │
+│    │              ┌───────────────────┐                 │        │
+│    │              │   ABCD-1234       │                 │        │
+│    │              └───────────────────┘                 │        │
+│    │                                                    │        │
+│    │      [📋 Copiar código]   [🔗 Abrir link]          │        │
+│    │                                                    │        │
+│    └────────────────────────────────────────────────────┘        │
 │                                                                  │
-│  ─────────────────────────────────────────────────────────────   │
+│    ⏳ Aguardando autenticação... (expira em 14:23)               │
 │                                                                  │
-│  Tenant ID: [________________________]                           │
-│  (Encontrado em Azure Portal > Entra ID > Properties)            │
+│    ─────────────────────────────────────────────────────────     │
 │                                                                  │
-│  Email do Administrador: [admin@contoso.com]                     │
-│                                                                  │
-│  Senha: [●●●●●●●●]                                               │
-│                                                                  │
-│  ⓘ Use as credenciais de um Global Admin ou Exchange Admin.      │
-│    A senha é usada uma única vez e nunca é armazenada.           │
-│                                                                  │
-│  [           🔒 Conectar                    ]                    │
+│    ℹ️ Após fazer login no link acima (incluindo MFA se           │
+│       habilitado), esta tela atualizará automaticamente.         │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
+**Novos estados do wizard:**
+- `form` → Seleção de workspace + email (só para detectar tenant)
+- `authenticating` → Exibe código + polling
+- `connecting` → Processando conexão final
+- `result` → Sucesso/Falha
 
-## Benefícios
+### 3. Nova Edge Function (opcional): `m365-device-code-poll/index.ts`
 
-| Antes | Depois |
-|-------|--------|
-| 4+ etapas no wizard | 2-3 etapas simples |
-| Popup OAuth separado | Formulário único |
-| Object ID manual | Automático via API |
-| Exchange RBAC como passo extra | Integrado e automático |
-| "Tenant Home" como pré-requisito | Não precisa mais |
-| Usuário precisa entender Azure | Só precisa de email/senha de admin |
+Alternativa: fazer polling separado para não sobrecarregar a função principal.
 
 ---
 
-## Considerações de Segurança
+## Fluxo Detalhado da UI
 
-1. **Credenciais nunca são armazenadas** - Apenas usadas para obter token e criar task
-2. **Task com criptografia de transporte** - XOR com chave única por request
-3. **Audit log de todas ações** - Rastreabilidade completa
-4. **Token expira rapidamente** - Não persiste
+### Passo 1: Formulário Simplificado
+- Workspace (dropdown ou auto-select)
+- Email do administrador (para detectar tenant ID)
+- Botão: "Continuar"
+
+### Passo 2: Autenticação Device Code
+- Exibe código grande e legível
+- Botão para copiar código
+- Botão para abrir link (nova aba)
+- Timer de expiração visual
+- Polling automático a cada 5 segundos
+- Quando usuário completa → avança automaticamente
+
+### Passo 3: Conectando
+- Busca info do tenant
+- Busca Service Principal
+- Cria registros
+- Cria task de Exchange RBAC
+
+### Passo 4: Resultado
+- Sucesso com detalhes do tenant
+- Ou erro com opção de retry
+
+---
+
+## Vantagens
+
+| Aspecto | ROPC (antes) | Device Code (novo) |
+|---------|--------------|-------------------|
+| Suporte MFA | ❌ Não | ✅ Sim |
+| Segurança | ⚠️ Senha no servidor | ✅ Autenticação direta com MS |
+| Conditional Access | ❌ Bloqueado | ✅ Suportado |
+| Experiência | Formulário de senha | Código + link |
+
+---
+
+## Considerações
+
+1. **Não precisa mais de senha** - O usuário autentica diretamente com a Microsoft
+2. **Suporte completo a políticas de segurança** - MFA, Conditional Access, etc.
+3. **Polling eficiente** - A cada 5 segundos (intervalo recomendado pela Microsoft)
+4. **Expiração clara** - Código expira em ~15 minutos, timer visível
 
 ---
 
 ## Arquivos a Criar/Modificar
 
-| Arquivo | Ação |
-|---------|------|
-| `supabase/functions/connect-m365-tenant/index.ts` | **Criar** - Nova edge function unificada |
-| `src/components/m365/TenantConnectionWizard.tsx` | **Modificar** - Simplificar para formulário único |
-| `supabase/functions/setup-exchange-rbac/index.ts` | **Modificar** - Obter SP Object ID automaticamente |
-| `src/components/m365/ExchangeRBACSetupCard.tsx` | **Remover ou esconder** - Não mais necessário como UI |
-| `src/components/m365/TenantStatusCard.tsx` | **Modificar** - Remover referências ao setup manual |
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `supabase/functions/connect-m365-tenant/index.ts` | Modificar | Substituir ROPC por Device Code Flow |
+| `src/components/m365/SimpleTenantConnectionWizard.tsx` | Modificar | Adicionar UI de código + polling |
+
+---
+
+## Código de Exemplo (Edge Function)
+
+```typescript
+// Duas ações na mesma função:
+
+if (action === 'start') {
+  // Inicia Device Code Flow
+  const deviceCodeResponse = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
+    {
+      method: 'POST',
+      body: new URLSearchParams({
+        client_id: appId,
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    }
+  );
+  
+  const { device_code, user_code, verification_uri, expires_in, interval } = 
+    await deviceCodeResponse.json();
+  
+  return { 
+    device_code,      // Guardar no client para polling
+    user_code,        // Exibir para o usuário
+    verification_uri, // URL para autenticar
+    expires_in,       // Segundos até expirar
+    interval,         // Segundos entre polls
+  };
+}
+
+if (action === 'poll') {
+  // Poll por token
+  const tokenResponse = await fetch(
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      body: new URLSearchParams({
+        client_id: appId,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: deviceCode,
+      }),
+    }
+  );
+  
+  const data = await tokenResponse.json();
+  
+  if (data.error === 'authorization_pending') {
+    return { pending: true };
+  }
+  
+  // Usuário autenticou! Continuar com o fluxo...
+  // - Buscar org info
+  // - Buscar SP Object ID
+  // - Criar tenant
+  // - Criar task Exchange RBAC
+}
+```
 
 ---
 
 ## Resumo
 
-O fluxo anterior exigia conhecimento técnico demais: Admin Consent, Object IDs, popups OAuth, configuração manual de Exchange RBAC.
+Remove a necessidade de senha no formulário. O usuário:
+1. Seleciona workspace
+2. Informa email (para detectar tenant)
+3. Recebe código para digitar em microsoft.com/devicelogin
+4. Autentica com a Microsoft (incluindo MFA)
+5. Sistema detecta automaticamente e completa a conexão
 
-O novo fluxo é:
-1. Escolhe o cliente/workspace
-2. Digita Tenant ID + Email + Senha do admin
-3. Clica "Conectar"
-4. **Pronto!** Sistema faz tudo automaticamente
+**Compatível com qualquer configuração de segurança do tenant.**
 
