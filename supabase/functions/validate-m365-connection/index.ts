@@ -60,10 +60,10 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     
     console.log(`Exchange Admin Role check - Found SP: ${spId}`);
     
-    // Check if the role is assigned to this Service Principal
-    // IMPORTANT: Microsoft Graph requires BOTH ConsistencyLevel: eventual header AND $count=true for advanced filters
+    // Check if the Exchange Administrator role is assigned to this Service Principal
+    // Use filter on principalId only (more reliable), then filter in code by roleDefinitionId
     const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$count=true&$filter=principalId eq '${spId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$count=true&$filter=principalId eq '${spId}'`,
       { 
         headers: { 
           'Authorization': `Bearer ${accessToken}`,
@@ -74,12 +74,20 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     
     if (roleResponse.ok) {
       const roleData = await roleResponse.json();
-      const hasRole = roleData.value?.length > 0;
-      console.log(`Exchange Admin Role check - Assignments found: ${roleData.value?.length || 0}, granted: ${hasRole}`);
-      return { granted: hasRole };
+      // Filter for Exchange Administrator role in code
+      const hasExchangeAdminRole = roleData.value?.some(
+        (assignment: { roleDefinitionId: string }) => 
+          assignment.roleDefinitionId === EXCHANGE_ADMIN_ROLE_TEMPLATE_ID
+      );
+      console.log(`Exchange Admin Role check - Total assignments: ${roleData.value?.length || 0}, hasExchangeAdmin: ${hasExchangeAdminRole}`);
+      if (roleData.value?.length > 0) {
+        console.log(`Exchange Admin Role check - Role IDs found: ${roleData.value.map((a: { roleDefinitionId: string }) => a.roleDefinitionId).join(', ')}`);
+      }
+      return { granted: hasExchangeAdminRole };
     }
     
-    console.log(`Exchange Admin Role check - Role assignment query failed: ${roleResponse.status}`);
+    const errBody = await roleResponse.text().catch(() => '');
+    console.log(`Exchange Admin Role check - Role assignment query failed: ${roleResponse.status}`, errBody.substring(0, 300));
     return { granted: false, error: `HTTP ${roleResponse.status}` };
   } catch (error) {
     console.error('Exchange Admin Role check - Exception:', error);
