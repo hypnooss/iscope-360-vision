@@ -89,7 +89,8 @@ export function TenantStatusCard({
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [showExchangeRBAC, setShowExchangeRBAC] = useState(false);
-  const [appCredentials, setAppCredentials] = useState<{ app_id: string; app_object_id?: string } | null>(null);
+  const [appCredentials, setAppCredentials] = useState<{ app_id: string } | null>(null);
+  const [hasLinkedAgent, setHasLinkedAgent] = useState(false);
 
   // Use external analyzing state if provided
   const isCurrentlyAnalyzing = externalIsAnalyzing || analyzing;
@@ -125,20 +126,31 @@ export function TenantStatusCard({
         .single();
 
       if (!error && data) {
-        // Also fetch global config for app_object_id if needed
-        const { data: globalConfig } = await supabase
-          .from('m365_global_config')
-          .select('app_object_id')
-          .limit(1)
-          .single();
-
         setAppCredentials({
           app_id: data.azure_app_id,
-          app_object_id: globalConfig?.app_object_id || undefined
         });
       }
     } catch (err) {
       console.error('Error fetching app credentials:', err);
+    }
+  };
+
+  const fetchLinkedAgent = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('m365_tenant_agents')
+        .select('id')
+        .eq('tenant_record_id', tenant.id)
+        .eq('enabled', true)
+        .limit(1);
+
+      if (!error && data && data.length > 0) {
+        setHasLinkedAgent(true);
+      } else {
+        setHasLinkedAgent(false);
+      }
+    } catch (err) {
+      console.error('Error fetching linked agent:', err);
     }
   };
 
@@ -147,6 +159,7 @@ export function TenantStatusCard({
     if (tenant.connection_status === 'connected' || tenant.connection_status === 'partial') {
       fetchPermissions();
       fetchAppCredentials();
+      fetchLinkedAgent();
     }
   }, [tenant.id, tenant.connection_status]);
 
@@ -436,9 +449,15 @@ export function TenantStatusCard({
                 {showExchangeRBAC && exchangeAdminRolePending && appCredentials && (
                   <ExchangeRBACSetupCard
                     appId={appCredentials.app_id}
+                    tenantRecordId={tenant.id}
                     tenantDomain={tenant.tenant_domain || undefined}
+                    hasLinkedAgent={hasLinkedAgent}
                     onVerify={handleTest}
                     isVerifying={testing}
+                    onSetupComplete={() => {
+                      // Refresh permissions after setup attempt
+                      setTimeout(() => fetchPermissions(), 5000);
+                    }}
                   />
                 )}
               </div>

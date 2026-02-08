@@ -59,6 +59,7 @@ class TaskExecutor:
         task_id = task.get('id', 'unknown')
         steps = task.get('steps', [])
         target = task.get('target', {})
+        payload = task.get('payload', {})
         
         self.logger.info(f"Executando tarefa {task_id} com {len(steps)} steps (progressive={self._use_progressive})")
         
@@ -66,6 +67,44 @@ class TaskExecutor:
         start_time = time.time()
         
         context = self._build_context(target)
+        
+        # Handle credential-based auth for M365 RBAC setup
+        if payload.get('auth_mode') == 'credential':
+            self.logger.info("Using credential-based authentication for this task")
+            try:
+                encrypted_password = payload.get('password_encrypted')
+                transport_key = payload.get('transport_key')
+                
+                if encrypted_password and transport_key:
+                    password = self._decrypt_transport_password(encrypted_password, transport_key)
+                    # Inject auth_mode and credentials into step params
+                    for step in steps:
+                        if step.get('type') == 'powershell':
+                            params = step.get('params', {})
+                            params['auth_mode'] = 'credential'
+                            params['username'] = payload.get('username')
+                            params['password'] = password
+                            step['params'] = params
+                else:
+                    return {
+                        'status': 'failed',
+                        'error_message': 'Missing encrypted password or transport key',
+                        'execution_time_ms': 0,
+                        'steps_completed': 0,
+                        'steps_failed': len(steps),
+                        'step_results': []
+                    }
+            except Exception as e:
+                return {
+                    'status': 'failed',
+                    'error_message': f'Credential decryption failed: {str(e)}',
+                    'execution_time_ms': 0,
+                    'steps_completed': 0,
+                    'steps_failed': len(steps),
+                    'step_results': []
+                }
+        
+        step_results = []  # Detailed step-by-step results
         step_results = []  # Detailed step-by-step results
         steps_completed = 0
         steps_failed = 0
@@ -283,7 +322,7 @@ class TaskExecutor:
             except Exception:
                 pass
         
-        return {
+        context = {
             'base_url': base_url,
             'domain': domain,
             'api_key': credentials.get('api_key'),
@@ -294,6 +333,33 @@ class TaskExecutor:
             'password': credentials.get('password'),
             'community': credentials.get('community'),
         }
+        
+        # M365 specific context
+        if target.get('type') == 'm365_tenant':
+            context.update({
+                'app_id': credentials.get('azure_app_id'),
+                'tenant_id': target.get('tenant_id'),
+                'organization': target.get('tenant_domain'),
+                'certificate_thumbprint': credentials.get('certificate_thumbprint'),
+            })
+        
+        return context
+    
+    def _decrypt_transport_password(self, encrypted: str, key: str) -> str:
+        """Decrypt password that was XOR-encrypted for transport."""
+        import base64
+        try:
+            encrypted_bytes = base64.b64decode(encrypted)
+            key_bytes = key.encode('utf-8')
+            result_bytes = bytearray(len(encrypted_bytes))
+            
+            for i in range(len(encrypted_bytes)):
+                result_bytes[i] = encrypted_bytes[i] ^ key_bytes[i % len(key_bytes)]
+            
+            return result_bytes.decode('utf-8')
+        except Exception as e:
+            self.logger.error(f"Failed to decrypt transport password: {e}")
+            raise ValueError("Failed to decrypt credentials")
 
     def report_result(self, task_id: str, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Report final task completion to the backend."""
