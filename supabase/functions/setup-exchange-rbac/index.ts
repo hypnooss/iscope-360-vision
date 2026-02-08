@@ -165,8 +165,9 @@ serve(async (req) => {
           type: 'exchange_rbac_setup',
           module: 'ExchangeOnline',
           auth_mode: 'credential', // Uses admin credentials for initial setup
-          admin_email: admin_email,
-          admin_password_encrypted: encryptedPassword,
+          username: admin_email,
+          password_encrypted: encryptedPassword,
+          transport_key: encryptionKey,
           commands: setupCommands,
           tenant_id: tenant.tenant_id,
           organization: tenant.tenant_domain,
