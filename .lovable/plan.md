@@ -1,167 +1,158 @@
 
-# Plano: Arquitetura Dual-Task para M365 (Graph API + Agent)
+# Plano: Corrigir Integração M365 Agent Blueprint
 
 ## Problema Identificado
 
-O `trigger-m365-posture-analysis` atualmente:
-1. Cria registro em `m365_posture_history`
-2. Chama `m365-security-posture` (que usa apenas Graph API)
-3. **Não cria tarefa para o agent** executar coletas PowerShell
+O erro `"powershell_exec: commands list is required"` ocorre porque:
 
-O blueprint "M365 - Exchange & SharePoint (Agent)" foi criado mas nunca é acionado automaticamente.
+1. O `trigger-m365-posture-analysis` cria a task com payload mínimo:
+   ```json
+   {
+     "analysis_id": "...",
+     "tenant_id": "...",
+     "tenant_domain": "..."
+   }
+   ```
+
+2. A RPC `rpc_get_agent_tasks` gera o blueprint **dinamicamente** esperando `payload->commands`:
+   ```sql
+   'commands', COALESCE(t.payload->'commands', '[]'::jsonb)
+   ```
+
+3. Como não há `commands` no payload, o array fica vazio e o PowerShell executor falha.
 
 ## Solução Proposta
 
-Refatorar o fluxo de análise M365 para disparar **duas tarefas paralelas**:
+Atualizar a RPC `rpc_get_agent_tasks` para buscar o blueprint do banco de dados (como já faz para firewall e external_domain), em vez de esperar os commands no payload.
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                trigger-m365-posture-analysis                     │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-           ┌───────────────┴───────────────┐
-           ▼                               ▼
-┌──────────────────────┐       ┌──────────────────────────────────┐
-│  m365-security-posture│       │      agent_tasks                 │
-│  (Graph API via Edge) │       │  (PowerShell via Agent)          │
-│                       │       │                                   │
-│  • 39 steps Graph     │       │  • 16 steps PowerShell           │
-│  • Identidades        │       │  • Exchange: Mailboxes, Rules    │
-│  • Auth, CA Policies  │       │  • SharePoint: Tenant, Sites     │
-│  • Risk Detections    │       │  • Coletas via CBA               │
-└──────────┬────────────┘       └──────────────┬────────────────────┘
-           │                                   │
-           │  Resultado imediato               │  Resultado async
-           ▼                                   ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     m365_posture_history                          │
-│                                                                   │
-│  • insights (Graph API)                                           │
-│  • agent_insights (PowerShell) ← NOVO CAMPO                      │
-│  • score combinado                                                │
-└──────────────────────────────────────────────────────────────────┘
+Antes:
+┌──────────────────────────────────────────────────────────────┐
+│  rpc_get_agent_tasks (M365 section)                          │
+│                                                              │
+│  payload->commands ───► COALESCE(..., '[]')                  │
+│                                       │                      │
+│                              Array vazio!                    │
+└──────────────────────────────────────────────────────────────┘
+
+Depois:
+┌──────────────────────────────────────────────────────────────┐
+│  rpc_get_agent_tasks (M365 section)                          │
+│                                                              │
+│  device_blueprints ───► WHERE device_type = 'm365'           │
+│          │                AND executor_type = 'agent'        │
+│          ▼                                                   │
+│  collection_steps.steps                                      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Alterações Necessárias
 
-### 1. Edge Function: `trigger-m365-posture-analysis/index.ts`
+### 1. Migração SQL: Atualizar `rpc_get_agent_tasks`
 
-Adicionar lógica para criar tarefa do agente:
-
-```typescript
-// Após criar historyRecord...
-
-// 1. Verificar se tenant tem agent vinculado
-const { data: tenantAgent } = await supabaseAdmin
-  .from('m365_tenant_agents')
-  .select('agent_id')
-  .eq('tenant_record_id', tenant_record_id)
-  .eq('enabled', true)
-  .maybeSingle();
-
-// 2. Se tiver agent, criar task de PowerShell
-if (tenantAgent?.agent_id) {
-  const { data: agentTask } = await supabaseAdmin
-    .from('agent_tasks')
-    .insert({
-      agent_id: tenantAgent.agent_id,
-      task_type: 'm365_powershell',
-      target_id: tenant_record_id,
-      target_type: 'm365_tenant',
-      status: 'pending',
-      priority: 5,
-      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      payload: {
-        analysis_id: historyRecord.id,  // Link com a análise
-        blueprint_type: 'exchange_sharepoint',
-        commands: [...] // Blueprint completo de 16 steps
-      }
-    })
-    .select('id')
-    .single();
-
-  console.log(`Agent task created: ${agentTask?.id}`);
-}
-
-// 3. Continuar com análise Graph API normalmente...
-EdgeRuntime.waitUntil(runAnalysis());
-```
-
-### 2. Banco de Dados: Nova coluna em `m365_posture_history`
+Modificar a seção M365 da função para buscar o blueprint do banco:
 
 ```sql
-ALTER TABLE m365_posture_history 
-ADD COLUMN agent_task_id uuid REFERENCES agent_tasks(id),
-ADD COLUMN agent_insights jsonb DEFAULT NULL,
-ADD COLUMN agent_status text DEFAULT NULL;
+-- M365 Tenant tasks section
+SELECT
+  t.id,
+  t.task_type,
+  t.target_id,
+  t.target_type,
+  t.payload,
+  t.priority,
+  t.expires_at,
+  json_build_object(
+    'id', mt.id,
+    'type', 'm365_tenant',
+    'tenant_id', mt.tenant_id,
+    'tenant_domain', mt.tenant_domain,
+    'display_name', mt.display_name,
+    'credentials', json_build_object(
+      'azure_app_id', cred.azure_app_id,
+      'auth_type', cred.auth_type,
+      'certificate_thumbprint', COALESCE(cred.certificate_thumbprint, a.certificate_thumbprint)
+    )
+  ) as target,
+  -- NOVO: Buscar blueprint do banco em vez de gerar dinamicamente
+  COALESCE(
+    (
+      SELECT db.collection_steps
+      FROM public.device_blueprints db
+      WHERE db.device_type_id = (
+        SELECT id FROM public.device_types 
+        WHERE code = 'm365' AND is_active = true 
+        LIMIT 1
+      )
+      AND db.executor_type = 'agent'  -- Importante: apenas blueprints do agent
+      AND db.is_active = true
+      ORDER BY db.version DESC
+      LIMIT 1
+    ),
+    -- Fallback: gerar dinamicamente se payload tiver commands
+    CASE WHEN t.payload->'commands' IS NOT NULL THEN
+      jsonb_build_object(
+        'steps', jsonb_build_array(
+          jsonb_build_object(
+            'id', COALESCE(t.payload->>'test_type', 'powershell_exec'),
+            'type', 'powershell',
+            'params', jsonb_build_object(
+              'module', COALESCE(t.payload->>'module', 'ExchangeOnline'),
+              'commands', t.payload->'commands',
+              'app_id', cred.azure_app_id,
+              'tenant_id', mt.tenant_id,
+              'organization', COALESCE(t.payload->>'organization', mt.tenant_domain)
+            )
+          )
+        )
+      )
+    ELSE
+      '{"steps": []}'::jsonb
+    END
+  ) as blueprint
+FROM public.agent_tasks t
+...
 ```
 
-### 3. Edge Function: `agent-task-result/index.ts`
+### 2. Simplificar `trigger-m365-posture-analysis`
 
-Atualizar para persistir resultados em `m365_posture_history`:
+O payload pode permanecer simples (apenas metadados), pois o blueprint será buscado do banco:
 
 ```typescript
-// Quando task é de tipo m365_tenant...
-if (task.target_type === 'm365_tenant' && task.payload?.analysis_id) {
-  // Atualizar m365_posture_history com os insights do agent
-  await supabase
-    .from('m365_posture_history')
-    .update({
-      agent_insights: processedInsights,
-      agent_status: result.status,
-    })
-    .eq('id', task.payload.analysis_id);
+payload: {
+  analysis_id: historyRecord.id,
+  tenant_id: tenant.tenant_id,
+  tenant_domain: tenant.tenant_domain,
+  // Não precisa mais de 'commands' - o banco resolve
 }
 ```
 
-### 4. RPC Function: `rpc_get_agent_tasks`
+## Fluxo Corrigido
 
-Já está configurada corretamente para gerar steps a partir de blueprints M365. Verificado que funciona (tarefa `dcfdcbfe...` executou com sucesso).
-
-### 5. Frontend: `M365PosturePage.tsx`
-
-Exibir insights combinados (Graph + Agent):
-
-```typescript
-// Combinar insights de ambas as fontes
-const allInsights = [
-  ...(postureData?.insights || []),           // Graph API
-  ...(postureData?.agent_insights || []),     // PowerShell/Agent
-];
-```
-
-## Fluxo de Execução Completo
-
-1. **Usuário clica "Analisar"** → `trigger-m365-posture-analysis`
-2. **Cria registro** em `m365_posture_history` com status `pending`
-3. **Verifica agent vinculado** em `m365_tenant_agents`
-4. **Se houver agent**:
-   - Cria `agent_task` com `target_type: m365_tenant`
-   - Payload inclui `analysis_id` para vincular
-5. **Executa análise Graph API** em background (Edge Function)
-6. **Agent processa task** quando disponível
-7. **agent-task-result** atualiza `m365_posture_history.agent_insights`
-8. **UI exibe resultados combinados**
-
-## Benefícios
-
-1. **Paralelismo**: Graph API e Agent executam simultaneamente
-2. **Independência**: Se agent não estiver disponível, Graph API ainda funciona
-3. **Rastreabilidade**: `analysis_id` liga tudo ao mesmo registro histórico
-4. **Escalabilidade**: Cada executor trabalha em seu domínio
+1. **Usuário clica "Analisar"** no tenant M365
+2. `trigger-m365-posture-analysis` cria `agent_task` com payload mínimo
+3. Agent chama `GET /agent-tasks`
+4. `rpc_get_agent_tasks` busca blueprint "M365 - Exchange & SharePoint (Agent)" do banco
+5. Agent recebe tasks com `steps` completos (16 comandos PowerShell)
+6. PowerShell executor processa cada step normalmente
 
 ## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Adicionar criação de task do agent |
-| `supabase/functions/agent-task-result/index.ts` | Persistir insights em `m365_posture_history` |
-| Migração SQL | Adicionar colunas `agent_task_id`, `agent_insights`, `agent_status` |
-| `src/pages/m365/M365PosturePage.tsx` | Exibir insights combinados |
-| `src/hooks/useM365SecurityPosture.ts` | Buscar `agent_insights` também |
+| Migração SQL | Atualizar `rpc_get_agent_tasks` para buscar blueprint M365 do banco |
 
-## Considerações de Segurança
+## Benefícios
 
-- Task do agent usa CBA (Certificate-Based Auth) - já implementado
-- Dados coletados são armazenados em `task_step_results` com RLS
-- `m365_posture_history` já tem políticas RLS apropriadas
+1. **Consistência**: M365 segue o mesmo padrão de firewall e external_domain
+2. **Manutenibilidade**: Alterar blueprint via admin UI atualiza automaticamente as tasks
+3. **Flexibilidade**: Fallback para payload dinâmico permite testes manuais
+4. **Sem breaking changes**: Tasks com `commands` no payload ainda funcionam
+
+## Seção Técnica
+
+A RPC precisa:
+1. Buscar o `device_type_id` onde `code = 'm365'`
+2. Buscar o blueprint onde `executor_type = 'agent'` (não o edge_function)
+3. Retornar `collection_steps` diretamente como blueprint
+4. Manter fallback para casos de teste manual com commands no payload
