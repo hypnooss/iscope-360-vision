@@ -1,15 +1,24 @@
 
 
-# Plano: Organizar Permissões nos Cards de Tenant
+# Plano: Corrigir Lista de Permissões nos Cards de Tenant Cliente
 
-## Contexto
+## Problema Identificado
 
-Atualmente, as permissões nos cards de tenant (página Microsoft 365 > Tenants) são exibidas em uma lista simples sem agrupamento. O objetivo é replicar o layout organizado da página de Configurações (Settings), que agrupa as permissões em 4 categorias:
+O `TenantStatusCard.tsx` está usando uma lista de 13 permissões copiada do SettingsPage (tenant home), mas os **tenants clientes** só validam/gravam 8 permissões + 1 role no banco.
 
-1. **Obrigatórias (Core)** - Permissões fundamentais
-2. **Entra ID / Security** - Segurança e identidade
-3. **Exchange Online** - Recursos de email
-4. **Upload de Certificados** - Gestão de certificados
+**Permissões no SettingsPage (Tenant Home - 13):**
+- Organization.Read.All, Domain.Read.All, RoleManagement.ReadWrite.Directory, RoleManagement.Read.Directory, Application.ReadWrite.All (não existem nos clientes)
+
+**Permissões realmente validadas nos tenants clientes (do `validate-m365-connection`):**
+- User.Read.All
+- Directory.Read.All
+- Group.Read.All
+- Application.Read.All
+- AuditLog.Read.All
+- RoleManagement.ReadWrite.Directory (quando validado)
+- MailboxSettings.Read
+- Mail.Read
+- Exchange Administrator Role (role adicional)
 
 ---
 
@@ -17,7 +26,7 @@ Atualmente, as permissões nos cards de tenant (página Microsoft 365 > Tenants)
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/m365/TenantStatusCard.tsx` | Reorganizar exibição de permissões por categoria |
+| `src/components/m365/TenantStatusCard.tsx` | Atualizar listas de permissões para refletir apenas as validadas nos tenants clientes |
 
 ---
 
@@ -25,148 +34,102 @@ Atualmente, as permissões nos cards de tenant (página Microsoft 365 > Tenants)
 
 ### `TenantStatusCard.tsx`
 
-**1. Adicionar constantes de agrupamento** (após linha 40):
+**Substituir as constantes de permissões** (linhas 44-48) por:
+
 ```typescript
-// Permission categories for organized display
-const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
-const ENTRA_ID_PERMISSIONS = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
+// Permission categories for tenant clients (based on validate-m365-connection)
+// These are the permissions actually validated and stored for client tenants
+const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All'];
 const EXCHANGE_PERMISSIONS = ['MailboxSettings.Read', 'Mail.Read'];
-const CERTIFICATE_PERMISSIONS = ['Application.ReadWrite.All'];
+const ROLE_PERMISSIONS = ['RoleManagement.ReadWrite.Directory', 'Exchange Administrator Role'];
+const ALL_PERMISSIONS = [...CORE_PERMISSIONS, ...EXCHANGE_PERMISSIONS, ...ROLE_PERMISSIONS];
 ```
 
-**2. Adicionar função auxiliar para filtrar permissões** (após as constantes):
+**Atualizar o grid de exibição** (linhas 319-399) para 3 colunas:
+
 ```typescript
-// Helper to get permissions by category
-const getPermissionsByCategory = (perms: TenantPermission[], categoryList: string[]) => {
-  return perms.filter(p => categoryList.includes(p.permission_name));
-};
-```
-
-**3. Substituir a seção de permissões** (linhas 309-330) por layout organizado em 4 colunas:
-```typescript
-{showPermissions && (
-  <div className="mt-3">
-    <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
-    <div className="grid gap-4 md:grid-cols-4">
-      {/* Core Permissions */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
-        <ul className="text-sm space-y-1">
-          {CORE_PERMISSIONS.map(permName => {
-            const perm = permissions.find(p => p.permission_name === permName);
-            return (
-              <li key={permName} className="flex items-center gap-2">
-                <span className={cn(
-                  "w-2 h-2 rounded-full flex-shrink-0",
-                  perm?.status === 'granted' ? 'bg-green-500' : 
-                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                )} />
-                <span className="text-xs truncate">{permName}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {/* Entra ID / Security */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
-        <ul className="text-sm space-y-1">
-          {ENTRA_ID_PERMISSIONS.map(permName => {
-            const perm = permissions.find(p => p.permission_name === permName);
-            return (
-              <li key={permName} className="flex items-center gap-2">
-                <span className={cn(
-                  "w-2 h-2 rounded-full flex-shrink-0",
-                  perm?.status === 'granted' ? 'bg-green-500' : 
-                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                )} />
-                <span className="text-xs truncate">{permName}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {/* Exchange Online */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
-        <ul className="text-sm space-y-1">
-          {EXCHANGE_PERMISSIONS.map(permName => {
-            const perm = permissions.find(p => p.permission_name === permName);
-            return (
-              <li key={permName} className="flex items-center gap-2">
-                <span className={cn(
-                  "w-2 h-2 rounded-full flex-shrink-0",
-                  perm?.status === 'granted' ? 'bg-green-500' : 
-                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                )} />
-                <span className="text-xs truncate">{permName}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {/* Certificate Upload */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
-        <ul className="text-sm space-y-1">
-          {CERTIFICATE_PERMISSIONS.map(permName => {
-            const perm = permissions.find(p => p.permission_name === permName);
-            return (
-              <li key={permName} className="flex items-center gap-2">
-                <span className={cn(
-                  "w-2 h-2 rounded-full flex-shrink-0",
-                  perm?.status === 'granted' ? 'bg-green-500' : 
-                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                )} />
-                <span className="text-xs truncate">{permName}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
+<div className="grid gap-4 md:grid-cols-3">
+  {/* Core Permissions */}
+  <div className="space-y-2">
+    <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
+    <ul className="text-sm space-y-1">
+      {CORE_PERMISSIONS.map(permName => {
+        const perm = permissions.find(p => p.permission_name === permName);
+        return (
+          <li key={permName} className="flex items-center gap-2">
+            <span className={cn(
+              "w-2 h-2 rounded-full flex-shrink-0",
+              perm?.status === 'granted' ? 'bg-green-500' : 
+              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+            )} />
+            <span className="text-xs truncate">{permName}</span>
+          </li>
+        );
+      })}
+    </ul>
   </div>
-)}
+
+  {/* Exchange Online */}
+  <div className="space-y-2">
+    <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
+    <ul className="text-sm space-y-1">
+      {EXCHANGE_PERMISSIONS.map(permName => {
+        const perm = permissions.find(p => p.permission_name === permName);
+        return (
+          <li key={permName} className="flex items-center gap-2">
+            <span className={cn(
+              "w-2 h-2 rounded-full flex-shrink-0",
+              perm?.status === 'granted' ? 'bg-green-500' : 
+              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+            )} />
+            <span className="text-xs truncate">{permName}</span>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
+
+  {/* Roles & Advanced */}
+  <div className="space-y-2">
+    <p className="text-xs font-medium text-muted-foreground">Roles do Diretório</p>
+    <ul className="text-sm space-y-1">
+      {ROLE_PERMISSIONS.map(permName => {
+        const perm = permissions.find(p => p.permission_name === permName);
+        return (
+          <li key={permName} className="flex items-center gap-2">
+            <span className={cn(
+              "w-2 h-2 rounded-full flex-shrink-0",
+              perm?.status === 'granted' ? 'bg-green-500' : 
+              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+            )} />
+            <span className="text-xs truncate">{permName}</span>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
+</div>
 ```
 
 ---
 
-## Resultado Visual
+## Resultado
 
-```text
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ Permissões (12/14)                                                          [▲]    │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Permissões do Microsoft Graph                                                        │
-│                                                                                      │
-│ Obrigatórias (Core)          Entra ID / Security       Exchange Online              │
-│ ● User.Read.All              ● Group.Read.All          ● MailboxSettings.Read       │
-│ ● Directory.Read.All         ● Application.Read.All    ● Mail.Read                  │
-│ ● Organization.Read.All      ● Policy.Read.All                                       │
-│ ● Domain.Read.All            ● Reports.Read.All        Upload de Certificados       │
-│ ● RoleManagement.ReadWrite   ● RoleManagement.Read     ● Application.ReadWrite.All  │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-```
+| Antes | Depois |
+|-------|--------|
+| 8/13 permissões (13 listadas, 8 gravadas) | 8/9 ou 9/9 permissões (apenas as que existem) |
+
+**Categorias atualizadas:**
+
+| Categoria | Permissões |
+|-----------|------------|
+| **Obrigatórias** | User.Read.All, Directory.Read.All, Group.Read.All, Application.Read.All, AuditLog.Read.All |
+| **Exchange Online** | MailboxSettings.Read, Mail.Read |
+| **Roles do Diretório** | RoleManagement.ReadWrite.Directory, Exchange Administrator Role |
 
 ---
 
-## Comportamento
+## Nota Técnica
 
-- **Verde** (●): Permissão concedida
-- **Amarelo** (●): Permissão pendente (não validada ou não presente)
-- **Vermelho** (●): Permissão negada/erro
-
-As permissões são listadas por categoria mesmo que não existam no banco - assim o usuário sabe exatamente quais são necessárias em cada módulo.
-
----
-
-## Benefícios
-
-1. **Consistência visual** entre Settings e Tenant cards
-2. **Clareza** sobre quais permissões são necessárias para cada funcionalidade
-3. **Facilidade** para identificar permissões faltantes por módulo
+As permissões `Organization.Read.All`, `Domain.Read.All`, `RoleManagement.Read.Directory`, e `Application.ReadWrite.All` são usadas apenas no **tenant home (MSP)** para validação da configuração global, não nos tenants clientes. Por isso foram removidas do card de tenant cliente.
 
