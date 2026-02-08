@@ -1,238 +1,143 @@
 
-# Plano: Correção do Fluxo de Certificados para Exchange Online
+# Plano: Correção do Erro de Certificados CA no Agent
 
-## Diagnóstico Completo
+## Problema Identificado
 
-Foram identificados **três problemas críticos** que impedem a autenticação do Exchange Online:
-
-### Problema 1: Inconsistência no nome do arquivo de thumbprint
-
-| Componente | Arquivo usado |
-|------------|---------------|
-| `check-deps.sh` (linha 330) | `/var/lib/iscope-agent/certs/m365.thumbprint` |
-| `auth.py` (linha 10) | `/var/lib/iscope-agent/certs/thumbprint.txt` |
-| `powershell.py` (linha 26) | `/var/lib/iscope-agent/certs/thumbprint.txt` |
-
-**Resultado**: O Python nunca encontra o thumbprint porque o arquivo tem nome diferente.
-
-### Problema 2: Formato inconsistente do thumbprint no banco
-
-Alguns agents enviaram thumbprints com prefixo incorreto:
-
-| Agent | Thumbprint no Banco |
-|-------|---------------------|
-| TASCHIBRA-IDA | `sha1 Fingerprint=47FF013BC99249965587DD92F7A7E9FAE7860331` |
-| PRECISIO-AZ | `27FA1C0F9B0D62AF5781F3D2E8940832CFC21980` |
-
-**Formato esperado pelo Azure**: Apenas o hash hexadecimal sem prefixos.
-
-### Problema 3: State local impede reenvio do certificado
-
-O Agent TASCHIBRA-IDA já tem `azure_certificate_key_id` no state local (gravado quando o certificado foi registrado no HOME tenant). Isso faz com que o método `_get_pending_certificate()` retorne `None`, impedindo o reenvio.
-
-**Código relevante** (`heartbeat.py` linhas 21-23):
-```python
-# Certificate already registered in Azure
-if self.state.data.get("azure_certificate_key_id"):
-    return None  # <-- Para aqui e não envia o certificado
+O agent está falhando com o erro:
+```
+OSError: Could not find a suitable TLS CA certificate bundle, invalid path: 
+/opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
 ```
 
----
+Isso ocorre porque a versão mais recente do `certifi` (2026.1.4) foi instalada, mas o arquivo `cacert.pem` não está presente no pacote. Este é um problema conhecido que pode acontecer por:
+- Incompatibilidade com certas versões do Python/pip
+- Cache corrompido (mesmo com `--no-cache-dir`)
+- Bug específico da versão
 
 ## Solução Proposta
 
-### Parte 1: Corrigir nome do arquivo de thumbprint (check-deps.sh)
+### 1. Fixar versão estável do certifi no requirements.txt
 
-**Arquivo**: `python-agent/check-deps.sh`  
-**Linha**: 330
+Adicionar uma versão específica conhecida e estável do `certifi`:
 
-**Alterar de**:
+| Antes | Depois |
+|-------|--------|
+| (não especificado) | `certifi>=2024.2.2,<2026.0.0` |
+
+Nota: O `certifi` é dependência transitiva do `requests`, então precisamos explicitá-lo para controlar a versão.
+
+### 2. Adicionar fallback para certificados do sistema no script de instalação
+
+Modificar o script `agent-install` para verificar se o `cacert.pem` existe após a instalação e, se não existir, criar um link simbólico para os certificados do sistema:
+
 ```bash
-echo "$thumbprint" > "$CERT_DIR/m365.thumbprint"
+# Verificar se certifi foi instalado corretamente
+certifi_pem="$INSTALL_DIR/venv/lib/python*/site-packages/certifi/cacert.pem"
+if ! compgen -G "$certifi_pem" >/dev/null 2>&1; then
+  echo "Aviso: cacert.pem não encontrado. Criando link para certificados do sistema..."
+  
+  # Caminhos comuns para CA bundle do sistema
+  system_ca=""
+  for ca_path in \
+    /etc/ssl/certs/ca-certificates.crt \
+    /etc/pki/tls/certs/ca-bundle.crt \
+    /etc/ssl/ca-bundle.pem \
+    /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem; do
+    if [[ -f "$ca_path" ]]; then
+      system_ca="$ca_path"
+      break
+    fi
+  done
+  
+  if [[ -n "$system_ca" ]]; then
+    # Encontrar diretório do certifi e criar link
+    certifi_dir=$(find "$INSTALL_DIR/venv" -type d -name certifi | head -1)
+    if [[ -n "$certifi_dir" ]]; then
+      ln -sf "$system_ca" "$certifi_dir/cacert.pem"
+      echo "Link criado: $certifi_dir/cacert.pem -> $system_ca"
+    fi
+  fi
+fi
 ```
 
-**Para**:
+### 3. Adicionar verificação de conectividade após setup
+
+Adicionar um teste simples no final da instalação para validar que o TLS está funcionando:
+
 ```bash
-echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"
-```
-
-### Parte 2: Sanitizar thumbprint antes de enviar (Python Agent)
-
-**Arquivo**: `python-agent/agent/auth.py`
-
-Adicionar função para limpar o thumbprint:
-```python
-def get_certificate_thumbprint():
-    """Read certificate thumbprint from file if available."""
-    if THUMBPRINT_FILE.exists():
-        raw = THUMBPRINT_FILE.read_text().strip()
-        # Remove prefixos comuns do openssl (sha1 Fingerprint=, SHA1 Fingerprint=, etc)
-        if '=' in raw:
-            raw = raw.split('=', 1)[-1]
-        # Remove dois pontos (AA:BB:CC -> AABBCC)
-        return raw.replace(':', '').strip()
-    return None
-```
-
-### Parte 3: Forçar reenvio de certificado para novos tenants
-
-O problema é que o Agent já tem `azure_certificate_key_id` no state, então não tenta reenviar. Para suportar múltiplos tenants, precisamos de uma abordagem diferente.
-
-**Opção escolhida**: Limpar o `azure_certificate_key_id` quando houver novos tenants que precisam do certificado.
-
-**Arquivo**: `supabase/functions/agent-heartbeat/index.ts`
-
-Na lógica de retorno do heartbeat, verificar se há tenants vinculados que ainda não têm certificado registrado:
-
-```typescript
-// Verificar se precisa forçar reenvio de certificado
-let needsCertRefresh = false;
-if (agent.azure_certificate_key_id) {
-  // Verificar se há tenants vinculados sem certificado
-  const { data: linkedTenantsNeedingCert } = await supabase
-    .from('m365_tenant_agents')
-    .select('tenant_record_id, m365_app_credentials!inner(certificate_thumbprint)')
-    .eq('agent_id', agentId)
-    .eq('enabled', true)
-    .is('m365_app_credentials.certificate_thumbprint', null);
-  
-  if (linkedTenantsNeedingCert?.length > 0) {
-    needsCertRefresh = true;
-  }
-}
-
-// Se needsCertRefresh, retornar flag especial para agent limpar o state
-```
-
-**Porém**, isso requer mudança no Python Agent para interpretar a flag. Uma solução mais simples:
-
-**Solução Simplificada**: Adicionar um campo no heartbeat response que informa se o certificado precisa ser reenviado:
-
-```json
-{
-  "success": true,
-  "request_certificate": true  // <-- Backend pede o certificado novamente
+verify_tls() {
+  echo "Verificando conectividade TLS..."
+  if "$INSTALL_DIR/venv/bin/python" -c "import requests; requests.get('https://httpbin.org/get', timeout=10)" 2>/dev/null; then
+    echo "Conectividade TLS OK"
+  else
+    echo "Aviso: Falha no teste de TLS. Verificando certificados..."
+    # Tentar fix automático
+    fix_certifi_bundle
+  fi
 }
 ```
 
-E o Python Agent, ao receber isso, inclui o certificado no próximo heartbeat mesmo se já tiver `azure_certificate_key_id`.
-
----
-
-## Alterações Detalhadas
-
-### 1. check-deps.sh (correção imediata)
-
-| Linha | Antes | Depois |
-|-------|-------|--------|
-| 330 | `echo "$thumbprint" > "$CERT_DIR/m365.thumbprint"` | `echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"` |
-
-### 2. auth.py (sanitização do thumbprint)
-
-Modificar a função `get_certificate_thumbprint()` para limpar o formato.
-
-### 3. heartbeat.py (suporte a request_certificate)
-
-Modificar `_get_pending_certificate()` para aceitar um parâmetro que força o envio:
-
-```python
-def _get_pending_certificate(self, force=False):
-    if not CERT_FILE.exists():
-        return None
-    
-    # Se não for forçado e já tiver registrado, não envia
-    if not force and self.state.data.get("azure_certificate_key_id"):
-        return None
-    
-    # ... resto do código
-```
-
-E no `send()`:
-
-```python
-# Check if backend requested certificate re-upload
-request_cert = response.get("request_certificate", False)
-if request_cert and not pending_cert:
-    self.logger.info("Backend solicitou reenvio de certificado")
-    # Force re-send on next heartbeat by clearing the flag
-    if "azure_certificate_key_id" in self.state.data:
-        del self.state.data["azure_certificate_key_id"]
-        self.state.save()
-```
-
-### 4. agent-heartbeat Edge Function (solicitação de certificado)
-
-Adicionar lógica para verificar se há tenants vinculados que precisam de certificado:
-
-```typescript
-// Check if agent has linked tenants needing certificate
-let requestCertificate = false;
-if (agent.certificate_thumbprint) {
-  const { data: linkedTenants } = await supabase
-    .from('m365_tenant_agents')
-    .select(`
-      tenant_record_id,
-      m365_app_credentials!inner(certificate_thumbprint, app_object_id)
-    `)
-    .eq('agent_id', agentId)
-    .eq('enabled', true);
-  
-  // Check if any linked tenant needs the certificate
-  for (const link of linkedTenants || []) {
-    const creds = link.m365_app_credentials;
-    if (creds.app_object_id && creds.certificate_thumbprint !== agent.certificate_thumbprint) {
-      requestCertificate = true;
-      break;
-    }
-  }
-}
-
-// Include in response
-return Response.json({
-  success: true,
-  // ... outros campos
-  request_certificate: requestCertificate,
-});
-```
-
----
-
-## Fluxo Corrigido
-
-```text
-1. Agent inicia
-2. check-deps.sh gera certificado e salva em thumbprint.txt (corrigido)
-3. Python lê thumbprint.txt e sanitiza o valor (corrigido)
-4. Heartbeat:
-   a. Se agent não tem azure_certificate_key_id → envia certificado
-   b. Backend verifica se há tenants vinculados que precisam do cert
-   c. Se sim, faz upload para o App Registration de cada tenant
-   d. Retorna azure_certificate_key_id
-5. Próximo Heartbeat:
-   a. Agent já tem azure_certificate_key_id, não envia cert
-   b. Backend verifica se há NOVOS tenants vinculados sem cert
-   c. Se sim, retorna request_certificate: true
-   d. Agent limpa azure_certificate_key_id e envia cert no próximo ciclo
-```
-
----
-
-## Ação Imediata para o Tenant BRASILUX
-
-1. **Reconectar o tenant BRASILUX** via OAuth para capturar o `app_object_id`
-2. **No servidor do Agent TASCHIBRA-IDA**:
-   - Renomear o arquivo: `mv /var/lib/iscope-agent/certs/m365.thumbprint /var/lib/iscope-agent/certs/thumbprint.txt`
-   - Limpar o state: editar `/var/lib/iscope/state.json` e remover a linha `azure_certificate_key_id`
-   - Reiniciar o agent: `systemctl restart iscope-agent`
-3. O certificado será reenviado e registrado
-
----
-
-## Resumo de Alterações
+## Arquivos a Modificar
 
 | Arquivo | Tipo | Descrição |
 |---------|------|-----------|
-| `python-agent/check-deps.sh` | EDIT | Corrigir nome do arquivo de thumbprint para `thumbprint.txt` |
-| `python-agent/agent/auth.py` | EDIT | Sanitizar thumbprint (remover prefixo e dois pontos) |
-| `python-agent/agent/heartbeat.py` | EDIT | Suporte a `request_certificate` do backend |
-| `supabase/functions/agent-heartbeat/index.ts` | EDIT | Lógica para solicitar reenvio de certificado para novos tenants |
+| `python-agent/requirements.txt` | EDIT | Adicionar versão específica do certifi |
+| `supabase/functions/agent-install/index.ts` | EDIT | Adicionar fallback para CA do sistema e verificação TLS |
+
+## Detalhes Técnicos
+
+### requirements.txt atualizado
+
+```
+requests>=2.31.0
+certifi>=2024.2.2,<2026.0.0
+pyjwt>=2.8.0
+python-dotenv>=1.0.1
+schedule>=1.2.1
+paramiko>=3.4.0
+pysnmp>=6.0.0
+urllib3>=2.0.0
+dnspython>=2.7.0
+```
+
+### Lógica de fallback no script de instalação
+
+A função `fix_certifi_bundle()` será chamada após `setup_venv()` e fará:
+
+1. Verificar se `cacert.pem` existe no pacote certifi
+2. Se não existir, procurar o CA bundle do sistema em caminhos conhecidos:
+   - Debian/Ubuntu: `/etc/ssl/certs/ca-certificates.crt`
+   - RHEL/CentOS: `/etc/pki/tls/certs/ca-bundle.crt`
+   - Alternativas: `/etc/ssl/ca-bundle.pem`, `/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem`
+3. Criar link simbólico do CA do sistema para `cacert.pem`
+4. Testar conectividade com uma request HTTPS simples
+
+## Correção Imediata (Manual)
+
+Para corrigir o agent já instalado sem precisar reinstalar:
+
+```bash
+# Encontrar o CA bundle do sistema
+CA_BUNDLE=$(cat /etc/ssl/certs/ca-certificates.crt 2>/dev/null && echo "/etc/ssl/certs/ca-certificates.crt" || \
+            cat /etc/pki/tls/certs/ca-bundle.crt 2>/dev/null && echo "/etc/pki/tls/certs/ca-bundle.crt")
+
+# Encontrar diretório do certifi
+CERTIFI_DIR=$(find /opt/iscope-agent/venv -type d -name certifi | head -1)
+
+# Criar link simbólico
+if [[ -n "$CERTIFI_DIR" ]] && [[ -n "$CA_BUNDLE" ]]; then
+  ln -sf "$CA_BUNDLE" "$CERTIFI_DIR/cacert.pem"
+  echo "Link criado: $CERTIFI_DIR/cacert.pem"
+  systemctl restart iscope-agent
+fi
+```
+
+Ou de forma mais simples:
+
+```bash
+# Para RHEL/CentOS:
+ln -sf /etc/pki/tls/certs/ca-bundle.crt \
+  /opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
+
+systemctl restart iscope-agent
+```
