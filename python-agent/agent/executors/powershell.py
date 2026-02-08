@@ -29,12 +29,12 @@ class PowerShellExecutor(BaseExecutor):
     MODULES = {
         "ExchangeOnline": {
             "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
-            "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword (ConvertTo-SecureString -String "" -AsPlainText -Force) -Organization "{organization}" -ShowBanner:$false',
+            "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
             "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
         },
         "MicrosoftGraph": {
             "import": "Import-Module Microsoft.Graph.Authentication -ErrorAction Stop",
-            "connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -TenantId "{tenant_id}" -NoWelcome',
+            "connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome',
             "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
         },
     }
