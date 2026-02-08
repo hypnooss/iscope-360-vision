@@ -11,6 +11,7 @@ const REQUIRED_PERMISSIONS = [
   'Directory.Read.All',
   'Organization.Read.All',
   'Domain.Read.All',
+  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
 ];
 
 const RECOMMENDED_PERMISSIONS = [
@@ -18,7 +19,7 @@ const RECOMMENDED_PERMISSIONS = [
   'Application.Read.All',
   'Policy.Read.All',
   'Reports.Read.All',
-  'RoleManagement.Read.Directory',
+  'RoleManagement.Read.Directory', // Read-only role management
 ];
 
 interface PermissionStatus {
@@ -126,6 +127,9 @@ async function testPermission(accessToken: string, permission: string): Promise<
         break;
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
+        break;
+      case 'RoleManagement.ReadWrite.Directory':
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
         break;
       default:
         return false;

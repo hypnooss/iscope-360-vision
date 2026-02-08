@@ -86,6 +86,7 @@ export default function SettingsPage() {
     { name: 'Directory.Read.All', granted: false, type: 'required' },
     { name: 'Organization.Read.All', granted: false, type: 'required' },
     { name: 'Domain.Read.All', granted: false, type: 'required' },
+    { name: 'RoleManagement.ReadWrite.Directory', granted: false, type: 'required' }, // Required to assign Exchange Administrator Role
     // Entra ID / Security
     { name: 'Group.Read.All', granted: false, type: 'recommended' },
     { name: 'Application.Read.All', granted: false, type: 'recommended' },
@@ -100,7 +101,7 @@ export default function SettingsPage() {
   ];
 
   // Group permissions by module for display
-  const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All'];
+  const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
   const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
   const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
   const certificatePermissions = ['Application.ReadWrite.All'];

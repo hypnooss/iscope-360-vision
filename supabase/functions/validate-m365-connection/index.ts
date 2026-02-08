@@ -26,6 +26,7 @@ const REQUIRED_PERMISSIONS = [
   'Group.Read.All',
   'Application.Read.All',
   'AuditLog.Read.All',
+  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',
@@ -285,6 +286,13 @@ serve(async (req) => {
             granted = signInsResponse.ok || signInsResponse.status === 400;
             console.log(`Permission ${permission} fallback: ${signInsResponse.status} - granted: ${granted}`);
           }
+        } else if (permission === 'RoleManagement.ReadWrite.Directory') {
+          // Test ability to read/write directory role assignments
+          const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'MailboxSettings.Read') {
           // Fetch up to 5 users to find one with an active mailbox
           const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {
