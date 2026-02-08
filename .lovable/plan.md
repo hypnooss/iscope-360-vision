@@ -1,204 +1,307 @@
 
-# Plano: Upload de Certificado para Service Principal do Tenant Cliente
 
-## Descoberta
+# Plano de Solução Completa: Certificado CBA no Tenant Cliente
 
-A Microsoft Graph API permite adicionar certificados **diretamente no Service Principal** usando:
+## Problemas Identificados
+
+### 1. CRÍTICO: Script `check-deps.sh` com CRLF (Line Endings Windows)
 ```
-POST /servicePrincipals/{id}/addKey
+bash[15432]: /opt/iscope-agent/check-deps.sh: line 28: syntax error near unexpected token `$'{\r''
+```
+O arquivo foi salvo com line endings Windows (`\r\n`) em vez de Unix (`\n`). Isso quebra a execução do script.
+
+**Solução**: Converter para LF e garantir que futuras edições mantenham formato Unix.
+
+### 2. CRÍTICO: Falta arquivo `m365.pfx`
+```bash
+ls -la /var/lib/iscope-agent/certs/
+m365.crt  ✓
+m365.key  ✓
+m365.pfx  ✗ FALTANDO!
+```
+O PowerShell requer arquivo PFX (PKCS#12), mas o PFX não foi gerado porque o script falhou com erro de CRLF.
+
+**Solução**: Após corrigir CRLF, regenerar o PFX manualmente ou reiniciar o agent com flag.
+
+### 3. CRÍTICO: Thumbprint com formato errado
+```
+sha1 Fingerprint=F5E4C5BDC18E0D1392EAF789B82973FB93BB3911
+```
+O arquivo `thumbprint.txt` contém o prefixo "sha1 Fingerprint=" mas o código espera apenas o thumbprint limpo. O código de sanitização existe mas o formato no arquivo foi gerado incorretamente.
+
+**Solução**: O script `generate_certificate()` já deveria ter tratado isso, mas falhou devido ao CRLF.
+
+### 4. CRÍTICO: Endpoint `addKey` requer `proof` JWT
+O endpoint `POST /servicePrincipals/{id}/addKey` **exige** um parâmetro `proof` - um JWT assinado por um certificado **já registrado**.
+
+Isso significa que é **IMPOSSÍVEL** adicionar o primeiro certificado via este endpoint!
+
+**Solução**: Usar endpoint alternativo ou abordagem diferente:
+- Opção A: `PATCH /applications/{id}` no App Registration (requer acesso ao tenant Home)
+- Opção B: Upload via PowerShell com credenciais de admin (no próprio Agent)
+
+### 5. State file em path diferente
+```bash
+cat /var/lib/iscope/state.json | jq .azure_certificate_key_id
+cat: /var/lib/iscope/state.json: No such file or directory
+```
+O agent usa `/var/lib/iscope/state.json` mas os certs estão em `/var/lib/iscope-agent/certs/`. Pode haver inconsistência de paths ou o agent nunca registrou.
+
+---
+
+## Arquivos que Precisam de Alteração
+
+### 1. `python-agent/check-deps.sh`
+**Problema**: Line endings CRLF
+**Solução**: Converter todas as linhas para LF (Unix format)
+
+### 2. `supabase/functions/agent-heartbeat/index.ts`
+**Problema**: Endpoint `addKey` requer `proof` JWT que não temos
+**Solução**: Usar `PATCH /applications/{app_object_id}` no tenant Home
+
+A estrutura do endpoint PATCH:
+```typescript
+// Buscar keyCredentials existentes
+GET /applications/{appObjectId}?$select=keyCredentials
+
+// Adicionar novo certificado à lista
+PATCH /applications/{appObjectId}
+{
+  keyCredentials: [...existingKeys, newKey]
+}
 ```
 
-Isso funciona **100% no tenant cliente**, sem precisar do App Registration no tenant Home!
+Isso requer:
+1. `app_object_id` do `m365_global_config`
+2. `home_tenant_id` do `m365_global_config`
+3. Token obtido contra o tenant Home
 
-## Problema Atual
+### 3. `python-agent/agent/executors/powershell.py`
+**Problema**: O parâmetro `organization` usa `tenant_id` como fallback, mas deveria usar o domínio `.onmicrosoft.com`
 
-O código atual tenta:
-1. Buscar `app_object_id` de `m365_app_credentials` → está NULL
-2. Fazer `PATCH /applications/{id}` → endpoint errado (App Registration)
+**Solução**: Garantir que o backend envie o `organization` correto no payload da task.
 
-## Solução
+### 4. Database function `rpc_get_agent_tasks`
+**Problema**: Não inclui o `tenant_domain` como `organization` no payload do step PowerShell
 
-Usar o `sp_object_id` (Service Principal) que a validação já descobriu, e o endpoint `addKey`:
-
+**Solução**: Modificar para incluir:
+```sql
+'organization', COALESCE(t.payload->>'organization', mt.tenant_domain, mt.tenant_id)
 ```
-POST /servicePrincipals/{sp_object_id}/addKey
+
+---
+
+## Fluxo Corrigido
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FLUXO CORRIGIDO DE UPLOAD DE CERTIFICADO                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Agent Linux                    Backend                     Azure           │
+│  ┌─────────────┐               ┌─────────────┐            ┌─────────────┐   │
+│  │ 1. Gera     │               │             │            │             │   │
+│  │ certificado │               │             │            │             │   │
+│  │ (check-deps)│               │             │            │             │   │
+│  │             │               │             │            │             │   │
+│  │ m365.crt    │               │             │            │             │   │
+│  │ m365.key    │               │             │            │             │   │
+│  │ m365.pfx ◄──│── PRECISA!    │             │            │             │   │
+│  │ thumbprint  │               │             │            │             │   │
+│  └─────────────┘               │             │            │             │   │
+│        │                       │             │            │             │   │
+│        │ 2. Heartbeat          │             │            │             │   │
+│        │   + thumbprint        │             │            │             │   │
+│        │   + public_key        │             │            │             │   │
+│        └──────────────────────▶│             │            │             │   │
+│                                │             │            │             │   │
+│                                │ 3. Busca:   │            │             │   │
+│                                │  - app_object_id         │             │   │
+│                                │  - home_tenant_id        │             │   │
+│                                │  - client_secret         │             │   │
+│                                │             │            │             │   │
+│                                │ 4. Token do │            │             │   │
+│                                │ tenant HOME │───────────▶│ Tenant HOME │   │
+│                                │             │◀───────────│ (MSP)       │   │
+│                                │             │            │             │   │
+│                                │ 5. GET      │───────────▶│             │   │
+│                                │ /apps/{id}  │◀───────────│ keyCredentials │
+│                                │             │            │             │   │
+│                                │ 6. PATCH    │───────────▶│ App Reg +   │   │
+│                                │ /apps/{id}  │            │ novo cert   │   │
+│                                │             │◀───────────│             │   │
+│                                │             │            │             │   │
+│        ◀────── keyId ─────────│             │            │             │   │
+│                                │             │            │             │   │
+│  ┌─────────────┐               │             │            │             │   │
+│  │ 7. PowerShell               │             │ ┌─────────────────────┐  │   │
+│  │    Connect                  │             │ │ Tenant CLIENTE      │  │   │
+│  │    -AppId                   │             │ │                     │  │   │
+│  │    -CertificateFilePath     │─────────────│─│─▶ Service Principal │  │   │
+│  │    -Organization ◄──────────│─ DOMÍNIO!   │ │   (herda cert do    │  │   │
+│  │      "cliente.onmicrosoft.  │             │ │    App Registration)│  │   │
+│  │       com"                  │             │ │                     │  │   │
+│  └─────────────┘               │             │ └─────────────────────┘  │   │
+│                                │             │                          │   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Dados Necessários
+---
 
-| Campo | Fonte | Valor |
-|-------|-------|-------|
-| `sp_object_id` | `m365_app_credentials.sp_object_id` | Já descoberto na validação |
-| `tenant_id` | `m365_tenants.tenant_id` | ID do tenant cliente |
-| `azure_app_id` | `m365_app_credentials.azure_app_id` | App ID do aplicativo |
+## Implementação
 
-## Alterações
+### Passo 1: Corrigir `check-deps.sh` (CRLF → LF)
 
-### Arquivo: `supabase/functions/agent-heartbeat/index.ts`
+Reescrever o arquivo garantindo line endings Unix.
 
-#### 1. Nova função para upload via Service Principal (substituir `uploadCertificateToTenantApp`)
+### Passo 2: Corrigir `agent-heartbeat/index.ts`
+
+Substituir `uploadCertificateToServicePrincipal` por `uploadCertificateToAppRegistration`:
 
 ```typescript
-async function uploadCertificateToServicePrincipal(
-  tenantId: string,
+async function uploadCertificateToAppRegistration(
+  homeTenantId: string,
   appId: string,
-  spObjectId: string,  // Service Principal Object ID (no tenant cliente)
+  appObjectId: string,
   clientSecret: string,
   thumbprint: string,
   publicKey: string,
   agentId: string
 ): Promise<{ success: boolean; keyId?: string; error?: string }> {
-  try {
-    console.log(`Uploading certificate to Service Principal ${spObjectId.substring(0, 8)}... in tenant ${tenantId}`);
-    
-    // Get access token for the client tenant
-    const tokenResponse = await fetch(
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: appId,
-          client_secret: clientSecret,
-          scope: 'https://graph.microsoft.com/.default',
-          grant_type: 'client_credentials',
-        }),
-      }
-    );
-
-    if (!tokenResponse.ok) {
-      const errText = await tokenResponse.text();
-      console.error(`Failed to get token for tenant ${tenantId}:`, errText);
-      return { success: false, error: `Token error: ${tokenResponse.status}` };
+  
+  // 1. Obter token do tenant HOME (não do cliente!)
+  const tokenResponse = await fetch(
+    `https://login.microsoftonline.com/${homeTenantId}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: clientSecret,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials',
+      }),
     }
+  );
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+  const tokenData = await tokenResponse.json();
+  const accessToken = tokenData.access_token;
 
-    // Format certificate for Azure (base64 without headers)
-    const certBase64 = publicKey
-      .replace(/-----BEGIN CERTIFICATE-----/g, '')
-      .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\s+/g, '');
+  // 2. Buscar keyCredentials existentes
+  const currentApp = await fetch(
+    `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=keyCredentials`,
+    { headers: { 'Authorization': `Bearer ${accessToken}` } }
+  );
+  const currentData = await currentApp.json();
+  const existingKeys = currentData.keyCredentials || [];
 
-    // Use addKey endpoint on Service Principal
-    const addKeyResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}/addKey`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          keyCredential: {
-            type: 'AsymmetricX509Cert',
-            usage: 'Verify',
-            key: certBase64,
-            displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
-          },
-          passwordCredential: null,
-          proof: null, // Not needed when using client_credentials flow
-        }),
-      }
-    );
+  // 3. Preparar novo certificado
+  const certBase64 = publicKey
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');
 
-    if (!addKeyResponse.ok) {
-      const errText = await addKeyResponse.text();
-      console.error(`Failed to add key to Service Principal ${spObjectId}:`, errText);
-      return { success: false, error: `AddKey error: ${addKeyResponse.status} - ${errText}` };
+  const newKey = {
+    type: 'AsymmetricX509Cert',
+    usage: 'Verify',
+    key: certBase64,
+    displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
+  };
+
+  // 4. PATCH com todos os certificados
+  const patchResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/applications/${appObjectId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        keyCredentials: [...existingKeys, newKey],
+      }),
     }
+  );
 
-    const keyData = await addKeyResponse.json();
-    const keyId = keyData.keyId || `sp-${tenantId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
-    
-    console.log(`Certificate uploaded to Service Principal, keyId: ${keyId}`);
-    return { success: true, keyId };
-  } catch (error) {
-    console.error(`Error uploading certificate to Service Principal:`, error);
-    return { success: false, error: String(error) };
+  if (!patchResponse.ok) {
+    const errText = await patchResponse.text();
+    return { success: false, error: `PATCH error: ${patchResponse.status} - ${errText}` };
   }
+
+  return { success: true, keyId: thumbprint };
 }
 ```
 
-#### 2. Atualizar `uploadAgentCertificate` para usar `sp_object_id`
-
-Linha 298-306 - Mudar o select para buscar `sp_object_id`:
+### Passo 3: Atualizar `uploadAgentCertificate` para usar Home Tenant
 
 ```typescript
-const { data: linkedTenants, error: linkError } = await supabase
-  .from('m365_tenant_agents')
-  .select(`
-    tenant_record_id,
-    m365_tenants!inner(id, tenant_id, client_id),
-    m365_app_credentials!inner(azure_app_id, sp_object_id)
-  `)
-  .eq('agent_id', agentId)
-  .eq('enabled', true);
-```
+async function uploadAgentCertificate(...) {
+  // Usar home_tenant_id e app_object_id do global_config
+  const { data: globalConfig } = await supabase
+    .from('m365_global_config')
+    .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
+    .single();
 
-Linha 313-331 - Usar `sp_object_id` e a nova função:
-
-```typescript
-for (const link of linkedTenants) {
-  const tenantId = link.m365_tenants?.tenant_id;
-  const spObjectId = link.m365_app_credentials?.sp_object_id;
-  const azureAppId = link.m365_app_credentials?.azure_app_id;
-
-  if (!tenantId || !spObjectId || !azureAppId) {
-    console.warn(`Missing data for linked tenant:`, { tenantId, spObjectId, azureAppId });
-    continue;
-  }
-
-  const result = await uploadCertificateToServicePrincipal(
-    tenantId,
-    azureAppId,
-    spObjectId,  // Service Principal no tenant cliente
+  return await uploadCertificateToAppRegistration(
+    globalConfig.home_tenant_id,
+    globalConfig.app_id,
+    globalConfig.app_object_id,
     clientSecret,
     thumbprint,
     publicKey,
     agentId
   );
-
-  if (result.success && result.keyId) {
-    uploadResults.push(result.keyId);
-  }
 }
 ```
 
-#### 3. Remover fallback para Home Tenant
+### Passo 4: Garantir `organization` correto nas tasks PowerShell
 
-Remover linhas 355-387 (fallback para home_tenant) - não é mais necessário.
+Modificar `rpc_get_agent_tasks` para usar `tenant_domain`:
 
-## Fluxo Final
-
-```
-Agent Linux                     Backend                        Azure (Tenant Cliente)
-    │                              │                                    │
-    │──heartbeat + cert──────────▶│                                    │
-    │                              │                                    │
-    │                              │  1. Busca sp_object_id            │
-    │                              │     de m365_app_credentials       │
-    │                              │                                    │
-    │                              │  2. Token do tenant cliente       │
-    │                              │───────────────────────────────────▶│
-    │                              │◀───────────────────────────────────│
-    │                              │                                    │
-    │                              │  3. POST /servicePrincipals/      │
-    │                              │     {sp_object_id}/addKey         │
-    │                              │───────────────────────────────────▶│
-    │                              │                                    │
-    │                              │◀──────────────── 200 OK ──────────│
-    │                              │                                    │
-    │◀────── keyId ───────────────│                                    │
+```sql
+'organization', COALESCE(t.payload->>'organization', mt.tenant_domain)
 ```
 
-## Pré-requisito
+---
 
-O `sp_object_id` precisa estar salvo em `m365_app_credentials`. A função `validate-m365-connection` já foi atualizada para salvá-lo.
+## Ação Manual Imediata no Agent
 
-## Resultado
+Enquanto eu implemento as correções, execute no agent:
 
-- Certificado é adicionado **diretamente no Service Principal do tenant cliente**
-- Zero dependência do tenant Home
-- Agent pode usar CBA para PowerShell/Exchange no tenant cliente
+```bash
+# 1. Converter check-deps.sh para Unix line endings
+sudo sed -i 's/\r$//' /opt/iscope-agent/check-deps.sh
+
+# 2. Gerar PFX manualmente (se check-deps.sh não funcionar)
+sudo openssl pkcs12 -export \
+  -out /var/lib/iscope-agent/certs/m365.pfx \
+  -inkey /var/lib/iscope-agent/certs/m365.key \
+  -in /var/lib/iscope-agent/certs/m365.crt \
+  -passout pass:
+
+# 3. Corrigir thumbprint (remover prefixo)
+sudo sh -c 'openssl x509 -in /var/lib/iscope-agent/certs/m365.crt -noout -fingerprint -sha1 | sed "s/.*=//" | tr -d ":" > /var/lib/iscope-agent/certs/thumbprint.txt'
+
+# 4. Verificar
+cat /var/lib/iscope-agent/certs/thumbprint.txt
+# Deve mostrar apenas: F5E4C5BDC18E0D1392EAF789B82973FB93BB3911
+
+# 5. Corrigir permissões
+sudo chown iscope:iscope /var/lib/iscope-agent/certs/m365.pfx
+sudo chmod 600 /var/lib/iscope-agent/certs/m365.pfx
+
+# 6. Reiniciar agent
+sudo systemctl restart iscope-agent
+sudo journalctl -u iscope-agent -f
+```
+
+---
+
+## Resumo de Alterações
+
+| # | Arquivo | Alteração | Tipo |
+|---|---------|-----------|------|
+| 1 | `python-agent/check-deps.sh` | Converter CRLF → LF | Bug fix |
+| 2 | `supabase/functions/agent-heartbeat/index.ts` | Mudar de `addKey` para `PATCH /applications` | Refactor |
+| 3 | `supabase/migrations/` | Atualizar `rpc_get_agent_tasks` com `organization` | SQL |
+
