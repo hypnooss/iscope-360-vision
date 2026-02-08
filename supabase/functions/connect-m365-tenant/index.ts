@@ -61,11 +61,10 @@ async function initiateDeviceCodeFlow(tenantId: string, appId: string): Promise<
   return await response.json();
 }
 
-// Poll for token using device code (Confidential Client with client_secret)
+// Poll for token using device code (Public Client - no client_secret)
 async function pollForToken(
   tenantId: string, 
   appId: string, 
-  clientSecret: string,
   deviceCode: string
 ): Promise<{ 
   pending?: boolean; 
@@ -73,11 +72,11 @@ async function pollForToken(
   access_token?: string;
   error?: string;
 }> {
-  console.log(`[pollForToken] Polling as confidential client (with client_secret, length=${clientSecret.length})`);
+  console.log(`[pollForToken] Polling as public client (no client_secret)`);
   
   const params = new URLSearchParams();
   params.append('client_id', appId);
-  params.append('client_secret', clientSecret);
+  // Public client flow - no client_secret required
   params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
   params.append('device_code', deviceCode);
   
@@ -300,22 +299,10 @@ serve(async (req) => {
         );
       }
 
-      console.log(`[connect-m365-tenant] Polling for token (confidential client)...`);
+      console.log(`[connect-m365-tenant] Polling for token (public client flow)...`);
 
-      // Decrypt client secret for token request
-      let clientSecret: string;
-      try {
-        clientSecret = await decryptSecret(globalConfig.client_secret_encrypted, encryptionKey);
-        console.log(`[connect-m365-tenant] Client secret decrypted, length: ${clientSecret.length}`);
-      } catch (decryptError: any) {
-        console.error("[connect-m365-tenant] Failed to decrypt client secret:", decryptError.message);
-        return new Response(
-          JSON.stringify({ error: "Falha ao descriptografar credenciais" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, clientSecret, deviceCode);
+      // Public client flow - no client_secret needed for Device Code Flow
+      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, deviceCode);
 
       if (pollResult.pending) {
         return new Response(
