@@ -1,166 +1,139 @@
 
 
-# Plano: Correções Finais para Upload de Certificado
+# Plano: Adicionar Botão de Exclusão de Certificado M365
 
-## Diagnóstico Atual
+## Objetivo
 
-| Item | Estado Atual | Estado Esperado |
-|------|--------------|-----------------|
-| `app_object_id` (BRASILUX) | `NULL` | UUID do App Registration |
-| `certificate_thumbprint` (agents) | `sha1 Fingerprint=47FF...` | `47FF...` |
-| `certificate_thumbprint` (credentials) | `NULL` | `47FF...` (após upload) |
-| `request_certificate` | Não funciona | Deveria pedir certificado |
+Adicionar um botão "Remover Certificado" no card de Certificado M365 na página de detalhes do Agent, permitindo que admins limpem os dados do certificado para forçar uma re-geração/re-upload.
 
-## Problemas Identificados
+## Motivação
 
-### Problema 1: app_object_id não foi capturado
-O OAuth do tenant BRASILUX foi realizado **antes** da implementação que busca o App Registration Object ID. Sem esse ID, o backend não consegue fazer `PATCH /applications/{id}` para registrar o certificado.
-
-**Solução**: Reconectar o tenant BRASILUX via OAuth.
-
-### Problema 2: Thumbprint sujo no banco de dados
-O thumbprint salvo na tabela `agents` contém o prefixo `sha1 Fingerprint=` do OpenSSL. A sanitização foi implementada no Python Agent, mas o valor já estava no banco.
-
-**Solução**: Adicionar sanitização no backend (agent-heartbeat) ao receber e ao comparar thumbprints.
-
-### Problema 3: Lógica de request_certificate não aciona
-A lógica atual (linha 575) compara:
-```typescript
-creds?.certificate_thumbprint !== agentData.certificate_thumbprint
-```
-
-Mas `app_object_id` é `NULL`, então a condição anterior (`creds?.app_object_id`) falha e o bloco não executa.
-
-**Solução**: Após reconectar o OAuth, o fluxo funcionará automaticamente.
+- **Troubleshooting**: Quando há problemas com o certificado (formato incorreto, expirado, etc.)
+- **Re-registro**: Forçar novo upload para Azure quando necessário
+- **Limpeza**: Remover certificados de agents que não precisam mais de M365
 
 ## Alterações Necessárias
 
-### 1. Sanitização de Thumbprint no Backend
-
-**Arquivo**: `supabase/functions/agent-heartbeat/index.ts`
-
-Adicionar função helper para sanitizar thumbprint:
+### 1. Adicionar estado para o dialog de confirmação
 
 ```typescript
-function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
-  if (!thumbprint) return null;
-  let clean = thumbprint.trim();
-  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
-  if (clean.includes('=')) {
-    clean = clean.split('=').pop() || clean;
+const [deleteCertDialogOpen, setDeleteCertDialogOpen] = useState(false);
+const [deletingCert, setDeletingCert] = useState(false);
+```
+
+### 2. Adicionar função para limpar o certificado
+
+```typescript
+const handleDeleteCertificate = async () => {
+  if (!agent) return;
+
+  setDeletingCert(true);
+  try {
+    const { error } = await supabase
+      .from("agents")
+      .update({
+        certificate_thumbprint: null,
+        certificate_public_key: null,
+        azure_certificate_key_id: null,
+      })
+      .eq("id", agent.id);
+
+    if (error) throw error;
+
+    toast.success("Certificado removido! O agent gerará um novo certificado no próximo heartbeat.");
+    setDeleteCertDialogOpen(false);
+    refetch();
+  } catch (error: any) {
+    toast.error("Erro ao remover certificado: " + error.message);
+  } finally {
+    setDeletingCert(false);
   }
-  // Remove colons (AA:BB:CC -> AABBCC)
-  clean = clean.replace(/:/g, '');
-  return clean.toUpperCase().trim();
-}
+};
 ```
 
-Usar essa função:
-- Ao receber `body.certificate_thumbprint`
-- Ao comparar com `agentData.certificate_thumbprint`
-- Ao comparar com `creds?.certificate_thumbprint`
+### 3. Adicionar botão no card de Certificado M365
 
-### 2. Atualizar Thumbprint no banco ao processar
+Abaixo do botão "Baixar Certificado", adicionar:
 
-Quando o certificado é processado com sucesso, atualizar o thumbprint sanitizado no banco:
-
-```typescript
-// Ao salvar o certificado no agents
-await supabase
-  .from('agents')
-  .update({ 
-    certificate_thumbprint: sanitizedThumbprint,  // Sanitizado
-    // ... outros campos
-  })
-  .eq('id', agentId);
+```tsx
+<Button 
+  variant="outline" 
+  size="sm" 
+  className="text-destructive border-destructive/50 hover:bg-destructive/10"
+  onClick={() => setDeleteCertDialogOpen(true)}
+>
+  <Trash2 className="w-4 h-4 mr-2" />
+  Remover Certificado
+</Button>
 ```
 
-## Fluxo Corrigido
+### 4. Adicionar dialog de confirmação
+
+```tsx
+<AlertDialog open={deleteCertDialogOpen} onOpenChange={setDeleteCertDialogOpen}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Remover Certificado M365?</AlertDialogTitle>
+      <AlertDialogDescription>
+        Esta ação irá remover o certificado M365 deste agent. O agent precisará 
+        gerar um novo certificado e registrá-lo no Azure AD novamente.
+        <br /><br />
+        <strong>Nota:</strong> Se o agent tiver tenants vinculados, eles perderão 
+        a capacidade de executar análises via PowerShell até que um novo 
+        certificado seja registrado.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+      <AlertDialogAction
+        onClick={handleDeleteCertificate}
+        disabled={deletingCert}
+        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      >
+        {deletingCert ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : (
+          <Trash2 className="w-4 h-4 mr-2" />
+        )}
+        Remover
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+## Layout do Card Atualizado
 
 ```text
-1. Admin reconecta BRASILUX via OAuth
-   ↓
-2. OAuth callback busca app_object_id via GET /applications(appId='...')
-   ↓
-3. Salva app_object_id em m365_app_credentials
-   ↓
-4. Próximo heartbeat do agent TASCHIBRA-IDA:
-   - Backend vê: app_object_id existe, certificate_thumbprint = NULL
-   - Backend retorna: request_certificate = true
-   ↓
-5. Agent limpa azure_certificate_key_id do state local
-   ↓
-6. Próximo heartbeat do agent:
-   - Agent envia certificate_thumbprint + certificate_public_key
-   - Backend sanitiza thumbprint
-   - Backend faz upload para App Registration do cliente via PATCH /applications/{app_object_id}
-   - Backend salva thumbprint em m365_app_credentials.certificate_thumbprint
-   ↓
-7. PowerShell consegue conectar ao Exchange Online
+┌─────────────────────────────────────────────────────────────┐
+│ 🛡️ Certificado M365                                         │
+│ Certificado registrado no Azure AD e pronto para uso        │
+├─────────────────────────────────────────────────────────────┤
+│ Status do Registro              [✓ Registrado]              │
+│                                                             │
+│ Thumbprint (SHA-1)                                          │
+│ ┌─────────────────────────────────────────────────────┐    │
+│ │ 47FF013BC99249965587DD92F7A7E9FAE7860331        [📋]│    │
+│ └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│ Azure Key ID                                                │
+│ ┌─────────────────────────────────────────────────────┐    │
+│ │ abc123-def456-...                                    │    │
+│ └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│ [📥 Baixar Certificado]  [🗑️ Remover Certificado]          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Ações Imediatas
+## Arquivo a Modificar
 
-### Para o Admin
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `src/pages/AgentDetailPage.tsx` | EDIT | Adicionar botão e lógica de remoção do certificado |
 
-1. **Reconectar o tenant BRASILUX via OAuth**
-   - Acesse a página do tenant M365
-   - Clique em "Reconectar" ou "Validar Conexão"
-   - Complete o fluxo OAuth com Admin Consent
-   - Isso irá capturar o `app_object_id`
+## Segurança
 
-### Alterações de Código
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/agent-heartbeat/index.ts` | Adicionar `sanitizeThumbprint()` e usar em todas comparações |
-
-## Código da Correção
-
-### agent-heartbeat/index.ts
-
-```typescript
-// Adicionar no início do arquivo (após imports)
-function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
-  if (!thumbprint) return null;
-  let clean = thumbprint.trim();
-  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
-  if (clean.includes('=')) {
-    clean = clean.split('=').pop() || clean;
-  }
-  // Remove colons (AA:BB:CC -> AABBCC)
-  clean = clean.replace(/:/g, '');
-  return clean.toUpperCase().trim();
-}
-
-// Na função principal, ao processar certificado:
-const sanitizedInputThumbprint = sanitizeThumbprint(body.certificate_thumbprint);
-const sanitizedAgentThumbprint = sanitizeThumbprint(agentData?.certificate_thumbprint);
-
-// Usar esses valores sanitizados em todas as comparações
-```
-
-### Correção adicional na função uploadAgentCertificate
-
-Garantir que o thumbprint sanitizado seja passado para a função de upload:
-
-```typescript
-azureCertificateKeyId = await uploadAgentCertificate(
-  supabase,
-  agentId,
-  sanitizedInputThumbprint, // Usar versão sanitizada
-  body.certificate_public_key
-);
-```
-
-E dentro da função, ao salvar no banco:
-```typescript
-await supabase
-  .from('agents')
-  .update({
-    certificate_thumbprint: sanitizedThumbprint,  // Sempre sanitizado
-    azure_certificate_key_id: keyId,
-  })
-  .eq('id', agentId);
-```
+- Apenas admins (isSuperAdmin ou isAdmin) têm acesso a esta página
+- Dialog de confirmação para evitar cliques acidentais
+- O certificado pode ser regenerado automaticamente pelo agent
 
