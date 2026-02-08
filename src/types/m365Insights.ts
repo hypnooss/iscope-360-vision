@@ -361,6 +361,23 @@ export interface TenantInfo {
 }
 
 /**
+ * Insight coletado pelo agent via PowerShell
+ * Formato simplificado comparado ao M365Insight padrão
+ */
+export interface M365AgentInsight {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  severity: M365Severity;
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  details?: string;
+  recommendation?: string;
+  affectedEntities?: Array<{ name: string; type: string; details?: string }>;
+  rawData?: Record<string, unknown>;
+}
+
+/**
  * Resposta completa da Edge Function m365-security-posture
  */
 export interface M365PostureResponse {
@@ -392,8 +409,14 @@ export interface M365PostureResponse {
 
   // ─── Insights ──────────────────────────────────────────────
   
-  /** Lista completa de insights */
+  /** Lista completa de insights (Graph API) */
   insights: M365Insight[];
+  
+  /** Insights coletados pelo agent via PowerShell */
+  agentInsights?: M365AgentInsight[];
+  
+  /** Status da coleta do agent */
+  agentStatus?: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | null;
 
   // ─── Metadados ─────────────────────────────────────────────
   

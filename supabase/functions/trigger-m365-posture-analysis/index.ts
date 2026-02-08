@@ -108,7 +108,59 @@ Deno.serve(async (req) => {
 
     console.log(`[trigger-m365-posture-analysis] Created pending record: ${historyRecord.id}`);
 
-    // Start background analysis using EdgeRuntime.waitUntil
+    // Check if tenant has linked agent for PowerShell-based collection
+    let agentTaskId: string | null = null;
+    const { data: tenantAgent } = await supabaseAdmin
+      .from('m365_tenant_agents')
+      .select('agent_id')
+      .eq('tenant_record_id', tenant_record_id)
+      .eq('enabled', true)
+      .maybeSingle();
+
+    if (tenantAgent?.agent_id) {
+      console.log(`[trigger-m365-posture-analysis] Tenant has linked agent: ${tenantAgent.agent_id}`);
+      
+      // Create agent task for PowerShell-based collection (Exchange, SharePoint)
+      const { data: agentTask, error: agentTaskError } = await supabaseAdmin
+        .from('agent_tasks')
+        .insert({
+          agent_id: tenantAgent.agent_id,
+          task_type: 'm365_powershell',
+          target_id: tenant_record_id,
+          target_type: 'm365_tenant',
+          status: 'pending',
+          priority: 5,
+          expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+          payload: {
+            analysis_id: historyRecord.id,
+            tenant_id: tenant.tenant_id,
+            tenant_domain: tenant.tenant_domain,
+          },
+        })
+        .select('id')
+        .single();
+
+      if (agentTaskError) {
+        console.error('[trigger-m365-posture-analysis] Failed to create agent task:', agentTaskError);
+        // Don't fail the whole operation - Graph API analysis can still proceed
+      } else {
+        agentTaskId = agentTask?.id || null;
+        console.log(`[trigger-m365-posture-analysis] Agent task created: ${agentTaskId}`);
+        
+        // Link agent task to the posture history record
+        await supabaseAdmin
+          .from('m365_posture_history')
+          .update({ 
+            agent_task_id: agentTaskId,
+            agent_status: 'pending',
+          })
+          .eq('id', historyRecord.id);
+      }
+    } else {
+      console.log(`[trigger-m365-posture-analysis] No agent linked to tenant, skipping PowerShell collection`);
+    }
+
+    // Start background analysis using EdgeRuntime.waitUntil (Graph API)
     const runAnalysis = async () => {
       try {
         // Update status to running
@@ -187,6 +239,8 @@ Deno.serve(async (req) => {
       success: true,
       message: 'Analysis started',
       analysis_id: historyRecord.id,
+      agent_task_id: agentTaskId,
+      has_agent: !!tenantAgent?.agent_id,
       tenant: {
         id: tenant.tenant_id,
         domain: tenant.tenant_domain,

@@ -8,7 +8,7 @@ import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { 
@@ -16,7 +16,11 @@ import {
   AlertTriangle, 
   Calendar,
   ArrowLeft,
-  Lock
+  Lock,
+  Server,
+  CheckCircle2,
+  Clock,
+  XCircle,
 } from 'lucide-react';
 import { 
   M365CategoryCard, 
@@ -45,7 +49,10 @@ export default function M365PosturePage() {
     data, 
     isLoading, 
     error, 
-    refetch 
+    refetch,
+    agentInsights,
+    agentStatus,
+    isAgentPending,
   } = useM365SecurityPosture({ 
     tenantRecordId: selectedTenantId || '' 
   });
@@ -247,12 +254,103 @@ export default function M365PosturePage() {
               </div>
             </div>
 
+            {/* Agent Insights Section */}
+            {(agentInsights.length > 0 || isAgentPending) && (
+              <>
+                <Separator className="my-8" />
+                
+                <Card className="glass-card">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Server className="w-5 h-5 text-muted-foreground" />
+                        <CardTitle className="text-base">Coleta via Agent (PowerShell)</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {agentStatus === 'completed' && (
+                          <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Concluído
+                          </Badge>
+                        )}
+                        {isAgentPending && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                            <Clock className="w-3 h-3 mr-1 animate-pulse" />
+                            Aguardando Agent
+                          </Badge>
+                        )}
+                        {agentStatus === 'failed' && (
+                          <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Falhou
+                          </Badge>
+                        )}
+                        {agentStatus === 'partial' && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                            <AlertTriangle className="w-3 h-3 mr-1" />
+                            Parcial
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Dados coletados do Exchange Online e SharePoint via PowerShell
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {isAgentPending && agentInsights.length === 0 && (
+                      <div className="flex items-center justify-center py-8 text-muted-foreground">
+                        <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+                        <span>Aguardando agent processar coleta...</span>
+                      </div>
+                    )}
+                    
+                    {agentInsights.length > 0 && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {agentInsights.map((insight) => (
+                          <Card key={insight.id} className="border bg-card/50">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <h4 className="font-medium text-sm">{insight.name}</h4>
+                                <Badge 
+                                  variant="outline" 
+                                  className={
+                                    insight.status === 'pass' ? 'text-green-600 border-green-200' :
+                                    insight.status === 'fail' ? 'text-red-600 border-red-200' :
+                                    insight.status === 'warn' ? 'text-amber-600 border-amber-200' :
+                                    'text-slate-600 border-slate-200'
+                                  }
+                                >
+                                  {insight.status === 'pass' ? 'OK' : 
+                                   insight.status === 'fail' ? 'Falha' :
+                                   insight.status === 'warn' ? 'Atenção' : 'N/A'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">{insight.description}</p>
+                              {insight.details && (
+                                <p className="text-xs text-muted-foreground/80 bg-muted/50 p-2 rounded">{insight.details}</p>
+                              )}
+                              {insight.affectedEntities && insight.affectedEntities.length > 0 && (
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  <span className="font-medium">{insight.affectedEntities.length} entidade(s) afetada(s)</span>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
             <Separator className="my-8" />
 
             {/* Insights by Category */}
             {groupedInsights && (
               <div className="space-y-8">
-                <h2 className="text-lg font-semibold text-foreground">Insights Detalhados</h2>
+                <h2 className="text-lg font-semibold text-foreground">Insights Detalhados (Graph API)</h2>
                 
                 {(Object.keys(groupedInsights) as M365RiskCategory[]).map((category) => {
                   const categoryInsights = groupedInsights[category];

@@ -928,6 +928,9 @@ export type Database = {
       }
       m365_posture_history: {
         Row: {
+          agent_insights: Json | null
+          agent_status: string | null
+          agent_task_id: string | null
           analyzed_by: string | null
           category_breakdown: Json | null
           classification: string | null
@@ -945,6 +948,9 @@ export type Database = {
           tenant_record_id: string
         }
         Insert: {
+          agent_insights?: Json | null
+          agent_status?: string | null
+          agent_task_id?: string | null
           analyzed_by?: string | null
           category_breakdown?: Json | null
           classification?: string | null
@@ -962,6 +968,9 @@ export type Database = {
           tenant_record_id: string
         }
         Update: {
+          agent_insights?: Json | null
+          agent_status?: string | null
+          agent_task_id?: string | null
           analyzed_by?: string | null
           category_breakdown?: Json | null
           classification?: string | null
@@ -979,6 +988,13 @@ export type Database = {
           tenant_record_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "m365_posture_history_agent_task_id_fkey"
+            columns: ["agent_task_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tasks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "m365_posture_history_client_id_fkey"
             columns: ["client_id"]
