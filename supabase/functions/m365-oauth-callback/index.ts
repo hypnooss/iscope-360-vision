@@ -331,6 +331,28 @@ Deno.serve(async (req) => {
       console.warn('Could not decode token for logging:', decodeErr);
     }
 
+    // ===== EARLY SAVE: Save credentials BEFORE testing Graph API =====
+    // This allows the user to use the "Test" button if the initial test fails
+    console.log('Saving credentials early to allow retry...');
+    const { error: earlyCredError } = await supabase
+      .from('m365_app_credentials')
+      .upsert({
+        tenant_record_id,
+        azure_app_id: appId,
+        auth_type: 'multi_tenant_app',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'tenant_record_id',
+      });
+
+    if (earlyCredError) {
+      console.error('Failed to save early credentials:', earlyCredError);
+      // Continue anyway - not critical at this point
+    } else {
+      console.log('Early credentials saved successfully for tenant_record_id:', tenant_record_id);
+    }
+
     // Test Graph API access using /organization endpoint
     // Organization.Read.All is always granted via Admin Consent
     console.log('Testing Graph API access with /organization endpoint...');
