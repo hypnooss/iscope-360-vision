@@ -1,5 +1,14 @@
-// Exchange Online Insights Types
+/**
+ * @deprecated Use M365RiskCategory from m365Insights.ts instead
+ * This file is kept for backwards compatibility only
+ * 
+ * Exchange Online now uses the unified M365 category system:
+ * - mail_flow, mailbox_access, security_hygiene -> email_exchange
+ * - security_policies, threats -> threats_activity  
+ * - governance -> pim_governance
+ */
 
+// Legacy types - use M365RiskCategory from m365Insights.ts instead
 export type ExoInsightCategory = 
   | 'mail_flow' 
   | 'mailbox_access' 

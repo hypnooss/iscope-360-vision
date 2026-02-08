@@ -11,8 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExoInsightSummaryCards } from '@/components/m365/exchange/ExoInsightSummaryCards';
-import { ExoInsightCategorySection } from '@/components/m365/exchange/ExoInsightCategorySection';
+import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
+import { 
+  M365RiskCategory, 
+  CATEGORY_LABELS,
+  M365Insight 
+} from '@/types/m365Insights';
 import { 
   Mail, 
   RefreshCw, 
@@ -22,7 +27,16 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ExoInsightCategory } from '@/types/exchangeInsights';
+
+/**
+ * Categories relevant to Exchange Online product
+ * Used to filter and group insights for the Exchange Online page
+ */
+const EXCHANGE_CATEGORIES: M365RiskCategory[] = [
+  'email_exchange',      // Fluxo de email, DKIM, regras
+  'threats_activity',    // Anti-phish, Safe Links, etc.
+  'pim_governance',      // Remote domains, OWA policies
+];
 
 export default function ExchangeOnlinePage() {
   const { user, loading: authLoading } = useAuth();
@@ -39,7 +53,6 @@ export default function ExchangeOnlinePage() {
     loading: insightsLoading, 
     error,
     errorCode,
-    refresh,
     triggerAnalysis,
   } = useExchangeOnlineInsights({
     tenantRecordId: selectedTenantId,
@@ -67,13 +80,51 @@ export default function ExchangeOnlinePage() {
 
   if (authLoading) return null;
 
+  // Map ExchangeInsight to M365Insight for component compatibility
+  const m365Insights: M365Insight[] = insights.map(insight => ({
+    id: insight.id,
+    code: insight.id,
+    category: insight.category,
+    product: 'exchange_online',
+    severity: insight.severity,
+    titulo: insight.name,
+    descricaoExecutiva: insight.description,
+    riscoTecnico: insight.details || '',
+    impactoNegocio: insight.recommendation || '',
+    scoreImpacto: 5,
+    status: insight.status === 'pass' ? 'pass' : insight.status === 'fail' ? 'fail' : 'warning',
+    evidencias: [],
+    affectedEntities: (insight.affectedEntities || []).map((e, idx) => ({
+      id: `${insight.id}-${idx}`,
+      displayName: e.name,
+      details: { type: e.type, info: e.details },
+    })),
+    affectedCount: insight.affectedEntities?.length || 0,
+    endpointUsado: '',
+    source: 'exchange_powershell',
+    remediacao: {
+      productAfetado: 'exchange_online',
+      portalUrl: 'https://admin.exchange.microsoft.com',
+      caminhoPortal: [],
+      passosDetalhados: insight.recommendation ? [insight.recommendation] : [],
+      referenciaDocumentacao: '',
+    },
+    detectedAt: insight.detectedAt,
+  }));
+
   // Group insights by category
-  const insightsByCategory: Record<ExoInsightCategory, typeof insights> = {
-    mail_flow: insights.filter(i => i.category === 'mail_flow'),
-    mailbox_access: insights.filter(i => i.category === 'mailbox_access'),
-    security_policies: insights.filter(i => i.category === 'security_policies'),
-    security_hygiene: insights.filter(i => i.category === 'security_hygiene'),
-    governance: insights.filter(i => i.category === 'governance'),
+  const insightsByCategory: Record<M365RiskCategory, M365Insight[]> = {
+    identities: [],
+    auth_access: [],
+    admin_privileges: [],
+    apps_integrations: [],
+    email_exchange: m365Insights.filter(i => i.category === 'email_exchange'),
+    threats_activity: m365Insights.filter(i => i.category === 'threats_activity'),
+    intune_devices: [],
+    pim_governance: m365Insights.filter(i => i.category === 'pim_governance'),
+    sharepoint_onedrive: [],
+    teams_collaboration: [],
+    defender_security: [],
   };
 
   // No tenant connected
@@ -199,19 +250,23 @@ export default function ExchangeOnlinePage() {
           </div>
         )}
 
-        {/* Insights by Category */}
-        {!insightsLoading && !error && insights.length > 0 && (
+        {/* Insights by Category - using unified M365CategorySection */}
+        {!insightsLoading && !error && m365Insights.length > 0 && (
           <div className="space-y-6">
-            <ExoInsightCategorySection category="mail_flow" insights={insightsByCategory.mail_flow} defaultOpen={true} />
-            <ExoInsightCategorySection category="mailbox_access" insights={insightsByCategory.mailbox_access} defaultOpen={true} />
-            <ExoInsightCategorySection category="security_policies" insights={insightsByCategory.security_policies} defaultOpen={true} />
-            <ExoInsightCategorySection category="security_hygiene" insights={insightsByCategory.security_hygiene} defaultOpen={true} />
-            <ExoInsightCategorySection category="governance" insights={insightsByCategory.governance} defaultOpen={true} />
+            {EXCHANGE_CATEGORIES.map((category, index) => (
+              <M365CategorySection 
+                key={category}
+                category={category} 
+                label={CATEGORY_LABELS[category]}
+                insights={insightsByCategory[category]} 
+                index={index}
+              />
+            ))}
           </div>
         )}
 
         {/* Empty State */}
-        {!insightsLoading && !error && insights.length === 0 && hasInitialized && (
+        {!insightsLoading && !error && m365Insights.length === 0 && hasInitialized && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="py-12 text-center">
               <Mail className="w-12 h-12 text-primary mx-auto mb-4" />
