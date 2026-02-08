@@ -92,8 +92,9 @@ async function getTokenWithCredentials(
       throw new Error('Conta desabilitada.');
     }
     if (errorData.error_description?.includes('AADSTS50076') || 
-        errorData.error_description?.includes('AADSTS50079')) {
-      throw new Error('MFA obrigatório. Desabilite MFA temporariamente ou use uma conta de serviço sem MFA.');
+        errorData.error_description?.includes('AADSTS50079') ||
+        errorData.suberror === 'basic_action') {
+      throw new Error('Esta conta possui MFA (autenticação multifator) habilitado. Para conectar, use uma conta de serviço sem MFA ou desabilite o MFA temporariamente durante a configuração.');
     }
     
     throw new Error(errorData.error_description || 'Erro ao obter token de acesso.');
