@@ -1,147 +1,108 @@
 
-# Plano: Corrigir Redirecionamento de Erro OAuth e Propagação do Admin Consent
+
+# Plano: Corrigir Endpoint de Teste da Graph API no OAuth Callback
 
 ## Diagnóstico
 
-### Problema 1: Toast de erro aparecendo na página de Login
-O fluxo atual:
-1. Edge function `m365-oauth-callback` redireciona para `${redirect_url}?error=...` (que é `/scope-m365/tenant-connection`)
-2. `TenantConnectionPage` carrega e dispara o toast de erro via query params
-3. Logo depois, outro useEffect detecta que o usuário não está autenticado e redireciona para `/auth`
-4. O toast já disparado permanece visível na tela de login
+O erro "Insufficient privileges to complete the operation" ocorre porque:
 
-A URL de redirecionamento deveria ser `/scope-m365/oauth-callback` (a página dedicada para callbacks), não `/scope-m365/tenant-connection`.
+| Endpoint | Permissão Requerida | Status no Tenant |
+|----------|---------------------|------------------|
+| `/domains` | `Domain.Read.All` | ❌ Não concedida |
+| `/organization` | `Organization.Read.All` | ✅ Concedida |
 
-### Problema 2: Erro de propagação do Admin Consent
-A mensagem "The identity of the calling application could not be established" indica que o Admin Consent ainda não propagou nos servidores do Azure AD. A edge function já implementa retries (5s, 10s, 15s = 30s total), mas em alguns casos isso não é suficiente.
+O `m365-oauth-callback` está usando `/domains` como endpoint de teste (linha 338), mas essa permissão **não está no manifest** do App Registration nem na lista `REQUIRED_PERMISSIONS`.
 
----
+## Solução Proposta
 
-## Solucao
+Alterar o endpoint de teste da Graph API de `/domains` para `/organization`, que:
+- Já funciona com `Organization.Read.All` (concedida no tenant)
+- É suficiente para validar que o token está funcionando
+- Também retorna o `displayName` e domínios verificados
 
-### Parte 1: Corrigir URL de Redirecionamento na Edge Function
+## Alterações
 
-No arquivo `supabase/functions/m365-oauth-callback/index.ts`, as linhas 389-394 redirecionam para `${redirect_url}` em caso de erro da Graph API, mas o `redirect_url` aponta para `/tenant-connection`.
+### Arquivo: `supabase/functions/m365-oauth-callback/index.ts`
 
-Alterar para usar a logica de substituicao consistente:
+#### 1. Alterar teste de conexão (Linhas 334-401)
 
+**De:**
 ```typescript
-// Linha ~389-394: Ao redirecionar em caso de erro Graph
-const errorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
+// Test Graph API access using /domains endpoint (more resilient than /organization)
+console.log('Testing Graph API access with /domains endpoint...');
 
-return new Response(null, {
-  status: 302,
-  headers: {
-    'Location': `${errorRedirectUrl}?error=graph_access_failed&error_description=${encodeURIComponent(...)}`,
-  },
-});
+const fetchDomains = async () => {
+  return await fetch('https://graph.microsoft.com/v1.0/domains', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+};
 ```
 
-### Parte 2: Aumentar Tempo de Retry para Propagacao
-
-Aumentar os delays de retry para dar mais tempo ao Azure AD propagar:
-- Atual: 5s, 10s, 15s (total 30s)
-- Novo: 10s, 20s, 30s (total 60s)
-
+**Para:**
 ```typescript
-// Linha ~343: Aumentar delays
-const delays = [10000, 20000, 30000];
+// Test Graph API access using /organization endpoint
+// Organization.Read.All is always granted via Admin Consent
+console.log('Testing Graph API access with /organization endpoint...');
+
+const fetchOrganization = async () => {
+  return await fetch('https://graph.microsoft.com/v1.0/organization', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+};
 ```
 
-### Parte 3: Melhorar Mensagem de Erro para Usuario
+#### 2. Ajustar processamento da resposta (Linhas 399-420)
 
-Atualizar a mensagem de erro para ser mais informativa:
-
+**De:**
 ```typescript
-`${finalError.message || 'Unknown error'}. O Admin Consent pode levar até 5 minutos para propagar. Aguarde e tente reconectar.`
+const domainsData = await domainsResponse.json();
+const domains = domainsData.value || [];
+console.log('Domains retrieved:', domains.length);
+
+// Extract primary domain from domains
+const defaultDomain = domains.find((d: any) => d.isDefault);
+...
 ```
 
----
-
-## Arquivos a Modificar
-
-| Arquivo | Tipo | Descricao |
-|---------|------|-----------|
-| `supabase/functions/m365-oauth-callback/index.ts` | EDIT | Corrigir redirect URL + aumentar delays + melhorar mensagem |
-
-## Secao Tecnica
-
-### Alteracao 1: Linha 389-394 (Redirecionamento de erro Graph)
-
-Antes:
+**Para:**
 ```typescript
-return new Response(null, {
-  status: 302,
-  headers: {
-    'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
-  },
-});
+const orgData = await orgResponse.json();
+const organization = orgData.value?.[0];
+console.log('Organization retrieved:', organization?.displayName);
+
+// Extract primary domain from organization's verified domains
+const verifiedDomains = organization?.verifiedDomains || [];
+const defaultDomain = verifiedDomains.find((d: any) => d.isDefault);
+const initialDomain = verifiedDomains.find((d: any) => d.isInitial);
+const primaryDomain = defaultDomain?.name || initialDomain?.name || verifiedDomains[0]?.name || null;
+const displayName = organization?.displayName || primaryDomain;
 ```
 
-Depois:
-```typescript
-const errorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
+## Resumo das Alterações
 
-return new Response(null, {
-  status: 302,
-  headers: {
-    'Location': `${errorRedirectUrl}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar até 5 minutos para propagar. Aguarde e tente reconectar.`)}`,
-  },
-});
-```
+| Item | Descrição |
+|------|-----------|
+| Arquivo | `supabase/functions/m365-oauth-callback/index.ts` |
+| Linhas | 334-420 |
+| Problema | Usa `/domains` que requer `Domain.Read.All` não concedida |
+| Solução | Usar `/organization` que funciona com `Organization.Read.All` já concedida |
 
-### Alteracao 2: Linha 343 (Delays de retry)
+## Por que isso resolve
 
-Antes:
-```typescript
-const delays = [5000, 10000, 15000];
-```
-
-Depois:
-```typescript
-const delays = [10000, 20000, 30000];
-```
-
-### Alteracao 3: Linha 306-311 (Erro de token - tambem precisa corrigir redirect)
-
-Antes:
-```typescript
-return new Response(null, {
-  status: 302,
-  headers: {
-    'Location': `${redirect_url}?error=token_failed&error_description=${encodeURIComponent('Failed to obtain access token. Admin consent may not have been granted.')}`,
-  },
-});
-```
-
-Depois:
-```typescript
-const tokenErrorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
-
-return new Response(null, {
-  status: 302,
-  headers: {
-    'Location': `${tokenErrorRedirectUrl}?error=token_failed&error_description=${encodeURIComponent('Falha ao obter token de acesso. Verifique se o Admin Consent foi concedido corretamente.')}`,
-  },
-});
-```
-
----
-
-## Resultado Esperado
-
-1. Erros de OAuth serao exibidos na pagina `/oauth-callback` dedicada, nao mais na pagina de login
-2. A propagacao do Admin Consent tera mais tempo para completar (ate 60s de retries)
-3. Mensagens de erro serao mais claras e em portugues
+1. A permissão `Organization.Read.All` já está concedida no tenant (visível no screenshot)
+2. O endpoint `/organization` retorna o nome da organização E os domínios verificados
+3. Não requer nenhuma alteração no Azure Portal ou no App Registration
+4. O sistema continuará funcionando corretamente para novos tenants
 
 ## Fluxo Corrigido
 
 ```text
-ANTES (Quebrado)
-────────────────
-m365-oauth-callback → /tenant-connection?error=... → toast → /auth (toast visivel)
+ANTES
+─────
+Token obtido → GET /domains → 403 Insufficient privileges → FALHA
 
-DEPOIS (Corrigido)
-──────────────────
-m365-oauth-callback → /oauth-callback?error=... → pagina de erro dedicada
+DEPOIS
+──────
+Token obtido → GET /organization → 200 OK → Sucesso!
 ```
+
