@@ -74,10 +74,29 @@ async function discoverTenantId(domain: string): Promise<string | null> {
       return null;
     }
     const data = await response.json();
-    // Extract tenant ID from issuer URL: https://login.microsoftonline.com/{tenant_id}/v2.0
-    const issuer = data.issuer;
-    const match = issuer?.match(/https:\/\/login\.microsoftonline\.com\/([^/]+)\//);
-    return match ? match[1] : null;
+    
+    // Try to extract tenant ID from multiple sources
+    // 1. Try issuer with login.microsoftonline.com format
+    // 2. Try issuer with sts.windows.net format  
+    // 3. Try token_endpoint as fallback
+    
+    const issuer = data.issuer || '';
+    const tokenEndpoint = data.token_endpoint || '';
+    
+    // Match login.microsoftonline.com/{tenant_id}/
+    let match = issuer.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    // Match sts.windows.net/{tenant_id}/
+    match = issuer.match(/https:\/\/sts\.windows\.net\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    // Fallback: extract from token_endpoint
+    match = tokenEndpoint.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    console.warn('Could not extract tenant ID from OpenID config:', { issuer, tokenEndpoint });
+    return null;
   } catch (err) {
     console.error('Error discovering tenant ID:', err);
     return null;
