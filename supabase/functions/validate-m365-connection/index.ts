@@ -511,61 +511,79 @@ serve(async (req) => {
     }
 
     // Test Application.ReadWrite.All (certificate management permission)
-    let appObjectId: string | null = null;
-
-    // First, try to get app_object_id from m365_app_credentials
+    // In a client tenant, we use the Service Principal (Enterprise Application)
+    // The endpoint /servicePrincipals works within the client tenant context
+    console.log('Testing Application.ReadWrite.All permission...');
+    
+    let spObjectId: string | null = null;
+    
+    // First, try to get sp_object_id from m365_app_credentials
     if (tenant_record_id) {
       const { data: appCreds } = await supabase
         .from('m365_app_credentials')
-        .select('app_object_id, azure_app_id')
+        .select('sp_object_id, azure_app_id')
         .eq('tenant_record_id', tenant_record_id)
         .maybeSingle();
       
-      appObjectId = appCreds?.app_object_id || null;
+      spObjectId = appCreds?.sp_object_id || null;
       
-      // If no app_object_id stored, try to fetch from Graph using app_id
-      if (!appObjectId && (appCreds?.azure_app_id || app_id)) {
+      // If no sp_object_id stored, fetch from Graph using servicePrincipals endpoint
+      if (!spObjectId && (appCreds?.azure_app_id || app_id)) {
         const appIdToUse = appCreds?.azure_app_id || app_id;
-        console.log('Fetching app_object_id from Graph API for appId:', appIdToUse);
+        console.log('Fetching Service Principal from Graph API for appId:', appIdToUse);
         
-        const appLookupResponse = await fetch(
-          `https://graph.microsoft.com/v1.0/applications?$filter=appId eq '${appIdToUse}'&$select=id`,
+        // Use servicePrincipals endpoint - this finds the Enterprise Application in the CLIENT tenant
+        const spLookupResponse = await fetch(
+          `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appIdToUse}'&$select=id,appId,displayName`,
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
         );
         
-        if (appLookupResponse.ok) {
-          const appData = await appLookupResponse.json();
-          appObjectId = appData.value?.[0]?.id || null;
+        if (spLookupResponse.ok) {
+          const spData = await spLookupResponse.json();
+          spObjectId = spData.value?.[0]?.id || null;
+          console.log('Found Service Principal:', spObjectId, spData.value?.[0]?.displayName);
           
-          // Store the app_object_id for future use
-          if (appObjectId && appCreds) {
+          // Store the sp_object_id for future use
+          if (spObjectId && tenant_record_id) {
             await supabase
               .from('m365_app_credentials')
-              .update({ app_object_id: appObjectId })
+              .update({ sp_object_id: spObjectId })
               .eq('tenant_record_id', tenant_record_id);
-            console.log('Stored app_object_id:', appObjectId);
+            console.log('Stored sp_object_id:', spObjectId);
           }
         } else {
-          console.log('Could not fetch app from Graph:', appLookupResponse.status);
+          const errorText = await spLookupResponse.text();
+          console.log('Could not fetch Service Principal:', spLookupResponse.status, errorText);
         }
       }
     }
 
-    if (appObjectId) {
-      console.log('Testing Application.ReadWrite.All with app_object_id:', appObjectId);
-      const appResponse = await fetch(
-        `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=id,keyCredentials`,
+    // To validate Application.ReadWrite.All, we test if we can read/update the Service Principal
+    // The /servicePrincipals/{id} endpoint with keyCredentials requires Application.ReadWrite.All
+    if (spObjectId) {
+      console.log('Testing Application.ReadWrite.All with Service Principal:', spObjectId);
+      
+      // Try to read the Service Principal with keyCredentials (requires Application.ReadWrite.All or equivalent)
+      const spResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}?$select=id,appId,keyCredentials`,
         { headers: { 'Authorization': `Bearer ${accessToken}` } }
       );
-      const appWriteGranted = appResponse.ok;
+      
+      const appWriteGranted = spResponse.ok;
+      console.log(`Permission Application.ReadWrite.All: ${spResponse.status} - granted: ${appWriteGranted}`);
+      
+      if (!appWriteGranted) {
+        const errorBody = await spResponse.text();
+        console.log('Application.ReadWrite.All error:', errorBody);
+      }
+      
       permissionResults.push({
         name: 'Application.ReadWrite.All',
         granted: appWriteGranted,
         required: false,
       });
-      console.log(`Permission Application.ReadWrite.All: ${appResponse.status} - granted: ${appWriteGranted}`);
     } else {
-      console.log('Could not determine app_object_id - marking Application.ReadWrite.All as not granted');
+      console.log('Could not find Service Principal - marking Application.ReadWrite.All as not granted');
       permissionResults.push({
         name: 'Application.ReadWrite.All',
         granted: false,
