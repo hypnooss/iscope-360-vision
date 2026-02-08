@@ -1,9 +1,9 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { AlertTriangle, AlertCircle, Info, Mail } from 'lucide-react';
-import { ExoInsightsSummary } from '@/types/exchangeInsights';
+import { AlertTriangle, AlertCircle, Mail } from 'lucide-react';
+import { SeveritySummary } from '@/types/m365Insights';
 
 interface ExoInsightSummaryCardsProps {
-  summary: ExoInsightsSummary;
+  summary: SeveritySummary;
   loading?: boolean;
 }
 

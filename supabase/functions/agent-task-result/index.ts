@@ -131,9 +131,37 @@ interface ComplianceResult {
 // M365 Agent Insights Types and Processing
 // ============================================
 
+/**
+ * M365 Risk Categories (aligned with m365Insights.ts)
+ * Used for consistent categorization across report and product pages
+ */
+type M365RiskCategory = 
+  | 'identities'           // Identidades
+  | 'auth_access'          // Autenticação & Acesso
+  | 'admin_privileges'     // Privilégios Administrativos  
+  | 'apps_integrations'    // Aplicações & Integrações
+  | 'email_exchange'       // Email & Exchange
+  | 'threats_activity'     // Ameaças & Atividades Suspeitas
+  | 'intune_devices'       // Intune & Dispositivos
+  | 'pim_governance'       // PIM & Governança
+  | 'sharepoint_onedrive'  // SharePoint & OneDrive
+  | 'teams_collaboration'  // Teams & Colaboração
+  | 'defender_security';   // Defender & DLP
+
+/**
+ * M365 Products (used for remediation guidance)
+ */
+type M365Product = 
+  | 'entra_id' 
+  | 'exchange_online' 
+  | 'sharepoint' 
+  | 'defender' 
+  | 'intune';
+
 interface M365AgentInsight {
   id: string;
-  category: string;
+  category: M365RiskCategory;
+  product: M365Product;
   name: string;
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -161,7 +189,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_mailbox_forwarding',
-        category: 'email',
+        category: 'email_exchange',
+        product: 'exchange_online',
         name: 'Encaminhamento de Email',
         description: forwardingEnabled.length > 0 
           ? `${forwardingEnabled.length} caixa(s) com encaminhamento externo configurado`
@@ -194,7 +223,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_inbox_rules',
-        category: 'email',
+        category: 'email_exchange',
+        product: 'exchange_online',
         name: 'Regras de Caixa de Entrada',
         description: suspiciousRules.length > 0 
           ? `${suspiciousRules.length} regra(s) com ações de encaminhamento/exclusão detectada(s)`
@@ -222,7 +252,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_transport_rules',
-        category: 'email',
+        category: 'email_exchange',
+        product: 'exchange_online',
         name: 'Regras de Transporte',
         description: `${activeRules.length} regra(s) de transporte ativa(s) configurada(s)`,
         severity: 'info',
@@ -247,7 +278,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_anti_phish_policy',
-        category: 'threats',
+        category: 'threats_activity',
+        product: 'exchange_online',
         name: 'Política Anti-Phishing',
         description: hasImpersonationProtection 
           ? `${enabledPolicies.length} política(s) anti-phishing com proteção contra impersonação ativa`
@@ -274,7 +306,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_safe_links_policy',
-        category: 'threats',
+        category: 'threats_activity',
+        product: 'exchange_online',
         name: 'Safe Links (Links Seguros)',
         description: enabledPolicies.length > 0 
           ? `Safe Links habilitado em ${enabledPolicies.length} política(s)`
@@ -303,7 +336,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_safe_attachment_policy',
-        category: 'threats',
+        category: 'threats_activity',
+        product: 'exchange_online',
         name: 'Safe Attachments (Anexos Seguros)',
         description: enabledPolicies.length > 0 
           ? `Safe Attachments habilitado em ${enabledPolicies.length} política(s)`
@@ -334,7 +368,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
         
         insights.push({
           id: 'exo_malware_filter_policy',
-          category: 'threats',
+          category: 'threats_activity',
+          product: 'exchange_online',
           name: 'Filtro de Malware',
           description: enableFileFilter && zap 
             ? 'Filtro de malware configurado com proteções recomendadas'
@@ -364,7 +399,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
         
         insights.push({
           id: 'exo_hosted_content_filter',
-          category: 'threats',
+          category: 'threats_activity',
+          product: 'exchange_online',
           name: 'Filtro de Conteúdo (Spam)',
           description: isSecure 
             ? 'Filtro de spam configurado para quarentena ou exclusão'
@@ -390,7 +426,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_remote_domains',
-        category: 'email',
+        category: 'pim_governance',
+        product: 'exchange_online',
         name: 'Domínios Remotos',
         description: autoForwardEnabled 
           ? 'Encaminhamento automático externo habilitado no domínio padrão'
@@ -419,7 +456,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
         
         insights.push({
           id: 'exo_owa_mailbox_policy',
-          category: 'email',
+          category: 'pim_governance',
+          product: 'exchange_online',
           name: 'Política OWA (Outlook Web)',
           description: `Política OWA configurada: ${defaultPolicy.Name || 'Padrão'}`,
           severity: 'info',
@@ -444,7 +482,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
         
         insights.push({
           id: 'exo_antispam_policy',
-          category: 'threats',
+          category: 'threats_activity',
+          product: 'exchange_online',
           name: 'Política Anti-Spam',
           description: isSecure 
             ? 'Política anti-spam configurada para quarentena de spam de alta confiança'
@@ -470,7 +509,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'exo_dkim_config',
-        category: 'email',
+        category: 'email_exchange',
+        product: 'exchange_online',
         name: 'Configuração DKIM',
         description: enabledDomains.length === totalDomains && totalDomains > 0
           ? 'DKIM habilitado para todos os domínios'
@@ -499,7 +539,8 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
       
       insights.push({
         id: 'spo_sharing_settings',
-        category: 'sharepoint',
+        category: 'sharepoint_onedrive',
+        product: 'sharepoint',
         name: 'Configurações de Compartilhamento SharePoint',
         description: isRestrictive 
           ? 'Compartilhamento externo está restrito ou desabilitado'

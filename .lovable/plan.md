@@ -1,6 +1,8 @@
 
 # Plano: Unificação de Categorias M365 - Exchange Online
 
+## ✅ Status: IMPLEMENTADO (2026-02-08)
+
 ## Objetivo
 
 Usar as **mesmas categorias do relatório** (`M365RiskCategory`) nas páginas de produto (Exchange Online, Entra ID, etc.), garantindo consistência visual e conceitual.

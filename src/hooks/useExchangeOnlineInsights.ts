@@ -1,14 +1,33 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { ExchangeInsight, ExoInsightsSummary, ExoInsightCategory, AffectedMailbox } from '@/types/exchangeInsights';
+import { M365RiskCategory, M365Severity, SeveritySummary } from '@/types/m365Insights';
 
 interface UseExchangeOnlineInsightsOptions {
   tenantRecordId: string | null;
 }
 
+/**
+ * Exchange Online Insight - uses unified M365 model
+ * Same structure as M365AgentInsight but with product filter
+ */
+export interface ExchangeInsight {
+  id: string;
+  category: M365RiskCategory;
+  product: 'exchange_online';
+  name: string;
+  description: string;
+  severity: M365Severity;
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  details?: string;
+  recommendation?: string;
+  affectedEntities?: Array<{ name: string; type: string; details?: string }>;
+  rawData?: Record<string, unknown>;
+  detectedAt: string;
+}
+
 interface UseExchangeOnlineInsightsResult {
   insights: ExchangeInsight[];
-  summary: ExoInsightsSummary;
+  summary: SeveritySummary;
   analyzedAt: string | null;
   loading: boolean;
   error: string | null;
@@ -17,7 +36,7 @@ interface UseExchangeOnlineInsightsResult {
   triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
 }
 
-const defaultSummary: ExoInsightsSummary = {
+const defaultSummary: SeveritySummary = {
   critical: 0,
   high: 0,
   medium: 0,
@@ -26,11 +45,21 @@ const defaultSummary: ExoInsightsSummary = {
   total: 0,
 };
 
+/**
+ * Categories relevant to Exchange Online product
+ * Used to filter insights for the Exchange Online page
+ */
+const EXCHANGE_CATEGORIES: M365RiskCategory[] = [
+  'email_exchange',      // Fluxo de email, DKIM, regras
+  'threats_activity',    // Anti-phish, Safe Links, etc.
+  'pim_governance',      // Remote domains, OWA policies
+];
+
 export function useExchangeOnlineInsights({
   tenantRecordId,
 }: UseExchangeOnlineInsightsOptions): UseExchangeOnlineInsightsResult {
   const [insights, setInsights] = useState<ExchangeInsight[]>([]);
-  const [summary, setSummary] = useState<ExoInsightsSummary>(defaultSummary);
+  const [summary, setSummary] = useState<SeveritySummary>(defaultSummary);
   const [analyzedAt, setAnalyzedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,67 +99,51 @@ export function useExchangeOnlineInsights({
         return;
       }
 
-      // Filter insights related to Exchange (email category)
+      // Combine all insights
       const allInsights = [
         ...((data.insights as any[]) || []),
         ...((data.agent_insights as any[]) || []),
       ];
 
-      // Map raw insights to ExchangeInsight format
+      // Filter insights by product OR category (for backwards compatibility)
       const exchangeInsights: ExchangeInsight[] = allInsights
-        .filter(
-          (insight: any) =>
-            insight.category?.includes('email') ||
-            insight.category?.includes('exchange') ||
-            insight.category?.includes('mail_flow') ||
-            insight.category?.includes('mailbox') ||
-            insight.category?.includes('threats') ||
-            insight.id?.startsWith('exo_') ||
-            insight.product === 'exchange'
-        )
-        .map((insight: any) => {
-          // Map category to ExoInsightCategory
-          let mappedCategory: ExoInsightCategory = 'mail_flow';
-          if (insight.category === 'threats') {
-            mappedCategory = 'security_policies';
-          } else if (insight.category?.includes('mailbox') || insight.id?.includes('forwarding')) {
-            mappedCategory = 'mailbox_access';
-          } else if (insight.id?.includes('dkim') || insight.id?.includes('dmarc') || insight.id?.includes('spf')) {
-            mappedCategory = 'security_hygiene';
-          } else if (insight.id?.includes('policy') || insight.id?.includes('filter')) {
-            mappedCategory = 'security_policies';
-          } else if (insight.id?.includes('rule') || insight.id?.includes('transport')) {
-            mappedCategory = 'governance';
+        .filter((insight: any) => {
+          // New model: filter by product
+          if (insight.product === 'exchange_online') {
+            return true;
           }
-
-          // Map affectedEntities to affectedMailboxes
-          const affectedEntities = insight.affectedEntities || [];
-          const affectedMailboxes: AffectedMailbox[] = affectedEntities.map((entity: any, idx: number) => ({
-            id: `${insight.id}-${idx}`,
-            displayName: entity.name || 'Unknown',
-            userPrincipalName: entity.name || '',
-            details: {
-              ruleName: entity.details,
-            },
-          }));
-
+          // Fallback: filter by category for older data
+          if (EXCHANGE_CATEGORIES.includes(insight.category)) {
+            return true;
+          }
+          // Legacy: check for Exchange-related IDs
+          if (insight.id?.startsWith('exo_')) {
+            return true;
+          }
+          return false;
+        })
+        .map((insight: any) => {
+          // Map to unified structure
+          const category = mapLegacyCategoryToRiskCategory(insight.category);
+          
           return {
             id: insight.id,
-            code: insight.id,
-            title: insight.name || insight.title || '',
+            category,
+            product: 'exchange_online' as const,
+            name: insight.name || insight.title || '',
             description: insight.description || '',
-            category: mappedCategory,
             severity: insight.severity || 'info',
-            affectedCount: affectedEntities.length || insight.rawData?.forwardingCount || insight.rawData?.total || 0,
-            affectedMailboxes,
-            criteria: insight.details || '',
+            status: mapStatusToUnified(insight.status),
+            details: insight.details || '',
             recommendation: insight.recommendation || '',
+            affectedEntities: insight.affectedEntities || [],
+            rawData: insight.rawData || {},
             detectedAt: data.completed_at || new Date().toISOString(),
-          } as ExchangeInsight;
+          };
         });
 
       // Calculate summary based on severity
-      const calculatedSummary: ExoInsightsSummary = {
+      const calculatedSummary: SeveritySummary = {
         critical: exchangeInsights.filter(i => i.severity === 'critical').length,
         high: exchangeInsights.filter(i => i.severity === 'high').length,
         medium: exchangeInsights.filter(i => i.severity === 'medium').length,
@@ -225,4 +238,42 @@ export function useExchangeOnlineInsights({
     refresh,
     triggerAnalysis,
   };
+}
+
+/**
+ * Maps legacy category names to M365RiskCategory
+ */
+function mapLegacyCategoryToRiskCategory(category: string): M365RiskCategory {
+  const mapping: Record<string, M365RiskCategory> = {
+    // Legacy Exchange categories
+    'email': 'email_exchange',
+    'mail_flow': 'email_exchange',
+    'mailbox_access': 'email_exchange',
+    'security_hygiene': 'email_exchange',
+    // Threats
+    'threats': 'threats_activity',
+    'security_policies': 'threats_activity',
+    // Governance
+    'governance': 'pim_governance',
+    // Already correct categories pass through
+    'email_exchange': 'email_exchange',
+    'threats_activity': 'threats_activity',
+    'pim_governance': 'pim_governance',
+  };
+
+  return mapping[category] || 'email_exchange';
+}
+
+/**
+ * Maps status to unified format
+ */
+function mapStatusToUnified(status: string): 'pass' | 'fail' | 'warn' | 'unknown' {
+  const statusMap: Record<string, 'pass' | 'fail' | 'warn' | 'unknown'> = {
+    'pass': 'pass',
+    'fail': 'fail',
+    'warn': 'warn',
+    'warning': 'warn',
+    'unknown': 'unknown',
+  };
+  return statusMap[status] || 'unknown';
 }
