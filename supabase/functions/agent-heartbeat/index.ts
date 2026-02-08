@@ -163,25 +163,30 @@ async function updateAgentVersion(supabase: any, agentId: string, version: strin
 }
 
 /**
- * Upload certificate to App Registration in Home Tenant using PATCH endpoint
- * This is the correct approach - certificates must be on the App Registration,
- * not on the Service Principal (addKey requires proof JWT which we don't have)
+ * Upload certificate to Service Principal in CLIENT Tenant using PATCH endpoint
+ * This is the correct approach - certificates are registered on the Service Principal
+ * using PATCH (not addKey which requires proof JWT)
+ * 
+ * Flow:
+ * 1. Get access token for the CLIENT tenant using app credentials
+ * 2. Fetch existing keyCredentials from Service Principal
+ * 3. PATCH Service Principal with new certificate appended to existing keys
  */
-async function uploadCertificateToAppRegistration(
-  homeTenantId: string,
+async function uploadCertificateToServicePrincipal(
+  clientTenantId: string,  // Tenant CLIENTE (e.g., TASCHIBRA)
   appId: string,
-  appObjectId: string,
+  spObjectId: string,      // Service Principal Object ID (in client tenant)
   clientSecret: string,
   thumbprint: string,
   publicKey: string,
   agentId: string
 ): Promise<{ success: boolean; keyId?: string; error?: string }> {
   try {
-    console.log(`Uploading certificate to App Registration ${appObjectId.substring(0, 8)}... in Home Tenant ${homeTenantId.substring(0, 8)}...`);
+    console.log(`Uploading certificate to Service Principal ${spObjectId.substring(0, 8)}... in Client Tenant ${clientTenantId.substring(0, 8)}...`);
     
-    // Get access token for the HOME tenant (not client tenant!)
+    // Get access token for the CLIENT tenant (NOT home tenant!)
     const tokenResponse = await fetch(
-      `https://login.microsoftonline.com/${homeTenantId}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${clientTenantId}/oauth2/v2.0/token`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -196,38 +201,38 @@ async function uploadCertificateToAppRegistration(
 
     if (!tokenResponse.ok) {
       const errText = await tokenResponse.text();
-      console.error(`Failed to get token for Home Tenant ${homeTenantId}:`, errText);
+      console.error(`Failed to get token for Client Tenant ${clientTenantId}:`, errText);
       return { success: false, error: `Token error: ${tokenResponse.status}` };
     }
 
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // First, fetch existing keyCredentials from the App Registration
-    const currentAppResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=keyCredentials`,
+    // Fetch existing keyCredentials from Service Principal
+    const currentSpResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}?$select=keyCredentials`,
       {
         headers: { 'Authorization': `Bearer ${accessToken}` },
       }
     );
 
-    if (!currentAppResponse.ok) {
-      const errText = await currentAppResponse.text();
-      console.error(`Failed to get current App Registration:`, errText);
-      return { success: false, error: `GET App error: ${currentAppResponse.status}` };
+    if (!currentSpResponse.ok) {
+      const errText = await currentSpResponse.text();
+      console.error(`Failed to get Service Principal:`, errText);
+      return { success: false, error: `GET SP error: ${currentSpResponse.status}` };
     }
 
-    const currentAppData = await currentAppResponse.json();
-    const existingKeys = currentAppData.keyCredentials || [];
+    const currentSpData = await currentSpResponse.json();
+    const existingKeys = currentSpData.keyCredentials || [];
     
-    console.log(`App Registration has ${existingKeys.length} existing key(s)`);
+    console.log(`Service Principal has ${existingKeys.length} existing key(s)`);
 
     // Check if this thumbprint is already registered
     const sanitizedNewThumbprint = sanitizeThumbprint(thumbprint);
     for (const key of existingKeys) {
       const existingThumbprint = sanitizeThumbprint(key.customKeyIdentifier);
       if (existingThumbprint === sanitizedNewThumbprint) {
-        console.log(`Certificate with thumbprint ${sanitizedNewThumbprint?.substring(0, 8)}... already registered`);
+        console.log(`Certificate with thumbprint ${sanitizedNewThumbprint?.substring(0, 8)}... already registered in Service Principal`);
         return { success: true, keyId: sanitizedNewThumbprint };
       }
     }
@@ -252,9 +257,9 @@ async function uploadCertificateToAppRegistration(
       endDateTime: endDate.toISOString(),
     };
 
-    // PATCH with all certificates (existing + new)
+    // PATCH Service Principal with all certificates (existing + new)
     const patchResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/applications/${appObjectId}`,
+      `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}`,
       {
         method: 'PATCH',
         headers: {
@@ -269,21 +274,21 @@ async function uploadCertificateToAppRegistration(
 
     if (!patchResponse.ok) {
       const errText = await patchResponse.text();
-      console.error(`Failed to PATCH App Registration:`, errText);
+      console.error(`Failed to PATCH Service Principal:`, errText);
       return { success: false, error: `PATCH error: ${patchResponse.status} - ${errText}` };
     }
 
-    console.log(`Certificate uploaded to App Registration, thumbprint: ${sanitizedNewThumbprint?.substring(0, 8)}...`);
+    console.log(`Certificate uploaded to Service Principal in Client Tenant, thumbprint: ${sanitizedNewThumbprint?.substring(0, 8)}...`);
     return { success: true, keyId: sanitizedNewThumbprint || thumbprint };
   } catch (error) {
-    console.error(`Error uploading certificate to App Registration:`, error);
+    console.error(`Error uploading certificate to Service Principal:`, error);
     return { success: false, error: String(error) };
   }
 }
 
 /**
- * Upload agent certificate to Azure App Registration
- * Uses global config (home tenant) to register the certificate
+ * Upload agent certificate to Azure Service Principal in CLIENT tenant
+ * Uses m365_tenant_agents + m365_app_credentials to find linked tenants
  * Returns the thumbprint if successful
  */
 async function uploadAgentCertificate(
@@ -295,58 +300,100 @@ async function uploadAgentCertificate(
   console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
   
   try {
-    // Get M365 global config (home tenant info)
-    const { data: globalConfig, error: configError } = await supabase
-      .from('m365_global_config')
-      .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
-      .limit(1)
-      .single();
+    // Get linked CLIENT tenants for this agent
+    const { data: linkedTenants, error: linkError } = await supabase
+      .from('m365_tenant_agents')
+      .select(`
+        tenant_record_id,
+        m365_tenants!inner(id, tenant_id, tenant_domain, client_id),
+        m365_app_credentials!inner(azure_app_id, sp_object_id, client_secret_encrypted)
+      `)
+      .eq('agent_id', agentId)
+      .eq('enabled', true);
 
-    if (configError || !globalConfig) {
-      console.log('M365 global config not found, skipping certificate upload');
+    if (linkError) {
+      console.error('Error fetching linked tenants:', linkError);
       return null;
     }
 
-    // Check if we have the required fields
-    if (!globalConfig.app_object_id || !globalConfig.home_tenant_id) {
-      console.log('M365 global config missing app_object_id or home_tenant_id, skipping certificate upload');
+    if (!linkedTenants?.length) {
+      console.log('No linked tenants found for agent, skipping certificate upload');
       return null;
     }
 
-    // Decrypt client secret
-    const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
-    if (!clientSecret) {
-      console.error('Failed to decrypt client secret');
-      return null;
+    console.log(`Found ${linkedTenants.length} linked tenant(s) for agent ${agentId}`);
+
+    const uploadResults: string[] = [];
+
+    for (const link of linkedTenants) {
+      const clientTenantId = link.m365_tenants?.tenant_id;
+      const tenantDomain = link.m365_tenants?.tenant_domain;
+      const spObjectId = link.m365_app_credentials?.sp_object_id;
+      const azureAppId = link.m365_app_credentials?.azure_app_id;
+      const encryptedSecret = link.m365_app_credentials?.client_secret_encrypted;
+
+      if (!clientTenantId || !spObjectId || !azureAppId || !encryptedSecret) {
+        console.warn(`Missing data for linked tenant:`, { 
+          clientTenantId: clientTenantId?.substring(0, 8), 
+          spObjectId: spObjectId?.substring(0, 8), 
+          azureAppId: azureAppId?.substring(0, 8),
+          hasSecret: !!encryptedSecret 
+        });
+        continue;
+      }
+
+      console.log(`Processing tenant ${tenantDomain || clientTenantId.substring(0, 8)}...`);
+
+      // Decrypt client secret
+      let clientSecret: string;
+      try {
+        clientSecret = await decryptSecret(encryptedSecret);
+      } catch (decryptError) {
+        console.error('Failed to decrypt client secret for tenant:', decryptError);
+        continue;
+      }
+
+      if (!clientSecret) {
+        console.error('Decrypted client secret is empty');
+        continue;
+      }
+
+      // Upload certificate to Service Principal in CLIENT tenant
+      const result = await uploadCertificateToServicePrincipal(
+        clientTenantId,       // Tenant CLIENTE (e.g., TASCHIBRA)
+        azureAppId,
+        spObjectId,           // Service Principal Object ID (in client tenant)
+        clientSecret,
+        thumbprint,
+        publicKey,
+        agentId
+      );
+
+      if (result.success && result.keyId) {
+        uploadResults.push(result.keyId);
+        console.log(`Certificate registered in tenant ${tenantDomain || clientTenantId}: ${result.keyId.substring(0, 8)}...`);
+      } else {
+        console.error(`Failed to upload certificate to tenant ${tenantDomain || clientTenantId}: ${result.error}`);
+      }
     }
 
-    // Upload certificate to App Registration in home tenant
-    const result = await uploadCertificateToAppRegistration(
-      globalConfig.home_tenant_id,
-      globalConfig.app_id,
-      globalConfig.app_object_id,
-      clientSecret,
-      thumbprint,
-      publicKey,
-      agentId
-    );
-
-    if (result.success && result.keyId) {
-      // Update agent record with certificate info
+    // Update agent record with certificate info if at least one upload succeeded
+    if (uploadResults.length > 0) {
       const sanitizedThumbprint = sanitizeThumbprint(thumbprint);
       await supabase
         .from('agents')
         .update({
           certificate_thumbprint: sanitizedThumbprint,
           certificate_public_key: publicKey,
-          azure_certificate_key_id: result.keyId,
+          azure_certificate_key_id: uploadResults[0],
         })
         .eq('id', agentId);
 
-      console.log(`Certificate registered for agent ${agentId}: ${result.keyId}`);
-      return result.keyId;
+      console.log(`Certificate registered for agent ${agentId}: ${uploadResults[0]}`);
+      return uploadResults[0];
     }
 
+    console.log(`No successful certificate uploads for agent ${agentId}`);
     return null;
   } catch (error) {
     console.error('Error uploading certificate:', error);
