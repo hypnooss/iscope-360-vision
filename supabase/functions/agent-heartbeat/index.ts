@@ -300,13 +300,37 @@ async function uploadAgentCertificate(
   console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
   
   try {
-    // Get linked CLIENT tenants for this agent
+    // 1. Get global config with the shared client_secret (Multi-Tenant App)
+    const { data: globalConfig, error: configError } = await supabase
+      .from('m365_global_config')
+      .select('app_id, client_secret_encrypted')
+      .single();
+    
+    if (configError || !globalConfig?.client_secret_encrypted) {
+      console.error('No global config or client_secret found:', configError);
+      return null;
+    }
+
+    // 2. Decrypt the global client_secret
+    let globalClientSecret: string;
+    try {
+      globalClientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
+    } catch (decryptError) {
+      console.error('Failed to decrypt global client secret:', decryptError);
+      return null;
+    }
+
+    // 3. Get linked CLIENT tenants for this agent (query correta com JOIN aninhado)
     const { data: linkedTenants, error: linkError } = await supabase
       .from('m365_tenant_agents')
       .select(`
         tenant_record_id,
-        m365_tenants!inner(id, tenant_id, tenant_domain, client_id),
-        m365_app_credentials!inner(azure_app_id, sp_object_id, client_secret_encrypted)
+        m365_tenants!inner(
+          id, 
+          tenant_id, 
+          tenant_domain,
+          m365_app_credentials(azure_app_id, sp_object_id, is_active)
+        )
       `)
       .eq('agent_id', agentId)
       .eq('enabled', true);
@@ -326,44 +350,35 @@ async function uploadAgentCertificate(
     const uploadResults: string[] = [];
 
     for (const link of linkedTenants) {
-      const clientTenantId = link.m365_tenants?.tenant_id;
-      const tenantDomain = link.m365_tenants?.tenant_domain;
-      const spObjectId = link.m365_app_credentials?.sp_object_id;
-      const azureAppId = link.m365_app_credentials?.azure_app_id;
-      const encryptedSecret = link.m365_app_credentials?.client_secret_encrypted;
+      const tenant = link.m365_tenants;
+      const clientTenantId = tenant?.tenant_id;
+      const tenantDomain = tenant?.tenant_domain;
+      
+      // Get active credentials for this tenant (m365_app_credentials is nested in m365_tenants)
+      const creds = Array.isArray(tenant?.m365_app_credentials) 
+        ? tenant.m365_app_credentials.find((c: any) => c.is_active)
+        : tenant?.m365_app_credentials;
+      
+      const spObjectId = creds?.sp_object_id;
+      const azureAppId = creds?.azure_app_id || globalConfig.app_id;
 
-      if (!clientTenantId || !spObjectId || !azureAppId || !encryptedSecret) {
+      if (!clientTenantId || !spObjectId) {
         console.warn(`Missing data for linked tenant:`, { 
           clientTenantId: clientTenantId?.substring(0, 8), 
-          spObjectId: spObjectId?.substring(0, 8), 
-          azureAppId: azureAppId?.substring(0, 8),
-          hasSecret: !!encryptedSecret 
+          spObjectId: spObjectId?.substring(0, 8)
         });
         continue;
       }
 
       console.log(`Processing tenant ${tenantDomain || clientTenantId.substring(0, 8)}...`);
 
-      // Decrypt client secret
-      let clientSecret: string;
-      try {
-        clientSecret = await decryptSecret(encryptedSecret);
-      } catch (decryptError) {
-        console.error('Failed to decrypt client secret for tenant:', decryptError);
-        continue;
-      }
-
-      if (!clientSecret) {
-        console.error('Decrypted client secret is empty');
-        continue;
-      }
-
       // Upload certificate to Service Principal in CLIENT tenant
+      // Using GLOBAL client_secret (same Multi-Tenant App for all tenants)
       const result = await uploadCertificateToServicePrincipal(
         clientTenantId,       // Tenant CLIENTE (e.g., TASCHIBRA)
         azureAppId,
         spObjectId,           // Service Principal Object ID (in client tenant)
-        clientSecret,
+        globalClientSecret,   // Secret GLOBAL do App Multi-Tenant
         thumbprint,
         publicKey,
         agentId
