@@ -73,17 +73,20 @@ async function pollForToken(
   access_token?: string;
   error?: string;
 }> {
+  const params = new URLSearchParams();
+  params.append('client_id', appId);
+  params.append('client_secret', clientSecret);
+  params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
+  params.append('device_code', deviceCode);
+  
+  console.log(`[pollForToken] Request params: client_id=${appId}, secret_length=${clientSecret.length}, grant_type=device_code`);
+  
   const response = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: appId,
-        client_secret: clientSecret,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        device_code: deviceCode,
-      }),
+      body: params,
     }
   );
 
@@ -297,8 +300,34 @@ serve(async (req) => {
       console.log(`[connect-m365-tenant] Polling for token...`);
 
       // Decrypt client secret for token request
-      const encryptionKey = Deno.env.get("M365_ENCRYPTION_KEY")!;
-      const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted, encryptionKey);
+      const pollEncryptionKey = Deno.env.get("M365_ENCRYPTION_KEY");
+      if (!pollEncryptionKey) {
+        console.error("[connect-m365-tenant] M365_ENCRYPTION_KEY not found");
+        return new Response(
+          JSON.stringify({ error: "Chave de criptografia não configurada" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      let clientSecret: string;
+      try {
+        clientSecret = await decryptSecret(globalConfig.client_secret_encrypted, pollEncryptionKey);
+        console.log(`[connect-m365-tenant] Client secret decrypted, length: ${clientSecret?.length || 0}`);
+      } catch (decryptError: any) {
+        console.error("[connect-m365-tenant] Failed to decrypt client secret:", decryptError.message);
+        return new Response(
+          JSON.stringify({ error: "Falha ao descriptografar credenciais" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!clientSecret || clientSecret.length === 0) {
+        console.error("[connect-m365-tenant] Client secret is empty after decryption");
+        return new Response(
+          JSON.stringify({ error: "Credenciais inválidas" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, clientSecret, deviceCode);
 
