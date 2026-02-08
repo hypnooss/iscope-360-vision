@@ -1,5 +1,8 @@
 project_id = "akbosdbyheezghieiefz"
 
+[functions.connect-m365-tenant]
+verify_jwt = false
+
 [functions.register-agent]
 verify_jwt = false
 
