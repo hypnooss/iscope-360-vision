@@ -41,9 +41,30 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 // Permission categories organized by Microsoft product
 const PERMISSION_CATEGORIES = {
-  'Entra ID': ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All'],
-  'Exchange Online': ['MailboxSettings.Read', 'Mail.Read'],
-  'Roles & Admin': ['RoleManagement.ReadWrite.Directory'],
+  'Entra ID': [
+    'User.Read.All',
+    'Directory.Read.All',
+    'Group.Read.All',
+    'Application.Read.All',
+    'AuditLog.Read.All',
+    'Organization.Read.All',
+    'Policy.Read.All',
+  ],
+  'Exchange Online': [
+    'MailboxSettings.Read',
+    'Mail.Read',
+    'RoleManagement.ReadWrite.Directory',
+  ],
+  'SharePoint': [
+    'Sites.Read.All',
+  ],
+  'Certificados': [
+    'Application.ReadWrite.All',
+  ],
+  'Outros': [
+    'User.Read',
+    'Reports.Read.All',
+  ],
 };
 const ALL_PERMISSIONS = Object.values(PERMISSION_CATEGORIES).flat();
 
@@ -317,7 +338,7 @@ export function TenantStatusCard({
             {showPermissions && (
               <div className="mt-3 space-y-4">
                 <p className="text-xs text-muted-foreground">Permissões do Microsoft Graph</p>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                   {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
                     <div key={category} className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">{category}</p>
