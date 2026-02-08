@@ -62,19 +62,22 @@ serve(async (req) => {
       adminEmail, 
       adminPassword,
       appId,
-      spObjectId,
+      spObjectId: providedSpObjectId, // Optional - will be fetched if not provided
       displayName = "iScope Security"
     } = body;
 
     // Validate required fields
-    if (!tenantRecordId || !adminEmail || !adminPassword || !appId || !spObjectId) {
+    if (!tenantRecordId || !adminEmail || !adminPassword || !appId) {
       return new Response(
         JSON.stringify({ 
-          error: "Missing required fields: tenantRecordId, adminEmail, adminPassword, appId, spObjectId" 
+          error: "Missing required fields: tenantRecordId, adminEmail, adminPassword, appId" 
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Use provided spObjectId or we'll need to fetch it
+    let spObjectId = providedSpObjectId;
 
     // Get tenant info
     const { data: tenant, error: tenantError } = await supabase
@@ -122,6 +125,28 @@ serve(async (req) => {
     // Check agent is online (last seen within 5 minutes)
     const lastSeen = new Date(agent.last_seen);
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    if (lastSeen < fiveMinutesAgo) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Agent is offline. Please ensure the agent is running.",
+          code: "AGENT_OFFLINE",
+          lastSeen: agent.last_seen
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // If spObjectId not provided, we need to inform the user
+    // The connect-m365-tenant function should always provide it
+    if (!spObjectId) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Service Principal Object ID not provided. Use the simplified connection flow.",
+          code: "SP_OBJECT_ID_REQUIRED"
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     if (lastSeen < fiveMinutesAgo) {
       return new Response(
         JSON.stringify({ 

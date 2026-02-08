@@ -7,7 +7,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useTenantConnection, TenantConnection } from '@/hooks/useTenantConnection';
 import { TenantStatusCard } from '@/components/m365/TenantStatusCard';
-import { TenantConnectionWizard } from '@/components/m365/TenantConnectionWizard';
+import { SimpleTenantConnectionWizard } from '@/components/m365/SimpleTenantConnectionWizard';
 import { TenantEditDialog } from '@/components/m365/TenantEditDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -470,7 +470,7 @@ export default function TenantConnectionPage() {
         )}
 
         {/* Connection Wizard Dialog */}
-        <TenantConnectionWizard 
+        <SimpleTenantConnectionWizard 
           open={showWizard} 
           onOpenChange={setShowWizard}
           onSuccess={() => {
