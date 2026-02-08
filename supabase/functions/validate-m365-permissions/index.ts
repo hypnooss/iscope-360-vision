@@ -34,6 +34,54 @@ const CERTIFICATE_PERMISSIONS = [
   'Application.ReadWrite.All',
 ];
 
+// Exchange Administrator Role Template ID (constant across all Azure AD tenants)
+const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
+
+// Test if Exchange Administrator role is assigned to the app's Service Principal
+async function testExchangeAdminRole(accessToken: string, appId: string): Promise<boolean> {
+  try {
+    // Get Service Principal by App ID
+    const spResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (!spResponse.ok) {
+      console.log('Exchange Admin Role test: could not fetch Service Principal');
+      await spResponse.text(); // Consume body
+      return false;
+    }
+    
+    const spData = await spResponse.json();
+    const spId = spData.value?.[0]?.id;
+    
+    if (!spId) {
+      console.log('Exchange Admin Role test: Service Principal not found');
+      return false;
+    }
+    
+    // Check if Exchange Administrator role is assigned to this SP
+    const roleResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=principalId eq '${spId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (!roleResponse.ok) {
+      const errText = await roleResponse.text();
+      console.log(`Exchange Admin Role test failed (${roleResponse.status}): ${errText.substring(0, 200)}`);
+      return false;
+    }
+    
+    const roleData = await roleResponse.json();
+    const hasRole = (roleData.value?.length || 0) > 0;
+    console.log(`Exchange Admin Role test: ${hasRole ? 'assigned' : 'not assigned'}`);
+    return hasRole;
+  } catch (error) {
+    console.error('Error testing Exchange Admin Role:', error);
+    return false;
+  }
+}
+
 // ============= AES-256-GCM Decryption =============
 
 async function getEncryptionKey(): Promise<CryptoKey> {
@@ -324,6 +372,16 @@ async function validatePermissions(
   } else {
     console.log('Skipping certificate permissions test (no app_object_id provided)');
   }
+
+  // Test Exchange Administrator Role assignment (required for PowerShell CBA)
+  console.log('Testing Exchange Administrator role assignment...');
+  const exchangeAdminRoleGranted = await testExchangeAdminRole(accessToken, appId);
+  results.push({ 
+    name: 'Exchange Administrator Role', 
+    granted: exchangeAdminRoleGranted, 
+    type: 'recommended' 
+  });
+  console.log(`Exchange Administrator Role: ${exchangeAdminRoleGranted ? 'assigned' : 'not assigned'}`);
 
   return results;
 }

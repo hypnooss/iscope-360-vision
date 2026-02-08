@@ -28,6 +28,104 @@ const OPTIONAL_PERMISSIONS = [
   'Reports.Read.All', // Requires Azure AD Premium
 ];
 
+// Exchange Administrator Role Template ID (constant across all Azure AD tenants)
+const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
+
+// Function to assign Exchange Administrator role to the App's Service Principal
+// This is required for PowerShell CBA connections to Exchange Online
+async function assignExchangeAdminRole(
+  accessToken: string, 
+  appId: string
+): Promise<{ success: boolean; error?: string; alreadyAssigned?: boolean }> {
+  try {
+    // 1. Get Service Principal by App ID in the target tenant
+    console.log('Looking up Service Principal for app:', appId);
+    const spResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id,displayName`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (!spResponse.ok) {
+      const errText = await spResponse.text();
+      console.error('Failed to find Service Principal:', spResponse.status, errText);
+      return { success: false, error: `Failed to find Service Principal: HTTP ${spResponse.status}` };
+    }
+    
+    const spData = await spResponse.json();
+    const servicePrincipalId = spData.value?.[0]?.id;
+    const spDisplayName = spData.value?.[0]?.displayName;
+    
+    if (!servicePrincipalId) {
+      console.error('Service Principal not found in tenant for app:', appId);
+      return { success: false, error: 'Service Principal not found in tenant' };
+    }
+    
+    console.log('Found Service Principal:', servicePrincipalId, spDisplayName);
+    
+    // 2. Check if role is already assigned
+    console.log('Checking if Exchange Administrator role is already assigned...');
+    const checkResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=principalId eq '${servicePrincipalId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (checkResponse.ok) {
+      const checkData = await checkResponse.json();
+      if (checkData.value?.length > 0) {
+        console.log('Exchange Administrator role already assigned to Service Principal');
+        return { success: true, alreadyAssigned: true };
+      }
+    } else {
+      // Log but continue - we'll try to assign anyway
+      const checkErr = await checkResponse.text();
+      console.warn('Could not check existing role assignments:', checkResponse.status, checkErr);
+    }
+    
+    // 3. Assign the Exchange Administrator role
+    console.log('Assigning Exchange Administrator role to Service Principal...');
+    const assignResponse = await fetch(
+      'https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          '@odata.type': '#microsoft.graph.unifiedRoleAssignment',
+          roleDefinitionId: EXCHANGE_ADMIN_ROLE_TEMPLATE_ID,
+          principalId: servicePrincipalId,
+          directoryScopeId: '/',
+        }),
+      }
+    );
+    
+    if (assignResponse.ok || assignResponse.status === 201) {
+      console.log('Exchange Administrator role assigned successfully');
+      return { success: true };
+    }
+    
+    const errorBody = await assignResponse.json().catch(() => ({}));
+    const errorMessage = errorBody?.error?.message || `HTTP ${assignResponse.status}`;
+    const errorCode = errorBody?.error?.code || '';
+    
+    // Handle specific error codes
+    if (errorCode === 'Authorization_RequestDenied' || assignResponse.status === 403) {
+      console.warn('Insufficient permissions to assign Exchange Administrator role:', errorMessage);
+      return { 
+        success: false, 
+        error: 'Permissão RoleManagement.ReadWrite.Directory não concedida. Atribuição manual necessária.' 
+      };
+    }
+    
+    console.error('Failed to assign Exchange Administrator role:', errorCode, errorMessage);
+    return { success: false, error: errorMessage };
+  } catch (error) {
+    console.error('Exception while assigning Exchange Administrator role:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
 // ============= AES-256-GCM Decryption =============
 
 // Derive CryptoKey from hex string
@@ -522,6 +620,29 @@ Deno.serve(async (req) => {
     }
 
     console.log('Permission test results:', JSON.stringify(permissionResults));
+
+    // === Attempt to assign Exchange Administrator role for PowerShell CBA ===
+    // This is non-blocking - if it fails, Graph API features still work
+    console.log('Attempting to assign Exchange Administrator role for PowerShell connectivity...');
+    const roleResult = await assignExchangeAdminRole(accessToken, appId);
+    
+    // Add role assignment result to permissions list for UI visibility
+    permissionResults.push({
+      name: 'Exchange Administrator Role',
+      granted: roleResult.success,
+      required: false, // Not required for Graph API, only for PowerShell
+      optional: true,
+      error: roleResult.error,
+    });
+    
+    if (roleResult.success) {
+      console.log(roleResult.alreadyAssigned 
+        ? 'Exchange Administrator role already assigned' 
+        : 'Exchange Administrator role assigned successfully');
+    } else {
+      console.warn('Could not assign Exchange Administrator role:', roleResult.error);
+      console.warn('PowerShell Exchange Online features may not work. Manual role assignment required.');
+    }
 
     const allPermissionsGranted = permissionResults
       .filter(p => p.required)
