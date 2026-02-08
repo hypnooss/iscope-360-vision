@@ -1,197 +1,238 @@
 
-# Plano: Suporte a Certificados para Tenants Multi-Tenant
+# Plano: Correção do Fluxo de Certificados para Exchange Online
 
-## Contexto do Problema
+## Diagnóstico Completo
 
-No fluxo atual:
-1. O Agent gera um certificado local
-2. No heartbeat, o certificado é enviado ao Azure
-3. O `agent-heartbeat` usa `m365_global_config` (app_object_id + home_tenant_id) para fazer upload
-4. O certificado é registrado no App Registration do **HOME tenant**
-5. O PowerShell tenta conectar ao **TENANT DO CLIENTE** onde o certificado NÃO existe
-6. **Resultado**: Falha de autenticação
+Foram identificados **três problemas críticos** que impedem a autenticação do Exchange Online:
 
-## Arquitetura Proposta
+### Problema 1: Inconsistência no nome do arquivo de thumbprint
 
-### Fluxo Corrigido
+| Componente | Arquivo usado |
+|------------|---------------|
+| `check-deps.sh` (linha 330) | `/var/lib/iscope-agent/certs/m365.thumbprint` |
+| `auth.py` (linha 10) | `/var/lib/iscope-agent/certs/thumbprint.txt` |
+| `powershell.py` (linha 26) | `/var/lib/iscope-agent/certs/thumbprint.txt` |
 
-```
-1. OAuth Callback no tenant do cliente
-   ↓
-2. Busca App Registration Object ID via GET /applications(appId='...')
-   ↓
-3. Salva app_object_id em m365_app_credentials
-   ↓
-4. Agent gera certificado e envia no heartbeat
-   ↓
-5. Agent-heartbeat verifica se agent tem tenants vinculados
-   ↓
-6. Para cada tenant vinculado, faz upload do certificado no App Registration do cliente
-   ↓
-7. PowerShell usa o certificado para conectar ao tenant do cliente
-```
+**Resultado**: O Python nunca encontra o thumbprint porque o arquivo tem nome diferente.
 
-## Alterações Necessárias
+### Problema 2: Formato inconsistente do thumbprint no banco
 
-### 1. Schema: Adicionar `app_object_id` em `m365_app_credentials`
+Alguns agents enviaram thumbprints com prefixo incorreto:
 
-```sql
-ALTER TABLE m365_app_credentials 
-ADD COLUMN IF NOT EXISTS app_object_id TEXT;
+| Agent | Thumbprint no Banco |
+|-------|---------------------|
+| TASCHIBRA-IDA | `sha1 Fingerprint=47FF013BC99249965587DD92F7A7E9FAE7860331` |
+| PRECISIO-AZ | `27FA1C0F9B0D62AF5781F3D2E8940832CFC21980` |
 
-COMMENT ON COLUMN m365_app_credentials.app_object_id IS 
-'Object ID do App Registration no tenant do cliente. Necessário para PATCH /applications/{id} via Graph API para upload de certificados.';
+**Formato esperado pelo Azure**: Apenas o hash hexadecimal sem prefixos.
+
+### Problema 3: State local impede reenvio do certificado
+
+O Agent TASCHIBRA-IDA já tem `azure_certificate_key_id` no state local (gravado quando o certificado foi registrado no HOME tenant). Isso faz com que o método `_get_pending_certificate()` retorne `None`, impedindo o reenvio.
+
+**Código relevante** (`heartbeat.py` linhas 21-23):
+```python
+# Certificate already registered in Azure
+if self.state.data.get("azure_certificate_key_id"):
+    return None  # <-- Para aqui e não envia o certificado
 ```
 
-### 2. Edge Function: `m365-oauth-callback`
+---
 
-**Arquivo**: `supabase/functions/m365-oauth-callback/index.ts`
+## Solução Proposta
 
-**Mudança**: Após obter o token, buscar o App Registration Object ID usando:
-```typescript
-// Buscar App Registration Object ID (diferente do Service Principal)
-const appRegResponse = await fetch(
-  `https://graph.microsoft.com/v1.0/applications(appId='${appId}')?$select=id,displayName`,
-  { headers: { 'Authorization': `Bearer ${accessToken}` } }
-);
+### Parte 1: Corrigir nome do arquivo de thumbprint (check-deps.sh)
 
-if (appRegResponse.ok) {
-  const appRegData = await appRegResponse.json();
-  const appObjectId = appRegData.id;
-  console.log('App Registration Object ID:', appObjectId);
-}
+**Arquivo**: `python-agent/check-deps.sh`  
+**Linha**: 330
+
+**Alterar de**:
+```bash
+echo "$thumbprint" > "$CERT_DIR/m365.thumbprint"
 ```
 
-**Salvar** o `app_object_id` junto com o `sp_object_id` no upsert de `m365_app_credentials`.
+**Para**:
+```bash
+echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"
+```
 
-### 3. Edge Function: `agent-heartbeat`
+### Parte 2: Sanitizar thumbprint antes de enviar (Python Agent)
+
+**Arquivo**: `python-agent/agent/auth.py`
+
+Adicionar função para limpar o thumbprint:
+```python
+def get_certificate_thumbprint():
+    """Read certificate thumbprint from file if available."""
+    if THUMBPRINT_FILE.exists():
+        raw = THUMBPRINT_FILE.read_text().strip()
+        # Remove prefixos comuns do openssl (sha1 Fingerprint=, SHA1 Fingerprint=, etc)
+        if '=' in raw:
+            raw = raw.split('=', 1)[-1]
+        # Remove dois pontos (AA:BB:CC -> AABBCC)
+        return raw.replace(':', '').strip()
+    return None
+```
+
+### Parte 3: Forçar reenvio de certificado para novos tenants
+
+O problema é que o Agent já tem `azure_certificate_key_id` no state, então não tenta reenviar. Para suportar múltiplos tenants, precisamos de uma abordagem diferente.
+
+**Opção escolhida**: Limpar o `azure_certificate_key_id` quando houver novos tenants que precisam do certificado.
 
 **Arquivo**: `supabase/functions/agent-heartbeat/index.ts`
 
-**Mudança na função `uploadAgentCertificate`**:
-
-Em vez de usar apenas `m365_global_config`, verificar se o agent tem tenants vinculados e fazer upload para cada um:
+Na lógica de retorno do heartbeat, verificar se há tenants vinculados que ainda não têm certificado registrado:
 
 ```typescript
-async function uploadAgentCertificate(
-  supabase: any,
-  agentId: string,
-  thumbprint: string,
-  publicKey: string
-): Promise<string | null> {
-  // 1. Verificar se o agent tem tenants vinculados
+// Verificar se precisa forçar reenvio de certificado
+let needsCertRefresh = false;
+if (agent.azure_certificate_key_id) {
+  // Verificar se há tenants vinculados sem certificado
+  const { data: linkedTenantsNeedingCert } = await supabase
+    .from('m365_tenant_agents')
+    .select('tenant_record_id, m365_app_credentials!inner(certificate_thumbprint)')
+    .eq('agent_id', agentId)
+    .eq('enabled', true)
+    .is('m365_app_credentials.certificate_thumbprint', null);
+  
+  if (linkedTenantsNeedingCert?.length > 0) {
+    needsCertRefresh = true;
+  }
+}
+
+// Se needsCertRefresh, retornar flag especial para agent limpar o state
+```
+
+**Porém**, isso requer mudança no Python Agent para interpretar a flag. Uma solução mais simples:
+
+**Solução Simplificada**: Adicionar um campo no heartbeat response que informa se o certificado precisa ser reenviado:
+
+```json
+{
+  "success": true,
+  "request_certificate": true  // <-- Backend pede o certificado novamente
+}
+```
+
+E o Python Agent, ao receber isso, inclui o certificado no próximo heartbeat mesmo se já tiver `azure_certificate_key_id`.
+
+---
+
+## Alterações Detalhadas
+
+### 1. check-deps.sh (correção imediata)
+
+| Linha | Antes | Depois |
+|-------|-------|--------|
+| 330 | `echo "$thumbprint" > "$CERT_DIR/m365.thumbprint"` | `echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"` |
+
+### 2. auth.py (sanitização do thumbprint)
+
+Modificar a função `get_certificate_thumbprint()` para limpar o formato.
+
+### 3. heartbeat.py (suporte a request_certificate)
+
+Modificar `_get_pending_certificate()` para aceitar um parâmetro que força o envio:
+
+```python
+def _get_pending_certificate(self, force=False):
+    if not CERT_FILE.exists():
+        return None
+    
+    # Se não for forçado e já tiver registrado, não envia
+    if not force and self.state.data.get("azure_certificate_key_id"):
+        return None
+    
+    # ... resto do código
+```
+
+E no `send()`:
+
+```python
+# Check if backend requested certificate re-upload
+request_cert = response.get("request_certificate", False)
+if request_cert and not pending_cert:
+    self.logger.info("Backend solicitou reenvio de certificado")
+    # Force re-send on next heartbeat by clearing the flag
+    if "azure_certificate_key_id" in self.state.data:
+        del self.state.data["azure_certificate_key_id"]
+        self.state.save()
+```
+
+### 4. agent-heartbeat Edge Function (solicitação de certificado)
+
+Adicionar lógica para verificar se há tenants vinculados que precisam de certificado:
+
+```typescript
+// Check if agent has linked tenants needing certificate
+let requestCertificate = false;
+if (agent.certificate_thumbprint) {
   const { data: linkedTenants } = await supabase
     .from('m365_tenant_agents')
     .select(`
       tenant_record_id,
-      m365_tenants!inner(id, tenant_id, client_id),
-      m365_app_credentials!inner(azure_app_id, app_object_id)
+      m365_app_credentials!inner(certificate_thumbprint, app_object_id)
     `)
     .eq('agent_id', agentId)
     .eq('enabled', true);
-
-  if (linkedTenants?.length > 0) {
-    // Upload para cada tenant vinculado
-    for (const link of linkedTenants) {
-      await uploadCertificateToTenantApp(
-        link.m365_tenants.tenant_id,
-        link.m365_app_credentials.azure_app_id,
-        link.m365_app_credentials.app_object_id,
-        thumbprint,
-        publicKey
-      );
-    }
-    return `tenant-certs-${linkedTenants.length}`;
-  }
-
-  // 2. Fallback: usar m365_global_config (comportamento atual)
-  const { data: globalConfig } = await supabase
-    .from('m365_global_config')
-    .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
-    .limit(1)
-    .single();
-
-  // ... código existente para upload no home tenant
-}
-```
-
-### 4. Obtenção de Token para Tenant do Cliente
-
-O upload de certificado requer um token com permissão `Application.ReadWrite.All` no tenant do cliente. Usaremos Client Credentials Flow com o próprio App ID do cliente:
-
-```typescript
-async function getClientTenantToken(
-  tenantId: string,
-  appId: string,
-  clientSecret: string
-): Promise<string> {
-  const tokenResponse = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: appId,
-        client_secret: clientSecret, // Decriptografado do global config (multi-tenant app)
-        scope: 'https://graph.microsoft.com/.default',
-        grant_type: 'client_credentials',
-      }),
-    }
-  );
   
-  const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
+  // Check if any linked tenant needs the certificate
+  for (const link of linkedTenants || []) {
+    const creds = link.m365_app_credentials;
+    if (creds.app_object_id && creds.certificate_thumbprint !== agent.certificate_thumbprint) {
+      requestCertificate = true;
+      break;
+    }
+  }
 }
+
+// Include in response
+return Response.json({
+  success: true,
+  // ... outros campos
+  request_certificate: requestCertificate,
+});
 ```
 
-**Nota**: O client_secret vem do `m365_global_config` (app multi-tenant), mas o token é obtido no contexto do tenant do cliente.
+---
+
+## Fluxo Corrigido
+
+```text
+1. Agent inicia
+2. check-deps.sh gera certificado e salva em thumbprint.txt (corrigido)
+3. Python lê thumbprint.txt e sanitiza o valor (corrigido)
+4. Heartbeat:
+   a. Se agent não tem azure_certificate_key_id → envia certificado
+   b. Backend verifica se há tenants vinculados que precisam do cert
+   c. Se sim, faz upload para o App Registration de cada tenant
+   d. Retorna azure_certificate_key_id
+5. Próximo Heartbeat:
+   a. Agent já tem azure_certificate_key_id, não envia cert
+   b. Backend verifica se há NOVOS tenants vinculados sem cert
+   c. Se sim, retorna request_certificate: true
+   d. Agent limpa azure_certificate_key_id e envia cert no próximo ciclo
+```
+
+---
+
+## Ação Imediata para o Tenant BRASILUX
+
+1. **Reconectar o tenant BRASILUX** via OAuth para capturar o `app_object_id`
+2. **No servidor do Agent TASCHIBRA-IDA**:
+   - Renomear o arquivo: `mv /var/lib/iscope-agent/certs/m365.thumbprint /var/lib/iscope-agent/certs/thumbprint.txt`
+   - Limpar o state: editar `/var/lib/iscope/state.json` e remover a linha `azure_certificate_key_id`
+   - Reiniciar o agent: `systemctl restart iscope-agent`
+3. O certificado será reenviado e registrado
+
+---
 
 ## Resumo de Alterações
 
-| Item | Tipo | Descrição |
-|------|------|-----------|
-| `m365_app_credentials.app_object_id` | MIGRATION | Nova coluna para Object ID do App Registration |
-| `m365-oauth-callback` | EDIT | Buscar e salvar `app_object_id` via `/applications(appId=...)` |
-| `agent-heartbeat` | EDIT | Lógica de upload para tenants vinculados + fallback para global |
-
-## Fluxo Final
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        OAUTH CALLBACK                           │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. Obtém token do tenant do cliente                             │
-│ 2. GET /applications(appId='...') → app_object_id               │
-│ 3. GET /servicePrincipals?filter=appId eq '...' → sp_object_id  │
-│ 4. Salva ambos em m365_app_credentials                          │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                      AGENT HEARTBEAT                            │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. Agent envia certificado no body                              │
-│ 2. Verifica m365_tenant_agents para tenants vinculados          │
-│ 3. Para cada tenant:                                            │
-│    - Obtém token via Client Credentials (tenant do cliente)     │
-│    - PATCH /applications/{app_object_id} com keyCredentials     │
-│ 4. Se nenhum tenant vinculado: usa m365_global_config (fallback)│
-│ 5. Atualiza agents.azure_certificate_key_id                     │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                    POWERSHELL CONNECTION                        │
-├─────────────────────────────────────────────────────────────────┤
-│ Connect-ExchangeOnline                                          │
-│   -CertificateThumbprint $thumbprint                            │
-│   -AppId $azure_app_id (do tenant do cliente)                   │
-│   -Organization $tenant_domain                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Considerações
-
-1. **Permissão Necessária**: O App Registration no tenant do cliente precisa ter `Application.ReadWrite.All` (ou `Application.ReadWrite.OwnedBy`) com Admin Consent para permitir o upload de certificados.
-
-2. **Client Secret Compartilhado**: O app multi-tenant usa o mesmo client_secret em todos os tenants, então podemos reutilizar o secret do `m365_global_config`.
-
-3. **Fallback**: Se o agent não tiver tenants vinculados, continua usando o comportamento atual (upload no home tenant).
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `python-agent/check-deps.sh` | EDIT | Corrigir nome do arquivo de thumbprint para `thumbprint.txt` |
+| `python-agent/agent/auth.py` | EDIT | Sanitizar thumbprint (remover prefixo e dois pontos) |
+| `python-agent/agent/heartbeat.py` | EDIT | Suporte a `request_certificate` do backend |
+| `supabase/functions/agent-heartbeat/index.ts` | EDIT | Lógica para solicitar reenvio de certificado para novos tenants |
