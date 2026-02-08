@@ -177,7 +177,8 @@ async function testPermission(accessToken: string, permission: string, appObject
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       case 'RoleManagement.ReadWrite.Directory':
-        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
+        // Graph API requires minimum $top=20 for roleDefinitions endpoint
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=20&$select=id';
         break;
       case 'Application.ReadWrite.All': {
         // Test certificate upload permission by trying to read the app's keyCredentials
