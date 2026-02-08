@@ -18,7 +18,7 @@ const RECOMMENDED_PERMISSIONS = [
   'Group.Read.All',
   'Application.Read.All',
   'Policy.Read.All',
-  'Reports.Read.All',
+  'Reports.Read.All', // Usage reports
   'RoleManagement.Read.Directory', // Read-only role management
 ];
 

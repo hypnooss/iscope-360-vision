@@ -24,6 +24,7 @@ const RECOMMENDED_PERMISSIONS = [
   'Group.Read.All',
   'Application.Read.All',
   'Policy.Read.All',
+  'Reports.Read.All', // Usage reports
   'RoleManagement.Read.Directory', // Read-only role management
   // Exchange Online
   'MailboxSettings.Read',
@@ -172,6 +173,9 @@ async function testPermission(accessToken: string, permission: string, appObject
         break;
       case 'Policy.Read.All':
         url = 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1';
+        break;
+      case 'Reports.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1';
         break;
       case 'RoleManagement.Read.Directory':
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
