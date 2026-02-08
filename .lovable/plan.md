@@ -1,143 +1,166 @@
 
-# Plano: Correção do Erro de Certificados CA no Agent
 
-## Problema Identificado
+# Plano: Correções Finais para Upload de Certificado
 
-O agent está falhando com o erro:
-```
-OSError: Could not find a suitable TLS CA certificate bundle, invalid path: 
-/opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
-```
+## Diagnóstico Atual
 
-Isso ocorre porque a versão mais recente do `certifi` (2026.1.4) foi instalada, mas o arquivo `cacert.pem` não está presente no pacote. Este é um problema conhecido que pode acontecer por:
-- Incompatibilidade com certas versões do Python/pip
-- Cache corrompido (mesmo com `--no-cache-dir`)
-- Bug específico da versão
+| Item | Estado Atual | Estado Esperado |
+|------|--------------|-----------------|
+| `app_object_id` (BRASILUX) | `NULL` | UUID do App Registration |
+| `certificate_thumbprint` (agents) | `sha1 Fingerprint=47FF...` | `47FF...` |
+| `certificate_thumbprint` (credentials) | `NULL` | `47FF...` (após upload) |
+| `request_certificate` | Não funciona | Deveria pedir certificado |
 
-## Solução Proposta
+## Problemas Identificados
 
-### 1. Fixar versão estável do certifi no requirements.txt
+### Problema 1: app_object_id não foi capturado
+O OAuth do tenant BRASILUX foi realizado **antes** da implementação que busca o App Registration Object ID. Sem esse ID, o backend não consegue fazer `PATCH /applications/{id}` para registrar o certificado.
 
-Adicionar uma versão específica conhecida e estável do `certifi`:
+**Solução**: Reconectar o tenant BRASILUX via OAuth.
 
-| Antes | Depois |
-|-------|--------|
-| (não especificado) | `certifi>=2024.2.2,<2026.0.0` |
+### Problema 2: Thumbprint sujo no banco de dados
+O thumbprint salvo na tabela `agents` contém o prefixo `sha1 Fingerprint=` do OpenSSL. A sanitização foi implementada no Python Agent, mas o valor já estava no banco.
 
-Nota: O `certifi` é dependência transitiva do `requests`, então precisamos explicitá-lo para controlar a versão.
+**Solução**: Adicionar sanitização no backend (agent-heartbeat) ao receber e ao comparar thumbprints.
 
-### 2. Adicionar fallback para certificados do sistema no script de instalação
-
-Modificar o script `agent-install` para verificar se o `cacert.pem` existe após a instalação e, se não existir, criar um link simbólico para os certificados do sistema:
-
-```bash
-# Verificar se certifi foi instalado corretamente
-certifi_pem="$INSTALL_DIR/venv/lib/python*/site-packages/certifi/cacert.pem"
-if ! compgen -G "$certifi_pem" >/dev/null 2>&1; then
-  echo "Aviso: cacert.pem não encontrado. Criando link para certificados do sistema..."
-  
-  # Caminhos comuns para CA bundle do sistema
-  system_ca=""
-  for ca_path in \
-    /etc/ssl/certs/ca-certificates.crt \
-    /etc/pki/tls/certs/ca-bundle.crt \
-    /etc/ssl/ca-bundle.pem \
-    /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem; do
-    if [[ -f "$ca_path" ]]; then
-      system_ca="$ca_path"
-      break
-    fi
-  done
-  
-  if [[ -n "$system_ca" ]]; then
-    # Encontrar diretório do certifi e criar link
-    certifi_dir=$(find "$INSTALL_DIR/venv" -type d -name certifi | head -1)
-    if [[ -n "$certifi_dir" ]]; then
-      ln -sf "$system_ca" "$certifi_dir/cacert.pem"
-      echo "Link criado: $certifi_dir/cacert.pem -> $system_ca"
-    fi
-  fi
-fi
+### Problema 3: Lógica de request_certificate não aciona
+A lógica atual (linha 575) compara:
+```typescript
+creds?.certificate_thumbprint !== agentData.certificate_thumbprint
 ```
 
-### 3. Adicionar verificação de conectividade após setup
+Mas `app_object_id` é `NULL`, então a condição anterior (`creds?.app_object_id`) falha e o bloco não executa.
 
-Adicionar um teste simples no final da instalação para validar que o TLS está funcionando:
+**Solução**: Após reconectar o OAuth, o fluxo funcionará automaticamente.
 
-```bash
-verify_tls() {
-  echo "Verificando conectividade TLS..."
-  if "$INSTALL_DIR/venv/bin/python" -c "import requests; requests.get('https://httpbin.org/get', timeout=10)" 2>/dev/null; then
-    echo "Conectividade TLS OK"
-  else
-    echo "Aviso: Falha no teste de TLS. Verificando certificados..."
-    # Tentar fix automático
-    fix_certifi_bundle
-  fi
+## Alterações Necessárias
+
+### 1. Sanitização de Thumbprint no Backend
+
+**Arquivo**: `supabase/functions/agent-heartbeat/index.ts`
+
+Adicionar função helper para sanitizar thumbprint:
+
+```typescript
+function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
+  if (!thumbprint) return null;
+  let clean = thumbprint.trim();
+  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
+  if (clean.includes('=')) {
+    clean = clean.split('=').pop() || clean;
+  }
+  // Remove colons (AA:BB:CC -> AABBCC)
+  clean = clean.replace(/:/g, '');
+  return clean.toUpperCase().trim();
 }
 ```
 
-## Arquivos a Modificar
+Usar essa função:
+- Ao receber `body.certificate_thumbprint`
+- Ao comparar com `agentData.certificate_thumbprint`
+- Ao comparar com `creds?.certificate_thumbprint`
 
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| `python-agent/requirements.txt` | EDIT | Adicionar versão específica do certifi |
-| `supabase/functions/agent-install/index.ts` | EDIT | Adicionar fallback para CA do sistema e verificação TLS |
+### 2. Atualizar Thumbprint no banco ao processar
 
-## Detalhes Técnicos
+Quando o certificado é processado com sucesso, atualizar o thumbprint sanitizado no banco:
 
-### requirements.txt atualizado
-
-```
-requests>=2.31.0
-certifi>=2024.2.2,<2026.0.0
-pyjwt>=2.8.0
-python-dotenv>=1.0.1
-schedule>=1.2.1
-paramiko>=3.4.0
-pysnmp>=6.0.0
-urllib3>=2.0.0
-dnspython>=2.7.0
+```typescript
+// Ao salvar o certificado no agents
+await supabase
+  .from('agents')
+  .update({ 
+    certificate_thumbprint: sanitizedThumbprint,  // Sanitizado
+    // ... outros campos
+  })
+  .eq('id', agentId);
 ```
 
-### Lógica de fallback no script de instalação
+## Fluxo Corrigido
 
-A função `fix_certifi_bundle()` será chamada após `setup_venv()` e fará:
-
-1. Verificar se `cacert.pem` existe no pacote certifi
-2. Se não existir, procurar o CA bundle do sistema em caminhos conhecidos:
-   - Debian/Ubuntu: `/etc/ssl/certs/ca-certificates.crt`
-   - RHEL/CentOS: `/etc/pki/tls/certs/ca-bundle.crt`
-   - Alternativas: `/etc/ssl/ca-bundle.pem`, `/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem`
-3. Criar link simbólico do CA do sistema para `cacert.pem`
-4. Testar conectividade com uma request HTTPS simples
-
-## Correção Imediata (Manual)
-
-Para corrigir o agent já instalado sem precisar reinstalar:
-
-```bash
-# Encontrar o CA bundle do sistema
-CA_BUNDLE=$(cat /etc/ssl/certs/ca-certificates.crt 2>/dev/null && echo "/etc/ssl/certs/ca-certificates.crt" || \
-            cat /etc/pki/tls/certs/ca-bundle.crt 2>/dev/null && echo "/etc/pki/tls/certs/ca-bundle.crt")
-
-# Encontrar diretório do certifi
-CERTIFI_DIR=$(find /opt/iscope-agent/venv -type d -name certifi | head -1)
-
-# Criar link simbólico
-if [[ -n "$CERTIFI_DIR" ]] && [[ -n "$CA_BUNDLE" ]]; then
-  ln -sf "$CA_BUNDLE" "$CERTIFI_DIR/cacert.pem"
-  echo "Link criado: $CERTIFI_DIR/cacert.pem"
-  systemctl restart iscope-agent
-fi
+```text
+1. Admin reconecta BRASILUX via OAuth
+   ↓
+2. OAuth callback busca app_object_id via GET /applications(appId='...')
+   ↓
+3. Salva app_object_id em m365_app_credentials
+   ↓
+4. Próximo heartbeat do agent TASCHIBRA-IDA:
+   - Backend vê: app_object_id existe, certificate_thumbprint = NULL
+   - Backend retorna: request_certificate = true
+   ↓
+5. Agent limpa azure_certificate_key_id do state local
+   ↓
+6. Próximo heartbeat do agent:
+   - Agent envia certificate_thumbprint + certificate_public_key
+   - Backend sanitiza thumbprint
+   - Backend faz upload para App Registration do cliente via PATCH /applications/{app_object_id}
+   - Backend salva thumbprint em m365_app_credentials.certificate_thumbprint
+   ↓
+7. PowerShell consegue conectar ao Exchange Online
 ```
 
-Ou de forma mais simples:
+## Ações Imediatas
 
-```bash
-# Para RHEL/CentOS:
-ln -sf /etc/pki/tls/certs/ca-bundle.crt \
-  /opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
+### Para o Admin
 
-systemctl restart iscope-agent
+1. **Reconectar o tenant BRASILUX via OAuth**
+   - Acesse a página do tenant M365
+   - Clique em "Reconectar" ou "Validar Conexão"
+   - Complete o fluxo OAuth com Admin Consent
+   - Isso irá capturar o `app_object_id`
+
+### Alterações de Código
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/agent-heartbeat/index.ts` | Adicionar `sanitizeThumbprint()` e usar em todas comparações |
+
+## Código da Correção
+
+### agent-heartbeat/index.ts
+
+```typescript
+// Adicionar no início do arquivo (após imports)
+function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
+  if (!thumbprint) return null;
+  let clean = thumbprint.trim();
+  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
+  if (clean.includes('=')) {
+    clean = clean.split('=').pop() || clean;
+  }
+  // Remove colons (AA:BB:CC -> AABBCC)
+  clean = clean.replace(/:/g, '');
+  return clean.toUpperCase().trim();
+}
+
+// Na função principal, ao processar certificado:
+const sanitizedInputThumbprint = sanitizeThumbprint(body.certificate_thumbprint);
+const sanitizedAgentThumbprint = sanitizeThumbprint(agentData?.certificate_thumbprint);
+
+// Usar esses valores sanitizados em todas as comparações
 ```
+
+### Correção adicional na função uploadAgentCertificate
+
+Garantir que o thumbprint sanitizado seja passado para a função de upload:
+
+```typescript
+azureCertificateKeyId = await uploadAgentCertificate(
+  supabase,
+  agentId,
+  sanitizedInputThumbprint, // Usar versão sanitizada
+  body.certificate_public_key
+);
+```
+
+E dentro da função, ao salvar no banco:
+```typescript
+await supabase
+  .from('agents')
+  .update({
+    certificate_thumbprint: sanitizedThumbprint,  // Sempre sanitizado
+    azure_certificate_key_id: keyId,
+  })
+  .eq('id', agentId);
+```
+
