@@ -65,6 +65,7 @@ async function initiateDeviceCodeFlow(tenantId: string, appId: string): Promise<
 async function pollForToken(
   tenantId: string, 
   appId: string, 
+  clientSecret: string,
   deviceCode: string
 ): Promise<{ 
   pending?: boolean; 
@@ -79,6 +80,7 @@ async function pollForToken(
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: appId,
+        client_secret: clientSecret,
         grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
         device_code: deviceCode,
       }),
@@ -294,7 +296,11 @@ serve(async (req) => {
 
       console.log(`[connect-m365-tenant] Polling for token...`);
 
-      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, deviceCode);
+      // Decrypt client secret for token request
+      const encryptionKey = Deno.env.get("M365_ENCRYPTION_KEY")!;
+      const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted, encryptionKey);
+
+      const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, clientSecret, deviceCode);
 
       if (pollResult.pending) {
         return new Response(
