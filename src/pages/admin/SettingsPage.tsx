@@ -60,6 +60,8 @@ export default function SettingsPage() {
   const [tenantIdForValidation, setTenantIdForValidation] = useState('');
   // Azure certificate upload config
   const [newAppObjectId, setNewAppObjectId] = useState('');
+  // Exchange permission auto-add
+  const [addingExchangePermission, setAddingExchangePermission] = useState(false);
   
   // Agent settings
   const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
@@ -93,9 +95,11 @@ export default function SettingsPage() {
     { name: 'Policy.Read.All', granted: false, type: 'recommended' },
     { name: 'Reports.Read.All', granted: false, type: 'recommended' },
     { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
-    // Exchange Online
+    // Exchange Online (Graph)
     { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
     { name: 'Mail.Read', granted: false, type: 'recommended' },
+    // Exchange Online (CBA) - Office 365 Exchange Online resource
+    { name: 'Exchange.ManageAsApp', granted: false, type: 'required' },
     // Certificate Upload
     { name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
   ];
@@ -103,7 +107,7 @@ export default function SettingsPage() {
   // Group permissions by module for display
   const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
   const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
-  const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
+  const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read', 'Exchange.ManageAsApp'];
   const certificatePermissions = ['Application.ReadWrite.All'];
 
   // Merge backend permissions with default permissions to ensure all expected permissions are displayed
@@ -591,6 +595,34 @@ export default function SettingsPage() {
     }
   };
 
+  const handleAddExchangePermission = async () => {
+    setAddingExchangePermission(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('add-exchange-permission');
+
+      if (error) throw error;
+
+      if (data?.already_configured) {
+        toast.info('Permissão já configurada', {
+          description: 'A permissão Exchange.ManageAsApp já está no App Registration.',
+        });
+      } else if (data?.success) {
+        toast.success('Permissão adicionada!', {
+          description: 'Exchange.ManageAsApp adicionada. Reconecte os tenants clientes para aplicar.',
+        });
+      } else {
+        throw new Error(data?.error || 'Erro desconhecido');
+      }
+    } catch (error: any) {
+      console.error('Error adding Exchange permission:', error);
+      toast.error('Erro ao adicionar permissão', {
+        description: error.message || 'Verifique se o Tenant ID e App Object ID estão configurados.',
+      });
+    } finally {
+      setAddingExchangePermission(false);
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout>
@@ -832,9 +864,27 @@ export default function SettingsPage() {
                                 }`}
                               />
                               <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
+                              {perm.name === 'Exchange.ManageAsApp' && !perm.granted && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 px-1.5 text-[10px]"
+                                  onClick={handleAddExchangePermission}
+                                  disabled={addingExchangePermission || !m365Config.isConfigured}
+                                >
+                                  {addingExchangePermission ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    'Adicionar'
+                                  )}
+                                </Button>
+                              )}
                             </li>
                           ))}
                       </ul>
+                      <p className="text-[10px] text-muted-foreground">
+                        Exchange.ManageAsApp é da API Office 365 Exchange Online
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>

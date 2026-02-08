@@ -66,3 +66,6 @@ verify_jwt = false
 [functions.setup-exchange-rbac]
 verify_jwt = false
 
+[functions.add-exchange-permission]
+verify_jwt = false
+
