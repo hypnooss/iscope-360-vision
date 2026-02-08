@@ -63,9 +63,9 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     }
     
     // Check if Exchange Administrator role is assigned to this SP
-    // Use filter on principalId only (more reliable), then filter in code by roleDefinitionId
+    // Use transitiveRoleAssignments endpoint (required by Graph API for Service Principals)
     const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$count=true&$filter=principalId eq '${spId}'`,
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/transitiveRoleAssignments?$count=true&$filter=principalId eq '${spId}'`,
       { 
         headers: { 
           'Authorization': `Bearer ${accessToken}`,
