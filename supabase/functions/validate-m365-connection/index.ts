@@ -32,6 +32,60 @@ const REQUIRED_PERMISSIONS = [
   'Mail.Read',
 ];
 
+// Exchange Administrator Role template ID
+const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
+
+// Helper function to test Exchange Administrator Role assignment
+async function testExchangeAdminRole(accessToken: string, appId: string): Promise<{granted: boolean, error?: string}> {
+  try {
+    // Get the Service Principal for the app
+    const spResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (!spResponse.ok) {
+      const errData = await spResponse.json().catch(() => ({}));
+      console.log(`Exchange Admin Role check - SP lookup failed: ${spResponse.status}`, errData);
+      return { granted: false, error: 'Não foi possível localizar o Service Principal' };
+    }
+    
+    const spData = await spResponse.json();
+    const spId = spData.value?.[0]?.id;
+    
+    if (!spId) {
+      console.log('Exchange Admin Role check - Service Principal not found');
+      return { granted: false, error: 'Service Principal não encontrado' };
+    }
+    
+    console.log(`Exchange Admin Role check - Found SP: ${spId}`);
+    
+    // Check if the role is assigned to this Service Principal
+    const roleResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=principalId eq '${spId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
+      { 
+        headers: { 
+          'Authorization': `Bearer ${accessToken}`,
+          'ConsistencyLevel': 'eventual'
+        } 
+      }
+    );
+    
+    if (roleResponse.ok) {
+      const roleData = await roleResponse.json();
+      const hasRole = roleData.value?.length > 0;
+      console.log(`Exchange Admin Role check - Assignments found: ${roleData.value?.length || 0}, granted: ${hasRole}`);
+      return { granted: hasRole };
+    }
+    
+    console.log(`Exchange Admin Role check - Role assignment query failed: ${roleResponse.status}`);
+    return { granted: false, error: `HTTP ${roleResponse.status}` };
+  } catch (error) {
+    console.error('Exchange Admin Role check - Exception:', error);
+    return { granted: false, error: String(error) };
+  }
+}
+
 // ========== Encryption Utilities ==========
 async function getEncryptionKey(): Promise<CryptoKey> {
   const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
@@ -288,7 +342,8 @@ serve(async (req) => {
           }
         } else if (permission === 'RoleManagement.ReadWrite.Directory') {
           // Test ability to read/write directory role assignments
-          const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id', {
+          // NOTE: This endpoint does not support $top or $select parameters
+          const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
@@ -393,6 +448,16 @@ serve(async (req) => {
         required: true,
       });
     }
+
+    // Test Exchange Administrator Role assignment (separate from API permissions)
+    console.log('Testing Exchange Administrator Role assignment...');
+    const roleTestResult = await testExchangeAdminRole(accessToken, app_id);
+    permissionResults.push({
+      name: 'Exchange Administrator Role',
+      granted: roleTestResult.granted,
+      required: false, // This is a role, not an API permission
+    });
+    console.log(`Exchange Administrator Role: ${roleTestResult.granted ? 'assigned' : 'not assigned'}${roleTestResult.error ? ` (${roleTestResult.error})` : ''}`);
 
     const allPermissionsGranted = permissionResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
