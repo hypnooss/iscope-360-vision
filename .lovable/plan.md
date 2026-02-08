@@ -1,139 +1,132 @@
 
 
-# Plano: Adicionar Botão de Exclusão de Certificado M365
+# Plano: Corrigir Lógica de Re-upload de Certificado
 
-## Objetivo
+## Problema Identificado
 
-Adicionar um botão "Remover Certificado" no card de Certificado M365 na página de detalhes do Agent, permitindo que admins limpem os dados do certificado para forçar uma re-geração/re-upload.
+Existe uma lógica circular que impede o re-upload do certificado:
 
-## Motivação
+| Componente | Estado Atual | Comportamento |
+|------------|--------------|---------------|
+| **Banco (agents)** | `certificate_thumbprint = NULL` | Backend não envia `request_certificate` |
+| **Agent state.json** | `azure_certificate_key_id = "..."` | Agent não envia certificado |
 
-- **Troubleshooting**: Quando há problemas com o certificado (formato incorreto, expirado, etc.)
-- **Re-registro**: Forçar novo upload para Azure quando necessário
-- **Limpeza**: Remover certificados de agents que não precisam mais de M365
+A condição atual no backend (linha 582):
+```typescript
+if (sanitizedAgentThumbprint && !sanitizedInputThumbprint)
+```
+
+Falha porque `sanitizedAgentThumbprint` é `NULL` após a remoção.
+
+## Solução
+
+### Cenário 1: Agent tem certificado local mas backend não tem registro
+
+Quando:
+- Backend não tem thumbprint no banco (`certificate_thumbprint = NULL`)
+- Agent não está enviando thumbprint (porque pensa que já está registrado)
+- Mas existem tenants vinculados que precisam do certificado
+
+Backend deve enviar `request_certificate = true` para forçar re-envio.
+
+### Cenário 2: Backend tem thumbprint mas agent não enviou
+
+Este já está coberto pela lógica atual.
 
 ## Alterações Necessárias
 
-### 1. Adicionar estado para o dialog de confirmação
+### agent-heartbeat/index.ts
 
+Modificar a lógica de verificação de tenants (linhas 580-607):
+
+**Antes:**
 ```typescript
-const [deleteCertDialogOpen, setDeleteCertDialogOpen] = useState(false);
-const [deletingCert, setDeletingCert] = useState(false);
+// Check if agent has linked tenants needing certificate registration
+if (sanitizedAgentThumbprint && !sanitizedInputThumbprint) {
+  // ... check tenants
+}
 ```
 
-### 2. Adicionar função para limpar o certificado
-
+**Depois:**
 ```typescript
-const handleDeleteCertificate = async () => {
-  if (!agent) return;
-
-  setDeletingCert(true);
+// Check if agent has linked tenants needing certificate registration
+// Case 1: Agent has thumbprint in DB but didn't send it (needs re-upload)
+// Case 2: Agent's DB thumbprint was cleared but has linked tenants (needs full re-registration)
+if (!sanitizedInputThumbprint) {
   try {
-    const { error } = await supabase
-      .from("agents")
-      .update({
-        certificate_thumbprint: null,
-        certificate_public_key: null,
-        azure_certificate_key_id: null,
-      })
-      .eq("id", agent.id);
+    const { data: linkedTenants } = await supabase
+      .from('m365_tenant_agents')
+      .select(`
+        tenant_record_id,
+        m365_app_credentials!inner(certificate_thumbprint, app_object_id)
+      `)
+      .eq('agent_id', agentId)
+      .eq('enabled', true);
 
-    if (error) throw error;
-
-    toast.success("Certificado removido! O agent gerará um novo certificado no próximo heartbeat.");
-    setDeleteCertDialogOpen(false);
-    refetch();
-  } catch (error: any) {
-    toast.error("Erro ao remover certificado: " + error.message);
-  } finally {
-    setDeletingCert(false);
+    // Check if any linked tenant needs the certificate
+    for (const link of linkedTenants || []) {
+      const creds = link.m365_app_credentials;
+      const sanitizedCredThumbprint = sanitizeThumbprint(creds?.certificate_thumbprint);
+      
+      // Request certificate if:
+      // 1. Tenant has app_object_id (can register certificates)
+      // 2. AND either:
+      //    a. Tenant doesn't have a certificate registered
+      //    b. OR agent's DB thumbprint differs from tenant's
+      if (creds?.app_object_id) {
+        const needsCert = !sanitizedCredThumbprint || 
+                          (sanitizedAgentThumbprint && sanitizedCredThumbprint !== sanitizedAgentThumbprint);
+        if (needsCert) {
+          requestCertificate = true;
+          console.log(`Agent ${agentId}: tenant needs certificate (app_object_id: ${creds.app_object_id?.substring(0, 8)}..., cred: ${sanitizedCredThumbprint?.substring(0, 8) || 'null'}, agent_db: ${sanitizedAgentThumbprint?.substring(0, 8) || 'null'})`);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error checking linked tenants for certificate:', err);
   }
-};
+}
 ```
 
-### 3. Adicionar botão no card de Certificado M365
-
-Abaixo do botão "Baixar Certificado", adicionar:
-
-```tsx
-<Button 
-  variant="outline" 
-  size="sm" 
-  className="text-destructive border-destructive/50 hover:bg-destructive/10"
-  onClick={() => setDeleteCertDialogOpen(true)}
->
-  <Trash2 className="w-4 h-4 mr-2" />
-  Remover Certificado
-</Button>
-```
-
-### 4. Adicionar dialog de confirmação
-
-```tsx
-<AlertDialog open={deleteCertDialogOpen} onOpenChange={setDeleteCertDialogOpen}>
-  <AlertDialogContent>
-    <AlertDialogHeader>
-      <AlertDialogTitle>Remover Certificado M365?</AlertDialogTitle>
-      <AlertDialogDescription>
-        Esta ação irá remover o certificado M365 deste agent. O agent precisará 
-        gerar um novo certificado e registrá-lo no Azure AD novamente.
-        <br /><br />
-        <strong>Nota:</strong> Se o agent tiver tenants vinculados, eles perderão 
-        a capacidade de executar análises via PowerShell até que um novo 
-        certificado seja registrado.
-      </AlertDialogDescription>
-    </AlertDialogHeader>
-    <AlertDialogFooter>
-      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-      <AlertDialogAction
-        onClick={handleDeleteCertificate}
-        disabled={deletingCert}
-        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-      >
-        {deletingCert ? (
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        ) : (
-          <Trash2 className="w-4 h-4 mr-2" />
-        )}
-        Remover
-      </AlertDialogAction>
-    </AlertDialogFooter>
-  </AlertDialogContent>
-</AlertDialog>
-```
-
-## Layout do Card Atualizado
+## Lógica Corrigida
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ 🛡️ Certificado M365                                         │
-│ Certificado registrado no Azure AD e pronto para uso        │
-├─────────────────────────────────────────────────────────────┤
-│ Status do Registro              [✓ Registrado]              │
-│                                                             │
-│ Thumbprint (SHA-1)                                          │
-│ ┌─────────────────────────────────────────────────────┐    │
-│ │ 47FF013BC99249965587DD92F7A7E9FAE7860331        [📋]│    │
-│ └─────────────────────────────────────────────────────┘    │
-│                                                             │
-│ Azure Key ID                                                │
-│ ┌─────────────────────────────────────────────────────┐    │
-│ │ abc123-def456-...                                    │    │
-│ └─────────────────────────────────────────────────────┘    │
-│                                                             │
-│ [📥 Baixar Certificado]  [🗑️ Remover Certificado]          │
-└─────────────────────────────────────────────────────────────┘
+Heartbeat recebido (sem thumbprint no payload)
+    ↓
+Backend verifica: agent tem tenants vinculados?
+    ↓
+Para cada tenant com app_object_id:
+    ↓
+Tenant precisa de certificado?
+  - Se tenant.certificate_thumbprint = NULL → SIM
+  - Se tenant.certificate_thumbprint ≠ agent.certificate_thumbprint → SIM
+    ↓
+Se SIM → request_certificate = true
+    ↓
+Agent recebe request_certificate = true
+    ↓
+Agent limpa azure_certificate_key_id do state local
+    ↓
+Próximo heartbeat: Agent envia certificado
+    ↓
+Backend faz upload para Azure
 ```
 
 ## Arquivo a Modificar
 
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| `src/pages/AgentDetailPage.tsx` | EDIT | Adicionar botão e lógica de remoção do certificado |
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/agent-heartbeat/index.ts` | Corrigir condição de verificação de certificado pendente |
 
-## Segurança
+## Teste Esperado
 
-- Apenas admins (isSuperAdmin ou isAdmin) têm acesso a esta página
-- Dialog de confirmação para evitar cliques acidentais
-- O certificado pode ser regenerado automaticamente pelo agent
+Após a correção:
+1. Agent faz heartbeat (sem enviar certificado)
+2. Backend vê: tenant BRASILUX tem `app_object_id` mas `certificate_thumbprint = NULL`
+3. Backend retorna: `request_certificate: true`
+4. Log do agent: "Backend solicitou reenvio de certificado"
+5. Agent limpa `azure_certificate_key_id` do state
+6. Próximo heartbeat: Agent envia certificado
+7. Backend registra no Azure e salva thumbprint
 
