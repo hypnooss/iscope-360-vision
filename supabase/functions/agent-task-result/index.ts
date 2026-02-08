@@ -128,6 +128,246 @@ interface ComplianceResult {
 }
 
 // ============================================
+// M365 Agent Insights Types and Processing
+// ============================================
+
+interface M365AgentInsight {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  details?: string;
+  recommendation?: string;
+  affectedEntities?: Array<{ name: string; type: string; details?: string }>;
+  rawData?: Record<string, unknown>;
+}
+
+/**
+ * Process raw PowerShell data from agent into structured M365 insights
+ * This transforms Exchange/SharePoint data into actionable security insights
+ */
+function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentInsight[] {
+  const insights: M365AgentInsight[] = [];
+  
+  // Process Exchange Online data
+  if (rawData['exo_mailbox_forwarding']) {
+    const data = extractStepData(rawData['exo_mailbox_forwarding']);
+    if (Array.isArray(data)) {
+      const forwardingEnabled = data.filter((m: Record<string, unknown>) => 
+        m.ForwardingAddress || m.ForwardingSmtpAddress
+      );
+      
+      insights.push({
+        id: 'exo_mailbox_forwarding',
+        category: 'email',
+        name: 'Encaminhamento de Email',
+        description: forwardingEnabled.length > 0 
+          ? `${forwardingEnabled.length} caixa(s) com encaminhamento externo configurado`
+          : 'Nenhuma caixa de correio com encaminhamento externo',
+        severity: forwardingEnabled.length > 5 ? 'high' : forwardingEnabled.length > 0 ? 'medium' : 'info',
+        status: forwardingEnabled.length > 5 ? 'fail' : forwardingEnabled.length > 0 ? 'warn' : 'pass',
+        details: forwardingEnabled.length > 0 
+          ? `Caixas com encaminhamento: ${forwardingEnabled.slice(0, 10).map((m: Record<string, unknown>) => m.DisplayName).join(', ')}${forwardingEnabled.length > 10 ? '...' : ''}`
+          : undefined,
+        recommendation: forwardingEnabled.length > 0 
+          ? 'Revise as regras de encaminhamento para garantir que são legítimas e necessárias'
+          : undefined,
+        affectedEntities: forwardingEnabled.slice(0, 20).map((m: Record<string, unknown>) => ({
+          name: String(m.DisplayName || m.PrimarySmtpAddress),
+          type: 'mailbox',
+          details: `Forward to: ${m.ForwardingAddress || m.ForwardingSmtpAddress}`,
+        })),
+        rawData: { total: data.length, forwardingCount: forwardingEnabled.length },
+      });
+    }
+  }
+  
+  // Process inbox rules
+  if (rawData['exo_inbox_rules']) {
+    const data = extractStepData(rawData['exo_inbox_rules']);
+    if (Array.isArray(data)) {
+      const suspiciousRules = data.filter((r: Record<string, unknown>) => 
+        r.ForwardTo || r.ForwardAsAttachmentTo || r.RedirectTo || r.DeleteMessage
+      );
+      
+      insights.push({
+        id: 'exo_inbox_rules',
+        category: 'email',
+        name: 'Regras de Caixa de Entrada',
+        description: suspiciousRules.length > 0 
+          ? `${suspiciousRules.length} regra(s) com ações de encaminhamento/exclusão detectada(s)`
+          : 'Nenhuma regra suspeita detectada',
+        severity: suspiciousRules.length > 10 ? 'high' : suspiciousRules.length > 0 ? 'medium' : 'info',
+        status: suspiciousRules.length > 10 ? 'fail' : suspiciousRules.length > 0 ? 'warn' : 'pass',
+        recommendation: suspiciousRules.length > 0 
+          ? 'Revise as regras que encaminham ou excluem emails automaticamente'
+          : undefined,
+        affectedEntities: suspiciousRules.slice(0, 20).map((r: Record<string, unknown>) => ({
+          name: String(r.Name || 'Regra sem nome'),
+          type: 'inbox_rule',
+          details: `Mailbox: ${r.MailboxOwnerId}`,
+        })),
+        rawData: { total: data.length, suspiciousCount: suspiciousRules.length },
+      });
+    }
+  }
+  
+  // Process transport rules
+  if (rawData['exo_transport_rules']) {
+    const data = extractStepData(rawData['exo_transport_rules']);
+    if (Array.isArray(data)) {
+      const activeRules = data.filter((r: Record<string, unknown>) => r.State === 'Enabled');
+      
+      insights.push({
+        id: 'exo_transport_rules',
+        category: 'email',
+        name: 'Regras de Transporte',
+        description: `${activeRules.length} regra(s) de transporte ativa(s) configurada(s)`,
+        severity: 'info',
+        status: activeRules.length > 0 ? 'pass' : 'warn',
+        details: activeRules.length > 0 
+          ? `Regras ativas: ${activeRules.slice(0, 5).map((r: Record<string, unknown>) => r.Name).join(', ')}${activeRules.length > 5 ? '...' : ''}`
+          : 'Nenhuma regra de transporte ativa',
+        rawData: { total: data.length, activeCount: activeRules.length },
+      });
+    }
+  }
+  
+  // Process anti-spam policy
+  if (rawData['exo_antispam_policy']) {
+    const data = extractStepData(rawData['exo_antispam_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
+      
+      if (defaultPolicy) {
+        const highConfidenceAction = defaultPolicy.HighConfidenceSpamAction;
+        const isSecure = ['Quarantine', 'MoveToJmf'].includes(String(highConfidenceAction));
+        
+        insights.push({
+          id: 'exo_antispam_policy',
+          category: 'threats',
+          name: 'Política Anti-Spam',
+          description: isSecure 
+            ? 'Política anti-spam configurada para quarentena de spam de alta confiança'
+            : 'Política anti-spam pode não estar adequadamente configurada',
+          severity: isSecure ? 'info' : 'medium',
+          status: isSecure ? 'pass' : 'warn',
+          details: `Ação para spam de alta confiança: ${highConfidenceAction}`,
+          recommendation: !isSecure 
+            ? 'Configure a ação de spam de alta confiança para "Quarentena" ou "Mover para Lixo Eletrônico"'
+            : undefined,
+          rawData: { highConfidenceAction, policyName: defaultPolicy.Name },
+        });
+      }
+    }
+  }
+  
+  // Process DKIM configuration
+  if (rawData['exo_dkim_config']) {
+    const data = extractStepData(rawData['exo_dkim_config']);
+    if (Array.isArray(data)) {
+      const enabledDomains = data.filter((d: Record<string, unknown>) => d.Enabled === true);
+      const totalDomains = data.length;
+      
+      insights.push({
+        id: 'exo_dkim_config',
+        category: 'email',
+        name: 'Configuração DKIM',
+        description: enabledDomains.length === totalDomains && totalDomains > 0
+          ? 'DKIM habilitado para todos os domínios'
+          : `DKIM habilitado para ${enabledDomains.length} de ${totalDomains} domínio(s)`,
+        severity: enabledDomains.length < totalDomains ? 'high' : 'info',
+        status: enabledDomains.length === totalDomains && totalDomains > 0 ? 'pass' : 'fail',
+        recommendation: enabledDomains.length < totalDomains 
+          ? 'Habilite DKIM para todos os domínios para melhorar a autenticação de email'
+          : undefined,
+        affectedEntities: data.filter((d: Record<string, unknown>) => !d.Enabled).slice(0, 10).map((d: Record<string, unknown>) => ({
+          name: String(d.Domain || d.Name),
+          type: 'domain',
+          details: 'DKIM desabilitado',
+        })),
+        rawData: { total: totalDomains, enabled: enabledDomains.length },
+      });
+    }
+  }
+  
+  // Process SharePoint tenant settings
+  if (rawData['spo_tenant_settings']) {
+    const data = extractStepData(rawData['spo_tenant_settings']);
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      const sharingCapability = (data as Record<string, unknown>).SharingCapability;
+      const isRestrictive = ['Disabled', 'ExternalUserSharingOnly'].includes(String(sharingCapability));
+      
+      insights.push({
+        id: 'spo_sharing_settings',
+        category: 'sharepoint',
+        name: 'Configurações de Compartilhamento SharePoint',
+        description: isRestrictive 
+          ? 'Compartilhamento externo está restrito ou desabilitado'
+          : 'Compartilhamento externo está habilitado para convidados ou anônimos',
+        severity: isRestrictive ? 'info' : 'high',
+        status: isRestrictive ? 'pass' : 'fail',
+        details: `Capacidade de compartilhamento: ${sharingCapability}`,
+        recommendation: !isRestrictive 
+          ? 'Considere restringir o compartilhamento externo para reduzir riscos de vazamento de dados'
+          : undefined,
+        rawData: { sharingCapability },
+      });
+    }
+  }
+  
+  // Process SharePoint sites
+  if (rawData['spo_sites']) {
+    const data = extractStepData(rawData['spo_sites']);
+    if (Array.isArray(data)) {
+      const externalSharingSites = data.filter((s: Record<string, unknown>) => 
+        ['ExternalUserAndGuestSharing', 'ExternalUserSharingOnly'].includes(String(s.SharingCapability))
+      );
+      
+      insights.push({
+        id: 'spo_sites_sharing',
+        category: 'sharepoint',
+        name: 'Sites com Compartilhamento Externo',
+        description: externalSharingSites.length > 0 
+          ? `${externalSharingSites.length} site(s) com compartilhamento externo habilitado`
+          : 'Nenhum site com compartilhamento externo',
+        severity: externalSharingSites.length > 10 ? 'high' : externalSharingSites.length > 0 ? 'medium' : 'info',
+        status: externalSharingSites.length > 10 ? 'fail' : externalSharingSites.length > 0 ? 'warn' : 'pass',
+        affectedEntities: externalSharingSites.slice(0, 20).map((s: Record<string, unknown>) => ({
+          name: String(s.Title || s.Url),
+          type: 'site',
+          details: `Template: ${s.Template}, Sharing: ${s.SharingCapability}`,
+        })),
+        rawData: { total: data.length, externalSharingCount: externalSharingSites.length },
+      });
+    }
+  }
+  
+  console.log(`[processM365AgentInsights] Generated ${insights.length} insights from agent data`);
+  return insights;
+}
+
+/**
+ * Extract data from various step result formats
+ */
+function extractStepData(stepResult: unknown): unknown {
+  if (!stepResult) return null;
+  
+  if (typeof stepResult === 'object') {
+    const obj = stepResult as Record<string, unknown>;
+    // Common formats: { data: [...] }, { results: [...] }, or direct array/object
+    if ('data' in obj && obj.data !== undefined) return obj.data;
+    if ('results' in obj && obj.results !== undefined) return obj.results;
+    if ('value' in obj && obj.value !== undefined) return obj.value;
+  }
+  
+  return stepResult;
+}
+
+// ============================================
 // Helper Functions
 // ============================================
 
@@ -3849,6 +4089,49 @@ serve(async (req: Request) => {
         }
       } else {
         console.log(`[external_domain] No domain in task payload, skipping subdomain enumeration`);
+      }
+    }
+
+    // ========================================================
+    // M365 Tenant: Process agent-collected insights (Exchange, SharePoint)
+    // This handles PowerShell-based data collected by the Python agent
+    // ========================================================
+    if ((body.status === 'completed' || body.status === 'partial') && task.target_type === 'm365_tenant' && rawData) {
+      const taskPayload = task.payload as Record<string, unknown> | null;
+      const analysisId = taskPayload?.analysis_id as string | undefined;
+      
+      if (analysisId) {
+        console.log(`[m365_tenant] Processing agent insights for analysis: ${analysisId}`);
+        
+        try {
+          // Transform raw PowerShell data into insights format
+          const agentInsights = processM365AgentInsights(rawData);
+          
+          // Update m365_posture_history with agent results
+          const { error: updateError } = await supabase
+            .from('m365_posture_history')
+            .update({
+              agent_insights: agentInsights,
+              agent_status: body.status === 'completed' ? 'completed' : 'partial',
+            })
+            .eq('id', analysisId);
+          
+          if (updateError) {
+            console.error(`[m365_tenant] Failed to update posture history:`, updateError);
+          } else {
+            console.log(`[m365_tenant] Updated posture history ${analysisId} with ${agentInsights.length} insights`);
+          }
+        } catch (e) {
+          console.error(`[m365_tenant] Error processing agent insights:`, e);
+          
+          // Still update status even on error
+          await supabase
+            .from('m365_posture_history')
+            .update({ agent_status: 'failed' })
+            .eq('id', analysisId);
+        }
+      } else {
+        console.log(`[m365_tenant] No analysis_id in task payload, skipping insights update`);
       }
     }
 
