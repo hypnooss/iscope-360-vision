@@ -1,144 +1,133 @@
 
 
-# Plano: Corrigir Autenticação Device Code Flow - Modo Público
+# Plano: Corrigir Configuração do Azure App Registration
 
-## Diagnóstico
+## Diagnóstico Final
 
-Os logs revelam que o `client_secret` está sendo enviado (40 chars, qT...P6), mas o Azure retorna **401 Unauthorized**. Isso indica:
+Após análise detalhada dos logs e documentação Microsoft, o problema foi identificado:
 
-1. O App Registration no Azure está configurado como **"Allow public client flows: Yes"**
-2. Quando um app está como público, o Azure **ignora o client_secret** e retorna erro
+| Evidência | Valor |
+|-----------|-------|
+| Secret descriptografado? | Sim, length=40 |
+| Secret sendo enviado? | Sim, via URLSearchParams |
+| Resposta do Azure | AADSTS7000218 - invalid_client |
 
-## Solução
+**Causa Raiz**: O **Device Code Flow é incompatível com Confidential Clients** no Azure AD.
 
-Oferecer **duas abordagens** para resolver - o usuário pode escolher qual se aplica:
+Segundo a documentação oficial Microsoft:
+> "In some authentication flow scenarios, such as the OAuth 2 device authorization grant flow, where you don't expect the client application to be confidential, allow public client flows"
 
-### Opção A: Usar como App Público (Recomendado para Device Code Flow)
-
-Remover o `client_secret` do polling request, já que o Device Code Flow é ideal para apps públicos.
+## O Problema
 
 ```text
-Alteração em: supabase/functions/connect-m365-tenant/index.ts
+Device Code Flow + Confidential Client = ERRO
 
-ANTES (pollForToken):
-  params.append('client_id', appId);
-  params.append('client_secret', clientSecret);  // ← REMOVER
-  params.append('grant_type', '...');
-  params.append('device_code', deviceCode);
-
-DEPOIS:
-  params.append('client_id', appId);
-  // client_secret removido - app público
-  params.append('grant_type', '...');
-  params.append('device_code', deviceCode);
+O Azure ignora o client_secret enviado porque:
+1. Device Code Flow foi projetado para apps que não podem guardar secrets
+2. O fluxo assume que o app é público
+3. Mesmo enviando o secret, o Azure rejeita porque espera que seja um public client
 ```
 
-**Requisitos no Azure Portal:**
-- App Registration → Authentication → "Allow public client flows" = **Yes**
-- Nenhum client_secret necessário para este fluxo
+## Solução Definitiva
 
-### Opção B: Manter como App Confidencial
+**Nao e uma correcao de codigo!** O problema esta na configuracao do Azure Portal.
 
-Se o app precisa ser confidencial (para outros fluxos que usam o secret):
+### Passos no Azure Portal
 
-1. **Verificar no Azure Portal** se o secret está válido e não expirado
-2. **Gerar novo secret** se necessário
-3. **Atualizar a configuração M365** com o novo secret
+1. Acessar [Azure Portal](https://portal.azure.com)
+2. Ir para **Microsoft Entra ID** (antigo Azure Active Directory)
+3. **App registrations** → Selecionar o app `800e141d-2dd6-4fa7-b19b-4a284f584d32`
+4. **Authentication** (menu lateral)
+5. Na secao **Advanced settings**:
+   - **Allow public client flows**: Alterar para **Yes**
+6. Clicar **Save**
 
----
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Azure Portal → App Registration → Authentication          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Advanced settings                                          │
+│  ─────────────────                                          │
+│                                                             │
+│  Allow public client flows                                  │
+│  ┌─────────────────────────────────────────┐               │
+│  │  ○ No   ● Yes  ←── MUDAR PARA YES       │               │
+│  └─────────────────────────────────────────┘               │
+│                                                             │
+│  [Save]                                                     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## Recomendação
+## Alteracao no Codigo
 
-**Usar Opção A (App Público)** porque:
+Apos habilitar public client flows no Azure, o codigo deve **remover o client_secret** do polling:
 
-1. Device Code Flow é projetado para apps públicos
-2. Mais seguro - não envia secret pela rede
-3. O app já parece estar configurado como público no Azure
-4. Outros fluxos (como Client Credentials para Graph API) podem usar o secret separadamente
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Ação |
-|---------|------|
-| `supabase/functions/connect-m365-tenant/index.ts` | Remover `client_secret` do `pollForToken` |
-
----
-
-## Código da Correção
+### Arquivo: supabase/functions/connect-m365-tenant/index.ts
 
 ```typescript
-// pollForToken - Versão App Público
-async function pollForToken(
-  tenantId: string, 
-  appId: string, 
-  deviceCode: string  // Remover clientSecret do parâmetro
-): Promise<{ 
-  pending?: boolean; 
-  expired?: boolean; 
-  access_token?: string;
-  error?: string;
-}> {
-  const params = new URLSearchParams();
-  params.append('client_id', appId);
-  // NÃO enviar client_secret - app público
-  params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
-  params.append('device_code', deviceCode);
-  
-  const response = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params,
-    }
-  );
+// ANTES (linha 78-82):
+const params = new URLSearchParams();
+params.append('client_id', appId);
+params.append('client_secret', clientSecret);  // ← REMOVER
+params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
+params.append('device_code', deviceCode);
 
-  const data = await response.json();
-  // ... resto do handling
-}
+// DEPOIS:
+const params = new URLSearchParams();
+params.append('client_id', appId);
+// Sem client_secret - Public Client Flow
+params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
+params.append('device_code', deviceCode);
 ```
 
-E remover a descriptografia do secret no action 'poll':
+### Simplificar pollForToken
 
-```typescript
-if (action === 'poll') {
-  // Remover toda a lógica de descriptografia do secret
-  // Chamar pollForToken sem o clientSecret
-  const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, deviceCode);
-  // ...
-}
-```
+Remover o parametro `clientSecret` da funcao e toda a logica de descriptografia no action 'poll'.
 
----
+## Por que o client_secret continua sendo util?
+
+O `client_secret` armazenado no banco **ainda sera usado** para:
+- Client Credentials Flow (automacao sem usuario)
+- Refresh de tokens
+- Chamadas Graph API server-to-server
+
+Apenas o Device Code Flow (autenticacao inicial) nao usa o secret.
 
 ## Fluxo Corrigido
 
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│                    DEVICE CODE FLOW (App Público)              │
-├────────────────────────────────────────────────────────────────┤
-│ 1. POST /devicecode                                            │
-│    → client_id + scope                                         │
-│    ← device_code, user_code, verification_uri                  │
-│                                                                │
-│ 2. Usuário autentica em microsoft.com/devicelogin              │
-│                                                                │
-│ 3. POST /token (POLLING)                                       │
-│    → client_id + grant_type + device_code                      │
-│    → SEM client_secret (app público)                           │
-│    ← access_token (após autenticação)                          │
-└────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              DEVICE CODE FLOW (Public Client)               │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. POST /devicecode                                        │
+│     Body: client_id + scope                                 │
+│     Response: device_code, user_code, verification_uri      │
+│                                                             │
+│  2. Usuario autentica em microsoft.com/devicelogin          │
+│                                                             │
+│  3. POST /token (POLLING) ← SEM client_secret               │
+│     Body: client_id + grant_type + device_code              │
+│     Response: access_token                                  │
+│                                                             │
+│  4. Usar access_token para Graph API                        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
----
+## Resumo das Alteracoes
 
-## Validação
+| Local | Acao |
+|-------|------|
+| **Azure Portal** | Habilitar "Allow public client flows" = Yes |
+| **connect-m365-tenant/index.ts** | Remover client_secret do pollForToken |
 
-Após a correção, o fluxo deve:
-1. Iniciar Device Code Flow ✓ (já funciona)
-2. Usuário autenticar no portal Microsoft ✓ (já funciona)  
-3. Polling receber o token ← (corrigido)
-4. Continuar com criação do tenant ← (já implementado)
+## Ordem de Execucao
+
+1. **PRIMEIRO**: Voce (usuario) altera a config no Azure Portal
+2. **DEPOIS**: Eu altero o codigo para remover o client_secret do polling
+
+Isso garante que nao haja janela de erro entre as mudancas.
 
