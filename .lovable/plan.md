@@ -1,89 +1,147 @@
 
-
-# Plano: Corrigir Descoberta de Tenant ID
+# Plano: Corrigir Redirecionamento de Erro OAuth e Propagação do Admin Consent
 
 ## Diagnóstico
 
-A função `discoverTenantId` está falhando porque o regex espera encontrar o tenant ID no formato:
-```
-https://login.microsoftonline.com/{tenant_id}/v2.0
-```
+### Problema 1: Toast de erro aparecendo na página de Login
+O fluxo atual:
+1. Edge function `m365-oauth-callback` redireciona para `${redirect_url}?error=...` (que é `/scope-m365/tenant-connection`)
+2. `TenantConnectionPage` carrega e dispara o toast de erro via query params
+3. Logo depois, outro useEffect detecta que o usuário não está autenticado e redireciona para `/auth`
+4. O toast já disparado permanece visível na tela de login
 
-Mas a resposta real do Azure para o domínio `taschibra.onmicrosoft.com` retorna:
-```
-"issuer": "https://sts.windows.net/95b506fe-8de3-4aa7-8ef0-d7fe4d494bde/"
-```
+A URL de redirecionamento deveria ser `/scope-m365/oauth-callback` (a página dedicada para callbacks), não `/scope-m365/tenant-connection`.
 
-O regex atual (`/login\.microsoftonline\.com/`) não casa com `sts.windows.net`.
+### Problema 2: Erro de propagação do Admin Consent
+A mensagem "The identity of the calling application could not be established" indica que o Admin Consent ainda não propagou nos servidores do Azure AD. A edge function já implementa retries (5s, 10s, 15s = 30s total), mas em alguns casos isso não é suficiente.
 
-## Solução
+---
 
-Atualizar o regex para capturar o tenant ID de ambos os formatos possíveis de issuer:
-- `https://login.microsoftonline.com/{tenant_id}/...`
-- `https://sts.windows.net/{tenant_id}/`
+## Solucao
 
-Alternativamente, podemos extrair de `token_endpoint` que sempre tem o formato:
-```
-https://login.microsoftonline.com/{tenant_id}/oauth2/token
-```
+### Parte 1: Corrigir URL de Redirecionamento na Edge Function
 
-## Alteração
+No arquivo `supabase/functions/m365-oauth-callback/index.ts`, as linhas 389-394 redirecionam para `${redirect_url}` em caso de erro da Graph API, mas o `redirect_url` aponta para `/tenant-connection`.
 
-### Arquivo: `src/components/m365/SimpleTenantConnectionWizard.tsx`
-
-Linhas 66-85 - Atualizar a função `discoverTenantId`:
+Alterar para usar a logica de substituicao consistente:
 
 ```typescript
-async function discoverTenantId(domain: string): Promise<string | null> {
-  try {
-    const response = await fetch(
-      `https://login.microsoftonline.com/${domain}/.well-known/openid-configuration`
-    );
-    if (!response.ok) {
-      console.warn('Could not discover tenant ID for domain:', domain);
-      return null;
-    }
-    const data = await response.json();
-    
-    // Try to extract tenant ID from multiple sources
-    // 1. Try issuer with login.microsoftonline.com format
-    // 2. Try issuer with sts.windows.net format  
-    // 3. Try token_endpoint as fallback
-    
-    const issuer = data.issuer || '';
-    const tokenEndpoint = data.token_endpoint || '';
-    
-    // Match login.microsoftonline.com/{tenant_id}/
-    let match = issuer.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
-    if (match) return match[1];
-    
-    // Match sts.windows.net/{tenant_id}/
-    match = issuer.match(/https:\/\/sts\.windows\.net\/([a-f0-9-]+)/i);
-    if (match) return match[1];
-    
-    // Fallback: extract from token_endpoint
-    match = tokenEndpoint.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
-    if (match) return match[1];
-    
-    console.warn('Could not extract tenant ID from OpenID config:', { issuer, tokenEndpoint });
-    return null;
-  } catch (err) {
-    console.error('Error discovering tenant ID:', err);
-    return null;
-  }
-}
+// Linha ~389-394: Ao redirecionar em caso de erro Graph
+const errorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
+
+return new Response(null, {
+  status: 302,
+  headers: {
+    'Location': `${errorRedirectUrl}?error=graph_access_failed&error_description=${encodeURIComponent(...)}`,
+  },
+});
 ```
 
-## Resumo
+### Parte 2: Aumentar Tempo de Retry para Propagacao
 
-| Item | Descrição |
-|------|-----------|
-| Arquivo | `src/components/m365/SimpleTenantConnectionWizard.tsx` |
-| Linhas | 66-85 |
-| Problema | Regex não casa com `sts.windows.net` |
-| Solução | Adicionar regex alternativo para `sts.windows.net` + fallback para `token_endpoint` |
+Aumentar os delays de retry para dar mais tempo ao Azure AD propagar:
+- Atual: 5s, 10s, 15s (total 30s)
+- Novo: 10s, 20s, 30s (total 60s)
+
+```typescript
+// Linha ~343: Aumentar delays
+const delays = [10000, 20000, 30000];
+```
+
+### Parte 3: Melhorar Mensagem de Erro para Usuario
+
+Atualizar a mensagem de erro para ser mais informativa:
+
+```typescript
+`${finalError.message || 'Unknown error'}. O Admin Consent pode levar até 5 minutos para propagar. Aguarde e tente reconectar.`
+```
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| `supabase/functions/m365-oauth-callback/index.ts` | EDIT | Corrigir redirect URL + aumentar delays + melhorar mensagem |
+
+## Secao Tecnica
+
+### Alteracao 1: Linha 389-394 (Redirecionamento de erro Graph)
+
+Antes:
+```typescript
+return new Response(null, {
+  status: 302,
+  headers: {
+    'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
+  },
+});
+```
+
+Depois:
+```typescript
+const errorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
+
+return new Response(null, {
+  status: 302,
+  headers: {
+    'Location': `${errorRedirectUrl}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar até 5 minutos para propagar. Aguarde e tente reconectar.`)}`,
+  },
+});
+```
+
+### Alteracao 2: Linha 343 (Delays de retry)
+
+Antes:
+```typescript
+const delays = [5000, 10000, 15000];
+```
+
+Depois:
+```typescript
+const delays = [10000, 20000, 30000];
+```
+
+### Alteracao 3: Linha 306-311 (Erro de token - tambem precisa corrigir redirect)
+
+Antes:
+```typescript
+return new Response(null, {
+  status: 302,
+  headers: {
+    'Location': `${redirect_url}?error=token_failed&error_description=${encodeURIComponent('Failed to obtain access token. Admin consent may not have been granted.')}`,
+  },
+});
+```
+
+Depois:
+```typescript
+const tokenErrorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
+
+return new Response(null, {
+  status: 302,
+  headers: {
+    'Location': `${tokenErrorRedirectUrl}?error=token_failed&error_description=${encodeURIComponent('Falha ao obter token de acesso. Verifique se o Admin Consent foi concedido corretamente.')}`,
+  },
+});
+```
+
+---
 
 ## Resultado Esperado
 
-Com esta correção, a descoberta do tenant ID funcionará para todos os formatos de resposta do Azure AD, permitindo que o domínio `taschibra.onmicrosoft.com` (que retorna tenant ID `95b506fe-8de3-4aa7-8ef0-d7fe4d494bde`) seja processado corretamente.
+1. Erros de OAuth serao exibidos na pagina `/oauth-callback` dedicada, nao mais na pagina de login
+2. A propagacao do Admin Consent tera mais tempo para completar (ate 60s de retries)
+3. Mensagens de erro serao mais claras e em portugues
 
+## Fluxo Corrigido
+
+```text
+ANTES (Quebrado)
+────────────────
+m365-oauth-callback → /tenant-connection?error=... → toast → /auth (toast visivel)
+
+DEPOIS (Corrigido)
+──────────────────
+m365-oauth-callback → /oauth-callback?error=... → pagina de erro dedicada
+```
