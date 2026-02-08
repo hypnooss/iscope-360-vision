@@ -1,73 +1,89 @@
-# Plano: Correção da Coleta de Dados Exchange Online
 
-## Status: ✅ Implementado
 
-## Resumo do Problema
+# Plano: Corrigir Filtro de Insights do Exchange Online
 
-A página Exchange Online exibia apenas **2 insights** (ambos do Agent). Os dados via Graph API **não estavam sendo coletados** corretamente.
+## Problema
 
----
+O hook `useExchangeOnlineInsights` filtra insights pela categoria, mas o filtro não inclui a categoria `threats` que é usada pelos insights de segurança do Exchange.
 
-## Implementação Realizada (Opção A - Foco no Agent)
+### Dados no Banco (8 insights)
 
-### ✅ Fase 1: Expandir processM365AgentInsights
+| ID | Categoria | Nome |
+|----|-----------|------|
+| exo_mailbox_forwarding | email | Encaminhamento de Email |
+| exo_owa_mailbox_policy | email | Política OWA |
+| exo_dkim_config | email | Configuração DKIM |
+| exo_anti_phish_policy | **threats** | Política Anti-Phishing |
+| exo_safe_links_policy | **threats** | Safe Links |
+| exo_safe_attachment_policy | **threats** | Safe Attachments |
+| exo_malware_filter_policy | **threats** | Filtro de Malware |
+| exo_hosted_content_filter | **threats** | Filtro de Spam |
 
-Adicionados processadores para todos os 10 steps do Exchange coletados pelo Agent:
+### Filtro Atual (linha 81-88)
+```typescript
+.filter((insight: any) =>
+  insight.category?.includes('email') ||      // ✅ Captura 3
+  insight.category?.includes('exchange') ||   // ❌ Nenhum
+  insight.category?.includes('mail_flow') ||  // ❌ Nenhum
+  insight.category?.includes('mailbox') ||    // ❌ Nenhum
+  insight.product === 'exchange'              // ❌ Nenhum
+)
+```
 
-| Step ID | Status | Insight Gerado |
-|---------|--------|----------------|
-| `exo_mailbox_forwarding` | ✅ Já existia | Encaminhamento de Email |
-| `exo_inbox_rules` | ✅ Já existia | Regras de Caixa de Entrada |
-| `exo_transport_rules` | ✅ Já existia | Regras de Transporte |
-| `exo_antispam_policy` | ✅ Já existia | Política Anti-Spam |
-| `exo_dkim_config` | ✅ Já existia | Configuração DKIM |
-| `exo_anti_phish_policy` | ✅ **Adicionado** | Política Anti-Phishing |
-| `exo_safe_links_policy` | ✅ **Adicionado** | Safe Links |
-| `exo_safe_attachment_policy` | ✅ **Adicionado** | Safe Attachments |
-| `exo_malware_filter_policy` | ✅ **Adicionado** | Filtro de Malware |
-| `exo_hosted_content_filter` | ✅ **Adicionado** | Filtro de Conteúdo (Spam) |
-| `exo_remote_domains` | ✅ **Adicionado** | Domínios Remotos |
-| `exo_owa_mailbox_policy` | ✅ **Adicionado** | Política OWA |
+## Solução
 
-### ✅ Fase 2: Desativar regras EXO via API
+Expandir o filtro para incluir a categoria `threats` e também usar o prefixo `exo_` no ID como critério adicional (já que todos os insights de Exchange começam com `exo_`).
 
-Regras desativadas (dependem de Graph API per-user - não funcionais):
-- `EXO-001` - Redirecionamento Externo de Email
-- `EXO-002` - Redirecionamento Interno de Email
-- `EXO-003` - Auto-Respostas Permanentes
-- `EXO-004` - Mailboxes Analisadas
-- `EXO-005` - Acesso a Mailboxes
+### Código Corrigido
+```typescript
+.filter((insight: any) =>
+  insight.category?.includes('email') ||
+  insight.category?.includes('exchange') ||
+  insight.category?.includes('mail_flow') ||
+  insight.category?.includes('mailbox') ||
+  insight.category?.includes('threats') ||    // NOVO: inclui threats
+  insight.id?.startsWith('exo_') ||           // NOVO: qualquer insight com prefixo exo_
+  insight.product === 'exchange'
+)
+```
 
----
+## Mapeamento de Categorias
 
-## Arquivos Modificados
+Também preciso atualizar o mapeamento de categorias para a UI (linha 91-100):
 
-1. **Edge Function**: `supabase/functions/agent-task-result/index.ts`
-   - Expandido `processM365AgentInsights()` com 7 novos processadores
+```typescript
+// Mapear categoria threats para security_policies
+if (insight.category === 'threats') {
+  mappedCategory = 'security_policies';
+}
+```
 
-2. **Banco de Dados**: Migração SQL aplicada
-   - Desativadas 5 regras EXO que dependiam de API per-user
+## Arquivo a Modificar
 
----
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/hooks/useExchangeOnlineInsights.ts` | Expandir filtro e mapeamento de categorias |
+
+## Resultado Esperado
+
+| Antes | Depois |
+|-------|--------|
+| 3 insights exibidos | 8 insights exibidos |
+| Cards: 4 high, 0 medium | Cards: 4 high, 1 medium, 3 info |
 
 ## Fluxo Corrigido
 
+```text
+m365_posture_history.agent_insights (8 insights)
+           ↓
+useExchangeOnlineInsights
+           ↓
+Filtro: email OR threats OR exo_* prefix
+           ↓
+8 insights passam ✅
+           ↓
+Mapeamento de categorias
+           ↓
+ExchangeOnlinePage exibe todos
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ Agent (PowerShell)                                              │
-│ ─────────────────────                                           │
-│ 12 steps (Exchange completo)                                    │
-│       ↓                                                         │
-│ 12+ insights (todos processados)                                │
-│       ↓                                                         │
-│ Exchange Online Page                                            │
-│ (exibe 12+ insights com severidade e recomendações)             │
-└─────────────────────────────────────────────────────────────────┘
-```
 
----
-
-## Próximos Passos
-
-1. Execute uma nova análise M365 para verificar os 12+ insights
-2. Os cards devem mostrar insights por categoria: email, threats
