@@ -40,12 +40,12 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-// Permission categories for organized display (matching SettingsPage)
-const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
-const ENTRA_ID_PERMISSIONS = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
+// Permission categories for tenant clients (based on validate-m365-connection)
+// These are the permissions actually validated and stored for client tenants
+const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All'];
 const EXCHANGE_PERMISSIONS = ['MailboxSettings.Read', 'Mail.Read'];
-const CERTIFICATE_PERMISSIONS = ['Application.ReadWrite.All'];
-const ALL_PERMISSIONS = [...CORE_PERMISSIONS, ...ENTRA_ID_PERMISSIONS, ...EXCHANGE_PERMISSIONS, ...CERTIFICATE_PERMISSIONS];
+const ROLE_PERMISSIONS = ['RoleManagement.ReadWrite.Directory', 'Exchange Administrator Role'];
+const ALL_PERMISSIONS = [...CORE_PERMISSIONS, ...EXCHANGE_PERMISSIONS, ...ROLE_PERMISSIONS];
 
 interface LastAnalysis {
   score: number | null;
@@ -316,32 +316,12 @@ export function TenantStatusCard({
             {showPermissions && (
               <div className="mt-3">
                 <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-3">
                   {/* Core Permissions */}
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
+                    <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
                     <ul className="text-sm space-y-1">
                       {CORE_PERMISSIONS.map(permName => {
-                        const perm = permissions.find(p => p.permission_name === permName);
-                        return (
-                          <li key={permName} className="flex items-center gap-2">
-                            <span className={cn(
-                              "w-2 h-2 rounded-full flex-shrink-0",
-                              perm?.status === 'granted' ? 'bg-green-500' : 
-                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                            )} />
-                            <span className="text-xs truncate">{permName}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  {/* Entra ID / Security */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
-                    <ul className="text-sm space-y-1">
-                      {ENTRA_ID_PERMISSIONS.map(permName => {
                         const perm = permissions.find(p => p.permission_name === permName);
                         return (
                           <li key={permName} className="flex items-center gap-2">
@@ -377,11 +357,11 @@ export function TenantStatusCard({
                     </ul>
                   </div>
 
-                  {/* Certificate Upload */}
+                  {/* Roles & Advanced */}
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
+                    <p className="text-xs font-medium text-muted-foreground">Roles do Diretório</p>
                     <ul className="text-sm space-y-1">
-                      {CERTIFICATE_PERMISSIONS.map(permName => {
+                      {ROLE_PERMISSIONS.map(permName => {
                         const perm = permissions.find(p => p.permission_name === permName);
                         return (
                           <li key={permName} className="flex items-center gap-2">
