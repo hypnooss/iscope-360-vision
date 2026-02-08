@@ -73,13 +73,20 @@ async function pollForToken(
   access_token?: string;
   error?: string;
 }> {
+  // Validate and log secret info (without exposing the actual secret)
+  const hasSpecialChars = /[^a-zA-Z0-9\-_.~]/.test(clientSecret);
+  console.log(`[pollForToken] Secret info: length=${clientSecret.length}, hasSpecialChars=${hasSpecialChars}, first2=${clientSecret.substring(0, 2)}, last2=${clientSecret.substring(clientSecret.length - 2)}`);
+  
   const params = new URLSearchParams();
   params.append('client_id', appId);
   params.append('client_secret', clientSecret);
   params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
   params.append('device_code', deviceCode);
   
-  console.log(`[pollForToken] Request params: client_id=${appId}, secret_length=${clientSecret.length}, grant_type=device_code`);
+  // Log the actual body being sent (with masked secret)
+  const bodyString = params.toString();
+  const maskedBody = bodyString.replace(/client_secret=[^&]+/, `client_secret=***MASKED(${clientSecret.length}chars)***`);
+  console.log(`[pollForToken] Request body: ${maskedBody}`);
   
   const response = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -89,6 +96,9 @@ async function pollForToken(
       body: params,
     }
   );
+  
+  // Log response status
+  console.log(`[pollForToken] Response status: ${response.status}`);
 
   const data = await response.json();
 
