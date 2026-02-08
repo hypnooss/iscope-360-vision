@@ -323,7 +323,21 @@ export function SimpleTenantConnectionWizard({
         },
       });
 
-      // 5. Get the app ID from edge function
+      // 5. Ensure Exchange.ManageAsApp is in App Registration before consent
+      try {
+        const { data: ensureResult, error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
+        if (ensureError) {
+          console.warn('Could not ensure Exchange permission, continuing:', ensureError);
+        } else if (ensureResult?.added) {
+          console.log('Exchange.ManageAsApp permission added to App Registration');
+        } else {
+          console.log('Exchange.ManageAsApp already configured or skipped');
+        }
+      } catch (e) {
+        console.warn('ensure-exchange-permission call failed, continuing:', e);
+      }
+
+      // 6. Get the app ID from edge function
       const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
         body: {},
       });
