@@ -436,7 +436,6 @@ export function TenantStatusCard({
                 {showExchangeRBAC && exchangeAdminRolePending && appCredentials && (
                   <ExchangeRBACSetupCard
                     appId={appCredentials.app_id}
-                    appObjectId={appCredentials.app_object_id}
                     tenantDomain={tenant.tenant_domain || undefined}
                     onVerify={handleTest}
                     isVerifying={testing}
