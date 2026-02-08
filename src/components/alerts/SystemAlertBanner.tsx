@@ -31,30 +31,67 @@ export function SystemAlertBanner() {
     }
   }, [user?.id, role]);
 
-  // Subscription para alertas em tempo real
+  // Subscription para alertas em tempo real via Supabase Realtime
   useEffect(() => {
     if (!user?.id) return;
 
     const channel = supabase
-      .channel('system_alerts_changes')
+      .channel('system-alerts-realtime')
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'system_alerts'
         },
         (payload) => {
-          console.log('Alert change detected:', payload);
+          console.log('New alert created:', payload);
           fetchActiveAlerts();
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'system_alerts'
+        },
+        (payload) => {
+          console.log('Alert updated:', payload);
+          fetchActiveAlerts();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'system_alerts'
+        },
+        (payload) => {
+          console.log('Alert deleted:', payload);
+          fetchActiveAlerts();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [role, user?.id]);
+
+  // Polling fallback - verificar a cada 10 segundos como backup do realtime
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const interval = setInterval(() => {
+      fetchActiveAlerts();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   const fetchActiveAlerts = async () => {
     try {
