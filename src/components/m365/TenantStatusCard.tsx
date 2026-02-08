@@ -39,6 +39,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { ExchangeRBACSetupCard } from './ExchangeRBACSetupCard';
 
 // Permission categories for tenant clients (based on validate-m365-connection)
 // These are the permissions actually validated and stored for client tenants
@@ -87,6 +88,8 @@ export function TenantStatusCard({
   const [permissions, setPermissions] = useState<TenantPermission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  const [showExchangeRBAC, setShowExchangeRBAC] = useState(false);
+  const [appCredentials, setAppCredentials] = useState<{ app_id: string; app_object_id?: string } | null>(null);
 
   // Use external analyzing state if provided
   const isCurrentlyAnalyzing = externalIsAnalyzing || analyzing;
@@ -111,12 +114,53 @@ export function TenantStatusCard({
     }
   };
 
+  // Fetch app credentials to get app_id and app_object_id for RBAC setup
+  const fetchAppCredentials = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('m365_app_credentials')
+        .select('azure_app_id')
+        .eq('tenant_record_id', tenant.id)
+        .eq('is_active', true)
+        .single();
+
+      if (!error && data) {
+        // Also fetch global config for app_object_id if needed
+        const { data: globalConfig } = await supabase
+          .from('m365_global_config')
+          .select('app_object_id')
+          .limit(1)
+          .single();
+
+        setAppCredentials({
+          app_id: data.azure_app_id,
+          app_object_id: globalConfig?.app_object_id || undefined
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching app credentials:', err);
+    }
+  };
+
   useEffect(() => {
     // Auto-fetch permissions if tenant is connected or partial
     if (tenant.connection_status === 'connected' || tenant.connection_status === 'partial') {
       fetchPermissions();
+      fetchAppCredentials();
     }
   }, [tenant.id, tenant.connection_status]);
+
+  // Check if Exchange Administrator Role is pending
+  const exchangeAdminRolePending = permissions.find(
+    p => p.permission_name === 'Exchange Administrator Role' && p.status !== 'granted'
+  );
+
+  // Auto-show Exchange RBAC card if role is pending and permissions are expanded
+  useEffect(() => {
+    if (exchangeAdminRolePending && showPermissions) {
+      setShowExchangeRBAC(true);
+    }
+  }, [exchangeAdminRolePending, showPermissions]);
 
   const handleTest = async () => {
     setTesting(true);
@@ -314,8 +358,8 @@ export function TenantStatusCard({
             </button>
             
             {showPermissions && (
-              <div className="mt-3">
-                <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
+              <div className="mt-3 space-y-4">
+                <p className="text-xs text-muted-foreground">Permissões do Microsoft Graph</p>
                 <div className="grid gap-4 md:grid-cols-3">
                   {/* Core Permissions */}
                   <div className="space-y-2">
@@ -363,6 +407,8 @@ export function TenantStatusCard({
                     <ul className="text-sm space-y-1">
                       {ROLE_PERMISSIONS.map(permName => {
                         const perm = permissions.find(p => p.permission_name === permName);
+                        const isPending = perm?.status !== 'granted';
+                        const isExchangeAdminRole = permName === 'Exchange Administrator Role';
                         return (
                           <li key={permName} className="flex items-center gap-2">
                             <span className={cn(
@@ -371,12 +417,31 @@ export function TenantStatusCard({
                               perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
                             )} />
                             <span className="text-xs truncate">{permName}</span>
+                            {isExchangeAdminRole && isPending && (
+                              <button
+                                onClick={() => setShowExchangeRBAC(!showExchangeRBAC)}
+                                className="text-xs text-amber-600 hover:text-amber-700 underline ml-1"
+                              >
+                                {showExchangeRBAC ? 'Ocultar' : 'Configurar'}
+                              </button>
+                            )}
                           </li>
                         );
                       })}
                     </ul>
                   </div>
                 </div>
+
+                {/* Exchange RBAC Setup Card */}
+                {showExchangeRBAC && exchangeAdminRolePending && appCredentials && (
+                  <ExchangeRBACSetupCard
+                    appId={appCredentials.app_id}
+                    appObjectId={appCredentials.app_object_id}
+                    tenantDomain={tenant.tenant_domain || undefined}
+                    onVerify={handleTest}
+                    isVerifying={testing}
+                  />
+                )}
               </div>
             )}
           </div>
