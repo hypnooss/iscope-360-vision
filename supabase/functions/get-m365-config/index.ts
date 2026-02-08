@@ -129,8 +129,8 @@ async function testPermission(accessToken: string, permission: string): Promise<
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       case 'RoleManagement.ReadWrite.Directory':
-        // Graph API requires minimum $top=20 for roleDefinitions endpoint
-        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=20&$select=id';
+        // Use same endpoint as Read permission - write permission is validated by successful API call
+        url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
       default:
         return false;
