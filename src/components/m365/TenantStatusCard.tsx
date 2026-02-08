@@ -39,14 +39,13 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ExchangeRBACSetupCard } from './ExchangeRBACSetupCard';
-
-// Permission categories for tenant clients (based on validate-m365-connection)
-// These are the permissions actually validated and stored for client tenants
-const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All'];
-const EXCHANGE_PERMISSIONS = ['MailboxSettings.Read', 'Mail.Read'];
-const ROLE_PERMISSIONS = ['RoleManagement.ReadWrite.Directory', 'Exchange Administrator Role'];
-const ALL_PERMISSIONS = [...CORE_PERMISSIONS, ...EXCHANGE_PERMISSIONS, ...ROLE_PERMISSIONS];
+// Permission categories organized by Microsoft product
+const PERMISSION_CATEGORIES = {
+  'Entra ID': ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All'],
+  'Exchange Online': ['MailboxSettings.Read', 'Mail.Read'],
+  'Roles & Admin': ['RoleManagement.ReadWrite.Directory'],
+};
+const ALL_PERMISSIONS = Object.values(PERMISSION_CATEGORIES).flat();
 
 interface LastAnalysis {
   score: number | null;
@@ -88,9 +87,6 @@ export function TenantStatusCard({
   const [permissions, setPermissions] = useState<TenantPermission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
-  const [showExchangeRBAC, setShowExchangeRBAC] = useState(false);
-  const [appCredentials, setAppCredentials] = useState<{ app_id: string } | null>(null);
-  const [hasLinkedAgent, setHasLinkedAgent] = useState(false);
 
   // Use external analyzing state if provided
   const isCurrentlyAnalyzing = externalIsAnalyzing || analyzing;
@@ -115,65 +111,13 @@ export function TenantStatusCard({
     }
   };
 
-  // Fetch app credentials to get app_id and app_object_id for RBAC setup
-  const fetchAppCredentials = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('m365_app_credentials')
-        .select('azure_app_id')
-        .eq('tenant_record_id', tenant.id)
-        .eq('is_active', true)
-        .single();
-
-      if (!error && data) {
-        setAppCredentials({
-          app_id: data.azure_app_id,
-        });
-      }
-    } catch (err) {
-      console.error('Error fetching app credentials:', err);
-    }
-  };
-
-  const fetchLinkedAgent = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('m365_tenant_agents')
-        .select('id')
-        .eq('tenant_record_id', tenant.id)
-        .eq('enabled', true)
-        .limit(1);
-
-      if (!error && data && data.length > 0) {
-        setHasLinkedAgent(true);
-      } else {
-        setHasLinkedAgent(false);
-      }
-    } catch (err) {
-      console.error('Error fetching linked agent:', err);
-    }
-  };
 
   useEffect(() => {
     // Auto-fetch permissions if tenant is connected or partial
     if (tenant.connection_status === 'connected' || tenant.connection_status === 'partial') {
       fetchPermissions();
-      fetchAppCredentials();
-      fetchLinkedAgent();
     }
   }, [tenant.id, tenant.connection_status]);
-
-  // Check if Exchange Administrator Role is pending
-  const exchangeAdminRolePending = permissions.find(
-    p => p.permission_name === 'Exchange Administrator Role' && p.status !== 'granted'
-  );
-
-  // Auto-show Exchange RBAC card if role is pending and permissions are expanded
-  useEffect(() => {
-    if (exchangeAdminRolePending && showPermissions) {
-      setShowExchangeRBAC(true);
-    }
-  }, [exchangeAdminRolePending, showPermissions]);
 
   const handleTest = async () => {
     setTesting(true);
@@ -374,92 +318,27 @@ export function TenantStatusCard({
               <div className="mt-3 space-y-4">
                 <p className="text-xs text-muted-foreground">Permissões do Microsoft Graph</p>
                 <div className="grid gap-4 md:grid-cols-3">
-                  {/* Core Permissions */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Obrigatórias</p>
-                    <ul className="text-sm space-y-1">
-                      {CORE_PERMISSIONS.map(permName => {
-                        const perm = permissions.find(p => p.permission_name === permName);
-                        return (
-                          <li key={permName} className="flex items-center gap-2">
-                            <span className={cn(
-                              "w-2 h-2 rounded-full flex-shrink-0",
-                              perm?.status === 'granted' ? 'bg-green-500' : 
-                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                            )} />
-                            <span className="text-xs truncate">{permName}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  {/* Exchange Online */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
-                    <ul className="text-sm space-y-1">
-                      {EXCHANGE_PERMISSIONS.map(permName => {
-                        const perm = permissions.find(p => p.permission_name === permName);
-                        return (
-                          <li key={permName} className="flex items-center gap-2">
-                            <span className={cn(
-                              "w-2 h-2 rounded-full flex-shrink-0",
-                              perm?.status === 'granted' ? 'bg-green-500' : 
-                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                            )} />
-                            <span className="text-xs truncate">{permName}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  {/* Roles & Advanced */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Roles do Diretório</p>
-                    <ul className="text-sm space-y-1">
-                      {ROLE_PERMISSIONS.map(permName => {
-                        const perm = permissions.find(p => p.permission_name === permName);
-                        const isPending = perm?.status !== 'granted';
-                        const isExchangeAdminRole = permName === 'Exchange Administrator Role';
-                        return (
-                          <li key={permName} className="flex items-center gap-2">
-                            <span className={cn(
-                              "w-2 h-2 rounded-full flex-shrink-0",
-                              perm?.status === 'granted' ? 'bg-green-500' : 
-                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                            )} />
-                            <span className="text-xs truncate">{permName}</span>
-                            {isExchangeAdminRole && isPending && (
-                              <button
-                                onClick={() => setShowExchangeRBAC(!showExchangeRBAC)}
-                                className="text-xs text-amber-600 hover:text-amber-700 underline ml-1"
-                              >
-                                {showExchangeRBAC ? 'Ocultar' : 'Configurar'}
-                              </button>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
+                  {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
+                    <div key={category} className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">{category}</p>
+                      <ul className="text-sm space-y-1">
+                        {perms.map(permName => {
+                          const perm = permissions.find(p => p.permission_name === permName);
+                          return (
+                            <li key={permName} className="flex items-center gap-2">
+                              <span className={cn(
+                                "w-2 h-2 rounded-full flex-shrink-0",
+                                perm?.status === 'granted' ? 'bg-green-500' : 
+                                perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                              )} />
+                              <span className="text-xs truncate">{permName}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-
-                {/* Exchange RBAC Setup Card */}
-                {showExchangeRBAC && exchangeAdminRolePending && appCredentials && (
-                  <ExchangeRBACSetupCard
-                    appId={appCredentials.app_id}
-                    tenantRecordId={tenant.id}
-                    tenantDomain={tenant.tenant_domain || undefined}
-                    hasLinkedAgent={hasLinkedAgent}
-                    onVerify={handleTest}
-                    isVerifying={testing}
-                    onSetupComplete={() => {
-                      // Refresh permissions after setup attempt
-                      setTimeout(() => fetchPermissions(), 5000);
-                    }}
-                  />
-                )}
               </div>
             )}
           </div>

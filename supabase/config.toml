@@ -63,5 +63,3 @@ verify_jwt = false
 [functions.test-m365-exchange-connection]
 verify_jwt = false
 
-[functions.setup-exchange-rbac]
-verify_jwt = false
