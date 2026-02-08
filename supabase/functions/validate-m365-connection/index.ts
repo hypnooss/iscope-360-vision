@@ -60,10 +60,10 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     
     console.log(`Exchange Admin Role check - Found SP: ${spId}`);
     
-    // Check if the Exchange Administrator role is assigned to this Service Principal
-    // Use transitiveRoleAssignments endpoint (required by Graph API for Service Principals)
+    // Get role assignments for this principal using the unifiedRoleAssignment endpoint
+    // Approach: Query assignments where the Exchange Admin role is assigned, then check if our SP is there
     const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/transitiveRoleAssignments?$count=true&$filter=principalId eq '${spId}'`,
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
       { 
         headers: { 
           'Authorization': `Bearer ${accessToken}`,
@@ -74,20 +74,40 @@ async function testExchangeAdminRole(accessToken: string, appId: string): Promis
     
     if (roleResponse.ok) {
       const roleData = await roleResponse.json();
-      // Filter for Exchange Administrator role in code
+      // Check if our Service Principal is in the list
       const hasExchangeAdminRole = roleData.value?.some(
-        (assignment: { roleDefinitionId: string }) => 
-          assignment.roleDefinitionId === EXCHANGE_ADMIN_ROLE_TEMPLATE_ID
+        (assignment: { principalId: string }) => assignment.principalId === spId
       );
-      console.log(`Exchange Admin Role check - Total assignments: ${roleData.value?.length || 0}, hasExchangeAdmin: ${hasExchangeAdminRole}`);
+      console.log(`Exchange Admin Role check - Total Exchange Admin assignments: ${roleData.value?.length || 0}, hasSPAssigned: ${hasExchangeAdminRole}`);
       if (roleData.value?.length > 0) {
-        console.log(`Exchange Admin Role check - Role IDs found: ${roleData.value.map((a: { roleDefinitionId: string }) => a.roleDefinitionId).join(', ')}`);
+        console.log(`Exchange Admin Role check - Principal IDs with Exchange Admin: ${roleData.value.map((a: { principalId: string }) => a.principalId).join(', ')}`);
       }
       return { granted: hasExchangeAdminRole };
     }
     
     const errBody = await roleResponse.text().catch(() => '');
     console.log(`Exchange Admin Role check - Role assignment query failed: ${roleResponse.status}`, errBody.substring(0, 300));
+    
+    // Fallback: Try to get ALL role assignments (no filter) and filter in code
+    console.log('Exchange Admin Role check - Trying fallback: fetch all assignments');
+    const allRolesResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (allRolesResponse.ok) {
+      const allRolesData = await allRolesResponse.json();
+      const matchingAssignment = allRolesData.value?.find(
+        (assignment: { principalId: string; roleDefinitionId: string }) => 
+          assignment.principalId === spId && 
+          assignment.roleDefinitionId === EXCHANGE_ADMIN_ROLE_TEMPLATE_ID
+      );
+      console.log(`Exchange Admin Role check (fallback) - Total assignments: ${allRolesData.value?.length || 0}, found: ${!!matchingAssignment}`);
+      return { granted: !!matchingAssignment };
+    }
+    
+    const fallbackErr = await allRolesResponse.text().catch(() => '');
+    console.log(`Exchange Admin Role check - Fallback also failed: ${allRolesResponse.status}`, fallbackErr.substring(0, 200));
     return { granted: false, error: `HTTP ${roleResponse.status}` };
   } catch (error) {
     console.error('Exchange Admin Role check - Exception:', error);
