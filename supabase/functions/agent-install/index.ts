@@ -614,10 +614,74 @@ setup_venv() {
   if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
     echo "Instalando dependências (offline wheels bundle)..."
     "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
-else
-  # Use --no-cache-dir to avoid issues with corrupted cached packages (e.g., certifi missing cacert.pem)
-  "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
-fi
+  else
+    # Use --no-cache-dir to avoid issues with corrupted cached packages (e.g., certifi missing cacert.pem)
+    "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+  fi
+  
+  # Fix certifi CA bundle if missing (known issue with certifi 2026.x)
+  fix_certifi_bundle
+}
+
+fix_certifi_bundle() {
+  echo "Verificando certificados CA do Python..."
+  
+  # Find certifi directory in venv
+  local certifi_dir
+  certifi_dir="\$(find "$INSTALL_DIR/venv" -type d -name certifi 2>/dev/null | head -1)"
+  
+  if [[ -z "\$certifi_dir" ]]; then
+    echo "Aviso: diretório certifi não encontrado no venv."
+    return
+  fi
+  
+  local cacert_pem="\$certifi_dir/cacert.pem"
+  
+  # Check if cacert.pem exists and is a regular file (not a broken symlink)
+  if [[ -f "\$cacert_pem" ]] && [[ -s "\$cacert_pem" ]]; then
+    echo "Certificados CA OK: \$cacert_pem"
+    return
+  fi
+  
+  echo "Aviso: cacert.pem ausente ou vazio. Criando link para certificados do sistema..."
+  
+  # Common system CA bundle paths
+  local system_ca=""
+  for ca_path in \\
+    /etc/ssl/certs/ca-certificates.crt \\
+    /etc/pki/tls/certs/ca-bundle.crt \\
+    /etc/ssl/ca-bundle.pem \\
+    /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \\
+    /etc/ssl/cert.pem; do
+    if [[ -f "\$ca_path" ]]; then
+      system_ca="\$ca_path"
+      break
+    fi
+  done
+  
+  if [[ -z "\$system_ca" ]]; then
+    echo "Erro: Não foi possível encontrar CA bundle do sistema."
+    echo "Instale o pacote ca-certificates: dnf install -y ca-certificates"
+    return
+  fi
+  
+  # Create symlink
+  ln -sf "\$system_ca" "\$cacert_pem"
+  echo "Link criado: \$cacert_pem -> \$system_ca"
+  
+  # Verify TLS connectivity
+  verify_tls_connectivity
+}
+
+verify_tls_connectivity() {
+  echo "Testando conectividade TLS..."
+  
+  if "$INSTALL_DIR/venv/bin/python" -c "import requests; requests.get('https://httpbin.org/get', timeout=10)" 2>/dev/null; then
+    echo "Conectividade TLS OK"
+  else
+    echo "Aviso: Teste de conectividade TLS falhou."
+    echo "Verifique os certificados CA do sistema."
+  fi
 }
 
 write_env_file() {
