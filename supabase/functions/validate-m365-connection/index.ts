@@ -474,11 +474,22 @@ serve(async (req) => {
           granted = response.ok || response.status === 400;
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'Sites.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/sites?search=*&$top=1', {
+          // Use root site access instead of search which requires specific terms
+          const response = await fetch('https://graph.microsoft.com/v1.0/sites/root?$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+          let sitesGranted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${sitesGranted}`);
+          
+          // Also try sites collection if root fails (but not on 403)
+          if (!sitesGranted && response.status !== 403) {
+            const sitesResponse = await fetch('https://graph.microsoft.com/v1.0/sites?$select=id&$top=1', {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            sitesGranted = sitesResponse.ok;
+            console.log(`Permission ${permission} fallback: ${sitesResponse.status} - granted: ${sitesGranted}`);
+          }
+          granted = sitesGranted;
         } else if (permission === 'Reports.Read.All') {
           const response = await fetch('https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
@@ -500,37 +511,61 @@ serve(async (req) => {
     }
 
     // Test Application.ReadWrite.All (certificate management permission)
+    let appObjectId: string | null = null;
+
     // First, try to get app_object_id from m365_app_credentials
     if (tenant_record_id) {
       const { data: appCreds } = await supabase
         .from('m365_app_credentials')
-        .select('app_object_id')
+        .select('app_object_id, azure_app_id')
         .eq('tenant_record_id', tenant_record_id)
         .maybeSingle();
-
-      if (appCreds?.app_object_id) {
-        console.log('Testing Application.ReadWrite.All with app_object_id:', appCreds.app_object_id);
-        const appResponse = await fetch(
-          `https://graph.microsoft.com/v1.0/applications/${appCreds.app_object_id}?$select=id,keyCredentials`,
+      
+      appObjectId = appCreds?.app_object_id || null;
+      
+      // If no app_object_id stored, try to fetch from Graph using app_id
+      if (!appObjectId && (appCreds?.azure_app_id || app_id)) {
+        const appIdToUse = appCreds?.azure_app_id || app_id;
+        console.log('Fetching app_object_id from Graph API for appId:', appIdToUse);
+        
+        const appLookupResponse = await fetch(
+          `https://graph.microsoft.com/v1.0/applications?$filter=appId eq '${appIdToUse}'&$select=id`,
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
         );
-        const appWriteGranted = appResponse.ok;
-        permissionResults.push({
-          name: 'Application.ReadWrite.All',
-          granted: appWriteGranted,
-          required: false,
-        });
-        console.log(`Permission Application.ReadWrite.All: ${appResponse.status} - granted: ${appWriteGranted}`);
-      } else {
-        console.log('Skipping Application.ReadWrite.All test (no app_object_id)');
-        permissionResults.push({
-          name: 'Application.ReadWrite.All',
-          granted: false,
-          required: false,
-        });
+        
+        if (appLookupResponse.ok) {
+          const appData = await appLookupResponse.json();
+          appObjectId = appData.value?.[0]?.id || null;
+          
+          // Store the app_object_id for future use
+          if (appObjectId && appCreds) {
+            await supabase
+              .from('m365_app_credentials')
+              .update({ app_object_id: appObjectId })
+              .eq('tenant_record_id', tenant_record_id);
+            console.log('Stored app_object_id:', appObjectId);
+          }
+        } else {
+          console.log('Could not fetch app from Graph:', appLookupResponse.status);
+        }
       }
+    }
+
+    if (appObjectId) {
+      console.log('Testing Application.ReadWrite.All with app_object_id:', appObjectId);
+      const appResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=id,keyCredentials`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+      const appWriteGranted = appResponse.ok;
+      permissionResults.push({
+        name: 'Application.ReadWrite.All',
+        granted: appWriteGranted,
+        required: false,
+      });
+      console.log(`Permission Application.ReadWrite.All: ${appResponse.status} - granted: ${appWriteGranted}`);
     } else {
-      // No tenant_record_id means we can't check Application.ReadWrite.All
+      console.log('Could not determine app_object_id - marking Application.ReadWrite.All as not granted');
       permissionResults.push({
         name: 'Application.ReadWrite.All',
         granted: false,
