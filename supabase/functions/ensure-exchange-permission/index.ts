@@ -7,10 +7,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Office 365 Exchange Online resource ID
+// Office 365 Exchange Online
 const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
-// Exchange.ManageAsApp permission ID
 const EXCHANGE_MANAGE_AS_APP_ID = "dc50a0fb-09a3-484d-be87-e023b12c6440";
+
+// SharePoint Online
+const SHAREPOINT_RESOURCE_ID = "00000003-0000-0ff1-ce00-000000000000";
+const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
+
+// Permissions to ensure on App Registration
+const REQUIRED_PERMISSIONS = [
+  { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
+  { resourceAppId: SHAREPOINT_RESOURCE_ID, permissionId: SHAREPOINT_SITES_FULLCONTROL_ID, name: "Sites.FullControl.All" },
+];
 
 function fromHex(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
@@ -146,44 +155,47 @@ serve(async (req) => {
     const app = await appResponse.json();
     const currentPermissions = app.requiredResourceAccess || [];
 
-    // Check if Exchange permission already exists
-    const exchangeResource = currentPermissions.find(
-      (r: any) => r.resourceAppId === EXCHANGE_RESOURCE_ID
-    );
+    // Check and add missing permissions
+    const addedPermissions: string[] = [];
 
-    if (exchangeResource) {
-      const hasPermission = exchangeResource.resourceAccess?.some(
-        (p: any) => p.id === EXCHANGE_MANAGE_AS_APP_ID
+    for (const perm of REQUIRED_PERMISSIONS) {
+      let resource = currentPermissions.find(
+        (r: any) => r.resourceAppId === perm.resourceAppId
       );
 
-      if (hasPermission) {
-        console.log("[ensure-exchange-permission] Exchange.ManageAsApp already configured");
-        return new Response(
-          JSON.stringify({ success: true, added: false, message: "Already configured" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (!resource) {
+        // Create new resource entry
+        resource = { resourceAppId: perm.resourceAppId, resourceAccess: [] };
+        currentPermissions.push(resource);
       }
 
-      // Add permission to existing resource
-      exchangeResource.resourceAccess.push({
-        id: EXCHANGE_MANAGE_AS_APP_ID,
-        type: "Role",
-      });
-    } else {
-      // Add new resource with permission
-      currentPermissions.push({
-        resourceAppId: EXCHANGE_RESOURCE_ID,
-        resourceAccess: [
-          {
-            id: EXCHANGE_MANAGE_AS_APP_ID,
-            type: "Role",
-          },
-        ],
-      });
+      const hasPermission = resource.resourceAccess?.some(
+        (p: any) => p.id === perm.permissionId
+      );
+
+      if (!hasPermission) {
+        resource.resourceAccess.push({
+          id: perm.permissionId,
+          type: "Role",
+        });
+        addedPermissions.push(perm.name);
+        console.log(`[ensure-exchange-permission] Adding ${perm.name} to app registration`);
+      } else {
+        console.log(`[ensure-exchange-permission] ${perm.name} already configured`);
+      }
     }
 
-    // Update app registration
-    console.log("[ensure-exchange-permission] Adding Exchange.ManageAsApp to app registration...");
+    // If no permissions were added, return early
+    if (addedPermissions.length === 0) {
+      console.log("[ensure-exchange-permission] All required permissions already configured");
+      return new Response(
+        JSON.stringify({ success: true, added: false, message: "All permissions already configured", permissions: [] }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Update app registration with new permissions
+    console.log(`[ensure-exchange-permission] Adding ${addedPermissions.join(", ")} to app registration...`);
     const updateResponse = await fetch(appUrl, {
       method: "PATCH",
       headers: {
@@ -204,13 +216,14 @@ serve(async (req) => {
       );
     }
 
-    console.log("[ensure-exchange-permission] Exchange.ManageAsApp added successfully!");
+    console.log(`[ensure-exchange-permission] Successfully added: ${addedPermissions.join(", ")}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         added: true,
-        message: "Exchange.ManageAsApp added to App Registration",
+        message: `Added permissions: ${addedPermissions.join(", ")}`,
+        permissions: addedPermissions,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
