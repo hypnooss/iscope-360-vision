@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 // Permission categories organized by Microsoft product
+// Note: User.Read is a delegated permission, not applicable to Client Credentials flow
 const PERMISSION_CATEGORIES = {
   'Entra ID': [
     'User.Read.All',
@@ -62,7 +63,6 @@ const PERMISSION_CATEGORIES = {
     'Application.ReadWrite.All',
   ],
   'Outros': [
-    'User.Read',
     'Reports.Read.All',
   ],
 };
