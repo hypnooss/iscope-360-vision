@@ -39,27 +39,30 @@ const REQUIRED_PERMISSIONS = [
   'Reports.Read.All',
 ];
 
-// Exchange Administrator Role template ID
-const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
+// Office 365 Exchange Online Resource ID
+const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
+const EXCHANGE_MANAGE_AS_APP_ID = "dc50a0fb-09a3-484d-be87-e023b12c6440";
 
-// SharePoint Administrator Role Template ID
-const SHAREPOINT_ADMIN_ROLE_TEMPLATE_ID = 'f28a1f50-f6e7-4571-818b-6a12f2af6b6c';
+// SharePoint Online Resource ID
+const SHAREPOINT_RESOURCE_ID = "00000003-0000-0ff1-ce00-000000000000";
+const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
 
-// Generic function to test Directory Role assignments
-async function testDirectoryRole(
+// Function to test App Role Assignments (via Admin Consent)
+async function testAppRoleAssignment(
   accessToken: string, 
   appId: string, 
-  roleTemplateId: string
+  resourceAppId: string, 
+  appRoleId: string
 ): Promise<{granted: boolean, error?: string}> {
   try {
-    // Get the Service Principal for the app
+    // Step 1: Get the Service Principal for our app
     const spResponse = await fetch(
       `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id`,
       { headers: { 'Authorization': `Bearer ${accessToken}` } }
     );
     
     if (!spResponse.ok) {
-      console.log(`Directory Role check - SP lookup failed: ${spResponse.status}`);
+      console.log(`App Role check - SP lookup failed: ${spResponse.status}`);
       return { granted: false, error: 'SP lookup failed' };
     }
     
@@ -70,41 +73,47 @@ async function testDirectoryRole(
       return { granted: false, error: 'SP not found' };
     }
     
-    // Query role assignments for this role
-    const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=roleDefinitionId eq '${roleTemplateId}'`,
-      { 
-        headers: { 
-          'Authorization': `Bearer ${accessToken}`,
-          'ConsistencyLevel': 'eventual'
-        } 
-      }
-    );
-    
-    if (roleResponse.ok) {
-      const roleData = await roleResponse.json();
-      const hasRole = roleData.value?.some(
-        (a: { principalId: string }) => a.principalId === spId
-      );
-      return { granted: hasRole };
-    }
-    
-    // Fallback: fetch all assignments
-    const allRolesResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments`,
+    // Step 2: Get all App Role Assignments for our Service Principal
+    const appRolesResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals/${spId}/appRoleAssignments`,
       { headers: { 'Authorization': `Bearer ${accessToken}` } }
     );
     
-    if (allRolesResponse.ok) {
-      const allRolesData = await allRolesResponse.json();
-      const match = allRolesData.value?.find(
-        (a: { principalId: string; roleDefinitionId: string }) => 
-          a.principalId === spId && a.roleDefinitionId === roleTemplateId
-      );
-      return { granted: !!match };
+    if (!appRolesResponse.ok) {
+      console.log(`App Role check - appRoleAssignments failed: ${appRolesResponse.status}`);
+      return { granted: false, error: `HTTP ${appRolesResponse.status}` };
     }
     
-    return { granted: false, error: `HTTP ${roleResponse.status}` };
+    const appRolesData = await appRolesResponse.json();
+    
+    // Step 3: Check if there's an assignment matching the resource and role
+    // We need to find the Resource Service Principal first to get its ID
+    const resourceSpResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${resourceAppId}'&$select=id`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    
+    if (!resourceSpResponse.ok) {
+      console.log(`App Role check - Resource SP lookup failed: ${resourceSpResponse.status}`);
+      return { granted: false, error: 'Resource SP lookup failed' };
+    }
+    
+    const resourceSpData = await resourceSpResponse.json();
+    const resourceSpId = resourceSpData.value?.[0]?.id;
+    
+    if (!resourceSpId) {
+      // Resource Service Principal not found in tenant - permission not granted
+      console.log(`App Role check - Resource SP not found for appId: ${resourceAppId}`);
+      return { granted: false, error: 'Resource SP not found' };
+    }
+    
+    // Check if there's an assignment where resourceId matches and appRoleId matches
+    const hasAssignment = appRolesData.value?.some(
+      (assignment: { resourceId: string; appRoleId: string }) => 
+        assignment.resourceId === resourceSpId && assignment.appRoleId === appRoleId
+    );
+    
+    return { granted: hasAssignment };
   } catch (error) {
     return { granted: false, error: String(error) };
   }
@@ -591,25 +600,25 @@ serve(async (req) => {
       });
     }
 
-    // Test Exchange Administrator Role assignment (separate from API permissions)
-    console.log('Testing Exchange Administrator Role assignment...');
-    const exchangeRoleResult = await testDirectoryRole(accessToken, app_id, EXCHANGE_ADMIN_ROLE_TEMPLATE_ID);
+    // Test Exchange.ManageAsApp permission (displayed as "Exchange Administrator")
+    console.log('Testing Exchange.ManageAsApp (Exchange Administrator)...');
+    const exchangeResult = await testAppRoleAssignment(accessToken, app_id, EXCHANGE_RESOURCE_ID, EXCHANGE_MANAGE_AS_APP_ID);
     permissionResults.push({
       name: 'Exchange Administrator',
-      granted: exchangeRoleResult.granted,
-      required: false, // This is a role, not an API permission
+      granted: exchangeResult.granted,
+      required: false,
     });
-    console.log(`Exchange Administrator: ${exchangeRoleResult.granted ? 'assigned' : 'not assigned'}${exchangeRoleResult.error ? ` (${exchangeRoleResult.error})` : ''}`);
+    console.log(`Exchange Administrator (Exchange.ManageAsApp): ${exchangeResult.granted ? 'granted' : 'not granted'}${exchangeResult.error ? ` (${exchangeResult.error})` : ''}`);
 
-    // Test SharePoint Administrator Role assignment
-    console.log('Testing SharePoint Administrator Role assignment...');
-    const spAdminResult = await testDirectoryRole(accessToken, app_id, SHAREPOINT_ADMIN_ROLE_TEMPLATE_ID);
+    // Test Sites.FullControl.All permission (displayed as "SharePoint Administrator")
+    console.log('Testing Sites.FullControl.All (SharePoint Administrator)...');
+    const sharepointResult = await testAppRoleAssignment(accessToken, app_id, SHAREPOINT_RESOURCE_ID, SHAREPOINT_SITES_FULLCONTROL_ID);
     permissionResults.push({
       name: 'SharePoint Administrator',
-      granted: spAdminResult.granted,
-      required: false, // This is a role, not an API permission
+      granted: sharepointResult.granted,
+      required: false,
     });
-    console.log(`SharePoint Administrator: ${spAdminResult.granted ? 'assigned' : 'not assigned'}${spAdminResult.error ? ` (${spAdminResult.error})` : ''}`);
+    console.log(`SharePoint Administrator (Sites.FullControl.All): ${sharepointResult.granted ? 'granted' : 'not granted'}${sharepointResult.error ? ` (${sharepointResult.error})` : ''}`);
 
     const allPermissionsGranted = permissionResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
