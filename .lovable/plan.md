@@ -1,145 +1,98 @@
 
 
-# Plano: Corrigir Formato do Certificado para Exchange Online
+# Plano: Corrigir Sintaxe de Senha Vazia no PowerShell
 
 ## Problema Identificado
 
-O PowerShell `Connect-ExchangeOnline` com o parâmetro `-CertificateFilePath` espera um arquivo **PFX (PKCS#12)** que contém certificado + chave privada em um único arquivo. Atualmente, o agente gera:
-
-- `/var/lib/iscope-agent/certs/m365.crt` (certificado público)
-- `/var/lib/iscope-agent/certs/m365.key` (chave privada)
-
-Mas o PowerShell não consegue usar arquivos separados:
+O PowerShell rejeita strings vazias no `ConvertTo-SecureString`:
 ```
-The certificate certificate does not have a private key.
+ConvertTo-SecureString -String "" -AsPlainText -Force
+Cannot bind argument to parameter 'String' because it is an empty string.
 ```
 
 ---
 
 ## Solução
 
-Modificar dois arquivos para:
-1. Gerar arquivo `.pfx` durante a criação do certificado
-2. Usar o `.pfx` no PowerShellExecutor com a senha correta
+Usar `[System.Security.SecureString]::new()` para criar um SecureString vazio, que é a forma correta de representar uma senha em branco no PowerShell.
 
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `python-agent/check-deps.sh` | Adicionar geração do arquivo `.pfx` |
-| `python-agent/agent/executors/powershell.py` | Usar `.pfx` e incluir `-CertificatePassword` |
+| `python-agent/agent/executors/powershell.py` | Corrigir sintaxe do SecureString vazio |
 
 ---
 
-## Mudanças Detalhadas
+## Mudança Detalhada
 
-### 1. `check-deps.sh` - Gerar PFX
+### `powershell.py` - Linha 28-29
 
-Após gerar os arquivos `.crt` e `.key`, adicionar:
-
-```bash
-# Generate PFX file (for PowerShell compatibility)
-# Use empty password for simplicity (protected by file permissions)
-openssl pkcs12 \
-    -export \
-    -out "$CERT_DIR/m365.pfx" \
-    -inkey "$CERT_DIR/m365.key" \
-    -in "$CERT_DIR/m365.crt" \
-    -passout pass: 2>/dev/null
-
-if [[ -f "$CERT_DIR/m365.pfx" ]]; then
-    chmod 600 "$CERT_DIR/m365.pfx"
-    log "Arquivo PFX gerado para PowerShell"
-fi
+**Antes:**
+```python
+"connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword (ConvertTo-SecureString -String "" -AsPlainText -Force) -Organization "{organization}" -ShowBanner:$false',
 ```
 
-O arquivo terá senha vazia (protegido por permissões de arquivo), simplificando o uso.
-
-### 2. `powershell.py` - Usar PFX
-
-Atualizar a constante do caminho e adicionar `-CertificatePassword`:
-
+**Depois:**
 ```python
-# Constantes atualizadas
-PFX_FILE = CERT_DIR / "m365.pfx"
-
-# Comando de conexão atualizado
-MODULES = {
-    "ExchangeOnline": {
-        "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
-        "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword (ConvertTo-SecureString -String "" -AsPlainText -Force) -Organization "{organization}" -ShowBanner:$false',
-        "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
-    },
-    "MicrosoftGraph": {
-        "import": "Import-Module Microsoft.Graph.Authentication -ErrorAction Stop",
-        "connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -TenantId "{tenant_id}" -NoWelcome',
-        "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
-    },
-}
+"connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
 ```
 
-E atualizar `_build_script` para usar `PFX_FILE`:
+O mesmo para MicrosoftGraph (linha 33):
 
+**Antes:**
 ```python
-module_config["connect"].format(
-    app_id=app_id,
-    cert_path=str(self.PFX_FILE),  # Usar PFX em vez de CRT
-    tenant_id=tenant_id,
-    organization=organization
-)
+"connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -TenantId "{tenant_id}" -NoWelcome',
+```
+
+**Depois:**
+```python
+"connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome',
 ```
 
 ---
 
-## Fluxo Após Correção
+## Sintaxe PowerShell
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
-│  GERAÇÃO DO CERTIFICADO (check-deps.sh)                                    │
+│  ANTES (erro)                                                              │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
-│  openssl req → m365.crt + m365.key                                        │
+│  ConvertTo-SecureString -String "" -AsPlainText -Force                    │
 │       ↓                                                                    │
-│  openssl pkcs12 -export → m365.pfx (cert+key combinados)                  │
-│       ↓                                                                    │
-│  chmod 600 m365.pfx (protegido por permissões)                            │
+│  ERRO: Cannot bind argument to parameter 'String'                         │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────────────────┐
-│  EXECUÇÃO POWERSHELL (PowerShellExecutor)                                  │
+│  DEPOIS (correto)                                                          │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
-│  Connect-ExchangeOnline                                                    │
-│    -AppId "xxx"                                                            │
-│    -CertificateFilePath "/var/lib/iscope-agent/certs/m365.pfx"            │
-│    -CertificatePassword (ConvertTo-SecureString "" -AsPlainText -Force)   │
-│    -Organization "contoso.onmicrosoft.com"                                 │
+│  [System.Security.SecureString]::new()                                     │
+│       ↓                                                                    │
+│  Cria SecureString vazio (senha em branco válida)                         │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Ação Manual Necessária
+## Ação Manual Após Implementação
 
-Após aplicar as mudanças, o operador precisa:
+Atualizar o arquivo no servidor do agente:
 
-1. **Regenerar o certificado** no servidor do agente:
-   ```bash
-   sudo touch /var/lib/iscope-agent/check_components.flag
-   sudo systemctl restart iscope-agent
-   ```
+```bash
+vi /opt/iscope-agent/agent/executors/powershell.py
+# Substituir: ConvertTo-SecureString -String "" -AsPlainText -Force
+# Por: [System.Security.SecureString]::new()
 
-2. **Verificar geração do PFX**:
-   ```bash
-   ls -la /var/lib/iscope-agent/certs/
-   # Deve mostrar: m365.crt, m365.key, m365.pfx, m365.thumbprint
-   ```
+systemctl restart iscope-agent
+```
 
-3. **Reenviar thumbprint** para o Azure (se necessário, caso o certificado tenha sido regerado)
+Ou aguardar o próximo deploy do agente.
 
 ---
 
