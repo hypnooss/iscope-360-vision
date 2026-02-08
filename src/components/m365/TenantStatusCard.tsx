@@ -40,6 +40,13 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+// Permission categories for organized display (matching SettingsPage)
+const CORE_PERMISSIONS = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
+const ENTRA_ID_PERMISSIONS = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
+const EXCHANGE_PERMISSIONS = ['MailboxSettings.Read', 'Mail.Read'];
+const CERTIFICATE_PERMISSIONS = ['Application.ReadWrite.All'];
+const ALL_PERMISSIONS = [...CORE_PERMISSIONS, ...ENTRA_ID_PERMISSIONS, ...EXCHANGE_PERMISSIONS, ...CERTIFICATE_PERMISSIONS];
+
 interface LastAnalysis {
   score: number | null;
   status: string;
@@ -206,10 +213,11 @@ export function TenantStatusCard({
     }
   };
 
-  // Separate permissions into required (all current ones are required)
-  const requiredPermissions = permissions.filter(p => p.permission_type === 'Application');
-  const grantedCount = permissions.filter(p => p.status === 'granted').length;
-  const totalCount = permissions.length;
+  // Count granted permissions from all expected permissions
+  const grantedCount = ALL_PERMISSIONS.filter(permName => 
+    permissions.find(p => p.permission_name === permName && p.status === 'granted')
+  ).length;
+  const totalCount = ALL_PERMISSIONS.length;
 
   const canAnalyze = tenant.connection_status === 'connected' || tenant.connection_status === 'partial';
 
@@ -289,48 +297,109 @@ export function TenantStatusCard({
           </div>
 
           {/* Permissions Section (Collapsible) */}
-          {permissions.length > 0 && (
-            <div className="pt-4 border-t border-border/50 mb-4">
-              <button
-                onClick={() => setShowPermissions(!showPermissions)}
-                className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  Permissões ({grantedCount}/{totalCount})
-                  {loadingPermissions && <Loader2 className="w-3 h-3 animate-spin" />}
-                </span>
-                {showPermissions ? (
-                  <ChevronUp className="w-4 h-4" />
-                ) : (
-                  <ChevronDown className="w-4 h-4" />
-                )}
-              </button>
-              
-              {showPermissions && (
-                <div className="mt-3">
-                  <p className="text-xs text-muted-foreground mb-2">Permissões do Microsoft Graph</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
-                    {requiredPermissions.map((perm) => (
-                      <div key={perm.id} className="flex items-center gap-2 text-xs py-1">
-                        <span 
-                          className={cn(
-                            "w-2 h-2 rounded-full flex-shrink-0",
-                            perm.status === 'granted' ? 'bg-green-500' : 
-                            perm.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                          )}
-                        />
-                        <span className="truncate flex-1">{perm.permission_name}</span>
-                        <span className="text-muted-foreground ml-auto">
-                          {perm.status === 'granted' ? 'OK' : 
-                           perm.status === 'denied' ? 'Negada' : 'Pendente'}
-                        </span>
-                      </div>
-                    ))}
+          <div className="pt-4 border-t border-border/50 mb-4">
+            <button
+              onClick={() => setShowPermissions(!showPermissions)}
+              className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                Permissões ({grantedCount}/{totalCount})
+                {loadingPermissions && <Loader2 className="w-3 h-3 animate-spin" />}
+              </span>
+              {showPermissions ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+            
+            {showPermissions && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
+                <div className="grid gap-4 md:grid-cols-4">
+                  {/* Core Permissions */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
+                    <ul className="text-sm space-y-1">
+                      {CORE_PERMISSIONS.map(permName => {
+                        const perm = permissions.find(p => p.permission_name === permName);
+                        return (
+                          <li key={permName} className="flex items-center gap-2">
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm?.status === 'granted' ? 'bg-green-500' : 
+                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )} />
+                            <span className="text-xs truncate">{permName}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  {/* Entra ID / Security */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
+                    <ul className="text-sm space-y-1">
+                      {ENTRA_ID_PERMISSIONS.map(permName => {
+                        const perm = permissions.find(p => p.permission_name === permName);
+                        return (
+                          <li key={permName} className="flex items-center gap-2">
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm?.status === 'granted' ? 'bg-green-500' : 
+                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )} />
+                            <span className="text-xs truncate">{permName}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  {/* Exchange Online */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
+                    <ul className="text-sm space-y-1">
+                      {EXCHANGE_PERMISSIONS.map(permName => {
+                        const perm = permissions.find(p => p.permission_name === permName);
+                        return (
+                          <li key={permName} className="flex items-center gap-2">
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm?.status === 'granted' ? 'bg-green-500' : 
+                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )} />
+                            <span className="text-xs truncate">{permName}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  {/* Certificate Upload */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
+                    <ul className="text-sm space-y-1">
+                      {CERTIFICATE_PERMISSIONS.map(permName => {
+                        const perm = permissions.find(p => p.permission_name === permName);
+                        return (
+                          <li key={permName} className="flex items-center gap-2">
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm?.status === 'granted' ? 'bg-green-500' : 
+                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )} />
+                            <span className="text-xs truncate">{permName}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
           {/* Actions Row */}
           <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border/50">
