@@ -655,6 +655,26 @@ Deno.serve(async (req) => {
       console.error('Error fetching Service Principal:', spErr);
     }
 
+    // === Fetch App Registration Object ID for certificate upload ===
+    // This is required for PATCH /applications/{id} to upload agent certificates
+    console.log('Fetching App Registration Object ID for certificate upload...');
+    let appObjectId: string | null = null;
+    try {
+      const appRegResponse = await fetch(
+        `https://graph.microsoft.com/v1.0/applications(appId='${appId}')?$select=id,displayName`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+      if (appRegResponse.ok) {
+        const appRegData = await appRegResponse.json();
+        appObjectId = appRegData.id || null;
+        console.log('App Registration Object ID:', appObjectId);
+      } else {
+        console.warn('Could not fetch App Registration:', await appRegResponse.text());
+      }
+    } catch (appErr) {
+      console.error('Error fetching App Registration:', appErr);
+    }
+
     // === Attempt to assign Exchange Administrator role for PowerShell CBA ===
     // This is non-blocking - if it fails, Graph API features still work
     console.log('Attempting to assign Exchange Administrator role for PowerShell connectivity...');
@@ -704,13 +724,14 @@ Deno.serve(async (req) => {
       throw new Error('Failed to update tenant record');
     }
 
-    // Store credentials reference (using multi-tenant app) with sp_object_id
+    // Store credentials reference (using multi-tenant app) with sp_object_id and app_object_id
     const { error: credError } = await supabase
       .from('m365_app_credentials')
       .upsert({
         tenant_record_id,
         azure_app_id: appId,
-        sp_object_id: spObjectId, // NEW: Save Service Principal Object ID for Exchange RBAC setup
+        sp_object_id: spObjectId, // Service Principal Object ID for Exchange RBAC setup
+        app_object_id: appObjectId, // App Registration Object ID for certificate upload
         auth_type: 'multi_tenant_app',
         is_active: true,
         updated_at: new Date().toISOString(),
@@ -720,8 +741,8 @@ Deno.serve(async (req) => {
 
     if (credError) {
       console.error('Failed to store credentials:', credError);
-    } else if (spObjectId) {
-      console.log('Service Principal Object ID saved to database for Exchange RBAC setup');
+    } else {
+      console.log('Credentials saved:', { spObjectId, appObjectId });
     }
 
     // Enable Entra ID submodule

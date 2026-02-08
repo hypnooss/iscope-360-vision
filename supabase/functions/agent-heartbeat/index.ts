@@ -146,46 +146,28 @@ async function updateAgentVersion(supabase: any, agentId: string, version: strin
 }
 
 /**
- * Upload agent certificate to Azure and update database
- * Returns the Azure key ID if successful
+ * Upload certificate to a specific tenant's app registration
  */
-async function uploadAgentCertificate(
-  supabase: any,
-  agentId: string,
+async function uploadCertificateToTenantApp(
+  tenantId: string,
+  appId: string,
+  appObjectId: string,
+  clientSecret: string,
   thumbprint: string,
-  publicKey: string
-): Promise<string | null> {
-  console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
-  
+  publicKey: string,
+  agentId: string
+): Promise<{ success: boolean; keyId?: string; error?: string }> {
   try {
-    // Get M365 global config for Azure credentials
-    const { data: globalConfig, error: configError } = await supabase
-      .from('m365_global_config')
-      .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
-      .limit(1)
-      .single();
-
-    if (configError || !globalConfig) {
-      console.log('M365 global config not found, skipping certificate upload');
-      return null;
-    }
-
-    if (!globalConfig.app_object_id || !globalConfig.home_tenant_id) {
-      console.log('M365 app_object_id or home_tenant_id not configured, skipping certificate upload');
-      return null;
-    }
-
-    // Decrypt client secret using the shared AES-GCM function
-    const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
-
-    // Get access token for Microsoft Graph
+    console.log(`Uploading certificate to tenant ${tenantId}, appObjectId: ${appObjectId.substring(0, 8)}...`);
+    
+    // Get access token for the specific tenant
     const tokenResponse = await fetch(
-      `https://login.microsoftonline.com/${globalConfig.home_tenant_id}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          client_id: globalConfig.app_id,
+          client_id: appId,
           client_secret: clientSecret,
           scope: 'https://graph.microsoft.com/.default',
           grant_type: 'client_credentials',
@@ -194,35 +176,34 @@ async function uploadAgentCertificate(
     );
 
     if (!tokenResponse.ok) {
-      console.error('Failed to get Azure access token:', await tokenResponse.text());
-      return null;
+      const errText = await tokenResponse.text();
+      console.error(`Failed to get token for tenant ${tenantId}:`, errText);
+      return { success: false, error: `Token error: ${tokenResponse.status}` };
     }
 
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Format certificate for Azure (remove headers and ALL whitespace including newlines)
-    const certBase64 = publicKey
-      .replace(/-----BEGIN CERTIFICATE-----/g, '')
-      .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\s+/g, '');  // CORRETO: remove espaços, tabs, quebras de linha
-
-    // Use PATCH approach directly (addKey requires proof JWT which is complex)
-    // Get current key credentials first
+    // Get current key credentials
     const getAppResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}?$select=keyCredentials`,
-      {
-        headers: { 'Authorization': `Bearer ${accessToken}` },
-      }
+      `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=keyCredentials`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
     );
 
     if (!getAppResponse.ok) {
-      console.error('Failed to get app credentials:', await getAppResponse.text());
-      return null;
+      const errText = await getAppResponse.text();
+      console.error(`Failed to get app credentials for ${appObjectId}:`, errText);
+      return { success: false, error: `Get app error: ${getAppResponse.status}` };
     }
 
     const appData = await getAppResponse.json();
     const existingKeys = appData.keyCredentials || [];
+
+    // Format certificate for Azure (remove headers and ALL whitespace including newlines)
+    const certBase64 = publicKey
+      .replace(/-----BEGIN CERTIFICATE-----/g, '')
+      .replace(/-----END CERTIFICATE-----/g, '')
+      .replace(/\s+/g, '');
 
     // Add new key credential
     const newKey = {
@@ -235,7 +216,7 @@ async function uploadAgentCertificate(
     };
 
     const patchResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`,
+      `https://graph.microsoft.com/v1.0/applications/${appObjectId}`,
       {
         method: 'PATCH',
         headers: {
@@ -249,25 +230,144 @@ async function uploadAgentCertificate(
     );
 
     if (!patchResponse.ok) {
-      console.error('Failed to patch app credentials:', await patchResponse.text());
+      const errText = await patchResponse.text();
+      console.error(`Failed to patch app credentials for ${appObjectId}:`, errText);
+      return { success: false, error: `Patch error: ${patchResponse.status}` };
+    }
+
+    const keyId = `tenant-${tenantId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+    console.log(`Certificate uploaded to tenant ${tenantId}, keyId: ${keyId}`);
+    return { success: true, keyId };
+  } catch (error) {
+    console.error(`Error uploading certificate to tenant ${tenantId}:`, error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Upload agent certificate to Azure App Registration(s)
+ * Priority: linked tenants first, then fallback to global config
+ * Returns the Azure key ID if successful
+ */
+async function uploadAgentCertificate(
+  supabase: any,
+  agentId: string,
+  thumbprint: string,
+  publicKey: string
+): Promise<string | null> {
+  console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
+  
+  try {
+    // Get M365 global config for client_secret (shared across all tenants)
+    const { data: globalConfig, error: configError } = await supabase
+      .from('m365_global_config')
+      .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
+      .limit(1)
+      .single();
+
+    if (configError || !globalConfig) {
+      console.log('M365 global config not found, skipping certificate upload');
       return null;
     }
 
-    // Generate a key ID based on thumbprint
-    const keyId = `agent-${agentId.substring(0, 8)}-${thumbprint.substring(0, 8)}`;
+    // Decrypt client secret
+    const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
+    if (!clientSecret) {
+      console.error('Failed to decrypt client secret');
+      return null;
+    }
 
-    // Update agent record with certificate info
-    await supabase
-      .from('agents')
-      .update({
-        certificate_thumbprint: thumbprint,
-        certificate_public_key: publicKey,
-        azure_certificate_key_id: keyId,
-      })
-      .eq('id', agentId);
+    // 1. Check if agent has linked tenants (multi-tenant flow)
+    const { data: linkedTenants, error: linkError } = await supabase
+      .from('m365_tenant_agents')
+      .select(`
+        tenant_record_id,
+        m365_tenants!inner(id, tenant_id, client_id),
+        m365_app_credentials!inner(azure_app_id, app_object_id)
+      `)
+      .eq('agent_id', agentId)
+      .eq('enabled', true);
 
-    console.log(`Certificate uploaded for agent ${agentId}, keyId: ${keyId}`);
-    return keyId;
+    if (!linkError && linkedTenants?.length > 0) {
+      console.log(`Found ${linkedTenants.length} linked tenant(s) for agent ${agentId}`);
+      
+      const uploadResults: string[] = [];
+      
+      for (const link of linkedTenants) {
+        const tenantId = link.m365_tenants?.tenant_id;
+        const appObjectId = link.m365_app_credentials?.app_object_id;
+        const azureAppId = link.m365_app_credentials?.azure_app_id;
+
+        if (!tenantId || !appObjectId || !azureAppId) {
+          console.warn(`Missing data for linked tenant:`, { tenantId, appObjectId, azureAppId });
+          continue;
+        }
+
+        const result = await uploadCertificateToTenantApp(
+          tenantId,
+          azureAppId,
+          appObjectId,
+          clientSecret, // Use shared client_secret from global config
+          thumbprint,
+          publicKey,
+          agentId
+        );
+
+        if (result.success && result.keyId) {
+          uploadResults.push(result.keyId);
+        }
+      }
+
+      if (uploadResults.length > 0) {
+        // Update agent record with certificate info
+        await supabase
+          .from('agents')
+          .update({
+            certificate_thumbprint: thumbprint,
+            certificate_public_key: publicKey,
+            azure_certificate_key_id: uploadResults.join(','),
+          })
+          .eq('id', agentId);
+
+        console.log(`Certificate uploaded to ${uploadResults.length} tenant(s) for agent ${agentId}`);
+        return uploadResults.join(',');
+      }
+    }
+
+    // 2. Fallback: upload to home tenant (legacy behavior)
+    if (!globalConfig.app_object_id || !globalConfig.home_tenant_id) {
+      console.log('M365 app_object_id or home_tenant_id not configured, skipping certificate upload');
+      return null;
+    }
+
+    console.log(`Fallback: uploading to home tenant ${globalConfig.home_tenant_id}`);
+    
+    const result = await uploadCertificateToTenantApp(
+      globalConfig.home_tenant_id,
+      globalConfig.app_id,
+      globalConfig.app_object_id,
+      clientSecret,
+      thumbprint,
+      publicKey,
+      agentId
+    );
+
+    if (result.success && result.keyId) {
+      // Update agent record with certificate info
+      await supabase
+        .from('agents')
+        .update({
+          certificate_thumbprint: thumbprint,
+          certificate_public_key: publicKey,
+          azure_certificate_key_id: result.keyId,
+        })
+        .eq('id', agentId);
+
+      console.log(`Certificate uploaded to home tenant for agent ${agentId}, keyId: ${result.keyId}`);
+      return result.keyId;
+    }
+
+    return null;
   } catch (error) {
     console.error('Error uploading certificate:', error);
     return null;
