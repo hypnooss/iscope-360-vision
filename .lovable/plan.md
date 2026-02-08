@@ -1,142 +1,167 @@
 
 
-# Plano: Corrigir Geração do PFX - Múltiplas Correções
+#LEMBRAR DAS REGRAS
+NENHUMA DIFICULDADE PARA O USUARIO!
 
-## Diagnóstico Completo
+O FLUXO INDICADO ESTA CRIANDO FACILIDDE OU DIFICULDADE ?
 
-Identifiquei **dois problemas** que impedem a geração do arquivo `.pfx`:
+# Plano: Corrigir Fluxo de Autenticação RBAC do Exchange
 
-### Problema 1: O `check-deps.sh` não está instalado no servidor
+## Diagnóstico
 
-O systemd está configurado para executar:
-```
-ExecStartPre=-/bin/bash /opt/iscope-agent/check-deps.sh
-```
+O erro `UnAuthorized` ao testar conexão com Exchange Online ocorre porque:
 
-Mas o arquivo `check-deps.sh` **não existe** em `/opt/iscope-agent/` porque:
-- Ele precisa estar incluído no tarball `iscope-agent-latest.tar.gz`
-- O tarball é baixado de `https://akbosdbyheezghieiefz.supabase.co/storage/v1/object/public/agent-releases/`
-- O tarball atual provavelmente foi criado **antes** do `check-deps.sh` ser adicionado ao repositório
+| Componente | Status | Problema |
+|------------|--------|----------|
+| Certificado do Agent | ✅ Registrado | No App Registration do home tenant (Precisio) |
+| Exchange RBAC | ❌ Não configurado | `New-ServicePrincipal` e `New-ManagementRoleAssignment` não foram executados |
+| Tentativa de conexão | ❌ Falha | CBA exige RBAC configurado, mas RBAC exige conexão para configurar |
 
-### Problema 2: Lógica de fallback no `agent-install`
+### O Problema Específico
 
-A função `generate_m365_certificate()` verifica se **todos os 3 arquivos** existem:
-```bash
-if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]] && [[ -f "$pfx_file" ]]; then
-    echo "Certificado M365 já existe, pulando geração..."
-    return
-fi
+O código em `connect-m365-tenant/index.ts` (linha 445) cria a tarefa de setup RBAC com:
+```typescript
+auth_mode: 'certificate', // Use CBA instead of credentials
 ```
 
-Isso está correto - deveria regenerar quando `.pfx` não existe. Mas a regeneração cria um **novo certificado** (`.crt` e `.key`), invalidando o thumbprint já registrado no Azure.
+Mas **CBA não funciona** para configurar o RBAC porque:
+1. O certificado está no home tenant, não no tenant cliente
+2. O RBAC precisa ser configurado antes do CBA funcionar para operações no Exchange
 
 ---
 
-## Solução em 2 Partes
+## Solução
 
-### Parte 1: Embutir o `check-deps.sh` diretamente no script de instalação
+Modificar o fluxo para que a configuração inicial do RBAC use autenticação baseada em **credenciais de administrador** (já suportada pelo executor PowerShell), e depois de configurado, as operações normais usem CBA.
 
-Em vez de depender do tarball, vou **gerar o arquivo `check-deps.sh` dinamicamente** durante a instalação, similar a como já é feito com o systemd unit file.
+### Opção A: Fluxo Automático com Credenciais (Recomendado)
 
-**Arquivo a modificar:**
-- `supabase/functions/agent-install/index.ts`
+1. Na UI de conexão do tenant, adicionar campos para credenciais de admin do Exchange
+2. Criar tarefa de RBAC setup com `auth_mode: 'credential'`
+3. Após sucesso, marcar tenant como "Exchange Authorized"
+4. Operações subsequentes usam CBA normalmente
 
-**Alteração:**
-- Adicionar função `write_check_deps_script()` que escreve o conteúdo do `check-deps.sh` diretamente em `/opt/iscope-agent/check-deps.sh`
-- Chamar esta função em `main()` antes de `write_systemd_service()`
+### Opção B: Fluxo Manual
 
-### Parte 2: Corrigir lógica de geração do PFX em instalações existentes
-
-Para instalações onde `.crt` e `.key` já existem mas `.pfx` não, adicionar lógica para **gerar apenas o PFX** sem recriar todo o certificado:
-
-```bash
-generate_m365_certificate() {
-  # ... definições de variáveis ...
-  
-  # Se cert e key existem mas pfx não, gerar apenas o pfx
-  if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]] && [[ ! -f "$pfx_file" ]]; then
-    echo "Gerando apenas arquivo PFX a partir do certificado existente..."
-    openssl pkcs12 -export -out "$pfx_file" -inkey "$key_file" -in "$cert_file" -passout pass: 2>/dev/null
-    if [[ -f "$pfx_file" ]]; then
-      chmod 600 "$pfx_file"
-      echo "Arquivo PFX gerado: $pfx_file"
-    fi
-    return
-  fi
-  
-  # Se todos existem, pular
-  if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]] && [[ -f "$pfx_file" ]]; then
-    echo "Certificado M365 já existe, pulando geração..."
-    return
-  fi
-  
-  # ... resto da geração completa ...
-}
-```
+1. Exibir instruções para o admin executar os comandos PowerShell manualmente
+2. Após execução manual, permitir testar a conexão
+3. Marcar tenant como "Exchange Authorized" após teste bem-sucedido
 
 ---
 
-## Detalhes Técnicos
+## Alterações Necessárias
 
-### Conteúdo do `write_check_deps_script()`
+### 1. Atualizar `connect-m365-tenant/index.ts`
 
-O script será escrito em `/opt/iscope-agent/check-deps.sh` com as seguintes seções:
-1. Flag file check (`/var/lib/iscope-agent/check_components.flag`)
-2. OS detection
-3. PowerShell installation (apt/dnf/yum)
-4. M365 modules installation (ExchangeOnlineManagement, Microsoft.Graph.Authentication)
-5. Certificate generation (com PFX)
+**Problema**: Linha 445 usa `auth_mode: 'certificate'` 
 
-### Localização no fluxo de instalação
+**Solução**: Remover a criação automática da tarefa RBAC na conexão inicial, pois ela sempre falhará
 
+```typescript
+// ANTES (linhas 421-457)
+// Create Exchange RBAC setup task using Certificate-Based Auth
+const setupCommands = [...];
+const { error: taskError } = await supabase.from('agent_tasks').insert({...});
+
+// DEPOIS
+// Não criar tarefa automática - RBAC precisa ser configurado 
+// via fluxo separado com credenciais de admin
+console.log('[connect-m365-tenant] RBAC setup will be handled via dedicated flow');
 ```
-main() {
-  ...
-  ensure_dirs
-  generate_m365_certificate
-  download_release
-  setup_venv
-  write_env_file
-  ensure_state_file
-  write_check_deps_script    # ADICIONAR AQUI
-  write_systemd_service
-  start_service
-}
+
+### 2. Criar Edge Function `setup-exchange-rbac`
+
+Nova edge function que:
+1. Recebe credenciais de admin (email/senha) via request seguro
+2. Cria tarefa para o agent com `auth_mode: 'credential'`
+3. Executa `New-ServicePrincipal` e `New-ManagementRoleAssignment`
+4. Atualiza permissões no banco após sucesso
+
+### 3. Atualizar UI `TenantStatusCard.tsx`
+
+Adicionar botão "Configurar Exchange" que abre modal para:
+1. Informar credenciais de admin do Exchange
+2. Disparar configuração via `setup-exchange-rbac`
+3. Exibir progresso e resultado
+
+### 4. Adicionar colunas no banco (m365_tenants ou nova tabela)
+
+```sql
+ALTER TABLE m365_tenants ADD COLUMN exchange_sp_registered BOOLEAN DEFAULT FALSE;
+ALTER TABLE m365_tenants ADD COLUMN exchange_rbac_assigned BOOLEAN DEFAULT FALSE;
 ```
 
 ---
 
-## Arquivos Modificados
+## Fluxo Atualizado
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    CONEXÃO DO TENANT                             │
+│  1. Admin faz login via Device Code                              │
+│  2. Sistema valida permissões Graph API                          │
+│  3. Tenant salvo com status "partial"                            │
+│  4. Exchange RBAC: ❌ Não configurado                            │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 CONFIGURAÇÃO DO EXCHANGE (NOVO)                  │
+│  1. Admin clica "Configurar Exchange" na UI                      │
+│  2. Informa credenciais de admin                                 │
+│  3. Sistema cria tarefa com auth_mode: 'credential'              │
+│  4. Agent executa New-ServicePrincipal + New-ManagementRole      │
+│  5. Sucesso → Exchange RBAC: ✅ Configurado                      │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    OPERAÇÕES NORMAIS                             │
+│  - Coletas de dados do Exchange usam CBA                         │
+│  - Certificado do agent já está no App Registration              │
+│  - Conexões subsequentes não precisam de credenciais             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Arquivos a Modificar
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/agent-install/index.ts` | Adicionar `write_check_deps_script()` e corrigir `generate_m365_certificate()` |
+| `supabase/functions/connect-m365-tenant/index.ts` | Remover criação automática de tarefa RBAC |
+| `supabase/functions/setup-exchange-rbac/index.ts` | **Criar** - Nova edge function para RBAC setup |
+| `src/components/m365/TenantStatusCard.tsx` | Adicionar botão/modal para configurar Exchange |
+| `src/hooks/useTenantConnection.ts` | Adicionar função para disparar setup RBAC |
+| Migrations | Adicionar colunas de status RBAC |
 
 ---
 
-## Impacto
+## Segurança das Credenciais
 
-- **Novas instalações:** Terão o `check-deps.sh` instalado e o `.pfx` gerado desde o início
-- **Updates (`--update`):** Gerará o `check-deps.sh` e o `.pfx` faltante sem recriar o certificado
-- **Flag manual:** Funcionará corretamente pois o `check-deps.sh` existirá
+1. Credenciais são enviadas via HTTPS para edge function
+2. Edge function usa criptografia XOR (já existente) para enviar ao agent
+3. Agent executa comandos e descarta credenciais
+4. Credenciais **nunca são persistidas** no banco
 
 ---
 
-## Teste Após Deploy
+## Alternativa Simplificada (Implementação Rápida)
 
-```bash
-# Atualizar instalação
-curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install | sudo bash -s -- --update
+Se quiser testar rapidamente sem modificar todo o fluxo:
 
-# Verificar check-deps.sh foi criado
-ls -la /opt/iscope-agent/check-deps.sh
+1. Executar manualmente no PowerShell (como admin do Exchange):
+```powershell
+Connect-ExchangeOnline
 
-# Verificar PFX foi criado
-ls -la /var/lib/iscope-agent/certs/
-# Esperado: m365.crt, m365.key, m365.pfx, thumbprint.txt
+# Registrar o app como Service Principal
+New-ServicePrincipal -AppId "800e141d-2dd6-4fa7-b19b-4a284f584d32" -ObjectId "<SP_OBJECT_ID>" -DisplayName "iScope Security"
 
-# Testar flag manual (opcional)
-sudo touch /var/lib/iscope-agent/check_components.flag && sudo systemctl restart iscope-agent
-tail -f /var/log/iscope-agent/components.log
+# Atribuir role
+New-ManagementRoleAssignment -App "800e141d-2dd6-4fa7-b19b-4a284f584d32" -Role "Exchange Recipient Administrator"
 ```
+
+2. Após executar, o teste de conexão CBA deve funcionar
+
+**Nota**: O `SP_OBJECT_ID` pode ser obtido do Azure Portal → Enterprise Applications → iScope Security → Object ID
 
