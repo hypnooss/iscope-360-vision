@@ -1,198 +1,89 @@
 
 
-# Plano: Corrigir Fluxo de Conexão M365 - Salvar spObjectId no OAuth Callback
+# Plano: Corrigir Descoberta de Tenant ID
 
 ## Diagnóstico
 
-O sistema já possui toda a lógica necessária, mas uma peça está faltando:
-
-| Componente | O que faz | Problema |
-|------------|-----------|----------|
-| `m365-oauth-callback` | Busca `servicePrincipalId` (linha 44-64) | Não salva no banco |
-| `setup-exchange-rbac` | Configura RBAC via Agent/PowerShell | Precisa do `spObjectId` mas não encontra |
-| `TenantConnectionWizard` | Usa Admin Consent popup | Funciona, mas não dispara setup RBAC |
-| `SimpleTenantConnectionWizard` | Usa Device Code Flow | Requer config manual no Azure |
-
-O `servicePrincipalId` é buscado no callback mas **não é persistido**. Por isso o `setup-exchange-rbac` falha.
-
-## Arquitetura da Solução
-
-```text
-FLUXO ATUAL (QUEBRADO)
-──────────────────────
-OAuth Callback                    setup-exchange-rbac
-      │                                  │
-      ├─ Busca spObjectId ✓              ├─ Precisa spObjectId
-      ├─ Tenta atribuir role (FALHA)     ├─ Não encontra no banco (FALHA)
-      └─ NÃO SALVA spObjectId            └─ Erro: SP_OBJECT_ID_REQUIRED
-
-
-FLUXO CORRIGIDO
-───────────────
-OAuth Callback                    setup-exchange-rbac
-      │                                  │
-      ├─ Busca spObjectId ✓              ├─ Busca spObjectId do banco ✓
-      ├─ SALVA no banco ✓                ├─ Cria task para Agent ✓
-      └─ (Role assignment opcional)      └─ Agent executa PowerShell ✓
+A função `discoverTenantId` está falhando porque o regex espera encontrar o tenant ID no formato:
+```
+https://login.microsoftonline.com/{tenant_id}/v2.0
 ```
 
-## Alterações Necessárias
-
-### 1. Migração SQL: Adicionar coluna sp_object_id
-
-```sql
-ALTER TABLE m365_app_credentials 
-ADD COLUMN IF NOT EXISTS sp_object_id TEXT;
-
-COMMENT ON COLUMN m365_app_credentials.sp_object_id IS 
-  'Service Principal Object ID no tenant do cliente, usado para setup do Exchange RBAC via PowerShell';
+Mas a resposta real do Azure para o domínio `taschibra.onmicrosoft.com` retorna:
+```
+"issuer": "https://sts.windows.net/95b506fe-8de3-4aa7-8ef0-d7fe4d494bde/"
 ```
 
-### 2. Edge Function: m365-oauth-callback/index.ts
+O regex atual (`/login\.microsoftonline\.com/`) não casa com `sts.windows.net`.
 
-Na função `assignExchangeAdminRole` (linha 37-128), o `servicePrincipalId` já é obtido.
+## Solução
 
-Modificar o upsert de credentials (linha 675-686) para incluir o `sp_object_id`:
+Atualizar o regex para capturar o tenant ID de ambos os formatos possíveis de issuer:
+- `https://login.microsoftonline.com/{tenant_id}/...`
+- `https://sts.windows.net/{tenant_id}/`
+
+Alternativamente, podemos extrair de `token_endpoint` que sempre tem o formato:
+```
+https://login.microsoftonline.com/{tenant_id}/oauth2/token
+```
+
+## Alteração
+
+### Arquivo: `src/components/m365/SimpleTenantConnectionWizard.tsx`
+
+Linhas 66-85 - Atualizar a função `discoverTenantId`:
 
 ```typescript
-// Linha ~628: Já chama assignExchangeAdminRole que retorna o spObjectId internamente
-// Precisamos extrair o spObjectId ANTES de tentar atribuir a role
-
-// NOVA LÓGICA: Buscar spObjectId separadamente
-const spResponse = await fetch(
-  `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id,displayName`,
-  { headers: { 'Authorization': `Bearer ${accessToken}` } }
-);
-const spData = await spResponse.json();
-const spObjectId = spData.value?.[0]?.id || null;
-
-console.log('Service Principal Object ID:', spObjectId);
-
-// Linha ~675-686: Modificar upsert para incluir sp_object_id
-const { error: credError } = await supabase
-  .from('m365_app_credentials')
-  .upsert({
-    tenant_record_id,
-    azure_app_id: appId,
-    sp_object_id: spObjectId,  // NOVO CAMPO
-    auth_type: 'multi_tenant_app',
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  }, {
-    onConflict: 'tenant_record_id',
-  });
-```
-
-### 3. Edge Function: setup-exchange-rbac/index.ts
-
-Modificar para buscar `sp_object_id` do banco se não fornecido (linha 139-149):
-
-```typescript
-// Se spObjectId não fornecido, buscar do banco
-if (!spObjectId) {
-  const { data: creds, error: credsError } = await supabase
-    .from('m365_app_credentials')
-    .select('sp_object_id')
-    .eq('tenant_record_id', tenantRecordId)
-    .single();
-  
-  if (credsError || !creds?.sp_object_id) {
-    console.error('SP Object ID not found in database:', credsError);
-    return new Response(
-      JSON.stringify({ 
-        error: "Service Principal não encontrado. Reconecte o tenant para resolver.",
-        code: "SP_OBJECT_ID_NOT_FOUND"
-      }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+async function discoverTenantId(domain: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://login.microsoftonline.com/${domain}/.well-known/openid-configuration`
     );
+    if (!response.ok) {
+      console.warn('Could not discover tenant ID for domain:', domain);
+      return null;
+    }
+    const data = await response.json();
+    
+    // Try to extract tenant ID from multiple sources
+    // 1. Try issuer with login.microsoftonline.com format
+    // 2. Try issuer with sts.windows.net format  
+    // 3. Try token_endpoint as fallback
+    
+    const issuer = data.issuer || '';
+    const tokenEndpoint = data.token_endpoint || '';
+    
+    // Match login.microsoftonline.com/{tenant_id}/
+    let match = issuer.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    // Match sts.windows.net/{tenant_id}/
+    match = issuer.match(/https:\/\/sts\.windows\.net\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    // Fallback: extract from token_endpoint
+    match = tokenEndpoint.match(/https:\/\/login\.microsoftonline\.com\/([a-f0-9-]+)/i);
+    if (match) return match[1];
+    
+    console.warn('Could not extract tenant ID from OpenID config:', { issuer, tokenEndpoint });
+    return null;
+  } catch (err) {
+    console.error('Error discovering tenant ID:', err);
+    return null;
   }
-  
-  spObjectId = creds.sp_object_id;
-  console.log('SP Object ID loaded from database:', spObjectId);
 }
 ```
 
-### 4. Frontend: SimpleTenantConnectionWizard.tsx
+## Resumo
 
-Substituir Device Code Flow por Admin Consent Flow (mesma lógica do `TenantConnectionWizard`):
+| Item | Descrição |
+|------|-----------|
+| Arquivo | `src/components/m365/SimpleTenantConnectionWizard.tsx` |
+| Linhas | 66-85 |
+| Problema | Regex não casa com `sts.windows.net` |
+| Solução | Adicionar regex alternativo para `sts.windows.net` + fallback para `token_endpoint` |
 
-- Remover estado de `deviceCodeData`, `timeRemaining`, `pollingRef`
-- Remover funções `startPolling`, `handleCopyCode`
-- Adicionar lógica de Admin Consent popup
-- Ouvir mensagens do popup via `window.addEventListener('message')`
+## Resultado Esperado
 
-```typescript
-const handleStart = async () => {
-  // 1. Descobrir tenant_id do email
-  const emailDomain = adminEmail.split('@')[1];
-  const tenantId = await discoverTenantId(emailDomain);
-  
-  // 2. Criar tenant record pendente
-  const { data: tenant } = await supabase
-    .from('m365_tenants')
-    .insert({
-      client_id: selectedClientId,
-      tenant_id: tenantId,
-      connection_status: 'pending',
-      created_by: user?.id,
-    })
-    .select()
-    .single();
-  
-  // 3. Linkar agent automaticamente
-  // 4. Buscar app_id via get-m365-config
-  // 5. Abrir popup Admin Consent
-  const consentUrl = new URL(`https://login.microsoftonline.com/${tenantId}/adminconsent`);
-  consentUrl.searchParams.set('client_id', appId);
-  consentUrl.searchParams.set('redirect_uri', callbackUrl);
-  consentUrl.searchParams.set('state', statePayload);
-  
-  window.open(consentUrl.toString(), 'microsoft_auth', 'width=600,height=700');
-  setWaitingForAuth(true);
-};
-```
-
-## Resumo das Alterações
-
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| Migration SQL | NEW | Adicionar coluna `sp_object_id` |
-| `m365-oauth-callback/index.ts` | EDIT | Salvar `sp_object_id` no upsert de credentials |
-| `setup-exchange-rbac/index.ts` | EDIT | Buscar `sp_object_id` do banco se não fornecido |
-| `SimpleTenantConnectionWizard.tsx` | EDIT | Usar Admin Consent ao invés de Device Code |
-
-## Por que isso resolve
-
-1. **Admin Consent** não requer configuração manual no Azure ("Allow public client flows")
-2. **spObjectId** é buscado automaticamente via token de aplicação após consent
-3. **spObjectId é salvo** no banco para uso posterior
-4. **setup-exchange-rbac** consegue buscar o spObjectId do banco
-5. **Exchange RBAC** é configurado via Agent/PowerShell usando AUTH_MODE_CREDENTIAL
-6. **MFA funciona** porque o admin autentica interativamente no popup
-
-## Fluxo Final Completo
-
-```text
-1. Usuario digita email do admin no SimpleTenantConnectionWizard
-2. Sistema descobre tenant_id do dominio do email
-3. Sistema cria tenant record + linka agent automaticamente
-4. Sistema abre popup Admin Consent
-5. Global Admin clica "Accept" (MFA suportado!)
-6. m365-oauth-callback:
-   - Obtém token de aplicação via client_credentials
-   - Busca spObjectId via Graph API
-   - SALVA spObjectId no banco (NOVO!)
-   - Valida permissões
-7. Popup fecha e SimpleTenantConnectionWizard mostra sucesso
-8. Usuario vai para "Configurar Exchange" (card no dashboard)
-9. setup-exchange-rbac:
-   - Busca spObjectId do banco (NOVO!)
-   - Cria task para Agent com AUTH_MODE_CREDENTIAL
-10. Agent executa PowerShell: New-ServicePrincipal + New-ManagementRoleAssignment
-11. Exchange RBAC configurado!
-```
-
-## Dependências
-
-- A coluna `sp_object_id` precisa existir antes de deployar as edge functions
+Com esta correção, a descoberta do tenant ID funcionará para todos os formatos de resposta do Azure AD, permitindo que o domínio `taschibra.onmicrosoft.com` (que retorna tenant ID `95b506fe-8de3-4aa7-8ef0-d7fe4d494bde`) seja processado corretamente.
 
