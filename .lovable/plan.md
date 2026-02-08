@@ -1,54 +1,11 @@
 
-# Plano: Automatizar Atribuição da Role Exchange Administrator
+# Plano: Adicionar RoleManagement.ReadWrite.Directory em Todo o Fluxo M365
 
-## Análise do Problema
+## Contexto
 
-O erro "UnAuthorized" no PowerShell Exchange Online ocorre porque o Service Principal do App precisa ter a role **Exchange Administrator** atribuída no Azure AD do tenant cliente. Esta role não é concedida automaticamente pelo Admin Consent - requer atribuição manual ou via Graph API.
+A permissão `RoleManagement.ReadWrite.Directory` é necessária para que o sistema possa automaticamente atribuir a role **Exchange Administrator** ao Service Principal do App no tenant cliente. Esta role é obrigatória para que o PowerShell possa conectar ao Exchange Online via CBA (Certificate-Based Authentication).
 
-### Fluxo Atual (Problema)
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  BOTÃO "PERMISSÕES" - Fluxo Atual                                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. Clique em "Permissões"                                                  │
-│  2. Abre Admin Consent Window                                               │
-│  3. Admin concede permissões Graph API (User.Read.All, etc.)               │
-│  4. m365-oauth-callback valida permissões Graph                            │
-│  5. Conexão estabelecida                                                    │
-│                                                                             │
-│  PROBLEMA: Exchange Administrator Role NÃO é concedida!                    │
-│  PowerShell Connect-ExchangeOnline falha com "UnAuthorized"                │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Requisito Técnico
-
-Para conectar ao Exchange Online via PowerShell com CBA (Certificate-Based Authentication), o Service Principal precisa de uma das seguintes roles:
-- **Exchange Administrator** (29232cdf-9323-42fd-ade2-1d097af3e4de)
-- **Global Administrator** (não recomendado por ser privilegiada demais)
-
-Esta atribuição é feita via:
-```
-POST /roleManagement/directory/roleAssignments
-{
-  "roleDefinitionId": "29232cdf-9323-42fd-ade2-1d097af3e4de",
-  "principalId": "<service-principal-object-id>",
-  "directoryScopeId": "/"
-}
-```
-
----
-
-## Solução Proposta
-
-Modificar o fluxo do `m365-oauth-callback` para, após o Admin Consent, automaticamente atribuir a role Exchange Administrator ao Service Principal do App no tenant cliente.
-
-### Pré-requisito
-
-A aplicação multi-tenant precisa ter a permissão **RoleManagement.ReadWrite.Directory** configurada no Azure. Se não tiver, o sistema tentará a atribuição e falhará graciosamente, indicando ao usuário que deve fazer manualmente.
+Atualmente, as permissões são definidas em múltiplos locais (edge functions, migrations, frontend) e precisamos adicionar `RoleManagement.ReadWrite.Directory` em todos eles.
 
 ---
 
@@ -56,227 +13,245 @@ A aplicação multi-tenant precisa ter a permissão **RoleManagement.ReadWrite.D
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/m365-oauth-callback/index.ts` | Adicionar lógica de atribuição de role após consentimento |
-| `supabase/functions/validate-m365-permissions/index.ts` | Adicionar verificação de Exchange Admin Role |
-| `src/components/m365/TenantStatusCard.tsx` | Exibir status da role Exchange Administrator |
+| `supabase/functions/m365-oauth-callback/index.ts` | Adicionar à lista REQUIRED_PERMISSIONS |
+| `supabase/functions/validate-m365-permissions/index.ts` | Adicionar à lista RECOMMENDED_PERMISSIONS e criar teste |
+| `supabase/functions/validate-m365-connection/index.ts` | Adicionar à lista REQUIRED_PERMISSIONS e criar teste |
+| `supabase/functions/get-m365-config/index.ts` | Adicionar à lista REQUIRED_PERMISSIONS |
+| `src/pages/admin/SettingsPage.tsx` | Adicionar à lista defaultPermissions |
+| Migração SQL | Inserir nova permissão na tabela m365_required_permissions |
 
 ---
 
 ## Mudanças Detalhadas
 
-### 1. `m365-oauth-callback/index.ts` - Atribuir Role Automaticamente
+### 1. `m365-oauth-callback/index.ts`
 
-Após o Admin Consent ser concedido com sucesso, adicionar:
+Adicionar `RoleManagement.ReadWrite.Directory` à lista de permissões requeridas e criar teste:
 
+**Linha 15-25 (REQUIRED_PERMISSIONS)**:
 ```typescript
-// Constants for Exchange Administrator role
-const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All', 
+  'Group.Read.All',
+  'Application.Read.All',
+  'AuditLog.Read.All',
+  'Policy.Read.All',
+  'RoleManagement.ReadWrite.Directory', // NOVO - Para atribuir Exchange Admin Role
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
+];
+```
 
-// Function to assign Exchange Administrator role to the App's Service Principal
-async function assignExchangeAdminRole(
-  accessToken: string, 
-  appId: string, 
-  tenantId: string
-): Promise<{ success: boolean; error?: string; alreadyAssigned?: boolean }> {
-  try {
-    // 1. Get Service Principal by App ID
-    const spResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id,displayName`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    
-    if (!spResponse.ok) {
-      return { success: false, error: 'Failed to find Service Principal' };
-    }
-    
-    const spData = await spResponse.json();
-    const servicePrincipalId = spData.value?.[0]?.id;
-    
-    if (!servicePrincipalId) {
-      return { success: false, error: 'Service Principal not found in tenant' };
-    }
-    
-    // 2. Check if role is already assigned
-    const checkResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=principalId eq '${servicePrincipalId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_TEMPLATE_ID}'`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    
-    if (checkResponse.ok) {
-      const checkData = await checkResponse.json();
-      if (checkData.value?.length > 0) {
-        return { success: true, alreadyAssigned: true };
-      }
-    }
-    
-    // 3. Assign the Exchange Administrator role
-    const assignResponse = await fetch(
-      'https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          '@odata.type': '#microsoft.graph.unifiedRoleAssignment',
-          roleDefinitionId: EXCHANGE_ADMIN_ROLE_TEMPLATE_ID,
-          principalId: servicePrincipalId,
-          directoryScopeId: '/',
-        }),
-      }
-    );
-    
-    if (assignResponse.ok || assignResponse.status === 201) {
-      return { success: true };
-    }
-    
-    const errorBody = await assignResponse.json().catch(() => ({}));
-    return { 
-      success: false, 
-      error: errorBody?.error?.message || `HTTP ${assignResponse.status}` 
-    };
-  } catch (error) {
-    return { success: false, error: String(error) };
-  }
+**Adicionar teste de permissão** (na seção de permission tests):
+```typescript
+// Test RoleManagement.ReadWrite.Directory
+{ 
+  permission: 'RoleManagement.ReadWrite.Directory', 
+  endpoint: 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1' 
+},
+```
+
+### 2. `validate-m365-permissions/index.ts`
+
+Mover de RECOMMENDED para REQUIRED e adicionar teste:
+
+**Linhas 15-30**:
+```typescript
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All',
+  'Organization.Read.All',
+  'Domain.Read.All',
+  'RoleManagement.ReadWrite.Directory', // NOVO
+];
+
+const RECOMMENDED_PERMISSIONS = [
+  'Group.Read.All',
+  'Application.Read.All',
+  'Policy.Read.All',
+  'RoleManagement.Read.Directory', // Manter para leitura
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
+];
+```
+
+**Adicionar case no testPermission (linha ~175)**:
+```typescript
+case 'RoleManagement.ReadWrite.Directory':
+  url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
+  break;
+```
+
+### 3. `validate-m365-connection/index.ts`
+
+Adicionar à lista e criar teste:
+
+**Linhas 22-32**:
+```typescript
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All', 
+  'Group.Read.All',
+  'Application.Read.All',
+  'AuditLog.Read.All',
+  'RoleManagement.ReadWrite.Directory', // NOVO
+  // Exchange Online
+  'MailboxSettings.Read',
+  'Mail.Read',
+];
+```
+
+**Adicionar teste (após linha ~376)**:
+```typescript
+} else if (permission === 'RoleManagement.ReadWrite.Directory') {
+  // Test ability to read/write directory role assignments
+  const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  granted = response.ok;
+  console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
 }
 ```
 
-Após validar permissões Graph, chamar:
+### 4. `get-m365-config/index.ts`
 
+Adicionar à lista de permissões:
+
+**Linhas 8-14 (REQUIRED_PERMISSIONS)**:
 ```typescript
-// Attempt to assign Exchange Administrator role for PowerShell connectivity
-console.log('Attempting to assign Exchange Administrator role...');
-const roleResult = await assignExchangeAdminRole(accessToken, appId, tenant_id);
-if (roleResult.success) {
-  console.log(roleResult.alreadyAssigned 
-    ? 'Exchange Administrator role already assigned' 
-    : 'Exchange Administrator role assigned successfully');
-} else {
-  console.warn('Could not assign Exchange Administrator role:', roleResult.error);
-  // Not a blocking error - PowerShell features may not work, but Graph API will
-}
+const REQUIRED_PERMISSIONS = [
+  'User.Read.All',
+  'Directory.Read.All',
+  'Organization.Read.All',
+  'Domain.Read.All',
+  'RoleManagement.ReadWrite.Directory', // NOVO
+];
 ```
 
-### 2. `validate-m365-permissions/index.ts` - Verificar Role
-
-Adicionar teste para Exchange Administrator role na lista de permissões:
-
+**Adicionar case no testPermission (linha ~127)**:
 ```typescript
-// Check Exchange Administrator role assignment
-const EXCHANGE_ADMIN_ROLE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
-
-async function testExchangeAdminRole(accessToken: string, appId: string): Promise<boolean> {
-  try {
-    // Get Service Principal
-    const spResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appId}'&$select=id`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    
-    if (!spResponse.ok) return false;
-    
-    const spData = await spResponse.json();
-    const spId = spData.value?.[0]?.id;
-    if (!spId) return false;
-    
-    // Check role assignment
-    const roleResponse = await fetch(
-      `https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?$filter=principalId eq '${spId}' and roleDefinitionId eq '${EXCHANGE_ADMIN_ROLE_ID}'`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    
-    if (!roleResponse.ok) return false;
-    
-    const roleData = await roleResponse.json();
-    return (roleData.value?.length || 0) > 0;
-  } catch {
-    return false;
-  }
-}
+case 'RoleManagement.ReadWrite.Directory':
+  url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$top=1&$select=id';
+  break;
 ```
 
-Adicionar na lista de permissões recomendadas:
+### 5. `src/pages/admin/SettingsPage.tsx`
 
+Adicionar à lista de permissões padrão do frontend:
+
+**Linhas 83-100 (defaultPermissions)**:
 ```typescript
-// Add to permissions list
-results.push({ 
-  name: 'Exchange Administrator Role', 
-  granted: await testExchangeAdminRole(accessToken, appId), 
-  type: 'recommended' 
-});
+const defaultPermissions: PermissionStatus[] = [
+  // Core permissions
+  { name: 'User.Read.All', granted: false, type: 'required' },
+  { name: 'Directory.Read.All', granted: false, type: 'required' },
+  { name: 'Organization.Read.All', granted: false, type: 'required' },
+  { name: 'Domain.Read.All', granted: false, type: 'required' },
+  { name: 'RoleManagement.ReadWrite.Directory', granted: false, type: 'required' }, // NOVO
+  // Entra ID / Security
+  { name: 'Group.Read.All', granted: false, type: 'recommended' },
+  { name: 'Application.Read.All', granted: false, type: 'recommended' },
+  { name: 'Policy.Read.All', granted: false, type: 'recommended' },
+  { name: 'Reports.Read.All', granted: false, type: 'recommended' },
+  { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
+  // Exchange Online
+  { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
+  { name: 'Mail.Read', granted: false, type: 'recommended' },
+  // Certificate Upload
+  { name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
+];
 ```
 
-### 3. `TenantStatusCard.tsx` - Mostrar Status da Role
-
-Atualizar a exibição de permissões para destacar a Exchange Administrator Role:
-
+**Atualizar corePermissions (linha ~103)**:
 ```typescript
-// Add icon for role-type permissions
-const isRole = perm.permission_name.includes('Role');
-// ... render with Shield icon for roles
+const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
+```
+
+### 6. Migração SQL
+
+Criar nova migração para inserir a permissão na tabela `m365_required_permissions`:
+
+```sql
+-- Add RoleManagement.ReadWrite.Directory permission for Exchange Administrator role assignment
+INSERT INTO public.m365_required_permissions (submodule, permission_name, permission_type, description, is_required)
+VALUES (
+  'entra_id', 
+  'RoleManagement.ReadWrite.Directory', 
+  'Application', 
+  'Atribuir roles de diretório (Exchange Administrator) ao Service Principal', 
+  true
+)
+ON CONFLICT (permission_name, submodule) DO UPDATE SET
+  description = EXCLUDED.description,
+  is_required = EXCLUDED.is_required;
 ```
 
 ---
 
-## Fluxo Após Implementação
+## Fluxo Atualizado
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  BOTÃO "PERMISSÕES" - Novo Fluxo                                            │
+│  FLUXO DE PERMISSÕES M365 - ATUALIZADO                                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  1. Clique em "Permissões"                                                  │
-│  2. Abre Admin Consent Window                                               │
-│  3. Admin concede permissões Graph API                                      │
-│  4. m365-oauth-callback:                                                    │
-│     a) Valida permissões Graph API                                          │
-│     b) NOVO: Tenta atribuir Exchange Administrator role                    │
-│     c) Registra resultado (sucesso ou falha graceful)                      │
-│  5. Conexão estabelecida                                                    │
-│  6. PowerShell pode conectar ao Exchange Online                            │
+│  1. Tenant Home (MSP)                                                       │
+│     └─ App Registration configura permissões:                              │
+│        • User.Read.All                                                      │
+│        • Directory.Read.All                                                 │
+│        • RoleManagement.ReadWrite.Directory  (NOVO)                        │
+│        • ... outras permissões                                             │
+│                                                                             │
+│  2. Tenant Cliente (via Admin Consent)                                      │
+│     └─ Admin concede permissões listadas acima                             │
+│     └─ m365-oauth-callback:                                                │
+│        a) Valida permissões Graph API                                       │
+│        b) Atribui Exchange Administrator Role automaticamente              │
+│        c) Salva status em m365_tenant_permissions                          │
+│                                                                             │
+│  3. Validação Periódica                                                     │
+│     └─ validate-m365-permissions verifica todas as permissões              │
+│     └─ Exibe status no TenantStatusCard                                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Requisitos de Permissão
+## Ação Manual Requerida no Azure
 
-Para que a atribuição automática funcione, o App Registration precisa ter:
+Após implementar as mudanças de código, o App Registration no Azure precisa ser atualizado:
 
-| Permissão | Propósito |
-|-----------|-----------|
-| `RoleManagement.ReadWrite.Directory` | Atribuir roles de diretório |
+1. Acesse o Azure Portal do tenant MSP (home)
+2. Vá em **Microsoft Entra ID** > **App registrations** > Selecione o App multi-tenant
+3. Vá em **API Permissions** > **Add a permission**
+4. Selecione **Microsoft Graph** > **Application permissions**
+5. Busque e adicione **RoleManagement.ReadWrite.Directory**
+6. Clique em **Grant admin consent for [Tenant]** (para o tenant home)
 
-Se esta permissão não estiver concedida, o sistema:
-1. Tenta a atribuição
-2. Falha graciosamente
-3. Loga warning nos logs
-4. Funcionalidades Graph API continuam funcionando
-5. PowerShell requer atribuição manual
-
----
-
-## Fallback Manual
-
-Se a atribuição automática falhar, documentar no UI:
-
-> **Exchange Online PowerShell requer configuração adicional**
-> 
-> Para usar recursos do Exchange Online via PowerShell, um administrador do tenant deve atribuir a role "Exchange Administrator" ao aplicativo iScope 360 no Azure Portal:
-> 
-> 1. Acesse Azure Portal > Microsoft Entra ID > Roles and administrators
-> 2. Selecione "Exchange Administrator"
-> 3. Clique em "Add assignments"
-> 4. Busque e selecione "iScope 360" (ou o nome do app)
-> 5. Confirme a atribuição
+Os tenants clientes precisarão reconsentir para obter a nova permissão (botão "Permissões" no card do tenant).
 
 ---
 
 ## Benefícios
 
-1. **Automatização**: A role é atribuída automaticamente durante o fluxo de consentimento
-2. **Graceful Degradation**: Se falhar, outras funcionalidades continuam funcionando
-3. **Visibilidade**: O status da role aparece na lista de permissões do tenant
-4. **Documentação**: Instruções claras para atribuição manual quando necessário
+1. **Automação completa**: Exchange Administrator Role será atribuída automaticamente durante o consentimento
+2. **Consistência**: Permissão presente em todos os locais do fluxo (edge functions, DB, frontend)
+3. **Visibilidade**: Status da permissão aparece na lista de permissões do tenant
+4. **Graceful degradation**: Se a permissão não for concedida, o sistema continua funcionando com outras features
+
+---
+
+## Resumo Técnico de Arquivos
+
+| Arquivo | Tipo | Propósito |
+|---------|------|-----------|
+| `m365-oauth-callback` | Edge Function | Valida permissões e atribui role após consentimento |
+| `validate-m365-permissions` | Edge Function | Validação periódica e exibição de status |
+| `validate-m365-connection` | Edge Function | Teste de conexão com tenant |
+| `get-m365-config` | Edge Function | Retorna config e status de permissões |
+| `SettingsPage.tsx` | Frontend | Exibe lista de permissões na configuração global |
+| Migração SQL | Database | Define permissões requeridas por submódulo |
