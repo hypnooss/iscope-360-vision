@@ -776,6 +776,7 @@ export type Database = {
       }
       m365_app_credentials: {
         Row: {
+          app_object_id: string | null
           auth_type: string
           azure_app_id: string
           certificate_thumbprint: string | null
@@ -790,6 +791,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          app_object_id?: string | null
           auth_type?: string
           azure_app_id: string
           certificate_thumbprint?: string | null
@@ -804,6 +806,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          app_object_id?: string | null
           auth_type?: string
           azure_app_id?: string
           certificate_thumbprint?: string | null
