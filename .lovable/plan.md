@@ -1,117 +1,95 @@
 
-# Plano: Mapear Permissões Exchange/SharePoint para Nomes de Roles
+# Plano: Blueprint M365 PowerShell (Exchange + SharePoint)
 
 ## Contexto
 
-As permissões `Exchange.ManageAsApp` e `Sites.FullControl.All` que adicionamos automaticamente ao App Registration precisam ser validadas e exibidas na interface. O usuário quer que sejam exibidas com os nomes:
+Criar um blueprint do tipo `agent` que utilize o executor PowerShell para coletar dados do Exchange Online e SharePoint Online via CBA (Certificate-Based Authentication).
 
-- `Exchange.ManageAsApp` → **Exchange Administrator**
-- `Sites.FullControl.All` → **SharePoint Administrator**
+## Arquitetura
 
-## Arquitetura Atual
+| Campo | Valor |
+|-------|-------|
+| **Nome** | M365 - Exchange & SharePoint (Agent) |
+| **Tipo de Executor** | `agent` |
+| **Template** | Microsoft 365 (m365) |
+| **Device Type ID** | `5d1a7095-2d7b-4541-873d-4b03c3d6122f` |
 
-O sistema **já exibe** "Exchange Administrator" e "SharePoint Administrator" na seção "Roles do Diretório (RBAC)" do `TenantStatusCard`, mas valida verificando se a **role do Azure AD** foi atribuída ao Service Principal.
+## Steps de Coleta - Exchange Online
 
-## Nova Lógica
+### 1. Configurações de Mailbox
+| Step ID | Comando PowerShell | Descrição |
+|---------|-------------------|-----------|
+| `exo_mailbox_forwarding` | `Get-Mailbox -ResultSize Unlimited \| Select DisplayName, ForwardingAddress, ForwardingSmtpAddress, DeliverToMailboxAndForward` | Encaminhamentos de e-mail |
+| `exo_inbox_rules` | `Get-InboxRule -Mailbox * -IncludeHidden` | Regras de inbox (redirecionamentos) |
+| `exo_cas_mailbox` | `Get-CASMailbox -ResultSize Unlimited \| Select Identity, ImapEnabled, PopEnabled, ActiveSyncEnabled, OWAEnabled, EwsEnabled` | Protocolos habilitados por mailbox |
 
-Substituir a validação de Directory Roles pela validação das **permissões de aplicativo** (que são concedidas via Admin Consent):
+### 2. Políticas de Transporte
+| Step ID | Comando PowerShell | Descrição |
+|---------|-------------------|-----------|
+| `exo_transport_rules` | `Get-TransportRule \| Select Name, State, Priority, FromScope, SentTo, RedirectMessageTo, BlindCopyTo` | Regras de fluxo de e-mail |
+| `exo_connectors_inbound` | `Get-InboundConnector` | Conectores de entrada |
+| `exo_connectors_outbound` | `Get-OutboundConnector` | Conectores de saída |
+| `exo_remote_domains` | `Get-RemoteDomain \| Select DomainName, AllowedOOFType, AutoForwardEnabled, DeliveryReportEnabled` | Domínios remotos e auto-forward |
 
-| Permissão Real (Azure) | Nome Exibido (UI) | Tipo |
-|------------------------|-------------------|------|
-| `Exchange.ManageAsApp` | Exchange Administrator | Application Permission |
-| `Sites.FullControl.All` | SharePoint Administrator | Application Permission |
+### 3. Políticas Anti-Spam/Anti-Malware
+| Step ID | Comando PowerShell | Descrição |
+|---------|-------------------|-----------|
+| `exo_antispam_policy` | `Get-HostedContentFilterPolicy` | Políticas anti-spam |
+| `exo_antimalware_policy` | `Get-MalwareFilterPolicy` | Políticas anti-malware |
+| `exo_safe_attachments` | `Get-SafeAttachmentPolicy` | Políticas de anexos seguros (Defender) |
+| `exo_safe_links` | `Get-SafeLinksPolicy` | Políticas de links seguros (Defender) |
 
-## Alterações
+### 4. Auditoria e Compliance
+| Step ID | Comando PowerShell | Descrição |
+|---------|-------------------|-----------|
+| `exo_audit_config` | `Get-AdminAuditLogConfig` | Configuração de log de auditoria |
+| `exo_retention_policies` | `Get-RetentionPolicy` | Políticas de retenção |
+| `exo_dlp_policies` | `Get-DlpPolicy` | Políticas de DLP |
+| `exo_journal_rules` | `Get-JournalRule` | Regras de journaling |
 
-### 1. Edge Function `validate-m365-connection/index.ts`
+## Steps de Coleta - SharePoint Online
 
-**Adicionar teste das permissões Exchange/SharePoint:**
+### 5. Sites e Configurações
+| Step ID | Comando PowerShell | Módulo | Descrição |
+|---------|-------------------|--------|-----------|
+| `spo_tenant_settings` | `Get-SPOTenant` | SharePointOnlinePowerShell | Configurações globais do tenant |
+| `spo_sites` | `Get-SPOSite -Limit All \| Select Url, Title, SharingCapability, ConditionalAccessPolicy, LockState` | SharePointOnlinePowerShell | Inventário de sites |
+| `spo_external_users` | `Get-SPOExternalUser -SiteUrl <cada site>` | SharePointOnlinePowerShell | Usuários externos por site |
 
-```typescript
-// Constantes para os Resource IDs
-const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
-const SHAREPOINT_RESOURCE_ID = "00000003-0000-0ff1-ce00-000000000000";
-```
+### 6. Segurança e Compartilhamento
+| Step ID | Comando PowerShell | Descrição |
+|---------|-------------------|-----------|
+| `spo_sharing_capability` | `Get-SPOTenant \| Select SharingCapability, DefaultSharingLinkType, DefaultLinkPermission` | Configurações de compartilhamento |
+| `spo_access_control` | `Get-SPOTenant \| Select ConditionalAccessPolicy, LegacyAuthProtocolsEnabled, DisableCustomAppAuthentication` | Controles de acesso |
 
-**Nova função para verificar permissões concedidas:**
+## Estrutura JSON do Blueprint
 
-```typescript
-async function testAppRoleAssignment(
-  accessToken: string, 
-  appId: string, 
-  resourceAppId: string, 
-  appRoleId: string
-): Promise<{ granted: boolean; error?: string }> {
-  // 1. Buscar Service Principal do app
-  // 2. Buscar Service Principal do recurso (Exchange/SharePoint)
-  // 3. Verificar se existe appRoleAssignment entre eles
+```json
+{
+  "steps": [
+    {
+      "id": "exo_mailbox_forwarding",
+      "type": "powershell",
+      "category": "Exchange - Mailbox",
+      "params": {
+        "module": "ExchangeOnline",
+        "commands": ["Get-Mailbox -ResultSize Unlimited | Select DisplayName, ForwardingAddress, ForwardingSmtpAddress, DeliverToMailboxAndForward | ConvertTo-Json -Depth 5"]
+      }
+    },
+    // ... outros steps
+  ]
 }
 ```
 
-**Substituir os testes de Directory Roles:**
+## Considerações
 
-```typescript
-// Ao invés de testar Exchange Administrator Role
-const exchangeResult = await testAppRoleAssignment(
-  accessToken, 
-  app_id, 
-  EXCHANGE_RESOURCE_ID, 
-  "dc50a0fb-09a3-484d-be87-e023b12c6440" // Exchange.ManageAsApp
-);
-permissionResults.push({
-  name: 'Exchange Administrator', // Nome amigável
-  granted: exchangeResult.granted,
-  required: false,
-});
+1. **Autenticação**: Os steps usarão CBA com o certificado do agente
+2. **Módulos**: ExchangeOnlineManagement para Exchange, Microsoft.Online.SharePoint.PowerShell para SharePoint
+3. **Timeout**: Steps com -ResultSize Unlimited podem demorar em tenants grandes
+4. **Rate Limiting**: Adicionar throttling entre comandos se necessário
 
-// Ao invés de testar SharePoint Administrator Role
-const sharepointResult = await testAppRoleAssignment(
-  accessToken, 
-  app_id, 
-  SHAREPOINT_RESOURCE_ID, 
-  "678536fe-1083-478a-9c59-b99265e6b0d3" // Sites.FullControl.All
-);
-permissionResults.push({
-  name: 'SharePoint Administrator', // Nome amigável
-  granted: sharepointResult.granted,
-  required: false,
-});
-```
+## Próximos Passos
 
-### 2. TenantStatusCard.tsx (Sem Alterações)
-
-A interface já está configurada corretamente:
-- Exibe "Exchange Administrator" na seção "Roles do Diretório"
-- Exibe "SharePoint Administrator" na seção "Roles do Diretório"
-
-Os nomes já estão certos, só precisamos ajustar a validação backend.
-
-### 3. Atualizar `validate-m365-permissions/index.ts` (Opcional)
-
-Se esta função também for usada, aplicar a mesma lógica.
-
-## Fluxo de Verificação (appRoleAssignments)
-
-```text
-1. GET /servicePrincipals?$filter=appId eq '{app_id}'
-   → Obtém o Service Principal do nosso app
-
-2. GET /servicePrincipals/{sp_id}/appRoleAssignments
-   → Lista todas as atribuições de roles do app
-
-3. Verificar se existe uma atribuição onde:
-   - resourceAppId = Exchange/SharePoint Resource ID
-   - appRoleId = Exchange.ManageAsApp / Sites.FullControl.All
-```
-
-## Resumo das Alterações
-
-| Arquivo | Ação |
-|---------|------|
-| `supabase/functions/validate-m365-connection/index.ts` | Substituir validação de Directory Roles por validação de App Role Assignments |
-
-## Benefícios
-
-1. **Precisão**: Valida exatamente o que foi concedido via Admin Consent
-2. **Consistência**: A edge function `ensure-exchange-permission` adiciona as permissões, e agora validamos essas mesmas permissões
-3. **Simplicidade**: Não requer atribuição manual de Directory Roles
+1. Inserir o blueprint no banco de dados
+2. Criar as regras de compliance correspondentes
+3. Testar a execução via agente
