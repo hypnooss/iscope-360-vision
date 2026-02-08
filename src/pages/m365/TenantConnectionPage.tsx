@@ -219,6 +219,13 @@ export default function TenantConnectionPage() {
     if (!tenant) return;
 
     try {
+      // Ensure Exchange.ManageAsApp is in App Registration before consent
+      const { error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
+      if (ensureError) {
+        console.warn('Could not ensure Exchange permission:', ensureError);
+        // Non-blocking - continue with consent
+      }
+
       // Get M365 App config to build Admin Consent URL
       const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
         body: {},
