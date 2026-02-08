@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { ExchangeInsight, ExoInsightsSummary } from '@/types/exchangeInsights';
+import { ExchangeInsight, ExoInsightsSummary, ExoInsightCategory, AffectedMailbox } from '@/types/exchangeInsights';
 
 interface UseExchangeOnlineInsightsOptions {
   tenantRecordId: string | null;
@@ -76,21 +76,61 @@ export function useExchangeOnlineInsights({
         ...((data.agent_insights as any[]) || []),
       ];
 
-      const exchangeInsights: ExchangeInsight[] = allInsights.filter(
-        (insight: any) =>
-          insight.category?.includes('email') ||
-          insight.category?.includes('exchange') ||
-          insight.category?.includes('mail_flow') ||
-          insight.category?.includes('mailbox') ||
-          insight.product === 'exchange'
-      );
+      // Map raw insights to ExchangeInsight format
+      const exchangeInsights: ExchangeInsight[] = allInsights
+        .filter(
+          (insight: any) =>
+            insight.category?.includes('email') ||
+            insight.category?.includes('exchange') ||
+            insight.category?.includes('mail_flow') ||
+            insight.category?.includes('mailbox') ||
+            insight.product === 'exchange'
+        )
+        .map((insight: any) => {
+          // Map category to ExoInsightCategory
+          let mappedCategory: ExoInsightCategory = 'mail_flow';
+          if (insight.category?.includes('mailbox') || insight.id?.includes('forwarding')) {
+            mappedCategory = 'mailbox_access';
+          } else if (insight.id?.includes('dkim') || insight.id?.includes('dmarc') || insight.id?.includes('spf')) {
+            mappedCategory = 'security_hygiene';
+          } else if (insight.id?.includes('policy') || insight.id?.includes('filter')) {
+            mappedCategory = 'security_policies';
+          } else if (insight.id?.includes('rule') || insight.id?.includes('transport')) {
+            mappedCategory = 'governance';
+          }
 
-      // Calculate summary based on severity and affectedCount
+          // Map affectedEntities to affectedMailboxes
+          const affectedEntities = insight.affectedEntities || [];
+          const affectedMailboxes: AffectedMailbox[] = affectedEntities.map((entity: any, idx: number) => ({
+            id: `${insight.id}-${idx}`,
+            displayName: entity.name || 'Unknown',
+            userPrincipalName: entity.name || '',
+            details: {
+              ruleName: entity.details,
+            },
+          }));
+
+          return {
+            id: insight.id,
+            code: insight.id,
+            title: insight.name || insight.title || '',
+            description: insight.description || '',
+            category: mappedCategory,
+            severity: insight.severity || 'info',
+            affectedCount: affectedEntities.length || insight.rawData?.forwardingCount || insight.rawData?.total || 0,
+            affectedMailboxes,
+            criteria: insight.details || '',
+            recommendation: insight.recommendation || '',
+            detectedAt: data.completed_at || new Date().toISOString(),
+          } as ExchangeInsight;
+        });
+
+      // Calculate summary based on severity
       const calculatedSummary: ExoInsightsSummary = {
-        critical: exchangeInsights.filter(i => i.severity === 'critical' && (i.affectedCount > 0 || (i as any).status === 'fail')).length,
-        high: exchangeInsights.filter(i => i.severity === 'high' && (i.affectedCount > 0 || (i as any).status === 'fail')).length,
-        medium: exchangeInsights.filter(i => i.severity === 'medium' && (i.affectedCount > 0 || (i as any).status === 'fail')).length,
-        low: exchangeInsights.filter(i => i.severity === 'low' && (i.affectedCount > 0 || (i as any).status === 'fail')).length,
+        critical: exchangeInsights.filter(i => i.severity === 'critical').length,
+        high: exchangeInsights.filter(i => i.severity === 'high').length,
+        medium: exchangeInsights.filter(i => i.severity === 'medium').length,
+        low: exchangeInsights.filter(i => i.severity === 'low').length,
         info: exchangeInsights.filter(i => i.severity === 'info').length,
         total: exchangeInsights.length,
       };
