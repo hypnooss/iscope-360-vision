@@ -69,3 +69,6 @@ verify_jwt = false
 [functions.add-exchange-permission]
 verify_jwt = false
 
+[functions.ensure-exchange-permission]
+verify_jwt = false
+
