@@ -352,16 +352,47 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
 
 /**
  * Extract data from various step result formats
+ * Handles JSON strings from PowerShell outputs (ConvertTo-Json)
  */
 function extractStepData(stepResult: unknown): unknown {
   if (!stepResult) return null;
   
   if (typeof stepResult === 'object') {
     const obj = stepResult as Record<string, unknown>;
+    let extracted: unknown = null;
+    
     // Common formats: { data: [...] }, { results: [...] }, or direct array/object
-    if ('data' in obj && obj.data !== undefined) return obj.data;
-    if ('results' in obj && obj.results !== undefined) return obj.results;
-    if ('value' in obj && obj.value !== undefined) return obj.value;
+    if ('data' in obj && obj.data !== undefined) {
+      extracted = obj.data;
+    } else if ('results' in obj && obj.results !== undefined) {
+      extracted = obj.results;
+    } else if ('value' in obj && obj.value !== undefined) {
+      extracted = obj.value;
+    } else {
+      extracted = stepResult;
+    }
+    
+    // Parse JSON strings (PowerShell outputs JSON as string via ConvertTo-Json)
+    if (typeof extracted === 'string') {
+      try {
+        const parsed = JSON.parse(extracted);
+        return parsed;
+      } catch {
+        // Not valid JSON, return as-is
+        return extracted;
+      }
+    }
+    
+    return extracted;
+  }
+  
+  // Handle top-level string (might be JSON)
+  if (typeof stepResult === 'string') {
+    try {
+      return JSON.parse(stepResult);
+    } catch {
+      return stepResult;
+    }
   }
   
   return stepResult;
