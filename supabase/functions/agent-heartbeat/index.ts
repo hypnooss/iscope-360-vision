@@ -32,6 +32,7 @@ interface HeartbeatSuccessResponse {
   update_info?: UpdateInfo;
   azure_certificate_key_id?: string;
   check_components?: boolean;
+  request_certificate?: boolean;
 }
 
 interface HeartbeatErrorResponse {
@@ -528,11 +529,12 @@ serve(async (req: Request) => {
     // Process certificate upload if provided
     let azureCertificateKeyId: string | null = null;
     let checkComponents = false;
+    let requestCertificate = false;
     
     // Fetch agent data (certificate and check_components flag) in a single query
     const { data: agentData } = await supabase
       .from('agents')
-      .select('azure_certificate_key_id, check_components')
+      .select('azure_certificate_key_id, check_components, certificate_thumbprint')
       .eq('id', agentId)
       .single();
 
@@ -550,6 +552,34 @@ serve(async (req: Request) => {
       } else {
         azureCertificateKeyId = agentData.azure_certificate_key_id;
         console.log(`Agent ${agentId} already has certificate registered: ${azureCertificateKeyId}`);
+      }
+    }
+    
+    // Check if agent has linked tenants needing certificate registration
+    // This handles the case where new tenants are linked after the agent already uploaded its certificate
+    if (agentData?.certificate_thumbprint && !body.certificate_thumbprint) {
+      try {
+        const { data: linkedTenants } = await supabase
+          .from('m365_tenant_agents')
+          .select(`
+            tenant_record_id,
+            m365_app_credentials!inner(certificate_thumbprint, app_object_id)
+          `)
+          .eq('agent_id', agentId)
+          .eq('enabled', true);
+
+        // Check if any linked tenant needs the certificate
+        for (const link of linkedTenants || []) {
+          const creds = link.m365_app_credentials;
+          // If tenant has app_object_id but doesn't have this agent's certificate
+          if (creds?.app_object_id && creds?.certificate_thumbprint !== agentData.certificate_thumbprint) {
+            requestCertificate = true;
+            console.log(`Agent ${agentId}: tenant needs certificate upload (app_object_id: ${creds.app_object_id?.substring(0, 8)}...)`);
+            break;
+          }
+        }
+      } catch (err) {
+        console.error('Error checking linked tenants for certificate:', err);
       }
     }
 
@@ -597,6 +627,12 @@ serve(async (req: Request) => {
     // Include check_components flag if set
     if (checkComponents) {
       response.check_components = true;
+    }
+    
+    // Request certificate re-upload if linked tenants need it
+    if (requestCertificate) {
+      response.request_certificate = true;
+      console.log(`Agent ${agentId}: requesting certificate re-upload for linked tenants`);
     }
 
     // Include update info if available

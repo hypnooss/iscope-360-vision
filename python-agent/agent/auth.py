@@ -12,9 +12,19 @@ CERT_FILE = CERT_DIR / "m365.crt"
 
 
 def get_certificate_thumbprint():
-    """Read certificate thumbprint from file if available."""
+    """Read certificate thumbprint from file if available.
+    
+    Sanitizes the thumbprint to ensure Azure compatibility:
+    - Removes common OpenSSL prefixes (sha1 Fingerprint=, SHA1 Fingerprint=, etc.)
+    - Removes colons (AA:BB:CC -> AABBCC)
+    """
     if THUMBPRINT_FILE.exists():
-        return THUMBPRINT_FILE.read_text().strip()
+        raw = THUMBPRINT_FILE.read_text().strip()
+        # Remove prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
+        if '=' in raw:
+            raw = raw.split('=', 1)[-1]
+        # Remove colons (AA:BB:CC:DD -> AABBCCDD)
+        return raw.replace(':', '').strip().upper()
     return None
 
 
