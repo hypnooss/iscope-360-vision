@@ -235,6 +235,202 @@ function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentIn
     }
   }
   
+  // Process Anti-Phishing Policy
+  if (rawData['exo_anti_phish_policy']) {
+    const data = extractStepData(rawData['exo_anti_phish_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const enabledPolicies = policies.filter((p: Record<string, unknown>) => p.Enabled === true);
+      const hasImpersonationProtection = policies.some((p: Record<string, unknown>) => 
+        p.EnableTargetedUserProtection === true || p.EnableOrganizationDomainsProtection === true
+      );
+      
+      insights.push({
+        id: 'exo_anti_phish_policy',
+        category: 'threats',
+        name: 'Política Anti-Phishing',
+        description: hasImpersonationProtection 
+          ? `${enabledPolicies.length} política(s) anti-phishing com proteção contra impersonação ativa`
+          : `${enabledPolicies.length} política(s) anti-phishing configurada(s), sem proteção contra impersonação`,
+        severity: hasImpersonationProtection ? 'info' : 'high',
+        status: hasImpersonationProtection ? 'pass' : 'warn',
+        details: `Políticas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name).join(', ')}`,
+        recommendation: !hasImpersonationProtection 
+          ? 'Habilite a proteção contra impersonação para usuários críticos e domínios da organização'
+          : undefined,
+        rawData: { total: policies.length, enabled: enabledPolicies.length, hasImpersonationProtection },
+      });
+    }
+  }
+  
+  // Process Safe Links Policy
+  if (rawData['exo_safe_links_policy']) {
+    const data = extractStepData(rawData['exo_safe_links_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const enabledPolicies = policies.filter((p: Record<string, unknown>) => 
+        p.EnableSafeLinksForEmail === true || p.IsEnabled === true || p.Enabled === true
+      );
+      
+      insights.push({
+        id: 'exo_safe_links_policy',
+        category: 'threats',
+        name: 'Safe Links (Links Seguros)',
+        description: enabledPolicies.length > 0 
+          ? `Safe Links habilitado em ${enabledPolicies.length} política(s)`
+          : 'Nenhuma política de Safe Links ativa encontrada',
+        severity: enabledPolicies.length > 0 ? 'info' : 'high',
+        status: enabledPolicies.length > 0 ? 'pass' : 'fail',
+        details: policies.length > 0 
+          ? `Políticas configuradas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name || p.Identity).join(', ')}`
+          : undefined,
+        recommendation: enabledPolicies.length === 0 
+          ? 'Configure e habilite o Safe Links para verificar URLs maliciosas em emails e documentos'
+          : undefined,
+        rawData: { total: policies.length, enabled: enabledPolicies.length },
+      });
+    }
+  }
+  
+  // Process Safe Attachments Policy
+  if (rawData['exo_safe_attachment_policy']) {
+    const data = extractStepData(rawData['exo_safe_attachment_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const enabledPolicies = policies.filter((p: Record<string, unknown>) => 
+        p.Enable === true || p.Enabled === true || p.Action !== 'Off'
+      );
+      
+      insights.push({
+        id: 'exo_safe_attachment_policy',
+        category: 'threats',
+        name: 'Safe Attachments (Anexos Seguros)',
+        description: enabledPolicies.length > 0 
+          ? `Safe Attachments habilitado em ${enabledPolicies.length} política(s)`
+          : 'Nenhuma política de Safe Attachments ativa encontrada',
+        severity: enabledPolicies.length > 0 ? 'info' : 'high',
+        status: enabledPolicies.length > 0 ? 'pass' : 'fail',
+        details: policies.length > 0 
+          ? `Políticas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name || p.Identity).join(', ')}`
+          : undefined,
+        recommendation: enabledPolicies.length === 0 
+          ? 'Configure e habilite o Safe Attachments para análise de anexos maliciosos em sandbox'
+          : undefined,
+        rawData: { total: policies.length, enabled: enabledPolicies.length },
+      });
+    }
+  }
+  
+  // Process Malware Filter Policy
+  if (rawData['exo_malware_filter_policy']) {
+    const data = extractStepData(rawData['exo_malware_filter_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
+      
+      if (defaultPolicy) {
+        const enableFileFilter = defaultPolicy.EnableFileFilter === true;
+        const zap = defaultPolicy.ZapEnabled === true;
+        
+        insights.push({
+          id: 'exo_malware_filter_policy',
+          category: 'threats',
+          name: 'Filtro de Malware',
+          description: enableFileFilter && zap 
+            ? 'Filtro de malware configurado com proteções recomendadas'
+            : 'Filtro de malware pode estar com proteções incompletas',
+          severity: enableFileFilter && zap ? 'info' : 'medium',
+          status: enableFileFilter && zap ? 'pass' : 'warn',
+          details: `Filtro de arquivos: ${enableFileFilter ? 'Ativo' : 'Inativo'}, ZAP: ${zap ? 'Ativo' : 'Inativo'}`,
+          recommendation: (!enableFileFilter || !zap) 
+            ? 'Habilite o filtro de arquivos comuns (EnableFileFilter) e ZAP (Zero-hour Auto Purge)'
+            : undefined,
+          rawData: { enableFileFilter, zap, policyName: defaultPolicy.Name },
+        });
+      }
+    }
+  }
+  
+  // Process Hosted Content Filter (Spam Filter)
+  if (rawData['exo_hosted_content_filter']) {
+    const data = extractStepData(rawData['exo_hosted_content_filter']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
+      
+      if (defaultPolicy) {
+        const spamAction = defaultPolicy.SpamAction || defaultPolicy.HighConfidenceSpamAction;
+        const isSecure = ['Quarantine', 'MoveToJmf', 'Delete'].includes(String(spamAction));
+        
+        insights.push({
+          id: 'exo_hosted_content_filter',
+          category: 'threats',
+          name: 'Filtro de Conteúdo (Spam)',
+          description: isSecure 
+            ? 'Filtro de spam configurado para quarentena ou exclusão'
+            : 'Filtro de spam pode não bloquear mensagens adequadamente',
+          severity: isSecure ? 'info' : 'medium',
+          status: isSecure ? 'pass' : 'warn',
+          details: `Ação para spam: ${spamAction || 'Não configurado'}`,
+          recommendation: !isSecure 
+            ? 'Configure a ação de spam para "Quarentena" ou "Mover para Lixo Eletrônico"'
+            : undefined,
+          rawData: { spamAction, policyName: defaultPolicy.Name },
+        });
+      }
+    }
+  }
+  
+  // Process Remote Domains
+  if (rawData['exo_remote_domains']) {
+    const data = extractStepData(rawData['exo_remote_domains']);
+    if (Array.isArray(data)) {
+      const defaultDomain = data.find((d: Record<string, unknown>) => d.DomainName === '*');
+      const autoForwardEnabled = defaultDomain && defaultDomain.AutoForwardEnabled === true;
+      
+      insights.push({
+        id: 'exo_remote_domains',
+        category: 'email',
+        name: 'Domínios Remotos',
+        description: autoForwardEnabled 
+          ? 'Encaminhamento automático externo habilitado no domínio padrão'
+          : 'Encaminhamento automático externo está bloqueado por padrão',
+        severity: autoForwardEnabled ? 'high' : 'info',
+        status: autoForwardEnabled ? 'fail' : 'pass',
+        details: `${data.length} domínio(s) remoto(s) configurado(s). Auto-forward padrão: ${autoForwardEnabled ? 'Habilitado' : 'Desabilitado'}`,
+        recommendation: autoForwardEnabled 
+          ? 'Desabilite o AutoForwardEnabled no domínio remoto padrão (*) para prevenir vazamento de dados'
+          : undefined,
+        rawData: { total: data.length, autoForwardEnabled },
+      });
+    }
+  }
+  
+  // Process OWA Mailbox Policy
+  if (rawData['exo_owa_mailbox_policy']) {
+    const data = extractStepData(rawData['exo_owa_mailbox_policy']);
+    if (data && typeof data === 'object') {
+      const policies = Array.isArray(data) ? data : [data];
+      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
+      
+      if (defaultPolicy) {
+        const conditionalAccess = defaultPolicy.ConditionalAccessPolicy;
+        const externalImages = defaultPolicy.ExternalImageProxyEnabled;
+        
+        insights.push({
+          id: 'exo_owa_mailbox_policy',
+          category: 'email',
+          name: 'Política OWA (Outlook Web)',
+          description: `Política OWA configurada: ${defaultPolicy.Name || 'Padrão'}`,
+          severity: 'info',
+          status: 'pass',
+          details: `Acesso Condicional: ${conditionalAccess || 'Não configurado'}, Proxy de imagens: ${externalImages ? 'Ativo' : 'Inativo'}`,
+          rawData: { conditionalAccess, externalImages, policyName: defaultPolicy.Name },
+        });
+      }
+    }
+  }
+  
   // Process anti-spam policy
   if (rawData['exo_antispam_policy']) {
     const data = extractStepData(rawData['exo_antispam_policy']);
