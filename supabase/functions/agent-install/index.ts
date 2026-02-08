@@ -320,9 +320,10 @@ generate_m365_certificate() {
   local cert_dir="$STATE_DIR/certs"
   local cert_file="$cert_dir/m365.crt"
   local key_file="$cert_dir/m365.key"
+  local pfx_file="$cert_dir/m365.pfx"
   local thumbprint_file="$cert_dir/thumbprint.txt"
   
-  if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]]; then
+  if [[ -f "$cert_file" ]] && [[ -f "$key_file" ]] && [[ -f "$pfx_file" ]]; then
     echo "Certificado M365 já existe, pulando geração..."
     return
   fi
@@ -369,6 +370,21 @@ generate_m365_certificate() {
   chmod 600 "$key_file"
   chmod 644 "$cert_file"
   
+  # Gerar arquivo PFX (PKCS#12) para compatibilidade com PowerShell
+  openssl pkcs12 \\
+    -export \\
+    -out "$pfx_file" \\
+    -inkey "$key_file" \\
+    -in "$cert_file" \\
+    -passout pass: 2>/dev/null
+  
+  if [[ -f "$pfx_file" ]]; then
+    chmod 600 "$pfx_file"
+    echo "  Arquivo PFX gerado para PowerShell: $pfx_file"
+  else
+    echo "Aviso: Falha ao gerar arquivo PFX."
+  fi
+  
   # Calcular e salvar thumbprint SHA1 (formato Azure)
   local thumbprint
   thumbprint="\$(openssl x509 -in "$cert_file" -noout -fingerprint -sha1 2>/dev/null | \\
@@ -380,6 +396,7 @@ generate_m365_certificate() {
     echo "  Thumbprint: $thumbprint"
     echo "  Certificado: $cert_file"
     echo "  Chave privada: $key_file (600)"
+    echo "  Arquivo PFX: $pfx_file (600)"
   fi
   
   # Ajustar permissões para o usuário do serviço
