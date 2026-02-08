@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -105,6 +105,21 @@ export default function SettingsPage() {
   const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
   const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read'];
   const certificatePermissions = ['Application.ReadWrite.All'];
+
+  // Merge backend permissions with default permissions to ensure all expected permissions are displayed
+  const mergedPermissions = useMemo(() => {
+    const permissionMap = new Map<string, PermissionStatus>();
+    
+    // Start with defaults
+    defaultPermissions.forEach(p => permissionMap.set(p.name, { ...p }));
+    
+    // Override with backend data
+    m365Config.permissions.forEach(p => {
+      permissionMap.set(p.name, { ...p });
+    });
+    
+    return Array.from(permissionMap.values());
+  }, [m365Config.permissions]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -773,7 +788,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
                       <ul className="text-sm space-y-1">
-                        {m365Config.permissions
+                        {mergedPermissions
                           .filter(p => corePermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
@@ -790,7 +805,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
                       <ul className="text-sm space-y-1">
-                        {m365Config.permissions
+                        {mergedPermissions
                           .filter(p => entraIdPermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
@@ -807,7 +822,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
                       <ul className="text-sm space-y-1">
-                        {m365Config.permissions
+                        {mergedPermissions
                           .filter(p => exchangeOnlinePermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
@@ -824,7 +839,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
                       <ul className="text-sm space-y-1">
-                        {m365Config.permissions
+                        {mergedPermissions
                           .filter(p => certificatePermissions.includes(p.name))
                           .map(perm => (
                             <li key={perm.name} className="flex items-center gap-2">
@@ -836,14 +851,6 @@ export default function SettingsPage() {
                               <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
                             </li>
                           ))}
-                        {!m365Config.permissions.some(p => certificatePermissions.includes(p.name)) && (
-                          <li className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-gray-400" />
-                            <code className="text-xs bg-background px-1.5 py-0.5 rounded text-muted-foreground">
-                              Application.ReadWrite.All
-                            </code>
-                          </li>
-                        )}
                       </ul>
                       <p className="text-[10px] text-muted-foreground">
                         Requer App Object ID
