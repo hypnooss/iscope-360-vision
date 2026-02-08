@@ -12,14 +12,19 @@ class AgentHeartbeat:
         self.state = state
         self.logger = logger
 
-    def _get_pending_certificate(self):
-        """Check if there's a certificate that needs to be uploaded to Azure."""
+    def _get_pending_certificate(self, force=False):
+        """Check if there's a certificate that needs to be uploaded to Azure.
+        
+        Args:
+            force: If True, ignores the azure_certificate_key_id state and returns
+                   the certificate anyway (used when backend requests re-upload).
+        """
         # No certificate file exists
         if not CERT_FILE.exists():
             return None
         
-        # Certificate already registered in Azure
-        if self.state.data.get("azure_certificate_key_id"):
+        # Certificate already registered in Azure (unless forced)
+        if not force and self.state.data.get("azure_certificate_key_id"):
             return None
         
         thumbprint = get_certificate_thumbprint()
@@ -34,7 +39,7 @@ class AgentHeartbeat:
         
         return None
 
-    def send(self, status="running", version=None):
+    def send(self, status="running", version=None, force_certificate=False):
         if version is None:
             version = get_version()
         self.logger.info(f"Enviando heartbeat (v{version})")
@@ -46,8 +51,8 @@ class AgentHeartbeat:
                 "agent_version": version
             }
             
-            # Include pending certificate if exists
-            pending_cert = self._get_pending_certificate()
+            # Include pending certificate if exists (or if forced by backend)
+            pending_cert = self._get_pending_certificate(force=force_certificate)
             if pending_cert:
                 payload.update(pending_cert)
                 self.logger.info("Incluindo certificado no heartbeat para upload ao Azure")
@@ -62,6 +67,16 @@ class AgentHeartbeat:
                 self.state.data["azure_certificate_key_id"] = response["azure_certificate_key_id"]
                 self.state.save()
                 self.logger.info(f"Certificado registrado no Azure: {response['azure_certificate_key_id']}")
+            
+            # Check if backend requested certificate re-upload (for new linked tenants)
+            request_cert = response.get("request_certificate", False)
+            if request_cert and not pending_cert:
+                self.logger.info("Backend solicitou reenvio de certificado para novos tenants")
+                # Clear the flag so next heartbeat will include the certificate
+                if "azure_certificate_key_id" in self.state.data:
+                    del self.state.data["azure_certificate_key_id"]
+                    self.state.save()
+                    self.logger.info("Flag azure_certificate_key_id removida, certificado será reenviado")
             
             return response
 

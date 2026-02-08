@@ -327,7 +327,7 @@ generate_certificate() {
         sed 's/SHA1 Fingerprint=//' | sed 's/://g')"
     
     if [[ -n "$thumbprint" ]]; then
-        echo "$thumbprint" > "$CERT_DIR/m365.thumbprint"
+        echo "$thumbprint" > "$CERT_DIR/thumbprint.txt"
         log "Certificado gerado com thumbprint: $thumbprint"
     fi
     
