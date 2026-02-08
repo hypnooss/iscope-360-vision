@@ -16,6 +16,7 @@ class PowerShellExecutor(BaseExecutor):
     """
     Executes PowerShell commands for M365 analysis.
     Supports Exchange Online and Microsoft Graph modules.
+    Supports both Certificate-Based Authentication (CBA) and Credential-based authentication.
     """
     
     CERT_DIR = Path("/var/lib/iscope-agent/certs")
@@ -24,17 +25,25 @@ class PowerShellExecutor(BaseExecutor):
     PFX_FILE = CERT_DIR / "m365.pfx"
     THUMBPRINT_FILE = CERT_DIR / "thumbprint.txt"
     
+    # Authentication modes
+    AUTH_MODE_CBA = "cba"  # Certificate-Based Authentication (default)
+    AUTH_MODE_CREDENTIAL = "credential"  # Username/Password (for initial RBAC setup)
+    
     # Supported modules and their connection commands
     # PFX file is used for PowerShell compatibility (contains cert + private key)
     MODULES = {
         "ExchangeOnline": {
             "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
-            "connect": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
+            # CBA connection (default)
+            "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
+            # Credential-based connection (for initial RBAC setup)
+            "connect_credential": 'Connect-ExchangeOnline -Credential $cred -ShowBanner:$false',
             "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
         },
         "MicrosoftGraph": {
             "import": "Import-Module Microsoft.Graph.Authentication -ErrorAction Stop",
-            "connect": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome',
+            "connect_cba": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome',
+            "connect_credential": 'Connect-MgGraph -Credential $cred -TenantId "{tenant_id}" -NoWelcome',
             "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
         },
     }
@@ -92,7 +101,10 @@ class PowerShellExecutor(BaseExecutor):
         commands: List[Dict[str, Any]],
         app_id: str,
         tenant_id: str,
-        organization: Optional[str] = None
+        organization: Optional[str] = None,
+        auth_mode: str = "cba",
+        username: Optional[str] = None,
+        password: Optional[str] = None
     ) -> str:
         """
         Build a PowerShell script with connection, commands, and cleanup.
@@ -103,6 +115,9 @@ class PowerShellExecutor(BaseExecutor):
             app_id: Azure App Registration ID
             tenant_id: Azure Tenant ID
             organization: Organization domain for Exchange (e.g., contoso.onmicrosoft.com)
+            auth_mode: Authentication mode ('cba' for certificate, 'credential' for username/password)
+            username: Admin username (required if auth_mode is 'credential')
+            password: Admin password (required if auth_mode is 'credential')
         """
         if module not in self.MODULES:
             raise ValueError(f"Unsupported module: {module}. Supported: {list(self.MODULES.keys())}")
@@ -121,18 +136,46 @@ class PowerShellExecutor(BaseExecutor):
             "# Import module",
             module_config["import"],
             "",
-            "# Connect",
-            module_config["connect"].format(
-                app_id=app_id,
-                cert_path=str(self.PFX_FILE),
-                tenant_id=tenant_id,
-                organization=organization
-            ),
-            "",
+        ]
+        
+        # Add connection based on auth mode
+        if auth_mode == self.AUTH_MODE_CREDENTIAL:
+            if not username or not password:
+                raise ValueError("Username and password are required for credential-based authentication")
+            
+            # Escape special characters in password for PowerShell
+            escaped_password = password.replace('"', '`"').replace("'", "`'").replace('$', '`$')
+            
+            script_parts.extend([
+                "# Create credential object",
+                f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
+                f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
+                "",
+                "# Connect with credentials",
+                module_config["connect_credential"].format(
+                    tenant_id=tenant_id
+                ),
+                "",
+            ])
+        else:
+            # Default: CBA connection
+            script_parts.extend([
+                "# Connect with certificate",
+                module_config["connect_cba"].format(
+                    app_id=app_id,
+                    cert_path=str(self.PFX_FILE),
+                    tenant_id=tenant_id,
+                    organization=organization
+                ),
+                "",
+            ])
+        
+        # Initialize results
+        script_parts.extend([
             "# Initialize results",
             "$results = @{}",
             "",
-        ]
+        ])
         
         # Add commands
         for cmd in commands:
@@ -172,7 +215,7 @@ class PowerShellExecutor(BaseExecutor):
     
     def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute PowerShell commands with certificate authentication.
+        Execute PowerShell commands with certificate or credential authentication.
         
         Step params:
             module: str - Module to use (ExchangeOnline, MicrosoftGraph)
@@ -183,6 +226,9 @@ class PowerShellExecutor(BaseExecutor):
             tenant_id: str - Azure Tenant ID (optional, can be in context)
             organization: str - Organization domain (optional)
             timeout: int - Command timeout in seconds (default: 300)
+            auth_mode: str - Authentication mode ('cba' or 'credential', default: 'cba')
+            username: str - Admin username (required if auth_mode is 'credential')
+            password: str - Admin password (required if auth_mode is 'credential')
         
         Context:
             app_id: str - Azure App ID
@@ -191,13 +237,22 @@ class PowerShellExecutor(BaseExecutor):
         """
         params = step.get("params", {})
         
-        # Check prerequisites
-        prereq = self._check_prerequisites()
-        if prereq.get("error"):
-            self.logger.error(f"PowerShell prerequisites not met: {prereq['error']}")
-            return {"error": prereq["error"]}
+        # Get auth mode
+        auth_mode = params.get("auth_mode", self.AUTH_MODE_CBA)
         
-        pwsh_path = prereq["pwsh_path"]
+        # For credential mode, we only need pwsh (not certificates)
+        if auth_mode == self.AUTH_MODE_CREDENTIAL:
+            pwsh = self._find_pwsh()
+            if not pwsh:
+                return {"error": "PowerShell Core (pwsh) not found. Install with: sudo apt install -y powershell"}
+            pwsh_path = pwsh
+        else:
+            # Check prerequisites for CBA mode
+            prereq = self._check_prerequisites()
+            if prereq.get("error"):
+                self.logger.error(f"PowerShell prerequisites not met: {prereq['error']}")
+                return {"error": prereq["error"]}
+            pwsh_path = prereq["pwsh_path"]
         
         # Get parameters
         module = params.get("module", "ExchangeOnline")
@@ -206,38 +261,50 @@ class PowerShellExecutor(BaseExecutor):
         tenant_id = params.get("tenant_id") or context.get("tenant_id")
         organization = params.get("organization") or context.get("organization")
         timeout = params.get("timeout", 300)
+        username = params.get("username")
+        password = params.get("password")
         
-        # Validate required params
-        if not app_id:
-            return {"error": "app_id is required"}
-        
-        if not tenant_id:
-            return {"error": "tenant_id is required"}
+        # Validate required params based on auth mode
+        if auth_mode == self.AUTH_MODE_CREDENTIAL:
+            if not username or not password:
+                return {"error": "username and password are required for credential-based authentication"}
+            if not tenant_id:
+                return {"error": "tenant_id is required"}
+        else:
+            if not app_id:
+                return {"error": "app_id is required"}
+            if not tenant_id:
+                return {"error": "tenant_id is required"}
         
         if not commands:
             return {"error": "commands list is required"}
         
-        self.logger.info(f"Executing PowerShell {module} commands: {[c.get('name', 'unknown') for c in commands]}")
+        self.logger.info(f"Executing PowerShell {module} commands ({auth_mode} auth): {[c.get('name', 'unknown') for c in commands]}")
         
         try:
             # Build script
             script = self._build_script(
                 module=module,
                 commands=commands,
-                app_id=app_id,
+                app_id=app_id or "",
                 tenant_id=tenant_id,
-                organization=organization
+                organization=organization,
+                auth_mode=auth_mode,
+                username=username,
+                password=password
             )
             
             self.logger.debug(f"PowerShell script built, {len(script)} chars")
             
-            # Execute
+            # Execute - use home directory for credential mode (no need for cert dir)
+            cwd = str(self.CERT_DIR) if auth_mode == self.AUTH_MODE_CBA else None
+            
             result = subprocess.run(
                 [pwsh_path, "-NoProfile", "-NonInteractive", "-Command", script],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=str(self.CERT_DIR)
+                cwd=cwd
             )
             
             if result.returncode != 0:

@@ -24,16 +24,22 @@ interface TaskResponse {
     id: string;
     type: string;
     base_url?: string;
+    domain?: string;
+    tenant_id?: string;
+    tenant_domain?: string;
     credentials?: {
       api_key?: string;
       username?: string;
       password?: string;
       community?: string;
+      azure_app_id?: string;
+      certificate_thumbprint?: string;
     };
     host?: string;
     port?: number;
   };
   steps: StepConfig[];
+  payload?: Record<string, unknown>;
   priority: number;
   expires_at: string;
 }
@@ -60,10 +66,15 @@ interface RpcTaskData {
     id: string;
     type: string;
     base_url: string;
+    domain?: string;
+    tenant_id?: string;
+    tenant_domain?: string;
     credentials: {
       api_key: string;
       username: string | null;
       password: string | null;
+      azure_app_id?: string;
+      certificate_thumbprint?: string;
     };
   };
   blueprint: {
@@ -212,13 +223,19 @@ serve(async (req: Request) => {
         id: task.target?.id || task.target_id,
         type: task.target?.type || task.target_type,
         base_url: task.target?.base_url,
+        domain: task.target?.domain,
+        tenant_id: task.target?.tenant_id,
+        tenant_domain: task.target?.tenant_domain,
         credentials: task.target?.credentials ? {
           api_key: task.target.credentials.api_key || undefined,
           username: task.target.credentials.username || undefined,
           password: task.target.credentials.password || undefined,
+          azure_app_id: task.target.credentials.azure_app_id || undefined,
+          certificate_thumbprint: task.target.credentials.certificate_thumbprint || undefined,
         } : undefined,
       },
       steps: task.blueprint?.steps || [],
+      payload: task.payload || undefined,
       priority: task.priority,
       expires_at: task.expires_at,
     }));
