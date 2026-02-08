@@ -1,108 +1,117 @@
 
-
-# Plano: Corrigir Endpoint de Teste da Graph API no OAuth Callback
+# Plano: Corrigir Salvamento de Credenciais e Validação de Permissões
 
 ## Diagnóstico
 
-O erro "Insufficient privileges to complete the operation" ocorre porque:
+### Problema 1: Logs mostram endpoint antigo (`/domains`)
+Os logs da Edge Function ainda mostram `Testing Graph API access with /domains endpoint...`. Isso indica que a alteração anterior para usar `/organization` **ainda não foi deployada** ou os logs são de execuções anteriores.
 
-| Endpoint | Permissão Requerida | Status no Tenant |
-|----------|---------------------|------------------|
-| `/domains` | `Domain.Read.All` | ❌ Não concedida |
-| `/organization` | `Organization.Read.All` | ✅ Concedida |
+**Ação**: Fazer re-deploy da edge function `m365-oauth-callback`.
 
-O `m365-oauth-callback` está usando `/domains` como endpoint de teste (linha 338), mas essa permissão **não está no manifest** do App Registration nem na lista `REQUIRED_PERMISSIONS`.
+### Problema 2: Credenciais não salvas quando Graph API falha
+O fluxo atual:
+```text
+OAuth Callback → Teste Graph API → FALHA → Retorna erro (NÃO salva credenciais)
+```
 
-## Solução Proposta
+Quando o teste da Graph API falha (por exemplo, devido à demora na propagação do Admin Consent), o callback **não salva as credenciais** na tabela `m365_app_credentials`. Resultado:
+- O botão "Testar" falha com "Credenciais não encontradas"
+- O usuário fica preso sem poder testar novamente
 
-Alterar o endpoint de teste da Graph API de `/domains` para `/organization`, que:
-- Já funciona com `Organization.Read.All` (concedida no tenant)
-- É suficiente para validar que o token está funcionando
-- Também retorna o `displayName` e domínios verificados
+### Problema 3: Permissões não listadas (0/9)
+A UI exibe 0/9 permissões porque:
+- Não há registros em `m365_tenant_permissions` para este tenant
+- Sem credenciais, a Edge Function `validate-m365-connection` não pode ser chamada
 
-## Alterações
+---
 
-### Arquivo: `supabase/functions/m365-oauth-callback/index.ts`
+## Solução
 
-#### 1. Alterar teste de conexão (Linhas 334-401)
+### Parte 1: Salvar Credenciais Mesmo em Caso de Falha
 
-**De:**
+Mover o salvamento de credenciais para **antes** do teste da Graph API, garantindo que o usuário possa usar o botão "Testar" posteriormente.
+
+**Arquivo**: `supabase/functions/m365-oauth-callback/index.ts`
+
+**Mudança**: Após obter o token com sucesso (linha ~317), salvar as credenciais imediatamente, antes de testar a Graph API.
+
+### Parte 2: Verificar Deploy da Edge Function
+
+A alteração de `/domains` para `/organization` já foi feita no código, mas os logs indicam que pode não ter sido deployada. Re-deploy é necessário para aplicar a correção.
+
+---
+
+## Detalhes Técnicos
+
+### Alteração no fluxo do `m365-oauth-callback`
+
+| Antes | Depois |
+|-------|--------|
+| Token OK → Teste Graph → Salva creds → Retorna sucesso | Token OK → **Salva creds** → Teste Graph → Atualiza status → Retorna resultado |
+| Token OK → Teste Graph falha → Retorna erro (sem salvar) | Token OK → **Salva creds** → Teste Graph falha → Retorna erro (creds salvas) |
+
+### Código a modificar
+
+**Linha ~317-400**: Após obter o token, inserir o salvamento de credenciais:
+
 ```typescript
-// Test Graph API access using /domains endpoint (more resilient than /organization)
-console.log('Testing Graph API access with /domains endpoint...');
+// APÓS obter token com sucesso (linha ~317)
 
-const fetchDomains = async () => {
-  return await fetch('https://graph.microsoft.com/v1.0/domains', {
-    headers: { 'Authorization': `Bearer ${accessToken}` },
+// ===== NOVO: Salvar credenciais ANTES de testar Graph API =====
+// Isso permite que o usuário use o botão "Testar" caso o teste inicial falhe
+console.log('Saving credentials early to allow retry...');
+const { error: earlyCredError } = await supabase
+  .from('m365_app_credentials')
+  .upsert({
+    tenant_record_id,
+    azure_app_id: appId,
+    auth_type: 'multi_tenant_app',
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  }, {
+    onConflict: 'tenant_record_id',
   });
-};
+
+if (earlyCredError) {
+  console.error('Failed to save early credentials:', earlyCredError);
+  // Continue mesmo se falhar - não é crítico neste ponto
+}
+
+// Continua com o teste da Graph API...
 ```
 
-**Para:**
-```typescript
-// Test Graph API access using /organization endpoint
-// Organization.Read.All is always granted via Admin Consent
-console.log('Testing Graph API access with /organization endpoint...');
+**Linha ~686-700**: Atualizar para fazer upsert com sp_object_id (já está correto, mas agora será uma atualização em vez de insert).
 
-const fetchOrganization = async () => {
-  return await fetch('https://graph.microsoft.com/v1.0/organization', {
-    headers: { 'Authorization': `Bearer ${accessToken}` },
-  });
-};
-```
+---
 
-#### 2. Ajustar processamento da resposta (Linhas 399-420)
+## Resultado Esperado
 
-**De:**
-```typescript
-const domainsData = await domainsResponse.json();
-const domains = domainsData.value || [];
-console.log('Domains retrieved:', domains.length);
-
-// Extract primary domain from domains
-const defaultDomain = domains.find((d: any) => d.isDefault);
-...
-```
-
-**Para:**
-```typescript
-const orgData = await orgResponse.json();
-const organization = orgData.value?.[0];
-console.log('Organization retrieved:', organization?.displayName);
-
-// Extract primary domain from organization's verified domains
-const verifiedDomains = organization?.verifiedDomains || [];
-const defaultDomain = verifiedDomains.find((d: any) => d.isDefault);
-const initialDomain = verifiedDomains.find((d: any) => d.isInitial);
-const primaryDomain = defaultDomain?.name || initialDomain?.name || verifiedDomains[0]?.name || null;
-const displayName = organization?.displayName || primaryDomain;
-```
-
-## Resumo das Alterações
-
-| Item | Descrição |
-|------|-----------|
-| Arquivo | `supabase/functions/m365-oauth-callback/index.ts` |
-| Linhas | 334-420 |
-| Problema | Usa `/domains` que requer `Domain.Read.All` não concedida |
-| Solução | Usar `/organization` que funciona com `Organization.Read.All` já concedida |
-
-## Por que isso resolve
-
-1. A permissão `Organization.Read.All` já está concedida no tenant (visível no screenshot)
-2. O endpoint `/organization` retorna o nome da organização E os domínios verificados
-3. Não requer nenhuma alteração no Azure Portal ou no App Registration
-4. O sistema continuará funcionando corretamente para novos tenants
-
-## Fluxo Corrigido
+### Fluxo corrigido:
 
 ```text
-ANTES
-─────
-Token obtido → GET /domains → 403 Insufficient privileges → FALHA
-
-DEPOIS
-──────
-Token obtido → GET /organization → 200 OK → Sucesso!
+1. OAuth Callback recebe código
+2. Obtém token de acesso ✓
+3. SALVA CREDENCIAIS (novo!) ✓
+4. Testa Graph API
+   4a. Se OK → Atualiza status para 'connected', salva permissões
+   4b. Se FALHA → Atualiza status para 'pending', redireciona com erro
+5. Usuário pode clicar "Testar" mais tarde quando Admin Consent propagar
 ```
 
+### Benefícios:
+
+1. **Usuário pode testar novamente**: Após aguardar propagação do Admin Consent
+2. **Visibilidade de permissões**: O botão "Testar" funcionará e populará a lista de permissões
+3. **Melhor UX**: Sem mensagem confusa "Credenciais não encontradas"
+
+---
+
+## Resumo de Alterações
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `supabase/functions/m365-oauth-callback/index.ts` | EDIT | Salvar credenciais antes de testar Graph API |
+
+## Re-deploy necessário
+
+Após a alteração, a edge function será automaticamente re-deployada, aplicando também a correção anterior (`/domains` → `/organization`).
