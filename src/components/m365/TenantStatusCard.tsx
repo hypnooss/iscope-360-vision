@@ -447,11 +447,11 @@ export function TenantStatusCard({
                   disabled={tenant.connection_status === 'disconnected'}
                 >
                   <ExternalLink className="w-3 h-3 mr-1" />
-                  Permissões
+                  Permissões Graph API
                 </Button>
               )}
               
-              {/* Exchange RBAC Setup Button - shown when Exchange permissions are missing */}
+              {/* Exchange/SharePoint RBAC Setup Button */}
               {(tenant.connection_status === 'connected' || tenant.connection_status === 'partial') && (
                 <Button 
                   variant="outline" 
@@ -460,7 +460,7 @@ export function TenantStatusCard({
                   className="text-blue-600 hover:text-blue-700 hover:bg-blue-500/10 border-border"
                 >
                   <Settings2 className="w-3 h-3 mr-1" />
-                  Configurar Exchange
+                  Permissões RBAC
                 </Button>
               )}
               
