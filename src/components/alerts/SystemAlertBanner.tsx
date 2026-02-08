@@ -113,7 +113,7 @@ export function SystemAlertBanner() {
       });
 
       // Regra de negócio:
-      // - Alertas M365* (TENANT HOME): apenas super_admin e super_suporte
+      // - Alertas M365*: apenas super_admin e super_suporte
       // - Demais alertas: qualquer usuário autenticado
       const canSeeM365 = ['super_admin', 'super_suporte'].includes(role || '');
       const roleFiltered = filteredData.filter((alert) => {

@@ -184,7 +184,7 @@ async function uploadCertificateToServicePrincipal(
   try {
     console.log(`Uploading certificate to Service Principal ${spObjectId.substring(0, 8)}... in Client Tenant ${clientTenantId.substring(0, 8)}...`);
     
-    // Get access token for the CLIENT tenant (NOT home tenant!)
+    // Get access token for the CLIENT tenant
     const tokenResponse = await fetch(
       `https://login.microsoftonline.com/${clientTenantId}/oauth2/v2.0/token`,
       {

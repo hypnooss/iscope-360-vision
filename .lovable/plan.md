@@ -24,3 +24,16 @@ Agent → Backend → Azure (Tenant CLIENTE)
 | `m365_tenant_agents` | Link agent ↔ tenant |
 | `m365_tenants` | `tenant_id`, `tenant_domain` |
 | `m365_app_credentials` | `sp_object_id`, `azure_app_id` |
+
+## Limpeza Realizada
+
+Removidas TODAS as referências a "home tenant" / "tenant home" dos seguintes arquivos:
+
+- `supabase/functions/agent-heartbeat/index.ts`
+- `supabase/functions/register-agent/index.ts` (função deprecada)
+- `supabase/functions/get-m365-config/index.ts`
+- `supabase/functions/update-m365-config/index.ts`
+- `supabase/functions/validate-m365-permissions/index.ts`
+- `src/components/alerts/SystemAlertBanner.tsx`
+
+O sistema agora usa APENAS o tenant cliente para operações de certificado.
