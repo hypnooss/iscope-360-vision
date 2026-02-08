@@ -1,156 +1,166 @@
 
-# Plano: Resolver Autorização do Exchange Online via Exchange.ManageAsApp
 
-## Diagnóstico Completo
+# Plano: Adicionar Exchange.ManageAsApp Automaticamente Antes do Admin Consent
 
-O erro `AADSTS50076` (MFA required) ocorre porque:
-1. A autenticação via credenciais (`Connect-ExchangeOnline -Credential`) falha quando MFA está habilitado
-2. A autenticação via CBA (`Connect-ExchangeOnline -CertificateFilePath`) falha porque o **Exchange.ManageAsApp** não está concedido
+## Diagnóstico
 
-### O que é necessário para CBA funcionar
+O fluxo de conexão **já usa Admin Consent URL** (não Device Code Flow). O Admin Consent consente TODAS as permissões do App Registration.
 
-| Requisito | Status | Descrição |
-|-----------|--------|-----------|
-| Certificado registrado no App | ✅ | Já está registrado via `connect-m365-tenant` |
-| Permissão `Exchange.ManageAsApp` | ❌ | **NÃO está no consentimento atual** |
-| Role de diretório OU RBAC | ❌ | Opcional para escopo granular |
+O problema: **Exchange.ManageAsApp não está no App Registration**, então o Admin Consent não inclui.
 
-A permissão `Exchange.ManageAsApp` está no resource **Office 365 Exchange Online** (`00000002-0000-0ff1-ce00-000000000000`), não no Microsoft Graph que usamos atualmente.
+## Solução Simples
 
-## Solução: Incluir Exchange.ManageAsApp no Consentimento Admin
+Adicionar `Exchange.ManageAsApp` ao App Registration **automaticamente** quando o admin iniciar a conexão de um tenant. Isso acontece **antes** de abrir a URL de Admin Consent.
 
-### Mudança de Arquitetura
+## Alterações
 
-Em vez de tentar configurar RBAC após a conexão, devemos:
-1. **Incluir `Exchange.ManageAsApp`** nas permissões do consentimento admin inicial
-2. **O CBA funcionará automaticamente** após o consentimento
-3. **Remover a necessidade de credenciais de admin** para configuração
+### 1. Criar Edge Function `ensure-exchange-permission`
 
-### Alterações Necessárias
+**Arquivo**: `supabase/functions/ensure-exchange-permission/index.ts`
 
-#### 1. Atualizar o Device Code Flow para incluir Exchange scope
-
-**Arquivo**: `supabase/functions/connect-m365-tenant/index.ts`
-
-```typescript
-// ANTES (linha 50)
-scope: 'https://graph.microsoft.com/.default offline_access',
-
-// DEPOIS - incluir Exchange Online scope
-scope: 'https://graph.microsoft.com/.default https://outlook.office365.com/.default offline_access',
-```
-
-**Problema**: Scopes de recursos diferentes não podem ser combinados em uma única requisição OAuth!
-
-#### Solução Alternativa: Consentimento via URL Admin
-
-O Device Code Flow não suporta múltiplos resources. A solução é usar o **Admin Consent URL** que já é usado para consent:
-
-**Arquivo**: `src/hooks/useTenantConnection.ts` ou similar
-
-```typescript
-// URL de consentimento admin que inclui Exchange.ManageAsApp
-const adminConsentUrl = `https://login.microsoftonline.com/${tenantId}/adminconsent?` +
-  `client_id=${appId}` +
-  `&redirect_uri=${encodeURIComponent(redirectUri)}`;
-```
-
-O problema é que as permissões precisam estar **pré-configuradas no App Registration** no Azure Portal.
-
-### Fluxo Correto
+Esta função:
+- Busca a configuração global (app_id, app_object_id, home_tenant_id, client_secret)
+- Obtém token do home tenant
+- Verifica se `Exchange.ManageAsApp` já está no App Registration
+- Se não estiver, adiciona automaticamente
+- Retorna sucesso
 
 ```text
-┌────────────────────────────────────────────────────────────────────┐
-│ CONFIGURAÇÃO ÚNICA NO AZURE (Home Tenant - Precisio)               │
-│                                                                     │
-│ 1. Adicionar permissão Exchange.ManageAsApp ao App Registration    │
-│    API: Office 365 Exchange Online                                  │
-│    Permissão: Exchange.ManageAsApp (Application)                   │
-│                                                                     │
-│ 2. Conceder admin consent no home tenant                           │
-└────────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ PARA CADA TENANT CLIENTE                                           │
-│                                                                     │
-│ 1. Admin do cliente faz consentimento (Device Code Flow já existe) │
-│    → Exchange.ManageAsApp é automaticamente incluído               │
-│                                                                     │
-│ 2. Após consentimento, o app pode usar CBA automaticamente!        │
-│    → Connect-ExchangeOnline -CertificateFilePath ... funciona      │
-│                                                                     │
-│ 3. NÃO PRECISA de New-ServicePrincipal ou New-ManagementRoleAssign │
-│    (a menos que queira limitar escopo a mailboxes específicas)     │
-└────────────────────────────────────────────────────────────────────┘
+Endpoint: POST /ensure-exchange-permission
+Resposta: { success: true, added: true/false }
 ```
 
-## Ação Imediata Necessária (No Azure Portal)
+### 2. Chamar a função antes do Admin Consent
 
-Você precisa adicionar a permissão `Exchange.ManageAsApp` ao App Registration **800e141d-2dd6-4fa7-b19b-4a284f584d32** no Azure Portal:
+**Arquivo**: `src/components/m365/SimpleTenantConnectionWizard.tsx`
 
-1. Acesse Azure Portal → App Registrations → iScope Security
-2. API Permissions → Add a permission
-3. Selecione **APIs my organization uses** → procure "Office 365 Exchange Online"
-4. Application permissions → **Exchange.ManageAsApp** ✓
-5. Grant admin consent for Precisio
+Na função `handleStart()`, antes de abrir a URL de Admin Consent (linha ~362):
 
-### Após adicionar no Home Tenant
+```typescript
+// ANTES de abrir Admin Consent URL, garantir que Exchange.ManageAsApp está no App Registration
+const { data: ensureResult, error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
 
-O admin do tenant cliente (TASCHIBRA) precisa re-consentir:
-1. Clique novamente em "Conectar Tenant" 
-2. Faça o Device Code Flow
-3. Após consentimento, as permissões Exchange.ManageAsApp são herdadas
+if (ensureError) {
+  console.warn('Could not ensure Exchange permission, continuing anyway:', ensureError);
+  // Não bloqueia - o admin pode adicionar manualmente depois
+}
+```
 
-## Alterações no Código (Após configurar no Azure)
+### 3. Remover código duplicado
 
-### 1. Remover lógica de RBAC manual
+**Arquivo**: `supabase/functions/add-exchange-permission/index.ts`
 
-**Arquivo**: `supabase/functions/setup-exchange-rbac/index.ts`
+Esta função já existe mas só é chamada manualmente via Configurações. Podemos:
+- Remover ela completamente
+- OU: Reutilizar sua lógica na nova função
 
-Pode ser **simplificado** para apenas verificar se a conexão CBA funciona:
-- Remove a necessidade de credenciais
-- Apenas testa a conexão CBA
-- Marca o tenant como "Exchange configurado" se sucesso
+A nova função `ensure-exchange-permission` será mais simples e focada.
 
-### 2. Atualizar o Dialog
+## Fluxo Resultante
 
-**Arquivo**: `src/components/m365/ExchangeRbacSetupDialog.tsx`
+```text
+1. Admin clica "Conectar Tenant"
+2. Wizard chama `ensure-exchange-permission`
+   ├── Verifica se Exchange.ManageAsApp está no App Registration
+   └── Se não, adiciona automaticamente
+3. Wizard abre Admin Consent URL
+4. Admin faz consent (Graph + Exchange incluídos)
+5. Callback processa e cria tenant
+6. CBA funciona automaticamente!
+```
 
-Transformar em um dialog de **verificação** ao invés de configuração:
-- Remove campos de credenciais
-- Mostra botão "Verificar Conexão Exchange"
-- Dispara teste CBA via agent
-- Se sucesso: marca como configurado
-- Se falha: orienta a re-consentir
+## Detalhes Técnicos
 
-### 3. Atualizar texto do botão
+### Nova Edge Function: `ensure-exchange-permission`
 
-**Arquivo**: `src/components/m365/TenantStatusCard.tsx`
+```typescript
+// IDs fixos do Azure
+const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
+const EXCHANGE_MANAGE_AS_APP_ID = "dc50a0fb-09a3-484d-be87-e023b12c6440";
 
-- "Permissões" → "Permissões Graph API"
-- "Configurar Exchange" → "Permissões RBAC"
+// 1. Buscar config global
+const { data: config } = await supabase
+  .from('m365_global_config')
+  .select('app_id, app_object_id, home_tenant_id, client_secret_encrypted')
+  .single();
 
-Estes ajustes de texto você já solicitou e eu aplico agora.
+// 2. Obter token do home tenant
+const tokenResponse = await fetch(
+  `https://login.microsoftonline.com/${config.home_tenant_id}/oauth2/v2.0/token`,
+  { method: 'POST', body: new URLSearchParams({
+    client_id: config.app_id,
+    client_secret: await decryptSecret(config.client_secret_encrypted),
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials',
+  }) }
+);
 
-## Resumo
+// 3. Verificar/adicionar permissão no App Registration
+const appUrl = `https://graph.microsoft.com/v1.0/applications/${config.app_object_id}`;
+const app = await (await fetch(appUrl, { headers: { Authorization: `Bearer ${token}` } })).json();
 
-| O que fazer | Quem faz | Onde |
-|-------------|----------|------|
-| Adicionar Exchange.ManageAsApp | Admin Precisio | Azure Portal |
-| Re-consentir tenant cliente | Admin TASCHIBRA | Device Code Flow |
-| Atualizar UI/edge function | Este plano | Código |
+const hasExchange = app.requiredResourceAccess?.some(r => 
+  r.resourceAppId === EXCHANGE_RESOURCE_ID &&
+  r.resourceAccess?.some(p => p.id === EXCHANGE_MANAGE_AS_APP_ID)
+);
 
-## Alterações de Código Imediatas
+if (!hasExchange) {
+  // Adicionar permissão
+  const permissions = app.requiredResourceAccess || [];
+  permissions.push({
+    resourceAppId: EXCHANGE_RESOURCE_ID,
+    resourceAccess: [{ id: EXCHANGE_MANAGE_AS_APP_ID, type: 'Role' }],
+  });
+  
+  await fetch(appUrl, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requiredResourceAccess: permissions }),
+  });
+}
+```
 
-Posso fazer agora as seguintes alterações que foram solicitadas:
+### Alteração no Wizard
 
-1. **Renomear botão "Permissões"** → **"Permissões Graph API"**
-2. **Renomear botão "Configurar Exchange"** → **"Permissões RBAC"**
-3. **Corrigir o payload da edge function** (já feito na última mensagem)
+```typescript
+// Em handleStart(), ANTES de criar a URL de Admin Consent:
 
----
+// Ensure Exchange.ManageAsApp is in App Registration before consent
+try {
+  const { data: ensureResult, error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
+  if (ensureResult?.added) {
+    console.log('Exchange.ManageAsApp permission added to App Registration');
+  }
+} catch (e) {
+  console.warn('ensure-exchange-permission call failed, continuing:', e);
+}
 
-## Pergunta
+// Então continua com o Admin Consent URL...
+```
 
-Antes de prosseguir com as alterações de código, você precisa adicionar a permissão **Exchange.ManageAsApp** no Azure Portal. Deseja que eu apresente instruções detalhadas passo-a-passo para essa configuração?
+## Vantagens
+
+1. **Zero interação manual** - Tudo automático
+2. **Transparente** - O admin não precisa saber que isso acontece
+3. **Idempotente** - Pode ser chamado várias vezes sem problemas
+4. **Não bloqueia** - Se falhar, o fluxo continua (admin pode configurar depois)
+
+## Resumo das Alterações
+
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/ensure-exchange-permission/index.ts` | Criar (nova função) |
+| `src/components/m365/SimpleTenantConnectionWizard.tsx` | Chamar função antes do consent |
+| `supabase/config.toml` | Adicionar nova função |
+
+## Validação após Consent
+
+No `m365-oauth-callback`, já temos lógica de validação de permissões. Podemos adicionar um teste para `Exchange.ManageAsApp`:
+
+```typescript
+// Testar se Exchange.ManageAsApp foi concedido
+// (via oauth2PermissionGrants ou teste direto de EWS)
+```
+
+Isso é opcional - se o consent foi feito com a permissão no App Registration, ela será concedida automaticamente.
+
