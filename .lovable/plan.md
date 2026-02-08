@@ -1,265 +1,144 @@
 
 
-# Plano: Suporte a MFA via Device Code Flow
+# Plano: Corrigir Autenticação Device Code Flow - Modo Público
 
-## Problema
-O fluxo ROPC (Resource Owner Password Credentials) não suporta MFA - é uma limitação da Microsoft por design. Quando MFA está habilitado, o erro `AADSTS50076` é retornado.
+## Diagnóstico
 
-## Solução: Device Code Flow
+Os logs revelam que o `client_secret` está sendo enviado (40 chars, qT...P6), mas o Azure retorna **401 Unauthorized**. Isso indica:
 
-O Device Code Flow é o único fluxo OAuth 2.0 que:
-- **Suporta MFA completamente**
-- Não requer popup/browser no servidor
-- O usuário autentica diretamente com a Microsoft
-- Funciona com qualquer política de segurança do tenant
+1. O App Registration no Azure está configurado como **"Allow public client flows: Yes"**
+2. Quando um app está como público, o Azure **ignora o client_secret** e retorna erro
 
-### Como Funciona
+## Solução
+
+Oferecer **duas abordagens** para resolver - o usuário pode escolher qual se aplica:
+
+### Opção A: Usar como App Público (Recomendado para Device Code Flow)
+
+Remover o `client_secret` do polling request, já que o Device Code Flow é ideal para apps públicos.
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                     DEVICE CODE FLOW                                │
-├─────────────────────────────────────────────────────────────────────┤
-│ 1. Sistema solicita device_code à Microsoft                         │
-│ 2. Microsoft retorna: código + URL + tempo de expiração            │
-│ 3. UI exibe: "Acesse https://microsoft.com/devicelogin"            │
-│                "Digite o código: ABCD-1234"                        │
-│ 4. Usuário abre URL → autentica (com MFA) → digita código          │
-│ 5. Sistema faz polling → recebe token quando usuário completa      │
-│ 6. Fluxo continua automaticamente ✅                                │
-└─────────────────────────────────────────────────────────────────────┘
+Alteração em: supabase/functions/connect-m365-tenant/index.ts
+
+ANTES (pollForToken):
+  params.append('client_id', appId);
+  params.append('client_secret', clientSecret);  // ← REMOVER
+  params.append('grant_type', '...');
+  params.append('device_code', deviceCode);
+
+DEPOIS:
+  params.append('client_id', appId);
+  // client_secret removido - app público
+  params.append('grant_type', '...');
+  params.append('device_code', deviceCode);
 ```
+
+**Requisitos no Azure Portal:**
+- App Registration → Authentication → "Allow public client flows" = **Yes**
+- Nenhum client_secret necessário para este fluxo
+
+### Opção B: Manter como App Confidencial
+
+Se o app precisa ser confidencial (para outros fluxos que usam o secret):
+
+1. **Verificar no Azure Portal** se o secret está válido e não expirado
+2. **Gerar novo secret** se necessário
+3. **Atualizar a configuração M365** com o novo secret
+
+---
+
+## Recomendação
+
+**Usar Opção A (App Público)** porque:
+
+1. Device Code Flow é projetado para apps públicos
+2. Mais seguro - não envia secret pela rede
+3. O app já parece estar configurado como público no Azure
+4. Outros fluxos (como Client Credentials para Graph API) podem usar o secret separadamente
 
 ---
 
 ## Arquivos a Modificar
 
-### 1. `supabase/functions/connect-m365-tenant/index.ts`
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/connect-m365-tenant/index.ts` | Remover `client_secret` do `pollForToken` |
 
-Substituir ROPC por Device Code Flow em duas etapas:
+---
 
-**Etapa 1 - Iniciar autenticação:**
+## Código da Correção
+
 ```typescript
-// POST /connect-m365-tenant com action: 'start'
-// Retorna: { user_code, verification_uri, device_code, expires_in }
-
-async function initiateDeviceCodeFlow(tenantId: string, appId: string) {
-  const response = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: appId,
-        scope: 'https://graph.microsoft.com/.default offline_access',
-      }),
-    }
-  );
-  return await response.json();
-  // Retorna: { device_code, user_code, verification_uri, expires_in, interval }
-}
-```
-
-**Etapa 2 - Poll por token:**
-```typescript
-// POST /connect-m365-tenant com action: 'poll'
-// Retorna: { success: true, ... } ou { pending: true }
-
-async function pollForToken(tenantId: string, appId: string, deviceCode: string) {
+// pollForToken - Versão App Público
+async function pollForToken(
+  tenantId: string, 
+  appId: string, 
+  deviceCode: string  // Remover clientSecret do parâmetro
+): Promise<{ 
+  pending?: boolean; 
+  expired?: boolean; 
+  access_token?: string;
+  error?: string;
+}> {
+  const params = new URLSearchParams();
+  params.append('client_id', appId);
+  // NÃO enviar client_secret - app público
+  params.append('grant_type', 'urn:ietf:params:oauth:grant-type:device_code');
+  params.append('device_code', deviceCode);
+  
   const response = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: appId,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        device_code: deviceCode,
-      }),
+      body: params,
     }
   );
-  
+
   const data = await response.json();
-  
-  if (data.error === 'authorization_pending') {
-    return { pending: true };
-  }
-  if (data.error === 'expired_token') {
-    throw new Error('Tempo expirado. Tente novamente.');
-  }
-  
-  return { access_token: data.access_token };
+  // ... resto do handling
 }
 ```
 
-### 2. `src/components/m365/SimpleTenantConnectionWizard.tsx`
+E remover a descriptografia do secret no action 'poll':
 
-Adicionar novo passo de autenticação com UI para exibir código:
+```typescript
+if (action === 'poll') {
+  // Remover toda a lógica de descriptografia do secret
+  // Chamar pollForToken sem o clientSecret
+  const pollResult = await pollForToken(providedTenantId, globalConfig.app_id, deviceCode);
+  // ...
+}
+```
+
+---
+
+## Fluxo Corrigido
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                  Autenticação Microsoft 365                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│    ┌────────────────────────────────────────────────────┐        │
-│    │                                                    │        │
-│    │      Acesse:  microsoft.com/devicelogin           │        │
-│    │                                                    │        │
-│    │      Digite o código:                              │        │
-│    │                                                    │        │
-│    │              ┌───────────────────┐                 │        │
-│    │              │   ABCD-1234       │                 │        │
-│    │              └───────────────────┘                 │        │
-│    │                                                    │        │
-│    │      [📋 Copiar código]   [🔗 Abrir link]          │        │
-│    │                                                    │        │
-│    └────────────────────────────────────────────────────┘        │
-│                                                                  │
-│    ⏳ Aguardando autenticação... (expira em 14:23)               │
-│                                                                  │
-│    ─────────────────────────────────────────────────────────     │
-│                                                                  │
-│    ℹ️ Após fazer login no link acima (incluindo MFA se           │
-│       habilitado), esta tela atualizará automaticamente.         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Novos estados do wizard:**
-- `form` → Seleção de workspace + email (só para detectar tenant)
-- `authenticating` → Exibe código + polling
-- `connecting` → Processando conexão final
-- `result` → Sucesso/Falha
-
-### 3. Nova Edge Function (opcional): `m365-device-code-poll/index.ts`
-
-Alternativa: fazer polling separado para não sobrecarregar a função principal.
-
----
-
-## Fluxo Detalhado da UI
-
-### Passo 1: Formulário Simplificado
-- Workspace (dropdown ou auto-select)
-- Email do administrador (para detectar tenant ID)
-- Botão: "Continuar"
-
-### Passo 2: Autenticação Device Code
-- Exibe código grande e legível
-- Botão para copiar código
-- Botão para abrir link (nova aba)
-- Timer de expiração visual
-- Polling automático a cada 5 segundos
-- Quando usuário completa → avança automaticamente
-
-### Passo 3: Conectando
-- Busca info do tenant
-- Busca Service Principal
-- Cria registros
-- Cria task de Exchange RBAC
-
-### Passo 4: Resultado
-- Sucesso com detalhes do tenant
-- Ou erro com opção de retry
-
----
-
-## Vantagens
-
-| Aspecto | ROPC (antes) | Device Code (novo) |
-|---------|--------------|-------------------|
-| Suporte MFA | ❌ Não | ✅ Sim |
-| Segurança | ⚠️ Senha no servidor | ✅ Autenticação direta com MS |
-| Conditional Access | ❌ Bloqueado | ✅ Suportado |
-| Experiência | Formulário de senha | Código + link |
-
----
-
-## Considerações
-
-1. **Não precisa mais de senha** - O usuário autentica diretamente com a Microsoft
-2. **Suporte completo a políticas de segurança** - MFA, Conditional Access, etc.
-3. **Polling eficiente** - A cada 5 segundos (intervalo recomendado pela Microsoft)
-4. **Expiração clara** - Código expira em ~15 minutos, timer visível
-
----
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/functions/connect-m365-tenant/index.ts` | Modificar | Substituir ROPC por Device Code Flow |
-| `src/components/m365/SimpleTenantConnectionWizard.tsx` | Modificar | Adicionar UI de código + polling |
-
----
-
-## Código de Exemplo (Edge Function)
-
-```typescript
-// Duas ações na mesma função:
-
-if (action === 'start') {
-  // Inicia Device Code Flow
-  const deviceCodeResponse = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`,
-    {
-      method: 'POST',
-      body: new URLSearchParams({
-        client_id: appId,
-        scope: 'https://graph.microsoft.com/.default',
-      }),
-    }
-  );
-  
-  const { device_code, user_code, verification_uri, expires_in, interval } = 
-    await deviceCodeResponse.json();
-  
-  return { 
-    device_code,      // Guardar no client para polling
-    user_code,        // Exibir para o usuário
-    verification_uri, // URL para autenticar
-    expires_in,       // Segundos até expirar
-    interval,         // Segundos entre polls
-  };
-}
-
-if (action === 'poll') {
-  // Poll por token
-  const tokenResponse = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      body: new URLSearchParams({
-        client_id: appId,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        device_code: deviceCode,
-      }),
-    }
-  );
-  
-  const data = await tokenResponse.json();
-  
-  if (data.error === 'authorization_pending') {
-    return { pending: true };
-  }
-  
-  // Usuário autenticou! Continuar com o fluxo...
-  // - Buscar org info
-  // - Buscar SP Object ID
-  // - Criar tenant
-  // - Criar task Exchange RBAC
-}
+┌────────────────────────────────────────────────────────────────┐
+│                    DEVICE CODE FLOW (App Público)              │
+├────────────────────────────────────────────────────────────────┤
+│ 1. POST /devicecode                                            │
+│    → client_id + scope                                         │
+│    ← device_code, user_code, verification_uri                  │
+│                                                                │
+│ 2. Usuário autentica em microsoft.com/devicelogin              │
+│                                                                │
+│ 3. POST /token (POLLING)                                       │
+│    → client_id + grant_type + device_code                      │
+│    → SEM client_secret (app público)                           │
+│    ← access_token (após autenticação)                          │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Resumo
+## Validação
 
-Remove a necessidade de senha no formulário. O usuário:
-1. Seleciona workspace
-2. Informa email (para detectar tenant)
-3. Recebe código para digitar em microsoft.com/devicelogin
-4. Autentica com a Microsoft (incluindo MFA)
-5. Sistema detecta automaticamente e completa a conexão
-
-**Compatível com qualquer configuração de segurança do tenant.**
+Após a correção, o fluxo deve:
+1. Iniciar Device Code Flow ✓ (já funciona)
+2. Usuário autenticar no portal Microsoft ✓ (já funciona)  
+3. Polling receber o token ← (corrigido)
+4. Continuar com criação do tenant ← (já implementado)
 
