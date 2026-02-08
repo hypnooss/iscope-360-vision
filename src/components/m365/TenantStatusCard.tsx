@@ -66,7 +66,20 @@ const PERMISSION_CATEGORIES = {
     'Reports.Read.All',
   ],
 };
-const ALL_PERMISSIONS = Object.values(PERMISSION_CATEGORIES).flat();
+
+const DIRECTORY_ROLES = {
+  'Exchange Online': [
+    'Exchange Administrator',
+  ],
+  'SharePoint': [
+    'SharePoint Administrator',
+  ],
+};
+
+const ALL_PERMISSIONS = [
+  ...Object.values(PERMISSION_CATEGORIES).flat(),
+  ...Object.values(DIRECTORY_ROLES).flat(),
+];
 
 interface LastAnalysis {
   score: number | null;
@@ -362,6 +375,33 @@ export function TenantStatusCard({
                 </div>
               </div>
             )}
+
+            {/* Directory Roles Section */}
+            <div className="pt-4 border-t border-border/50">
+              <p className="text-xs text-muted-foreground mb-3">Roles do Diretório (RBAC)</p>
+              <div className="grid gap-4 grid-cols-2">
+                {Object.entries(DIRECTORY_ROLES).map(([category, roles]) => (
+                  <div key={category} className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">{category}</p>
+                    <ul className="text-sm space-y-1">
+                      {roles.map(roleName => {
+                        const perm = permissions.find(p => p.permission_name === roleName);
+                        return (
+                          <li key={roleName} className="flex items-center gap-2">
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              perm?.status === 'granted' ? 'bg-green-500' : 
+                              perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                            )} />
+                            <span className="text-xs truncate">{roleName}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Actions Row */}
