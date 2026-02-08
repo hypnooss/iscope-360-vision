@@ -303,10 +303,11 @@ Deno.serve(async (req) => {
     if (!tokenResponse.ok) {
       const tokenError = await tokenResponse.text();
       console.error('Token error:', tokenError);
+      const tokenErrorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
       return new Response(null, {
         status: 302,
         headers: {
-          'Location': `${redirect_url}?error=token_failed&error_description=${encodeURIComponent('Failed to obtain access token. Admin consent may not have been granted.')}`,
+          'Location': `${tokenErrorRedirectUrl}?error=token_failed&error_description=${encodeURIComponent('Falha ao obter token de acesso. Verifique se o Admin Consent foi concedido corretamente.')}`,
         },
       });
     }
@@ -340,7 +341,7 @@ Deno.serve(async (req) => {
     };
     
     // Retry with exponential backoff: 5s, 10s, 15s (total 30s max wait)
-    const delays = [5000, 10000, 15000];
+    const delays = [10000, 20000, 30000];
     let domainsResponse = await fetchDomains();
     let lastError: { code?: string; message?: string } = {};
 
@@ -386,10 +387,11 @@ Deno.serve(async (req) => {
         message: finalError.message,
       });
       
+      const errorRedirectUrl = redirect_url.replace('/tenant-connection', '/oauth-callback');
       return new Response(null, {
         status: 302,
         headers: {
-          'Location': `${redirect_url}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar alguns minutos para propagar. Tente novamente em 2-3 minutos.`)}`,
+          'Location': `${errorRedirectUrl}?error=graph_access_failed&error_description=${encodeURIComponent(`Failed to access Microsoft Graph API after retries: ${finalError.message || 'Unknown error'}. O Admin Consent pode levar até 5 minutos para propagar. Aguarde e tente reconectar.`)}`,
         },
       });
     }
