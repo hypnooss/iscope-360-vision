@@ -4071,7 +4071,18 @@ serve(async (req: Request) => {
         rawData = {};
         for (const step of stepResults) {
           if (step.status === 'success' && step.data) {
-            rawData[step.step_id] = step.data;
+            // The step.data might be wrapped as { [step_id]: { data: ..., success: true } }
+            // or directly as { data: ..., success: true }
+            const stepData = step.data as Record<string, unknown>;
+            
+            // Check if data is wrapped with step_id key (e.g., { "exo_dkim_config": { ... } })
+            if (step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
+              // Unwrap: use the inner object
+              rawData[step.step_id] = stepData[step.step_id];
+            } else {
+              // Already in correct format
+              rawData[step.step_id] = stepData;
+            }
           }
         }
         console.log(`Reconstructed raw_data from ${stepResults.length} steps, ${Object.keys(rawData).length} successful`);
