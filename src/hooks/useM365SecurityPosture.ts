@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   M365PostureResponse, 
@@ -19,6 +19,7 @@ interface UseM365SecurityPostureReturn {
   isLoading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
   getInsightsByCategory: (category: M365RiskCategory) => M365Insight[];
   getFailedInsights: () => M365Insight[];
   getCriticalInsights: () => M365Insight[];
@@ -40,6 +41,7 @@ export function useM365SecurityPosture({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Fetch latest analysis from history (no API call)
   const refetch = useCallback(async () => {
     if (!tenantRecordId) {
       setError('Tenant não selecionado');
@@ -50,12 +52,68 @@ export function useM365SecurityPosture({
     setError(null);
 
     try {
-      // Trigger the analysis (creates agent task + runs Graph API analysis)
+      const { data: historyRecord, error: queryError } = await supabase
+        .from('m365_posture_history')
+        .select('*')
+        .eq('tenant_record_id', tenantRecordId)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (queryError) {
+        throw new Error(queryError.message);
+      }
+
+      if (!historyRecord) {
+        setData(null);
+        setError('Nenhuma análise encontrada. Clique em "Atualizar" para executar.');
+        return;
+      }
+
+      // Transform to M365PostureResponse format
+      const response: M365PostureResponse = {
+        success: true,
+        score: historyRecord.score ?? 0,
+        classification: historyRecord.classification as any ?? 'critical',
+        summary: (historyRecord.summary as any) ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
+        categoryBreakdown: (historyRecord.category_breakdown as any) ?? [],
+        insights: (historyRecord.insights as any) ?? [],
+        agentInsights: (historyRecord.agent_insights as any) ?? [],
+        agentStatus: historyRecord.agent_status as M365PostureResponse['agentStatus'],
+        tenant: {
+          id: tenantRecordId,
+          domain: '',
+          displayName: '',
+        },
+        analyzedAt: historyRecord.completed_at ?? historyRecord.created_at ?? new Date().toISOString(),
+        analyzedPeriod: { from: dateFrom ?? '', to: dateTo ?? '' },
+        errors: (historyRecord.errors as any)?.errors ?? [],
+      };
+
+      setData(response);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar postura de segurança';
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tenantRecordId, dateFrom, dateTo]);
+
+  // Trigger a new analysis (calls edge function)
+  const triggerAnalysis = useCallback(async (): Promise<{ success: boolean; analysisId?: string }> => {
+    if (!tenantRecordId) {
+      setError('Tenant não selecionado');
+      return { success: false };
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
       const { data: triggerData, error: triggerError } = await supabase.functions.invoke(
         'trigger-m365-posture-analysis',
-        {
-          body: { tenant_record_id: tenantRecordId },
-        }
+        { body: { tenant_record_id: tenantRecordId } }
       );
 
       if (triggerError) {
@@ -67,68 +125,38 @@ export function useM365SecurityPosture({
       }
 
       const analysisId = triggerData.analysis_id;
-      console.log('[useM365SecurityPosture] Analysis triggered:', analysisId, 'has_agent:', triggerData.has_agent);
+      console.log('[useM365SecurityPosture] Analysis triggered:', analysisId);
 
-      // Poll for results (Graph API analysis runs in background)
+      // Poll for results
       let attempts = 0;
-      const maxAttempts = 60; // 60 seconds max
-      const pollInterval = 1000; // 1 second
+      const maxAttempts = 60;
+      const pollInterval = 1000;
 
-      const pollForResults = async (): Promise<M365PostureResponse | null> => {
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        
         const { data: historyRecord, error: historyError } = await supabase
           .from('m365_posture_history')
-          .select('*')
+          .select('status')
           .eq('id', analysisId)
           .single();
 
         if (historyError) {
           console.error('[useM365SecurityPosture] Error fetching history:', historyError);
-          return null;
+          break;
         }
 
-        // Check if Graph API analysis is complete
         if (historyRecord.status === 'completed' || historyRecord.status === 'failed') {
-          // Transform to M365PostureResponse format
-          const response: M365PostureResponse = {
-            success: historyRecord.status === 'completed',
-            error: historyRecord.status === 'failed' ? (historyRecord.errors as any)?.message : undefined,
-            score: historyRecord.score ?? 0,
-            classification: historyRecord.classification as any ?? 'critical',
-            summary: (historyRecord.summary as any) ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
-            categoryBreakdown: (historyRecord.category_breakdown as any) ?? [],
-            insights: (historyRecord.insights as any) ?? [],
-            agentInsights: (historyRecord.agent_insights as any) ?? [],
-            agentStatus: historyRecord.agent_status as M365PostureResponse['agentStatus'],
-            tenant: triggerData.tenant,
-            analyzedAt: historyRecord.completed_at ?? historyRecord.created_at ?? new Date().toISOString(),
-            analyzedPeriod: { from: dateFrom ?? '', to: dateTo ?? '' },
-            errors: (historyRecord.errors as any)?.errors ?? [],
-          };
-
-          return response;
+          break;
         }
-
-        return null;
-      };
-
-      // Initial poll
-      let result = await pollForResults();
-      
-      // If not ready, keep polling
-      while (!result && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        result = await pollForResults();
         attempts++;
       }
 
-      if (!result) {
-        throw new Error('Timeout aguardando análise completar');
-      }
-
-      setData(result);
+      // Refetch to get latest data
+      await refetch();
 
       // Notify about agent status
-      if (triggerData.has_agent && result.agentStatus === 'pending') {
+      if (triggerData.has_agent) {
         toast({
           title: 'Coleta via Agent em andamento',
           description: 'Dados do Exchange e SharePoint serão atualizados quando o agent completar.',
@@ -136,14 +164,7 @@ export function useM365SecurityPosture({
         });
       }
 
-      // Notify about errors in collectors
-      if (result.errors && result.errors.length > 0) {
-        toast({
-          title: 'Análise parcial',
-          description: `Alguns coletores tiveram problemas: ${result.errors.length} erro(s)`,
-          variant: 'default',
-        });
-      }
+      return { success: true, analysisId };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao analisar postura de segurança';
       setError(message);
@@ -152,10 +173,18 @@ export function useM365SecurityPosture({
         description: message,
         variant: 'destructive',
       });
+      return { success: false };
     } finally {
       setIsLoading(false);
     }
-  }, [tenantRecordId, dateFrom, dateTo, toast]);
+  }, [tenantRecordId, refetch, toast]);
+
+  // Auto-fetch when tenant changes
+  useEffect(() => {
+    if (tenantRecordId) {
+      refetch();
+    }
+  }, [tenantRecordId, refetch]);
 
   const getInsightsByCategory = useCallback(
     (category: M365RiskCategory): M365Insight[] => {
@@ -187,6 +216,7 @@ export function useM365SecurityPosture({
     isLoading,
     error,
     refetch,
+    triggerAnalysis,
     getInsightsByCategory,
     getFailedInsights,
     getCriticalInsights,
