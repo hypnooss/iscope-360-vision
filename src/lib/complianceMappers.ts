@@ -1,4 +1,4 @@
-import { ComplianceCheck, ComplianceStatus } from '@/types/compliance';
+import { ComplianceCheck, ComplianceStatus, EvidenceItem } from '@/types/compliance';
 import { M365Insight, M365AgentInsight } from '@/types/m365Insights';
 import { SecurityInsight } from '@/types/securityInsights';
 import { ExchangeInsight } from '@/types/exchangeInsights';
@@ -113,24 +113,27 @@ export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianc
  * Mapeia SecurityInsight (Entra ID Security) para UnifiedComplianceItem
  */
 export function mapSecurityInsight(insight: SecurityInsight): UnifiedComplianceItem {
+  const evidence: EvidenceItem[] = [
+    { label: 'Itens afetados', value: `${insight.affectedCount} usuário(s)`, type: 'text' },
+    ...(insight.affectedUsers.length > 0 ? [{
+      label: 'Usuários afetados',
+      value: insight.affectedUsers.map(u => u.displayName || u.userPrincipalName).join('\n'),
+      type: 'list' as const,
+    }] : []),
+  ];
+
   return {
     id: insight.id,
     code: insight.code,
     name: insight.title,
     description: insight.criteria,
     category: insight.category,
-    status: 'fail', // SecurityInsights são sempre problemas detectados
+    status: 'fail',
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
     details: insight.description,
     recommendation: insight.recommendation,
-    affectedEntities: insight.affectedUsers.map(u => ({
-      id: u.id,
-      displayName: u.displayName,
-      userPrincipalName: u.userPrincipalName,
-      details: u.details,
-    })),
-    affectedCount: insight.affectedCount,
+    evidence,
     product: 'entra_id',
   };
 }
@@ -139,24 +142,27 @@ export function mapSecurityInsight(insight: SecurityInsight): UnifiedComplianceI
  * Mapeia ExchangeInsight (Exchange Online) para UnifiedComplianceItem
  */
 export function mapExchangeInsight(insight: ExchangeInsight): UnifiedComplianceItem {
+  const evidence: EvidenceItem[] = [
+    { label: 'Itens afetados', value: `${insight.affectedCount} mailbox(es)`, type: 'text' },
+    ...(insight.affectedMailboxes.length > 0 ? [{
+      label: 'Mailboxes afetadas',
+      value: insight.affectedMailboxes.map(m => m.displayName || m.userPrincipalName).join('\n'),
+      type: 'list' as const,
+    }] : []),
+  ];
+
   return {
     id: insight.id,
     code: insight.code,
     name: insight.title,
     description: insight.criteria,
     category: insight.category,
-    status: 'fail', // ExchangeInsights são sempre problemas detectados
+    status: 'fail',
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
     details: insight.description,
     recommendation: insight.recommendation,
-    affectedEntities: insight.affectedMailboxes.map(m => ({
-      id: m.id,
-      displayName: m.displayName,
-      userPrincipalName: m.userPrincipalName,
-      details: m.details as Record<string, unknown> | undefined,
-    })),
-    affectedCount: insight.affectedCount,
+    evidence,
     product: 'exchange_online',
   };
 }
@@ -165,23 +171,27 @@ export function mapExchangeInsight(insight: ExchangeInsight): UnifiedComplianceI
  * Mapeia ApplicationInsight (Entra ID Applications) para UnifiedComplianceItem
  */
 export function mapApplicationInsight(insight: ApplicationInsight): UnifiedComplianceItem {
+  const evidence: EvidenceItem[] = [
+    { label: 'Itens afetados', value: `${insight.affectedCount} aplicativo(s)`, type: 'text' },
+    ...(insight.affectedApplications.length > 0 ? [{
+      label: 'Aplicativos afetados',
+      value: insight.affectedApplications.map(a => a.displayName).join('\n'),
+      type: 'list' as const,
+    }] : []),
+  ];
+
   return {
     id: insight.id,
     code: insight.code,
     name: insight.title,
     description: insight.criteria,
     category: insight.category,
-    status: 'fail', // ApplicationInsights são sempre problemas detectados
+    status: 'fail',
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
     details: insight.description,
     recommendation: insight.recommendation,
-    affectedEntities: insight.affectedApplications.map(a => ({
-      id: a.id,
-      displayName: a.displayName,
-      details: a.details as Record<string, unknown> | undefined,
-    })),
-    affectedCount: insight.affectedCount,
+    evidence,
     product: 'entra_id',
   };
 }
