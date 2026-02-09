@@ -117,11 +117,12 @@ export function mapSecurityInsight(insight: SecurityInsight): UnifiedComplianceI
     id: insight.id,
     code: insight.code,
     name: insight.title,
-    description: insight.description,
+    description: insight.criteria,
     category: insight.category,
     status: 'fail', // SecurityInsights são sempre problemas detectados
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
+    details: insight.description,
     recommendation: insight.recommendation,
     affectedEntities: insight.affectedUsers.map(u => ({
       id: u.id,
@@ -142,11 +143,12 @@ export function mapExchangeInsight(insight: ExchangeInsight): UnifiedComplianceI
     id: insight.id,
     code: insight.code,
     name: insight.title,
-    description: insight.description,
+    description: insight.criteria,
     category: insight.category,
     status: 'fail', // ExchangeInsights são sempre problemas detectados
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
+    details: insight.description,
     recommendation: insight.recommendation,
     affectedEntities: insight.affectedMailboxes.map(m => ({
       id: m.id,
@@ -167,11 +169,12 @@ export function mapApplicationInsight(insight: ApplicationInsight): UnifiedCompl
     id: insight.id,
     code: insight.code,
     name: insight.title,
-    description: insight.description,
+    description: insight.criteria,
     category: insight.category,
     status: 'fail', // ApplicationInsights são sempre problemas detectados
     severity: normalizeSeverity(insight.severity),
     failDescription: insight.description,
+    details: insight.description,
     recommendation: insight.recommendation,
     affectedEntities: insight.affectedApplications.map(a => ({
       id: a.id,
