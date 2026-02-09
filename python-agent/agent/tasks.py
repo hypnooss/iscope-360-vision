@@ -105,70 +105,182 @@ class TaskExecutor:
                 }
         
         step_results = []  # Detailed step-by-step results
-        step_results = []  # Detailed step-by-step results
         steps_completed = 0
         steps_failed = 0
         errors = []
         
-        for i, step in enumerate(steps):
-            step_id = step.get('id', 'unknown')
-            step_start = time.time()
-            
-            # Support both 'type' (from blueprint) and 'executor' (legacy) field names
-            executor_type = step.get('type') or step.get('executor', 'unknown')
-            
-            # Auto-route steps with use_session: true to http_session executor
-            if step.get('use_session') and executor_type in ('http_request', 'unknown'):
-                executor_type = 'http_session'
-            
-            executor = self._executors.get(executor_type)
-            if not executor:
-                self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
-                step_duration = int((time.time() - step_start) * 1000)
-                step_result = {
-                    'step_id': step_id,
-                    'status': 'failed',
-                    'error': f"Executor desconhecido: {executor_type}",
-                    'duration_ms': step_duration
-                }
-                step_results.append(step_result)
-                steps_failed += 1
-                errors.append(f"{step_id}: Executor desconhecido")
+        # Group consecutive PowerShell steps by module for batch execution
+        batches = self._group_steps_into_batches(steps)
+        
+        global_step_index = 0  # Track position for fail-fast on first step
+        
+        for batch in batches:
+            if batch['type'] == 'powershell_batch':
+                # Execute all PowerShell steps in a single session
+                batch_result = self._execute_powershell_batch(
+                    task_id, batch['steps'], context, 
+                    is_first=(global_step_index == 0),
+                    all_steps=steps
+                )
                 
-                # Report step result progressively
-                if self._use_progressive:
-                    self._report_step_result(task_id, step_id, 'failed', None, step_result['error'], step_duration)
-                continue
-            
-            try:
-                result = executor.run(step, context)
-                step_duration = int((time.time() - step_start) * 1000)
+                for sr in batch_result['step_results']:
+                    step_results.append(sr)
+                    if sr['status'] == 'success':
+                        steps_completed += 1
+                    elif sr['status'] == 'failed':
+                        steps_failed += 1
+                        errors.append(f"{sr['step_id']}: {sr.get('error', 'unknown')}")
+                    # skipped steps are counted as failed
+                    elif sr['status'] == 'skipped':
+                        steps_failed += 1
                 
-                # Update context with session data if executor returns it
-                if result.get('session_data'):
-                    context.update(result['session_data'])
-                
-                # Check for connectivity errors on first step (fail-fast)
-                if i == 0 and result.get('error'):
-                    error_msg = result.get('error', '')
-                    if self._is_connectivity_error(error_msg):
-                        self.logger.error(
-                            f"Falha de conectividade no primeiro step. "
-                            f"Abortando {len(steps) - 1} steps restantes."
-                        )
+                # If batch caused an abort (connectivity failure on first step)
+                if batch_result.get('abort'):
+                    # Mark all remaining steps (outside this batch) as skipped
+                    remaining_steps = steps[global_step_index + len(batch['steps']):]
+                    for remaining_step in remaining_steps:
+                        remaining_id = remaining_step.get('id', 'unknown')
                         step_results.append({
-                            'step_id': step_id,
-                            'status': 'failed',
-                            'error': error_msg,
-                            'duration_ms': step_duration
+                            'step_id': remaining_id,
+                            'status': 'skipped',
+                            'error': 'Ignorado: falha de conectividade no step inicial',
+                            'duration_ms': 0
                         })
                         steps_failed += 1
-                        
-                        # Report failed step
                         if self._use_progressive:
-                            self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
-                        
-                        # Mark all remaining steps as skipped
+                            self._report_step_result(task_id, remaining_id, 'skipped', None,
+                                'Ignorado: falha de conectividade no step inicial', 0)
+                    
+                    execution_time_ms = int((time.time() - start_time) * 1000)
+                    return {
+                        'status': 'failed',
+                        'error_message': batch_result.get('error_message', 'Falha de conectividade'),
+                        'execution_time_ms': execution_time_ms,
+                        'steps_completed': steps_completed,
+                        'steps_failed': steps_failed,
+                        'step_results': step_results
+                    }
+                
+                global_step_index += len(batch['steps'])
+            else:
+                # Single non-PowerShell step - execute individually
+                step = batch['steps'][0]
+                i = global_step_index
+                step_id = step.get('id', 'unknown')
+                step_start = time.time()
+                
+                executor_type = step.get('type') or step.get('executor', 'unknown')
+                
+                if step.get('use_session') and executor_type in ('http_request', 'unknown'):
+                    executor_type = 'http_session'
+                
+                executor = self._executors.get(executor_type)
+                if not executor:
+                    self.logger.warning(f"Step {step_id}: Executor desconhecido '{executor_type}'")
+                    step_duration = int((time.time() - step_start) * 1000)
+                    step_result = {
+                        'step_id': step_id,
+                        'status': 'failed',
+                        'error': f"Executor desconhecido: {executor_type}",
+                        'duration_ms': step_duration
+                    }
+                    step_results.append(step_result)
+                    steps_failed += 1
+                    errors.append(f"{step_id}: Executor desconhecido")
+                    if self._use_progressive:
+                        self._report_step_result(task_id, step_id, 'failed', None, step_result['error'], step_duration)
+                    global_step_index += 1
+                    continue
+                
+                try:
+                    result = executor.run(step, context)
+                    step_duration = int((time.time() - step_start) * 1000)
+                    
+                    if result.get('session_data'):
+                        context.update(result['session_data'])
+                    
+                    # Check for connectivity errors on first step (fail-fast)
+                    if i == 0 and result.get('error'):
+                        error_msg = result.get('error', '')
+                        if self._is_connectivity_error(error_msg):
+                            self.logger.error(
+                                f"Falha de conectividade no primeiro step. "
+                                f"Abortando {len(steps) - 1} steps restantes."
+                            )
+                            step_results.append({
+                                'step_id': step_id,
+                                'status': 'failed',
+                                'error': error_msg,
+                                'duration_ms': step_duration
+                            })
+                            steps_failed += 1
+                            if self._use_progressive:
+                                self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
+                            
+                            for remaining_step in steps[1:]:
+                                remaining_id = remaining_step.get('id', 'unknown')
+                                step_results.append({
+                                    'step_id': remaining_id,
+                                    'status': 'skipped',
+                                    'error': 'Ignorado: falha de conectividade no step inicial',
+                                    'duration_ms': 0
+                                })
+                                if self._use_progressive:
+                                    self._report_step_result(task_id, remaining_id, 'skipped', None,
+                                        'Ignorado: falha de conectividade no step inicial', 0)
+                            
+                            execution_time_ms = int((time.time() - start_time) * 1000)
+                            return {
+                                'status': 'failed',
+                                'error_message': f'Falha de conectividade: {error_msg}',
+                                'execution_time_ms': execution_time_ms,
+                                'steps_completed': steps_completed,
+                                'steps_failed': steps_failed + len(steps) - 1,
+                                'step_results': step_results
+                            }
+                    
+                    step_status = 'failed' if result.get('error') else 'success'
+                    step_data = result.get('data') if result.get('data') is not None else None
+                    step_error = result.get('error') if result.get('error') else None
+                    
+                    step_results.append({
+                        'step_id': step_id,
+                        'status': step_status,
+                        'error': step_error,
+                        'duration_ms': step_duration
+                    })
+                    
+                    if step_status == 'success':
+                        steps_completed += 1
+                    else:
+                        steps_failed += 1
+                        errors.append(f"{step_id}: {step_error}")
+                    
+                    if self._use_progressive:
+                        self._report_step_result(task_id, step_id, step_status, step_data, step_error, step_duration)
+                        del result
+                    
+                except Exception as e:
+                    step_duration = int((time.time() - step_start) * 1000)
+                    error_msg = str(e)
+                    
+                    step_results.append({
+                        'step_id': step_id,
+                        'status': 'failed',
+                        'error': error_msg,
+                        'duration_ms': step_duration
+                    })
+                    steps_failed += 1
+                    errors.append(f"{step_id}: {error_msg}")
+                    
+                    if self._use_progressive:
+                        self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
+                    
+                    if i == 0 and self._is_connectivity_error(error_msg):
+                        self.logger.error(
+                            f"Falha de conectividade no primeiro step (exceção). "
+                            f"Abortando {len(steps) - 1} steps restantes."
+                        )
                         for remaining_step in steps[1:]:
                             remaining_id = remaining_step.get('id', 'unknown')
                             step_results.append({
@@ -178,7 +290,7 @@ class TaskExecutor:
                                 'duration_ms': 0
                             })
                             if self._use_progressive:
-                                self._report_step_result(task_id, remaining_id, 'skipped', None, 
+                                self._report_step_result(task_id, remaining_id, 'skipped', None,
                                     'Ignorado: falha de conectividade no step inicial', 0)
                         
                         execution_time_ms = int((time.time() - start_time) * 1000)
@@ -187,78 +299,11 @@ class TaskExecutor:
                             'error_message': f'Falha de conectividade: {error_msg}',
                             'execution_time_ms': execution_time_ms,
                             'steps_completed': steps_completed,
-                            'steps_failed': steps_failed + len(steps) - 1,  # Current + remaining
+                            'steps_failed': steps_failed + len(steps) - 1,
                             'step_results': step_results
                         }
                 
-                # Determine step status
-                step_status = 'failed' if result.get('error') else 'success'
-                step_data = result.get('data') if result.get('data') is not None else None
-                step_error = result.get('error') if result.get('error') else None
-                
-                step_results.append({
-                    'step_id': step_id,
-                    'status': step_status,
-                    'error': step_error,
-                    'duration_ms': step_duration
-                })
-                
-                if step_status == 'success':
-                    steps_completed += 1
-                else:
-                    steps_failed += 1
-                    errors.append(f"{step_id}: {step_error}")
-                
-                # Report step result progressively (send data immediately, free memory)
-                if self._use_progressive:
-                    self._report_step_result(task_id, step_id, step_status, step_data, step_error, step_duration)
-                    # Clear data from memory after upload
-                    del result
-                
-            except Exception as e:
-                step_duration = int((time.time() - step_start) * 1000)
-                error_msg = str(e)
-                
-                step_results.append({
-                    'step_id': step_id,
-                    'status': 'failed',
-                    'error': error_msg,
-                    'duration_ms': step_duration
-                })
-                steps_failed += 1
-                errors.append(f"{step_id}: {error_msg}")
-                
-                # Report failed step
-                if self._use_progressive:
-                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
-                
-                # Also check for connectivity errors in exceptions
-                if i == 0 and self._is_connectivity_error(error_msg):
-                    self.logger.error(
-                        f"Falha de conectividade no primeiro step (exceção). "
-                        f"Abortando {len(steps) - 1} steps restantes."
-                    )
-                    for remaining_step in steps[1:]:
-                        remaining_id = remaining_step.get('id', 'unknown')
-                        step_results.append({
-                            'step_id': remaining_id,
-                            'status': 'skipped',
-                            'error': 'Ignorado: falha de conectividade no step inicial',
-                            'duration_ms': 0
-                        })
-                        if self._use_progressive:
-                            self._report_step_result(task_id, remaining_id, 'skipped', None,
-                                'Ignorado: falha de conectividade no step inicial', 0)
-                    
-                    execution_time_ms = int((time.time() - start_time) * 1000)
-                    return {
-                        'status': 'failed',
-                        'error_message': f'Falha de conectividade: {error_msg}',
-                        'execution_time_ms': execution_time_ms,
-                        'steps_completed': steps_completed,
-                        'steps_failed': steps_failed + len(steps) - 1,
-                        'step_results': step_results
-                    }
+                global_step_index += 1
         
         # Determine final status
         if steps_failed == len(steps) and steps:
@@ -281,6 +326,171 @@ class TaskExecutor:
             'steps_failed': steps_failed,
             'step_results': step_results
         }
+
+    def _group_steps_into_batches(self, steps):
+        """
+        Group consecutive PowerShell steps with the same module into batches.
+        Non-PowerShell steps become single-step batches.
+        """
+        batches = []
+        current_ps_batch = None
+        
+        for step in steps:
+            executor_type = step.get('type') or step.get('executor', 'unknown')
+            
+            if executor_type == 'powershell':
+                module = step.get('params', {}).get('module', 'ExchangeOnline')
+                
+                if current_ps_batch and current_ps_batch['module'] == module:
+                    current_ps_batch['steps'].append(step)
+                else:
+                    if current_ps_batch:
+                        batches.append(current_ps_batch)
+                    current_ps_batch = {
+                        'type': 'powershell_batch',
+                        'module': module,
+                        'steps': [step]
+                    }
+            else:
+                if current_ps_batch:
+                    batches.append(current_ps_batch)
+                    current_ps_batch = None
+                batches.append({
+                    'type': 'single',
+                    'steps': [step]
+                })
+        
+        if current_ps_batch:
+            batches.append(current_ps_batch)
+        
+        return batches
+    
+    def _execute_powershell_batch(self, task_id, steps, context, is_first=False, all_steps=None):
+        """
+        Execute multiple PowerShell steps in a single session.
+        Returns dict with 'step_results' list and optional 'abort' flag.
+        """
+        batch_start = time.time()
+        
+        # Merge all commands into one executor call
+        first_params = dict(steps[0].get('params', {}))
+        merged_commands = []
+        for step in steps:
+            cmds = step.get('params', {}).get('commands', [])
+            merged_commands.extend(cmds)
+        
+        first_params['commands'] = merged_commands
+        merged_step = {'type': 'powershell', 'params': first_params}
+        
+        self.logger.info(f"PowerShell batch: {len(steps)} steps, {len(merged_commands)} commands in single session")
+        
+        executor = self._executors.get('powershell')
+        
+        try:
+            result = executor.run(merged_step, context)
+        except Exception as e:
+            error_msg = str(e)
+            self.logger.error(f"PowerShell batch execution error: {error_msg}")
+            
+            # Report all steps as failed
+            step_results = []
+            for step in steps:
+                step_id = step.get('id', 'unknown')
+                step_results.append({
+                    'step_id': step_id,
+                    'status': 'failed',
+                    'error': error_msg,
+                    'duration_ms': 0
+                })
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, 0)
+            
+            return {
+                'step_results': step_results,
+                'abort': is_first and self._is_connectivity_error(error_msg),
+                'error_message': f'Falha de conectividade: {error_msg}' if is_first else None
+            }
+        
+        batch_duration = int((time.time() - batch_start) * 1000)
+        per_step_duration = batch_duration // max(len(steps), 1)
+        
+        # Check for batch-level error (connection failure)
+        if result.get('error'):
+            error_msg = result['error']
+            self.logger.error(f"PowerShell batch failed: {error_msg}")
+            
+            step_results = []
+            for step in steps:
+                step_id = step.get('id', 'unknown')
+                step_results.append({
+                    'step_id': step_id,
+                    'status': 'failed',
+                    'error': error_msg,
+                    'duration_ms': per_step_duration
+                })
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, per_step_duration)
+            
+            return {
+                'step_results': step_results,
+                'abort': is_first and self._is_connectivity_error(error_msg),
+                'error_message': f'Falha de conectividade: {error_msg}' if is_first else None
+            }
+        
+        # Unpack individual results and report progressively
+        data = result.get('data', {})
+        step_results = []
+        
+        for step in steps:
+            step_id = step.get('id', 'unknown')
+            cmds = step.get('params', {}).get('commands', [])
+            cmd_name = cmds[0]['name'] if cmds else 'unknown'
+            
+            if isinstance(data, dict) and cmd_name in data:
+                cmd_result = data[cmd_name]
+                
+                # Each command result has 'success' and 'data'/'error' from the PS script
+                if isinstance(cmd_result, dict):
+                    if cmd_result.get('success') is False:
+                        step_status = 'failed'
+                        step_error = cmd_result.get('error', 'Command failed')
+                        step_data = None
+                    else:
+                        step_status = 'success'
+                        step_error = None
+                        # Data comes as JSON string from ConvertTo-Json
+                        raw_data = cmd_result.get('data')
+                        if isinstance(raw_data, str):
+                            import json
+                            try:
+                                step_data = json.loads(raw_data)
+                            except (json.JSONDecodeError, ValueError):
+                                step_data = raw_data
+                        else:
+                            step_data = raw_data
+                else:
+                    step_status = 'success'
+                    step_error = None
+                    step_data = cmd_result
+            else:
+                step_status = 'failed'
+                step_error = f"No result found for command '{cmd_name}'"
+                step_data = None
+            
+            step_results.append({
+                'step_id': step_id,
+                'status': step_status,
+                'error': step_error,
+                'duration_ms': per_step_duration
+            })
+            
+            if self._use_progressive:
+                self._report_step_result(task_id, step_id, step_status, step_data, step_error, per_step_duration)
+        
+        # Free memory
+        del result
+        
+        return {'step_results': step_results}
 
     def _report_step_result(self, task_id: str, step_id: str, status: str, 
                             data: Optional[Dict[str, Any]], error: Optional[str], 

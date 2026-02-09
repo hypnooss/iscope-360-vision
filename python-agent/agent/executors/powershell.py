@@ -266,7 +266,8 @@ class PowerShellExecutor(BaseExecutor):
         app_id = params.get("app_id") or context.get("app_id")
         tenant_id = params.get("tenant_id") or context.get("tenant_id")
         organization = params.get("organization") or context.get("organization")
-        timeout = params.get("timeout", 300)
+        default_timeout = 300 + (max(0, len(commands) - 1) * 30)  # Scale timeout with command count
+        timeout = params.get("timeout", default_timeout)
         username = params.get("username")
         password = params.get("password")
         
