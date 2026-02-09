@@ -232,6 +232,16 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Recalculate summary with ALL insights (API + Exchange)
+        const recalculatedSummary = {
+          critical: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+          high: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+          medium: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+          low: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+          info: allInsights.filter((i: any) => i.severity === 'info').length,
+          total: allInsights.length,
+        };
+
         // Update history record with results
         await supabaseAdmin
           .from('m365_posture_history')
@@ -240,7 +250,7 @@ Deno.serve(async (req) => {
             completed_at: new Date().toISOString(),
             score: result.score,
             classification: result.classification,
-            summary: result.summary,
+            summary: recalculatedSummary,
             category_breakdown: result.categoryBreakdown,
             insights: allInsights,
             environment_metrics: result.environmentMetrics || null,
