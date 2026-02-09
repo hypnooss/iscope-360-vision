@@ -1,47 +1,65 @@
 
-# Fix: Agent recebe 0 steps do Exchange Online
 
-## Diagnostico Completo (fim-a-fim)
+# Fix: Mover criacao do home directory e limpeza de cache para ANTES do early exit
 
-Foram identificados **dois problemas** na cadeia:
+## Causa Raiz
 
-### Problema 1: Edge Functions nao foram redeployadas corretamente
-Os logs mostram que `m365-security-posture` carregou **5 blueprints** mesmo com `blueprint_filter = 'exchange_online'`, confirmando que a versao anterior (sem o filtro) ainda estava rodando. Precisamos garantir o deploy.
+No `check-deps.sh` atual, a criacao do diretorio home do usuario `iscope` esta na funcao `main()` (linha ~395), que so roda quando a flag `/var/lib/iscope-agent/check_components.flag` existe. Sem a flag, o script sai na linha 48 e **nunca cria o `/home/iscope`**.
 
-### Problema 2 (CRITICO): `rpc_get_agent_tasks` nao encontra o blueprint Exchange
-A funcao RPC filtra blueprints com `executor_type = 'agent'`, porem o blueprint "M365 - Exchange Online" tem `executor_type = 'hybrid'`. Resultado: **0 steps enviados ao Agent**.
+Sem o home directory, o PowerShell retorna string vazia para `$env:HOME`, e o modulo ExchangeOnlineManagement falha com erro `Split-Path`.
 
-```text
-RPC Query:  WHERE db.executor_type = 'agent'
-Blueprint:  executor_type = 'hybrid'  --> NAO ENCONTRADO --> 0 steps
+## Alteracao
+
+### `python-agent/check-deps.sh` (linhas 43-49)
+
+Mover duas operacoes criticas para **antes** do early exit (entre o `mkdir` do log e o check da flag):
+
+**De:**
+```bash
+# Ensure log directory exists
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+
+# Check if verification was requested
+if [[ ! -f "$FLAG_FILE" ]]; then
+    # No flag = no action needed, exit silently
+    exit 0
+fi
 ```
 
-## Solucao
+**Para:**
+```bash
+# Ensure log directory exists
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
-### 1. Migrar SQL: Atualizar `rpc_get_agent_tasks`
+# === ALWAYS RUN (every service start, regardless of flag) ===
 
-Na secao M365 da funcao RPC (por volta da linha que faz `AND db.executor_type = 'agent'`), alterar para incluir `'hybrid'`:
+# 1. Ensure service user home directory exists (required for PowerShell $env:HOME)
+if id "$SERVICE_USER" >/dev/null 2>&1; then
+    user_home="$(eval echo ~$SERVICE_USER)"
+    if [[ -n "$user_home" ]] && [[ ! -d "$user_home" ]]; then
+        mkdir -p "$user_home"
+        chown "$SERVICE_USER":"$SERVICE_USER" "$user_home"
+    fi
+fi
 
-```sql
-AND db.executor_type IN ('agent', 'hybrid')
+# 2. Clean stale Python bytecode cache (forces recompilation after updates)
+INSTALL_DIR="/opt/iscope-agent"
+if [[ -d "$INSTALL_DIR" ]]; then
+    find "$INSTALL_DIR" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# === END ALWAYS RUN ===
+
+# Check if verification was requested
+if [[ ! -f "$FLAG_FILE" ]]; then
+    exit 0
+fi
 ```
 
-Isso permite que o blueprint Exchange (`hybrid`) seja encontrado. Os steps individuais ja sao filtrados pelo `COALESCE(step->>'executor', 'agent') = 'agent'`, garantindo que apenas os 18 steps PowerShell sejam enviados (o step `sample_users_for_mailbox` com `executor = 'edge_function'` continua sendo excluido).
+A funcao `main()` mantem a mesma logica de home directory como fallback redundante (nao faz mal rodar duas vezes).
 
-### 2. Re-deploy Edge Functions
+## Resultado
 
-Redeployar ambas as edge functions para garantir que o codigo com `blueprint_filter` esteja ativo:
-- `trigger-m365-posture-analysis`
-- `m365-security-posture`
-
-### 3. Nenhuma mudanca no frontend
-
-O hook `useExchangeOnlineInsights` ja envia `scope: 'exchange_online'` corretamente (confirmado na linha 181).
-
-## Resultado Esperado
-
-Apos as alteracoes:
-1. O Agent recebe 18 steps PowerShell (Exchange Online) em vez de 0
-2. A API executa apenas 1 step Graph API (Exchange) em vez de 39
-3. Sem erros 403 em endpoints irrelevantes
-4. A tarefa do Agent conclui com dados reais em vez de "0 steps completed"
+- Em **cada inicio** do servico (com ou sem flag), o `/home/iscope` e criado se nao existir
+- O `__pycache__` e limpo, forcando recompilacao do `powershell.py` com o preambulo `$env:HOME`
+- Erro Split-Path eliminado permanentemente
