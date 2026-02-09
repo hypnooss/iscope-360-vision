@@ -1,41 +1,41 @@
 
 
-# Corrigir contagem de severidades no cabeçalho da seção Exchange Online
+# Fix: Always show rule description (criteria) on Exchange Online cards
 
-## Problema
+## Root Cause
 
-As contagens de severidade (crítico, alto, médio, baixo) no cabeçalho da categoria são calculadas apenas a partir dos itens com status `fail`. Itens com status `warn`/`warning` que também possuem severidade crítica ou alta são ignorados na contagem.
+In `mapExchangeAgentInsight`, the mapper sets `passDescription`, `failDescription`, and `notFoundDescription` to the dynamic analysis results. The `UnifiedComplianceCard` uses these as the contextual message (the text shown below the rule name), which **overrides** the criteria ("Verifica se...").
 
-Exemplo: "Transport Rules Redirecionando para Externo" tem severidade **crítica** mas status `warn` — não é contado no badge "crítico" do cabeçalho.
+In contrast, the Domain/Firewall mapper (`mapComplianceCheck`) never sets these fields, so the card always falls back to `description` (the criteria) for the contextual message.
 
-## Solução
+## Fix
 
-Alterar a base de cálculo das contagens de severidade para incluir **todos os itens não-conformes** (fail + warning + other), excluindo apenas os itens `pass`.
+In `src/lib/complianceMappers.ts`, remove the `passDescription`, `failDescription`, and `notFoundDescription` mappings from `mapExchangeAgentInsight`. This way:
 
-### Arquivo: `src/components/m365/exchange/ExchangeComplianceSection.tsx`
+- The contextual message will ALWAYS show the criteria ("Verifica se...") regardless of status - just like Domain and Firewall
+- The dynamic analysis result stays in `details` and appears in the "ANALISE EFETUADA" expandable section
 
-Linhas 52-55: Trocar `failedItems` por uma lista combinada de itens não-pass:
-
-```text
-// ANTES (só conta fail):
-const criticalCount = failedItems.filter(i => i.severity === 'critical').length;
-
-// DEPOIS (conta fail + warning + other):
-const nonPassItems = items.filter(i => i.status !== 'pass');
-const criticalCount = nonPassItems.filter(i => i.severity === 'critical').length;
-const highCount = nonPassItems.filter(i => i.severity === 'high').length;
-const mediumCount = nonPassItems.filter(i => i.severity === 'medium').length;
-const lowCount = nonPassItems.filter(i => i.severity === 'low').length;
+### Before (current mapper, lines 249-251):
+```
+failDescription: insight.failDescription || insight.description,
+passDescription: insight.passDescription,
+notFoundDescription: insight.notFoundDescription,
 ```
 
-### Arquivo: `src/components/m365/posture/M365CategorySection.tsx`
+### After:
+```
+// Remove passDescription, failDescription, notFoundDescription
+// Let UnifiedComplianceCard fall back to description (criteria)
+```
 
-Mesma correção nas linhas 59-62 para manter consistência entre as páginas Postura e Exchange Online.
+## File changed
 
-## Arquivos afetados
+| File | Change |
+|------|--------|
+| `src/lib/complianceMappers.ts` | Remove 3 lines (passDescription, failDescription, notFoundDescription) from mapExchangeAgentInsight return |
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/m365/exchange/ExchangeComplianceSection.tsx` | Contar severidade de todos os itens não-pass |
-| `src/components/m365/posture/M365CategorySection.tsx` | Mesma correção para consistência |
+## Result
 
+All Exchange cards will display identically to Domain/Firewall:
+- Level 1: Rule name + criteria ("Verifica se...")
+- Level 3 (expanded): "ANALISE EFETUADA" shows the dynamic result
