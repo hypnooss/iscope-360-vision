@@ -312,6 +312,13 @@ generate_certificate() {
         -out "$CERT_DIR/m365.pfx" \
         -inkey "$CERT_DIR/m365.key" \
         -in "$CERT_DIR/m365.crt" \
+        -passout pass: \
+        -legacy 2>/dev/null || \
+    openssl pkcs12 \
+        -export \
+        -out "$CERT_DIR/m365.pfx" \
+        -inkey "$CERT_DIR/m365.key" \
+        -in "$CERT_DIR/m365.crt" \
         -passout pass: 2>/dev/null
 
     if [[ -f "$CERT_DIR/m365.pfx" ]]; then

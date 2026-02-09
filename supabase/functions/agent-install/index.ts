@@ -349,6 +349,13 @@ generate_m365_certificate() {
       -out "$pfx_file" \\
       -inkey "$key_file" \\
       -in "$cert_file" \\
+      -passout pass: \\
+      -legacy 2>/dev/null || \\
+    openssl pkcs12 \\
+      -export \\
+      -out "$pfx_file" \\
+      -inkey "$key_file" \\
+      -in "$cert_file" \\
       -passout pass: 2>/dev/null
     
     if [[ -f "$pfx_file" ]]; then
@@ -410,6 +417,13 @@ generate_m365_certificate() {
   chmod 644 "$cert_file"
   
   # Gerar arquivo PFX (PKCS#12) para compatibilidade com PowerShell
+  openssl pkcs12 \\
+    -export \\
+    -out "$pfx_file" \\
+    -inkey "$key_file" \\
+    -in "$cert_file" \\
+    -passout pass: \\
+    -legacy 2>/dev/null || \\
   openssl pkcs12 \\
     -export \\
     -out "$pfx_file" \\
@@ -985,6 +999,13 @@ generate_certificate() {
             -out "$CERT_DIR/m365.pfx" \
             -inkey "$CERT_DIR/m365.key" \
             -in "$CERT_DIR/m365.crt" \
+            -passout pass: \
+            -legacy 2>/dev/null || \
+        openssl pkcs12 \
+            -export \
+            -out "$CERT_DIR/m365.pfx" \
+            -inkey "$CERT_DIR/m365.key" \
+            -in "$CERT_DIR/m365.crt" \
             -passout pass: 2>/dev/null
         if [[ -f "$CERT_DIR/m365.pfx" ]]; then
             chmod 600 "$CERT_DIR/m365.pfx"
@@ -1030,6 +1051,13 @@ generate_certificate() {
     fi
     chmod 600 "$CERT_DIR/m365.key"
     chmod 644 "$CERT_DIR/m365.crt"
+    openssl pkcs12 \
+        -export \
+        -out "$CERT_DIR/m365.pfx" \
+        -inkey "$CERT_DIR/m365.key" \
+        -in "$CERT_DIR/m365.crt" \
+        -passout pass: \
+        -legacy 2>/dev/null || \
     openssl pkcs12 \
         -export \
         -out "$CERT_DIR/m365.pfx" \
