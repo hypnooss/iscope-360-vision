@@ -316,12 +316,16 @@ class PowerShellExecutor(BaseExecutor):
                 script_file.write(script)
                 script_file.close()
 
+                env = os.environ.copy()
+                env["HOME"] = "/var/lib/iscope-agent"
+
                 result = subprocess.run(
                     [pwsh_path, "-NoProfile", "-NonInteractive", "-File", script_file.name],
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    cwd=cwd
+                    cwd=cwd,
+                    env=env
                 )
             finally:
                 if script_file:
