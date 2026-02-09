@@ -636,7 +636,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tenant_record_id } = await req.json();
+    const { tenant_record_id, blueprint_filter } = await req.json();
     if (!tenant_record_id) {
       return new Response(JSON.stringify({ success: false, error: 'tenant_record_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -675,13 +675,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Load ALL active blueprints for M365 (multi-blueprint)
-    const { data: blueprints } = await supabase
+    // 3. Load active blueprints for M365 (optionally filtered by scope)
+    let blueprintQuery = supabase
       .from('device_blueprints')
       .select('*')
       .eq('device_type_id', '5d1a7095-2d7b-4541-873d-4b03c3d6122f') // M365 device type
       .eq('is_active', true)
       .in('executor_type', ['edge_function', 'hybrid']);
+
+    if (blueprint_filter === 'exchange_online') {
+      blueprintQuery = blueprintQuery.ilike('name', '%Exchange%');
+    }
+
+    const { data: blueprints } = await blueprintQuery;
     
     if (!blueprints || blueprints.length === 0) {
       console.log('[m365-security-posture] No blueprints found, using legacy mode');
@@ -690,12 +696,18 @@ Deno.serve(async (req) => {
 
     console.log(`[m365-security-posture] Loaded ${blueprints.length} blueprints: ${blueprints.map(b => b.name).join(', ')}`);
 
-    // 4. Load compliance rules
-    const { data: rules } = await supabase
+    // 4. Load compliance rules (optionally filtered by scope)
+    let rulesQuery = supabase
       .from('compliance_rules')
       .select('*')
       .eq('device_type_id', '5d1a7095-2d7b-4541-873d-4b03c3d6122f')
       .eq('is_active', true);
+
+    if (blueprint_filter === 'exchange_online') {
+      rulesQuery = rulesQuery.in('category', ['email_exchange', 'threats_activity', 'pim_governance']);
+    }
+
+    const { data: rules } = await rulesQuery;
 
     console.log(`[m365-security-posture] Loaded ${rules?.length || 0} compliance rules`);
 

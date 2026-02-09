@@ -178,7 +178,7 @@ export function useExchangeOnlineInsights({
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         'trigger-m365-posture-analysis',
-        { body: { tenant_record_id: tenantRecordId } }
+        { body: { tenant_record_id: tenantRecordId, scope: 'exchange_online' } }
       );
 
       if (fnError) {
