@@ -98,7 +98,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   posture_analysis: {
-    label: 'Análise de Postura',
+    label: 'API',
     color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
     icon: <Cloud className="w-3 h-3" />,
   },
