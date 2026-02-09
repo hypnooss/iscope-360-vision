@@ -87,6 +87,9 @@ class AutoUpdater:
             self._replace_files(extract_dir)
             shutil.rmtree(extract_dir)
 
+            # 6.1. Garantir line endings Unix nos scripts shell
+            self._fix_shell_line_endings()
+
             # 7. Reinstalar dependências se requirements mudou
             self._update_dependencies()
 
@@ -239,6 +242,18 @@ class AutoUpdater:
                 self.logger.info("Dependências atualizadas")
             except Exception as e:
                 self.logger.warning(f"Erro ao atualizar dependências: {e}")
+
+    def _fix_shell_line_endings(self) -> None:
+        """Ensure all .sh files have Unix line endings (LF)."""
+        for sh_file in self.install_dir.glob('*.sh'):
+            try:
+                content = sh_file.read_bytes()
+                if b'\r\n' in content:
+                    content = content.replace(b'\r\n', b'\n')
+                    sh_file.write_bytes(content)
+                    self.logger.info(f"Line endings corrigidos: {sh_file.name}")
+            except Exception as e:
+                self.logger.warning(f"Erro ao corrigir line endings de {sh_file.name}: {e}")
 
     def _restore_backup(self) -> None:
         """Restore from backup on failure."""

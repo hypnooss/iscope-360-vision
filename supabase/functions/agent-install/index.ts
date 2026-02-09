@@ -1130,6 +1130,9 @@ CHECKDEPS
     chown "$SERVICE_USER":"$SERVICE_USER" "$script_file" || true
   fi
   
+  # Garantir line endings Unix (prevenir CRLF)
+  sed -i 's/\r$//' "$script_file"
+  
   echo "Script check-deps.sh instalado: $script_file"
 }
 
