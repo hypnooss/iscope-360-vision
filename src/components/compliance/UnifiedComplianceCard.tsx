@@ -170,9 +170,9 @@ export function UnifiedComplianceCard({
   // Mensagem contextual baseada no status
   const contextualMessage = (() => {
     switch (item.status) {
-      case 'pass': return item.passDescription;
-      case 'fail': return item.failDescription;
-      case 'not_found': return item.notFoundDescription;
+      case 'pass': return item.passDescription || item.description;
+      case 'fail': return item.failDescription || item.description;
+      case 'not_found': return item.notFoundDescription || item.description;
       default: return item.description;
     }
   })();
@@ -218,10 +218,6 @@ export function UnifiedComplianceCard({
             <div className="flex-1 min-w-0">
               {/* Code + Name + Severity badge */}
               <div className="flex items-center gap-2 flex-wrap">
-                <code className="text-sm font-mono font-semibold text-foreground">
-                  {item.code}
-                </code>
-                <span className="text-muted-foreground hidden sm:inline">•</span>
                 <span className="text-sm font-medium text-foreground truncate">
                   {item.name}
                 </span>
