@@ -4,8 +4,10 @@ Uses certificate-based authentication for Exchange Online and Microsoft Graph.
 """
 
 import json
+import os
 import subprocess
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -299,13 +301,28 @@ class PowerShellExecutor(BaseExecutor):
             # Execute - use home directory for credential mode (no need for cert dir)
             cwd = str(self.CERT_DIR) if auth_mode == self.AUTH_MODE_CBA else None
             
-            result = subprocess.run(
-                [pwsh_path, "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=cwd
-            )
+            # Write script to temp file (required for $PSScriptRoot support in EXO 3.9+)
+            script_file = None
+            try:
+                script_file = tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.ps1', delete=False, dir=cwd or '/tmp'
+                )
+                script_file.write(script)
+                script_file.close()
+
+                result = subprocess.run(
+                    [pwsh_path, "-NoProfile", "-NonInteractive", "-File", script_file.name],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    cwd=cwd
+                )
+            finally:
+                if script_file:
+                    try:
+                        os.unlink(script_file.name)
+                    except OSError:
+                        pass
             
             if result.returncode != 0:
                 error_msg = result.stderr.strip() if result.stderr else f"Exit code: {result.returncode}"
