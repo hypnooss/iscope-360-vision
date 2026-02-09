@@ -225,6 +225,9 @@ async function uploadCertificateToAppRegistration(
     const existingKeys = currentAppData.keyCredentials || [];
     
     console.log(`App Registration has ${existingKeys.length} existing key(s)`);
+    for (const k of existingKeys) {
+      console.log(`  Key: ${k.displayName || 'unnamed'} | end: ${k.endDateTime} | type: ${k.type} | usage: ${k.usage}`);
+    }
 
     // Sanitize the new thumbprint
     const sanitizedNewThumbprint = sanitizeThumbprint(thumbprint);
@@ -252,37 +255,51 @@ async function uploadCertificateToAppRegistration(
       .replace(/-----END CERTIFICATE-----/g, '')
       .replace(/\s+/g, '');
 
-    // Calculate dates (1 year validity - Azure limit)
-    const startDate = new Date();
-    const endDate = new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000);
-
     // Convert thumbprint to base64 for customKeyIdentifier
     const thumbprintBytes = fromHex(sanitizedNewThumbprint || '');
     const customKeyIdentifier = btoa(String.fromCharCode(...thumbprintBytes));
 
-    // Create new key credential
-    const newKeyCredential = {
+    // Create new key credential - let Azure extract dates from the certificate itself
+    // to avoid KeyCredentialsInvalidEndDate errors from date mismatches
+    const newKeyCredential: Record<string, string> = {
       type: 'AsymmetricX509Cert',
       usage: 'Verify',
       key: certBase64,
       customKeyIdentifier: customKeyIdentifier,
       displayName: `iScope-Agent-${agentId.substring(0, 8)}`,
-      startDateTime: startDate.toISOString(),
-      endDateTime: endDate.toISOString(),
     };
 
     console.log(`Adding certificate with displayName: ${newKeyCredential.displayName}`);
 
-    // Filter existing keys to only include writable properties
-    const cleanedExistingKeys = existingKeys.map((key: any) => ({
-      type: key.type,
-      usage: key.usage,
-      key: key.key,
-      customKeyIdentifier: key.customKeyIdentifier,
-      displayName: key.displayName,
-      startDateTime: key.startDateTime,
-      endDateTime: key.endDateTime,
-    }));
+    // Keep only keys from OTHER agents (different displayName prefix) that are not expired
+    const now = new Date();
+    const agentPrefix = `iScope-Agent-${agentId.substring(0, 8)}`;
+    const cleanedExistingKeys = existingKeys
+      .filter((key: any) => {
+        // Remove expired keys
+        if (key.endDateTime) {
+          const endDate = new Date(key.endDateTime);
+          if (endDate < now) {
+            console.log(`Removing expired key: ${key.displayName || 'unnamed'} (expired ${key.endDateTime})`);
+            return false;
+          }
+        }
+        // Remove old keys from THIS agent (we're replacing with the new cert)
+        if (key.displayName === agentPrefix) {
+          console.log(`Removing old key from same agent: ${key.displayName}`);
+          return false;
+        }
+        return true;
+      })
+      .map((key: any) => ({
+        type: key.type,
+        usage: key.usage,
+        key: key.key,
+        customKeyIdentifier: key.customKeyIdentifier,
+        displayName: key.displayName,
+        startDateTime: key.startDateTime,
+        endDateTime: key.endDateTime,
+      }));
 
     // PATCH App Registration with all certificates (existing + new)
     const patchResponse = await fetch(
