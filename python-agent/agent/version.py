@@ -1,6 +1,6 @@
 """Agent version information."""
 
-__version__ = "1.2.3"
+__version__ = "1.2.5"
 
 
 def get_version() -> str:

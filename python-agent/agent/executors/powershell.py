@@ -37,14 +37,14 @@ class PowerShellExecutor(BaseExecutor):
         "ExchangeOnline": {
             "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
             # CBA connection (default)
-            "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
+            "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -Certificate $cert -Organization "{organization}" -ShowBanner:$false',
             # Credential-based connection (for initial RBAC setup)
             "connect_credential": 'Connect-ExchangeOnline -Credential $cred -ShowBanner:$false',
             "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
         },
         "MicrosoftGraph": {
             "import": "Import-Module Microsoft.Graph.Authentication -ErrorAction Stop",
-            "connect_cba": 'Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome',
+            "connect_cba": 'Connect-MgGraph -ClientId "{app_id}" -Certificate $cert -TenantId "{tenant_id}" -NoWelcome',
             "connect_credential": 'Connect-MgGraph -Credential $cred -TenantId "{tenant_id}" -NoWelcome',
             "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
         },
@@ -139,6 +139,14 @@ class PowerShellExecutor(BaseExecutor):
             module_config["import"],
             "",
         ]
+        
+        # Load certificate into memory for CBA (avoids Split-Path bug in EXO 3.9+)
+        if auth_mode == self.AUTH_MODE_CBA:
+            script_parts.extend([
+                "# Load certificate",
+                f'$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{str(self.PFX_FILE)}")',
+                "",
+            ])
         
         # Add connection based on auth mode
         if auth_mode == self.AUTH_MODE_CREDENTIAL:
