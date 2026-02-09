@@ -389,6 +389,17 @@ generate_certificate() {
 main() {
     local errors=0
 
+    # Ensure service user home directory exists (needed for PowerShell modules)
+    if id "$SERVICE_USER" >/dev/null 2>&1; then
+        local user_home
+        user_home="$(eval echo ~$SERVICE_USER)"
+        if [[ -n "$user_home" ]] && [[ ! -d "$user_home" ]]; then
+            mkdir -p "$user_home"
+            chown "$SERVICE_USER":"$SERVICE_USER" "$user_home"
+            log "Diretório home criado: $user_home"
+        fi
+    fi
+
     # Install PowerShell
     if ! install_powershell; then
         ((errors++)) || true
