@@ -14,8 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer, Ban } from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -52,6 +51,18 @@ interface AgentTask {
   completed_at: string | null;
 }
 
+interface UnifiedExecution {
+  id: string;
+  source: 'posture' | 'agent_task';
+  tenantId: string;
+  agentId: string | null;
+  type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api';
+  status: string;
+  duration: string;
+  createdAt: string;
+  original: PostureHistory | AgentTask;
+}
+
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   pending: {
     label: 'Pendente',
@@ -85,19 +96,25 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   },
 };
 
-const taskTypeConfig: Record<string, { label: string; color: string }> = {
+const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  posture_analysis: {
+    label: 'Análise de Postura',
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    icon: <Cloud className="w-3 h-3" />,
+  },
   m365_powershell: {
     label: 'PowerShell',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
+    icon: <Terminal className="w-3 h-3" />,
   },
   m365_graph_api: {
     label: 'Graph API',
-    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
+    icon: <Terminal className="w-3 h-3" />,
   },
 };
 
 export default function M365ExecutionsPage() {
-  const [activeTab, setActiveTab] = useState<string>('posture');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('24h');
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,69 +144,55 @@ export default function M365ExecutionsPage() {
     ? previewTarget.workspaces.map(w => w.id)
     : null;
 
-  // Fetch tenants for lookup
   const { data: tenants = [] } = useQuery({
     queryKey: ['m365-tenants-lookup', workspaceIds],
     queryFn: async () => {
       let query = supabase
         .from('m365_tenants')
         .select('id, tenant_domain, display_name, client_id');
-      
       if (workspaceIds && workspaceIds.length > 0) {
         query = query.in('client_id', workspaceIds);
       }
-      
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
   });
 
-  // Fetch clients for lookup
   const { data: clients = [] } = useQuery({
     queryKey: ['clients-lookup'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('id, name');
+      const { data, error } = await supabase.from('clients').select('id, name');
       if (error) throw error;
       return data || [];
     },
   });
 
-  // Fetch agents for lookup
   const { data: agents = [] } = useQuery({
     queryKey: ['agents-lookup'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('agents')
-        .select('id, name');
+      const { data, error } = await supabase.from('agents').select('id, name');
       if (error) throw error;
       return data || [];
     },
   });
 
-  // Posture History Query
   const { data: executions = [], isLoading: isLoadingPosture, refetch: refetchPosture } = useQuery({
     queryKey: ['m365-posture-history', statusFilter, timeFilter, workspaceIds],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
-
       let query = supabase
         .from('m365_posture_history')
         .select('id, tenant_record_id, client_id, status, score, classification, summary, category_breakdown, errors, analyzed_by, started_at, completed_at, created_at')
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
-
       if (workspaceIds && workspaceIds.length > 0) {
         query = query.in('client_id', workspaceIds);
       }
-
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter);
       }
-
       const { data, error } = await query;
       if (error) throw error;
       return (data || []) as PostureHistory[];
@@ -201,15 +204,12 @@ export default function M365ExecutionsPage() {
     },
   });
 
-  // Agent Tasks Query
   const { data: agentTasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useQuery({
     queryKey: ['m365-agent-tasks', statusFilter, timeFilter, tenants],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
       const tenantIds = tenants.map(t => t.id);
-      
       if (tenantIds.length === 0) return [];
-
       let query = supabase
         .from('agent_tasks')
         .select('id, agent_id, task_type, target_id, target_type, status, payload, result, error_message, execution_time_ms, created_at, started_at, completed_at')
@@ -218,11 +218,9 @@ export default function M365ExecutionsPage() {
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(50);
-
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter as AgentTask['status']);
       }
-
       const { data, error } = await query;
       if (error) throw error;
       return (data || []) as AgentTask[];
@@ -235,27 +233,62 @@ export default function M365ExecutionsPage() {
     },
   });
 
-  const hasActivePosture = executions.some(e => e.status === 'running' || e.status === 'pending');
-  const hasActiveTasks = agentTasks.some(t => t.status === 'running' || t.status === 'pending');
-  const hasActive = hasActivePosture || hasActiveTasks;
+  const getDuration = (item: { started_at: string | null; completed_at: string | null; execution_time_ms?: number | null }) => {
+    if ('execution_time_ms' in item && item.execution_time_ms) {
+      const ms = item.execution_time_ms;
+      if (ms < 1000) return `${ms}ms`;
+      if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+      return `${(ms / 60000).toFixed(1)}m`;
+    }
+    if (!item.started_at) return '-';
+    const end = item.completed_at ? new Date(item.completed_at) : new Date();
+    const start = new Date(item.started_at);
+    const ms = end.getTime() - start.getTime();
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
 
-  const postureStats = useMemo(() => ({
-    total: executions.length,
-    pending: executions.filter(e => e.status === 'pending').length,
-    running: executions.filter(e => e.status === 'running').length,
-    completed: executions.filter(e => e.status === 'completed').length,
-    failed: executions.filter(e => e.status === 'failed').length,
-  }), [executions]);
+  // Merge into unified list
+  const unifiedExecutions = useMemo<UnifiedExecution[]>(() => {
+    const postureItems: UnifiedExecution[] = executions.map(exec => ({
+      id: exec.id,
+      source: 'posture' as const,
+      tenantId: exec.tenant_record_id,
+      agentId: null,
+      type: 'posture_analysis' as const,
+      status: exec.status,
+      duration: getDuration(exec),
+      createdAt: exec.created_at,
+      original: exec,
+    }));
 
-  const taskStats = useMemo(() => ({
-    total: agentTasks.length,
-    pending: agentTasks.filter(t => t.status === 'pending').length,
-    running: agentTasks.filter(t => t.status === 'running').length,
-    completed: agentTasks.filter(t => t.status === 'completed').length,
-    failed: agentTasks.filter(t => t.status === 'failed' || t.status === 'timeout' || t.status === 'cancelled').length,
-  }), [agentTasks]);
+    const taskItems: UnifiedExecution[] = agentTasks.map(task => ({
+      id: task.id,
+      source: 'agent_task' as const,
+      tenantId: task.target_id,
+      agentId: task.agent_id,
+      type: (task.task_type === 'm365_graph_api' ? 'm365_graph_api' : 'm365_powershell') as UnifiedExecution['type'],
+      status: task.status,
+      duration: getDuration(task),
+      createdAt: task.created_at,
+      original: task,
+    }));
 
-  const stats = activeTab === 'posture' ? postureStats : taskStats;
+    return [...postureItems, ...taskItems].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [executions, agentTasks]);
+
+  const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending');
+
+  const stats = useMemo(() => ({
+    total: unifiedExecutions.length,
+    pending: unifiedExecutions.filter(e => e.status === 'pending').length,
+    running: unifiedExecutions.filter(e => e.status === 'running').length,
+    completed: unifiedExecutions.filter(e => e.status === 'completed').length,
+    failed: unifiedExecutions.filter(e => ['failed', 'timeout', 'cancelled'].includes(e.status)).length,
+  }), [unifiedExecutions]);
 
   const getTenantLabel = (tenantId: string) => {
     const tenant = tenants.find(t => t.id === tenantId);
@@ -278,41 +311,30 @@ export default function M365ExecutionsPage() {
     return getClientName(tenant.client_id);
   };
 
-  const filteredExecutions = executions.filter(exec => {
+  const filteredExecutions = unifiedExecutions.filter(item => {
     if (!searchTerm) return true;
-    const tenant = tenants.find(t => t.id === exec.tenant_record_id);
-    const client = clients.find(c => c.id === exec.client_id);
     const s = searchTerm.toLowerCase();
+    const tenant = tenants.find(t => t.id === item.tenantId);
+    const agent = item.agentId ? agents.find(a => a.id === item.agentId) : null;
+    const client = tenant ? clients.find(c => c.id === tenant.client_id) : null;
     return (
       tenant?.display_name?.toLowerCase().includes(s) ||
       tenant?.tenant_domain?.toLowerCase().includes(s) ||
+      agent?.name?.toLowerCase().includes(s) ||
       client?.name?.toLowerCase().includes(s)
     );
   });
 
-  const filteredTasks = agentTasks.filter(task => {
-    if (!searchTerm) return true;
-    const tenant = tenants.find(t => t.id === task.target_id);
-    const agent = agents.find(a => a.id === task.agent_id);
-    const s = searchTerm.toLowerCase();
-    return (
-      tenant?.display_name?.toLowerCase().includes(s) ||
-      tenant?.tenant_domain?.toLowerCase().includes(s) ||
-      agent?.name?.toLowerCase().includes(s)
-    );
-  });
-
-  const openDetails = (execution: PostureHistory) => {
-    setSelectedExecution(execution);
-    setDetailsOpen(true);
+  const openDetails = (item: UnifiedExecution) => {
+    if (item.source === 'posture') {
+      setSelectedExecution(item.original as PostureHistory);
+      setDetailsOpen(true);
+    } else {
+      setSelectedTask(item.original as AgentTask);
+      setTaskDetailsOpen(true);
+    }
   };
 
-  const openTaskDetails = (task: AgentTask) => {
-    setSelectedTask(task);
-    setTaskDetailsOpen(true);
-  };
-
-  // Cancel mutation for agent tasks
   const cancelMutation = useMutation({
     mutationFn: async (taskId: string) => {
       const { error } = await supabase
@@ -324,14 +346,11 @@ export default function M365ExecutionsPage() {
         })
         .eq('id', taskId)
         .in('status', ['pending', 'running']);
-      
       if (error) throw error;
     },
     onSuccess: async () => {
       toast.success('Tarefa cancelada com sucesso');
       await queryClient.invalidateQueries({ queryKey: ['m365-agent-tasks'] });
-      
-      // Update details dialog if open
       setSelectedTask(prev => {
         if (!prev || prev.id !== taskToCancel?.id) return prev;
         return {
@@ -354,25 +373,12 @@ export default function M365ExecutionsPage() {
     setCancelOpen(true);
   };
 
-  const getDuration = (exec: { started_at: string | null; completed_at: string | null }) => {
-    if (!exec.started_at) return '-';
-    const end = exec.completed_at ? new Date(exec.completed_at) : new Date();
-    const start = new Date(exec.started_at);
-    const ms = end.getTime() - start.getTime();
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${(ms / 60000).toFixed(1)}m`;
-  };
-
   const handleRefresh = () => {
-    if (activeTab === 'posture') {
-      refetchPosture();
-    } else {
-      refetchTasks();
-    }
+    refetchPosture();
+    refetchTasks();
   };
 
-  const isLoading = activeTab === 'posture' ? isLoadingPosture : isLoadingTasks;
+  const isLoading = isLoadingPosture || isLoadingTasks;
 
   return (
     <AppLayout>
@@ -393,283 +399,189 @@ export default function M365ExecutionsPage() {
           </Button>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="posture" className="gap-2">
-              <Cloud className="w-4 h-4" />
-              Análises de Postura
-              {postureStats.total > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 px-1.5">
-                  {postureStats.total}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="tasks" className="gap-2">
-              <Terminal className="w-4 h-4" />
-              Tasks PowerShell
-              {taskStats.total > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 px-1.5">
-                  {taskStats.total}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Activity className="w-8 h-8 text-primary" />
-                  <div>
-                    <p className="text-2xl font-bold">{stats.total}</p>
-                    <p className="text-xs text-muted-foreground">Total</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Clock className="w-8 h-8 text-yellow-500" />
-                  <div>
-                    <p className="text-2xl font-bold">{stats.pending}</p>
-                    <p className="text-xs text-muted-foreground">Pendentes</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="w-8 h-8 text-blue-500" />
-                  <div>
-                    <p className="text-2xl font-bold">{stats.running}</p>
-                    <p className="text-xs text-muted-foreground">Executando</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-8 h-8 text-green-500" />
-                  <div>
-                    <p className="text-2xl font-bold">{stats.completed}</p>
-                    <p className="text-xs text-muted-foreground">Concluídas</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <XCircle className="w-8 h-8 text-red-500" />
-                  <div>
-                    <p className="text-2xl font-bold">{stats.failed}</p>
-                    <p className="text-xs text-muted-foreground">Falhas</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Filters */}
-          <Card className="glass-card mt-4">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Card className="glass-card">
             <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder={activeTab === 'posture' ? "Buscar por tenant ou workspace..." : "Buscar por tenant ou agente..."}
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
+              <div className="flex items-center gap-3">
+                <Activity className="w-8 h-8 text-primary" />
+                <div>
+                  <p className="text-2xl font-bold">{stats.total}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
                 </div>
-                <Select value={timeFilter} onValueChange={setTimeFilter}>
-                  <SelectTrigger className="w-full md:w-[180px]">
-                    <SelectValue placeholder="Período" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1h">Última hora</SelectItem>
-                    <SelectItem value="6h">Últimas 6 horas</SelectItem>
-                    <SelectItem value="12h">Últimas 12 horas</SelectItem>
-                    <SelectItem value="24h">Últimas 24 horas</SelectItem>
-                    <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full md:w-[180px]">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pending">Pendentes</SelectItem>
-                    <SelectItem value="running">Executando</SelectItem>
-                    <SelectItem value="completed">Concluídas</SelectItem>
-                    <SelectItem value="failed">Falhas</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
             </CardContent>
           </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="w-8 h-8 text-yellow-500" />
+                <div>
+                  <p className="text-2xl font-bold">{stats.pending}</p>
+                  <p className="text-xs text-muted-foreground">Pendentes</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-8 h-8 text-blue-500" />
+                <div>
+                  <p className="text-2xl font-bold">{stats.running}</p>
+                  <p className="text-xs text-muted-foreground">Executando</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-8 h-8 text-green-500" />
+                <div>
+                  <p className="text-2xl font-bold">{stats.completed}</p>
+                  <p className="text-xs text-muted-foreground">Concluídas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <XCircle className="w-8 h-8 text-red-500" />
+                <div>
+                  <p className="text-2xl font-bold">{stats.failed}</p>
+                  <p className="text-xs text-muted-foreground">Falhas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-          {/* Posture Tab Content */}
-          <TabsContent value="posture" className="mt-4">
-            <Card className="glass-card">
-              <CardContent className="p-0">
-                {isLoadingPosture ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredExecutions.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Cloud className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhuma análise de postura encontrada</p>
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Workspace</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Score</TableHead>
-                        <TableHead>Duração</TableHead>
-                        <TableHead>Criado em</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredExecutions.map(exec => {
-                        const config = statusConfig[exec.status] || statusConfig.pending;
-                        return (
-                          <TableRow key={exec.id}>
-                            <TableCell className="font-medium">
-                              {getTenantLabel(exec.tenant_record_id)}
-                            </TableCell>
-                            <TableCell>{getClientName(exec.client_id)}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={cn('gap-1', config.color)}>
-                                {config.icon}
-                                {config.label}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {exec.status === 'completed' && exec.score !== null ? (
-                                <Badge className={exec.score >= 70 ? 'bg-green-500/20 text-green-500' : 'bg-orange-500/20 text-orange-500'}>
-                                  {exec.score}%
-                                </Badge>
-                              ) : '-'}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {getDuration(exec)}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDistanceToNow(new Date(exec.created_at), { locale: ptBR, addSuffix: true })}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" onClick={() => openDetails(exec)}>
-                                <Eye className="w-4 h-4" />
+        {/* Filters */}
+        <Card className="glass-card">
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por tenant, agente ou workspace..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <Select value={timeFilter} onValueChange={setTimeFilter}>
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Última hora</SelectItem>
+                  <SelectItem value="6h">Últimas 6 horas</SelectItem>
+                  <SelectItem value="12h">Últimas 12 horas</SelectItem>
+                  <SelectItem value="24h">Últimas 24 horas</SelectItem>
+                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendentes</SelectItem>
+                  <SelectItem value="running">Executando</SelectItem>
+                  <SelectItem value="completed">Concluídas</SelectItem>
+                  <SelectItem value="failed">Falhas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Unified Table */}
+        <Card className="glass-card">
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : filteredExecutions.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Nenhuma execução encontrada</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Duração</TableHead>
+                    <TableHead>Criado em</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredExecutions.map(item => {
+                    const sConfig = statusConfig[item.status] || statusConfig.pending;
+                    const tConfig = typeConfig[item.type] || typeConfig.posture_analysis;
+                    return (
+                      <TableRow key={`${item.source}-${item.id}`}>
+                        <TableCell className="font-medium">
+                          {getTenantLabel(item.tenantId)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {item.agentId ? getAgentName(item.agentId) : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
+                            {tConfig.icon}
+                            {tConfig.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn('gap-1', sConfig.color)}>
+                            {sConfig.icon}
+                            {sConfig.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {item.duration}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDistanceToNow(new Date(item.createdAt), { locale: ptBR, addSuffix: true })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {item.source === 'agent_task' && ['pending', 'running'].includes(item.status) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => requestCancel(item.original as AgentTask)}
+                                disabled={cancelMutation.isPending}
+                                title="Cancelar tarefa"
+                              >
+                                <Ban className="w-4 h-4 text-destructive" />
                               </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Tasks Tab Content */}
-          <TabsContent value="tasks" className="mt-4">
-            <Card className="glass-card">
-              <CardContent className="p-0">
-                {isLoadingTasks ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredTasks.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Terminal className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhuma task PowerShell encontrada</p>
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Agente</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Duração</TableHead>
-                        <TableHead>Criado em</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
+                            )}
+                            <Button variant="ghost" size="icon" onClick={() => openDetails(item)}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredTasks.map(task => {
-                        const config = statusConfig[task.status] || statusConfig.pending;
-                        const typeConfig = taskTypeConfig[task.task_type] || { label: task.task_type, color: 'bg-muted text-muted-foreground' };
-                        return (
-                          <TableRow key={task.id}>
-                            <TableCell className="font-medium">
-                              {getTenantLabel(task.target_id)}
-                            </TableCell>
-                            <TableCell>{getAgentName(task.agent_id)}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={cn('gap-1', typeConfig.color)}>
-                                <Terminal className="w-3 h-3" />
-                                {typeConfig.label}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={cn('gap-1', config.color)}>
-                                {config.icon}
-                                {config.label}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {task.execution_time_ms 
-                                ? `${(task.execution_time_ms / 1000).toFixed(1)}s`
-                                : getDuration(task)}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDistanceToNow(new Date(task.created_at), { locale: ptBR, addSuffix: true })}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {(task.status === 'pending' || task.status === 'running') && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => requestCancel(task)}
-                                    disabled={cancelMutation.isPending}
-                                    title="Cancelar tarefa"
-                                  >
-                                    <Ban className="w-4 h-4 text-destructive" />
-                                  </Button>
-                                )}
-                                <Button variant="ghost" size="icon" onClick={() => openTaskDetails(task)}>
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Posture Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
@@ -789,9 +701,9 @@ export default function M365ExecutionsPage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo</p>
-                      <Badge variant="outline" className={cn('gap-1', taskTypeConfig[selectedTask.task_type]?.color)}>
-                        <Terminal className="w-3 h-3" />
-                        {taskTypeConfig[selectedTask.task_type]?.label || selectedTask.task_type}
+                      <Badge variant="outline" className={cn('gap-1', typeConfig[selectedTask.task_type]?.color)}>
+                        {typeConfig[selectedTask.task_type]?.icon}
+                        {typeConfig[selectedTask.task_type]?.label || selectedTask.task_type}
                       </Badge>
                     </div>
                     <div>
@@ -804,7 +716,7 @@ export default function M365ExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Duração</p>
                       <p className="font-medium">
-                        {selectedTask.execution_time_ms 
+                        {selectedTask.execution_time_ms
                           ? `${(selectedTask.execution_time_ms / 1000).toFixed(2)}s`
                           : getDuration(selectedTask)}
                       </p>
@@ -865,8 +777,8 @@ export default function M365ExecutionsPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Encerrar execução?</AlertDialogTitle>
               <AlertDialogDescription>
-                Isso marcará a tarefa como <span className="font-medium">cancelada</span>. 
-                Se o agent já estiver executando, ele pode ainda terminar o step atual, 
+                Isso marcará a tarefa como <span className="font-medium">cancelada</span>.
+                Se o agent já estiver executando, ele pode ainda terminar o step atual,
                 mas a execução ficará registrada como encerrada.
               </AlertDialogDescription>
             </AlertDialogHeader>
