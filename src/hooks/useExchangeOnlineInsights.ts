@@ -23,6 +23,14 @@ export interface ExchangeInsight {
   affectedEntities?: Array<{ name: string; type: string; details?: string }>;
   rawData?: Record<string, unknown>;
   detectedAt: string;
+  // Static rule metadata
+  criteria?: string;
+  passDescription?: string;
+  failDescription?: string;
+  notFoundDescription?: string;
+  technicalRisk?: string;
+  businessImpact?: string;
+  apiEndpoint?: string;
 }
 
 interface UseExchangeOnlineInsightsResult {
@@ -123,7 +131,6 @@ export function useExchangeOnlineInsights({
           return false;
         })
         .map((insight: any) => {
-          // Map to unified structure
           const category = mapLegacyCategoryToRiskCategory(insight.category);
           
           return {
@@ -139,6 +146,14 @@ export function useExchangeOnlineInsights({
             affectedEntities: insight.affectedEntities || [],
             rawData: insight.rawData || {},
             detectedAt: data.completed_at || new Date().toISOString(),
+            // Static rule metadata
+            criteria: insight.criteria || '',
+            passDescription: insight.passDescription || '',
+            failDescription: insight.failDescription || '',
+            notFoundDescription: insight.notFoundDescription || '',
+            technicalRisk: insight.technicalRisk || '',
+            businessImpact: insight.businessImpact || '',
+            apiEndpoint: insight.apiEndpoint || '',
           };
         });
 

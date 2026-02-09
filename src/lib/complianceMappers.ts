@@ -211,6 +211,13 @@ export function mapExchangeAgentInsight(insight: {
   recommendation?: string;
   affectedEntities?: Array<{ name: string; type: string; details?: string }>;
   rawData?: Record<string, unknown>;
+  criteria?: string;
+  passDescription?: string;
+  failDescription?: string;
+  notFoundDescription?: string;
+  technicalRisk?: string;
+  businessImpact?: string;
+  apiEndpoint?: string;
 }): UnifiedComplianceItem {
   const evidence: EvidenceItem[] = [];
 
@@ -227,20 +234,29 @@ export function mapExchangeAgentInsight(insight: {
     });
   }
 
+  // Use criteria (static rule description) as the card description
+  // Use description (dynamic analysis result) as details ("ANÁLISE EFETUADA")
+  const normalizedStatus = normalizeStatus(insight.status);
+
   return {
     id: insight.id,
     code: insight.id,
     name: insight.name,
-    description: insight.description,
+    description: insight.criteria || insight.description,
     category: insight.category,
-    status: normalizeStatus(insight.status),
+    status: normalizedStatus,
     severity: normalizeSeverity(insight.severity),
-    failDescription: insight.description,
+    failDescription: insight.failDescription || insight.description,
+    passDescription: insight.passDescription,
+    notFoundDescription: insight.notFoundDescription,
     recommendation: insight.recommendation,
-    details: insight.details,
+    details: insight.description,
     evidence,
     rawData: insight.rawData,
     product: 'exchange_online',
     source: 'exchange_powershell',
+    technicalRisk: insight.technicalRisk,
+    businessImpact: insight.businessImpact,
+    apiEndpoint: insight.apiEndpoint,
   };
 }

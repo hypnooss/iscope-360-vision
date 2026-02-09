@@ -170,6 +170,14 @@ interface M365AgentInsight {
   recommendation?: string;
   affectedEntities?: Array<{ name: string; type: string; details?: string }>;
   rawData?: Record<string, unknown>;
+  // Static rule metadata
+  criteria?: string;
+  passDescription?: string;
+  failDescription?: string;
+  notFoundDescription?: string;
+  technicalRisk?: string;
+  businessImpact?: string;
+  apiEndpoint?: string;
 }
 
 /**
@@ -344,6 +352,14 @@ function processM365AgentInsights(rawData: Record<string, unknown>, rules: Compl
       recommendation: rule.recommendation || undefined,
       affectedEntities: result.affectedEntities,
       rawData: result.rawData,
+      // Static rule metadata for frontend display
+      criteria: rule.description || undefined,
+      passDescription: rule.pass_description || undefined,
+      failDescription: rule.fail_description || undefined,
+      notFoundDescription: (rule as any).not_found_description || undefined,
+      technicalRisk: rule.technical_risk || undefined,
+      businessImpact: rule.business_impact || undefined,
+      apiEndpoint: rule.api_endpoint || undefined,
     });
   }
 
