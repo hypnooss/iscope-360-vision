@@ -1,61 +1,55 @@
 
-# Correcao do erro "Access to path '/home/iscope' is denied" no PowerShell
+
+# Correcao do TypeError no processamento de step results no agent-task-result
 
 ## Problema
 
-O script PowerShell gerado pelo executor tenta criar `$env:HOME` (linha 6 do script gerado). Embora o executor Python injete `HOME=/var/lib/iscope-agent` no ambiente do subprocess, o PowerShell esta resolvendo `$env:HOME` como `/home/iscope` (o home definido no `/etc/passwd` do usuario `iscope`). O usuario `iscope` nao tem permissao para criar `/home/iscope`, resultando em erro em todos os comandos Exchange.
+Quando um step do PowerShell retorna output nao-JSON (ex: uma mensagem WARNING do Exchange), o agente Python envia o resultado com `raw: true` e o campo `data` como string. Na edge function `agent-task-result`, ao reconstruir os dados dos steps (linha 4080), o codigo faz:
+
+```text
+if (step.step_id in stepData ...)
+```
+
+O operador `in` do JavaScript so funciona em objetos. Quando `stepData` e uma string, o `in` lanca `TypeError: Cannot use 'in' operator to search for 'exo_outbound_connectors' in WARNING: ...`.
+
+Isso faz toda a tarefa falhar com `INTERNAL_ERROR`, mesmo que os outros 17 steps tenham sido processados com sucesso.
 
 ## Causa Raiz
 
-O agente no servidor pode estar rodando uma versao anterior a v1.2.6 (que introduziu a injecao de `HOME` no env). Alem disso, o script PowerShell gerado depende de `$env:HOME` para decidir qual diretorio criar, o que e fragil.
+O step `exo_outbound_connectors` retornou a string de warning do PowerShell ("WARNING: There is at least one test mode connector...") em vez de JSON. O agente tratou corretamente como `raw: true`, mas a edge function nao valida se `stepData` e um objeto antes de usar o operador `in`.
 
 ## Solucao
 
-Duas alteracoes no arquivo `python-agent/agent/executors/powershell.py`:
+No arquivo `supabase/functions/agent-task-result/index.ts`, adicionar uma validacao de tipo antes do operador `in` na linha 4080:
 
-### 1. Remover o bloco New-Item do script PowerShell gerado
+```text
+Antes (linha 4074-4086):
+  if (step.status === 'success' && step.data) {
+    const stepData = step.data as Record<string, unknown>;
+    if (step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
+      rawData[step.step_id] = stepData[step.step_id];
+    } else {
+      rawData[step.step_id] = stepData;
+    }
+  }
 
-O trecho nas linhas 138-141 da funcao `_build_script` (que gera o PowerShell) faz:
-
-```
-if (-not (Test-Path $env:HOME)) {
-    New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
-}
-```
-
-Substituir por um override direto de `$env:HOME` no proprio script PowerShell, sem tentar criar diretorios:
-
-```
-$env:HOME = '/var/lib/iscope-agent'
-```
-
-Isso garante que mesmo se o env do subprocess falhar, o PowerShell usara o caminho correto. O diretorio `/var/lib/iscope-agent` ja existe e pertence ao usuario `iscope`.
-
-### 2. Manter a injecao de HOME no env do subprocess (ja existe)
-
-A linha 320 (`env["HOME"] = "/var/lib/iscope-agent"`) permanece como camada adicional de seguranca.
-
-## Resultado
-
-O script PowerShell gerado passara de:
-
-```powershell
-# Ensure HOME directory exists (EXO 3.9+ requires valid HOME for Split-Path)
-if (-not (Test-Path $env:HOME)) {
-    New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
-}
+Depois:
+  if (step.status === 'success' && step.data) {
+    const stepData = step.data as Record<string, unknown>;
+    if (stepData && typeof stepData === 'object' && !Array.isArray(stepData) && step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
+      rawData[step.step_id] = stepData[step.step_id];
+    } else {
+      rawData[step.step_id] = stepData;
+    }
+  }
 ```
 
-Para:
-
-```powershell
-# Override HOME to agent state dir (EXO 3.9+ requires valid HOME for Split-Path)
-$env:HOME = '/var/lib/iscope-agent'
-```
+A validacao `typeof stepData === 'object' && !Array.isArray(stepData)` garante que o operador `in` so e usado em objetos planos, ignorando strings e arrays.
 
 ## Detalhes Tecnicos
 
-- Arquivo: `python-agent/agent/executors/powershell.py`
-- Linhas afetadas: 138-141 (dentro de `_build_script`)
-- Alterar 4 linhas do array `script_parts` para 1 linha com o override direto
-- Incrementar versao em `python-agent/agent/version.py` para `1.2.7`
+- Arquivo: `supabase/functions/agent-task-result/index.ts`
+- Linha afetada: 4080
+- Alteracao: adicionar guard `typeof stepData === 'object' && !Array.isArray(stepData)` antes do `in`
+- A edge function precisara ser re-deployada apos a alteracao
+
