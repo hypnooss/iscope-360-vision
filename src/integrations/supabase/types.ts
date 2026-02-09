@@ -562,27 +562,42 @@ export type Database = {
       external_domain_analysis_history: {
         Row: {
           analyzed_by: string | null
+          completed_at: string | null
           created_at: string
           domain_id: string
+          execution_time_ms: number | null
           id: string
-          report_data: Json
-          score: number
+          report_data: Json | null
+          score: number | null
+          source: string
+          started_at: string | null
+          status: string
         }
         Insert: {
           analyzed_by?: string | null
+          completed_at?: string | null
           created_at?: string
           domain_id: string
+          execution_time_ms?: number | null
           id?: string
-          report_data: Json
-          score: number
+          report_data?: Json | null
+          score?: number | null
+          source?: string
+          started_at?: string | null
+          status?: string
         }
         Update: {
           analyzed_by?: string | null
+          completed_at?: string | null
           created_at?: string
           domain_id?: string
+          execution_time_ms?: number | null
           id?: string
-          report_data?: Json
-          score?: number
+          report_data?: Json | null
+          score?: number | null
+          source?: string
+          started_at?: string | null
+          status?: string
         }
         Relationships: [
           {

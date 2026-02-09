@@ -4598,6 +4598,11 @@ serve(async (req: Request) => {
             domain_id: task.target_id,
             score: score,
             report_data: historyReportData,
+            source: 'agent',
+            status: 'completed',
+            started_at: task.started_at || new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            execution_time_ms: task.execution_time_ms || null,
           })
           .select('id')
           .single();

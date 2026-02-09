@@ -12,6 +12,7 @@ interface TriggerRequest {
 interface TriggerResponse {
   success: boolean;
   task_id?: string;
+  analysis_id?: string;
   message: string;
   error?: string;
 }
@@ -108,7 +109,9 @@ Deno.serve(async (req) => {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 1);
 
-    // NOTE: task_type é apenas um rótulo (enum) — os steps vêm do rpc_get_agent_tasks.
+    // =========================================================
+    // 1. Create Agent Task (DNS collection via Python Agent)
+    // =========================================================
     const { data: newTask, error: taskError } = await supabase
       .from('agent_tasks')
       .insert({
@@ -135,10 +138,138 @@ Deno.serve(async (req) => {
       });
     }
 
+    console.log(`[trigger-external-domain-analysis] Agent task created: ${newTask.id}`);
+
+    // =========================================================
+    // 2. Create API Analysis Record (Subdomain Enum via Edge Function)
+    // =========================================================
+    let analysisId: string | null = null;
+
+    // Check for existing pending/running API analysis
+    const { data: existingApiAnalysis } = await supabase
+      .from('external_domain_analysis_history')
+      .select('id')
+      .eq('domain_id', domain_id)
+      .eq('source', 'api')
+      .in('status', ['pending', 'running'])
+      .maybeSingle();
+
+    if (!existingApiAnalysis) {
+      const { data: analysisRecord, error: analysisError } = await supabase
+        .from('external_domain_analysis_history')
+        .insert({
+          domain_id: domain_id,
+          source: 'api',
+          status: 'pending',
+          analyzed_by: null,
+          score: null,
+          report_data: null,
+        })
+        .select('id')
+        .single();
+
+      if (analysisError || !analysisRecord) {
+        console.error('[trigger-external-domain-analysis] Failed to create API analysis record:', analysisError);
+        // Non-fatal: agent task still exists
+      } else {
+        analysisId = analysisRecord.id;
+        console.log(`[trigger-external-domain-analysis] API analysis record created: ${analysisId}`);
+
+        // Run subdomain-enum in background
+        const runApiAnalysis = async () => {
+          try {
+            // Update status to running
+            await supabase
+              .from('external_domain_analysis_history')
+              .update({ status: 'running', started_at: new Date().toISOString() })
+              .eq('id', analysisId);
+
+            console.log(`[trigger-external-domain-analysis] Starting subdomain-enum for ${domain.domain}...`);
+
+            const startTime = Date.now();
+            const res = await fetch(`${supabaseUrl}/functions/v1/subdomain-enum`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+              },
+              body: JSON.stringify({ domain: domain.domain, timeout: 30 }),
+            });
+
+            const executionTimeMs = Date.now() - startTime;
+
+            if (!res.ok) {
+              const errorText = await res.text();
+              console.error(`[trigger-external-domain-analysis] subdomain-enum failed: ${res.status} ${errorText}`);
+              await supabase
+                .from('external_domain_analysis_history')
+                .update({
+                  status: 'failed',
+                  completed_at: new Date().toISOString(),
+                  execution_time_ms: executionTimeMs,
+                  report_data: { error: `subdomain-enum failed: ${res.status}`, details: errorText },
+                })
+                .eq('id', analysisId);
+              return;
+            }
+
+            const result = await res.json();
+            console.log(`[trigger-external-domain-analysis] subdomain-enum completed: ${result.total_found} subdomains, ${result.alive_count} alive`);
+
+            // Calculate a simple score based on subdomain findings
+            // Score reflects the subdomain enumeration coverage (not compliance)
+            const subdomainScore = result.success ? Math.min(100, Math.round(
+              (result.alive_count / Math.max(result.total_found, 1)) * 100
+            )) : 0;
+
+            await supabase
+              .from('external_domain_analysis_history')
+              .update({
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                execution_time_ms: executionTimeMs,
+                score: subdomainScore,
+                report_data: {
+                  type: 'subdomain_enumeration',
+                  domain: result.domain,
+                  total_found: result.total_found,
+                  alive_count: result.alive_count,
+                  inactive_count: result.inactive_count,
+                  sources: result.sources,
+                  subdomains: result.subdomains,
+                  errors: result.errors,
+                },
+              })
+              .eq('id', analysisId);
+
+            console.log(`[trigger-external-domain-analysis] API analysis ${analysisId} completed successfully`);
+
+          } catch (e) {
+            console.error(`[trigger-external-domain-analysis] Background API error:`, e);
+            await supabase
+              .from('external_domain_analysis_history')
+              .update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                report_data: { error: String(e) },
+              })
+              .eq('id', analysisId);
+          }
+        };
+
+        // Run API analysis in background (non-blocking)
+        EdgeRuntime.waitUntil(runApiAnalysis());
+      }
+    } else {
+      console.log(`[trigger-external-domain-analysis] API analysis already in progress: ${existingApiAnalysis.id}`);
+      analysisId = existingApiAnalysis.id;
+    }
+
     const response: TriggerResponse = {
       success: true,
       task_id: newTask.id,
-      message: 'Análise agendada com sucesso. O agent irá processar em breve.',
+      analysis_id: analysisId || undefined,
+      message: 'Análise agendada com sucesso. O agent e a API irão processar em paralelo.',
     };
 
     return new Response(JSON.stringify(response), {
