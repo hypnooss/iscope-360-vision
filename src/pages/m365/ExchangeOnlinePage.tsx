@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { useExchangeOnlineInsights } from '@/hooks/useExchangeOnlineInsights';
+import { mapExchangeAgentInsight } from '@/lib/complianceMappers';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,13 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExoInsightSummaryCards } from '@/components/m365/exchange/ExoInsightSummaryCards';
-import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
+import { ExchangeComplianceSection } from '@/components/m365/exchange/ExchangeComplianceSection';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { 
   M365RiskCategory, 
   CATEGORY_LABELS,
-  M365Insight 
 } from '@/types/m365Insights';
+import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
 import { 
   Mail, 
   RefreshCw, 
@@ -80,52 +81,14 @@ export default function ExchangeOnlinePage() {
 
   if (authLoading) return null;
 
-  // Map ExchangeInsight to M365Insight for component compatibility
-  const m365Insights: M365Insight[] = insights.map(insight => ({
-    id: insight.id,
-    code: insight.id,
-    category: insight.category,
-    product: 'exchange_online',
-    severity: insight.severity,
-    titulo: insight.name,
-    descricaoExecutiva: insight.description,
-    riscoTecnico: insight.details || '',
-    impactoNegocio: insight.recommendation || '',
-    scoreImpacto: 5,
-    status: insight.status === 'pass' ? 'pass' : insight.status === 'fail' ? 'fail' : 'warning',
-    evidencias: [],
-    affectedEntities: (insight.affectedEntities || []).map((e, idx) => ({
-      id: `${insight.id}-${idx}`,
-      displayName: e.name,
-      details: { type: e.type, info: e.details },
-    })),
-    affectedCount: insight.affectedEntities?.length || 0,
-    endpointUsado: '',
-    source: 'exchange_powershell',
-    remediacao: {
-      productAfetado: 'exchange_online',
-      portalUrl: 'https://admin.exchange.microsoft.com',
-      caminhoPortal: [],
-      passosDetalhados: insight.recommendation ? [insight.recommendation] : [],
-      referenciaDocumentacao: '',
-    },
-    detectedAt: insight.detectedAt,
-  }));
+  // Map ExchangeInsight to UnifiedComplianceItem with evidence
+  const unifiedItems: UnifiedComplianceItem[] = insights.map(insight => mapExchangeAgentInsight(insight));
 
-  // Group insights by category
-  const insightsByCategory: Record<M365RiskCategory, M365Insight[]> = {
-    identities: [],
-    auth_access: [],
-    admin_privileges: [],
-    apps_integrations: [],
-    email_exchange: m365Insights.filter(i => i.category === 'email_exchange'),
-    threats_activity: m365Insights.filter(i => i.category === 'threats_activity'),
-    intune_devices: [],
-    pim_governance: m365Insights.filter(i => i.category === 'pim_governance'),
-    sharepoint_onedrive: [],
-    teams_collaboration: [],
-    defender_security: [],
-  };
+  // Group items by category
+  const itemsByCategory: Record<string, UnifiedComplianceItem[]> = {};
+  for (const cat of EXCHANGE_CATEGORIES) {
+    itemsByCategory[cat] = unifiedItems.filter(i => i.category === cat);
+  }
 
   // No tenant connected
   if (!tenantsLoading && tenants.length === 0) {
@@ -250,15 +213,15 @@ export default function ExchangeOnlinePage() {
           </div>
         )}
 
-        {/* Insights by Category - using unified M365CategorySection */}
-        {!insightsLoading && !error && m365Insights.length > 0 && (
+        {/* Insights by Category - using UnifiedComplianceCard */}
+        {!insightsLoading && !error && unifiedItems.length > 0 && (
           <div className="space-y-6">
             {EXCHANGE_CATEGORIES.map((category, index) => (
-              <M365CategorySection 
+              <ExchangeComplianceSection 
                 key={category}
                 category={category} 
                 label={CATEGORY_LABELS[category]}
-                insights={insightsByCategory[category]} 
+                items={itemsByCategory[category] || []} 
                 index={index}
               />
             ))}
@@ -266,7 +229,7 @@ export default function ExchangeOnlinePage() {
         )}
 
         {/* Empty State */}
-        {!insightsLoading && !error && m365Insights.length === 0 && hasInitialized && (
+        {!insightsLoading && !error && unifiedItems.length === 0 && hasInitialized && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="py-12 text-center">
               <Mail className="w-12 h-12 text-primary mx-auto mb-4" />
