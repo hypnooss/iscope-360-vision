@@ -581,12 +581,20 @@ serve(async (req: Request) => {
     const sanitizedAgentThumbprint = sanitizeThumbprint(agentData?.certificate_thumbprint);
     
     if (body.certificate_public_key && sanitizedInputThumbprint) {
-      if (!agentData?.azure_certificate_key_id) {
-        console.log(`Agent ${agentId} has pending certificate (thumbprint: ${sanitizedInputThumbprint?.substring(0, 8)}...), uploading to Azure...`);
+      // Check if thumbprint changed (certificate was regenerated)
+      const thumbprintChanged = sanitizedAgentThumbprint &&
+        sanitizedAgentThumbprint !== sanitizedInputThumbprint;
+
+      if (thumbprintChanged) {
+        console.log(`Agent ${agentId}: thumbprint changed ${sanitizedAgentThumbprint?.substring(0, 8)}... -> ${sanitizedInputThumbprint?.substring(0, 8)}..., re-uploading`);
+      }
+
+      if (!agentData?.azure_certificate_key_id || thumbprintChanged) {
+        console.log(`Agent ${agentId} uploading certificate (thumbprint: ${sanitizedInputThumbprint?.substring(0, 8)}...)`);
         azureCertificateKeyId = await uploadAgentCertificate(
           supabase,
           agentId,
-          sanitizedInputThumbprint, // Use sanitized thumbprint
+          sanitizedInputThumbprint,
           body.certificate_public_key
         );
       } else {
