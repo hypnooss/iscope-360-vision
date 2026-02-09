@@ -4077,7 +4077,7 @@ serve(async (req: Request) => {
             const stepData = step.data as Record<string, unknown>;
             
             // Check if data is wrapped with step_id key (e.g., { "exo_dkim_config": { ... } })
-            if (step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
+            if (stepData && typeof stepData === 'object' && !Array.isArray(stepData) && step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
               // Unwrap: use the inner object
               rawData[step.step_id] = stepData[step.step_id];
             } else {
