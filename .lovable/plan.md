@@ -1,91 +1,48 @@
 
 
-# Fix: Agent Nao Consegue Reiniciar o Proprio Servico
+# Fix: Garantir Diretório Home do Usuário iscope
 
 ## Problema
 
-O botao "Verificar Componentes" funciona assim:
-1. Backend envia `check_components: true` no heartbeat
-2. Agent cria `/var/lib/iscope-agent/check_components.flag`
-3. Agent tenta `systemctl restart iscope-agent`
-4. **FALHA**: O agent roda como user `iscope`, que nao tem permissao para executar `systemctl restart`
-5. O `check-deps.sh` (que so roda no `ExecStartPre` durante o start do servico) nunca executa
-6. O certificado nunca e gerado, e o backend continua pedindo a cada heartbeat
+O instalador cria o usuário `iscope` com `--no-create-home`, e nenhum outro ponto do sistema cria o diretório `/home/iscope/`. A correção atual no `powershell.py` resolve o problema em runtime (ao executar scripts PowerShell), mas o `check-deps.sh` -- que roda como root durante o restart -- não garante a existência desse diretório.
 
-## Causa Raiz
+Isso pode causar falhas silenciosas na instalação dos módulos M365 via PowerShell durante a verificação de componentes.
 
-O script de instalacao (`agent-install`) nao configura uma regra sudoers para permitir que o user `iscope` reinicie o servico.
+## Solução
 
-## Solucao
+Criar o diretório home do usuário `iscope` em dois pontos:
 
-Duas mudancas:
+### 1. Instalador (`agent-install/index.ts`)
 
-### 1. Script de Instalacao: Adicionar regra sudoers
-
-Adicionar ao `agent-install/index.ts`, na funcao `write_systemd_service()` (ou em uma funcao nova chamada logo apos), a criacao de um arquivo sudoers que permite ao user `iscope` reiniciar apenas o servico `iscope-agent`:
+Na função `create_service_user()`, após o `useradd`, criar o diretório home e atribuir ownership:
 
 ```text
-/etc/sudoers.d/iscope-agent
-Conteudo: iscope ALL=(ALL) NOPASSWD: /bin/systemctl restart iscope-agent
+# Após useradd
+mkdir -p /home/$SERVICE_USER
+chown $SERVICE_USER:$SERVICE_USER /home/$SERVICE_USER
 ```
 
-Isso e seguro porque:
-- Permite apenas o comando especifico `systemctl restart iscope-agent`
-- Nao abre nenhum outro acesso
-- Padrao comum para servicos que precisam de auto-restart
+### 2. check-deps.sh
 
-### 2. Agent Python: Usar `sudo` no restart
-
-Alterar `main.py` (linha 99) para usar `sudo systemctl restart iscope-agent` em vez de `systemctl restart iscope-agent`.
-
-De:
-```text
-subprocess.run(
-    ['systemctl', 'restart', 'iscope-agent'],
-    capture_output=True,
-    timeout=30
-)
-```
-
-Para:
-```text
-subprocess.run(
-    ['sudo', 'systemctl', 'restart', 'iscope-agent'],
-    capture_output=True,
-    timeout=30
-)
-```
-
-### 3. Agent Python: Logar erros do restart
-
-Adicionar log se o `subprocess.run` retornar erro, para facilitar debug futuro:
+Adicionar no início da função `main()`, antes de instalar qualquer componente, a verificação e criação do home:
 
 ```text
-result = subprocess.run(
-    ['sudo', 'systemctl', 'restart', 'iscope-agent'],
-    capture_output=True,
-    timeout=30
-)
-if result.returncode != 0:
-    stderr = result.stderr.decode() if result.stderr else ''
-    self.logger.warning(f"Falha ao reiniciar servico: {stderr}")
+# Ensure service user home directory exists
+if id "$SERVICE_USER" >/dev/null 2>&1; then
+    local user_home
+    user_home="$(eval echo ~$SERVICE_USER)"
+    if [[ -n "$user_home" ]] && [[ ! -d "$user_home" ]]; then
+        mkdir -p "$user_home"
+        chown "$SERVICE_USER":"$SERVICE_USER" "$user_home"
+        log "Diretório home criado: $user_home"
+    fi
+fi
 ```
-
-## Efeito nos Agents ja Instalados
-
-Agents ja instalados NAO terao a regra sudoers automaticamente. Para corrigir agents existentes, o operador deve executar manualmente no servidor:
-
-```text
-echo 'iscope ALL=(ALL) NOPASSWD: /bin/systemctl restart iscope-agent' | sudo tee /etc/sudoers.d/iscope-agent
-sudo chmod 440 /etc/sudoers.d/iscope-agent
-```
-
-Ou executar `agent-install --update` que ira reescrever o arquivo sudoers.
 
 ## Arquivos Modificados
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/agent-install/index.ts` | Adicionar funcao para criar `/etc/sudoers.d/iscope-agent` e chama-la no `main()` |
-| `python-agent/main.py` | Usar `sudo systemctl restart` e logar erros |
+| `supabase/functions/agent-install/index.ts` | Criar `/home/iscope` após `useradd` na função `create_service_user()` |
+| `python-agent/check-deps.sh` | Verificar e criar home do usuário no início de `main()` |
 
