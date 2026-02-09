@@ -1,78 +1,86 @@
 
-# Corrigir Upload de Certificado e Garantir -File no Executor
 
-## Problema 1: KeyCredentialsInvalidEndDate (BLOQUEANTE)
+# Corrigir Split-Path: Usar -Certificate em vez de -CertificateFilePath
 
-O upload do certificado ao Azure falha com erro `KeyCredentialsInvalidEndDate` porque o PATCH inclui keys existentes que podem ter datas expiradas. O Azure rejeita o request inteiro quando qualquer key no array tem data invalida.
+## Problema
 
-Logs do backend:
-```
-PATCH error: 400 - {"error":{"code":"KeyCredentialsInvalidEndDate","message":"Key credential end date is invalid."}}
-```
+O erro `Split-Path` nao ocorre no script do agente (que ja usa `-File` corretamente), mas **dentro** do modulo `ExchangeOnlineManagement 3.9+`. Internamente, o cmdlet `Connect-ExchangeOnline` faz `Split-Path` num caminho vazio quando usa o parametro `-CertificateFilePath` no Linux. Isso e um bug conhecido do modulo.
 
-## Problema 2: Split-Path (PENDENTE DE DEPLOY)
-
-A correcao de `-Command` para `-File` ja esta no repositorio mas o agente no servidor ainda roda v1.2.4. Apos atualizar o agente, o Split-Path sera resolvido.
+O `Import-Module` funciona perfeitamente -- o erro so aparece no `Connect-ExchangeOnline`.
 
 ## Solucao
 
-### Arquivo: `supabase/functions/agent-heartbeat/index.ts`
+Alterar os comandos de conexao para carregar o certificado como objeto `X509Certificate2` na memoria e passa-lo via parametro `-Certificate`, evitando completamente o codigo interno que causa o `Split-Path`.
 
-Na logica de upload (linhas 276-285), filtrar keys expiradas ANTES de incluir no PATCH:
+## Mudanca Tecnica
 
-**Antes:**
-```typescript
-const cleanedExistingKeys = existingKeys.map((key: any) => ({
-  type: key.type,
-  usage: key.usage,
-  key: key.key,
-  customKeyIdentifier: key.customKeyIdentifier,
-  displayName: key.displayName,
-  startDateTime: key.startDateTime,
-  endDateTime: key.endDateTime,
-}));
+### Arquivo: `python-agent/agent/executors/powershell.py`
+
+Alterar as strings de conexao CBA nos dicionarios `MODULES`:
+
+**ExchangeOnline - Antes:**
+```
+Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false
 ```
 
-**Depois:**
-```typescript
-const now = new Date();
-const cleanedExistingKeys = existingKeys
-  .filter((key: any) => {
-    // Remove expired keys to avoid KeyCredentialsInvalidEndDate
-    if (key.endDateTime) {
-      const endDate = new Date(key.endDateTime);
-      if (endDate < now) {
-        console.log(`Removing expired key: ${key.displayName || 'unnamed'} (expired ${key.endDateTime})`);
-        return false;
-      }
-    }
-    return true;
-  })
-  .map((key: any) => ({
-    type: key.type,
-    usage: key.usage,
-    key: key.key,
-    customKeyIdentifier: key.customKeyIdentifier,
-    displayName: key.displayName,
-    startDateTime: key.startDateTime,
-    endDateTime: key.endDateTime,
-  }));
+**ExchangeOnline - Depois:**
+```
+$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{cert_path}")
+Connect-ExchangeOnline -AppId "{app_id}" -Certificate $cert -Organization "{organization}" -ShowBanner:$false
 ```
 
-### Nenhuma mudanca adicional no Python Agent
+**MicrosoftGraph - Antes:**
+```
+Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome
+```
 
-A correcao do `-File` ja foi feita no commit anterior. So precisa atualizar o agente no servidor apos o deploy.
+**MicrosoftGraph - Depois:**
+```
+$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{cert_path}")
+Connect-MgGraph -ClientId "{app_id}" -Certificate $cert -TenantId "{tenant_id}" -NoWelcome
+```
 
-## Resumo
+Como os comandos de conexao agora tem 2 linhas, eles precisam ser incluidos no script de forma diferente. A abordagem mais limpa e mover o carregamento do certificado para o inicio do script (apos o import) e referencia-lo na conexao.
 
-| Problema | Arquivo | Mudanca |
-|----------|---------|---------|
-| KeyCredentialsInvalidEndDate | `agent-heartbeat/index.ts` | Filtrar keys expiradas antes do PATCH |
-| Split-Path | (ja corrigido) | Atualizar agente no servidor |
+Na funcao `_build_script`, apos o bloco de import do modulo, adicionar:
+
+```python
+# Load certificate into memory (avoids Split-Path bug in EXO 3.9+)
+script_parts.extend([
+    "# Load certificate",
+    f'$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{str(self.PFX_FILE)}")',
+    "",
+])
+```
+
+E alterar os comandos de conexao CBA para:
+
+```python
+"ExchangeOnline": {
+    "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -Certificate $cert -Organization "{organization}" -ShowBanner:$false',
+    ...
+},
+"MicrosoftGraph": {
+    "connect_cba": 'Connect-MgGraph -ClientId "{app_id}" -Certificate $cert -TenantId "{tenant_id}" -NoWelcome',
+    ...
+},
+```
+
+### Arquivo: `python-agent/agent/version.py`
+
+Incrementar versao para `1.2.5` para facilitar identificacao no servidor.
+
+## Impacto
+
+- Resolve o bug do `Split-Path` no EXO 3.9+ no Linux
+- Compativel com todas as versoes do modulo EXO
+- O parametro `-Certificate` aceita X509Certificate2 desde EXO v3
+- Nao afeta o modo `credential` (que nao usa certificado)
+- Nenhuma mudanca no MicrosoftGraph se `-Certificate` for suportado (e, desde Microsoft.Graph v2)
 
 ## Pos-Correcao
 
-1. Deploy da edge function (automatico)
-2. Aguardar proximo heartbeat (60s) - o certificado sera enviado e registrado com sucesso
-3. Atualizar o agente no servidor para pegar a correcao do `-File`
-4. Disparar nova analise M365
+1. Atualizar o agente no servidor NEXTA
+2. Disparar nova analise M365
+3. Os comandos Exchange devem conectar sem erro
+
