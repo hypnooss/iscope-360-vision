@@ -99,17 +99,17 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   posture_analysis: {
     label: 'API',
-    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
     icon: <Cloud className="w-3 h-3" />,
   },
   m365_powershell: {
-    label: 'PowerShell',
+    label: 'Agent',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     icon: <Terminal className="w-3 h-3" />,
   },
   m365_graph_api: {
-    label: 'Graph API',
-    color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
+    label: 'Agent',
+    color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     icon: <Terminal className="w-3 h-3" />,
   },
 };
@@ -536,7 +536,7 @@ export default function M365ExecutionsPage() {
                           {getTenantLabel(item.tenantId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {item.agentId ? getAgentName(item.agentId) : '-'}
+                          {item.type === 'posture_analysis' ? 'Edge Function' : item.agentId ? getAgentName(item.agentId) : '-'}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
