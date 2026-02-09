@@ -1,55 +1,63 @@
 
 
-# Correcao do TypeError no processamento de step results no agent-task-result
+# Padronizar cards Exchange Online com o modelo Firewall/Dominio
 
-## Problema
+## Objetivo
 
-Quando um step do PowerShell retorna output nao-JSON (ex: uma mensagem WARNING do Exchange), o agente Python envia o resultado com `raw: true` e o campo `data` como string. Na edge function `agent-task-result`, ao reconstruir os dados dos steps (linha 4080), o codigo faz:
+Remover o comportamento especifico de "itens afetados" e "Como Corrigir" dos cards do Exchange Online, convertendo as mailboxes afetadas em **Evidencias Coletadas** (formato `EvidenceItem[]`), alinhando com o padrao dos modulos Firewall e Dominio Externo.
 
-```text
-if (step.step_id in stepData ...)
-```
+## Alteracoes
 
-O operador `in` do JavaScript so funciona em objetos. Quando `stepData` e uma string, o `in` lanca `TypeError: Cannot use 'in' operator to search for 'exo_outbound_connectors' in WARNING: ...`.
+### 1. Mapper `mapExchangeInsight` (src/lib/complianceMappers.ts)
 
-Isso faz toda a tarefa falhar com `INTERNAL_ERROR`, mesmo que os outros 17 steps tenham sido processados com sucesso.
+Converter `affectedMailboxes` em `evidence` (array de `EvidenceItem`) e remover `affectedEntities`/`affectedCount`:
 
-## Causa Raiz
+- Criar evidencias a partir das mailboxes afetadas:
+  - Uma evidencia de contagem: `{ label: "Itens afetados", value: "7 de X total", type: "text" }`
+  - Uma evidencia de lista com os nomes/emails afetados: `{ label: "Mailboxes", value: "user1@..., user2@...", type: "list" }`
+  - Evidencias adicionais com detalhes relevantes (forwardTo, redirectTo, etc.) quando disponiveis
+- Remover `affectedEntities` e `affectedCount` do retorno
+- Manter `rawData` (ja sera exibido apenas para Super Admins pelo componente unificado)
+- Nao mapear `remediation` (o botao "Como Corrigir" desaparecera automaticamente)
 
-O step `exo_outbound_connectors` retornou a string de warning do PowerShell ("WARNING: There is at least one test mode connector...") em vez de JSON. O agente tratou corretamente como `raw: true`, mas a edge function nao valida se `stepData` e um objeto antes de usar o operador `in`.
+### 2. Componente `ExoInsightCard` (src/components/m365/exchange/ExoInsightCard.tsx)
 
-## Solucao
+Simplificar removendo:
+- O state `showDetails` e o dialog `ExoInsightDetailDialog`
+- As props `onShowAffectedEntities` do `UnifiedComplianceCard`
+- O componente passa a ser apenas o mapper + `UnifiedComplianceCard` sem callbacks
 
-No arquivo `supabase/functions/agent-task-result/index.ts`, adicionar uma validacao de tipo antes do operador `in` na linha 4080:
+### 3. Mesma alteracao para SecurityInsight e ApplicationInsight
 
-```text
-Antes (linha 4074-4086):
-  if (step.status === 'success' && step.data) {
-    const stepData = step.data as Record<string, unknown>;
-    if (step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
-      rawData[step.step_id] = stepData[step.step_id];
-    } else {
-      rawData[step.step_id] = stepData;
-    }
-  }
-
-Depois:
-  if (step.status === 'success' && step.data) {
-    const stepData = step.data as Record<string, unknown>;
-    if (stepData && typeof stepData === 'object' && !Array.isArray(stepData) && step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
-      rawData[step.step_id] = stepData[step.step_id];
-    } else {
-      rawData[step.step_id] = stepData;
-    }
-  }
-```
-
-A validacao `typeof stepData === 'object' && !Array.isArray(stepData)` garante que o operador `in` so e usado em objetos planos, ignorando strings e arrays.
+Aplicar o mesmo padrao aos outros dois mappers para consistencia:
+- `mapSecurityInsight`: converter `affectedUsers` em `evidence`, remover `affectedEntities`/`affectedCount`
+- `mapApplicationInsight`: converter `affectedApplications` em `evidence`, remover `affectedEntities`/`affectedCount`
 
 ## Detalhes Tecnicos
 
-- Arquivo: `supabase/functions/agent-task-result/index.ts`
-- Linha afetada: 4080
-- Alteracao: adicionar guard `typeof stepData === 'object' && !Array.isArray(stepData)` antes do `in`
-- A edge function precisara ser re-deployada apos a alteracao
+No mapper `mapExchangeInsight`, o bloco de `affectedMailboxes` sera substituido por:
+
+```text
+evidence: [
+  { label: "Itens afetados", value: `${insight.affectedCount} mailbox(es)`, type: "text" },
+  ...(insight.affectedMailboxes.length > 0 ? [{
+    label: "Mailboxes afetadas",
+    value: insight.affectedMailboxes.map(m => m.displayName || m.userPrincipalName).join('\n'),
+    type: "list"
+  }] : [])
+],
+```
+
+O mesmo padrao sera aplicado para `SecurityInsight` (usando `affectedUsers`) e `ApplicationInsight` (usando `affectedApplications`).
+
+Os componentes wrapper (`ExoInsightCard`, correspondentes de Security e Application) serao simplificados removendo os dialogs de entidades afetadas, ficando apenas como thin wrappers sobre `UnifiedComplianceCard`.
+
+### Arquivos afetados
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/lib/complianceMappers.ts` | Converter entidades em evidence nos 3 mappers |
+| `src/components/m365/exchange/ExoInsightCard.tsx` | Remover dialog e callbacks |
+| `src/components/m365/insights/InsightCard.tsx` | Remover dialog e callbacks (se aplicavel) |
+| `src/components/m365/applications/AppInsightCard.tsx` | Remover dialog e callbacks (se aplicavel) |
 
