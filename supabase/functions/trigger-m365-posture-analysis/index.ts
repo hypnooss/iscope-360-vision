@@ -200,39 +200,9 @@ Deno.serve(async (req) => {
         const result = await res.json();
         console.log(`[trigger-m365-posture-analysis] Analysis completed. Score: ${result.score}`);
 
-        let allInsights = result.insights || [];
+        const allInsights = result.insights || [];
 
-        // When scope is exchange_online, also call exchange-online-insights for inbox rules analysis
-        if (scope === 'exchange_online') {
-          try {
-            console.log(`[trigger-m365-posture-analysis] Calling exchange-online-insights for scoped analysis...`);
-            const exoRes = await fetch(`${supabaseUrl}/functions/v1/exchange-online-insights`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${serviceRoleKey}`,
-              },
-              body: JSON.stringify({ tenant_record_id }),
-            });
-
-            if (exoRes.ok) {
-              const exoResult = await exoRes.json();
-              const exoInsights = (exoResult.insights || []).map((i: any) => ({
-                ...i,
-                product: 'exchange_online',
-                category: i.category || 'email_exchange',
-              }));
-              allInsights = [...allInsights, ...exoInsights];
-              console.log(`[trigger-m365-posture-analysis] Merged ${exoInsights.length} exchange-online-insights`);
-            } else {
-              console.error(`[trigger-m365-posture-analysis] exchange-online-insights failed: ${exoRes.status}`);
-            }
-          } catch (exoErr) {
-            console.error(`[trigger-m365-posture-analysis] exchange-online-insights error:`, exoErr);
-          }
-        }
-
-        // Recalculate summary with ALL insights (API + Exchange)
+        // Recalculate summary with ALL insights
         const recalculatedSummary = {
           critical: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
           high: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
