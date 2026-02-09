@@ -1,113 +1,123 @@
 
 
-# Segmentar Blueprints M365 por Produto
+# Enriquecer Blueprint M365 - Exchange Online
 
-## Contexto Atual
+## Analise de Duplicacao: API vs Agent
 
-Existem 2 blueprints para o device_type Microsoft 365:
+Todos os 10 steps PowerShell atuais utilizam cmdlets do Exchange Online Management que **nao possuem equivalente na Graph API**. A Microsoft nao expoe as configuracoes de protecao do Exchange (Anti-Phish, Safe Links, Safe Attachments, Transport Rules, DKIM, etc.) via REST API. Portanto, **nao ha duplicacao** e o uso do Agent e obrigatorio para estes dados.
 
-1. **M365 - Exchange & SharePoint (Agent)** - 10 steps PowerShell (todos Exchange Online)
-2. **M365 - Postura de Seguranca** - 39 steps Graph API cobrindo todos os produtos
+O unico step Graph API existente (`sample_users_for_mailbox`) e complementar — fornece IDs de usuarios para correlacao.
 
-A edge function `m365-security-posture` carrega apenas **1 blueprint** (`LIMIT 1`) e chama 5 sub-funcoes hardcoded para Intune, PIM, SharePoint, Teams e Defender.
+## Novos Steps Propostos (somente Agent/PowerShell)
 
-## Nova Estrutura Proposta
+Todos os enrichments abaixo sao exclusivos de PowerShell, sem equivalente na Graph API:
 
-Segmentar em **5 blueprints** por produto:
+### Prioridade Alta (Seguranca)
 
-```text
-+------------------------------+------------+--------+-----------------------------+
-| Blueprint                    | Executor   | Steps  | Categorias de Regras        |
-+------------------------------+------------+--------+-----------------------------+
-| M365 - Entra ID              | edge_func  | 25     | identities, auth_access,    |
-|                              |            |        | admin_privileges,           |
-|                              |            |        | apps_integrations,          |
-|                              |            |        | pim_governance, environment |
-+------------------------------+------------+--------+-----------------------------+
-| M365 - Exchange Online       | hybrid     | 10+1   | email_exchange,             |
-|                              | (agent+ef) |        | threats_activity (parcial)  |
-+------------------------------+------------+--------+-----------------------------+
-| M365 - SharePoint & OneDrive | edge_func  | 2+sub  | sharepoint_onedrive         |
-+------------------------------+------------+--------+-----------------------------+
-| M365 - Teams                 | edge_func  | 2+sub  | teams_collaboration         |
-+------------------------------+------------+--------+-----------------------------+
-| M365 - Intune & Defender     | edge_func  | 3+6+sub| intune_devices,             |
-|                              |            |        | defender_security,          |
-|                              |            |        | threats_activity (parcial)  |
-+------------------------------+------------+--------+-----------------------------+
-```
+| Step ID | Cmdlet | Finalidade |
+|---------|--------|------------|
+| `exo_audit_config` | `Get-AdminAuditLogConfig` | Verificar se auditoria admin esta habilitada |
+| `exo_org_config` | `Get-OrganizationConfig` | OAuth habilitado, SMTP Auth, Focused Inbox |
+| `exo_accepted_domains` | `Get-AcceptedDomain` | Dominios aceitos e tipo (autoritativo vs relay) |
+| `exo_inbound_connectors` | `Get-InboundConnector` | Conectores de entrada (bypass de SPF/filtros) |
+| `exo_outbound_connectors` | `Get-OutboundConnector` | Conectores de saida (roteamento TLS) |
 
-## Mudancas Necessarias
+### Prioridade Media (Governanca)
 
-### 1. Banco de Dados (device_blueprints)
+| Step ID | Cmdlet | Finalidade |
+|---------|--------|------------|
+| `exo_role_assignments` | `Get-ManagementRoleAssignment -GetEffectiveUsers -RoleGroup "Organization Management"` | Quem tem permissoes administrativas no Exchange |
+| `exo_mailbox_audit` | `Get-Mailbox -ResultSize 100 \| Select AuditEnabled, AuditOwner` | Status de auditoria por mailbox |
+| `exo_auth_policy` | `Get-AuthenticationPolicy` | Politicas de autenticacao (bloqueio de protocolos legados) |
 
-**Atualizar** o blueprint existente "M365 - Postura de Seguranca" para conter apenas os steps de Entra ID e renomea-lo para **"M365 - Entra ID"**.
+### Prioridade Baixa (Informacional)
 
-**Atualizar** o blueprint existente "M365 - Exchange & SharePoint (Agent)" para conter tambem o step `sample_users_for_mailbox` (Graph API) e os steps de threats_activity relacionados a email. Renomear para **"M365 - Exchange Online"**. Mudar `executor_type` para `hybrid`.
+| Step ID | Cmdlet | Finalidade |
+|---------|--------|------------|
+| `exo_mobile_device_policy` | `Get-MobileDeviceMailboxPolicy` | Politicas de dispositivos moveis (PIN, wipe) |
+| `exo_shared_mailboxes` | `Get-Mailbox -RecipientTypeDetails SharedMailbox -ResultSize 200 \| Select DisplayName, PrimarySmtpAddress, MessageCopyForSentAsEnabled` | Caixas compartilhadas e config |
 
-**Criar 3 novos blueprints**:
-- **M365 - SharePoint & OneDrive** (edge_function): steps `sharepoint_sites`, `sharepoint_external_sharing`
-- **M365 - Teams** (edge_function): steps `teams_list`, `teams_settings`
-- **M365 - Intune & Defender** (edge_function): steps `managed_devices`, `device_compliance_policies`, `device_configuration_policies`, `security_alerts_v1`, `security_alerts_v2`, `secure_scores`
+## Compliance Rules a Criar (EXO-006 a EXO-020)
 
-### 2. Edge Function: m365-security-posture
+Regras para avaliar os dados ja coletados + novos steps:
 
-Atualmente carrega 1 blueprint com `LIMIT 1`. Precisa ser alterada para:
+### Para steps existentes
 
-- Carregar **todos** os blueprints ativos do device_type M365 com `executor_type = 'edge_function'` ou `'hybrid'`
-- Iterar sobre cada blueprint e executar seus steps Graph API
-- Unificar os resultados de todos os blueprints em um unico Map de `stepResults`
-- **Remover** as chamadas hardcoded das 5 sub-funcoes (`m365-check-intune`, `m365-check-pim`, `m365-check-sharepoint`, `m365-check-teams`, `m365-check-defender`), ja que os steps agora estao nos blueprints segmentados
-- Manter a avaliacao de regras e calculo de score inalterados
+| Codigo | Nome | Step Source | Severidade |
+|--------|------|------------|------------|
+| EXO-006 | Politica Anti-Phishing Desabilitada | `exo_anti_phish_policy` | critical |
+| EXO-007 | Safe Links Desabilitado | `exo_safe_links_policy` | high |
+| EXO-008 | Safe Attachments Desabilitado | `exo_safe_attachment_policy` | high |
+| EXO-009 | DKIM Nao Configurado | `exo_dkim_config` | high |
+| EXO-010 | Filtro de Malware Sem File Filter | `exo_malware_filter_policy` | medium |
+| EXO-011 | Auto-Forward Habilitado em Remote Domains | `exo_remote_domains` | high |
+| EXO-012 | Transport Rules Redirecionando para Externo | `exo_transport_rules` | critical |
+| EXO-013 | Spam Filter Permissivo | `exo_hosted_content_filter` | medium |
+| EXO-014 | OWA Permite Download Direto em PCs Publicos | `exo_owa_mailbox_policy` | medium |
 
-Mudancas especificas:
-- Linha 679-686: trocar `.single()` por buscar multiplos blueprints
-- Linhas 780-786: remover chamadas de sub-funcoes (dados ja coletados via blueprints)
-- Ajustar log para mostrar quantos blueprints foram carregados
+### Para novos steps
 
-### 3. Edge Function: trigger-m365-posture-analysis
+| Codigo | Nome | Step Source | Severidade |
+|--------|------|------------|------------|
+| EXO-015 | Auditoria Admin Desabilitada | `exo_audit_config` | critical |
+| EXO-016 | SMTP Auth Global Habilitado | `exo_org_config` | high |
+| EXO-017 | Dominio Aceito como Relay | `exo_accepted_domains` | high |
+| EXO-018 | Conector Inbound Bypass SPF | `exo_inbound_connectors` | critical |
+| EXO-019 | Conector Outbound sem TLS | `exo_outbound_connectors` | high |
+| EXO-020 | Auditoria de Mailbox Desabilitada | `exo_mailbox_audit` | medium |
 
-Sem mudancas necessarias - ja cria a task corretamente e chama `m365-security-posture`.
+## Reativacao das Regras Legadas (EXO-001 a EXO-005)
 
-### 4. Agente Python (agent/tasks.py ou RPC)
+As regras EXO-001 a EXO-005 estao desativadas. A EXO-001 (Redirecionamento Externo) deve ser **reativada** com `evaluation_logic` apontando para o step `exo_mailbox_forwarding` do Agent (nao mais via Graph API individual). As demais (EXO-002 a EXO-005) sao informacionais e podem ser mantidas inativas por enquanto.
 
-A funcao `rpc_get_agent_tasks` ja busca blueprints por device_type `m365` e executor `agent`. Com a renomeacao, ela continuara funcionando pois filtra por `executor_type`, nao por nome.
+## Secao Tecnica
 
-### 5. Frontend (TemplateDetailPage)
+### Implementacao dos novos steps no blueprint
 
-Sem mudancas necessarias - ja lista todos os blueprints do device_type dinamicamente.
-
-## Secao Tecnica - Detalhes de Implementacao
-
-### Queries SQL para segmentar os blueprints
-
-Os dados serao manipulados via `UPDATE` e `INSERT` nos blueprints existentes. Os steps de cada blueprint serao redistribuidos conforme o mapeamento de categorias acima.
-
-### Logica de carregamento multi-blueprint
+Cada novo step sera adicionado ao array `collection_steps.steps` do blueprint "M365 - Exchange Online" via `UPDATE` SQL. Formato padrao:
 
 ```text
-// Antes (1 blueprint):
-.eq('is_active', true).limit(1).single()
-
-// Depois (todos os blueprints edge_function/hybrid):
-.eq('is_active', true).in('executor_type', ['edge_function', 'hybrid'])
+{
+  "id": "exo_audit_config",
+  "type": "powershell",
+  "category": "Exchange - Audit",
+  "params": {
+    "module": "ExchangeOnline",
+    "timeout": 30,
+    "commands": [{
+      "name": "exo_audit_config",
+      "command": "Get-AdminAuditLogConfig | Select-Object UnifiedAuditLogIngestionEnabled, AdminAuditLogEnabled, AdminAuditLogAgeLimit"
+    }]
+  }
+}
 ```
 
-Os steps de todos os blueprints serao agregados em um unico array antes da execucao paralela.
+### Implementacao das compliance rules
 
-### Remocao das sub-funcoes
+Cada regra sera `INSERT` na tabela `compliance_rules` com:
+- `device_type_id`: ID do device_type m365
+- `category`: `email_exchange`
+- `evaluation_logic`: JSON especifico para cada regra
+- `is_active`: true
+- Campos descritivos: `recommendation`, `pass_description`, `fail_description`, `technical_risk`, `business_impact`
 
-As sub-funcoes `m365-check-intune`, `m365-check-pim`, `m365-check-sharepoint`, `m365-check-teams` e `m365-check-defender` contem logica de avaliacao complexa que ja foi migrada para `compliance_rules` com `evaluation_logic`. Elas serao removidas das chamadas, mas os arquivos podem ser mantidos temporariamente como fallback.
+### Nenhuma mudanca na edge function
+
+A `m365-security-posture` ja carrega todas as compliance rules ativas e avalia contra os dados coletados. Os novos steps serao executados pelo Agent automaticamente (ja que o blueprint e `hybrid` e o `rpc_get_agent_tasks` filtra por `executor_type = 'agent'`).
+
+### Nenhuma mudanca no Agent Python
+
+O agente ja processa steps do tipo `powershell` com modulo `ExchangeOnline` dinamicamente.
 
 ## Arquivos Modificados
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/m365-security-posture/index.ts` | Carregar multiplos blueprints, remover sub-funcoes |
-| Banco de dados (device_blueprints) | Renomear e redistribuir steps entre 5 blueprints |
+| Item | Mudanca |
+|------|---------|
+| Banco de dados (`device_blueprints`) | Adicionar 8 novos steps PowerShell ao blueprint Exchange Online |
+| Banco de dados (`compliance_rules`) | Inserir 15 novas regras (EXO-006 a EXO-020) + reativar EXO-001 |
 
-## Riscos e Mitigacao
+## Riscos
 
-- **Sub-funcoes com logica complexa**: Intune, PIM, SharePoint, Teams e Defender usam chamadas Graph API internas que nao estao nos steps do blueprint. Sera necessario verificar se todos os endpoints ja estao cadastrados como steps antes de remover as sub-funcoes.
-- **Fallback**: Manter as sub-funcoes como fallback ate validar que todos os insights sao gerados corretamente pelos blueprints segmentados.
+- **Timeout**: Steps como `exo_role_assignments` podem ser lentos em tenants grandes. Mitigacao: usar `-ResultSize` e timeout de 60s.
+- **Licenciamento**: `Get-SafeLinksPolicy` e `Get-SafeAttachmentPolicy` requerem Defender for Office 365. O agent ja trata com `-ErrorAction SilentlyContinue`.
 
