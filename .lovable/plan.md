@@ -1,69 +1,41 @@
 
-# Exibir descricao da regra e analise efetuada nos cards Exchange Online
+
+# Corrigir contagem de severidades no cabeçalho da seção Exchange Online
 
 ## Problema
 
-Na edge function `processM365AgentInsights`, o campo `description` do insight recebe o resultado dinamico da avaliacao (ex: "7 de 10 item(ns) nao conforme(s)"). O criterio da regra (`rule.description`, ex: "Verifica se...") nunca e salvo. Por isso os cards Exchange nao exibem a descricao da regra nem a secao "ANALISE EFETUADA" corretamente.
+As contagens de severidade (crítico, alto, médio, baixo) no cabeçalho da categoria são calculadas apenas a partir dos itens com status `fail`. Itens com status `warn`/`warning` que também possuem severidade crítica ou alta são ignorados na contagem.
 
-No Dominio Externo funciona porque o `ComplianceCheck` carrega o `description` da regra (criterio) diretamente do banco.
+Exemplo: "Transport Rules Redirecionando para Externo" tem severidade **crítica** mas status `warn` — não é contado no badge "crítico" do cabeçalho.
 
-## Solucao em 3 pontos
+## Solução
 
-### 1. Edge Function `agent-task-result/index.ts` (linha 335-347)
+Alterar a base de cálculo das contagens de severidade para incluir **todos os itens não-conformes** (fail + warning + other), excluindo apenas os itens `pass`.
 
-Adicionar `criteria` ao insight com o `rule.description`:
+### Arquivo: `src/components/m365/exchange/ExchangeComplianceSection.tsx`
 
-```text
-insights.push({
-  ...campos existentes...,
-  criteria: rule.description,                    // NOVO: "Verifica se..."
-  passDescription: rule.pass_description,        // NOVO
-  failDescription: rule.fail_description,        // NOVO
-  notFoundDescription: rule.not_found_description,// NOVO
-  technicalRisk: rule.technical_risk,            // NOVO
-  businessImpact: rule.business_impact,          // NOVO
-  apiEndpoint: rule.api_endpoint,                // NOVO
-});
-```
-
-### 2. Hook `useExchangeOnlineInsights.ts` (linhas 129-142)
-
-Propagar os campos novos no mapeamento:
+Linhas 52-55: Trocar `failedItems` por uma lista combinada de itens não-pass:
 
 ```text
-return {
-  ...campos existentes...,
-  criteria: insight.criteria || '',
-  passDescription: insight.passDescription || '',
-  failDescription: insight.failDescription || '',
-  notFoundDescription: insight.notFoundDescription || '',
-  technicalRisk: insight.technicalRisk || '',
-  businessImpact: insight.businessImpact || '',
-  apiEndpoint: insight.apiEndpoint || '',
-};
+// ANTES (só conta fail):
+const criticalCount = failedItems.filter(i => i.severity === 'critical').length;
+
+// DEPOIS (conta fail + warning + other):
+const nonPassItems = items.filter(i => i.status !== 'pass');
+const criticalCount = nonPassItems.filter(i => i.severity === 'critical').length;
+const highCount = nonPassItems.filter(i => i.severity === 'high').length;
+const mediumCount = nonPassItems.filter(i => i.severity === 'medium').length;
+const lowCount = nonPassItems.filter(i => i.severity === 'low').length;
 ```
 
-Expandir a interface `ExchangeInsight` com esses campos opcionais.
+### Arquivo: `src/components/m365/posture/M365CategorySection.tsx`
 
-### 3. Mapper `mapExchangeAgentInsight` em `complianceMappers.ts`
-
-Corrigir o mapeamento para o `UnifiedComplianceItem`:
-
-- `description` -> `insight.criteria` (criterio da regra = "Verifica se..." = o que aparece no card)
-- `failDescription` -> `insight.failDescription || insight.description` (mensagem de falha)
-- `details` -> `insight.description` (resultado dinamico = secao "ANALISE EFETUADA")
-- `technicalRisk`, `businessImpact`, `apiEndpoint` -> campos diretos
-
-Resultado: identico ao Dominio Externo e Firewall.
+Mesma correção nas linhas 59-62 para manter consistência entre as páginas Postura e Exchange Online.
 
 ## Arquivos afetados
 
-| Arquivo | Alteracao |
+| Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Adicionar 7 campos da regra ao insight (linha 335-347) |
-| `src/hooks/useExchangeOnlineInsights.ts` | Expandir interface e mapeamento |
-| `src/lib/complianceMappers.ts` | Corrigir mapeamento criteria/description/details |
+| `src/components/m365/exchange/ExchangeComplianceSection.tsx` | Contar severidade de todos os itens não-pass |
+| `src/components/m365/posture/M365CategorySection.tsx` | Mesma correção para consistência |
 
-## Nota
-
-Analises ja executadas nao terao os campos novos. Sera necessario clicar em "Reanalisar" para popular os metadados.
