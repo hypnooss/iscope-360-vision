@@ -1,41 +1,38 @@
 
+# Padronizar M365 Execucoes com Dominio Externo
 
-# Fix: Always show rule description (criteria) on Exchange Online cards
+Tres alteracoes no arquivo `src/pages/m365/M365ExecutionsPage.tsx`:
 
-## Root Cause
+## 1. Tag "PowerShell" -> "Agent" com cor roxa (typeConfig)
 
-In `mapExchangeAgentInsight`, the mapper sets `passDescription`, `failDescription`, and `notFoundDescription` to the dynamic analysis results. The `UnifiedComplianceCard` uses these as the contextual message (the text shown below the rule name), which **overrides** the criteria ("Verifica se...").
+Linhas 99-115: Simplificar o `typeConfig` para usar apenas dois tipos como o Dominio Externo:
 
-In contrast, the Domain/Firewall mapper (`mapComplianceCheck`) never sets these fields, so the card always falls back to `description` (the criteria) for the contextual message.
+| Atual (M365) | Novo (padrao Dominio Externo) |
+|---|---|
+| `posture_analysis` -> label "API", cor azul | `posture_analysis` -> label "API", cor **teal-400** |
+| `m365_powershell` -> label "PowerShell", cor roxa | `m365_powershell` -> label "**Agent**", cor roxa (mantida) |
+| `m365_graph_api` -> label "Graph API", cor cyan | `m365_graph_api` -> label "**Agent**", cor roxa |
 
-## Fix
+## 2. Coluna Agent: exibir "Edge Function" para tarefas API
 
-In `src/lib/complianceMappers.ts`, remove the `passDescription`, `failDescription`, and `notFoundDescription` mappings from `mapExchangeAgentInsight`. This way:
-
-- The contextual message will ALWAYS show the criteria ("Verifica se...") regardless of status - just like Domain and Firewall
-- The dynamic analysis result stays in `details` and appears in the "ANALISE EFETUADA" expandable section
-
-### Before (current mapper, lines 249-251):
+Linha 539: Trocar `{item.agentId ? getAgentName(item.agentId) : '-'}` por:
 ```
-failDescription: insight.failDescription || insight.description,
-passDescription: insight.passDescription,
-notFoundDescription: insight.notFoundDescription,
+{item.type === 'posture_analysis' ? 'Edge Function' : item.agentId ? getAgentName(item.agentId) : '-'}
 ```
 
-### After:
-```
-// Remove passDescription, failDescription, notFoundDescription
-// Let UnifiedComplianceCard fall back to description (criteria)
-```
+## 3. Cor da tag API: azul -> teal
 
-## File changed
+Linha 101-103: Mudar de `bg-blue-500/20 text-blue-500 border-blue-500/30` para `bg-teal-400/20 text-teal-400 border-teal-400/30`.
 
-| File | Change |
-|------|--------|
-| `src/lib/complianceMappers.ts` | Remove 3 lines (passDescription, failDescription, notFoundDescription) from mapExchangeAgentInsight return |
+## Resumo das alteracoes
 
-## Result
+| Item | Antes | Depois |
+|---|---|---|
+| Tag tipo API | Azul | Teal (como Dominio Externo) |
+| Tag tipo PowerShell | ">_ PowerShell" | ">_ Agent" |
+| Tag tipo Graph API | ">_ Graph API" | ">_ Agent" |
+| Coluna Agent (API) | "-" | "Edge Function" |
 
-All Exchange cards will display identically to Domain/Firewall:
-- Level 1: Rule name + criteria ("Verifica se...")
-- Level 3 (expanded): "ANALISE EFETUADA" shows the dynamic result
+## Arquivo afetado
+
+`src/pages/m365/M365ExecutionsPage.tsx` - unico arquivo alterado.
