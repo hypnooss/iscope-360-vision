@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
 
     // Parse body
     const body = await req.json();
-    const { tenant_record_id } = body;
+    const { tenant_record_id, scope } = body;
 
     if (!tenant_record_id) {
       return new Response(JSON.stringify({ error: 'tenant_record_id is required' }), {
@@ -135,6 +135,7 @@ Deno.serve(async (req) => {
             analysis_id: historyRecord.id,
             tenant_id: tenant.tenant_id,
             tenant_domain: tenant.tenant_domain,
+            ...(scope ? { scope } : {}),
           },
         })
         .select('id')
@@ -178,7 +179,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${serviceRoleKey}`,
           },
-          body: JSON.stringify({ tenant_record_id }),
+          body: JSON.stringify({ tenant_record_id, ...(scope ? { blueprint_filter: scope } : {}) }),
         });
 
         if (!res.ok) {
@@ -199,6 +200,38 @@ Deno.serve(async (req) => {
         const result = await res.json();
         console.log(`[trigger-m365-posture-analysis] Analysis completed. Score: ${result.score}`);
 
+        let allInsights = result.insights || [];
+
+        // When scope is exchange_online, also call exchange-online-insights for inbox rules analysis
+        if (scope === 'exchange_online') {
+          try {
+            console.log(`[trigger-m365-posture-analysis] Calling exchange-online-insights for scoped analysis...`);
+            const exoRes = await fetch(`${supabaseUrl}/functions/v1/exchange-online-insights`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({ tenant_record_id }),
+            });
+
+            if (exoRes.ok) {
+              const exoResult = await exoRes.json();
+              const exoInsights = (exoResult.insights || []).map((i: any) => ({
+                ...i,
+                product: 'exchange_online',
+                category: i.category || 'email_exchange',
+              }));
+              allInsights = [...allInsights, ...exoInsights];
+              console.log(`[trigger-m365-posture-analysis] Merged ${exoInsights.length} exchange-online-insights`);
+            } else {
+              console.error(`[trigger-m365-posture-analysis] exchange-online-insights failed: ${exoRes.status}`);
+            }
+          } catch (exoErr) {
+            console.error(`[trigger-m365-posture-analysis] exchange-online-insights error:`, exoErr);
+          }
+        }
+
         // Update history record with results
         await supabaseAdmin
           .from('m365_posture_history')
@@ -209,7 +242,7 @@ Deno.serve(async (req) => {
             classification: result.classification,
             summary: result.summary,
             category_breakdown: result.categoryBreakdown,
-            insights: result.insights,
+            insights: allInsights,
             environment_metrics: result.environmentMetrics || null,
             errors: result.errors ? { errors: result.errors } : null,
           })
