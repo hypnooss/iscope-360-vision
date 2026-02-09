@@ -1,86 +1,35 @@
 
 
-# Corrigir Split-Path: Usar -Certificate em vez de -CertificateFilePath
+# Reverter PowerShell Executor para CertificateFilePath
 
-## Problema
+## Diagnostico
 
-O erro `Split-Path` nao ocorre no script do agente (que ja usa `-File` corretamente), mas **dentro** do modulo `ExchangeOnlineManagement 3.9+`. Internamente, o cmdlet `Connect-ExchangeOnline` faz `Split-Path` num caminho vazio quando usa o parametro `-CertificateFilePath` no Linux. Isso e um bug conhecido do modulo.
+A evidencia e clara:
+- **TASCHIBRA-IDA** usa `CertificateFilePath` com EXO 3.9.2 e **funciona**
+- **NEXTA-AAX** usa `-Certificate $cert` (a "correcao") com EXO 3.9.2 e **falha**
 
-O `Import-Module` funciona perfeitamente -- o erro so aparece no `Connect-ExchangeOnline`.
+A correcao anterior (trocar `CertificateFilePath` por `-Certificate $cert`) foi baseada numa hipotese incorreta e e a **causa real** do erro `Split-Path`.
 
-## Solucao
+## Mudancas
 
-Alterar os comandos de conexao para carregar o certificado como objeto `X509Certificate2` na memoria e passa-lo via parametro `-Certificate`, evitando completamente o codigo interno que causa o `Split-Path`.
+### 1. Reverter `python-agent/agent/executors/powershell.py`
 
-## Mudanca Tecnica
+**Reverter os templates de conexao CBA para o formato original:**
 
-### Arquivo: `python-agent/agent/executors/powershell.py`
+- ExchangeOnline: voltar para `CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new())`
+- MicrosoftGraph: voltar para `CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new())`
 
-Alterar as strings de conexao CBA nos dicionarios `MODULES`:
+**Remover o bloco de carregamento do certificado em memoria** (linhas que criam `$cert` via `X509Certificate2`) adicionado no `_build_script`.
 
-**ExchangeOnline - Antes:**
-```
-Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false
-```
+### 2. Incrementar versao em `python-agent/agent/version.py`
 
-**ExchangeOnline - Depois:**
-```
-$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{cert_path}")
-Connect-ExchangeOnline -AppId "{app_id}" -Certificate $cert -Organization "{organization}" -ShowBanner:$false
-```
+Atualizar para `1.2.6` para rastrear o deploy da reversao.
 
-**MicrosoftGraph - Antes:**
-```
-Connect-MgGraph -ClientId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -TenantId "{tenant_id}" -NoWelcome
-```
+## Acao pos-deploy
 
-**MicrosoftGraph - Depois:**
-```
-$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{cert_path}")
-Connect-MgGraph -ClientId "{app_id}" -Certificate $cert -TenantId "{tenant_id}" -NoWelcome
-```
-
-Como os comandos de conexao agora tem 2 linhas, eles precisam ser incluidos no script de forma diferente. A abordagem mais limpa e mover o carregamento do certificado para o inicio do script (apos o import) e referencia-lo na conexao.
-
-Na funcao `_build_script`, apos o bloco de import do modulo, adicionar:
-
-```python
-# Load certificate into memory (avoids Split-Path bug in EXO 3.9+)
-script_parts.extend([
-    "# Load certificate",
-    f'$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("{str(self.PFX_FILE)}")',
-    "",
-])
-```
-
-E alterar os comandos de conexao CBA para:
-
-```python
-"ExchangeOnline": {
-    "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -Certificate $cert -Organization "{organization}" -ShowBanner:$false',
-    ...
-},
-"MicrosoftGraph": {
-    "connect_cba": 'Connect-MgGraph -ClientId "{app_id}" -Certificate $cert -TenantId "{tenant_id}" -NoWelcome',
-    ...
-},
-```
-
-### Arquivo: `python-agent/agent/version.py`
-
-Incrementar versao para `1.2.5` para facilitar identificacao no servidor.
-
-## Impacto
-
-- Resolve o bug do `Split-Path` no EXO 3.9+ no Linux
-- Compativel com todas as versoes do modulo EXO
-- O parametro `-Certificate` aceita X509Certificate2 desde EXO v3
-- Nao afeta o modo `credential` (que nao usa certificado)
-- Nenhuma mudanca no MicrosoftGraph se `-Certificate` for suportado (e, desde Microsoft.Graph v2)
-
-## Pos-Correcao
-
-1. Atualizar o agente no servidor NEXTA
-2. Disparar nova analise M365
-3. Os comandos Exchange devem conectar sem erro
+1. Atualizar o agente no NEXTA-AAX (copiar o arquivo ou usar auto-update)
+2. Limpar `__pycache__`: `rm -rf /opt/iscope-agent/agent/executors/__pycache__`
+3. Reiniciar: `systemctl restart iscope-agent`
+4. Disparar nova analise M365
+5. O comportamento deve ser identico ao TASCHIBRA-IDA (sucesso)
 
