@@ -24,7 +24,6 @@ import {
   RefreshCw, 
   AlertTriangle,
   Link as LinkIcon,
-  Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -142,7 +141,6 @@ export default function ExchangeOnlinePage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-2xl font-bold text-foreground">Exchange Online</h1>
-              <Sparkles className="w-5 h-5 text-primary" />
             </div>
             <p className="text-muted-foreground">
               Análise de riscos e configurações do serviço de e-mail
