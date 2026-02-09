@@ -23,10 +23,15 @@ import { Json } from '@/integrations/supabase/types';
 interface AnalysisHistory {
   id: string;
   domain_id: string;
-  score: number;
+  score: number | null;
   report_data: Json;
   analyzed_by: string | null;
   created_at: string;
+  status: string;
+  source: string;
+  started_at: string | null;
+  completed_at: string | null;
+  execution_time_ms: number | null;
 }
 
 interface AgentTask {
@@ -181,7 +186,8 @@ export default function ExternalDomainExecutionsPage() {
       const startTime = getTimeFilterDate();
       let query = supabase
         .from('external_domain_analysis_history')
-        .select('id, domain_id, score, report_data, analyzed_by, created_at')
+        .select('id, domain_id, score, report_data, analyzed_by, created_at, status, source, started_at, completed_at, execution_time_ms')
+        .eq('source', 'api')
         .gte('created_at', startTime.toISOString())
         .order('created_at', { ascending: false })
         .limit(100);
@@ -192,14 +198,18 @@ export default function ExternalDomainExecutionsPage() {
         return [] as AnalysisHistory[];
       }
 
-      // API analyses are always "completed" (they only exist if they succeeded)
-      if (statusFilter !== 'all' && statusFilter !== 'completed') {
-        return [] as AnalysisHistory[];
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
       }
 
       const { data, error } = await query;
       if (error) throw error;
       return (data || []) as AnalysisHistory[];
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data as AnalysisHistory[] | undefined;
+      const hasActive = data?.some(a => a.status === 'pending' || a.status === 'running');
+      return hasActive ? 10000 : false;
     },
     enabled: domains.length > 0 || !workspaceIds,
   });
@@ -281,8 +291,12 @@ export default function ExternalDomainExecutionsPage() {
       domainId: hist.domain_id,
       agentId: null,
       type: 'api' as const,
-      status: 'completed',
-      duration: '-',
+      status: hist.status || 'completed',
+      duration: hist.execution_time_ms ? formatDuration(hist.execution_time_ms) : getDuration({
+        started_at: hist.started_at,
+        completed_at: hist.completed_at,
+        execution_time_ms: hist.execution_time_ms,
+      }),
       createdAt: hist.created_at,
       original: hist,
     }));
