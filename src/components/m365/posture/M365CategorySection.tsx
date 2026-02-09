@@ -56,10 +56,11 @@ export function M365CategorySection({ category, label, insights, index }: M365Ca
   const otherInsights = insights.filter(i => 
     i.status !== 'fail' && i.status !== 'pass' && i.status !== 'warning' && (i.status as string) !== 'warn'
   );
-  const criticalCount = failedInsights.filter(i => i.severity === 'critical').length;
-  const highCount = failedInsights.filter(i => i.severity === 'high').length;
-  const mediumCount = failedInsights.filter(i => i.severity === 'medium').length;
-  const lowCount = failedInsights.filter(i => i.severity === 'low').length;
+  const nonPassInsights = insights.filter(i => i.status !== 'pass');
+  const criticalCount = nonPassInsights.filter(i => i.severity === 'critical').length;
+  const highCount = nonPassInsights.filter(i => i.severity === 'high').length;
+  const mediumCount = nonPassInsights.filter(i => i.severity === 'medium').length;
+  const lowCount = nonPassInsights.filter(i => i.severity === 'low').length;
 
   // Calculate pass rate
   const passRate = insights.length > 0 

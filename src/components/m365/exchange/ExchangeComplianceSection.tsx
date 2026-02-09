@@ -49,10 +49,11 @@ export function ExchangeComplianceSection({ category, label, items, index }: Exc
   const passedItems = items.filter(i => i.status === 'pass');
   const otherItems = items.filter(i => i.status !== 'fail' && i.status !== 'pass' && i.status !== 'warning');
 
-  const criticalCount = failedItems.filter(i => i.severity === 'critical').length;
-  const highCount = failedItems.filter(i => i.severity === 'high').length;
-  const mediumCount = failedItems.filter(i => i.severity === 'medium').length;
-  const lowCount = failedItems.filter(i => i.severity === 'low').length;
+  const nonPassItems = items.filter(i => i.status !== 'pass');
+  const criticalCount = nonPassItems.filter(i => i.severity === 'critical').length;
+  const highCount = nonPassItems.filter(i => i.severity === 'high').length;
+  const mediumCount = nonPassItems.filter(i => i.severity === 'medium').length;
+  const lowCount = nonPassItems.filter(i => i.severity === 'low').length;
 
   const passRate = items.length > 0
     ? Math.round((passedItems.length / items.length) * 100)
