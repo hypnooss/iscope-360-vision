@@ -1,63 +1,69 @@
 
+# Exibir descricao da regra e analise efetuada nos cards Exchange Online
 
-# Padronizar cards Exchange Online com o modelo Firewall/Dominio
+## Problema
 
-## Objetivo
+Na edge function `processM365AgentInsights`, o campo `description` do insight recebe o resultado dinamico da avaliacao (ex: "7 de 10 item(ns) nao conforme(s)"). O criterio da regra (`rule.description`, ex: "Verifica se...") nunca e salvo. Por isso os cards Exchange nao exibem a descricao da regra nem a secao "ANALISE EFETUADA" corretamente.
 
-Remover o comportamento especifico de "itens afetados" e "Como Corrigir" dos cards do Exchange Online, convertendo as mailboxes afetadas em **Evidencias Coletadas** (formato `EvidenceItem[]`), alinhando com o padrao dos modulos Firewall e Dominio Externo.
+No Dominio Externo funciona porque o `ComplianceCheck` carrega o `description` da regra (criterio) diretamente do banco.
 
-## Alteracoes
+## Solucao em 3 pontos
 
-### 1. Mapper `mapExchangeInsight` (src/lib/complianceMappers.ts)
+### 1. Edge Function `agent-task-result/index.ts` (linha 335-347)
 
-Converter `affectedMailboxes` em `evidence` (array de `EvidenceItem`) e remover `affectedEntities`/`affectedCount`:
-
-- Criar evidencias a partir das mailboxes afetadas:
-  - Uma evidencia de contagem: `{ label: "Itens afetados", value: "7 de X total", type: "text" }`
-  - Uma evidencia de lista com os nomes/emails afetados: `{ label: "Mailboxes", value: "user1@..., user2@...", type: "list" }`
-  - Evidencias adicionais com detalhes relevantes (forwardTo, redirectTo, etc.) quando disponiveis
-- Remover `affectedEntities` e `affectedCount` do retorno
-- Manter `rawData` (ja sera exibido apenas para Super Admins pelo componente unificado)
-- Nao mapear `remediation` (o botao "Como Corrigir" desaparecera automaticamente)
-
-### 2. Componente `ExoInsightCard` (src/components/m365/exchange/ExoInsightCard.tsx)
-
-Simplificar removendo:
-- O state `showDetails` e o dialog `ExoInsightDetailDialog`
-- As props `onShowAffectedEntities` do `UnifiedComplianceCard`
-- O componente passa a ser apenas o mapper + `UnifiedComplianceCard` sem callbacks
-
-### 3. Mesma alteracao para SecurityInsight e ApplicationInsight
-
-Aplicar o mesmo padrao aos outros dois mappers para consistencia:
-- `mapSecurityInsight`: converter `affectedUsers` em `evidence`, remover `affectedEntities`/`affectedCount`
-- `mapApplicationInsight`: converter `affectedApplications` em `evidence`, remover `affectedEntities`/`affectedCount`
-
-## Detalhes Tecnicos
-
-No mapper `mapExchangeInsight`, o bloco de `affectedMailboxes` sera substituido por:
+Adicionar `criteria` ao insight com o `rule.description`:
 
 ```text
-evidence: [
-  { label: "Itens afetados", value: `${insight.affectedCount} mailbox(es)`, type: "text" },
-  ...(insight.affectedMailboxes.length > 0 ? [{
-    label: "Mailboxes afetadas",
-    value: insight.affectedMailboxes.map(m => m.displayName || m.userPrincipalName).join('\n'),
-    type: "list"
-  }] : [])
-],
+insights.push({
+  ...campos existentes...,
+  criteria: rule.description,                    // NOVO: "Verifica se..."
+  passDescription: rule.pass_description,        // NOVO
+  failDescription: rule.fail_description,        // NOVO
+  notFoundDescription: rule.not_found_description,// NOVO
+  technicalRisk: rule.technical_risk,            // NOVO
+  businessImpact: rule.business_impact,          // NOVO
+  apiEndpoint: rule.api_endpoint,                // NOVO
+});
 ```
 
-O mesmo padrao sera aplicado para `SecurityInsight` (usando `affectedUsers`) e `ApplicationInsight` (usando `affectedApplications`).
+### 2. Hook `useExchangeOnlineInsights.ts` (linhas 129-142)
 
-Os componentes wrapper (`ExoInsightCard`, correspondentes de Security e Application) serao simplificados removendo os dialogs de entidades afetadas, ficando apenas como thin wrappers sobre `UnifiedComplianceCard`.
+Propagar os campos novos no mapeamento:
 
-### Arquivos afetados
+```text
+return {
+  ...campos existentes...,
+  criteria: insight.criteria || '',
+  passDescription: insight.passDescription || '',
+  failDescription: insight.failDescription || '',
+  notFoundDescription: insight.notFoundDescription || '',
+  technicalRisk: insight.technicalRisk || '',
+  businessImpact: insight.businessImpact || '',
+  apiEndpoint: insight.apiEndpoint || '',
+};
+```
+
+Expandir a interface `ExchangeInsight` com esses campos opcionais.
+
+### 3. Mapper `mapExchangeAgentInsight` em `complianceMappers.ts`
+
+Corrigir o mapeamento para o `UnifiedComplianceItem`:
+
+- `description` -> `insight.criteria` (criterio da regra = "Verifica se..." = o que aparece no card)
+- `failDescription` -> `insight.failDescription || insight.description` (mensagem de falha)
+- `details` -> `insight.description` (resultado dinamico = secao "ANALISE EFETUADA")
+- `technicalRisk`, `businessImpact`, `apiEndpoint` -> campos diretos
+
+Resultado: identico ao Dominio Externo e Firewall.
+
+## Arquivos afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/lib/complianceMappers.ts` | Converter entidades em evidence nos 3 mappers |
-| `src/components/m365/exchange/ExoInsightCard.tsx` | Remover dialog e callbacks |
-| `src/components/m365/insights/InsightCard.tsx` | Remover dialog e callbacks (se aplicavel) |
-| `src/components/m365/applications/AppInsightCard.tsx` | Remover dialog e callbacks (se aplicavel) |
+| `supabase/functions/agent-task-result/index.ts` | Adicionar 7 campos da regra ao insight (linha 335-347) |
+| `src/hooks/useExchangeOnlineInsights.ts` | Expandir interface e mapeamento |
+| `src/lib/complianceMappers.ts` | Corrigir mapeamento criteria/description/details |
 
+## Nota
+
+Analises ja executadas nao terao os campos novos. Sera necessario clicar em "Reanalisar" para popular os metadados.
