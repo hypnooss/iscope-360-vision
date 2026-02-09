@@ -1,44 +1,49 @@
 
+# Fix: Recalcular summary com todos os insights
 
-# Fix: PowerShell HOME directory - Solucao definitiva
+## Problema
 
-## Problema raiz
+O summary na tabela `m365_posture_history` esta zerado porque:
 
-O erro `Split-Path` ocorre porque o modulo ExchangeOnlineManagement (v3.9+) tenta resolver `$env:HOME`, que aponta para `/home/iscope` -- um diretorio que nao existe e que o user `iscope` nao consegue criar (so root pode criar em `/home`).
-
-O `check-deps.sh` deveria criar esse diretorio como root via ExecStartPre, mas nao esta executando corretamente (sem output no components.log nas ultimas execucoes).
+1. O `result.summary` vem da Edge Function `m365-security-posture`, que calcula o summary apenas com os insights da **Graph API** (4 insights, todos `pass`)
+2. Os insights do Exchange Online (mergeados na linha 225) nao sao contabilizados no summary
+3. Os `agent_insights` (que chegam depois via `agent-task-result`) tambem nao atualizam o summary
 
 ## Solucao
 
-Em vez de depender do `check-deps.sh` ou de criar `/home/iscope`, vamos **redirecionar HOME para `/var/lib/iscope-agent`** diretamente no executor PowerShell. Esse diretorio ja existe e ja pertence ao user `iscope`.
+### 1. `supabase/functions/trigger-m365-posture-analysis/index.ts`
 
-## Alteracao
+Apos mergear os `exoInsights` em `allInsights` (linha 225), **recalcular o summary** antes de persistir:
 
-### `python-agent/agent/executors/powershell.py`
-
-Na funcao `run()`, ao chamar `subprocess.run()` para executar o pwsh, passar uma copia do environment com `HOME=/var/lib/iscope-agent`:
-
-```python
-env = os.environ.copy()
-env["HOME"] = "/var/lib/iscope-agent"
-
-result = subprocess.run(
-    [pwsh_path, "-NoProfile", "-NonInteractive", "-File", script_file.name],
-    capture_output=True,
-    text=True,
-    timeout=timeout,
-    cwd=cwd,
-    env=env
-)
+```typescript
+// Recalculate summary with ALL insights (API + Exchange)
+const recalculatedSummary = {
+  critical: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+  high: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+  medium: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+  low: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+  info: allInsights.filter((i: any) => i.severity === 'info').length,
+  total: allInsights.length,
+};
 ```
 
-Isso garante que:
-- O PowerShell resolve `$env:HOME` para um diretorio que ja existe
-- O modulo ExchangeOnlineManagement encontra um caminho valido para `Split-Path`
-- Nao depende mais do check-deps.sh ou de permissoes root
-- Funciona imediatamente apos o deploy, sem precisar de restart
+E na linha 243, trocar `summary: result.summary` por `summary: recalculatedSummary`.
 
-### `python-agent/agent/version.py`
+### 2. `supabase/functions/agent-task-result/index.ts`
 
-Atualizar versao para `1.2.6` (novo release necessario para o fix chegar aos agentes).
+Quando o Agent finaliza uma task M365 e salva `agent_insights`, tambem recalcular o summary combinando `insights` + `agent_insights` e atualizar o registro no `m365_posture_history`.
 
+Isso requer:
+- Buscar o registro atual do `m365_posture_history` pelo `analysis_id`
+- Combinar `insights` (ja salvos) + novos `agent_insights`
+- Recalcular summary e score
+- Atualizar o registro com o novo summary
+
+### Resumo das alteracoes
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `trigger-m365-posture-analysis/index.ts` | Recalcular summary apos merge de exoInsights |
+| `agent-task-result/index.ts` | Recalcular summary quando agent_insights sao salvos |
+
+Nenhuma alteracao de frontend necessaria -- o dialog de detalhes ja exibe `selectedExecution.summary` corretamente, so faltam os dados no banco.
