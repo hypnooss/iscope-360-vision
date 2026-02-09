@@ -1,97 +1,69 @@
 
 
-# Unificar Abas de Execuções M365
+# Corrigir Geração PFX para Compatibilidade com OpenSSL 3.x
 
-## Objetivo
+## Problema
 
-Remover as abas "Análises de Postura" e "Tasks PowerShell" e exibir todas as execuções em uma **tabela única** com colunas padronizadas.
+O servidor do agente NEXTA usa **Oracle Linux 9** com **OpenSSL 3.x**, que gera arquivos PFX com algoritmos de criptografia modernos (AES-256-CBC) por padrão. O PowerShell/.NET nao consegue ler esses PFX, causando o erro:
 
-## Colunas da Tabela Unificada
-
-| Coluna | Fonte Posture | Fonte Agent Task |
-|--------|---------------|------------------|
-| Tenant | `tenant_record_id` | `target_id` |
-| Agent | "-" (execução via Edge Function) | `agent_id` -> nome |
-| Tipo | "Análise de Postura" (badge Cloud) | "PowerShell" (badge Terminal) |
-| Status | `status` (badge colorido) | `status` (badge colorido) |
-| Duração | `started_at` / `completed_at` | `execution_time_ms` ou calculado |
-| Criado em | `created_at` | `created_at` |
-| Ações | Botão ver detalhes | Botão ver detalhes + cancelar |
-
-## Abordagem Tecnica
-
-### 1. Criar tipo unificado `UnifiedExecution`
-
-```typescript
-interface UnifiedExecution {
-  id: string;
-  source: 'posture' | 'agent_task';
-  tenantId: string;
-  agentId: string | null;
-  type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api';
-  status: string;
-  duration: string;
-  createdAt: string;
-  original: PostureHistory | AgentTask;
-}
+```
+Split-Path: Cannot bind argument to parameter 'Path' because it is an empty string
 ```
 
-### 2. Mesclar e ordenar os dados
+O erro ocorre internamente no modulo ExchangeOnlineManagement ao tentar carregar o certificado PFX - o .NET falha silenciosamente na leitura e passa um path vazio para `Split-Path`.
 
-Combinar `executions` (posture) e `agentTasks` em um unico array, ordenado por `created_at` descendente.
+## Solucao
 
-### 3. Remover componente Tabs
+Adicionar a flag `-legacy` ao comando `openssl pkcs12 -export` em todos os locais que geram PFX. Isso forca o uso dos algoritmos classicos (PBE-SHA1-3DES) compativeis com .NET/PowerShell.
 
-- Remover `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`
-- Manter uma unica tabela
-- Stats cards mostram totais combinados
-- Filtros aplicam a ambas as fontes
+Como a flag `-legacy` pode nao existir em versoes mais antigas do OpenSSL (1.x), adicionar um fallback: tentar com `-legacy` primeiro, se falhar, tentar sem.
 
-### 4. Coluna "Tipo" com badges visuais
+## Arquivos a Modificar
 
-- **Analise de Postura**: badge azul com icone Cloud
-- **PowerShell**: badge roxo com icone Terminal
+| Arquivo | Locais | Descricao |
+|---------|--------|-----------|
+| `python-agent/check-deps.sh` | Linha 310 | Geracao completa do certificado |
+| `supabase/functions/agent-install/index.ts` | Linhas 347, 413, 983, 1033 | 4 trechos de geracao PFX no script de instalacao |
 
-### 5. Coluna "Agent"
+## Detalhe Tecnico
 
-- Para posture: exibir "-" ou "Edge Function"
-- Para agent tasks: exibir nome do agente
-
-### 6. Filtro de busca unificado
-
-Placeholder: "Buscar por tenant, agente ou workspace..."
-
-### 7. Acoes por tipo
-
-- Posture: botao Eye para detalhes
-- Agent Task: botao Eye + botao Ban (cancelar) se pendente/running
-
-## Arquivo a Modificar
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/pages/m365/M365ExecutionsPage.tsx` | Remover tabs, unificar tabela, mesclar dados |
-
-## Resultado Visual
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Execucoes de Analise                                          [Atualizar]  │
-│ Monitore as analises de postura e tasks do agente M365                     │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ [Total: 12] [Pendentes: 2] [Executando: 1] [Concluidas: 8] [Falhas: 1]   │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ [Buscar...]                        [Periodo: 24h]  [Status: Todos]        │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Tenant      │ Agent        │ Tipo              │ Status    │ Duracao │ ... │
-│─────────────┼──────────────┼───────────────────┼───────────┼─────────┼─────│
-│ contoso.com │ -            │ ☁ Analise Postura │ Concluida │ 2.3m    │ 👁  │
-│ contoso.com │ Agent-PC01   │ ⌨ PowerShell      │ Executando│ 45.2s   │ 👁🚫│
-│ fabrikam.io │ -            │ ☁ Analise Postura │ Pendente  │ -       │ 👁  │
-└──────────────────────────────────────────────────────────────────────────────┘
+Substituir cada ocorrencia de:
+```bash
+openssl pkcs12 \
+    -export \
+    -out "$CERT_DIR/m365.pfx" \
+    -inkey "$CERT_DIR/m365.key" \
+    -in "$CERT_DIR/m365.crt" \
+    -passout pass:
 ```
 
-## Dialogs de Detalhes
+Por um padrao com fallback:
+```bash
+openssl pkcs12 \
+    -export \
+    -out "$CERT_DIR/m365.pfx" \
+    -inkey "$CERT_DIR/m365.key" \
+    -in "$CERT_DIR/m365.crt" \
+    -passout pass: \
+    -legacy 2>/dev/null || \
+openssl pkcs12 \
+    -export \
+    -out "$CERT_DIR/m365.pfx" \
+    -inkey "$CERT_DIR/m365.key" \
+    -in "$CERT_DIR/m365.crt" \
+    -passout pass:
+```
 
-Os dois dialogs existentes (Posture Details e Task Details) serao mantidos. O clique no botao Eye abrira o dialog correto conforme o `source` do item.
+Isso garante compatibilidade tanto com OpenSSL 1.x (sem `-legacy`) quanto com OpenSSL 3.x (com `-legacy`).
+
+## Apos a Correcao
+
+No servidor do agente, executar:
+```bash
+sudo rm -f /var/lib/iscope-agent/certs/m365.pfx
+sudo touch /var/lib/iscope-agent/check_components.flag
+sudo systemctl restart iscope-agent
+```
+
+E entao disparar nova analise no tenant NEXTA.
 
