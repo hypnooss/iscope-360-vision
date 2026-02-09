@@ -675,23 +675,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Load blueprint from database
-    const { data: blueprint } = await supabase
+    // 3. Load ALL active blueprints for M365 (multi-blueprint)
+    const { data: blueprints } = await supabase
       .from('device_blueprints')
       .select('*')
       .eq('device_type_id', '5d1a7095-2d7b-4541-873d-4b03c3d6122f') // M365 device type
       .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .single();
+      .in('executor_type', ['edge_function', 'hybrid']);
     
-    if (!blueprint) {
-      console.log('[m365-security-posture] No blueprint found, using legacy mode');
-      // Fallback to legacy collectors if no blueprint exists
+    if (!blueprints || blueprints.length === 0) {
+      console.log('[m365-security-posture] No blueprints found, using legacy mode');
       return await handleLegacyMode(req, tenant, config, supabaseUrl, supabaseKey);
     }
 
-    console.log(`[m365-security-posture] Using blueprint: ${blueprint.name} v${blueprint.version}`);
+    console.log(`[m365-security-posture] Loaded ${blueprints.length} blueprints: ${blueprints.map(b => b.name).join(', ')}`);
 
     // 4. Load compliance rules
     const { data: rules } = await supabase
@@ -735,13 +732,17 @@ Deno.serve(async (req) => {
     const now = new Date();
     const nowIso = now.toISOString();
 
-    // 7. Execute blueprint steps
-    const steps = (blueprint.collection_steps as any)?.steps || [];
-    const edgeSteps = steps.filter((s: BlueprintStep) => s.executor === 'edge_function' && s.runtime === 'graph_api');
+    // 7. Execute Graph API steps from ALL blueprints
+    const allEdgeSteps: BlueprintStep[] = [];
+    for (const bp of blueprints) {
+      const steps = (bp.collection_steps as any)?.steps || [];
+      const edgeSteps = steps.filter((s: BlueprintStep) => s.executor === 'edge_function' && s.runtime === 'graph_api');
+      allEdgeSteps.push(...edgeSteps);
+    }
     
-    console.log(`[m365-security-posture] Executing ${edgeSteps.length} Graph API steps in parallel...`);
+    console.log(`[m365-security-posture] Executing ${allEdgeSteps.length} Graph API steps from ${blueprints.length} blueprints...`);
 
-    const stepPromises = edgeSteps.map((step: BlueprintStep) => 
+    const stepPromises = allEdgeSteps.map((step: BlueprintStep) => 
       executeGraphApiStep(access_token, step, { now })
     );
     
@@ -767,32 +768,7 @@ Deno.serve(async (req) => {
 
     console.log(`[m365-security-posture] Evaluated ${allInsights.length} insights from database rules`);
 
-    // 9. Call sub-functions for categories that need complex logic
-    const timeoutPromise = <T>(promise: Promise<T>, name: string, timeoutMs = 30000): Promise<T | CollectorResult> => {
-      return Promise.race([
-        promise,
-        new Promise<CollectorResult>((_, reject) => 
-          setTimeout(() => reject(new Error(`${name} timeout after ${timeoutMs}ms`)), timeoutMs)
-        )
-      ]).catch(e => ({ insights: [], errors: [String(e)] }));
-    };
-
-    const subFunctionResults = await Promise.all([
-      timeoutPromise(callSubFunction(supabaseUrl, supabaseKey, 'm365-check-intune', access_token, nowIso), 'Intune'),
-      timeoutPromise(callSubFunction(supabaseUrl, supabaseKey, 'm365-check-pim', access_token, nowIso), 'PIM'),
-      timeoutPromise(callSubFunction(supabaseUrl, supabaseKey, 'm365-check-sharepoint', access_token, nowIso), 'SharePoint'),
-      timeoutPromise(callSubFunction(supabaseUrl, supabaseKey, 'm365-check-teams', access_token, nowIso), 'Teams'),
-      timeoutPromise(callSubFunction(supabaseUrl, supabaseKey, 'm365-check-defender', access_token, nowIso), 'Defender'),
-    ]);
-
-    for (const result of subFunctionResults) {
-      if ('insights' in result) {
-        allInsights.push(...result.insights);
-        allErrors.push(...result.errors);
-      }
-    }
-
-    // Collect step errors
+    // 9. Collect step errors (sub-functions removed - all data now comes from segmented blueprints)
     for (const [stepId, result] of stepResults) {
       if (result.error) {
         allErrors.push(`${stepId}: ${result.error}`);
@@ -882,8 +858,9 @@ Deno.serve(async (req) => {
       },
       // Metadata about data-driven execution
       _meta: {
-        blueprintId: blueprint.id,
-        blueprintVersion: blueprint.version,
+        blueprintIds: blueprints.map(b => b.id),
+        blueprintNames: blueprints.map(b => b.name),
+        blueprintCount: blueprints.length,
         stepsExecuted: stepResults.size,
         rulesEvaluated: rules?.length || 0,
       }
