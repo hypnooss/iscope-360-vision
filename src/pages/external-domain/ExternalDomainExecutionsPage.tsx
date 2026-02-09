@@ -112,7 +112,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   api: {
     label: 'API',
-    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
     icon: <Cloud className="w-3 h-3" />,
   },
   agent: {
