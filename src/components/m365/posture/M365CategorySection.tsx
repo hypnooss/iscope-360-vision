@@ -49,9 +49,13 @@ export function M365CategorySection({ category, label, insights, index }: M365Ca
   const colorName = CATEGORY_COLORS[category as keyof typeof CATEGORY_COLORS] || 'blue';
   const colorHex = CATEGORY_COLOR_HEX[colorName] || '#3b82f6';
 
-  // Count by status and severity
+  // Group by status
   const failedInsights = insights.filter(i => i.status === 'fail');
+  const warningInsights = insights.filter(i => i.status === 'warning' || (i.status as string) === 'warn');
   const passedInsights = insights.filter(i => i.status === 'pass');
+  const otherInsights = insights.filter(i => 
+    i.status !== 'fail' && i.status !== 'pass' && i.status !== 'warning' && (i.status as string) !== 'warn'
+  );
   const criticalCount = failedInsights.filter(i => i.severity === 'critical').length;
   const highCount = failedInsights.filter(i => i.severity === 'high').length;
   const mediumCount = failedInsights.filter(i => i.severity === 'medium').length;
@@ -139,8 +143,14 @@ export function M365CategorySection({ category, label, insights, index }: M365Ca
             borderLeftColor: `${colorHex}30`,
           }}
         >
-          {/* Show failed insights first, then passed */}
+          {/* Show failed first, then warnings, then unknown/other, then passed */}
           {failedInsights.map((insight) => (
+            <M365InsightCard key={insight.id} insight={insight} />
+          ))}
+          {warningInsights.map((insight) => (
+            <M365InsightCard key={insight.id} insight={insight} />
+          ))}
+          {otherInsights.map((insight) => (
             <M365InsightCard key={insight.id} insight={insight} />
           ))}
           {passedInsights.map((insight) => (
