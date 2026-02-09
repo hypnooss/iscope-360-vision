@@ -1,35 +1,53 @@
 
 
-# Reverter PowerShell Executor para CertificateFilePath
+# Corrigir Split-Path: Garantir HOME valido no script PowerShell
 
-## Diagnostico
+## Causa raiz confirmada
 
-A evidencia e clara:
-- **TASCHIBRA-IDA** usa `CertificateFilePath` com EXO 3.9.2 e **funciona**
-- **NEXTA-AAX** usa `-Certificate $cert` (a "correcao") com EXO 3.9.2 e **falha**
+O diretorio `/home/iscope/` **nao existe** no NEXTA-AAX. O modulo ExchangeOnlineManagement 3.9.2 executa `Split-Path` em um caminho derivado de `$env:HOME` durante o `Import-Module`, e quando o diretorio nao existe, o path resolve para string vazia, causando o erro.
 
-A correcao anterior (trocar `CertificateFilePath` por `-Certificate $cert`) foi baseada numa hipotese incorreta e e a **causa real** do erro `Split-Path`.
+**Evidencia**: O erro ocorre na linha `Import-Module ExchangeOnlineManagement`, antes mesmo de qualquer `Connect-ExchangeOnline`.
 
-## Mudancas
+No TASCHIBRA-IDA, `/home/iscope/` existe, por isso funciona.
 
-### 1. Reverter `python-agent/agent/executors/powershell.py`
+## Correcao imediata (no servidor NEXTA-AAX)
 
-**Reverter os templates de conexao CBA para o formato original:**
+```text
+mkdir -p /home/iscope && chown iscope:iscope /home/iscope
+systemctl restart iscope-agent
+```
 
-- ExchangeOnline: voltar para `CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new())`
-- MicrosoftGraph: voltar para `CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new())`
+## Mudanca no codigo (prevencao)
 
-**Remover o bloco de carregamento do certificado em memoria** (linhas que criam `$cert` via `X509Certificate2`) adicionado no `_build_script`.
+### Arquivo: `python-agent/agent/executors/powershell.py`
 
-### 2. Incrementar versao em `python-agent/agent/version.py`
+Adicionar um preambulo no metodo `_build_script` que garante que `$env:HOME` aponte para um diretorio existente antes de importar qualquer modulo:
 
-Atualizar para `1.2.6` para rastrear o deploy da reversao.
+```text
+# Ensure HOME directory exists (EXO 3.9+ requires valid HOME for Split-Path)
+if (-not (Test-Path $env:HOME)) {
+    New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
+}
+```
 
-## Acao pos-deploy
+Este bloco sera inserido no inicio do script gerado, antes da linha `Import-Module`, dentro do array `script_parts`.
 
-1. Atualizar o agente no NEXTA-AAX (copiar o arquivo ou usar auto-update)
-2. Limpar `__pycache__`: `rm -rf /opt/iscope-agent/agent/executors/__pycache__`
-3. Reiniciar: `systemctl restart iscope-agent`
-4. Disparar nova analise M365
-5. O comportamento deve ser identico ao TASCHIBRA-IDA (sucesso)
+### Arquivo: `python-agent/agent/version.py`
+
+Incrementar para `1.2.7`.
+
+### Arquivo: `python-agent/agent/executors/powershell.py` (revert parcial)
+
+Manter os templates `CertificateFilePath` como estao atualmente (corretos).
+
+## Resumo das mudancas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `powershell.py` | Adicionar bloco de 3 linhas no inicio do script PS1 gerado |
+| `version.py` | `1.2.6` para `1.2.7` |
+
+## Secao tecnica
+
+O bloco sera inserido apos as linhas de `$ErrorActionPreference` e `$ProgressPreference`, antes do `Import-Module`. Isso garante que qualquer modulo PowerShell que dependa de `$env:HOME` (EXO, MgGraph, etc.) encontre o diretorio disponivel.
 
