@@ -173,417 +173,181 @@ interface M365AgentInsight {
 }
 
 /**
- * Process raw PowerShell data from agent into structured M365 insights
- * This transforms Exchange/SharePoint data into actionable security insights
+ * Maps risk categories to M365 products for remediation context
  */
-function processM365AgentInsights(rawData: Record<string, unknown>): M365AgentInsight[] {
+function mapCategoryToProduct(category: string): M365Product {
+  const categoryProductMap: Record<string, M365Product> = {
+    'identities': 'entra_id',
+    'auth_access': 'entra_id',
+    'admin_privileges': 'entra_id',
+    'apps_integrations': 'entra_id',
+    'email_exchange': 'exchange_online',
+    'threats_activity': 'exchange_online',
+    'pim_governance': 'entra_id',
+    'intune_devices': 'intune',
+    'sharepoint_onedrive': 'sharepoint',
+    'teams_collaboration': 'sharepoint',
+    'defender_security': 'defender',
+  };
+  return categoryProductMap[category] || 'entra_id';
+}
+
+/**
+ * Evaluate agent-collected data against a single compliance rule's evaluation_logic.
+ * Supports: array_empty, all_match, none_match pass_when strategies.
+ */
+function evaluateAgentRule(
+  rule: ComplianceRule,
+  data: unknown
+): { status: 'pass' | 'fail' | 'warn'; description: string; details?: string; affectedEntities?: Array<{ name: string; type: string; details?: string }>; rawData?: Record<string, unknown> } | null {
+  const evalLogic = rule.evaluation_logic as Record<string, unknown>;
+  const passWhen = evalLogic.pass_when as string;
+  const conditions = evalLogic.conditions as Array<Record<string, unknown>> | undefined;
+
+  // === array_empty: pass when the data array is empty (no violations) ===
+  if (passWhen === 'array_empty') {
+    if (!Array.isArray(data)) {
+      return {
+        status: 'unknown',
+        description: rule.pass_description || rule.description || rule.name,
+        rawData: { note: 'Data is not an array' },
+      } as any;
+    }
+
+    // For array_empty, the conditions may specify a filter field
+    let violatingItems = data;
+    if (conditions && conditions.length > 0) {
+      const cond = conditions[0];
+      const field = cond.field as string;
+      // If field is 'data' it means the whole array; otherwise filter by field presence
+      if (field && field !== 'data') {
+        violatingItems = data.filter((item: Record<string, unknown>) => {
+          const val = item[field];
+          return val !== null && val !== undefined && val !== '' && val !== false;
+        });
+      }
+    }
+
+    const isEmpty = violatingItems.length === 0;
+    return {
+      status: isEmpty ? 'pass' : (violatingItems.length > 5 ? 'fail' : 'warn'),
+      description: isEmpty
+        ? (rule.pass_description || `${rule.name}: Nenhuma violação detectada`)
+        : (rule.fail_description || `${violatingItems.length} violação(ões) detectada(s) em ${rule.name}`),
+      details: !isEmpty
+        ? `${violatingItems.length} item(ns) afetado(s) de ${data.length} total`
+        : undefined,
+      affectedEntities: !isEmpty
+        ? violatingItems.slice(0, 20).map((item: Record<string, unknown>) => ({
+            name: String(item.DisplayName || item.Name || item.Identity || item.PrimarySmtpAddress || 'N/A'),
+            type: 'entity',
+            details: Object.keys(item).slice(0, 3).map(k => `${k}: ${item[k]}`).join(', '),
+          }))
+        : undefined,
+      rawData: { total: data.length, violatingCount: violatingItems.length },
+    };
+  }
+
+  // === all_match / none_match: evaluate conditions against policy objects ===
+  if (passWhen === 'all_match' || passWhen === 'none_match') {
+    const items = Array.isArray(data) ? data : [data];
+    if (!conditions || conditions.length === 0) return null;
+
+    let matchCount = 0;
+    const failingItems: Array<Record<string, unknown>> = [];
+
+    for (const item of items) {
+      if (typeof item !== 'object' || item === null) continue;
+      const obj = item as Record<string, unknown>;
+
+      const conditionResults = conditions.map((cond) => {
+        const field = cond.field as string;
+        const operator = cond.operator as string;
+        const expected = cond.value;
+        const actual = obj[field];
+
+        switch (operator) {
+          case 'equals': return actual === expected;
+          case 'not_equals': return actual !== expected;
+          case 'gt': return typeof actual === 'number' && actual > (expected as number);
+          case 'gte': return typeof actual === 'number' && actual >= (expected as number);
+          case 'lt': return typeof actual === 'number' && actual < (expected as number);
+          case 'includes': return typeof actual === 'string' && actual.includes(String(expected));
+          default: return false;
+        }
+      });
+
+      const allMatch = conditionResults.every(Boolean);
+
+      if (passWhen === 'all_match') {
+        if (allMatch) matchCount++;
+        else failingItems.push(obj);
+      } else {
+        // none_match: pass when NO item matches all conditions
+        if (allMatch) failingItems.push(obj);
+        else matchCount++;
+      }
+    }
+
+    const isPassing = passWhen === 'all_match'
+      ? failingItems.length === 0
+      : failingItems.length === 0;
+
+    return {
+      status: isPassing ? 'pass' : (failingItems.length > 3 ? 'fail' : 'warn'),
+      description: isPassing
+        ? (rule.pass_description || `${rule.name}: Conforme`)
+        : (rule.fail_description || `${rule.name}: ${failingItems.length} item(ns) não conforme(s)`),
+      details: !isPassing
+        ? `${failingItems.length} de ${items.length} item(ns) não conforme(s)`
+        : `${items.length} item(ns) verificado(s) - todos conformes`,
+      affectedEntities: failingItems.slice(0, 20).map((item) => ({
+        name: String(item.Name || item.Identity || item.DisplayName || item.Domain || 'N/A'),
+        type: 'policy',
+        details: conditions.map(c => `${c.field}: ${item[c.field as string]}`).join(', '),
+      })),
+      rawData: { total: items.length, passing: matchCount, failing: failingItems.length },
+    };
+  }
+
+  console.warn(`[evaluateAgentRule] Unknown pass_when: ${passWhen} for rule ${rule.code}`);
+  return null;
+}
+
+/**
+ * Process raw PowerShell data from agent into structured M365 insights.
+ * Data-driven: uses compliance_rules from the database instead of hardcoded logic.
+ */
+function processM365AgentInsights(rawData: Record<string, unknown>, rules: ComplianceRule[]): M365AgentInsight[] {
   const insights: M365AgentInsight[] = [];
-  
-  // Process Exchange Online data
-  if (rawData['exo_mailbox_forwarding']) {
-    const data = extractStepData(rawData['exo_mailbox_forwarding']);
-    if (Array.isArray(data)) {
-      const forwardingEnabled = data.filter((m: Record<string, unknown>) => 
-        m.ForwardingAddress || m.ForwardingSmtpAddress
-      );
-      
-      insights.push({
-        id: 'exo_mailbox_forwarding',
-        category: 'email_exchange',
-        product: 'exchange_online',
-        name: 'Encaminhamento de Email',
-        description: forwardingEnabled.length > 0 
-          ? `${forwardingEnabled.length} caixa(s) com encaminhamento externo configurado`
-          : 'Nenhuma caixa de correio com encaminhamento externo',
-        severity: forwardingEnabled.length > 5 ? 'high' : forwardingEnabled.length > 0 ? 'medium' : 'info',
-        status: forwardingEnabled.length > 5 ? 'fail' : forwardingEnabled.length > 0 ? 'warn' : 'pass',
-        details: forwardingEnabled.length > 0 
-          ? `Caixas com encaminhamento: ${forwardingEnabled.slice(0, 10).map((m: Record<string, unknown>) => m.DisplayName).join(', ')}${forwardingEnabled.length > 10 ? '...' : ''}`
-          : undefined,
-        recommendation: forwardingEnabled.length > 0 
-          ? 'Revise as regras de encaminhamento para garantir que são legítimas e necessárias'
-          : undefined,
-        affectedEntities: forwardingEnabled.slice(0, 20).map((m: Record<string, unknown>) => ({
-          name: String(m.DisplayName || m.PrimarySmtpAddress),
-          type: 'mailbox',
-          details: `Forward to: ${m.ForwardingAddress || m.ForwardingSmtpAddress}`,
-        })),
-        rawData: { total: data.length, forwardingCount: forwardingEnabled.length },
-      });
-    }
+
+  for (const rule of rules) {
+    const evalLogic = rule.evaluation_logic as Record<string, unknown>;
+    const sourceKey = evalLogic?.source_key as string | undefined;
+    if (!sourceKey || !rawData[sourceKey]) continue;
+
+    const data = extractStepData(rawData[sourceKey]);
+    if (data === null || data === undefined) continue;
+
+    const result = evaluateAgentRule(rule, data);
+    if (!result) continue;
+
+    insights.push({
+      id: rule.code,
+      category: rule.category as M365RiskCategory,
+      product: mapCategoryToProduct(rule.category),
+      name: rule.name,
+      description: result.description,
+      severity: result.status === 'pass' ? 'info' : (rule.severity as M365AgentInsight['severity']),
+      status: result.status,
+      details: result.details,
+      recommendation: rule.recommendation || undefined,
+      affectedEntities: result.affectedEntities,
+      rawData: result.rawData,
+    });
   }
-  
-  // Process inbox rules
-  if (rawData['exo_inbox_rules']) {
-    const data = extractStepData(rawData['exo_inbox_rules']);
-    if (Array.isArray(data)) {
-      const suspiciousRules = data.filter((r: Record<string, unknown>) => 
-        r.ForwardTo || r.ForwardAsAttachmentTo || r.RedirectTo || r.DeleteMessage
-      );
-      
-      insights.push({
-        id: 'exo_inbox_rules',
-        category: 'email_exchange',
-        product: 'exchange_online',
-        name: 'Regras de Caixa de Entrada',
-        description: suspiciousRules.length > 0 
-          ? `${suspiciousRules.length} regra(s) com ações de encaminhamento/exclusão detectada(s)`
-          : 'Nenhuma regra suspeita detectada',
-        severity: suspiciousRules.length > 10 ? 'high' : suspiciousRules.length > 0 ? 'medium' : 'info',
-        status: suspiciousRules.length > 10 ? 'fail' : suspiciousRules.length > 0 ? 'warn' : 'pass',
-        recommendation: suspiciousRules.length > 0 
-          ? 'Revise as regras que encaminham ou excluem emails automaticamente'
-          : undefined,
-        affectedEntities: suspiciousRules.slice(0, 20).map((r: Record<string, unknown>) => ({
-          name: String(r.Name || 'Regra sem nome'),
-          type: 'inbox_rule',
-          details: `Mailbox: ${r.MailboxOwnerId}`,
-        })),
-        rawData: { total: data.length, suspiciousCount: suspiciousRules.length },
-      });
-    }
-  }
-  
-  // Process transport rules
-  if (rawData['exo_transport_rules']) {
-    const data = extractStepData(rawData['exo_transport_rules']);
-    if (Array.isArray(data)) {
-      const activeRules = data.filter((r: Record<string, unknown>) => r.State === 'Enabled');
-      
-      insights.push({
-        id: 'exo_transport_rules',
-        category: 'email_exchange',
-        product: 'exchange_online',
-        name: 'Regras de Transporte',
-        description: `${activeRules.length} regra(s) de transporte ativa(s) configurada(s)`,
-        severity: 'info',
-        status: activeRules.length > 0 ? 'pass' : 'warn',
-        details: activeRules.length > 0 
-          ? `Regras ativas: ${activeRules.slice(0, 5).map((r: Record<string, unknown>) => r.Name).join(', ')}${activeRules.length > 5 ? '...' : ''}`
-          : 'Nenhuma regra de transporte ativa',
-        rawData: { total: data.length, activeCount: activeRules.length },
-      });
-    }
-  }
-  
-  // Process Anti-Phishing Policy
-  if (rawData['exo_anti_phish_policy']) {
-    const data = extractStepData(rawData['exo_anti_phish_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const enabledPolicies = policies.filter((p: Record<string, unknown>) => p.Enabled === true);
-      const hasImpersonationProtection = policies.some((p: Record<string, unknown>) => 
-        p.EnableTargetedUserProtection === true || p.EnableOrganizationDomainsProtection === true
-      );
-      
-      insights.push({
-        id: 'exo_anti_phish_policy',
-        category: 'threats_activity',
-        product: 'exchange_online',
-        name: 'Política Anti-Phishing',
-        description: hasImpersonationProtection 
-          ? `${enabledPolicies.length} política(s) anti-phishing com proteção contra impersonação ativa`
-          : `${enabledPolicies.length} política(s) anti-phishing configurada(s), sem proteção contra impersonação`,
-        severity: hasImpersonationProtection ? 'info' : 'high',
-        status: hasImpersonationProtection ? 'pass' : 'warn',
-        details: `Políticas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name).join(', ')}`,
-        recommendation: !hasImpersonationProtection 
-          ? 'Habilite a proteção contra impersonação para usuários críticos e domínios da organização'
-          : undefined,
-        rawData: { total: policies.length, enabled: enabledPolicies.length, hasImpersonationProtection },
-      });
-    }
-  }
-  
-  // Process Safe Links Policy
-  if (rawData['exo_safe_links_policy']) {
-    const data = extractStepData(rawData['exo_safe_links_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const enabledPolicies = policies.filter((p: Record<string, unknown>) => 
-        p.EnableSafeLinksForEmail === true || p.IsEnabled === true || p.Enabled === true
-      );
-      
-      insights.push({
-        id: 'exo_safe_links_policy',
-        category: 'threats_activity',
-        product: 'exchange_online',
-        name: 'Safe Links (Links Seguros)',
-        description: enabledPolicies.length > 0 
-          ? `Safe Links habilitado em ${enabledPolicies.length} política(s)`
-          : 'Nenhuma política de Safe Links ativa encontrada',
-        severity: enabledPolicies.length > 0 ? 'info' : 'high',
-        status: enabledPolicies.length > 0 ? 'pass' : 'fail',
-        details: policies.length > 0 
-          ? `Políticas configuradas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name || p.Identity).join(', ')}`
-          : undefined,
-        recommendation: enabledPolicies.length === 0 
-          ? 'Configure e habilite o Safe Links para verificar URLs maliciosas em emails e documentos'
-          : undefined,
-        rawData: { total: policies.length, enabled: enabledPolicies.length },
-      });
-    }
-  }
-  
-  // Process Safe Attachments Policy
-  if (rawData['exo_safe_attachment_policy']) {
-    const data = extractStepData(rawData['exo_safe_attachment_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const enabledPolicies = policies.filter((p: Record<string, unknown>) => 
-        p.Enable === true || p.Enabled === true || p.Action !== 'Off'
-      );
-      
-      insights.push({
-        id: 'exo_safe_attachment_policy',
-        category: 'threats_activity',
-        product: 'exchange_online',
-        name: 'Safe Attachments (Anexos Seguros)',
-        description: enabledPolicies.length > 0 
-          ? `Safe Attachments habilitado em ${enabledPolicies.length} política(s)`
-          : 'Nenhuma política de Safe Attachments ativa encontrada',
-        severity: enabledPolicies.length > 0 ? 'info' : 'high',
-        status: enabledPolicies.length > 0 ? 'pass' : 'fail',
-        details: policies.length > 0 
-          ? `Políticas: ${policies.slice(0, 3).map((p: Record<string, unknown>) => p.Name || p.Identity).join(', ')}`
-          : undefined,
-        recommendation: enabledPolicies.length === 0 
-          ? 'Configure e habilite o Safe Attachments para análise de anexos maliciosos em sandbox'
-          : undefined,
-        rawData: { total: policies.length, enabled: enabledPolicies.length },
-      });
-    }
-  }
-  
-  // Process Malware Filter Policy
-  if (rawData['exo_malware_filter_policy']) {
-    const data = extractStepData(rawData['exo_malware_filter_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
-      
-      if (defaultPolicy) {
-        const enableFileFilter = defaultPolicy.EnableFileFilter === true;
-        const zap = defaultPolicy.ZapEnabled === true;
-        
-        insights.push({
-          id: 'exo_malware_filter_policy',
-          category: 'threats_activity',
-          product: 'exchange_online',
-          name: 'Filtro de Malware',
-          description: enableFileFilter && zap 
-            ? 'Filtro de malware configurado com proteções recomendadas'
-            : 'Filtro de malware pode estar com proteções incompletas',
-          severity: enableFileFilter && zap ? 'info' : 'medium',
-          status: enableFileFilter && zap ? 'pass' : 'warn',
-          details: `Filtro de arquivos: ${enableFileFilter ? 'Ativo' : 'Inativo'}, ZAP: ${zap ? 'Ativo' : 'Inativo'}`,
-          recommendation: (!enableFileFilter || !zap) 
-            ? 'Habilite o filtro de arquivos comuns (EnableFileFilter) e ZAP (Zero-hour Auto Purge)'
-            : undefined,
-          rawData: { enableFileFilter, zap, policyName: defaultPolicy.Name },
-        });
-      }
-    }
-  }
-  
-  // Process Hosted Content Filter (Spam Filter)
-  if (rawData['exo_hosted_content_filter']) {
-    const data = extractStepData(rawData['exo_hosted_content_filter']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
-      
-      if (defaultPolicy) {
-        const spamAction = defaultPolicy.SpamAction || defaultPolicy.HighConfidenceSpamAction;
-        const isSecure = ['Quarantine', 'MoveToJmf', 'Delete'].includes(String(spamAction));
-        
-        insights.push({
-          id: 'exo_hosted_content_filter',
-          category: 'threats_activity',
-          product: 'exchange_online',
-          name: 'Filtro de Conteúdo (Spam)',
-          description: isSecure 
-            ? 'Filtro de spam configurado para quarentena ou exclusão'
-            : 'Filtro de spam pode não bloquear mensagens adequadamente',
-          severity: isSecure ? 'info' : 'medium',
-          status: isSecure ? 'pass' : 'warn',
-          details: `Ação para spam: ${spamAction || 'Não configurado'}`,
-          recommendation: !isSecure 
-            ? 'Configure a ação de spam para "Quarentena" ou "Mover para Lixo Eletrônico"'
-            : undefined,
-          rawData: { spamAction, policyName: defaultPolicy.Name },
-        });
-      }
-    }
-  }
-  
-  // Process Remote Domains
-  if (rawData['exo_remote_domains']) {
-    const data = extractStepData(rawData['exo_remote_domains']);
-    if (Array.isArray(data)) {
-      const defaultDomain = data.find((d: Record<string, unknown>) => d.DomainName === '*');
-      const autoForwardEnabled = defaultDomain && defaultDomain.AutoForwardEnabled === true;
-      
-      insights.push({
-        id: 'exo_remote_domains',
-        category: 'pim_governance',
-        product: 'exchange_online',
-        name: 'Domínios Remotos',
-        description: autoForwardEnabled 
-          ? 'Encaminhamento automático externo habilitado no domínio padrão'
-          : 'Encaminhamento automático externo está bloqueado por padrão',
-        severity: autoForwardEnabled ? 'high' : 'info',
-        status: autoForwardEnabled ? 'fail' : 'pass',
-        details: `${data.length} domínio(s) remoto(s) configurado(s). Auto-forward padrão: ${autoForwardEnabled ? 'Habilitado' : 'Desabilitado'}`,
-        recommendation: autoForwardEnabled 
-          ? 'Desabilite o AutoForwardEnabled no domínio remoto padrão (*) para prevenir vazamento de dados'
-          : undefined,
-        rawData: { total: data.length, autoForwardEnabled },
-      });
-    }
-  }
-  
-  // Process OWA Mailbox Policy
-  if (rawData['exo_owa_mailbox_policy']) {
-    const data = extractStepData(rawData['exo_owa_mailbox_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
-      
-      if (defaultPolicy) {
-        const conditionalAccess = defaultPolicy.ConditionalAccessPolicy;
-        const externalImages = defaultPolicy.ExternalImageProxyEnabled;
-        
-        insights.push({
-          id: 'exo_owa_mailbox_policy',
-          category: 'pim_governance',
-          product: 'exchange_online',
-          name: 'Política OWA (Outlook Web)',
-          description: `Política OWA configurada: ${defaultPolicy.Name || 'Padrão'}`,
-          severity: 'info',
-          status: 'pass',
-          details: `Acesso Condicional: ${conditionalAccess || 'Não configurado'}, Proxy de imagens: ${externalImages ? 'Ativo' : 'Inativo'}`,
-          rawData: { conditionalAccess, externalImages, policyName: defaultPolicy.Name },
-        });
-      }
-    }
-  }
-  
-  // Process anti-spam policy
-  if (rawData['exo_antispam_policy']) {
-    const data = extractStepData(rawData['exo_antispam_policy']);
-    if (data && typeof data === 'object') {
-      const policies = Array.isArray(data) ? data : [data];
-      const defaultPolicy = policies.find((p: Record<string, unknown>) => p.IsDefault) || policies[0];
-      
-      if (defaultPolicy) {
-        const highConfidenceAction = defaultPolicy.HighConfidenceSpamAction;
-        const isSecure = ['Quarantine', 'MoveToJmf'].includes(String(highConfidenceAction));
-        
-        insights.push({
-          id: 'exo_antispam_policy',
-          category: 'threats_activity',
-          product: 'exchange_online',
-          name: 'Política Anti-Spam',
-          description: isSecure 
-            ? 'Política anti-spam configurada para quarentena de spam de alta confiança'
-            : 'Política anti-spam pode não estar adequadamente configurada',
-          severity: isSecure ? 'info' : 'medium',
-          status: isSecure ? 'pass' : 'warn',
-          details: `Ação para spam de alta confiança: ${highConfidenceAction}`,
-          recommendation: !isSecure 
-            ? 'Configure a ação de spam de alta confiança para "Quarentena" ou "Mover para Lixo Eletrônico"'
-            : undefined,
-          rawData: { highConfidenceAction, policyName: defaultPolicy.Name },
-        });
-      }
-    }
-  }
-  
-  // Process DKIM configuration
-  if (rawData['exo_dkim_config']) {
-    const data = extractStepData(rawData['exo_dkim_config']);
-    if (Array.isArray(data)) {
-      const enabledDomains = data.filter((d: Record<string, unknown>) => d.Enabled === true);
-      const totalDomains = data.length;
-      
-      insights.push({
-        id: 'exo_dkim_config',
-        category: 'email_exchange',
-        product: 'exchange_online',
-        name: 'Configuração DKIM',
-        description: enabledDomains.length === totalDomains && totalDomains > 0
-          ? 'DKIM habilitado para todos os domínios'
-          : `DKIM habilitado para ${enabledDomains.length} de ${totalDomains} domínio(s)`,
-        severity: enabledDomains.length < totalDomains ? 'high' : 'info',
-        status: enabledDomains.length === totalDomains && totalDomains > 0 ? 'pass' : 'fail',
-        recommendation: enabledDomains.length < totalDomains 
-          ? 'Habilite DKIM para todos os domínios para melhorar a autenticação de email'
-          : undefined,
-        affectedEntities: data.filter((d: Record<string, unknown>) => !d.Enabled).slice(0, 10).map((d: Record<string, unknown>) => ({
-          name: String(d.Domain || d.Name),
-          type: 'domain',
-          details: 'DKIM desabilitado',
-        })),
-        rawData: { total: totalDomains, enabled: enabledDomains.length },
-      });
-    }
-  }
-  
-  // Process SharePoint tenant settings
-  if (rawData['spo_tenant_settings']) {
-    const data = extractStepData(rawData['spo_tenant_settings']);
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
-      const sharingCapability = (data as Record<string, unknown>).SharingCapability;
-      const isRestrictive = ['Disabled', 'ExternalUserSharingOnly'].includes(String(sharingCapability));
-      
-      insights.push({
-        id: 'spo_sharing_settings',
-        category: 'sharepoint_onedrive',
-        product: 'sharepoint',
-        name: 'Configurações de Compartilhamento SharePoint',
-        description: isRestrictive 
-          ? 'Compartilhamento externo está restrito ou desabilitado'
-          : 'Compartilhamento externo está habilitado para convidados ou anônimos',
-        severity: isRestrictive ? 'info' : 'high',
-        status: isRestrictive ? 'pass' : 'fail',
-        details: `Capacidade de compartilhamento: ${sharingCapability}`,
-        recommendation: !isRestrictive 
-          ? 'Considere restringir o compartilhamento externo para reduzir riscos de vazamento de dados'
-          : undefined,
-        rawData: { sharingCapability },
-      });
-    }
-  }
-  
-  // Process SharePoint sites
-  if (rawData['spo_sites']) {
-    const data = extractStepData(rawData['spo_sites']);
-    if (Array.isArray(data)) {
-      const externalSharingSites = data.filter((s: Record<string, unknown>) => 
-        ['ExternalUserAndGuestSharing', 'ExternalUserSharingOnly'].includes(String(s.SharingCapability))
-      );
-      
-      insights.push({
-        id: 'spo_sites_sharing',
-        category: 'sharepoint',
-        name: 'Sites com Compartilhamento Externo',
-        description: externalSharingSites.length > 0 
-          ? `${externalSharingSites.length} site(s) com compartilhamento externo habilitado`
-          : 'Nenhum site com compartilhamento externo',
-        severity: externalSharingSites.length > 10 ? 'high' : externalSharingSites.length > 0 ? 'medium' : 'info',
-        status: externalSharingSites.length > 10 ? 'fail' : externalSharingSites.length > 0 ? 'warn' : 'pass',
-        affectedEntities: externalSharingSites.slice(0, 20).map((s: Record<string, unknown>) => ({
-          name: String(s.Title || s.Url),
-          type: 'site',
-          details: `Template: ${s.Template}, Sharing: ${s.SharingCapability}`,
-        })),
-        rawData: { total: data.length, externalSharingCount: externalSharingSites.length },
-      });
-    }
-  }
-  
-  console.log(`[processM365AgentInsights] Generated ${insights.length} insights from agent data`);
+
+  console.log(`[processM365AgentInsights] Generated ${insights.length} insights from ${rules.length} rules`);
   return insights;
 }
 
@@ -4383,8 +4147,35 @@ serve(async (req: Request) => {
         console.log(`[m365_tenant] Processing agent insights for analysis: ${analysisId}`);
         
         try {
-          // Transform raw PowerShell data into insights format
-          const agentInsights = processM365AgentInsights(rawData);
+          // Load M365 compliance rules from database
+          const { data: m365DeviceType } = await supabase
+            .from('device_types')
+            .select('id')
+            .eq('code', 'm365')
+            .eq('is_active', true)
+            .single();
+
+          const m365DeviceTypeId = m365DeviceType?.id;
+          let m365Rules: ComplianceRule[] = [];
+          if (m365DeviceTypeId) {
+            const { data: rulesData } = await supabase
+              .from('compliance_rules')
+              .select('id, code, name, category, severity, description, recommendation, pass_description, fail_description, weight, evaluation_logic, technical_risk, business_impact, api_endpoint')
+              .eq('device_type_id', m365DeviceTypeId)
+              .eq('is_active', true);
+            m365Rules = (rulesData || []) as unknown as ComplianceRule[];
+          }
+
+          // Filter to rules that have source_key in evaluation_logic (agent-evaluable rules)
+          const agentRules = m365Rules.filter(r => {
+            const el = r.evaluation_logic as Record<string, unknown>;
+            return !!el?.source_key;
+          });
+
+          console.log(`[m365_tenant] Loaded ${agentRules.length} agent-evaluable rules from ${m365Rules.length} total`);
+
+          // Transform raw PowerShell data into insights using DB rules
+          const agentInsights = processM365AgentInsights(rawData, agentRules);
           
           // Fetch existing record to merge insights and recalculate summary
           const { data: existingRecord } = await supabase
