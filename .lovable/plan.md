@@ -1,49 +1,49 @@
 
-# Fix: Recalcular summary com todos os insights
+# Fix: Exibir todos os insights nas categorias do Exchange Online
 
 ## Problema
 
-O summary na tabela `m365_posture_history` esta zerado porque:
+O componente `M365CategorySection` conta TODOS os insights no badge ("6 verificacoes"), mas so renderiza os que tem `status === 'fail'` ou `status === 'pass'`. Insights com status `warn` ou `unknown` sao contados mas nao exibidos, gerando divergencia visual.
 
-1. O `result.summary` vem da Edge Function `m365-security-posture`, que calcula o summary apenas com os insights da **Graph API** (4 insights, todos `pass`)
-2. Os insights do Exchange Online (mergeados na linha 225) nao sao contabilizados no summary
-3. Os `agent_insights` (que chegam depois via `agent-task-result`) tambem nao atualizam o summary
+Alem disso, ha uma inconsistencia de mapeamento: o hook retorna `'warn'`, mas a pagina tenta mapear para `'warning'` -- nenhum dos dois e reconhecido pelo componente de renderizacao.
 
 ## Solucao
 
-### 1. `supabase/functions/trigger-m365-posture-analysis/index.ts`
+### 1. `src/components/m365/posture/M365CategorySection.tsx`
 
-Apos mergear os `exoInsights` em `allInsights` (linha 225), **recalcular o summary** antes de persistir:
+Adicionar renderizacao dos insights com status `warning`/`warn`/`unknown` junto com os demais. A ordem de exibicao sera:
+
+1. `fail` (primeiro, sao os mais criticos)
+2. `warn` / `warning` (alertas)
+3. `pass` (aprovados)
+
+Alterar as linhas 53-54 e 142-148:
 
 ```typescript
-// Recalculate summary with ALL insights (API + Exchange)
-const recalculatedSummary = {
-  critical: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
-  high: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
-  medium: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
-  low: allInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
-  info: allInsights.filter((i: any) => i.severity === 'info').length,
-  total: allInsights.length,
-};
+const failedInsights = insights.filter(i => i.status === 'fail');
+const warningInsights = insights.filter(i => i.status === 'warning' || i.status === 'warn');
+const passedInsights = insights.filter(i => i.status === 'pass');
+const otherInsights = insights.filter(i => 
+  i.status !== 'fail' && i.status !== 'pass' && i.status !== 'warning' && i.status !== 'warn'
+);
+
+// Na renderizacao:
+{failedInsights.map(...)}
+{warningInsights.map(...)}
+{otherInsights.map(...)}
+{passedInsights.map(...)}
 ```
 
-E na linha 243, trocar `summary: result.summary` por `summary: recalculatedSummary`.
+### 2. `src/pages/m365/ExchangeOnlinePage.tsx`
 
-### 2. `supabase/functions/agent-task-result/index.ts`
+Corrigir o mapeamento de status na linha 95 para usar `'warn'` em vez de `'warning'`, mantendo consistencia com o tipo definido no hook (`'pass' | 'fail' | 'warn' | 'unknown'`):
 
-Quando o Agent finaliza uma task M365 e salva `agent_insights`, tambem recalcular o summary combinando `insights` + `agent_insights` e atualizar o registro no `m365_posture_history`.
+```typescript
+status: insight.status === 'pass' ? 'pass' : insight.status === 'fail' ? 'fail' : insight.status === 'warn' ? 'warn' : 'warning',
+```
 
-Isso requer:
-- Buscar o registro atual do `m365_posture_history` pelo `analysis_id`
-- Combinar `insights` (ja salvos) + novos `agent_insights`
-- Recalcular summary e score
-- Atualizar o registro com o novo summary
+Na verdade, como o tipo `M365Insight.status` aceita `'pass' | 'fail' | 'warning'`, e o hook retorna `'warn'`, o mapeamento correto e preservar o valor original do insight e garantir que o componente renderize todos.
 
-### Resumo das alteracoes
+## Resultado
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `trigger-m365-posture-analysis/index.ts` | Recalcular summary apos merge de exoInsights |
-| `agent-task-result/index.ts` | Recalcular summary quando agent_insights sao salvos |
-
-Nenhuma alteracao de frontend necessaria -- o dialog de detalhes ja exibe `selectedExecution.summary` corretamente, so faltam os dados no banco.
+Todos os insights serao exibidos nas suas categorias, eliminando a divergencia entre o contador do badge e os cards renderizados.
