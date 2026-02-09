@@ -301,11 +301,23 @@ install_amass() {
 
 ensure_user() {
   if id "$SERVICE_USER" >/dev/null 2>&1; then
+    # Garantir que o diretório home existe (mesmo para usuário pré-existente)
+    local user_home
+    user_home="\\$(eval echo ~$SERVICE_USER)"
+    if [[ -n "\\$user_home" ]] && [[ ! -d "\\$user_home" ]]; then
+      mkdir -p "\\$user_home"
+      chown "$SERVICE_USER":"$SERVICE_USER" "\\$user_home"
+      echo "Diretório home criado: \\$user_home"
+    fi
     return
   fi
 
   if command -v useradd >/dev/null 2>&1; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER" || true
+    # Criar diretório home para o usuário de serviço
+    mkdir -p /home/$SERVICE_USER
+    chown "$SERVICE_USER":"$SERVICE_USER" /home/$SERVICE_USER
+    echo "Diretório home criado: /home/$SERVICE_USER"
   else
     echo "Aviso: useradd não encontrado; continuando sem criar usuário dedicado."
   fi
