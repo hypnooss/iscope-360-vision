@@ -1156,6 +1156,14 @@ WantedBy=multi-user.target
 EOF
 }
 
+setup_sudoers() {
+  local sudoers_file="/etc/sudoers.d/iscope-agent"
+  echo "Configurando permissão sudoers para restart do serviço..."
+  echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME" > "$sudoers_file"
+  chmod 440 "$sudoers_file"
+  echo "Sudoers configurado: $sudoers_file"
+}
+
 start_service() {
   systemctl daemon-reload
   systemctl enable --now "$SERVICE_NAME"
@@ -1189,6 +1197,7 @@ main() {
   ensure_state_file
   write_check_deps_script
   write_systemd_service
+  setup_sudoers
   start_service
 
   echo ""

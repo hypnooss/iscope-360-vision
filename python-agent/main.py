@@ -96,11 +96,14 @@ class AgentApp:
                 
                 # Request service restart - the systemd ExecStartPre will run check-deps.sh as root
                 import subprocess
-                subprocess.run(
-                    ['systemctl', 'restart', 'iscope-agent'],
+                result = subprocess.run(
+                    ['sudo', 'systemctl', 'restart', 'iscope-agent'],
                     capture_output=True,
                     timeout=30
                 )
+                if result.returncode != 0:
+                    stderr = result.stderr.decode() if result.stderr else ''
+                    self.logger.warning(f"Falha ao reiniciar serviço: {stderr}")
                 # Note: this process will be terminated by the restart
             except Exception as e:
                 self.logger.warning(f"Erro ao solicitar verificação de componentes: {e}")
