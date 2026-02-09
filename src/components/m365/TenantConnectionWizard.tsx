@@ -375,6 +375,12 @@ export function TenantConnectionWizard({ open, onOpenChange, onSuccess }: Tenant
       
       multiTenantAppId = configData.app_id;
       
+      // Ensure Exchange.ManageAsApp and Sites.FullControl.All are in App Registration
+      const { error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
+      if (ensureError) {
+        console.warn('Could not ensure Exchange permission:', ensureError);
+      }
+
       // Build the admin consent URL
       const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenantId.trim()}/adminconsent`);
       adminConsentUrl.searchParams.set('client_id', multiTenantAppId);

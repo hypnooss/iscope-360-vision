@@ -372,7 +372,13 @@ export function SimpleTenantConnectionWizard({
       };
       const state = btoa(JSON.stringify(statePayload));
 
-      // 7. Build Admin Consent URL
+      // 7. Ensure Exchange.ManageAsApp and Sites.FullControl.All are in App Registration
+      const { error: ensureError } = await supabase.functions.invoke('ensure-exchange-permission');
+      if (ensureError) {
+        console.warn('Could not ensure Exchange permission:', ensureError);
+      }
+
+      // 8. Build Admin Consent URL
       const callbackUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/m365-oauth-callback`;
       
       const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenantId}/adminconsent`);
