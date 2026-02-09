@@ -1,8 +1,8 @@
-# InfraScope360 Python Agent
+# iScope 360 — Python Agent
 
-**Versão atual: 1.1.1**
+**Versão atual: 1.2.3**
 
-Agent Python para comunicação com o backend do InfraScope360. Executa em servidores Linux, envia heartbeats periódicos, processa tarefas de coleta e suporta atualização automática.
+Agent Python para comunicação com o backend do iScope 360. Executa em servidores Linux, envia heartbeats periódicos, processa tarefas de coleta (firewalls, domínios externos, M365 PowerShell) e suporta atualização automática.
 
 ## Índice
 
@@ -16,6 +16,7 @@ Agent Python para comunicação com o backend do InfraScope360. Executa em servi
 - [Endpoints Utilizados](#endpoints-utilizados)
 - [Sistema de Tarefas](#sistema-de-tarefas)
 - [Módulos/Executores](#módulosexecutores)
+- [Gerenciamento de Componentes](#gerenciamento-de-componentes)
 - [Sistema de Auto-Update](#sistema-de-auto-update)
 - [Compatibilidade de Sistemas](#compatibilidade-de-sistemas)
 - [Estrutura de Arquivos](#estrutura-de-arquivos)
@@ -32,6 +33,7 @@ Agent Python para comunicação com o backend do InfraScope360. Executa em servi
 | **Sistema** | Linux com systemd |
 | **Rede** | Acesso HTTPS aos endpoints do backend |
 | **Amass** | Instalado automaticamente pelo script |
+| **PowerShell Core** | Instalado automaticamente (necessário para M365) |
 
 ### Sistemas Operacionais Suportados
 
@@ -57,6 +59,7 @@ O script automaticamente:
 - Configura diretórios com permissões corretas
 - Instala o agent e dependências Python
 - Configura e inicia o serviço systemd
+- Instala componentes M365 (PowerShell, módulos, certificado) quando solicitado
 
 ---
 
@@ -139,6 +142,7 @@ echo '{"agent_id": null, "access_token": null, "refresh_token": null}' > storage
 | `/opt/iscope-agent` | Código-fonte do agent |
 | `/etc/iscope-agent` | Configuração (`agent.env`) |
 | `/var/lib/iscope-agent` | Estado persistente (`state.json`) |
+| `/var/lib/iscope-agent/certs` | Certificados M365 (CRT, KEY, PFX, thumbprint) |
 | `/var/log/iscope-agent` | Logs com rotação |
 
 ---
@@ -192,6 +196,7 @@ sudo journalctl -u iscope-agent -n 100
 ├─────────────────────────────────────────────────────────────┤
 │  1. Envia heartbeat para /agent-heartbeat                   │
 │  2. Verifica resposta:                                      │
+│     ├─ check_components → Solicita verificação de deps      │
 │     ├─ update_available → Executa auto-update               │
 │     ├─ has_pending_tasks → Busca e processa tarefas         │
 │     └─ next_heartbeat_in → Aguarda intervalo                │
@@ -241,27 +246,29 @@ O agent processa tarefas atribuídas pela plataforma em um modelo de execução 
 | `external_domain_analysis` | Análise de domínio externo |
 | `ssh_command` | Execução de comandos via SSH |
 | `snmp_query` | Queries SNMP em dispositivos |
+| `m365_powershell` | Comandos PowerShell para Exchange Online e Microsoft Graph |
 
 ---
 
 ## Módulos/Executores
 
-O agent possui 6 executores implementados para diferentes tipos de coleta:
+O agent possui 7 executores implementados para diferentes tipos de coleta:
 
 | Executor | Descrição | Dependência |
 |----------|-----------|-------------|
 | `http_request` | Requisições HTTP genéricas com interpolação de variáveis | requests |
 | `http_session` | APIs com autenticação por sessão/cookies | requests |
-| `ssh_command` | Execução de comandos via SSH | paramiko |
-| `snmp_query` | Queries SNMP (GET, WALK, BULK) | pysnmp |
+| `ssh` | Execução de comandos via SSH | paramiko |
+| `snmp` | Queries SNMP (GET, WALK, BULK) | pysnmp |
 | `dns_query` | Queries DNS (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) | dnspython |
 | `amass` | Enumeração de subdomínios via OWASP Amass | amass (CLI) |
+| `powershell` | Comandos M365 via PowerShell Core (Exchange Online, Microsoft Graph) | pwsh + módulos |
 
 ### Detalhes dos Executores
 
 #### HTTP Request
 - Suporta GET, POST, PUT, DELETE
-- Interpolação de variáveis: `{{variable}}`
+- Interpolação de variáveis: `{{variable}}` (com suporte a dot notation)
 - Headers customizáveis
 - Timeout configurável
 
@@ -289,6 +296,55 @@ O agent possui 6 executores implementados para diferentes tipos de coleta:
 - Enumeração passiva de subdomínios
 - Integração com APIs externas
 - Output em formato estruturado
+
+#### PowerShell (M365)
+- **Módulos suportados**: Exchange Online Management, Microsoft Graph Authentication
+- **Autenticação**: Certificate-Based Authentication (CBA) ou credenciais
+- Execução de comandos arbitrários com captura de resultados em JSON
+- Suporte a múltiplos comandos por execução com isolamento de erros
+- Timeout configurável (padrão: 300s)
+- Certificado auto-assinado RSA-2048 gerenciado automaticamente
+
+---
+
+## Gerenciamento de Componentes
+
+O agent possui um sistema de gerenciamento automático de componentes do sistema, acionado pelo backend via heartbeat (`check_components`).
+
+### Componentes Gerenciados
+
+| Componente | Descrição | Verificação |
+|-----------|-----------|-------------|
+| **PowerShell Core 7.x** | Runtime para comandos M365 | `which pwsh` |
+| **ExchangeOnlineManagement** | Módulo PowerShell para Exchange | `Get-Module -ListAvailable` |
+| **Microsoft.Graph.Authentication** | Módulo PowerShell para Graph API | `Get-Module -ListAvailable` |
+| **Certificado M365** | Certificado auto-assinado RSA-2048 para CBA | Verifica existência e validade |
+
+### Fluxo de Verificação
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  VERIFICAÇÃO DE COMPONENTES                                  │
+├─────────────────────────────────────────────────────────────┤
+│  1. Backend envia check_components=true no heartbeat         │
+│  2. Agent cria flag em /var/lib/iscope-agent/                │
+│  3. Agent solicita restart do serviço via systemd            │
+│  4. ExecStartPre executa check-deps.sh (como root)          │
+│  5. Script instala componentes ausentes                     │
+│  6. Agent reinicia normalmente                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Certificado M365
+
+O certificado é gerado automaticamente e armazenado em `/var/lib/iscope-agent/certs/`:
+
+| Arquivo | Descrição | Permissões |
+|---------|-----------|------------|
+| `m365.crt` | Certificado público (PEM) | 644 |
+| `m365.key` | Chave privada (PEM) | 600 |
+| `m365.pfx` | Bundle PKCS#12 (para PowerShell) | 600 |
+| `thumbprint.txt` | SHA1 fingerprint (formato Azure) | 644 |
 
 ---
 
@@ -359,31 +415,34 @@ dnf install -y python39 python39-pip
 
 ```
 python-agent/
-├── main.py               # Entry point
-├── requirements.txt      # Dependências Python
-├── .env.example          # Template de configuração
-├── README.md             # Esta documentação
+├── main.py                   # Entry point
+├── requirements.txt          # Dependências Python
+├── check-deps.sh             # Script de verificação de componentes (ExecStartPre)
+├── .env.example              # Template de configuração
+├── README.md                 # Esta documentação
 └── agent/
-    ├── __init__.py       # Package marker
-    ├── config.py         # Carregamento de configurações
-    ├── state.py          # Gerenciamento de estado persistente
-    ├── api_client.py     # Cliente HTTP para backend
-    ├── auth.py           # Autenticação e renovação de tokens
-    ├── heartbeat.py      # Lógica de heartbeat
-    ├── tasks.py          # Orquestrador de tarefas
-    ├── scheduler.py      # Loop principal
-    ├── logger.py         # Sistema de logging com rotação
-    ├── updater.py        # Auto-update com rollback
-    ├── version.py        # Versão centralizada (1.1.1)
+    ├── __init__.py            # Package marker
+    ├── config.py              # Carregamento de configurações
+    ├── state.py               # Gerenciamento de estado persistente
+    ├── api_client.py          # Cliente HTTP para backend
+    ├── auth.py                # Autenticação e renovação de tokens
+    ├── heartbeat.py           # Lógica de heartbeat
+    ├── tasks.py               # Orquestrador de tarefas
+    ├── scheduler.py           # Loop principal
+    ├── logger.py              # Sistema de logging com rotação
+    ├── updater.py             # Auto-update com rollback
+    ├── version.py             # Versão centralizada (1.2.3)
+    ├── components.py          # Gerenciamento de componentes do sistema
     └── executors/
-        ├── __init__.py       # Exporta executores
-        ├── base.py           # Classe base abstrata
-        ├── http_request.py   # HTTP genérico
-        ├── http_session.py   # HTTP com sessão
-        ├── ssh.py            # SSH (paramiko)
-        ├── snmp.py           # SNMP (pysnmp)
-        ├── dns_query.py      # DNS queries
-        └── amass.py          # Subdomain enumeration
+        ├── __init__.py        # Exporta executores
+        ├── base.py            # Classe base abstrata
+        ├── http_request.py    # HTTP genérico
+        ├── http_session.py    # HTTP com sessão
+        ├── ssh.py             # SSH (paramiko)
+        ├── snmp.py            # SNMP (pysnmp)
+        ├── dns_query.py       # DNS queries
+        ├── amass.py           # Subdomain enumeration
+        └── powershell.py      # M365 PowerShell (Exchange Online, Microsoft Graph)
 ```
 
 ---
@@ -446,6 +505,26 @@ amass -version
 curl -fsSL .../agent-install | sudo bash -s -- --update
 ```
 
+### PowerShell / M365 não funciona
+```bash
+# Verificar PowerShell
+pwsh --version
+
+# Verificar módulos M365
+pwsh -Command "Get-Module -ListAvailable ExchangeOnlineManagement, Microsoft.Graph.Authentication"
+
+# Verificar certificado
+ls -la /var/lib/iscope-agent/certs/
+openssl x509 -in /var/lib/iscope-agent/certs/m365.crt -noout -dates
+
+# Forçar reinstalação de componentes
+sudo touch /var/lib/iscope-agent/check_components.flag
+sudo systemctl restart iscope-agent
+
+# Ver logs de componentes
+cat /var/log/iscope-agent/components.log
+```
+
 ### Verificar versão instalada
 ```bash
 # Via código Python
@@ -461,6 +540,7 @@ sudo journalctl -u iscope-agent | grep "Agent v"
 
 ```
 requests>=2.31.0      # HTTP client
+certifi>=2024.2.2     # Certificados SSL
 pyjwt>=2.8.0          # JWT handling
 python-dotenv>=1.0.1  # Environment variables
 schedule>=1.2.1       # Task scheduling
@@ -474,4 +554,4 @@ dnspython>=2.7.0      # DNS queries
 
 ## Licença
 
-Proprietário - InfraScope360 © 2024
+Proprietário — iScope 360 © 2024-2025

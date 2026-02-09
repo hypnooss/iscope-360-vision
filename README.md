@@ -1,6 +1,6 @@
 # iScope 360
 
-Plataforma web para análise de **compliance**, **segurança** e **boas práticas** em infraestrutura (rede, domínios externos e Microsoft 365), com dashboards, relatórios e fluxos de gestão.
+Plataforma web para análise de **compliance**, **segurança** e **boas práticas** em infraestrutura (firewalls, domínios externos e Microsoft 365), com dashboards, relatórios PDF, execuções unificadas e gestão multi-tenant.
 
 > Status: em desenvolvimento (Preview)
 
@@ -9,24 +9,59 @@ Plataforma web para análise de **compliance**, **segurança** e **boas prática
 - **Preview (Lovable):** https://id-preview--d760b909-6da2-4037-9fd2-c67de04113d1.lovable.app
 - **Publicado:** (ainda não publicado)
 
-## Principais funcionalidades (alto nível)
+## Principais funcionalidades
 
-- **Dashboard geral** para visão consolidada.
-- **Scope Firewall**: cadastro de firewalls, análises, execuções e relatórios.
-- **Scope External Domain**: cadastro de domínios, análises, execuções e relatórios.
-- **Scope M365 / Entra ID**: conexão de tenant, auditoria e páginas de análise.
-- **Administração**: gestão de usuários, administradores, agentes e workspaces.
+### Scope Firewall
+- Cadastro de firewalls com suporte a múltiplos device types (FortiGate, etc.)
+- Análise de compliance baseada em blueprints e regras configuráveis
+- Verificação de CVEs no firmware
+- Dashboard com score, categorias e tendências
+- Execuções via agent com upload progressivo de steps
+- Relatórios PDF com score gauge, categorias e plano de ação
 
-> Observação: esta lista reflete as rotas/telas existentes no frontend (veja “Rotas principais”).
+### Scope External Domain
+- Cadastro de domínios externos vinculados a workspaces
+- Análise automatizada: DNS, subdomínios (Amass), SPF, DMARC, DKIM, DNSSEC
+- Mapa DNS visual
+- Relatórios PDF com score, categorias e recomendações
+
+### Scope Microsoft 365
+- **Conexão de tenant**: OAuth 2.0 com consentimento admin, suporte multi-tenant
+- **Postura de segurança**: Análise via Microsoft Graph API com score consolidado, categorias (Identity, Data, Device, App, Infrastructure) e breakdown por severidade
+- **Entra ID — Security Insights**: Análise de configurações de segurança do Entra ID
+- **Entra ID — Application Insights**: Inventário e análise de App Registrations e Enterprise Apps
+- **Exchange Online**: Análise via PowerShell (Exchange Online Management) com autenticação CBA
+- **Execuções unificadas**: Tabela única combinando análises de postura (API/Edge Function) e tasks PowerShell do agent, com colunas padronizadas (Tenant, Agent, Tipo, Status, Duração, Criado em, Ações)
+- **Relatórios PDF**: Postura M365 com score gauge, categorias, entidades afetadas e remediações
+
+### Administração
+- **Workspaces**: Gestão de clientes/workspaces com isolamento de dados
+- **Usuários**: Convite, permissões por módulo (view/manage), roles (super_admin, workspace_admin, user)
+- **Administradores**: Gestão de super admins e workspace admins
+- **Agents**: Cadastro, ativação por código, monitoramento (heartbeat, versão, capabilities), detalhes por agent
+- **Templates**: Blueprints de coleta e regras de compliance por device type, com visualização de fluxo
+- **Configurações**: Configuração global do app M365 (app_id, client_secret), permissões requeridas
+- **Preview Mode**: Admins podem visualizar a plataforma como um usuário específico
 
 ## Tecnologias
 
+### Frontend
 - **Vite** + **React 18** + **TypeScript**
 - **Tailwind CSS** + **shadcn/ui** (Radix)
-- **React Router** (roteamento)
+- **React Router** (roteamento com lazy loading)
 - **TanStack Query** (cache/requests)
-- **Supabase JS v2** (integração no frontend)
-- **Playwright** (E2E – base configurada)
+- **@react-pdf/renderer** (geração de PDFs no client)
+- **Recharts** (gráficos e dashboards)
+- **Framer Motion** via Tailwind (animações)
+- **Supabase JS v2** (integração frontend)
+
+### Backend
+- **Supabase** (PostgreSQL, Auth, RLS, Edge Functions)
+- **Edge Functions** (Deno): análises de postura, compliance, integração Microsoft Graph API
+- **Python Agent**: coleta local em servidores (firewalls, SSH, SNMP, DNS, PowerShell M365)
+
+### Testes
+- **Playwright** (E2E — base configurada)
 
 ## Como rodar localmente
 
@@ -72,7 +107,7 @@ VITE_SUPABASE_PROJECT_ID="<project-ref>"
 - **Nunca** coloque `service_role` no frontend.
 - No client, use apenas a **anon key/publishable**.
 
-## Rotas principais (atalhos para QA/operação)
+## Rotas principais
 
 Rotas definidas em `src/App.tsx`:
 
@@ -103,23 +138,35 @@ Rotas definidas em `src/App.tsx`:
 
 ### Scope M365
 
-- `/scope-m365/dashboard`
 - `/scope-m365/tenant-connection`
 - `/scope-m365/oauth-callback`
+- `/scope-m365/posture`
+- `/scope-m365/posture/report/:reportId`
 - `/scope-m365/entra-id`
-- `/scope-m365/entra-id/audit-logs`
+- `/scope-m365/entra-id/security-insights`
+- `/scope-m365/entra-id/applications`
 - `/scope-m365/entra-id/analysis`
+- `/scope-m365/exchange-online`
+- `/scope-m365/executions`
+- `/scope-m365/reports`
 
 ### Admin
 
 - `/users`
 - `/agents`
-- `/workspaces` (rota recomendada)
+- `/agents/:id`
+- `/workspaces`
 - `/administrators`
 - `/settings`
-- `/collections`
+- `/templates`
+- `/templates/:id`
 
-## Backend (referência — somente o necessário para o frontend)
+### Preview (temporário)
+
+- `/preview/domain-report`
+- `/preview/firewall-report`
+
+## Backend (referência)
 
 Este repositório inclui integrações com Supabase e Edge Functions, mas o setup detalhado do backend fica referenciado em:
 
@@ -145,4 +192,4 @@ npx playwright test
 
 ## Licença
 
-Licença: a definir.
+Proprietário — iScope 360 © 2024-2025
