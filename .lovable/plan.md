@@ -1,120 +1,173 @@
 
-# Refatorar: Usar compliance_rules do banco para insights do Agent (remover hardcoded)
 
-## Problema
+# Padronizar Cards de Conformidade em Todo o Sistema
 
-A funcao `processM365AgentInsights()` em `agent-task-result/index.ts` (linhas 179-587) contem ~400 linhas de logica hardcoded que:
-- Usa `source_key` como ID do insight (ex: `exo_mailbox_forwarding`) em vez do codigo da regra (`EXO-001`)
-- Hardcoda nomes, descricoes, severidades e categorias que ja existem na tabela `compliance_rules`
-- Viola a regra arquitetural de que toda logica deve vir do banco de dados
+## Situacao Atual: 5 Cards Diferentes
 
-Alem disso, a Edge Function `exchange-online-insights` tambem duplica verificacoes (EXO-001 a EXO-006) ja cobertas pelas compliance_rules + Agent.
+O sistema possui 5 componentes de card distintos, cada um com estrutura, tipo de dados e logica de expansao diferentes:
 
-## Solucao
+| Componente | Usado em | Campos exibidos | Expansao |
+|---|---|---|---|
+| `ComplianceCard` | Firewall, Dominio Externo | name, description, severity, recommendation, evidence, technicalRisk, businessImpact, apiEndpoint, rawData | Inline |
+| `M365InsightCard` | M365 Postura | code, titulo, descricaoExecutiva, severity, product, riscoTecnico, impactoNegocio, affectedEntities, remediacao | Inline + Dialog |
+| `InsightCard` | Entra ID Security | code, title, description, severity, affectedCount, category | Dialog |
+| `ExoInsightCard` | Exchange Online | code, title, description, severity, affectedCount | Dialog |
+| `AppInsightCard` | Entra ID Applications | code, title, description, severity, affectedCount, category | Dialog |
+| `RulePreviewCard` | Admin Templates | code, name, description, severity, recommendation, pass/fail/not_found descriptions, technicalRisk, businessImpact, apiEndpoint | Inline (Collapsible) |
 
-### 1. Refatorar `processM365AgentInsights()` para ser data-driven
+## Problemas
 
-Em vez de ter blocos `if (rawData['exo_mailbox_forwarding']) { ... }` hardcoded para cada source_key, a funcao deve:
+1. **Inconsistencia visual**: cada card tem layout, icones e espacamento diferentes
+2. **Duplicacao de codigo**: logica de severidade, status e cores repetida em cada componente
+3. **Experiencia fragmentada**: o usuario ve estilos diferentes dependendo do modulo
+4. **Manutencao dificil**: qualquer mudanca de design precisa ser replicada em 5+ arquivos
 
-1. Receber as `compliance_rules` carregadas do banco como parametro
-2. Para cada regra ativa com `source_key` presente no `rawData`, avaliar usando a `evaluation_logic` da regra
-3. Usar `code`, `name`, `category`, `severity` da regra do banco -- nao valores hardcoded
+## Proposta: Hierarquia de Informacao em 3 Niveis
+
+Criar um **unico componente** `UnifiedComplianceCard` com informacoes organizadas em camadas progressivas de profundidade:
+
+### Nivel 1 - Visao Rapida (sempre visivel)
+Informacoes para decisao rapida em ~2 segundos:
+
+- **Icone de Status** (pass/fail/warning/not_found) com cor contextual
+- **Codigo** da regra (ex: `EXO-001`, `FW-012`)
+- **Nome** da verificacao
+- **Badge de Severidade** (colorido apenas em falha, neutro em pass)
+- **Mensagem contextual**: pass_description, fail_description ou not_found_description conforme o status
+
+### Nivel 2 - Contexto Estrategico (visivel apenas em falha/warning, inline)
+Informacoes que aparecem automaticamente quando o item falha:
+
+- **Recomendacao** (texto curto, destaque em primary)
+- **Entidades afetadas** (contagem + link para drill-down, quando aplicavel)
+
+### Nivel 3 - Detalhes Expandiveis (click para expandir)
+Informacoes tecnicas sob demanda:
+
+- **Endpoint consultado** (apenas Super Admin)
+- **Analise Efetuada** (description/details)
+- **Risco Tecnico** (apenas em falha)
+- **Impacto no Negocio** (apenas em falha)
+- **Evidencias Coletadas** (dados humanizados)
+- **Dados Brutos JSON** (apenas Super Admin)
+
+### Resumo Visual
 
 ```text
-Fluxo Atual (hardcoded):
-  rawData[source_key] --> logica hardcoded --> insight com id=source_key
-
-Fluxo Novo (data-driven):
-  rawData[source_key] --> compliance_rules[source_key] --> evaluation_logic --> insight com id=rule.code
++----------------------------------------------------------+
+| [icon] CODE  Nome da Regra              [Severidade]     |  Nivel 1
+|        Mensagem contextual (pass/fail/not_found)          |
+|                                                          |
+|   > Recomendacao (apenas falha)                          |  Nivel 2
+|   ! 3 itens afetados >                                   |
+|                                                          |
+|   [v] Detalhes                                           |  Nivel 3
+|   +------------------------------------------------------+
+|   | Endpoint: /api/...                (super admin)      |
+|   | ANALISE EFETUADA: ...                                |
+|   | RISCO TECNICO: ...                (apenas falha)     |
+|   | IMPACTO NO NEGOCIO: ...           (apenas falha)     |
+|   | EVIDENCIAS: ...                                      |
+|   | JSON bruto                        (super admin)      |
+|   +------------------------------------------------------+
++----------------------------------------------------------+
 ```
 
-### 2. Carregar compliance_rules antes de processar
+## Plano Tecnico de Implementacao
 
-Na secao M365 do handler (~linha 4378), antes de chamar `processM365AgentInsights`, carregar as regras do banco:
+### 1. Interface unificada `UnifiedComplianceItem`
 
-```typescript
-const { data: m365Rules } = await supabase
-  .from('compliance_rules')
-  .select('*')
-  .eq('device_type_id', '5d1a7095-2d7b-4541-873d-4b03c3d6122f')
-  .eq('is_active', true);
-```
-
-E passar para a funcao:
-```typescript
-const agentInsights = processM365AgentInsights(rawData, m365Rules || []);
-```
-
-### 3. Nova implementacao de `processM365AgentInsights`
-
-A funcao iterara sobre as regras (nao sobre keys hardcoded):
+Criar em `src/types/unifiedCompliance.ts` uma interface que consolida todos os campos dos 5 tipos atuais:
 
 ```typescript
-function processM365AgentInsights(
-  rawData: Record<string, unknown>,
-  rules: ComplianceRule[]
-): M365AgentInsight[] {
-  const insights: M365AgentInsight[] = [];
+interface UnifiedComplianceItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  category: string;
+  status: 'pass' | 'fail' | 'warning' | 'not_found' | 'unknown';
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
   
-  for (const rule of rules) {
-    const evalLogic = rule.evaluation_logic as any;
-    const sourceKey = evalLogic?.source_key;
-    if (!sourceKey || !rawData[sourceKey]) continue;
-    
-    const data = extractStepData(rawData[sourceKey]);
-    if (!data) continue;
-    
-    // Avaliar usando evaluation_logic da regra
-    const result = evaluateAgentRule(rule, data);
-    if (!result) continue;
-    
-    insights.push({
-      id: rule.code,           // EXO-001, nao exo_mailbox_forwarding
-      category: rule.category, // do banco
-      product: mapCategoryToProduct(rule.category),
-      name: rule.name,         // do banco
-      description: result.description,
-      severity: result.status === 'pass' ? 'info' : rule.severity as any,
-      status: result.status,
-      details: result.details,
-      recommendation: rule.recommendation || undefined,
-      affectedEntities: result.affectedEntities,
-      rawData: result.rawData,
-    });
-  }
+  // Mensagens contextuais por status
+  passDescription?: string;
+  failDescription?: string;
+  notFoundDescription?: string;
   
-  return insights;
+  // Contexto estrategico
+  recommendation?: string;
+  technicalRisk?: string;
+  businessImpact?: string;
+  
+  // Evidencias e dados
+  apiEndpoint?: string;
+  evidence?: EvidenceItem[];
+  rawData?: Record<string, unknown>;
+  details?: string;
+  
+  // Entidades afetadas
+  affectedEntities?: AffectedEntity[];
+  affectedCount?: number;
+  
+  // Remediacao
+  remediation?: RemediationGuide;
+  
+  // Metadata
+  product?: string;
+  source?: string;
 }
 ```
 
-### 4. Funcao `evaluateAgentRule` (nova)
+### 2. Componente `UnifiedComplianceCard`
 
-Avalia os dados do Agent contra a `evaluation_logic` da regra. Os tipos de avaliacao ja definidos nas regras EXO incluem:
+Criar em `src/components/compliance/UnifiedComplianceCard.tsx`:
 
-- `check_array_condition`: Verifica arrays (mailboxes com forwarding, transport rules, etc.)
-- `check_policy_field`: Verifica campos de politicas (anti-phish, safe links, etc.)
-- `check_boolean_field`: Verifica campos booleanos simples
+- Reutiliza a estrutura do `ComplianceCard` atual (mais completo)
+- Incorpora o sistema de `affectedEntities` do `M365InsightCard`
+- Incorpora o botao "Como Corrigir" com dialog
+- Suporte a `not_found` status do `RulePreviewCard`
+- Logica de role-based visibility (endpoint e JSON para super_admin)
 
-Esta funcao lera `evaluation_logic.evaluate.type` e aplicara a logica correspondente, usando `pass_description`/`fail_description` da regra para gerar descricoes.
+### 3. Funcoes adaptadoras (mappers)
 
-### 5. Remover chamada a `exchange-online-insights` do trigger
+Criar mappers em `src/lib/complianceMappers.ts` para converter cada tipo existente para `UnifiedComplianceItem`:
 
-Em `trigger-m365-posture-analysis/index.ts` (linhas 206-232), remover o bloco que chama `exchange-online-insights` quando `scope === 'exchange_online'`, pois essa funcao duplica verificacoes ja cobertas pelo Agent + compliance_rules.
+- `mapComplianceCheck(check: ComplianceCheck): UnifiedComplianceItem`
+- `mapM365Insight(insight: M365Insight): UnifiedComplianceItem`
+- `mapSecurityInsight(insight: SecurityInsight): UnifiedComplianceItem`
+- `mapExchangeInsight(insight: ExchangeInsight): UnifiedComplianceItem`
+- `mapApplicationInsight(insight: ApplicationInsight): UnifiedComplianceItem`
 
-### 6. Verificar evaluation_logic das regras EXO no banco
+### 4. Migracao progressiva
 
-Confirmar que todas as 16 regras EXO ativas possuem `evaluation_logic` compativel com dados do Agent (field_path, conditions, etc.). Se alguma regra nao tiver, adicionar.
+Substituir os cards existentes modulo a modulo:
 
-## Resumo das alteracoes
+1. **Fase 1**: Criar `UnifiedComplianceCard` + tipo + mappers
+2. **Fase 2**: Migrar `ComplianceCard` (Firewall/Dominio) -- maior uso
+3. **Fase 3**: Migrar `M365InsightCard` (Postura M365)
+4. **Fase 4**: Migrar `InsightCard`, `ExoInsightCard`, `AppInsightCard`
+5. **Fase 5**: Atualizar `RulePreviewCard` para usar o mesmo componente com prop `previewMode`
+6. **Fase 6**: Remover componentes antigos
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `agent-task-result/index.ts` | Substituir ~400 linhas hardcoded por funcao data-driven que le regras do banco |
-| `trigger-m365-posture-analysis/index.ts` | Remover chamada a `exchange-online-insights` (linhas 206-232) |
+### 5. Manter `RulePreviewCard` como wrapper
 
-## Resultado esperado
+O `RulePreviewCard` continuara existindo como wrapper do `UnifiedComplianceCard` com:
+- Botoes de toggle (Sucesso/Falha/N/A)
+- Prop `previewMode` que desabilita interacoes reais
 
-- Insights exibidos com codigos corretos (`EXO-001`, `EXO-007`, etc.) em vez de `exo_mailbox_forwarding`
-- Nomes e descricoes vindos do banco, editaveis via Templates
-- Sem duplicacao de insights entre API e Agent
-- Conformidade com a regra arquitetural de zero hardcode
+Isso garante que o admin veja exatamente o mesmo layout que o usuario final.
+
+## Arquivos envolvidos
+
+| Arquivo | Acao |
+|---|---|
+| `src/types/unifiedCompliance.ts` | **Novo** - Interface unificada |
+| `src/lib/complianceMappers.ts` | **Novo** - Funcoes de conversao |
+| `src/components/compliance/UnifiedComplianceCard.tsx` | **Novo** - Componente unico |
+| `src/components/ComplianceCard.tsx` | Migrar para usar UnifiedComplianceCard |
+| `src/components/m365/posture/M365InsightCard.tsx` | Migrar para usar UnifiedComplianceCard |
+| `src/components/m365/insights/InsightCard.tsx` | Migrar para usar UnifiedComplianceCard |
+| `src/components/m365/exchange/ExoInsightCard.tsx` | Migrar para usar UnifiedComplianceCard |
+| `src/components/m365/applications/AppInsightCard.tsx` | Migrar para usar UnifiedComplianceCard |
+| `src/components/admin/RulePreviewCard.tsx` | Atualizar para wrapper do UnifiedComplianceCard |
+
