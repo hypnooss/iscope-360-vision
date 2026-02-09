@@ -261,6 +261,37 @@ generate_certificate() {
         fi
     fi
 
+    # If .crt and .key exist but .pfx is missing, only regenerate PFX
+    if [[ -f "$CERT_DIR/m365.crt" ]] && [[ -f "$CERT_DIR/m365.key" ]] && [[ ! -f "$CERT_DIR/m365.pfx" ]]; then
+        log "Gerando apenas arquivo PFX a partir do certificado existente..."
+
+        openssl pkcs12 \
+            -export \
+            -out "$CERT_DIR/m365.pfx" \
+            -inkey "$CERT_DIR/m365.key" \
+            -in "$CERT_DIR/m365.crt" \
+            -passout pass: \
+            -legacy 2>/dev/null || \
+        openssl pkcs12 \
+            -export \
+            -out "$CERT_DIR/m365.pfx" \
+            -inkey "$CERT_DIR/m365.key" \
+            -in "$CERT_DIR/m365.crt" \
+            -passout pass: 2>/dev/null
+
+        if [[ -f "$CERT_DIR/m365.pfx" ]]; then
+            chmod 600 "$CERT_DIR/m365.pfx"
+            if id "$SERVICE_USER" >/dev/null 2>&1; then
+                chown "$SERVICE_USER":"$SERVICE_USER" "$CERT_DIR/m365.pfx" || true
+            fi
+            log "Arquivo PFX regenerado: $CERT_DIR/m365.pfx"
+            return 0
+        else
+            log_error "Falha ao gerar arquivo PFX"
+            return 1
+        fi
+    fi
+
     log "Gerando certificado M365..."
 
     # Ensure openssl is available
