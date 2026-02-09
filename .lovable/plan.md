@@ -1,80 +1,69 @@
 
 
-# Unificar Execucoes de Dominio Externo: Agent + API
+# Filtrar Steps do Blueprint Enviados ao Agent
 
-## Contexto
+## Problema
 
-Atualmente a pagina **Execucoes** do modulo Dominio Externo (`ExternalDomainExecutionsPage`) exibe apenas as tasks do **Agent** (tabela `agent_tasks` com `target_type = 'external_domain'`).
+A funcao RPC `rpc_get_agent_tasks` envia **todos** os steps do blueprint "External Domain DNS Scan" para o Agent Python, incluindo os 11 steps com `executor: "edge_function"` (subdomain_securitytrails, subdomain_virustotal, etc.). O Agent nao possui um executor do tipo `edge_function`, gerando o erro "Executor desconhecido: edge_function" para cada um desses steps.
 
-Porem, a analise de dominio externo tambem gera registros na tabela `external_domain_analysis_history` quando a Edge Function `subdomain-enum` executa a enumeracao de subdominios via APIs externas. Esses registros de API nao aparecem na pagina de execucoes.
+Esses steps de enumeracao de subdominios ja sao executados pela Edge Function `subdomain-enum` (disparada em paralelo pelo `trigger-external-domain-analysis`). Portanto, o Agent deve receber **apenas** os 7 steps DNS (ns_records, mx_records, soa_record, etc.) que possuem `executor: "agent"`.
 
-O objetivo e replicar o padrao ja implementado em `M365ExecutionsPage`, que unifica duas fontes de dados (`m365_posture_history` + `agent_tasks`) em uma tabela unica com tags visuais distintas.
+## Solucao
 
-## Estrutura Unificada
+Filtrar os steps do blueprint **dentro da RPC** antes de enviar ao Agent. Apenas steps com `executor = 'agent'` (ou sem campo `executor` para retrocompatibilidade) devem ser incluidos.
 
+## Mudanca Tecnica
+
+### Migracacao SQL: Alterar `rpc_get_agent_tasks`
+
+Na secao de External Domain da RPC (linhas ~69-81), alterar o `COALESCE` que busca o blueprint para filtrar os steps:
+
+**Antes:**
 ```text
-+-------------------+---------------------+-------------------------------+
-| Fonte             | Tabela              | Tag Visual                    |
-+-------------------+---------------------+-------------------------------+
-| API (Edge Func)   | external_domain_    | Icone Cloud + "API"           |
-|                   | analysis_history    | (azul)                        |
-+-------------------+---------------------+-------------------------------+
-| Agent (Python)    | agent_tasks         | Icone Terminal + "Agent"      |
-|                   | target_type =       | (roxo)                        |
-|                   | external_domain     |                               |
-+-------------------+---------------------+-------------------------------+
+COALESCE(
+  (SELECT db.collection_steps FROM device_blueprints db WHERE ...),
+  '{"steps": []}'::jsonb
+) as blueprint
 ```
 
-## Colunas da Tabela Unificada
+**Depois:**
+```text
+COALESCE(
+  (
+    SELECT jsonb_build_object(
+      'steps',
+      COALESCE(
+        (SELECT jsonb_agg(step)
+         FROM jsonb_array_elements(db.collection_steps->'steps') AS step
+         WHERE COALESCE(step->>'executor', 'agent') = 'agent'),
+        '[]'::jsonb
+      )
+    )
+    FROM device_blueprints db
+    WHERE db.device_type_id = (
+      SELECT id FROM device_types WHERE code = 'external_domain' AND is_active = true LIMIT 1
+    )
+    AND db.is_active = true
+    ORDER BY db.version DESC
+    LIMIT 1
+  ),
+  '{"steps": []}'::jsonb
+) as blueprint
+```
 
-| Coluna | Fonte API | Fonte Agent |
-|--------|-----------|-------------|
-| Dominio | `domain_id` -> lookup `external_domains` | `target_id` -> lookup `external_domains` |
-| Agent | "Edge Function" (fixo) | `agent_id` -> lookup `agents` |
-| Tipo | Badge "API" (Cloud icon, azul) | Badge "Agent" (Terminal icon, roxo) |
-| Status | Mapear: score != null = completed, else pending | Campo `status` direto |
-| Criado em | `created_at` | `created_at` |
-| Duracao | Calculada (se `completed_at` existir) | `execution_time_ms` |
-| Acoes | Ver detalhes (score, report_data) | Ver detalhes (payload, result, steps) |
+Isso filtra o array `steps` para incluir apenas os que tem `executor = 'agent'` ou nao possuem campo `executor` (default agent). Os 11 steps `edge_function` serao removidos da task enviada ao Agent.
 
-## Mudancas no Arquivo
+Essa mesma filtragem sera aplicada tambem a secao de Firewall e M365 (por seguranca e consistencia), embora hoje esses blueprints nao tenham steps `edge_function`.
 
-### `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+## Resultado Esperado
 
-1. **Adicionar interface `AnalysisHistory`** com campos de `external_domain_analysis_history` (id, domain_id, score, created_at, report_data)
-
-2. **Adicionar interface `UnifiedExecution`** similar ao M365:
-   - `id`, `source` ('analysis' | 'agent_task'), `domainId`, `agentId`, `type` ('api' | 'agent'), `status`, `duration`, `createdAt`, `original`
-
-3. **Adicionar query para `external_domain_analysis_history`**: buscar registros com os mesmos filtros de tempo e preview mode
-
-4. **Adicionar `typeConfig`** com badges visuais:
-   - `api`: Cloud icon, label "API", cor azul
-   - `agent`: Terminal icon, label "Agent", cor roxa
-
-5. **Criar `unifiedExecutions`** via `useMemo` que mescla ambas as fontes e ordena por `createdAt` desc
-
-6. **Atualizar stats** para contar do array unificado
-
-7. **Atualizar a tabela** para usar `unifiedExecutions` em vez de `filteredTasks`:
-   - Coluna "Agent" mostra "Edge Function" para API ou nome do agent
-   - Coluna "Tipo" mostra badge colorido com icone
-   - Dialogo de detalhes diferenciado por `source`
-
-8. **Adicionar dialogo de detalhes para API**: exibir score, dados do report_data resumido
-
-9. **Importar icones** `Cloud` e `Terminal` do lucide-react (Cloud ja nao esta importado)
-
-## Nenhuma Mudanca no Backend
-
-- A tabela `external_domain_analysis_history` ja existe e contem os dados necessarios
-- A Edge Function `subdomain-enum` ja persiste os resultados nesta tabela
-- O trigger `trigger-external-domain-analysis` cria apenas a task do Agent
-- Nao e necessario criar uma nova task separada para API; os registros de historico ja existem
+- Agent recebe apenas 7 steps DNS: `ns_records`, `mx_records`, `soa_record`, `spf_record`, `dmarc_record`, `dkim_records`, `dnssec_status`
+- Os 11 steps de subdomain continuam sendo executados pela Edge Function `subdomain-enum` via API
+- Nenhuma mudanca no Agent Python, Edge Functions ou frontend
 
 ## Arquivo Modificado
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/pages/external-domain/ExternalDomainExecutionsPage.tsx` | Refatorar para unificar agent_tasks + analysis_history com tags visuais |
+| Item | Mudanca |
+|------|---------|
+| Migration SQL (alterar funcao `rpc_get_agent_tasks`) | Filtrar `collection_steps.steps` para incluir apenas `executor = 'agent'` |
 
