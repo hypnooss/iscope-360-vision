@@ -42,9 +42,27 @@ log_error() {
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
+# === ALWAYS RUN (every service start, regardless of flag) ===
+
+# 1. Ensure service user home directory exists (required for PowerShell $env:HOME)
+if id "$SERVICE_USER" >/dev/null 2>&1; then
+    user_home="$(eval echo ~$SERVICE_USER)"
+    if [[ -n "$user_home" ]] && [[ ! -d "$user_home" ]]; then
+        mkdir -p "$user_home"
+        chown "$SERVICE_USER":"$SERVICE_USER" "$user_home"
+    fi
+fi
+
+# 2. Clean stale Python bytecode cache (forces recompilation after updates)
+INSTALL_DIR="/opt/iscope-agent"
+if [[ -d "$INSTALL_DIR" ]]; then
+    find "$INSTALL_DIR" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# === END ALWAYS RUN ===
+
 # Check if verification was requested
 if [[ ! -f "$FLAG_FILE" ]]; then
-    # No flag = no action needed, exit silently
     exit 0
 fi
 
