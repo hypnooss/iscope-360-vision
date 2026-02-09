@@ -195,3 +195,52 @@ export function mapApplicationInsight(insight: ApplicationInsight): UnifiedCompl
     product: 'entra_id',
   };
 }
+
+/**
+ * Mapeia ExchangeInsight do hook useExchangeOnlineInsights para UnifiedComplianceItem.
+ * Converte affectedEntities em evidências e não inclui remediation/affectedEntities.
+ */
+export function mapExchangeAgentInsight(insight: {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  severity: string;
+  status: string;
+  details?: string;
+  recommendation?: string;
+  affectedEntities?: Array<{ name: string; type: string; details?: string }>;
+  rawData?: Record<string, unknown>;
+}): UnifiedComplianceItem {
+  const evidence: EvidenceItem[] = [];
+
+  if (insight.affectedEntities && insight.affectedEntities.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${insight.affectedEntities.length} item(ns)`,
+      type: 'text',
+    });
+    evidence.push({
+      label: 'Entidades afetadas',
+      value: insight.affectedEntities.map(e => e.name).join('\n'),
+      type: 'list',
+    });
+  }
+
+  return {
+    id: insight.id,
+    code: insight.id,
+    name: insight.name,
+    description: insight.description,
+    category: insight.category,
+    status: normalizeStatus(insight.status),
+    severity: normalizeSeverity(insight.severity),
+    failDescription: insight.description,
+    recommendation: insight.recommendation,
+    details: insight.details,
+    evidence,
+    rawData: insight.rawData,
+    product: 'exchange_online',
+    source: 'exchange_powershell',
+  };
+}
