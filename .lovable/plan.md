@@ -1,62 +1,78 @@
 
+# Corrigir Upload de Certificado e Garantir -File no Executor
 
-# Corrigir Split-Path no Executor PowerShell (usar -File em vez de -Command)
+## Problema 1: KeyCredentialsInvalidEndDate (BLOQUEANTE)
 
-## Problema
+O upload do certificado ao Azure falha com erro `KeyCredentialsInvalidEndDate` porque o PATCH inclui keys existentes que podem ter datas expiradas. O Azure rejeita o request inteiro quando qualquer key no array tem data invalida.
 
-O modulo `ExchangeOnlineManagement 3.9.2` usa internamente `Split-Path $PSScriptRoot`, que retorna string vazia quando o script e executado via `pwsh -Command "..."`. Isso causa o erro `Split-Path: Cannot bind argument to parameter 'Path' because it is an empty string` em todos os comandos Exchange.
+Logs do backend:
+```
+PATCH error: 400 - {"error":{"code":"KeyCredentialsInvalidEndDate","message":"Key credential end date is invalid."}}
+```
 
-O outro agente que funciona provavelmente usa uma versao diferente do modulo EXO que nao depende de `$PSScriptRoot`.
+## Problema 2: Split-Path (PENDENTE DE DEPLOY)
+
+A correcao de `-Command` para `-File` ja esta no repositorio mas o agente no servidor ainda roda v1.2.4. Apos atualizar o agente, o Split-Path sera resolvido.
 
 ## Solucao
 
-Alterar o executor (`python-agent/agent/executors/powershell.py`) para escrever o script em um arquivo temporario e executar com `-File` em vez de `-Command`. Isso garante que `$PSScriptRoot` seja populado corretamente pelo PowerShell.
+### Arquivo: `supabase/functions/agent-heartbeat/index.ts`
 
-## Mudanca Tecnica
+Na logica de upload (linhas 276-285), filtrar keys expiradas ANTES de incluir no PATCH:
 
-### Arquivo: `python-agent/agent/executors/powershell.py`
-
-Na funcao `run()`, linhas 296-308, substituir a execucao via `-Command` por:
-
-1. Importar `tempfile` no topo do arquivo
-2. Escrever o script em um arquivo `.ps1` temporario
-3. Executar com `-File` em vez de `-Command`
-4. Remover o arquivo temporario apos execucao
-
-```python
-import tempfile
-
-# ... dentro de run():
-
-# Write script to temp file (required for $PSScriptRoot support)
-script_file = None
-try:
-    script_file = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.ps1', delete=False, dir=cwd or '/tmp'
-    )
-    script_file.write(script)
-    script_file.close()
-
-    result = subprocess.run(
-        [pwsh_path, "-NoProfile", "-NonInteractive", "-File", script_file.name],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        cwd=cwd
-    )
-finally:
-    if script_file:
-        try:
-            os.unlink(script_file.name)
-        except OSError:
-            pass
+**Antes:**
+```typescript
+const cleanedExistingKeys = existingKeys.map((key: any) => ({
+  type: key.type,
+  usage: key.usage,
+  key: key.key,
+  customKeyIdentifier: key.customKeyIdentifier,
+  displayName: key.displayName,
+  startDateTime: key.startDateTime,
+  endDateTime: key.endDateTime,
+}));
 ```
 
-5. Adicionar `import os` no topo (se nao existir)
+**Depois:**
+```typescript
+const now = new Date();
+const cleanedExistingKeys = existingKeys
+  .filter((key: any) => {
+    // Remove expired keys to avoid KeyCredentialsInvalidEndDate
+    if (key.endDateTime) {
+      const endDate = new Date(key.endDateTime);
+      if (endDate < now) {
+        console.log(`Removing expired key: ${key.displayName || 'unnamed'} (expired ${key.endDateTime})`);
+        return false;
+      }
+    }
+    return true;
+  })
+  .map((key: any) => ({
+    type: key.type,
+    usage: key.usage,
+    key: key.key,
+    customKeyIdentifier: key.customKeyIdentifier,
+    displayName: key.displayName,
+    startDateTime: key.startDateTime,
+    endDateTime: key.endDateTime,
+  }));
+```
 
-## Impacto
+### Nenhuma mudanca adicional no Python Agent
 
-- Compativel com todas as versoes do ExchangeOnlineManagement
-- Nao afeta o comportamento de outros executores
-- O outro agente que ja funciona com `-Command` continuara funcionando com `-File` sem problemas
+A correcao do `-File` ja foi feita no commit anterior. So precisa atualizar o agente no servidor apos o deploy.
 
+## Resumo
+
+| Problema | Arquivo | Mudanca |
+|----------|---------|---------|
+| KeyCredentialsInvalidEndDate | `agent-heartbeat/index.ts` | Filtrar keys expiradas antes do PATCH |
+| Split-Path | (ja corrigido) | Atualizar agente no servidor |
+
+## Pos-Correcao
+
+1. Deploy da edge function (automatico)
+2. Aguardar proximo heartbeat (60s) - o certificado sera enviado e registrado com sucesso
+3. Atualizar o agente no servidor para pegar a correcao do `-File`
+4. Disparar nova analise M365
