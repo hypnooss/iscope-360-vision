@@ -1,236 +1,97 @@
 
-# Plano: Unificação de Categorias M365 - Exchange Online
 
-## ✅ Status: IMPLEMENTADO (2026-02-08)
+# Unificar Abas de Execuções M365
 
 ## Objetivo
 
-Usar as **mesmas categorias do relatório** (`M365RiskCategory`) nas páginas de produto (Exchange Online, Entra ID, etc.), garantindo consistência visual e conceitual.
+Remover as abas "Análises de Postura" e "Tasks PowerShell" e exibir todas as execuções em uma **tabela única** com colunas padronizadas.
 
-## Situação Atual
+## Colunas da Tabela Unificada
 
-### Duas definições de categorias
+| Coluna | Fonte Posture | Fonte Agent Task |
+|--------|---------------|------------------|
+| Tenant | `tenant_record_id` | `target_id` |
+| Agent | "-" (execução via Edge Function) | `agent_id` -> nome |
+| Tipo | "Análise de Postura" (badge Cloud) | "PowerShell" (badge Terminal) |
+| Status | `status` (badge colorido) | `status` (badge colorido) |
+| Duração | `started_at` / `completed_at` | `execution_time_ms` ou calculado |
+| Criado em | `created_at` | `created_at` |
+| Ações | Botão ver detalhes | Botão ver detalhes + cancelar |
 
-| Sistema | Arquivo | Categorias | Uso |
-|---------|---------|------------|-----|
-| Relatório | `m365Insights.ts` | 11 categorias (`identities`, `email_exchange`, `threats_activity`, etc.) | Relatório Web e PDF |
-| Exchange | `exchangeInsights.ts` | 5 categorias (`mail_flow`, `security_policies`, etc.) | Página Exchange Online |
+## Abordagem Tecnica
 
-### Problema
-
-O usuário vê categorias diferentes na página Exchange Online vs. o Relatório, causando confusão:
-
-```text
-Página Exchange Online:        Relatório de Postura:
-──────────────────────────     ─────────────────────
-• Fluxo de E-mail              • Email & Exchange
-• Políticas de Segurança       • Ameaças & Atividades
-• Higiene de Segurança         • Governança (PIM)
-• Governança                   
-```
-
----
-
-## Solução
-
-### Nova Arquitetura
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                    M365RiskCategory (ÚNICA FONTE)               │
-│                                                                 │
-│  identities | auth_access | admin_privileges | apps_integrations│
-│  email_exchange | threats_activity | intune_devices | ...       │
-└──────────────────────┬──────────────────────────────────────────┘
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-   ┌─────────┐    ┌─────────┐    ┌─────────┐
-   │Exchange │    │Entra ID │    │Relatório│
-   │  Page   │    │  Page   │    │Web/PDF  │
-   └─────────┘    └─────────┘    └─────────┘
-        │              │              │
-   Filtra por      Filtra por    Exibe todas
-   product=        product=      as categorias
-   exchange_online  entra_id
-```
-
-### Mapeamento para Exchange
-
-Os insights do Exchange usarão as categorias do relatório:
-
-| Insight | Categoria Atual | Categoria Nova |
-|---------|-----------------|----------------|
-| Encaminhamento de Email | `mail_flow` | **`email_exchange`** |
-| Configuração DKIM | `security_hygiene` | **`email_exchange`** |
-| Regras de Transporte | `mail_flow` | **`email_exchange`** |
-| Política Anti-Phishing | `threats` | **`threats_activity`** |
-| Safe Links | `threats` | **`threats_activity`** |
-| Safe Attachments | `threats` | **`threats_activity`** |
-| Filtro de Malware | `threats` | **`threats_activity`** |
-| Filtro de Spam | `threats` | **`threats_activity`** |
-| Remote Domains | `governance` | **`pim_governance`** |
-| Política OWA | `governance` | **`pim_governance`** |
-
----
-
-## Arquivos a Modificar
-
-### 1. Edge Function: Atualizar categorias geradas
-
-**Arquivo:** `supabase/functions/agent-task-result/index.ts`
-
-Alterar a função `processM365AgentInsights` para usar categorias corretas:
+### 1. Criar tipo unificado `UnifiedExecution`
 
 ```typescript
-// ANTES
-if (rawData['exo_anti_phish_policy']) {
-  insights.push({
-    category: 'threats',  // categoria genérica
-    ...
-  });
-}
-
-// DEPOIS
-if (rawData['exo_anti_phish_policy']) {
-  insights.push({
-    category: 'threats_activity',  // categoria do relatório
-    product: 'exchange_online',
-    ...
-  });
+interface UnifiedExecution {
+  id: string;
+  source: 'posture' | 'agent_task';
+  tenantId: string;
+  agentId: string | null;
+  type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api';
+  status: string;
+  duration: string;
+  createdAt: string;
+  original: PostureHistory | AgentTask;
 }
 ```
 
-### 2. Hook: Atualizar filtro e mapeamento
+### 2. Mesclar e ordenar os dados
 
-**Arquivo:** `src/hooks/useExchangeOnlineInsights.ts`
+Combinar `executions` (posture) e `agentTasks` em um unico array, ordenado por `created_at` descendente.
 
-- Remover mapeamento de categorias (usar diretamente `M365RiskCategory`)
-- Filtrar insights por `product === 'exchange_online'`
-- Retornar tipo `M365Insight` em vez de `ExchangeInsight`
+### 3. Remover componente Tabs
 
-### 3. Página: Usar componente unificado
+- Remover `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`
+- Manter uma unica tabela
+- Stats cards mostram totais combinados
+- Filtros aplicam a ambas as fontes
 
-**Arquivo:** `src/pages/m365/ExchangeOnlinePage.tsx`
+### 4. Coluna "Tipo" com badges visuais
 
-- Usar `M365CategorySection` em vez de `ExoInsightCategorySection`
-- Remover importação de tipos específicos do Exchange
-- Filtrar apenas categorias relevantes para Exchange
+- **Analise de Postura**: badge azul com icone Cloud
+- **PowerShell**: badge roxo com icone Terminal
 
-### 4. Tipos: Simplificar
+### 5. Coluna "Agent"
 
-**Arquivo:** `src/types/exchangeInsights.ts`
+- Para posture: exibir "-" ou "Edge Function"
+- Para agent tasks: exibir nome do agente
 
-- Marcar como **deprecated** ou remover
-- Manter apenas tipos específicos como `AffectedMailbox` se necessário
+### 6. Filtro de busca unificado
 
----
+Placeholder: "Buscar por tenant, agente ou workspace..."
 
-## Benefícios
+### 7. Acoes por tipo
 
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Categorias | 2 sistemas (11 + 5) | 1 sistema (11) |
-| Consistência | Confuso | Idêntico |
-| Manutenção | Duplicada | Centralizada |
-| UX | Categorias diferentes por página | Mesmo visual em todo lugar |
+- Posture: botao Eye para detalhes
+- Agent Task: botao Eye + botao Ban (cancelar) se pendente/running
 
----
+## Arquivo a Modificar
 
-## Detalhes Técnicos
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/pages/m365/M365ExecutionsPage.tsx` | Remover tabs, unificar tabela, mesclar dados |
 
-### Categorias relevantes para Exchange
-
-Das 11 categorias, apenas 3 serão exibidas na página Exchange:
-
-```typescript
-const EXCHANGE_CATEGORIES: M365RiskCategory[] = [
-  'email_exchange',      // Fluxo, DKIM, regras
-  'threats_activity',    // Anti-phish, Safe Links, etc.
-  'pim_governance',      // Remote domains, OWA
-];
-```
-
-### Nova estrutura da página Exchange
-
-```typescript
-// ExchangeOnlinePage.tsx
-const exchangeInsights = insights.filter(
-  i => i.product === 'exchange_online'
-);
-
-const insightsByCategory = {
-  email_exchange: exchangeInsights.filter(i => i.category === 'email_exchange'),
-  threats_activity: exchangeInsights.filter(i => i.category === 'threats_activity'),
-  pim_governance: exchangeInsights.filter(i => i.category === 'pim_governance'),
-};
-
-return (
-  <>
-    <M365CategorySection 
-      category="email_exchange" 
-      label={CATEGORY_LABELS.email_exchange}
-      insights={insightsByCategory.email_exchange} 
-    />
-    <M365CategorySection 
-      category="threats_activity" 
-      label={CATEGORY_LABELS.threats_activity}
-      insights={insightsByCategory.threats_activity} 
-    />
-    <M365CategorySection 
-      category="pim_governance" 
-      label={CATEGORY_LABELS.pim_governance}
-      insights={insightsByCategory.pim_governance} 
-    />
-  </>
-);
-```
-
----
-
-## Ordem de Implementação
-
-1. **Backend**: Atualizar `agent-task-result` para gerar categorias corretas (`email_exchange`, `threats_activity`, `pim_governance`)
-
-2. **Hook**: Modificar `useExchangeOnlineInsights` para usar `M365RiskCategory`
-
-3. **Página**: Atualizar `ExchangeOnlinePage` para usar `M365CategorySection`
-
-4. **Limpeza**: Remover/depreciar tipos específicos do Exchange
-
-5. **Teste**: Executar nova análise e verificar consistência visual
-
----
-
-## Resultado Final
-
-Ao abrir a página **Exchange Online** ou o **Relatório de Postura**, o usuário verá:
+## Resultado Visual
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│ Email & Exchange                                      90%       │
-├─────────────────────────────────────────────────────────────────┤
-│ ✓ Encaminhamento de Email Configurado                          │
-│ ✓ DKIM Habilitado                                              │
-│ ✓ Regras de Transporte Seguras                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│ Ameaças & Atividades Suspeitas                        75%       │
-├─────────────────────────────────────────────────────────────────┤
-│ ✓ Política Anti-Phishing Configurada                           │
-│ ✓ Safe Links Habilitado                                        │
-│ ⚠ Safe Attachments Desabilitado                   [Alto]       │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│ PIM & Governança                                     100%       │
-├─────────────────────────────────────────────────────────────────┤
-│ ✓ Remote Domains Configurados                                  │
-│ ✓ Política OWA Segura                                          │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Execucoes de Analise                                          [Atualizar]  │
+│ Monitore as analises de postura e tasks do agente M365                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ [Total: 12] [Pendentes: 2] [Executando: 1] [Concluidas: 8] [Falhas: 1]   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ [Buscar...]                        [Periodo: 24h]  [Status: Todos]        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Tenant      │ Agent        │ Tipo              │ Status    │ Duracao │ ... │
+│─────────────┼──────────────┼───────────────────┼───────────┼─────────┼─────│
+│ contoso.com │ -            │ ☁ Analise Postura │ Concluida │ 2.3m    │ 👁  │
+│ contoso.com │ Agent-PC01   │ ⌨ PowerShell      │ Executando│ 45.2s   │ 👁🚫│
+│ fabrikam.io │ -            │ ☁ Analise Postura │ Pendente  │ -       │ 👁  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-A diferença entre as páginas será apenas o **filtro aplicado**:
-- **Exchange Online**: Apenas insights com `product: 'exchange_online'`
-- **Relatório**: Todos os insights, organizados por categoria
+## Dialogs de Detalhes
+
+Os dois dialogs existentes (Posture Details e Task Details) serao mantidos. O clique no botao Eye abrira o dialog correto conforme o `source` do item.
+
