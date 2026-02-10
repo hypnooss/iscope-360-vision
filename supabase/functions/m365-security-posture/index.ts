@@ -201,9 +201,20 @@ function evaluateRule(
   const stepResult = stepResults.get(evalLogic.source_key);
   if (!stepResult) return null;
   
-  // If step had an error, return not_found status
+  // If step had an error, return not_found insight
   if (stepResult.error) {
-    return createInsight(rule, 'pass', 0, [], rule.not_found_description || 'Dados não disponíveis', now, stepResult.stepId);
+    const isPermissionError = stepResult.error.includes('403') || 
+                              stepResult.error.includes('Forbidden');
+    const isBadRequest = stepResult.error.includes('400') || 
+                         stepResult.error.includes('Bad Request');
+    
+    const detail = isPermissionError
+      ? 'Permissão insuficiente para acessar este recurso'
+      : isBadRequest
+        ? 'Endpoint não suportado neste tenant'
+        : 'Dados não disponíveis';
+    
+    return createNotFoundInsight(rule, rule.not_found_description || detail, now, stepResult.stepId);
   }
   
   const data = stepResult.data;
@@ -395,7 +406,7 @@ function evaluateRule(
     }
   } catch (e) {
     console.error(`[evaluateRule] Error evaluating ${rule.code}:`, e);
-    return createInsight(rule, 'pass', 0, [], rule.not_found_description || 'Erro na avaliação', now, stepResult.stepId);
+    return createNotFoundInsight(rule, rule.not_found_description || 'Erro na avaliação', now, stepResult.stepId);
   }
   
   return createInsight(rule, status, affectedCount, affectedEntities, description, now, stepResult.stepId);
@@ -462,6 +473,53 @@ function createInsight(
       portalUrl: portalMap[product] || 'https://entra.microsoft.com',
       caminhoPortal: [],
       passosDetalhados: rule.recommendation ? [rule.recommendation] : [],
+    },
+    detectedAt: now,
+    endpointUsado: rule.api_endpoint || endpointUsed,
+  };
+}
+
+function createNotFoundInsight(
+  rule: ComplianceRule,
+  description: string,
+  now: string,
+  endpointUsed: string
+): M365Insight {
+  const productMap: Record<string, string> = {
+    identities: 'entra_id',
+    auth_access: 'entra_id',
+    admin_privileges: 'entra_id',
+    apps_integrations: 'entra_id',
+    email_exchange: 'exchange_online',
+    threats_activity: 'defender',
+    intune_devices: 'intune',
+    pim_governance: 'entra_id',
+    sharepoint_onedrive: 'sharepoint',
+    teams_collaboration: 'teams',
+    defender_security: 'defender',
+  };
+  
+  const product = productMap[rule.category] || 'entra_id';
+  
+  return {
+    id: rule.code,
+    code: rule.code,
+    category: rule.category,
+    product,
+    severity: 'info',
+    titulo: rule.name,
+    descricaoExecutiva: description,
+    riscoTecnico: '',
+    impactoNegocio: '',
+    scoreImpacto: 0,
+    status: 'not_found' as any,
+    affectedCount: 0,
+    affectedEntities: [],
+    remediacao: {
+      productAfetado: product,
+      portalUrl: 'https://entra.microsoft.com',
+      caminhoPortal: [],
+      passosDetalhados: [],
     },
     detectedAt: now,
     endpointUsado: rule.api_endpoint || endpointUsed,
@@ -683,8 +741,22 @@ Deno.serve(async (req) => {
       .eq('is_active', true)
       .in('executor_type', ['edge_function', 'hybrid']);
 
-    if (blueprint_filter === 'exchange_online') {
-      blueprintQuery = blueprintQuery.ilike('name', '%Exchange%');
+    // Scope config: maps scope to blueprint pattern and rule categories
+    const scopeConfig: Record<string, { blueprintPattern: string; categories: string[] }> = {
+      exchange_online: { 
+        blueprintPattern: '%Exchange%', 
+        categories: ['email_exchange', 'threats_activity', 'pim_governance'] 
+      },
+      entra_id: { 
+        blueprintPattern: '%Entra%', 
+        categories: ['identities', 'auth_access', 'admin_privileges', 'apps_integrations'] 
+      },
+    };
+
+    if (blueprint_filter && scopeConfig[blueprint_filter]) {
+      const cfg = scopeConfig[blueprint_filter];
+      blueprintQuery = blueprintQuery.ilike('name', cfg.blueprintPattern);
+      console.log(`[m365-security-posture] Filtering blueprints by scope '${blueprint_filter}': pattern=${cfg.blueprintPattern}`);
     }
 
     const { data: blueprints } = await blueprintQuery;
@@ -703,8 +775,10 @@ Deno.serve(async (req) => {
       .eq('device_type_id', '5d1a7095-2d7b-4541-873d-4b03c3d6122f')
       .eq('is_active', true);
 
-    if (blueprint_filter === 'exchange_online') {
-      rulesQuery = rulesQuery.in('category', ['email_exchange', 'threats_activity', 'pim_governance']);
+    if (blueprint_filter && scopeConfig[blueprint_filter]) {
+      const cfg = scopeConfig[blueprint_filter];
+      rulesQuery = rulesQuery.in('category', cfg.categories);
+      console.log(`[m365-security-posture] Filtering rules by categories: ${cfg.categories.join(', ')}`);
     }
 
     const { data: rules } = await rulesQuery;
