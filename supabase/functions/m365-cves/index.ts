@@ -154,7 +154,7 @@ function extractCustomerActionRequired(vuln: any): boolean {
   }
 
   if (!vuln.Remediations || !Array.isArray(vuln.Remediations) || vuln.Remediations.length === 0) {
-    return true; // No remediation info → assume action needed
+    return false; // No remediation info → likely auto-fixed SaaS, no action needed
   }
 
   // Check if any remediation explicitly mentions customer action
