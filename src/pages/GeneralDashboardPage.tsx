@@ -3,62 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
-import { useDashboardStats, RecentActivity, ModuleHealth } from '@/hooks/useDashboardStats';
+import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ScoreGauge } from '@/components/ScoreGauge';
-import { StatCard } from '@/components/StatCard';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Shield, Cloud, Globe, Server, ArrowRight, Clock,
-  AlertTriangle, ShieldAlert, Info, CheckCircle,
-  Activity, MonitorCheck, LucideIcon,
+  Shield, Cloud, Globe, Server, ArrowRight,
+  AlertTriangle, ShieldAlert, LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-// ─── Module metadata ──────────────────────────────────────────────────────────
-
-const MODULE_META: Record<RecentActivity['module'], {
-  icon: LucideIcon;
-  label: string;
-  iconColor: string;
-  iconBg: string;
-  borderColor: string;
-}> = {
-  firewall: {
-    icon: Shield,
-    label: 'Firewall',
-    iconColor: 'text-orange-500',
-    iconBg: 'bg-orange-500/10',
-    borderColor: 'border-l-orange-500',
-  },
-  m365: {
-    icon: Cloud,
-    label: 'Microsoft 365',
-    iconColor: 'text-blue-500',
-    iconBg: 'bg-blue-500/10',
-    borderColor: 'border-l-blue-500',
-  },
-  external_domain: {
-    icon: Globe,
-    label: 'Domínio Externo',
-    iconColor: 'text-purple-500',
-    iconBg: 'bg-purple-500/10',
-    borderColor: 'border-l-purple-500',
-  },
-};
-
-const getScoreColor = (score: number) => {
-  if (score >= 90) return 'text-primary';
-  if (score >= 75) return 'text-emerald-400';
-  if (score >= 60) return 'text-warning';
-  return 'text-destructive';
-};
 
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
@@ -158,76 +116,6 @@ function ModuleHealthCard({
   );
 }
 
-// ─── Infrastructure Card ──────────────────────────────────────────────────────
-
-function InfrastructureCard({
-  agentsOnline, agentsTotal, totalAssets, lastOverallAnalysis, loading,
-}: {
-  agentsOnline: number;
-  agentsTotal: number;
-  totalAssets: number;
-  lastOverallAnalysis: string | null;
-  loading: boolean;
-}) {
-  const agentRatio = agentsTotal > 0 ? agentsOnline / agentsTotal : 0;
-  const agentStatusColor = agentRatio >= 1 ? 'bg-emerald-400' : agentRatio > 0 ? 'bg-warning' : 'bg-destructive';
-
-  return (
-    <Card className="glass-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <MonitorCheck className="w-4 h-4 text-muted-foreground" />
-          Infraestrutura
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-full" />
-            <Skeleton className="h-5 w-full" />
-          </div>
-        ) : (
-          <>
-            {/* Agents */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-                <span className="text-sm text-muted-foreground">Agents</span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">
-                {agentsOnline}/{agentsTotal} online
-              </span>
-            </div>
-
-            {/* Total assets */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Total de ativos</span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">{totalAssets}</span>
-            </div>
-
-            {/* Last scan */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Último scan</span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">
-                {lastOverallAnalysis
-                  ? formatDistanceToNow(new Date(lastOverallAnalysis), { addSuffix: true, locale: ptBR })
-                  : '—'}
-              </span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GeneralDashboardPage() {
@@ -252,48 +140,96 @@ export default function GeneralDashboardPage() {
   const hasM365 = hasEffectiveModuleAccess('scope_m365');
   const hasExtDomain = hasEffectiveModuleAccess('scope_external_domain');
 
-  const moduleCards = [
-    hasFirewall && {
-      key: 'firewall',
-      moduleCode: 'scope_firewall',
-      path: '/scope-firewall/dashboard',
-      meta: MODULE_META.firewall,
-      health: stats?.firewall,
-      assetLabel: 'firewalls',
-    },
-    hasM365 && {
-      key: 'm365',
-      moduleCode: 'scope_m365',
-      path: '/scope-m365/posture',
-      meta: MODULE_META.m365,
-      health: stats?.m365,
-      assetLabel: 'tenants',
-    },
-    hasExtDomain && {
-      key: 'external_domain',
-      moduleCode: 'scope_external_domain',
-      path: '/scope-external-domain/domains',
-      meta: MODULE_META.external_domain,
-      health: stats?.externalDomain,
-      assetLabel: 'domínios',
-    },
-  ].filter(Boolean) as Array<{
-    key: string;
-    moduleCode: string;
-    path: string;
-    meta: typeof MODULE_META.firewall;
-    health: ModuleHealth | undefined;
-    assetLabel: string;
-  }>;
-
-  if (authLoading) return null;
-
   const emptyHealth: ModuleHealth = {
     score: null,
     assetCount: 0,
     lastAnalysisDate: null,
     severities: { critical: 0, high: 0, medium: 0, low: 0 },
   };
+
+  // Agents card: score = percentage online
+  const agentsScore = stats && stats.agentsTotal > 0
+    ? Math.round((stats.agentsOnline / stats.agentsTotal) * 100)
+    : null;
+
+  const agentsHealth: ModuleHealth = {
+    score: agentsScore,
+    assetCount: stats?.agentsTotal || 0,
+    lastAnalysisDate: null,
+    severities: { critical: 0, high: 0, medium: 0, low: 0 },
+  };
+
+  type CardDef = {
+    key: string;
+    title: string;
+    icon: LucideIcon;
+    iconColor: string;
+    iconBg: string;
+    borderColor: string;
+    health: ModuleHealth;
+    assetLabel: string;
+    moduleCode: string;
+    path: string;
+  };
+
+  const moduleCards: CardDef[] = [
+    hasFirewall && {
+      key: 'firewall',
+      title: 'Firewall',
+      icon: Shield,
+      iconColor: 'text-orange-500',
+      iconBg: 'bg-orange-500/10',
+      borderColor: 'border-l-orange-500',
+      health: stats?.firewall || emptyHealth,
+      assetLabel: 'firewalls',
+      moduleCode: 'scope_firewall',
+      path: '/scope-firewall/dashboard',
+    },
+    hasM365 && {
+      key: 'm365',
+      title: 'Microsoft 365',
+      icon: Cloud,
+      iconColor: 'text-blue-500',
+      iconBg: 'bg-blue-500/10',
+      borderColor: 'border-l-blue-500',
+      health: stats?.m365 || emptyHealth,
+      assetLabel: 'tenants',
+      moduleCode: 'scope_m365',
+      path: '/scope-m365/posture',
+    },
+    hasExtDomain && {
+      key: 'external_domain',
+      title: 'Domínio Externo',
+      icon: Globe,
+      iconColor: 'text-teal-500',
+      iconBg: 'bg-teal-500/10',
+      borderColor: 'border-l-teal-500',
+      health: stats?.externalDomain || emptyHealth,
+      assetLabel: 'domínios',
+      moduleCode: 'scope_external_domain',
+      path: '/scope-external-domain/domains',
+    },
+    {
+      key: 'agents',
+      title: 'Infraestrutura',
+      icon: Server,
+      iconColor: 'text-emerald-500',
+      iconBg: 'bg-emerald-500/10',
+      borderColor: 'border-l-emerald-500',
+      health: agentsHealth,
+      assetLabel: stats ? `${stats.agentsOnline}/${stats.agentsTotal} online` : 'agents',
+      moduleCode: '',
+      path: '/agents',
+    },
+  ].filter(Boolean) as CardDef[];
+
+  const gridCols = moduleCards.length <= 2
+    ? 'grid-cols-1 md:grid-cols-2'
+    : moduleCards.length === 3
+    ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+    : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+
+  if (authLoading) return null;
 
   return (
     <AppLayout>
@@ -306,172 +242,27 @@ export default function GeneralDashboardPage() {
           <p className="text-muted-foreground">Painel executivo de segurança</p>
         </div>
 
-        {/* ── SECTION 1: Module Health Cards ─────────────────────────── */}
+        {/* Module Health Cards */}
         <section>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
             Postura de Segurança por Módulo
           </h2>
-          <div className={cn(
-            'grid gap-4',
-            moduleCards.length === 1 ? 'grid-cols-1 max-w-md' :
-            moduleCards.length === 2 ? 'grid-cols-1 md:grid-cols-2' :
-            'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
-          )}>
-            {moduleCards.map(({ key, moduleCode, path, meta, health, assetLabel }) => (
+          <div className={cn('grid gap-4', gridCols)}>
+            {moduleCards.map(({ key, title, icon, iconColor, iconBg, borderColor, health, assetLabel, moduleCode, path }) => (
               <ModuleHealthCard
                 key={key}
-                title={meta.label}
-                icon={meta.icon}
-                iconColor={meta.iconColor}
-                iconBg={meta.iconBg}
-                borderColor={meta.borderColor}
-                health={health || emptyHealth}
+                title={title}
+                icon={icon}
+                iconColor={iconColor}
+                iconBg={iconBg}
+                borderColor={borderColor}
+                health={health}
                 assetLabel={assetLabel}
                 loading={loading}
-                onAccess={() => handleGoToModule(moduleCode, path)}
+                onAccess={() => moduleCode ? handleGoToModule(moduleCode, path) : navigate(path)}
               />
             ))}
           </div>
-        </section>
-
-        {/* ── SECTION 2: Operational Summary ─────────────────────────── */}
-        <section>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-            Resumo Operacional
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Severity cards - takes 2 cols */}
-            <div className="lg:col-span-2">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {loading ? (
-                  Array(4).fill(0).map((_, i) => (
-                    <Card key={i} className="glass-card">
-                      <CardContent className="p-3">
-                        <Skeleton className="h-4 w-16 mb-2" />
-                        <Skeleton className="h-8 w-10" />
-                      </CardContent>
-                    </Card>
-                  ))
-                ) : (
-                  <>
-                    <StatCard
-                      title="Críticos"
-                      value={stats?.totalSeverities.critical || 0}
-                      icon={ShieldAlert}
-                      variant="destructive"
-                      compact
-                      delay={0}
-                    />
-                    <StatCard
-                      title="Altos"
-                      value={stats?.totalSeverities.high || 0}
-                      icon={AlertTriangle}
-                      variant="warning"
-                      compact
-                      delay={0.05}
-                    />
-                    <StatCard
-                      title="Médios"
-                      value={stats?.totalSeverities.medium || 0}
-                      icon={Info}
-                      variant="default"
-                      compact
-                      delay={0.1}
-                    />
-                    <StatCard
-                      title="Baixos"
-                      value={stats?.totalSeverities.low || 0}
-                      icon={Shield}
-                      variant="success"
-                      compact
-                      delay={0.15}
-                    />
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Infrastructure card */}
-            <InfrastructureCard
-              agentsOnline={stats?.agentsOnline || 0}
-              agentsTotal={stats?.agentsTotal || 0}
-              totalAssets={stats?.totalAssets || 0}
-              lastOverallAnalysis={stats?.lastOverallAnalysis || null}
-              loading={loading}
-            />
-          </div>
-        </section>
-
-        {/* ── SECTION 3: Recent Activity ─────────────────────────────── */}
-        <section>
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="w-5 h-5" />
-                Atividade Recente
-              </CardTitle>
-              <CardDescription>Últimas análises realizadas em todos os módulos</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-4">
-                  {Array(4).fill(0).map((_, i) => (
-                    <div key={i} className="flex items-center gap-4">
-                      <Skeleton className="h-10 w-10 rounded-lg" />
-                      <div className="flex-1">
-                        <Skeleton className="h-4 w-32 mb-2" />
-                        <Skeleton className="h-3 w-24" />
-                      </div>
-                      <Skeleton className="h-6 w-12" />
-                    </div>
-                  ))}
-                </div>
-              ) : !stats?.recentActivity.length ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Nenhuma análise realizada ainda</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {stats.recentActivity.map((item) => {
-                    const meta = MODULE_META[item.module];
-                    const Icon = meta.icon;
-                    return (
-                      <div
-                        key={`${item.module}-${item.id}`}
-                        className="flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/50 transition-colors"
-                      >
-                        <div className={cn('p-2 rounded-lg', meta.iconBg)}>
-                          <Icon className={cn('w-5 h-5', meta.iconColor)} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground truncate">{item.resourceName}</p>
-                          <p className="text-sm text-muted-foreground truncate">{item.clientName}</p>
-                        </div>
-                        {item.score != null && (
-                          <div className="flex items-center gap-1.5">
-                            {item.score >= 80 ? (
-                              <CheckCircle className="w-4 h-4 text-emerald-400" />
-                            ) : item.score >= 60 ? (
-                              <AlertTriangle className="w-4 h-4 text-warning" />
-                            ) : (
-                              <AlertTriangle className="w-4 h-4 text-destructive" />
-                            )}
-                            <span className={cn('font-bold text-sm tabular-nums', getScoreColor(item.score))}>
-                              {item.score}
-                            </span>
-                          </div>
-                        )}
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {formatDistanceToNow(new Date(item.date), { addSuffix: true, locale: ptBR })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </section>
       </div>
     </AppLayout>

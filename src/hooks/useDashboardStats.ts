@@ -24,14 +24,6 @@ const emptyHealth: ModuleHealth = {
   severities: { critical: 0, high: 0, medium: 0, low: 0 },
 };
 
-export interface RecentActivity {
-  id: string;
-  module: 'firewall' | 'm365' | 'external_domain';
-  resourceName: string;
-  clientName: string;
-  score: number | null;
-  date: string;
-}
 
 export interface DashboardStats {
   firewall: ModuleHealth;
