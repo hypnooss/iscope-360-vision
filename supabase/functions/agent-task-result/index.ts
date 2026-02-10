@@ -332,7 +332,35 @@ function processM365AgentInsights(rawData: Record<string, unknown>, rules: Compl
   for (const rule of rules) {
     const evalLogic = rule.evaluation_logic as Record<string, unknown>;
     const sourceKey = evalLogic?.source_key as string | undefined;
-    if (!sourceKey || !rawData[sourceKey]) continue;
+    if (!sourceKey) continue;
+    
+    // Check if data is missing (step was not_applicable or failed)
+    if (!rawData[sourceKey] || rawData[sourceKey] === null) {
+      const stepStatus = rawData[`_step_status_${sourceKey}`] as string | undefined;
+      if (stepStatus === 'not_applicable' || stepStatus === 'failed') {
+        insights.push({
+          id: rule.code,
+          category: rule.category as M365RiskCategory,
+          product: mapCategoryToProduct(rule.category),
+          name: rule.name,
+          description: (rule as any).not_found_description || rule.description || rule.name,
+          severity: 'info',
+          status: 'not_found' as any,
+          details: stepStatus === 'not_applicable'
+            ? 'Recurso não licenciado neste tenant'
+            : 'Dados não coletados - verifique logs do agent',
+          recommendation: undefined,
+          criteria: rule.description || undefined,
+          passDescription: rule.pass_description || undefined,
+          failDescription: rule.fail_description || undefined,
+          notFoundDescription: (rule as any).not_found_description || undefined,
+          technicalRisk: rule.technical_risk || undefined,
+          businessImpact: rule.business_impact || undefined,
+          apiEndpoint: rule.api_endpoint || undefined,
+        });
+      }
+      continue;
+    }
 
     const data = extractStepData(rawData[sourceKey]);
     if (data === null || data === undefined) continue;
@@ -4100,6 +4128,9 @@ serve(async (req: Request) => {
               // Already in correct format
               rawData[step.step_id] = stepData;
             }
+          } else if (step.status === 'not_applicable' || step.status === 'failed') {
+            // Propagate step status metadata so insight generator knows why data is missing
+            rawData[`_step_status_${step.step_id}`] = step.status;
           }
         }
         console.log(`Reconstructed raw_data from ${stepResults.length} steps, ${Object.keys(rawData).length} successful`);

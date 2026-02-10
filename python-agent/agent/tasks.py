@@ -127,6 +127,8 @@ class TaskExecutor:
                     step_results.append(sr)
                     if sr['status'] == 'success':
                         steps_completed += 1
+                    elif sr['status'] == 'not_applicable':
+                        steps_completed += 1  # not_applicable counts as completed
                     elif sr['status'] == 'failed':
                         steps_failed += 1
                         errors.append(f"{sr['step_id']}: {sr.get('error', 'unknown')}")
@@ -306,12 +308,16 @@ class TaskExecutor:
                 global_step_index += 1
         
         # Determine final status
-        if steps_failed == len(steps) and steps:
+        # Count not_applicable steps separately - they don't count as failures
+        steps_na = sum(1 for sr in step_results if sr['status'] == 'not_applicable')
+        actual_failures = steps_failed  # not_applicable already excluded from steps_failed
+        
+        if actual_failures == len(steps) and steps:
             status = 'failed'
-        elif steps_failed > 0:
+        elif actual_failures > 0:
             status = 'partial'  # Some steps failed
         else:
-            status = 'completed'
+            status = 'completed'  # All success or not_applicable
         
         execution_time_ms = int((time.time() - start_time) * 1000)
         
@@ -474,8 +480,14 @@ class TaskExecutor:
                 # Each command result has 'success' and 'data'/'error' from the PS script
                 if isinstance(cmd_result, dict):
                     if cmd_result.get('success') is False:
-                        step_status = 'failed'
-                        step_error = cmd_result.get('error', 'Command failed')
+                        error_text = cmd_result.get('error', 'Command failed')
+                        # Detect unlicensed cmdlets as not_applicable
+                        if 'is not recognized as a name of a cmdlet' in error_text:
+                            step_status = 'not_applicable'
+                            step_error = f"Cmdlet nao disponivel (licenca ausente): {error_text[:150]}"
+                        else:
+                            step_status = 'failed'
+                            step_error = error_text
                         step_data = None
                     else:
                         step_status = 'success'
