@@ -135,7 +135,12 @@ const fwHealth: ModuleHealth = {
       }
 
       // --- M365 ---
-      const m365Health: ModuleHealth = { ...emptyHealth, assetCount: m365Res.count || 0 };
+const m365Health: ModuleHealth = {
+        score: null,
+        assetCount: m365Res.count || 0,
+        lastAnalysisDate: null,
+        severities: { critical: 0, high: 0, medium: 0, low: 0 },
+      };
       if (tenantIds.length > 0) {
         const { data: m365History } = await supabase
           .from('m365_posture_history')
