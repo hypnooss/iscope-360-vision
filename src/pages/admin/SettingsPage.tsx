@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -43,6 +43,7 @@ export default function SettingsPage() {
   
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("m365");
+  const initialLoadDone = useRef(false);
   const [saving, setSaving] = useState(false);
   const [validatingPermissions, setValidatingPermissions] = useState(false);
   const [m365Config, setM365Config] = useState<M365Config>({
@@ -137,8 +138,9 @@ export default function SettingsPage() {
   }, [user, role, authLoading, navigate]);
 
   useEffect(() => {
-    if (user && role === 'super_admin') {
-      checkM365Config();
+    if (user && role === 'super_admin' && !initialLoadDone.current) {
+      initialLoadDone.current = true;
+      checkM365Config(true);
       loadAgentSettings();
       loadAgentUpdateSettings();
       loadAgentStats();
