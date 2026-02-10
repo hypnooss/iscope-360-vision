@@ -244,6 +244,14 @@ serve(async (req) => {
           const cveId = vuln.CVE;
           if (!cveId || seenCves.has(cveId)) continue;
 
+          // Step 0: Filter by CVE title — reject on-premises server vulnerabilities
+          const cveTitle = (vuln.Title?.Value || '').toLowerCase();
+          const onPremTitlePatterns = [
+            'sharepoint server', 'sharepoint enterprise server', 'sharepoint foundation',
+            'exchange server', 'windows server', 'skype for business server', 'lync server'
+          ];
+          if (onPremTitlePatterns.some(p => cveTitle.includes(p))) continue;
+
           // Step 1: Get raw product names
           const productNames = getProductNames(vuln, productTree);
 
