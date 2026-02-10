@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { StatCard } from '@/components/StatCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,8 +13,8 @@ import { AlertTriangle, ShieldAlert, Shield, ChevronDown, ChevronRight, External
 import { cn } from '@/lib/utils';
 
 const ALL_PRODUCTS = [
-  'Exchange Server',
-  'SharePoint',
+  'Exchange Online',
+  'SharePoint Online',
   'Entra ID',
   'Teams',
   'Outlook',
@@ -139,6 +140,10 @@ export default function M365CVEsPage() {
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
+        <PageBreadcrumb items={[
+          { label: 'Microsoft 365', href: '/scope-m365/tenant-connection' },
+          { label: 'CVEs' },
+        ]} />
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

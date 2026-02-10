@@ -190,8 +190,8 @@ serve(async (req) => {
           // Deduplicate and simplify product names
           const simplifiedProducts = [...new Set(productNames.map((name: string) => {
             // Extract the main product family name
-            if (name.toLowerCase().includes('exchange')) return 'Exchange Server';
-            if (name.toLowerCase().includes('sharepoint')) return 'SharePoint';
+            if (name.toLowerCase().includes('exchange')) return 'Exchange Online';
+            if (name.toLowerCase().includes('sharepoint')) return 'SharePoint Online';
             if (name.toLowerCase().includes('teams')) return 'Teams';
             if (name.toLowerCase().includes('outlook')) return 'Outlook';
             if (name.toLowerCase().includes('entra') || name.toLowerCase().includes('azure active directory')) return 'Entra ID';
