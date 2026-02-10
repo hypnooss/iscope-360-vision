@@ -143,14 +143,16 @@ export default function M365CVEsPage() {
   }, [data?.cves, selectedProducts, severityFilter, actionFilter]);
 
   const stats = useMemo(() => {
-    const cves = filteredCves;
+    const cves = data?.cves ?? [];
     return {
       total: cves.length,
       critical: cves.filter((c) => c.severity === 'CRITICAL').length,
       high: cves.filter((c) => c.severity === 'HIGH').length,
+      medium: cves.filter((c) => c.severity === 'MEDIUM').length,
+      low: cves.filter((c) => c.severity === 'LOW').length,
       actionRequired: cves.filter((c) => c.customerActionRequired).length,
     };
-  }, [filteredCves]);
+  }, [data?.cves]);
 
   const toggleProduct = (product: string) => {
     setSelectedProducts((prev) =>
@@ -189,60 +191,34 @@ export default function M365CVEsPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard title="Total CVEs" value={stats.total} icon={Shield} variant="default" delay={0} compact />
-          <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact />
-          <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact />
-          <StatCard title="Ação Necessária" value={stats.actionRequired} icon={UserCheck} variant="destructive" delay={0.15} compact />
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+          <StatCard title="Total CVEs" value={stats.total} icon={Shield} variant="default" delay={0} compact onClick={() => { setSeverityFilter('all'); setActionFilter(false); }} active={severityFilter === 'all' && !actionFilter} />
+          <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'CRITICAL' ? 'all' : 'CRITICAL'); }} active={severityFilter === 'CRITICAL'} />
+          <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'HIGH' ? 'all' : 'HIGH'); }} active={severityFilter === 'HIGH'} />
+          <StatCard title="Médios" value={stats.medium} icon={Info} variant="warning" delay={0.15} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'MEDIUM' ? 'all' : 'MEDIUM'); }} active={severityFilter === 'MEDIUM'} />
+          <StatCard title="Baixos" value={stats.low} icon={Shield} variant="default" delay={0.2} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'LOW' ? 'all' : 'LOW'); }} active={severityFilter === 'LOW'} />
+          <StatCard title="Ação Necessária" value={stats.actionRequired} icon={UserCheck} variant="destructive" delay={0.25} compact onClick={() => { setSeverityFilter('all'); setActionFilter(prev => !prev); }} active={actionFilter} />
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Produtos:</span>
-            {ALL_PRODUCTS.map((product) => (
-              <Button
-                key={product}
-                variant={selectedProducts.includes(product) ? 'default' : 'outline'}
-                size="sm"
-                className="text-xs h-7"
-                onClick={() => toggleProduct(product)}
-              >
-                {product}
-              </Button>
-            ))}
-            {selectedProducts.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedProducts([])}>
-                Limpar
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Severidade:</span>
-              <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                <SelectTrigger className="w-[140px] h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="CRITICAL">Crítico</SelectItem>
-                  <SelectItem value="HIGH">Alto</SelectItem>
-                  <SelectItem value="MEDIUM">Médio</SelectItem>
-                  <SelectItem value="LOW">Baixo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium text-muted-foreground">Produtos:</span>
+          {ALL_PRODUCTS.map((product) => (
             <Button
-              variant={actionFilter ? 'default' : 'outline'}
+              key={product}
+              variant={selectedProducts.includes(product) ? 'default' : 'outline'}
               size="sm"
               className="text-xs h-7"
-              onClick={() => setActionFilter(!actionFilter)}
+              onClick={() => toggleProduct(product)}
             >
-              <UserCheck className="w-3 h-3 mr-1" />
-              Ação Necessária
+              {product}
             </Button>
-          </div>
+          ))}
+          {selectedProducts.length > 0 && (
+            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedProducts([])}>
+              Limpar
+            </Button>
+          )}
         </div>
 
         {/* CVE List */}

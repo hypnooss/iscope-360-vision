@@ -8,6 +8,8 @@ interface StatCardProps {
   variant: 'success' | 'destructive' | 'warning' | 'default';
   delay?: number;
   compact?: boolean;
+  onClick?: () => void;
+  active?: boolean;
 }
 
 const variantStyles = {
@@ -31,15 +33,25 @@ const valueStyles = {
   default: 'text-primary',
 };
 
-export function StatCard({ title, value, icon: Icon, variant, delay = 0, compact = false }: StatCardProps) {
+const ringStyles = {
+  success: 'ring-success',
+  destructive: 'ring-destructive',
+  warning: 'ring-warning',
+  default: 'ring-primary',
+};
+
+export function StatCard({ title, value, icon: Icon, variant, delay = 0, compact = false, onClick, active = false }: StatCardProps) {
   return (
     <div 
       className={cn(
         "glass-card rounded-xl border animate-fade-in",
         compact ? "p-3" : "p-4",
-        variantStyles[variant]
+        variantStyles[variant],
+        onClick && "cursor-pointer hover:scale-[1.02] transition-transform",
+        active && `ring-2 ring-offset-1 ${ringStyles[variant]}`
       )}
       style={{ animationDelay: `${delay}s` }}
+      onClick={onClick}
     >
       <div className="flex items-center justify-between">
         <div>
