@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 
 export interface M365CVE {
   id: string;
@@ -30,21 +29,15 @@ export function useM365CVEs(months: number = 3, products?: string[]) {
         params.set('products', products.join(','));
       }
 
-      const { data, error } = await supabase.functions.invoke('m365-cves', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        body: null,
-      });
-
-      // supabase.functions.invoke doesn't support query params natively,
-      // so we call directly
-      const baseUrl = `https://akbosdbyheezghieiefz.supabase.co/functions/v1/m365-cves?${params.toString()}`;
-      const res = await fetch(baseUrl, {
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo',
-          'Content-Type': 'application/json',
-        },
-      });
+      const res = await fetch(
+        `https://akbosdbyheezghieiefz.supabase.co/functions/v1/m365-cves?${params.toString()}`,
+        {
+          headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (!res.ok) {
         throw new Error(`Failed to fetch CVEs: ${res.status}`);
@@ -52,7 +45,7 @@ export function useM365CVEs(months: number = 3, products?: string[]) {
 
       return res.json();
     },
-    staleTime: 1000 * 60 * 30, // 30 min cache
+    staleTime: 1000 * 60 * 30,
     retry: 1,
   });
 }
