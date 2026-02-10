@@ -1,72 +1,110 @@
 
-# Transformar a pagina Entra ID no mesmo modelo da Exchange Online
 
-## Objetivo
+# Corrigir Scope Filtering e Erros Graph API no M365
 
-Substituir a pagina hub atual do Entra ID (com cards de navegacao para sub-paginas) por uma pagina de insights diretos com compliance sections, identica a Exchange Online. Os dados virao do snapshot mais recente da tabela `m365_posture_history`, filtrados pelo produto `entra_id`.
+## Problema 1: Agent task criada desnecessariamente para scope `entra_id`
 
-## Categorias Entra ID
+O `trigger-m365-posture-analysis` sempre cria uma agent task quando o tenant tem agent vinculado, independentemente do scope. Para `entra_id`, nao existe blueprint com `executor_type: 'hybrid'` ou `'agent'` -- toda a coleta e via Graph API (Edge Function). O agent recebe a task e executa 18 steps de Exchange desnecessariamente.
 
-As categorias de risco relevantes ao produto Entra ID sao:
+**Correcao:** No `trigger-m365-posture-analysis`, antes de criar a agent task, verificar se existem blueprints com `executor_type IN ('agent', 'hybrid')` que correspondam ao scope solicitado. Se nao houver, pular a criacao da task.
 
-- `identities` - Identidades
-- `auth_access` - Autenticacao e Acesso
-- `admin_privileges` - Privilegios Administrativos
-- `apps_integrations` - Aplicacoes e Integracoes
+```text
+trigger-m365-posture-analysis/index.ts (linhas ~111-160)
 
-## Alteracoes
+ANTES:
+  if (tenantAgent?.agent_id) {
+    // Sempre cria agent task
+  }
 
-### 1. Criar hook `useEntraIdInsights` (novo arquivo)
+DEPOIS:
+  if (tenantAgent?.agent_id) {
+    // Verificar se o scope requer coleta via agent
+    const needsAgent = await checkScopeNeedsAgent(supabaseAdmin, scope);
+    if (needsAgent) {
+      // Criar agent task
+    } else {
+      console.log('Scope does not require agent, skipping task creation');
+    }
+  }
+```
 
-**Arquivo:** `src/hooks/useEntraIdInsights.ts`
+A funcao `checkScopeNeedsAgent` consulta `device_blueprints` para o device type M365 com `executor_type IN ('agent', 'hybrid')` e verifica se o nome do blueprint corresponde ao scope (ex: scope `exchange_online` -> blueprint com nome contendo "Exchange").
 
-Clone do `useExchangeOnlineInsights.ts` com as seguintes diferencas:
-- Interface `EntraIdInsight` com `product: 'entra_id'`
-- Constante `ENTRA_ID_CATEGORIES`: `['identities', 'auth_access', 'admin_privileges', 'apps_integrations']`
-- Filtro por `product === 'entra_id'` ou categoria no array acima
-- Fallback de legado: IDs comecando com `IDT-`, `AUT-`, `ADM-`, `APP-`
-- Scope de analise: `scope: 'entra_id'` ao disparar `trigger-m365-posture-analysis`
-- Mapper de categorias legadas adaptado para Entra ID
+## Problema 2: Erros 403/400 da Graph API nao geram insights `not_found`
 
-### 2. Reescrever pagina `EntraIdPage` 
+Atualmente, quando um step da Graph API falha com 403 (permissao ausente) ou 400 (endpoint invalido), o `evaluateRule` na funcao `m365-security-posture` retorna um insight com status `pass` e mensagem generica "Dados nao disponiveis". Isso e enganoso -- deveria ser `not_found`.
 
-**Arquivo:** `src/pages/m365/EntraIdPage.tsx`
+**Correcao:** Na funcao `evaluateRule` (linha ~204-207), quando o step tem erro, retornar status `not_found` em vez de `pass`. Isso requer uma pequena alteracao no tipo de retorno para suportar o status adicional.
 
-Substituir o hub de cards pelo modelo da Exchange Online:
-- Usar `useEntraIdInsights` para buscar dados
-- Summary cards com contadores de severidade (usando `ExoInsightSummaryCards` renomeado ou clone)
-- Botao "Reanalisar" que chama `triggerAnalysis`
-- Tenant selector com badge "Conectado" e data da ultima analise
-- Sections por categoria usando `ExchangeComplianceSection` (componente generico, funciona para qualquer categoria)
-- Mapper `mapExchangeAgentInsight` reutilizado (ja e generico, apenas ajustar product)
-- Estados: sem tenant, loading, erro, vazio, com dados
-- Icone do header: `Shield` em vez de `Mail`
+```text
+m365-security-posture/index.ts (linhas ~204-207)
 
-### 3. Criar mapper `mapEntraIdAgentInsight`
+ANTES:
+  if (stepResult.error) {
+    return createInsight(rule, 'pass', 0, [], 
+      rule.not_found_description || 'Dados nao disponiveis', now, stepResult.stepId);
+  }
 
-**Arquivo:** `src/lib/complianceMappers.ts`
+DEPOIS:
+  if (stepResult.error) {
+    // Determinar se e erro de permissao/licenca
+    const isPermissionError = stepResult.error.includes('403') || 
+                              stepResult.error.includes('Forbidden');
+    const isBadRequest = stepResult.error.includes('400') || 
+                         stepResult.error.includes('Bad Request');
+    
+    const detail = isPermissionError
+      ? 'Permissao insuficiente para acessar este recurso'
+      : isBadRequest
+        ? 'Endpoint nao suportado neste tenant'
+        : 'Dados nao disponiveis';
+    
+    return createNotFoundInsight(rule, 
+      rule.not_found_description || detail, now, stepResult.stepId);
+  }
+```
 
-Adicionar funcao identica a `mapExchangeAgentInsight` mas com `product: 'entra_id'` e `source: 'graph'`.
+A nova funcao `createNotFoundInsight` gera um insight com `status: 'not_found'` e `severity: 'info'`, garantindo que apareca na UI como neutro (cinza) em vez de pass (verde).
 
-### 4. Criar `EntraIdInsightSummaryCards`
+## Problema 3: Scope filtering no `m365-security-posture` nao cobre `entra_id`
 
-**Arquivo:** `src/components/m365/entra-id/EntraIdInsightSummaryCards.tsx`
+O filtro de blueprints na linha 686-688 so trata `exchange_online`. Precisa tambem tratar `entra_id` e outros scopes futuros.
 
-Clone do `ExoInsightSummaryCards` com icone `Shield` em vez de `Mail` no card "Total de Insights".
+**Correcao:** Expandir o filtro para mapear scope -> nome de blueprint e categorias.
 
-### 5. Ajustar rotas (manter sub-paginas existentes)
+```text
+m365-security-posture/index.ts (linhas ~686-708)
 
-As sub-paginas existentes (`/scope-m365/entra-id/analysis`, `/scope-m365/entra-id/security-insights`, `/scope-m365/entra-id/applications`) permanecem como estao. A rota `/scope-m365/entra-id` agora mostra insights diretamente em vez do hub.
+// Mapa de scope para filtros
+const scopeConfig: Record<string, { blueprintPattern: string; categories: string[] }> = {
+  exchange_online: { 
+    blueprintPattern: '%Exchange%', 
+    categories: ['email_exchange', 'threats_activity', 'pim_governance'] 
+  },
+  entra_id: { 
+    blueprintPattern: '%Entra%', 
+    categories: ['identities', 'auth_access', 'admin_privileges', 'apps_integrations'] 
+  },
+};
 
-## Resumo tecnico
+if (blueprint_filter && scopeConfig[blueprint_filter]) {
+  const cfg = scopeConfig[blueprint_filter];
+  blueprintQuery = blueprintQuery.ilike('name', cfg.blueprintPattern);
+  rulesQuery = rulesQuery.in('category', cfg.categories);
+}
+```
 
-| Arquivo | Acao |
-|---------|------|
-| `src/hooks/useEntraIdInsights.ts` | Novo - clone do useExchangeOnlineInsights adaptado |
-| `src/pages/m365/EntraIdPage.tsx` | Reescrever - substituir hub por pagina de insights |
-| `src/lib/complianceMappers.ts` | Adicionar `mapEntraIdAgentInsight` |
-| `src/components/m365/entra-id/EntraIdInsightSummaryCards.tsx` | Novo - summary cards com icone Shield |
+## Arquivos afetados
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Verificar se scope requer agent antes de criar task |
+| `supabase/functions/m365-security-posture/index.ts` | Scope filtering para `entra_id`; insights `not_found` para erros 403/400 |
 
 ## Resultado esperado
 
-A pagina Entra ID tera a mesma experiencia visual da Exchange Online: summary cards de severidade no topo, seguidos por sections colapsaveis por categoria (Identidades, Autenticacao, Privilegios, Aplicacoes), cada uma contendo cards de conformidade unificados com status pass/fail/warning/not_found.
+- Analise com scope `entra_id` nao cria agent task desnecessaria
+- Steps Graph API com erro 403 geram insights "Nao Encontrado" (cinza) em vez de "Pass" (verde)
+- Filtragem correta de blueprints e regras para Entra ID (apenas categorias relevantes)
+- Contagem consistente de insights mesmo com permissoes ausentes
+
