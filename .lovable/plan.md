@@ -1,45 +1,55 @@
 
-# Ajustes no Dashboard: Cor/Icone do Dominio Externo + CVEs no M365
+# Ajustes no Dashboard: Workspace Selector + Espacamento + Infraestrutura
 
-## 1. Corrigir icone e cor do Dominio Externo
+## 1. Dropdown de Workspace para Super Admins
 
-O banco de dados define o modulo "Dominio Externo" com:
-- **Icone**: `Layers` (e nao `Globe` como esta no dashboard)
-- **Cor**: `text-green-500` (e nao `text-teal-500` como esta no dashboard)
+Adicionar um dropdown (Select) no canto superior direito do header do Dashboard (area do retangulo vermelho na imagem) que permite Super Admins filtrar os dados por workspace.
 
-O card sera atualizado para usar `Layers` e `green-500` em todos os pontos (icone, fundo, borda).
+- Visivel apenas para `super_admin` e `super_suporte`
+- Opcao padrao: "Todos os workspaces" (sem filtro)
+- Listar todos os workspaces da tabela `clients`
+- Ao selecionar um workspace, os dados dos cards (Module Health + Infraestrutura) devem refletir apenas aquele workspace
 
-## 2. Substituir severidades do M365 por CVEs recentes
+### Implementacao:
+- Buscar lista de workspaces (`clients`) via query Supabase no componente
+- Armazenar `selectedWorkspaceId` em state local
+- Modificar `useDashboardStats` para aceitar um parametro opcional `workspaceId: string | null` que, quando fornecido, filtra todas as queries por `client_id`
+- Passar o `selectedWorkspaceId` para o hook
 
-Os badges "14 criticos / 8 altos" no card M365 nao sao severidades de postura -- sao CVEs da Microsoft. A proposta e:
+## 2. Corrigir espacamento (setas verdes)
 
-- **Remover os badges de severidade do card M365**
-- **Adicionar contagem de CVEs NEW** (ultimos 30 dias) ao lado do ScoreGauge
-- Layout: um pequeno indicador compacto abaixo ou ao lado do gauge mostrando algo como "12 CVEs recentes" com a tag NEW animada (ja existente no sistema de CVEs)
-- Usar o hook `useM365CVEs` (ja existe, com `months: 1` para 30 dias) para buscar a contagem
-- Exibir apenas se houver CVEs (>0), de forma discreta
+O Dashboard atualmente usa `space-y-8` enquanto o padrao do sistema e `space-y-6`. Ajustar:
+- Container principal: `space-y-8` para `space-y-6`
+- Manter `p-6 lg:p-8` (padrao do sistema)
+
+## 3. Card de Infraestrutura - cor e layout (setas azuis)
+
+A borda e icone do card de Infraestrutura ja usam `primary` (teal), que e a cor do centro do gauge. Isso esta correto.
+
+Sobre o numero distante do texto no card de Infraestrutura: o grid de 4 colunas usa `ml-auto` nos numeros, empurrando-os para longe. Vou ajustar para que o numero fique proximo ao label, removendo o `ml-auto` e usando `gap-1.5` mais compacto.
 
 ## Alteracoes tecnicas
 
-### Arquivo: `src/pages/GeneralDashboardPage.tsx`
-
-1. **Importar `Layers`** do lucide-react (substituir `Globe` se nao for usado em outro lugar)
-2. **Corrigir o card de Dominio Externo**:
-   - `icon: Layers` (era `Globe`)
-   - `iconColor: 'text-green-500'` (era `text-teal-500`)
-   - `iconBg: 'bg-green-500/10'` (era `bg-teal-500/10`)
-   - `borderColor: 'border-l-green-500'` (era `border-l-teal-500`)
-3. **Importar e usar `useM365CVEs`** com `months: 1` para buscar CVEs dos ultimos 30 dias
-4. **Modificar `ModuleHealthCard`** para aceitar uma prop opcional `extraInfo` (ReactNode) que sera renderizada ao lado ou abaixo do ScoreGauge
-5. **Para o card M365**: passar como `extraInfo` um badge compacto com contagem de CVEs recentes e tag NEW animada, visivel apenas quando ha CVEs
-6. **Remover os badges de severidade do card M365** (manter para Firewall que tem severidades reais de postura)
-
 ### Arquivo: `src/hooks/useDashboardStats.ts`
 
-Nenhuma alteracao necessaria -- os dados de CVE vem do hook `useM365CVEs` separado.
+- Adicionar parametro `selectedWorkspaceId?: string | null` ao hook
+- Na logica de filtragem: se `selectedWorkspaceId` for fornecido, usar `eq('client_id', selectedWorkspaceId)` em vez de `in('client_id', workspaceIds)`
+- Se preview mode estiver ativo, priorizar os filtros de preview (manter comportamento existente)
+- Adicionar `selectedWorkspaceId` como dependencia do useEffect
+
+### Arquivo: `src/pages/GeneralDashboardPage.tsx`
+
+1. **Imports**: Adicionar `Select, SelectContent, SelectItem, SelectTrigger, SelectValue` de `@/components/ui/select` e `useState` do React
+2. **State**: `selectedWorkspaceId` (string | null, default null) e `workspaces` (array de {id, name})
+3. **Fetch workspaces**: useEffect para buscar `clients` quando usuario for super_admin/super_suporte
+4. **Dropdown**: Renderizar o Select no header, alinhado a direita, ao lado do titulo "Dashboard"
+5. **Passar para hook**: `useDashboardStats(selectedWorkspaceId)`
+6. **Espacamento**: Alterar `space-y-8` para `space-y-6`
+7. **Numeros no Infra Card**: Remover `ml-auto` dos spans de contagem e ajustar layout para ficarem proximos ao label
 
 ### Resumo
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/GeneralDashboardPage.tsx` | Corrigir icone/cor Ext. Domain + adicionar CVEs ao card M365 |
+| `src/hooks/useDashboardStats.ts` | Aceitar `selectedWorkspaceId` para filtro por workspace |
+| `src/pages/GeneralDashboardPage.tsx` | Dropdown workspace + espacamento + layout numeros |
