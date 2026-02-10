@@ -1,25 +1,39 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
+import { useEntraIdInsights } from '@/hooks/useEntraIdInsights';
+import { mapEntraIdAgentInsight } from '@/lib/complianceMappers';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EntraIdInsightSummaryCards } from '@/components/m365/entra-id/EntraIdInsightSummaryCards';
+import { ExchangeComplianceSection } from '@/components/m365/exchange/ExchangeComplianceSection';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { 
+  M365RiskCategory, 
+  CATEGORY_LABELS,
+} from '@/types/m365Insights';
+import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
+import { 
   Shield, 
-  Users, 
-  Key, 
-  FileText,
+  RefreshCw, 
   AlertTriangle,
-  ArrowRight,
-  RefreshCw,
-  Link as LinkIcon
+  Link as LinkIcon,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+const ENTRA_ID_CATEGORIES: M365RiskCategory[] = [
+  'identities',
+  'auth_access',
+  'admin_privileges',
+  'apps_integrations',
+];
 
 export default function EntraIdPage() {
   const { user, loading: authLoading } = useAuth();
@@ -27,6 +41,19 @@ export default function EntraIdPage() {
   const navigate = useNavigate();
   
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  const { 
+    insights, 
+    summary, 
+    analyzedAt,
+    loading: insightsLoading, 
+    error,
+    errorCode,
+    triggerAnalysis,
+  } = useEntraIdInsights({
+    tenantRecordId: selectedTenantId,
+  });
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -40,15 +67,28 @@ export default function EntraIdPage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
+  useEffect(() => {
+    if (selectedTenantId && !tenantsLoading) {
+      setHasInitialized(true);
+    }
+  }, [selectedTenantId, tenantsLoading]);
+
   if (authLoading) return null;
 
-  // Show blocking message if no tenant is connected
+  const unifiedItems: UnifiedComplianceItem[] = insights.map(insight => mapEntraIdAgentInsight(insight));
+
+  const itemsByCategory: Record<string, UnifiedComplianceItem[]> = {};
+  for (const cat of ENTRA_ID_CATEGORIES) {
+    itemsByCategory[cat] = unifiedItems.filter(i => i.category === cat);
+  }
+
+  // No tenant connected
   if (!tenantsLoading && tenants.length === 0) {
     return (
       <AppLayout>
         <div className="p-6 lg:p-8">
           <PageBreadcrumb items={[
-            { label: 'Microsoft 365', href: '/scope-m365' },
+            { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
             { label: 'Entra ID' },
           ]} />
           
@@ -56,7 +96,7 @@ export default function EntraIdPage() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
               <p className="text-muted-foreground">
-                Gestão de identidades e auditoria de acessos via Microsoft Graph
+                Análise de identidades, autenticação e privilégios administrativos
               </p>
             </div>
           </div>
@@ -66,8 +106,7 @@ export default function EntraIdPage() {
               <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">Tenant Microsoft 365 não conectado</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Para utilizar o Entra ID, primeiro conecte um tenant Microsoft 365 na página 
-                de conexão centralizada. A conexão será compartilhada com todos os submódulos.
+                Para visualizar os insights do Entra ID, primeiro conecte um tenant Microsoft 365.
               </p>
               <Button asChild className="gap-2">
                 <Link to="/scope-m365/tenant-connection">
@@ -86,178 +125,113 @@ export default function EntraIdPage() {
     <AppLayout>
       <div className="p-6 lg:p-8">
         <PageBreadcrumb items={[
-          { label: 'Microsoft 365', href: '/scope-m365' },
+          { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
           { label: 'Entra ID' },
         ]} />
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
+            </div>
             <p className="text-muted-foreground">
-              Gestão de identidades e auditoria de acessos via Microsoft Graph
+              Análise de identidades, autenticação e privilégios administrativos
             </p>
           </div>
-          <Button variant="outline" className="gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Sincronizar Dados
+          <Button 
+            className="gap-2"
+            onClick={triggerAnalysis}
+            disabled={insightsLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${insightsLoading ? 'animate-spin' : ''}`} />
+            {insightsLoading ? 'Analisando...' : 'Reanalisar'}
           </Button>
         </div>
 
         {/* Tenant Selector */}
         <Card className="mb-6 border-primary/20 bg-primary/5">
           <CardContent className="py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <TenantSelector
                 tenants={tenants}
                 selectedId={selectedTenantId}
                 onSelect={selectTenant}
                 loading={tenantsLoading}
               />
-              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                Conectado
-              </Badge>
+              <div className="flex items-center gap-3">
+                {analyzedAt && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>
+                      Analisado em {format(new Date(analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    </span>
+                  </div>
+                )}
+                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                  Conectado
+                </Badge>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Security Analysis - Main Feature */}
-          <Card 
-            className="glass-card hover:shadow-lg transition-shadow cursor-pointer group border-primary/30"
-            onClick={() => navigate(`/scope-m365/entra-id/analysis?tenant=${selectedTenantId}`)}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Shield className="w-6 h-6 text-primary" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Análise de Segurança</CardTitle>
-              <CardDescription>
-                Identifica configurações inseguras, políticas ausentes e lacunas de segurança
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Badge className="bg-primary/10 text-primary border-primary/20">
-                Disponível
-              </Badge>
-            </CardContent>
-          </Card>
-
-          {/* Security Insights */}
-          <Card 
-            className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => navigate(`/scope-m365/entra-id/security-insights?tenant=${selectedTenantId}`)}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-orange-500/10">
-                  <FileText className="w-6 h-6 text-orange-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Insights de Segurança</CardTitle>
-              <CardDescription>
-                Análise consolidada de riscos e indicadores de segurança
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                Disponível
-              </Badge>
-            </CardContent>
-          </Card>
-
-          {/* Users */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <Users className="w-6 h-6 text-blue-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Usuários</CardTitle>
-              <CardDescription>
-                Lista de usuários, status de conta e últimos acessos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
-
-          {/* Groups */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-green-500/10">
-                  <Users className="w-6 h-6 text-green-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Grupos</CardTitle>
-              <CardDescription>
-                Grupos de segurança, Microsoft 365 e distribuição
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
-
-          {/* Applications */}
-          <Card 
-            className="glass-card hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => navigate(`/scope-m365/entra-id/applications?tenant=${selectedTenantId}`)}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-purple-500/10">
-                  <Key className="w-6 h-6 text-purple-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Aplicativos</CardTitle>
-              <CardDescription>
-                App Registrations, Enterprise Apps e análise de credenciais
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                Disponível
-              </Badge>
-            </CardContent>
-          </Card>
-
-          {/* Conditional Access */}
-          <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer group opacity-75">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="p-2 rounded-lg bg-red-500/10">
-                  <Shield className="w-6 h-6 text-red-500" />
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-              <CardTitle className="text-lg mt-3">Acesso Condicional</CardTitle>
-              <CardDescription>
-                Políticas de acesso condicional e compliance
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                Em breve
-              </span>
-            </CardContent>
-          </Card>
+        {/* Summary Cards */}
+        <div className="mb-8">
+          <EntraIdInsightSummaryCards summary={summary} loading={insightsLoading} />
         </div>
+
+        {/* Error State */}
+        {error && (
+          <Card className="mb-6 border-destructive/30 bg-destructive/5">
+            <CardContent className="py-6 text-center">
+              <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
+              <h3 className="font-semibold mb-1">{error}</h3>
+              {errorCode === 'PERMISSION_ERROR' && (
+                <p className="text-sm text-muted-foreground">
+                  São necessárias as permissões do Microsoft Graph para analisar o Entra ID.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Loading State */}
+        {insightsLoading && (
+          <div className="space-y-4">
+            {[1, 2, 3].map(i => (
+              <Skeleton key={i} className="h-32 w-full rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {/* Insights by Category */}
+        {!insightsLoading && !error && unifiedItems.length > 0 && (
+          <div className="space-y-6">
+            {ENTRA_ID_CATEGORIES.map((category, index) => (
+              <ExchangeComplianceSection 
+                key={category}
+                category={category} 
+                label={CATEGORY_LABELS[category]}
+                items={itemsByCategory[category] || []} 
+                index={index}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!insightsLoading && !error && unifiedItems.length === 0 && hasInitialized && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="py-12 text-center">
+              <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Nenhum insight detectado</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Não foram encontrados indicadores de risco no Entra ID. 
+                Isso pode significar que o ambiente está seguro ou que mais dados são necessários.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
