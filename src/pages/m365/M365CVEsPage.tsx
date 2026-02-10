@@ -13,8 +13,8 @@ import { AlertTriangle, ShieldAlert, Shield, ChevronDown, ChevronRight, External
 import { cn } from '@/lib/utils';
 
 const ALL_PRODUCTS = [
-  'Exchange Server',
-  'SharePoint',
+  'Exchange Online',
+  'SharePoint Online',
   'Entra ID',
   'Teams',
   'Outlook',
