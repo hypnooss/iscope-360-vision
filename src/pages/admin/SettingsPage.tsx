@@ -475,7 +475,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">{key.description}</p>
                       
                       {key.configured && key.maskedValue && (
-                        <p className="text-xs font-mono text-emerald-400">
+                        <p className="text-xs font-mono text-green-600">
                           Valor atual: {key.maskedValue}
                         </p>
                       )}
