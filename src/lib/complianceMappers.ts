@@ -200,6 +200,66 @@ export function mapApplicationInsight(insight: ApplicationInsight): UnifiedCompl
  * Mapeia ExchangeInsight do hook useExchangeOnlineInsights para UnifiedComplianceItem.
  * Converte affectedEntities em evidências e não inclui remediation/affectedEntities.
  */
+/**
+ * Mapeia EntraIdInsight do hook useEntraIdInsights para UnifiedComplianceItem.
+ * Idêntico ao mapExchangeAgentInsight mas com product 'entra_id' e source 'graph'.
+ */
+export function mapEntraIdAgentInsight(insight: {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  severity: string;
+  status: string;
+  details?: string;
+  recommendation?: string;
+  affectedEntities?: Array<{ name: string; type: string; details?: string }>;
+  rawData?: Record<string, unknown>;
+  criteria?: string;
+  passDescription?: string;
+  failDescription?: string;
+  notFoundDescription?: string;
+  technicalRisk?: string;
+  businessImpact?: string;
+  apiEndpoint?: string;
+}): UnifiedComplianceItem {
+  const evidence: EvidenceItem[] = [];
+
+  if (insight.affectedEntities && insight.affectedEntities.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${insight.affectedEntities.length} item(ns)`,
+      type: 'text',
+    });
+    evidence.push({
+      label: 'Entidades afetadas',
+      value: insight.affectedEntities.map(e => e.name).join('\n'),
+      type: 'list',
+    });
+  }
+
+  const normalizedStatus = normalizeStatus(insight.status);
+
+  return {
+    id: insight.id,
+    code: insight.id,
+    name: insight.name,
+    description: insight.criteria || insight.description,
+    category: insight.category,
+    status: normalizedStatus,
+    severity: normalizeSeverity(insight.severity),
+    recommendation: insight.recommendation,
+    details: insight.description,
+    evidence,
+    rawData: insight.rawData,
+    product: 'entra_id',
+    source: 'graph',
+    technicalRisk: insight.technicalRisk,
+    businessImpact: insight.businessImpact,
+    apiEndpoint: insight.apiEndpoint,
+  };
+}
+
 export function mapExchangeAgentInsight(insight: {
   id: string;
   category: string;
