@@ -1,24 +1,18 @@
 
+# Ajustar cor do "Valor atual" para o mesmo verde do badge "Configurada"
 
-# Alterar cor do "Valor atual" para verde
+O badge "Configurada" usa `bg-green-600`. O texto "Valor atual" deve usar `text-green-600` para manter consistencia visual.
 
 ## Alteracao
 
-No arquivo `src/pages/admin/SettingsPage.tsx`, alterar a cor do texto "Valor atual:" (que exibe o valor mascarado da API key) de `text-muted-foreground` para `text-emerald-400` (verde), mantendo consistencia com o design system do projeto.
-
-## Detalhe tecnico
-
-Localizar o `<span>` que exibe "Valor atual: {maskedValue}" e trocar a classe de cor.
-
-**Arquivo:** `src/pages/admin/SettingsPage.tsx`
+**Arquivo:** `src/pages/admin/SettingsPage.tsx` (linha 478)
 
 De:
 ```
-text-xs text-muted-foreground
+text-xs font-mono text-emerald-400
 ```
 
 Para:
 ```
-text-xs text-emerald-400
+text-xs font-mono text-green-600
 ```
-
