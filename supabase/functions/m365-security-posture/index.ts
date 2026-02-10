@@ -201,6 +201,11 @@ function evaluateRule(
   const stepResult = stepResults.get(evalLogic.source_key);
   if (!stepResult) return null;
   
+  // Support secondary_source_key for cross-referencing data from two steps
+  const secondaryResult = evalLogic.secondary_source_key 
+    ? stepResults.get(evalLogic.secondary_source_key) 
+    : null;
+  
   // If step had an error, return not_found insight
   if (stepResult.error) {
     const isPermissionError = stepResult.error.includes('403') || 
@@ -400,6 +405,313 @@ function evaluateRule(
         break;
       }
       
+      case 'count_problematic_guests': {
+        const guests = (data as any)?.value || [];
+        const problematic = guests.filter((g: any) => g.externalUserState !== 'Accepted');
+        affectedCount = problematic.length;
+        affectedEntities = problematic.slice(0, 20).map((g: any) => ({
+          id: g.id,
+          displayName: g.displayName || g.userPrincipalName,
+          details: { state: g.externalUserState, created: g.createdDateTime }
+        }));
+        status = affectedCount > (evaluate.threshold || 10) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(guests.length));
+        break;
+      }
+
+      case 'count_inactive_guests': {
+        const guests = (data as any)?.value || [];
+        const threshold = new Date(Date.now() - (evaluate.days_threshold || 60) * 24 * 60 * 60 * 1000);
+        const inactive = guests.filter((g: any) => {
+          const lastSignIn = g.signInActivity?.lastSignInDateTime;
+          if (!lastSignIn) return true;
+          return new Date(lastSignIn) < threshold;
+        });
+        affectedCount = inactive.length;
+        affectedEntities = inactive.slice(0, 20).map((g: any) => ({
+          id: g.id,
+          displayName: g.displayName || g.userPrincipalName,
+          details: { lastSignIn: g.signInActivity?.lastSignInDateTime || 'Nunca' }
+        }));
+        status = affectedCount > (evaluate.threshold || 15) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_old_passwords': {
+        const users = (data as any)?.value || [];
+        const threshold = new Date(Date.now() - (evaluate.days_threshold || 365) * 24 * 60 * 60 * 1000);
+        const oldPwd = users.filter((u: any) => {
+          if (!u.lastPasswordChangeDateTime) return true;
+          return new Date(u.lastPasswordChangeDateTime) < threshold;
+        });
+        affectedCount = oldPwd.length;
+        affectedEntities = oldPwd.slice(0, 20).map((u: any) => ({
+          id: u.id,
+          displayName: u.displayName || u.userPrincipalName,
+          details: { lastChange: u.lastPasswordChangeDateTime || 'Nunca' }
+        }));
+        status = affectedCount > (evaluate.threshold || 20) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_global_admins': {
+        const roles = (data as any)?.value || [];
+        const targetRole = roles.find((r: any) => r.displayName === (evaluate.role_name || 'Global Administrator'));
+        const members = targetRole?.members || [];
+        affectedCount = members.length;
+        affectedEntities = members.slice(0, 20).map((m: any) => ({
+          id: m.id,
+          displayName: m.displayName || m.userPrincipalName,
+          details: { userType: m.userType || 'Member' }
+        }));
+        status = affectedCount > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'check_admin_mfa': {
+        const roles = (data as any)?.value || [];
+        const targetRole = roles.find((r: any) => r.displayName === (evaluate.role_name || 'Global Administrator'));
+        const adminMembers = targetRole?.members || [];
+        const adminIds = new Set(adminMembers.map((m: any) => m.id));
+        
+        // Cross-reference with MFA data from secondary source
+        const mfaUsers = (secondaryResult?.data as any)?.value || [];
+        const adminsWithoutMfa = mfaUsers.filter((u: any) => {
+          if (!adminIds.has(u.id)) return false;
+          const methods = u.methodsRegistered || [];
+          return !methods.includes('microsoftAuthenticatorPush') && 
+                 !methods.includes('softwareOneTimePasscode') && 
+                 !methods.includes('phoneAuthentication');
+        });
+        
+        // Also count admins not in MFA report at all
+        const mfaUserIds = new Set(mfaUsers.map((u: any) => u.id));
+        const adminsNotInReport = adminMembers.filter((m: any) => !mfaUserIds.has(m.id));
+        
+        const allWithoutMfa = [...adminsWithoutMfa, ...adminsNotInReport];
+        affectedCount = allWithoutMfa.length;
+        affectedEntities = allWithoutMfa.slice(0, 20).map((u: any) => ({
+          id: u.id,
+          displayName: u.displayName || u.userDisplayName || u.userPrincipalName,
+        }));
+        status = affectedCount > 0 ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_privileged_users': {
+        const roles = (data as any)?.value || [];
+        const allMembers = new Set<string>();
+        const memberDetails: any[] = [];
+        for (const role of roles) {
+          for (const member of role.members || []) {
+            if (!allMembers.has(member.id)) {
+              allMembers.add(member.id);
+              memberDetails.push({ ...member, roleName: role.displayName });
+            }
+          }
+        }
+        affectedCount = allMembers.size;
+        affectedEntities = memberDetails.slice(0, 20).map((m: any) => ({
+          id: m.id,
+          displayName: m.displayName || m.userPrincipalName,
+          details: { role: m.roleName }
+        }));
+        status = affectedCount > (evaluate.threshold || 30) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_multi_role_admins': {
+        const roles = (data as any)?.value || [];
+        const userRoles = new Map<string, { displayName: string; roles: string[] }>();
+        for (const role of roles) {
+          for (const member of role.members || []) {
+            const existing = userRoles.get(member.id) || { displayName: member.displayName, roles: [] };
+            existing.roles.push(role.displayName);
+            userRoles.set(member.id, existing);
+          }
+        }
+        const multiRole = Array.from(userRoles.entries()).filter(([, v]) => v.roles.length > 1);
+        affectedCount = multiRole.length;
+        affectedEntities = multiRole.slice(0, 20).map(([id, v]) => ({
+          id,
+          displayName: v.displayName,
+          details: { roles: v.roles.join(', '), count: v.roles.length }
+        }));
+        status = affectedCount > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_guest_admins': {
+        const roles = (data as any)?.value || [];
+        const guestAdmins: any[] = [];
+        const seen = new Set<string>();
+        for (const role of roles) {
+          for (const member of role.members || []) {
+            if (member.userType === 'Guest' && !seen.has(member.id)) {
+              seen.add(member.id);
+              guestAdmins.push({ ...member, roleName: role.displayName });
+            }
+          }
+        }
+        affectedCount = guestAdmins.length;
+        affectedEntities = guestAdmins.slice(0, 20).map((m: any) => ({
+          id: m.id,
+          displayName: m.displayName || m.userPrincipalName,
+          details: { role: m.roleName, userType: 'Guest' }
+        }));
+        status = affectedCount > (evaluate.threshold || 0) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_sp_admins': {
+        const sps = (data as any)?.value || [];
+        const adminSps = sps.filter((sp: any) => {
+          const appRoles = sp.appRoleAssignments || sp.appRoles || [];
+          return appRoles.some?.((r: any) => 
+            r.resourceDisplayName === 'Microsoft Graph' || 
+            r.principalType === 'ServicePrincipal'
+          ) || sp.appOwnerOrganizationId;
+        });
+        affectedCount = adminSps.length;
+        affectedEntities = adminSps.slice(0, 20).map((sp: any) => ({
+          id: sp.id,
+          displayName: sp.displayName || sp.appDisplayName,
+        }));
+        status = affectedCount > (evaluate.threshold || 3) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_expiring_credentials': {
+        const apps = (data as any)?.value || [];
+        const daysAhead = evaluate.days_ahead || 30;
+        const futureDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+        const nowDate = new Date();
+        const expiring = apps.filter((app: any) => {
+          const allCreds = [...(app.passwordCredentials || []), ...(app.keyCredentials || [])];
+          return allCreds.some((c: any) => {
+            const endDate = new Date(c.endDateTime);
+            return endDate > nowDate && endDate <= futureDate;
+          });
+        });
+        affectedCount = expiring.length;
+        affectedEntities = expiring.slice(0, 20).map((app: any) => ({
+          id: app.id,
+          displayName: app.displayName,
+        }));
+        status = affectedCount > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_expired_credentials': {
+        const apps = (data as any)?.value || [];
+        const nowDate = new Date();
+        const expired = apps.filter((app: any) => {
+          const allCreds = [...(app.passwordCredentials || []), ...(app.keyCredentials || [])];
+          return allCreds.some((c: any) => new Date(c.endDateTime) < nowDate);
+        });
+        affectedCount = expired.length;
+        affectedEntities = expired.slice(0, 20).map((app: any) => ({
+          id: app.id,
+          displayName: app.displayName,
+        }));
+        status = affectedCount > (evaluate.threshold || 0) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_high_privilege_apps': {
+        const apps = (data as any)?.value || [];
+        const highPrivPerms = ['Mail.ReadWrite', 'Directory.ReadWrite.All', 'Files.ReadWrite.All', 
+          'User.ReadWrite.All', 'Group.ReadWrite.All', 'Sites.ReadWrite.All', 'RoleManagement.ReadWrite.Directory'];
+        const highPrivApps = apps.filter((app: any) => {
+          const resources = app.requiredResourceAccess || [];
+          return resources.some((r: any) =>
+            r.resourceAccess?.some((ra: any) => highPrivPerms.some(p => ra.id?.includes(p) || app.displayName?.includes(p)))
+          );
+        });
+        // Simpler: check by permission scope count as proxy
+        const appsWithManyPerms = apps.filter((app: any) => {
+          const resources = app.requiredResourceAccess || [];
+          const totalPerms = resources.reduce((sum: number, r: any) => sum + (r.resourceAccess?.length || 0), 0);
+          return totalPerms > 10;
+        });
+        const result = highPrivApps.length > 0 ? highPrivApps : appsWithManyPerms;
+        affectedCount = result.length;
+        affectedEntities = result.slice(0, 20).map((app: any) => ({
+          id: app.id,
+          displayName: app.displayName,
+        }));
+        status = affectedCount > (evaluate.threshold || 10) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_no_owner_apps': {
+        const apps = (data as any)?.value || [];
+        const noOwner = apps.filter((app: any) => !app.owners || app.owners.length === 0);
+        affectedCount = noOwner.length;
+        affectedEntities = noOwner.slice(0, 20).map((app: any) => ({
+          id: app.id,
+          displayName: app.displayName,
+        }));
+        status = affectedCount > (evaluate.threshold || 10) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
+      case 'count_oauth_consents': {
+        const grants = (data as any)?.value || [];
+        const allPrincipals = grants.filter((g: any) => 
+          g.consentType === 'AllPrincipals' || g.scope?.includes('AllPrincipals')
+        );
+        affectedCount = allPrincipals.length;
+        affectedEntities = allPrincipals.slice(0, 20).map((g: any) => ({
+          id: g.id,
+          displayName: g.clientId || g.resourceId || 'OAuth Grant',
+          details: { scope: g.scope, consentType: g.consentType }
+        }));
+        status = affectedCount > (evaluate.threshold || 20) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : (rule.pass_description || '').replace('{count}', String(affectedCount));
+        break;
+      }
+
       default:
         // Unknown evaluation type - skip
         return null;
