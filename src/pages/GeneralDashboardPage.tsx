@@ -258,14 +258,11 @@ export default function GeneralDashboardPage() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Painel executivo de segurança</p>
+          <p className="text-muted-foreground">Postura de Segurança por Módulo</p>
         </div>
 
         {/* Module Health Cards */}
         <section>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-            Postura de Segurança por Módulo
-          </h2>
           <div className={cn('grid gap-4', gridCols)}>
             {moduleCards.map(({ key, title, icon, iconColor, iconBg, borderColor, health, assetLabel, moduleCode, path, extraInfo, hideSeverities }) => (
               <ModuleHealthCard
