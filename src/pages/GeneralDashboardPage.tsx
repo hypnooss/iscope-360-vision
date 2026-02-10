@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
+import { useM365CVEs } from '@/hooks/useM365CVEs';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,7 +12,7 @@ import { ScoreGauge } from '@/components/ScoreGauge';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Shield, Cloud, Globe, Server, ArrowRight,
+  Shield, Cloud, Layers, Server, ArrowRight,
   AlertTriangle, ShieldAlert, LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,13 +31,15 @@ interface ModuleHealthCardProps {
   assetLabel: string;
   loading: boolean;
   onAccess: () => void;
+  extraInfo?: ReactNode;
+  hideSeverities?: boolean;
 }
 
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor,
-  health, assetLabel, loading, onAccess,
+  health, assetLabel, loading, onAccess, extraInfo, hideSeverities,
 }: ModuleHealthCardProps) {
-  const hasSeverities = health.severities.critical > 0 || health.severities.high > 0;
+  const hasSeverities = !hideSeverities && (health.severities.critical > 0 || health.severities.high > 0);
 
   return (
     <Card
@@ -69,8 +72,8 @@ function ModuleHealthCard({
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Score Gauge */}
-            <div className="py-2">
+            {/* Score Gauge + Extra Info */}
+            <div className="py-2 flex items-center gap-4">
               {health.score != null ? (
                 <ScoreGauge score={health.score} size="sm" />
               ) : (
@@ -79,6 +82,7 @@ function ModuleHealthCard({
                   <span className="text-xs text-muted-foreground">Sem análise</span>
                 </div>
               )}
+              {extraInfo}
             </div>
 
             {/* Severity badges */}
@@ -123,6 +127,7 @@ export default function GeneralDashboardPage() {
   const { setActiveModule } = useModules();
   const { hasEffectiveModuleAccess } = useEffectiveModules();
   const { stats, loading } = useDashboardStats();
+  const { data: cveData } = useM365CVEs(1);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -149,6 +154,8 @@ export default function GeneralDashboardPage() {
 
 
 
+  const recentCVECount = cveData?.totalCVEs ?? 0;
+
   type CardDef = {
     key: string;
     title: string;
@@ -160,6 +167,8 @@ export default function GeneralDashboardPage() {
     assetLabel: string;
     moduleCode: string;
     path: string;
+    extraInfo?: ReactNode;
+    hideSeverities?: boolean;
   };
 
   const moduleCards: CardDef[] = [
@@ -186,14 +195,24 @@ export default function GeneralDashboardPage() {
       assetLabel: 'tenants',
       moduleCode: 'scope_m365',
       path: '/scope-m365/posture',
+      hideSeverities: true,
+      extraInfo: recentCVECount > 0 ? (
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-lg font-bold text-foreground">{recentCVECount}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded animate-pulse">NEW</span>
+            <span className="text-xs text-muted-foreground">CVEs</span>
+          </div>
+        </div>
+      ) : undefined,
     },
     hasExtDomain && {
       key: 'external_domain',
       title: 'Domínio Externo',
-      icon: Globe,
-      iconColor: 'text-teal-500',
-      iconBg: 'bg-teal-500/10',
-      borderColor: 'border-l-teal-500',
+      icon: Layers,
+      iconColor: 'text-green-500',
+      iconBg: 'bg-green-500/10',
+      borderColor: 'border-l-green-500',
       health: stats?.externalDomain || emptyHealth,
       assetLabel: 'domínios',
       moduleCode: 'scope_external_domain',
@@ -248,7 +267,7 @@ export default function GeneralDashboardPage() {
             Postura de Segurança por Módulo
           </h2>
           <div className={cn('grid gap-4', gridCols)}>
-            {moduleCards.map(({ key, title, icon, iconColor, iconBg, borderColor, health, assetLabel, moduleCode, path }) => (
+            {moduleCards.map(({ key, title, icon, iconColor, iconBg, borderColor, health, assetLabel, moduleCode, path, extraInfo, hideSeverities }) => (
               <ModuleHealthCard
                 key={key}
                 title={title}
@@ -260,6 +279,8 @@ export default function GeneralDashboardPage() {
                 assetLabel={assetLabel}
                 loading={loading}
                 onAccess={() => handleGoToModule(moduleCode, path)}
+                extraInfo={extraInfo}
+                hideSeverities={hideSeverities}
               />
             ))}
           </div>
