@@ -1,70 +1,58 @@
 
 
-# Correcoes do Dashboard Geral
+# Card de Infraestrutura Diferenciado
 
-## Problemas identificados
+## Objetivo
 
-### 1. Bug critico: severidades identicas em todos os modulos
-No hook `useDashboardStats.ts`, o spread `{ ...emptyHealth }` e raso (shallow copy). O objeto `severities` dentro de `emptyHealth` e compartilhado por referencia entre `fwHealth`, `m365Health` e `extHealth`. Quando o loop do Firewall acumula valores em `fwHealth.severities.critical += ...`, ele esta na verdade mutando o mesmo objeto que os outros modulos usam. Resultado: todos os 3 cards mostram os mesmos numeros.
+Separar o card de Infraestrutura dos Module Health Cards, pois ele atende todos os modulos e nao e um modulo de seguranca com score. Ele deve ter um layout proprio, similar ao da imagem de referencia, com metricas em lista.
 
-**Correcao**: criar objetos `severities` independentes para cada modulo em vez de usar spread do `emptyHealth`.
+## Layout do card
 
-### 2. Remover secoes "Resumo Operacional" e "Atividade Recente"
-Conforme solicitado, as secoes 2 e 3 serao removidas da pagina.
+```text
++----------------------------------------+
+| [Server icon]  Infraestrutura          |
+|                                        |
+|  * Agents          10/10 online        |
+|  * Total de ativos            42       |
+|  * Ultimo scan       ha cerca de 10h   |
++----------------------------------------+
+```
 
-### 3. Card de Infraestrutura (Agents) como Module Health Card
-O card de infraestrutura deve seguir o mesmo padrao visual dos demais cards de modulo (com borda lateral, icone, contagem), em vez do layout diferente atual.
-
-### 4. Cores dos modulos devem seguir o padrao do menu lateral
-As cores no sidebar (`AppLayout.tsx`) sao:
-- **Firewall**: `text-orange-500` (ja correto)
-- **Microsoft 365**: `text-blue-500` (ja correto)
-- **Dominio Externo**: `text-teal-500` (no dashboard esta `text-purple-500`, precisa corrigir)
+- Card com borda superior (em vez de lateral) em `emerald-500` para diferenciar visualmente
+- Sem ScoreGauge -- usa metricas em linhas com indicadores visuais
+- Indicador de status dos agents: bolinha verde (todos online), amarela (parcial), vermelha (nenhum)
+- Ocupa toda a largura abaixo dos Module Health Cards (full-width)
+- Clicavel, navega para `/agents`
 
 ## Alteracoes tecnicas
 
-### Arquivo 1: `src/hooks/useDashboardStats.ts`
+### Arquivo: `src/pages/GeneralDashboardPage.tsx`
 
-Corrigir o bug do shallow copy. Substituir:
-```typescript
-const fwHealth: ModuleHealth = { ...emptyHealth, assetCount: fwRes.count || 0 };
-```
-Por:
-```typescript
-const fwHealth: ModuleHealth = {
-  score: null,
-  assetCount: fwRes.count || 0,
-  lastAnalysisDate: null,
-  severities: { critical: 0, high: 0, medium: 0, low: 0 },
-};
-```
-Mesmo tratamento para `m365Health` e `extHealth`. Isso garante que cada modulo tenha seu proprio objeto `severities` independente.
+1. **Remover o card "agents" do array `moduleCards`** -- ele nao deve mais usar `ModuleHealthCard`
 
-Remover campos que nao serao mais usados no dashboard: `totalSeverities`, `totalAssets`, `lastOverallAnalysis`, `recentActivity` e toda a logica de queries de "recent activity" (linhas 198-306). Isso simplifica o hook e reduz queries desnecessarias.
+2. **Adicionar novo componente `InfrastructureCard`** (inline) com:
+   - Header: icone `Server` + titulo "Infraestrutura"
+   - 3 linhas de metricas:
+     - Agents: bolinha colorida + `X/Y online`
+     - Total de ativos: soma de firewalls + tenants + dominios
+     - Ultimo scan: `formatDistanceToNow` do mais recente `lastAnalysisDate` entre todos os modulos
+   - Borda superior emerald (`border-t-4 border-t-emerald-500`)
 
-### Arquivo 2: `src/pages/GeneralDashboardPage.tsx`
+3. **Ajustar grid dos Module Health Cards** para considerar apenas os 3 modulos de seguranca (sem agents)
 
-1. **Corrigir cor do Dominio Externo**: mudar de `text-purple-500` / `bg-purple-500/10` / `border-l-purple-500` para `text-teal-500` / `bg-teal-500/10` / `border-l-teal-500`
+4. **Renderizar o `InfrastructureCard`** como secao separada abaixo dos Module Health Cards
 
-2. **Adicionar card de Agents** como um `ModuleHealthCard` com:
-   - Icone: `Server` (ou `MonitorCheck`)
-   - Cor: `text-emerald-500` (verde, indicando status operacional)
-   - Score: representado como percentual de agents online (ex: 10/10 = 100%)
-   - Asset count: "X/Y agents online"
-   - Sem severidades
-   - Sem link de navegacao (ou navegando para `/agents`)
+### Dados necessarios (ja disponiveis no hook)
 
-3. **Remover secao "Resumo Operacional"** (StatCards de severidade + InfrastructureCard)
+- `stats.agentsOnline` / `stats.agentsTotal` -- ja existem
+- Total de ativos = `stats.firewall.assetCount + stats.m365.assetCount + stats.externalDomain.assetCount`
+- Ultimo scan = `max(firewall.lastAnalysisDate, m365.lastAnalysisDate, externalDomain.lastAnalysisDate)` -- calculado no componente
 
-4. **Remover secao "Atividade Recente"** (timeline inteira)
+Nenhuma alteracao no hook `useDashboardStats.ts` e necessaria.
 
-5. **Remover componente `InfrastructureCard`** que nao sera mais usado
-
-O dashboard ficara apenas com a secao "Postura de Seguranca por Modulo" contendo os Module Health Cards (Firewall, M365, Dominio Externo, Agents).
-
-### Resumo de arquivos
+### Resumo
 
 | Arquivo | Acao |
 |---------|------|
-| `src/hooks/useDashboardStats.ts` | Corrigir bug de severidades + remover campos nao usados |
-| `src/pages/GeneralDashboardPage.tsx` | Corrigir cores + adicionar card Agents + remover secoes 2 e 3 |
+| `src/pages/GeneralDashboardPage.tsx` | Separar card Infraestrutura com layout proprio |
+
