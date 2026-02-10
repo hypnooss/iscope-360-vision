@@ -128,6 +128,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'Tenants', href: '/scope-m365/tenant-connection', icon: Building },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
+      { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
       { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
     ],

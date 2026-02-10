@@ -75,3 +75,6 @@ verify_jwt = false
 [functions.manage-api-keys]
 verify_jwt = false
 
+[functions.m365-cves]
+verify_jwt = false
+
