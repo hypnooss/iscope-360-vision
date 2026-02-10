@@ -1,140 +1,72 @@
 
+# Transformar a pagina Entra ID no mesmo modelo da Exchange Online
 
-# Tratar Erros de Licenciamento PowerShell como "Nao Aplicavel"
+## Objetivo
 
-## Contexto
+Substituir a pagina hub atual do Entra ID (com cards de navegacao para sub-paginas) por uma pagina de insights diretos com compliance sections, identica a Exchange Online. Os dados virao do snapshot mais recente da tabela `m365_posture_history`, filtrados pelo produto `entra_id`.
 
-Apos a atualizacao do agent para v1.2.7, a coleta Exchange Online funciona corretamente, mas 3 de 5 tenants reportam status "partial" e "failed" porque nao possuem licenca do Microsoft Defender for Office 365. Os cmdlets `Get-SafeLinksPolicy` e `Get-SafeAttachmentPolicy` retornam "is not recognized as a name of a cmdlet", o que e tratado como erro quando deveria ser "nao aplicavel".
+## Categorias Entra ID
 
-### Impacto atual
+As categorias de risco relevantes ao produto Entra ID sao:
 
-| Tenant | Status | Insights | Problema |
-|--------|--------|----------|----------|
-| IE Madeira | completed | 15/15 | OK (tem Defender) |
-| Precisio | completed | 15/15 | OK (tem Defender) |
-| BRASILUX | partial | 12/15 | Safe Links + Safe Attachments = failed |
-| ESTRELA | partial | 12/15 | Safe Links + Safe Attachments = failed |
-| NEXTA | partial | 11/15 | Safe Links + Safe Attachments = failed |
+- `identities` - Identidades
+- `auth_access` - Autenticacao e Acesso
+- `admin_privileges` - Privilegios Administrativos
+- `apps_integrations` - Aplicacoes e Integracoes
 
-## Solucao em 3 camadas
+## Alteracoes
 
-### Camada 1 - Agent: Novo status `not_applicable`
+### 1. Criar hook `useEntraIdInsights` (novo arquivo)
 
-**Arquivo:** `python-agent/agent/tasks.py`
+**Arquivo:** `src/hooks/useEntraIdInsights.ts`
 
-Quando um comando PowerShell falha com "is not recognized as a name of a cmdlet", tratar como `not_applicable` em vez de `failed`. Isso indica que o modulo nao esta licenciado no tenant.
+Clone do `useExchangeOnlineInsights.ts` com as seguintes diferencas:
+- Interface `EntraIdInsight` com `product: 'entra_id'`
+- Constante `ENTRA_ID_CATEGORIES`: `['identities', 'auth_access', 'admin_privileges', 'apps_integrations']`
+- Filtro por `product === 'entra_id'` ou categoria no array acima
+- Fallback de legado: IDs comecando com `IDT-`, `AUT-`, `ADM-`, `APP-`
+- Scope de analise: `scope: 'entra_id'` ao disparar `trigger-m365-posture-analysis`
+- Mapper de categorias legadas adaptado para Entra ID
 
-```
-# No unpacker de batch (linhas ~476-479)
-if cmd_result.get('success') is False:
-    error_text = cmd_result.get('error', '')
-    if 'is not recognized as a name of a cmdlet' in error_text:
-        step_status = 'not_applicable'
-        step_error = f"Cmdlet nao disponivel (licenca ausente): {error_text[:100]}"
-        step_data = None
-    else:
-        step_status = 'failed'
-        step_error = error_text
-        step_data = None
-```
+### 2. Reescrever pagina `EntraIdPage` 
 
-Na determinacao do status final da tarefa (linhas ~308-314), contabilizar `not_applicable` separadamente para que nao marque a tarefa como `partial` ou `failed`:
+**Arquivo:** `src/pages/m365/EntraIdPage.tsx`
 
-```
-# Contar not_applicable separadamente
-steps_na = sum(1 for sr in step_results if sr['status'] == 'not_applicable')
-actual_failures = steps_failed - steps_na  # (ajustar contagem)
+Substituir o hub de cards pelo modelo da Exchange Online:
+- Usar `useEntraIdInsights` para buscar dados
+- Summary cards com contadores de severidade (usando `ExoInsightSummaryCards` renomeado ou clone)
+- Botao "Reanalisar" que chama `triggerAnalysis`
+- Tenant selector com badge "Conectado" e data da ultima analise
+- Sections por categoria usando `ExchangeComplianceSection` (componente generico, funciona para qualquer categoria)
+- Mapper `mapExchangeAgentInsight` reutilizado (ja e generico, apenas ajustar product)
+- Estados: sem tenant, loading, erro, vazio, com dados
+- Icone do header: `Shield` em vez de `Mail`
 
-if actual_failures == len(steps) and steps:
-    status = 'failed'
-elif actual_failures > 0:
-    status = 'partial'
-else:
-    status = 'completed'  # Mesmo com not_applicable, e "completed"
-```
+### 3. Criar mapper `mapEntraIdAgentInsight`
 
-**Arquivo:** `python-agent/agent/version.py`
+**Arquivo:** `src/lib/complianceMappers.ts`
 
-Manter versao em 1.2.7 (sem bump, apenas correcao de comportamento).
+Adicionar funcao identica a `mapExchangeAgentInsight` mas com `product: 'entra_id'` e `source: 'graph'`.
 
-### Camada 2 - Edge Function: Gerar insight `not_found` para dados ausentes
+### 4. Criar `EntraIdInsightSummaryCards`
 
-**Arquivo:** `supabase/functions/agent-task-result/index.ts`
+**Arquivo:** `src/components/m365/entra-id/EntraIdInsightSummaryCards.tsx`
 
-Na funcao `processM365AgentInsights`, quando uma regra nao encontra dados no `rawData` (porque o step foi `not_applicable` ou falhou), gerar um insight com status `not_found` em vez de simplesmente ignorar a regra. Isso garante que a contagem de insights seja consistente (15/15 em todos os tenants).
+Clone do `ExoInsightSummaryCards` com icone `Shield` em vez de `Mail` no card "Total de Insights".
 
-Mudanca na linha 335:
+### 5. Ajustar rotas (manter sub-paginas existentes)
 
-```typescript
-// ANTES: Silenciosamente ignora regras sem dados
-if (!sourceKey || !rawData[sourceKey]) continue;
+As sub-paginas existentes (`/scope-m365/entra-id/analysis`, `/scope-m365/entra-id/security-insights`, `/scope-m365/entra-id/applications`) permanecem como estao. A rota `/scope-m365/entra-id` agora mostra insights diretamente em vez do hub.
 
-// DEPOIS: Gera insight not_found quando dados estao ausentes
-if (!sourceKey) continue;
-if (!rawData[sourceKey] || rawData[sourceKey] === null) {
-  // Check if the step was reported as not_applicable
-  const stepStatus = rawData[`_step_status_${sourceKey}`];
-  if (stepStatus === 'not_applicable' || stepStatus === 'failed') {
-    insights.push({
-      id: rule.code,
-      category: rule.category as M365RiskCategory,
-      product: mapCategoryToProduct(rule.category),
-      name: rule.name,
-      description: rule.not_found_description || rule.description || rule.name,
-      severity: 'info',
-      status: 'not_found',
-      details: stepStatus === 'not_applicable'
-        ? 'Recurso nao licenciado neste tenant'
-        : 'Dados nao coletados - verifique logs do agent',
-      recommendation: undefined,
-      criteria: rule.description || undefined,
-      passDescription: rule.pass_description || undefined,
-      failDescription: rule.fail_description || undefined,
-      notFoundDescription: rule.not_found_description || undefined,
-      technicalRisk: rule.technical_risk || undefined,
-      businessImpact: rule.business_impact || undefined,
-      apiEndpoint: rule.api_endpoint || undefined,
-    });
-  }
-  continue;
-}
-```
+## Resumo tecnico
 
-### Camada 3 - Edge Function: Propagar status dos steps no rawData
-
-**Arquivo:** `supabase/functions/agent-task-result/index.ts`
-
-No bloco que reconstroi o `rawData` a partir dos step results (antes de chamar `processM365AgentInsights`), incluir metadados de status dos steps que falharam ou sao `not_applicable`. Isso permite que a Camada 2 saiba o motivo da ausencia.
-
-Na secao de reconstrucao de dados dos steps (~linha 4180-4200), para cada step com status diferente de success, adicionar:
-
-```typescript
-rawData[`_step_status_${stepId}`] = stepResult.status; // 'not_applicable' ou 'failed'
-```
-
-### Camada 4 - Agent: Reportar step_data para not_applicable
-
-**Arquivo:** `python-agent/agent/tasks.py`
-
-No `_report_step_result`, quando o status for `not_applicable`, enviar o status e a razao para que o backend possa propagar no rawData:
-
-```python
-# Ja funciona com o codigo atual, pois _report_step_result envia o status
-# O step sera salvo com status='not_applicable' no backend
-```
-
-## Arquivos afetados
-
-| Arquivo | Alteracao |
-|--------|-----------|
-| `python-agent/agent/tasks.py` | Detectar "not recognized as cmdlet" como not_applicable; ajustar contagem de status final |
-| `supabase/functions/agent-task-result/index.ts` | Gerar insights not_found para steps ausentes; propagar status dos steps no rawData |
+| Arquivo | Acao |
+|---------|------|
+| `src/hooks/useEntraIdInsights.ts` | Novo - clone do useExchangeOnlineInsights adaptado |
+| `src/pages/m365/EntraIdPage.tsx` | Reescrever - substituir hub por pagina de insights |
+| `src/lib/complianceMappers.ts` | Adicionar `mapEntraIdAgentInsight` |
+| `src/components/m365/entra-id/EntraIdInsightSummaryCards.tsx` | Novo - summary cards com icone Shield |
 
 ## Resultado esperado
 
-- Tenants sem Defender for Office 365 mostram status "completed" (nao "partial")
-- Regras de Safe Links e Safe Attachments aparecem como "Nao Encontrado" (cinza, neutro) na interface
-- A contagem de insights e consistente: 15/15 para todos os tenants (em vez de 12/15 ou 11/15)
-- Nenhum impacto em tenants que possuem todas as licencas
-- O campo `not_found_description` das compliance_rules EXO-007 e EXO-008 fornece a mensagem amigavel
-
+A pagina Entra ID tera a mesma experiencia visual da Exchange Online: summary cards de severidade no topo, seguidos por sections colapsaveis por categoria (Identidades, Autenticacao, Privilegios, Aplicacoes), cada uma contendo cards de conformidade unificados com status pass/fail/warning/not_found.
