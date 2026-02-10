@@ -1,5 +1,46 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
+// Scope-to-blueprint pattern mapping for determining if agent is needed
+const SCOPE_BLUEPRINT_PATTERNS: Record<string, string> = {
+  exchange_online: '%Exchange%',
+  entra_id: '%Entra%',
+};
+
+async function checkScopeNeedsAgent(supabaseAdmin: any, scope?: string): Promise<boolean> {
+  // No scope = full analysis, always needs agent if available
+  if (!scope) return true;
+  
+  // Get M365 device type
+  const { data: deviceType } = await supabaseAdmin
+    .from('device_types')
+    .select('id')
+    .eq('code', 'm365')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  
+  if (!deviceType) return true; // Fallback: create task
+  
+  // Check if there are agent/hybrid blueprints matching this scope
+  let query = supabaseAdmin
+    .from('device_blueprints')
+    .select('id')
+    .eq('device_type_id', deviceType.id)
+    .eq('is_active', true)
+    .in('executor_type', ['agent', 'hybrid']);
+  
+  const pattern = SCOPE_BLUEPRINT_PATTERNS[scope];
+  if (pattern) {
+    query = query.ilike('name', pattern);
+  }
+  
+  const { data: agentBlueprints } = await query;
+  
+  const needs = (agentBlueprints?.length || 0) > 0;
+  console.log(`[trigger-m365-posture-analysis] checkScopeNeedsAgent('${scope}'): ${needs} (found ${agentBlueprints?.length || 0} agent/hybrid blueprints)`);
+  return needs;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -120,42 +161,49 @@ Deno.serve(async (req) => {
     if (tenantAgent?.agent_id) {
       console.log(`[trigger-m365-posture-analysis] Tenant has linked agent: ${tenantAgent.agent_id}`);
       
-      // Create agent task for PowerShell-based collection (Exchange, SharePoint)
-      const { data: agentTask, error: agentTaskError } = await supabaseAdmin
-        .from('agent_tasks')
-        .insert({
-          agent_id: tenantAgent.agent_id,
-          task_type: 'm365_powershell',
-          target_id: tenant_record_id,
-          target_type: 'm365_tenant',
-          status: 'pending',
-          priority: 5,
-          expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
-          payload: {
-            analysis_id: historyRecord.id,
-            tenant_id: tenant.tenant_id,
-            tenant_domain: tenant.tenant_domain,
-            ...(scope ? { scope } : {}),
-          },
-        })
-        .select('id')
-        .single();
-
-      if (agentTaskError) {
-        console.error('[trigger-m365-posture-analysis] Failed to create agent task:', agentTaskError);
-        // Don't fail the whole operation - Graph API analysis can still proceed
-      } else {
-        agentTaskId = agentTask?.id || null;
-        console.log(`[trigger-m365-posture-analysis] Agent task created: ${agentTaskId}`);
-        
-        // Link agent task to the posture history record
-        await supabaseAdmin
-          .from('m365_posture_history')
-          .update({ 
-            agent_task_id: agentTaskId,
-            agent_status: 'pending',
+      // Check if the requested scope actually needs agent-based collection
+      const needsAgent = await checkScopeNeedsAgent(supabaseAdmin, scope);
+      
+      if (needsAgent) {
+        // Create agent task for PowerShell-based collection (Exchange, SharePoint)
+        const { data: agentTask, error: agentTaskError } = await supabaseAdmin
+          .from('agent_tasks')
+          .insert({
+            agent_id: tenantAgent.agent_id,
+            task_type: 'm365_powershell',
+            target_id: tenant_record_id,
+            target_type: 'm365_tenant',
+            status: 'pending',
+            priority: 5,
+            expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+            payload: {
+              analysis_id: historyRecord.id,
+              tenant_id: tenant.tenant_id,
+              tenant_domain: tenant.tenant_domain,
+              ...(scope ? { scope } : {}),
+            },
           })
-          .eq('id', historyRecord.id);
+          .select('id')
+          .single();
+
+        if (agentTaskError) {
+          console.error('[trigger-m365-posture-analysis] Failed to create agent task:', agentTaskError);
+          // Don't fail the whole operation - Graph API analysis can still proceed
+        } else {
+          agentTaskId = agentTask?.id || null;
+          console.log(`[trigger-m365-posture-analysis] Agent task created: ${agentTaskId}`);
+          
+          // Link agent task to the posture history record
+          await supabaseAdmin
+            .from('m365_posture_history')
+            .update({ 
+              agent_task_id: agentTaskId,
+              agent_status: 'pending',
+            })
+            .eq('id', historyRecord.id);
+        }
+      } else {
+        console.log(`[trigger-m365-posture-analysis] Scope '${scope}' does not require agent collection, skipping task creation`);
       }
     } else {
       console.log(`[trigger-m365-posture-analysis] No agent linked to tenant, skipping PowerShell collection`);
