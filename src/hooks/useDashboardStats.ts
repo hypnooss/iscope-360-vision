@@ -3,21 +3,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
 import { useAuth } from '@/contexts/AuthContext';
 
-export interface DashboardStats {
-  totalFirewalls: number;
-  totalM365Tenants: number;
-  totalExternalDomains: number;
-  agentsOnline: number;
-  agentsTotal: number;
-  consolidatedScore: number | null;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ModuleHealth {
+  score: number | null;
+  assetCount: number;
+  lastAnalysisDate: string | null;
   severities: {
     critical: number;
     high: number;
     medium: number;
     low: number;
   };
-  recentActivity: RecentActivity[];
 }
+
+const emptyHealth: ModuleHealth = {
+  score: null,
+  assetCount: 0,
+  lastAnalysisDate: null,
+  severities: { critical: 0, high: 0, medium: 0, low: 0 },
+};
 
 export interface RecentActivity {
   id: string;
@@ -27,6 +32,25 @@ export interface RecentActivity {
   score: number | null;
   date: string;
 }
+
+export interface DashboardStats {
+  firewall: ModuleHealth;
+  m365: ModuleHealth;
+  externalDomain: ModuleHealth;
+  agentsOnline: number;
+  agentsTotal: number;
+  totalSeverities: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  totalAssets: number;
+  lastOverallAnalysis: string | null;
+  recentActivity: RecentActivity[];
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useDashboardStats() {
   const { user } = useAuth();
@@ -43,16 +67,6 @@ export function useDashboardStats() {
       fetchStats();
     }
   }, [user, isPreviewMode, previewTarget]);
-
-  const applyWorkspaceFilter = <T extends { in: (col: string, values: string[]) => T }>(
-    query: T,
-    column: string
-  ): T => {
-    if (workspaceIds && workspaceIds.length > 0) {
-      return query.in(column, workspaceIds);
-    }
-    return query;
-  };
 
   const fetchStats = async () => {
     try {
@@ -75,23 +89,19 @@ export function useDashboardStats() {
         fwQuery, m365Query, extQuery, agentsQuery,
       ]);
 
-      const totalFirewalls = fwRes.count || 0;
-      const totalM365Tenants = m365Res.count || 0;
-      const totalExternalDomains = extRes.count || 0;
-
+      // Agents
       const agents = agentsRes.data || [];
       const agentsTotal = agents.length;
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const agentsOnline = agents.filter(a => a.last_seen && a.last_seen > fiveMinAgo).length;
 
-      // ── 2. Latest scores per resource ───────────────────────────────
+      // ── 2. Scores per module ────────────────────────────────────────
       const firewallIds = (fwRes.data || []).map(f => f.id);
       const tenantIds = (m365Res.data || []).map(t => t.id);
+      const extDomainIds = (extRes.data || []).map(d => d.id);
 
-      // Firewall: latest analysis per firewall
-      let fwScores: number[] = [];
-      let fwSeverities = { critical: 0, high: 0, medium: 0, low: 0 };
-
+      // --- Firewall ---
+      const fwHealth: ModuleHealth = { ...emptyHealth, assetCount: fwRes.count || 0 };
       if (firewallIds.length > 0) {
         const { data: fwHistory } = await supabase
           .from('analysis_history')
@@ -99,28 +109,28 @@ export function useDashboardStats() {
           .in('firewall_id', firewallIds)
           .order('created_at', { ascending: false });
 
-        // Deduplicate: keep only latest per firewall
-        const seenFw = new Set<string>();
+        const scores: number[] = [];
+        let latestDate: string | null = null;
+        const seen = new Set<string>();
         for (const h of (fwHistory || [])) {
-          if (seenFw.has(h.firewall_id)) continue;
-          seenFw.add(h.firewall_id);
-          fwScores.push(h.score);
-
-          // Extract severities from report_data summary if available
+          if (seen.has(h.firewall_id)) continue;
+          seen.add(h.firewall_id);
+          scores.push(h.score);
+          if (!latestDate || h.created_at > latestDate) latestDate = h.created_at;
           const report = h.report_data as any;
           if (report?.summary) {
-            fwSeverities.critical += report.summary.critical || 0;
-            fwSeverities.high += report.summary.high || 0;
-            fwSeverities.medium += report.summary.medium || 0;
-            fwSeverities.low += report.summary.low || 0;
+            fwHealth.severities.critical += report.summary.critical || 0;
+            fwHealth.severities.high += report.summary.high || 0;
+            fwHealth.severities.medium += report.summary.medium || 0;
+            fwHealth.severities.low += report.summary.low || 0;
           }
         }
+        fwHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        fwHealth.lastAnalysisDate = latestDate;
       }
 
-      // M365: latest posture per tenant
-      let m365Scores: number[] = [];
-      let m365Severities = { critical: 0, high: 0, medium: 0, low: 0 };
-
+      // --- M365 ---
+      const m365Health: ModuleHealth = { ...emptyHealth, assetCount: m365Res.count || 0 };
       if (tenantIds.length > 0) {
         const { data: m365History } = await supabase
           .from('m365_posture_history')
@@ -129,36 +139,63 @@ export function useDashboardStats() {
           .eq('status', 'completed')
           .order('created_at', { ascending: false });
 
-        const seenTenant = new Set<string>();
+        const scores: number[] = [];
+        let latestDate: string | null = null;
+        const seen = new Set<string>();
         for (const h of (m365History || [])) {
-          if (seenTenant.has(h.tenant_record_id)) continue;
-          seenTenant.add(h.tenant_record_id);
-          if (h.score != null) m365Scores.push(h.score);
-
+          if (seen.has(h.tenant_record_id)) continue;
+          seen.add(h.tenant_record_id);
+          if (h.score != null) scores.push(h.score);
+          if (!latestDate || (h.created_at && h.created_at > latestDate)) latestDate = h.created_at;
           const summary = h.summary as any;
           if (summary) {
-            m365Severities.critical += summary.critical || 0;
-            m365Severities.high += summary.high || 0;
-            m365Severities.medium += summary.medium || 0;
-            m365Severities.low += summary.low || 0;
+            m365Health.severities.critical += summary.critical || 0;
+            m365Health.severities.high += summary.high || 0;
+            m365Health.severities.medium += summary.medium || 0;
+            m365Health.severities.low += summary.low || 0;
           }
         }
+        m365Health.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        m365Health.lastAnalysisDate = latestDate;
       }
 
-      // Consolidated score
-      const allScores = [...fwScores, ...m365Scores];
-      const consolidatedScore = allScores.length > 0
-        ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
-        : null;
+      // --- External Domain ---
+      const extHealth: ModuleHealth = { ...emptyHealth, assetCount: extRes.count || 0 };
+      if (extDomainIds.length > 0) {
+        const { data: extHistory } = await supabase
+          .from('external_domain_analysis_history')
+          .select('domain_id, score, created_at')
+          .in('domain_id', extDomainIds)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false });
 
-      const severities = {
-        critical: fwSeverities.critical + m365Severities.critical,
-        high: fwSeverities.high + m365Severities.high,
-        medium: fwSeverities.medium + m365Severities.medium,
-        low: fwSeverities.low + m365Severities.low,
+        const scores: number[] = [];
+        let latestDate: string | null = null;
+        const seen = new Set<string>();
+        for (const h of (extHistory || [])) {
+          if (seen.has(h.domain_id)) continue;
+          seen.add(h.domain_id);
+          if (h.score != null) scores.push(h.score);
+          if (!latestDate || h.created_at > latestDate) latestDate = h.created_at;
+        }
+        extHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        extHealth.lastAnalysisDate = latestDate;
+      }
+
+      // Cross-module totals
+      const totalSeverities = {
+        critical: fwHealth.severities.critical + m365Health.severities.critical + extHealth.severities.critical,
+        high: fwHealth.severities.high + m365Health.severities.high + extHealth.severities.high,
+        medium: fwHealth.severities.medium + m365Health.severities.medium + extHealth.severities.medium,
+        low: fwHealth.severities.low + m365Health.severities.low + extHealth.severities.low,
       };
 
-      // ── 3. Recent activity (unified timeline) ──────────────────────
+      const totalAssets = fwHealth.assetCount + m365Health.assetCount + extHealth.assetCount;
+
+      const dates = [fwHealth.lastAnalysisDate, m365Health.lastAnalysisDate, extHealth.lastAnalysisDate].filter(Boolean) as string[];
+      const lastOverallAnalysis = dates.length > 0 ? dates.sort().reverse()[0] : null;
+
+      // ── 3. Recent activity ──────────────────────────────────────────
       const recentActivity: RecentActivity[] = [];
 
       // Firewall recent
@@ -168,9 +205,9 @@ export function useDashboardStats() {
           .select('id, firewall_id, score, created_at')
           .in('firewall_id', firewallIds)
           .order('created_at', { ascending: false })
-          .limit(8);
+          .limit(10);
 
-        if (fwRecent && fwRecent.length > 0) {
+        if (fwRecent?.length) {
           const fwIds = [...new Set(fwRecent.map(r => r.firewall_id))];
           const { data: fwData } = await supabase.from('firewalls').select('id, name, client_id').in('id', fwIds);
           const clientIds = [...new Set((fwData || []).map(f => f.client_id))];
@@ -203,9 +240,9 @@ export function useDashboardStats() {
           .in('tenant_record_id', tenantIds)
           .eq('status', 'completed')
           .order('created_at', { ascending: false })
-          .limit(8);
+          .limit(10);
 
-        if (m365Recent && m365Recent.length > 0) {
+        if (m365Recent?.length) {
           const tIds = [...new Set(m365Recent.map(r => r.tenant_record_id))];
           const { data: tData } = await supabase.from('m365_tenants').select('id, display_name, tenant_domain').in('id', tIds);
           const cIds = [...new Set(m365Recent.map(r => r.client_id))];
@@ -231,7 +268,6 @@ export function useDashboardStats() {
       }
 
       // External domain recent
-      const extDomainIds = (extRes.data || []).map(d => d.id);
       if (extDomainIds.length > 0) {
         const { data: extRecent } = await supabase
           .from('external_domain_analysis_history')
@@ -239,9 +275,9 @@ export function useDashboardStats() {
           .in('domain_id', extDomainIds)
           .eq('status', 'completed')
           .order('created_at', { ascending: false })
-          .limit(8);
+          .limit(10);
 
-        if (extRecent && extRecent.length > 0) {
+        if (extRecent?.length) {
           const dIds = [...new Set(extRecent.map(r => r.domain_id))];
           const { data: dData } = await supabase.from('external_domains').select('id, name, client_id').in('id', dIds);
           const cIds = [...new Set((dData || []).map(d => d.client_id))];
@@ -266,18 +302,18 @@ export function useDashboardStats() {
         }
       }
 
-      // Sort by date desc and take top 8
       recentActivity.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const topActivity = recentActivity.slice(0, 8);
+      const topActivity = recentActivity.slice(0, 10);
 
       setStats({
-        totalFirewalls,
-        totalM365Tenants,
-        totalExternalDomains,
+        firewall: fwHealth,
+        m365: m365Health,
+        externalDomain: extHealth,
         agentsOnline,
         agentsTotal,
-        consolidatedScore,
-        severities,
+        totalSeverities,
+        totalAssets,
+        lastOverallAnalysis,
         recentActivity: topActivity,
       });
     } catch (error) {
