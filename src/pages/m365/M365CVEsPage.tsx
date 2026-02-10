@@ -139,7 +139,7 @@ export default function M365CVEsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6 animate-fade-in">
+      <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/tenant-connection' },
           { label: 'CVEs' },
