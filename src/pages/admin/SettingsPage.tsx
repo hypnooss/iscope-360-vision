@@ -42,6 +42,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("m365");
   const [saving, setSaving] = useState(false);
   const [validatingPermissions, setValidatingPermissions] = useState(false);
   const [m365Config, setM365Config] = useState<M365Config>({
@@ -396,9 +397,9 @@ export default function SettingsPage() {
     }
   };
 
-  const checkM365Config = async () => {
+  const checkM365Config = async (isInitialLoad = true) => {
     try {
-      setLoading(true);
+      if (isInitialLoad) setLoading(true);
       
       // Verify session is still valid before calling
       const { data: { session } } = await supabase.auth.getSession();
@@ -491,7 +492,7 @@ export default function SettingsPage() {
       console.error('Error:', error);
       setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
     } finally {
-      setLoading(false);
+      if (isInitialLoad) setLoading(false);
     }
   };
 
@@ -647,7 +648,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="m365" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="m365" className="gap-2">
               <Cloud className="w-4 h-4" />
@@ -690,7 +691,7 @@ export default function SettingsPage() {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={checkM365Config}
+                    onClick={() => checkM365Config(false)}
                     disabled={loading}
                   >
                     <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
