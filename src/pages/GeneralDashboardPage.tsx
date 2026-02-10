@@ -147,17 +147,7 @@ export default function GeneralDashboardPage() {
     severities: { critical: 0, high: 0, medium: 0, low: 0 },
   };
 
-  // Agents card: score = percentage online
-  const agentsScore = stats && stats.agentsTotal > 0
-    ? Math.round((stats.agentsOnline / stats.agentsTotal) * 100)
-    : null;
 
-  const agentsHealth: ModuleHealth = {
-    score: agentsScore,
-    assetCount: stats?.agentsTotal || 0,
-    lastAnalysisDate: null,
-    severities: { critical: 0, high: 0, medium: 0, low: 0 },
-  };
 
   type CardDef = {
     key: string;
