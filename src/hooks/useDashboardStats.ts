@@ -170,7 +170,12 @@ const m365Health: ModuleHealth = {
       }
 
       // --- External Domain ---
-      const extHealth: ModuleHealth = { ...emptyHealth, assetCount: extRes.count || 0 };
+const extHealth: ModuleHealth = {
+        score: null,
+        assetCount: extRes.count || 0,
+        lastAnalysisDate: null,
+        severities: { critical: 0, high: 0, medium: 0, low: 0 },
+      };
       if (extDomainIds.length > 0) {
         const { data: extHistory } = await supabase
           .from('external_domain_analysis_history')
