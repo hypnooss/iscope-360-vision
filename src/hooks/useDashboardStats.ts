@@ -101,7 +101,12 @@ export function useDashboardStats() {
       const extDomainIds = (extRes.data || []).map(d => d.id);
 
       // --- Firewall ---
-      const fwHealth: ModuleHealth = { ...emptyHealth, assetCount: fwRes.count || 0 };
+const fwHealth: ModuleHealth = {
+        score: null,
+        assetCount: fwRes.count || 0,
+        lastAnalysisDate: null,
+        severities: { critical: 0, high: 0, medium: 0, low: 0 },
+      };
       if (firewallIds.length > 0) {
         const { data: fwHistory } = await supabase
           .from('analysis_history')
