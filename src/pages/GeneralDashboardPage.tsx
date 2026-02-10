@@ -286,7 +286,7 @@ export default function GeneralDashboardPage() {
         {/* Infrastructure Card */}
         <section>
           <Card
-            className="glass-card border-t-4 border-t-emerald-500 cursor-pointer hover:scale-[1.01] transition-all duration-200 hover:shadow-lg"
+            className="glass-card border-t-4 border-t-primary cursor-pointer hover:scale-[1.01] transition-all duration-200 hover:shadow-lg"
             onClick={() => navigate('/agents')}
           >
             <CardContent className="p-5">
@@ -300,39 +300,62 @@ export default function GeneralDashboardPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-emerald-500/10">
-                        <Server className="w-5 h-5 text-emerald-500" />
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Server className="w-5 h-5 text-primary" />
                       </div>
                       <h3 className="font-semibold text-foreground">Infraestrutura</h3>
                     </div>
                     <ArrowRight className="w-4 h-4 text-muted-foreground" />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-                      <span className="text-sm text-muted-foreground">Agents</span>
-                      <span className="text-sm font-semibold text-foreground ml-auto">
-                        {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0} online
-                      </span>
+                  {/* Assets by module - same style as Workspace Details */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Firewalls */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-orange-500" />
+                        <span className="text-sm font-medium text-foreground">Firewalls</span>
+                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.firewall.assetCount ?? 0}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Server className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Total de ativos</span>
-                      <span className="text-sm font-semibold text-foreground ml-auto">
-                        {totalAssets}
-                      </span>
+
+                    {/* M365 Tenants */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Cloud className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm font-medium text-foreground">Tenants M365</span>
+                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.m365.assetCount ?? 0}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Último scan</span>
-                      <span className="text-sm font-semibold text-foreground ml-auto">
-                        {lastOverallScan
-                          ? formatDistanceToNow(new Date(lastOverallScan), { addSuffix: true, locale: ptBR })
-                          : '—'}
-                      </span>
+
+                    {/* External Domains */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-green-500" />
+                        <span className="text-sm font-medium text-foreground">Domínios</span>
+                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.externalDomain.assetCount ?? 0}</span>
+                      </div>
+                    </div>
+
+                    {/* Agents */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
+                        <span className="text-sm font-medium text-foreground">Agents</span>
+                        <span className="text-sm font-bold text-foreground ml-auto">
+                          {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Last scan */}
+                  {lastOverallScan && (
+                    <p className="text-xs text-muted-foreground">
+                      Último scan:{' '}
+                      {formatDistanceToNow(new Date(lastOverallScan), { addSuffix: true, locale: ptBR })}
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>
