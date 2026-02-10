@@ -269,10 +269,66 @@ export default function GeneralDashboardPage() {
                 health={health}
                 assetLabel={assetLabel}
                 loading={loading}
-                onAccess={() => moduleCode ? handleGoToModule(moduleCode, path) : navigate(path)}
+                onAccess={() => handleGoToModule(moduleCode, path)}
               />
             ))}
           </div>
+        </section>
+
+        {/* Infrastructure Card */}
+        <section>
+          <Card
+            className="glass-card border-t-4 border-t-emerald-500 cursor-pointer hover:scale-[1.01] transition-all duration-200 hover:shadow-lg"
+            onClick={() => navigate('/agents')}
+          >
+            <CardContent className="p-5">
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-4 w-60" />
+                  <Skeleton className="h-4 w-48" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                        <Server className="w-5 h-5 text-emerald-500" />
+                      </div>
+                      <h3 className="font-semibold text-foreground">Infraestrutura</h3>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
+                      <span className="text-sm text-muted-foreground">Agents</span>
+                      <span className="text-sm font-semibold text-foreground ml-auto">
+                        {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0} online
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Server className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Total de ativos</span>
+                      <span className="text-sm font-semibold text-foreground ml-auto">
+                        {totalAssets}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Último scan</span>
+                      <span className="text-sm font-semibold text-foreground ml-auto">
+                        {lastOverallScan
+                          ? formatDistanceToNow(new Date(lastOverallScan), { addSuffix: true, locale: ptBR })
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </section>
       </div>
     </AppLayout>
