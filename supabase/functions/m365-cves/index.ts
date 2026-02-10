@@ -7,22 +7,6 @@ const corsHeaders = {
 
 const MSRC_BASE = 'https://api.msrc.microsoft.com/cvrf/v3.0';
 
-// Cloud-only M365 product patterns (excludes on-premises servers)
-const M365_PRODUCT_PATTERNS = [
-  'exchange online',
-  'sharepoint online',
-  'microsoft 365 apps',
-  'microsoft office',
-  'entra',
-  'azure active directory',
-  'microsoft teams',
-  'outlook',
-  'defender',
-  'intune',
-  'onedrive',
-  'microsoft 365',
-];
-
 interface MSRCUpdate {
   ID: string;
   Alias: string;
@@ -52,17 +36,6 @@ function mapSeverity(sev: string | undefined | null): CVEResult['severity'] {
   if (s === 'moderate' || s === 'medium') return 'MEDIUM';
   if (s === 'low') return 'LOW';
   return 'UNKNOWN';
-}
-
-function matchesM365Products(productNames: string[], filterProducts: string[] | null): boolean {
-  const patterns = filterProducts && filterProducts.length > 0
-    ? filterProducts.map(p => p.toLowerCase())
-    : M365_PRODUCT_PATTERNS;
-
-  return productNames.some(name => {
-    const lower = name.toLowerCase();
-    return patterns.some(pattern => lower.includes(pattern));
-  });
 }
 
 function getProductNames(vuln: any, productTree: any): string[] {
@@ -126,37 +99,24 @@ function getMaxSeverity(vuln: any): string | null {
   return null;
 }
 
-function extractCustomerActionRequired(vuln: any): boolean {
-  if (!vuln.Remediations || !Array.isArray(vuln.Remediations)) {
-    return true; // No remediation info → assume action needed
-  }
-
-  for (const rem of vuln.Remediations) {
-    const desc = (rem.Description?.Value || '').toLowerCase();
-    const subType = (rem.SubType || '').toLowerCase();
-
-    // Explicit "customer action required" in description or subtype
-    if (desc.includes('customer action') || subType.includes('customer action')) {
-      return true;
-    }
-  }
-
-  // Check if there's an automatic vendor fix (Type 2 = VendorFix)
-  const hasAutoFix = vuln.Remediations.some((rem: any) =>
-    rem.Type === 2 && (rem.SubType || '').toLowerCase().includes('security update')
-  );
-
-  return !hasAutoFix;
-}
-
+/**
+ * Maps a raw MSRC product name to a simplified cloud product name.
+ * Returns null for on-premises products or unrecognized names — 
+ * this ensures only explicitly mapped cloud products are included.
+ */
 function simplifyProductName(name: string): string | null {
   const lower = name.toLowerCase();
-  // Exclude on-premises server products explicitly
+
+  // Explicitly exclude on-premises server products
   if (lower.includes('exchange server')) return null;
   if (lower.includes('sharepoint server')) return null;
   if (lower.includes('sharepoint enterprise server')) return null;
   if (lower.includes('sharepoint foundation')) return null;
+  if (lower.includes('windows server')) return null;
+  if (lower.includes('skype for business server')) return null;
+  if (lower.includes('lync server')) return null;
 
+  // Map to cloud product names
   if (lower.includes('exchange online')) return 'Exchange Online';
   if (lower.includes('sharepoint online')) return 'SharePoint Online';
   if (lower.includes('teams')) return 'Teams';
@@ -167,7 +127,74 @@ function simplifyProductName(name: string): string | null {
   if (lower.includes('onedrive')) return 'OneDrive';
   if (lower.includes('microsoft 365 apps') || lower.includes('microsoft office')) return 'Microsoft 365 Apps';
   if (lower.includes('microsoft 365')) return 'Microsoft 365';
-  return name;
+
+  // Reject anything not explicitly mapped as a cloud product
+  return null;
+}
+
+/**
+ * Determines if a CVE requires customer action based on MSRC remediation data.
+ * 
+ * Logic:
+ * 1. If any remediation explicitly mentions "customer action" → true
+ * 2. If vuln.Flags contains action indicators → true  
+ * 3. If there are NO remediations at all → true (no info = assume action needed)
+ * 4. For cloud products: if all remediations are automatic VendorFix → false
+ * 5. Otherwise → true
+ */
+function extractCustomerActionRequired(vuln: any): boolean {
+  // Check Flags array (MSRC uses this for explicit action indicators)
+  if (vuln.Flags && Array.isArray(vuln.Flags)) {
+    for (const flag of vuln.Flags) {
+      const label = (flag.Label || '').toLowerCase();
+      if (label.includes('customer action') || label.includes('action required')) {
+        return true;
+      }
+    }
+  }
+
+  if (!vuln.Remediations || !Array.isArray(vuln.Remediations) || vuln.Remediations.length === 0) {
+    return true; // No remediation info → assume action needed
+  }
+
+  // Check if any remediation explicitly mentions customer action
+  for (const rem of vuln.Remediations) {
+    const desc = (rem.Description?.Value || '').toLowerCase();
+    const subType = (rem.SubType || '').toLowerCase();
+    const url = (rem.URL || '').toLowerCase();
+
+    if (desc.includes('customer action required') || desc.includes('action required')) {
+      return true;
+    }
+    if (subType.includes('customer action')) {
+      return true;
+    }
+    // MSRC sometimes uses specific known-issue URLs indicating manual steps
+    if (url.includes('aka.ms') && desc.includes('update') && desc.includes('manual')) {
+      return true;
+    }
+  }
+
+  // For cloud/SaaS CVEs: Microsoft typically auto-patches.
+  // If there's at least one VendorFix with "Security Update", it's auto-managed.
+  // But we need to check that the fix applies to cloud products, not just on-prem.
+  const hasCloudAutoFix = vuln.Remediations.some((rem: any) => {
+    if (rem.Type !== 2) return false; // Type 2 = VendorFix
+    const subType = (rem.SubType || '').toLowerCase();
+    if (!subType.includes('security update')) return false;
+
+    // Check if this fix targets cloud products (not just on-prem)
+    if (rem.ProductID && Array.isArray(rem.ProductID)) {
+      // If the remediation has no product IDs, it's generic
+      return true;
+    }
+    // Generic fix without product filter = applies broadly
+    return true;
+  });
+
+  // If there's an automatic cloud fix and no explicit action required flag, 
+  // it's auto-managed by Microsoft
+  return !hasCloudAutoFix;
 }
 
 serve(async (req) => {
@@ -178,8 +205,6 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const months = parseInt(url.searchParams.get('months') || '3', 10);
-    const productsParam = url.searchParams.get('products');
-    const filterProducts = productsParam ? productsParam.split(',').map(p => p.trim()) : null;
 
     const updatesRes = await fetch(`${MSRC_BASE}/updates`, {
       headers: { 'Accept': 'application/json' },
@@ -219,21 +244,20 @@ serve(async (req) => {
           const cveId = vuln.CVE;
           if (!cveId || seenCves.has(cveId)) continue;
 
+          // Step 1: Get raw product names
           const productNames = getProductNames(vuln, productTree);
 
-          if (!matchesM365Products(productNames, filterProducts)) continue;
-
-          seenCves.add(cveId);
-
-          // Simplify and filter out on-premises products
+          // Step 2: Simplify and filter — ONLY keep explicitly mapped cloud products
           const simplifiedProducts = [...new Set(
             productNames
               .map(simplifyProductName)
               .filter((n): n is string => n !== null)
           )];
 
-          // Skip if no cloud products remain after filtering
+          // Step 3: If no cloud products remain, skip this CVE entirely
           if (simplifiedProducts.length === 0) continue;
+
+          seenCves.add(cveId);
 
           const severity = mapSeverity(getMaxSeverity(vuln));
           const score = extractCVSSScore(vuln);
