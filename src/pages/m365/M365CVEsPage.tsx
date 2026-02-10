@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useM365CVEs, M365CVE } from '@/hooks/useM365CVEs';
-import { AlertTriangle, ShieldAlert, Shield, ChevronDown, ChevronRight, ExternalLink, Bug, Info } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, Shield, ChevronDown, ChevronRight, ExternalLink, Bug, Info, UserCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const ALL_PRODUCTS = [
@@ -47,6 +47,11 @@ function CVECard({ cve }: { cve: M365CVE }) {
                     <Badge className={cn('text-xs font-bold', SEVERITY_COLORS[cve.severity])}>
                       {cve.severity}
                     </Badge>
+                    {cve.customerActionRequired && (
+                      <Badge className="text-xs font-bold bg-orange-500 text-white border-orange-500">
+                        Ação Necessária
+                      </Badge>
+                    )}
                     {cve.score != null && (
                       <span className="text-xs font-mono text-muted-foreground">
                         CVSS {cve.score.toFixed(1)}
@@ -105,6 +110,7 @@ export default function M365CVEsPage() {
   const [months, setMonths] = useState(3);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [actionFilter, setActionFilter] = useState(false);
 
   const { data, isLoading, error } = useM365CVEs(months);
 
@@ -117,9 +123,12 @@ export default function M365CVEsPage() {
       if (severityFilter !== 'all' && cve.severity !== severityFilter) {
         return false;
       }
+      if (actionFilter && !cve.customerActionRequired) {
+        return false;
+      }
       return true;
     });
-  }, [data?.cves, selectedProducts, severityFilter]);
+  }, [data?.cves, selectedProducts, severityFilter, actionFilter]);
 
   const stats = useMemo(() => {
     const cves = filteredCves;
@@ -127,7 +136,7 @@ export default function M365CVEsPage() {
       total: cves.length,
       critical: cves.filter((c) => c.severity === 'CRITICAL').length,
       high: cves.filter((c) => c.severity === 'HIGH').length,
-      medium: cves.filter((c) => c.severity === 'MEDIUM').length,
+      actionRequired: cves.filter((c) => c.customerActionRequired).length,
     };
   }, [filteredCves]);
 
@@ -172,7 +181,7 @@ export default function M365CVEsPage() {
           <StatCard title="Total CVEs" value={stats.total} icon={Shield} variant="default" delay={0} compact />
           <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact />
           <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact />
-          <StatCard title="Médios" value={stats.medium} icon={Info} variant="default" delay={0.15} compact />
+          <StatCard title="Ação Necessária" value={stats.actionRequired} icon={UserCheck} variant="destructive" delay={0.15} compact />
         </div>
 
         {/* Filters */}
@@ -196,20 +205,31 @@ export default function M365CVEsPage() {
               </Button>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground">Severidade:</span>
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger className="w-[140px] h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="CRITICAL">Crítico</SelectItem>
-                <SelectItem value="HIGH">Alto</SelectItem>
-                <SelectItem value="MEDIUM">Médio</SelectItem>
-                <SelectItem value="LOW">Baixo</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Severidade:</span>
+              <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                <SelectTrigger className="w-[140px] h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="CRITICAL">Crítico</SelectItem>
+                  <SelectItem value="HIGH">Alto</SelectItem>
+                  <SelectItem value="MEDIUM">Médio</SelectItem>
+                  <SelectItem value="LOW">Baixo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant={actionFilter ? 'default' : 'outline'}
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => setActionFilter(!actionFilter)}
+            >
+              <UserCheck className="w-3 h-3 mr-1" />
+              Ação Necessária
+            </Button>
           </div>
         </div>
 
