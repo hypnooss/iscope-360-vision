@@ -143,14 +143,16 @@ export default function M365CVEsPage() {
   }, [data?.cves, selectedProducts, severityFilter, actionFilter]);
 
   const stats = useMemo(() => {
-    const cves = filteredCves;
+    const cves = data?.cves ?? [];
     return {
       total: cves.length,
       critical: cves.filter((c) => c.severity === 'CRITICAL').length,
       high: cves.filter((c) => c.severity === 'HIGH').length,
+      medium: cves.filter((c) => c.severity === 'MEDIUM').length,
+      low: cves.filter((c) => c.severity === 'LOW').length,
       actionRequired: cves.filter((c) => c.customerActionRequired).length,
     };
-  }, [filteredCves]);
+  }, [data?.cves]);
 
   const toggleProduct = (product: string) => {
     setSelectedProducts((prev) =>
