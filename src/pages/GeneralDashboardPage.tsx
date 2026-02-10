@@ -209,19 +209,29 @@ export default function GeneralDashboardPage() {
       moduleCode: 'scope_external_domain',
       path: '/scope-external-domain/domains',
     },
-    {
-      key: 'agents',
-      title: 'Infraestrutura',
-      icon: Server,
-      iconColor: 'text-emerald-500',
-      iconBg: 'bg-emerald-500/10',
-      borderColor: 'border-l-emerald-500',
-      health: agentsHealth,
-      assetLabel: stats ? `${stats.agentsOnline}/${stats.agentsTotal} online` : 'agents',
-      moduleCode: '',
-      path: '/agents',
-    },
   ].filter(Boolean) as CardDef[];
+
+  // Infrastructure metrics
+  const totalAssets = stats
+    ? (stats.firewall.assetCount + stats.m365.assetCount + stats.externalDomain.assetCount)
+    : 0;
+
+  const lastOverallScan = stats
+    ? [stats.firewall.lastAnalysisDate, stats.m365.lastAnalysisDate, stats.externalDomain.lastAnalysisDate]
+        .filter(Boolean)
+        .sort()
+        .pop() || null
+    : null;
+
+  const agentStatusColor = stats
+    ? stats.agentsTotal === 0
+      ? 'bg-muted-foreground'
+      : stats.agentsOnline === stats.agentsTotal
+      ? 'bg-emerald-500'
+      : stats.agentsOnline > 0
+      ? 'bg-yellow-500'
+      : 'bg-destructive'
+    : 'bg-muted-foreground';
 
   const gridCols = moduleCards.length <= 2
     ? 'grid-cols-1 md:grid-cols-2'
