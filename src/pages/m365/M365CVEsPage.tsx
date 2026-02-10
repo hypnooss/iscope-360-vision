@@ -191,11 +191,13 @@ export default function M365CVEsPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard title="Total CVEs" value={stats.total} icon={Shield} variant="default" delay={0} compact />
-          <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact />
-          <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact />
-          <StatCard title="Ação Necessária" value={stats.actionRequired} icon={UserCheck} variant="destructive" delay={0.15} compact />
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+          <StatCard title="Total CVEs" value={stats.total} icon={Shield} variant="default" delay={0} compact onClick={() => { setSeverityFilter('all'); setActionFilter(false); }} active={severityFilter === 'all' && !actionFilter} />
+          <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'CRITICAL' ? 'all' : 'CRITICAL'); }} active={severityFilter === 'CRITICAL'} />
+          <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'HIGH' ? 'all' : 'HIGH'); }} active={severityFilter === 'HIGH'} />
+          <StatCard title="Médios" value={stats.medium} icon={Info} variant="warning" delay={0.15} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'MEDIUM' ? 'all' : 'MEDIUM'); }} active={severityFilter === 'MEDIUM'} />
+          <StatCard title="Baixos" value={stats.low} icon={Shield} variant="default" delay={0.2} compact onClick={() => { setActionFilter(false); setSeverityFilter(prev => prev === 'LOW' ? 'all' : 'LOW'); }} active={severityFilter === 'LOW'} />
+          <StatCard title="Ação Necessária" value={stats.actionRequired} icon={UserCheck} variant="destructive" delay={0.25} compact onClick={() => { setSeverityFilter('all'); setActionFilter(prev => !prev); }} active={actionFilter} />
         </div>
 
         {/* Filters */}
