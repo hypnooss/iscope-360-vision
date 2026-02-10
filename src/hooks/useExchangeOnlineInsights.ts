@@ -85,20 +85,19 @@ export function useExchangeOnlineInsights({
     setErrorCode(null);
 
     try {
-      const { data, error: queryError } = await supabase
+      const { data: records, error: queryError } = await supabase
         .from('m365_posture_history')
         .select('insights, agent_insights, completed_at, status')
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
         .order('completed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(5);
 
       if (queryError) {
         throw new Error(queryError.message);
       }
 
-      if (!data) {
+      if (!records || records.length === 0) {
         setInsights([]);
         setSummary(defaultSummary);
         setAnalyzedAt(null);
@@ -107,7 +106,25 @@ export function useExchangeOnlineInsights({
         return;
       }
 
-      // Combine all insights
+      // Find the most recent record that contains Exchange insights
+      let data = records[0]; // fallback to most recent
+      for (const record of records) {
+        const combined = [
+          ...((record.insights as any[]) || []),
+          ...((record.agent_insights as any[]) || []),
+        ];
+        const hasExchange = combined.some((i: any) =>
+          i.product === 'exchange_online' ||
+          EXCHANGE_CATEGORIES.includes(i.category) ||
+          i.id?.startsWith('exo_')
+        );
+        if (hasExchange) {
+          data = record;
+          break;
+        }
+      }
+
+      // Combine all insights from the selected record
       const allInsights = [
         ...((data.insights as any[]) || []),
         ...((data.agent_insights as any[]) || []),

@@ -84,26 +84,44 @@ export function useEntraIdInsights({
     setErrorCode(null);
 
     try {
-      const { data, error: queryError } = await supabase
+      const { data: records, error: queryError } = await supabase
         .from('m365_posture_history')
         .select('insights, agent_insights, completed_at, status')
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
         .order('completed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(5);
 
       if (queryError) {
         throw new Error(queryError.message);
       }
 
-      if (!data) {
+      if (!records || records.length === 0) {
         setInsights([]);
         setSummary(defaultSummary);
         setAnalyzedAt(null);
         setError('Nenhuma análise encontrada. Clique em "Reanalisar" para executar.');
         setErrorCode('NO_ANALYSIS');
         return;
+      }
+
+      // Find the most recent record that contains Entra ID insights
+      let data = records[0]; // fallback to most recent
+      for (const record of records) {
+        const combined = [
+          ...((record.insights as any[]) || []),
+          ...((record.agent_insights as any[]) || []),
+        ];
+        const hasEntraId = combined.some((i: any) =>
+          i.product === 'entra_id' ||
+          ENTRA_ID_CATEGORIES.includes(i.category) ||
+          i.id?.startsWith('IDT-') || i.id?.startsWith('AUT-') ||
+          i.id?.startsWith('ADM-') || i.id?.startsWith('APP-')
+        );
+        if (hasEntraId) {
+          data = record;
+          break;
+        }
       }
 
       const allInsights = [
