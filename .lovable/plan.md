@@ -1,41 +1,79 @@
 
-# Corrigir Descricao dos Cards Entra ID (Campo `criteria` ausente)
+# Corrigir Perda de Insights por Analises Escopadas
 
 ## Problema
 
-Os cards de conformidade do Entra ID exibem o texto dinamico da analise (ex: "{110} usuario(s) sem MFA configurado.") em vez da descricao estatica da regra (ex: "Verifica se todos os usuarios possuem MFA configurado.").
+Os hooks `useEntraIdInsights` e `useExchangeOnlineInsights` sempre buscam o **unico registro mais recente** com status `completed` na tabela `m365_posture_history`. Porem, analises escopadas (scope `entra_id` ou `exchange_online`) geram registros separados contendo apenas os insights daquele produto.
 
-Este e o mesmo problema que ja foi corrigido no Exchange Online.
-
-## Causa Raiz
-
-As funcoes `createInsight` e `createNotFoundInsight` em `m365-security-posture/index.ts` nao incluem o campo `criteria` na saida. O frontend espera esse campo para exibir a descricao estatica da regra no Level 1 do card:
+Dados atuais no banco para o tenant selecionado:
 
 ```text
-// Frontend mapper (complianceMappers.ts, linha 247)
-description: insight.criteria || insight.description
-                  ^^^^^^^^^       ^^^^^^^^^^^^^^^^^^
-                  (ausente!)      (cai no fallback = texto dinamico)
+1. 202075e6 (12:41) -> insights: 0, agent_insights: 14 (Exchange)
+2. b1478eba (12:40) -> insights: 25 (Entra ID), agent_insights: 0
 ```
 
-## Correcao
+Quando a analise do Exchange (mais recente) completa, ambos os hooks leem o registro `202075e6`, que nao tem dados de Entra ID. Resultado: Entra ID mostra 0 insights. O inverso tambem ocorre.
 
-Adicionar `criteria: rule.description` ao objeto retornado em ambas as funcoes:
+## Solucao
 
-**Arquivo:** `supabase/functions/m365-security-posture/index.ts`
+Modificar ambos os hooks para buscar o registro mais recente **que contenha insights relevantes para o produto**, em vez de simplesmente o mais recente.
 
-### Em `createInsight` (~linha 769-791)
-Adicionar campo `criteria` com a descricao estatica da regra do template.
+### Hook `useExchangeOnlineInsights`
 
-### Em `createNotFoundInsight` (~linha 816-838)
-Adicionar campo `criteria` com a descricao estatica da regra do template.
+Buscar os N registros mais recentes e iterar ate encontrar um que contenha insights de Exchange (por produto ou categoria). Se nenhum tiver, usar o mais recente (comportamento atual).
 
-Isso garante que:
-- `criteria` = descricao estatica da regra ("Verifica se...") -> exibido no Level 1 do card
-- `descricaoExecutiva` = resultado dinamico da analise ("{110} usuarios sem MFA") -> exibido na secao "ANALISE EFETUADA"
+```text
+// Em vez de limit(1), buscar ultimos 5 registros
+.limit(5)
+
+// Iterar para encontrar o primeiro com insights relevantes
+for (const record of records) {
+  const allInsights = [...(record.insights || []), ...(record.agent_insights || [])];
+  const hasExchange = allInsights.some(i => 
+    i.product === 'exchange_online' || 
+    EXCHANGE_CATEGORIES.includes(i.category) ||
+    i.id?.startsWith('exo_')
+  );
+  if (hasExchange) {
+    // Usar este registro
+    break;
+  }
+}
+```
+
+### Hook `useEntraIdInsights`
+
+Mesma logica, filtrando por insights de Entra ID:
+
+```text
+for (const record of records) {
+  const allInsights = [...(record.insights || []), ...(record.agent_insights || [])];
+  const hasEntraId = allInsights.some(i => 
+    i.product === 'entra_id' || 
+    ENTRA_ID_CATEGORIES.includes(i.category) ||
+    i.id?.startsWith('IDT-') || i.id?.startsWith('AUT-') ||
+    i.id?.startsWith('ADM-') || i.id?.startsWith('APP-')
+  );
+  if (hasEntraId) {
+    // Usar este registro
+    break;
+  }
+}
+```
+
+### Consideracao sobre `analyzedAt`
+
+O campo `analyzedAt` deve refletir a data do registro que realmente contem os dados exibidos, nao a data da analise mais recente (que pode ser de outro produto).
+
+## Arquivos afetados
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/hooks/useExchangeOnlineInsights.ts` | Buscar ultimo registro com insights de Exchange |
+| `src/hooks/useEntraIdInsights.ts` | Buscar ultimo registro com insights de Entra ID |
 
 ## Resultado esperado
 
-- Cards do Entra ID exibem a descricao da regra (do template) no subtitulo
-- Texto dinamico aparece apenas na secao "ANALISE EFETUADA" ao expandir o card
-- Comportamento identico ao Exchange Online
+- Exchange Online sempre exibe insights do ultimo registro que contenha dados de Exchange
+- Entra ID sempre exibe insights do ultimo registro que contenha dados de Entra ID
+- Analises escopadas nao "apagam" os dados do outro produto na interface
