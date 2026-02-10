@@ -213,7 +213,8 @@ class PowerShellExecutor(BaseExecutor):
             "# Disconnect",
             module_config["disconnect"],
             "",
-            "# Output results as JSON",
+            "# Output results as JSON with delimiter marker",
+            "Write-Output '---ISCOPE_JSON_START---'",
             "$results | ConvertTo-Json -Depth 10 -Compress",
         ])
         
@@ -338,10 +339,15 @@ class PowerShellExecutor(BaseExecutor):
                 self.logger.error(f"PowerShell execution failed: {error_msg}")
                 return {"error": error_msg, "exit_code": result.returncode}
             
-            # Parse output
+            # Parse output - extract JSON after delimiter marker
             output = result.stdout.strip()
             if not output:
                 return {"error": "No output from PowerShell script"}
+            
+            # Extract content after the delimiter marker (ignores warnings/banners)
+            marker = '---ISCOPE_JSON_START---'
+            if marker in output:
+                output = output.split(marker, 1)[1].strip()
             
             try:
                 data = json.loads(output)
