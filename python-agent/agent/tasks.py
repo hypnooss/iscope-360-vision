@@ -437,6 +437,28 @@ class TaskExecutor:
                 'error_message': f'Falha de conectividade: {error_msg}' if is_first else None
             }
         
+        # Check for raw (non-JSON) output - treat as batch error
+        if result.get('raw'):
+            error_msg = f"PowerShell output is not valid JSON: {str(result.get('data', ''))[:200]}"
+            self.logger.error(f"PowerShell batch raw output: {error_msg}")
+            
+            step_results = []
+            for step in steps:
+                step_id = step.get('id', 'unknown')
+                step_results.append({
+                    'step_id': step_id,
+                    'status': 'failed',
+                    'error': error_msg,
+                    'duration_ms': per_step_duration
+                })
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, per_step_duration)
+            
+            return {
+                'step_results': step_results,
+                'abort': False,
+            }
+        
         # Unpack individual results and report progressively
         data = result.get('data', {})
         step_results = []
