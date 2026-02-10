@@ -39,15 +39,6 @@ export interface DashboardStats {
   externalDomain: ModuleHealth;
   agentsOnline: number;
   agentsTotal: number;
-  totalSeverities: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
-  totalAssets: number;
-  lastOverallAnalysis: string | null;
-  recentActivity: RecentActivity[];
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
