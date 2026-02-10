@@ -1,79 +1,95 @@
 
-# Corrigir Perda de Insights por Analises Escopadas
+# Remover Aba M365 e Criar Aba "Chaves de API"
 
-## Problema
+## Resumo
 
-Os hooks `useEntraIdInsights` e `useExchangeOnlineInsights` sempre buscam o **unico registro mais recente** com status `completed` na tabela `m365_posture_history`. Porem, analises escopadas (scope `entra_id` ou `exchange_online`) geram registros separados contendo apenas os insights daquele produto.
+Remover a aba "Microsoft 365" da pagina Configuracoes (ja que o conceito de tenant home foi descontinuado) e substituir por uma aba "Chaves de API" para gerenciar as API keys de terceiros usadas pelo sistema.
 
-Dados atuais no banco para o tenant selecionado:
+## Chaves de API identificadas no codigo
 
-```text
-1. 202075e6 (12:41) -> insights: 0, agent_insights: 14 (Exchange)
-2. b1478eba (12:40) -> insights: 25 (Entra ID), agent_insights: 0
-```
+O sistema utiliza as seguintes API keys de terceiros (armazenadas como Supabase Secrets):
 
-Quando a analise do Exchange (mais recente) completa, ambos os hooks leem o registro `202075e6`, que nao tem dados de Entra ID. Resultado: Entra ID mostra 0 insights. O inverso tambem ocorre.
+| Chave | Uso | Funcao |
+|-------|-----|--------|
+| `VIRUSTOTAL_API_KEY` | Enumeracao de subdomainios | `subdomain-enum` |
+| `SECURITYTRAILS_API_KEY` | Enumeracao de subdomainios | `subdomain-enum` |
 
-## Solucao
+Essas chaves sao lidas via `Deno.env.get()` nas edge functions e configuradas como Supabase Secrets. A nova aba permitira visualizar se estao configuradas e atualizar seus valores.
 
-Modificar ambos os hooks para buscar o registro mais recente **que contenha insights relevantes para o produto**, em vez de simplesmente o mais recente.
+## Impacto no backend (tenant home)
 
-### Hook `useExchangeOnlineInsights`
+Tres edge functions referenciam `home_tenant_id`:
+- `add-exchange-permission` - usa para obter token do tenant home
+- `ensure-exchange-permission` - idem
+- `agent-heartbeat` - ja migrou para usar `validation_tenant_id`
 
-Buscar os N registros mais recentes e iterar ate encontrar um que contenha insights de Exchange (por produto ou categoria). Se nenhum tiver, usar o mais recente (comportamento atual).
+Como `home_tenant_id` e `validation_tenant_id` apontam para o mesmo tenant na pratica, as duas funcoes que ainda usam `home_tenant_id` serao atualizadas para usar `validation_tenant_id` em vez disso.
 
-```text
-// Em vez de limit(1), buscar ultimos 5 registros
-.limit(5)
+## Detalhes Tecnicos
 
-// Iterar para encontrar o primeiro com insights relevantes
-for (const record of records) {
-  const allInsights = [...(record.insights || []), ...(record.agent_insights || [])];
-  const hasExchange = allInsights.some(i => 
-    i.product === 'exchange_online' || 
-    EXCHANGE_CATEGORIES.includes(i.category) ||
-    i.id?.startsWith('exo_')
-  );
-  if (hasExchange) {
-    // Usar este registro
-    break;
-  }
-}
-```
+### 1. Atualizar edge functions para usar `validation_tenant_id`
 
-### Hook `useEntraIdInsights`
+**`supabase/functions/add-exchange-permission/index.ts`:**
+- Alterar select de `home_tenant_id` para `validation_tenant_id`
+- Substituir todas as referencias a `home_tenant_id` por `validation_tenant_id`
 
-Mesma logica, filtrando por insights de Entra ID:
+**`supabase/functions/ensure-exchange-permission/index.ts`:**
+- Mesma alteracao
 
-```text
-for (const record of records) {
-  const allInsights = [...(record.insights || []), ...(record.agent_insights || [])];
-  const hasEntraId = allInsights.some(i => 
-    i.product === 'entra_id' || 
-    ENTRA_ID_CATEGORIES.includes(i.category) ||
-    i.id?.startsWith('IDT-') || i.id?.startsWith('AUT-') ||
-    i.id?.startsWith('ADM-') || i.id?.startsWith('APP-')
-  );
-  if (hasEntraId) {
-    // Usar este registro
-    break;
-  }
-}
-```
+### 2. Remover aba M365 e adicionar aba "Chaves de API" no SettingsPage
 
-### Consideracao sobre `analyzedAt`
+**`src/pages/admin/SettingsPage.tsx`:**
 
-O campo `analyzedAt` deve refletir a data do registro que realmente contem os dados exibidos, nao a data da analise mais recente (que pode ser de outro produto).
+**Remover:**
+- Todo o state relacionado a M365 (`m365Config`, `newAppId`, `newClientSecret`, `tenantIdForValidation`, `newAppObjectId`, `addingExchangePermission`, etc.)
+- Funcoes `checkM365Config`, `validatePermissions`, `handleSaveM365Config`, `handleAddExchangePermission`
+- Interface `M365Config`, `PermissionStatus`
+- Arrays `defaultPermissions`, `corePermissions`, etc.
+- `mergedPermissions` memo
+- `TabsContent value="m365"` inteiro
+- `TabsTrigger value="m365"`
+- Import de `PasswordInput`
+- Chamada `checkM365Config(true)` no useEffect
+- Logica de autenticacao/retry do M365
+
+**Adicionar:**
+- Nova aba "Chaves de API" com icone `Key`
+- Interface para gerenciar secrets de terceiros via uma edge function dedicada
+- Para cada chave (VirusTotal, SecurityTrails): campo de input mascarado, status (configurada/nao), botao salvar
+- Edge function `manage-api-keys` para ler status (configurada sim/nao) e atualizar valores das chaves
+
+### 3. Criar edge function `manage-api-keys`
+
+**`supabase/functions/manage-api-keys/index.ts`:**
+
+- `GET`: Retorna lista de chaves conhecidas com status (configurada ou nao), sem revelar valores
+- `POST`: Recebe `{ key_name, value }` e armazena na tabela `system_settings` (encriptado com AES-256-GCM usando `M365_ENCRYPTION_KEY`)
+
+As edge functions de subdomain-enum ja leem via `Deno.env.get()`. Para manter compatibilidade, a nova funcao salvara na `system_settings` E a funcao `subdomain-enum` sera atualizada para verificar primeiro `system_settings` (decriptado) e depois fallback para `Deno.env.get()`.
+
+### 4. Atualizar `subdomain-enum` para ler chaves do banco
+
+**`supabase/functions/subdomain-enum/index.ts`:**
+- No trecho que verifica `Deno.env.get(config.api_key_env)`, adicionar busca previa na tabela `system_settings` com a chave correspondente
+- Se encontrar valor encriptado, decriptar e usar; senao, fallback para env var
+
+### 5. Migracao SQL
+
+- Remover coluna `home_tenant_id` da tabela `m365_global_config`
+
+### 6. Remover `home_tenant_id` do frontend
+
+- Remover envio de `home_tenant_id` em `handleSaveM365Config` (sera removido junto com toda a aba M365)
+- Atualizar tipos em `src/integrations/supabase/types.ts` para remover `home_tenant_id`
 
 ## Arquivos afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/hooks/useExchangeOnlineInsights.ts` | Buscar ultimo registro com insights de Exchange |
-| `src/hooks/useEntraIdInsights.ts` | Buscar ultimo registro com insights de Entra ID |
-
-## Resultado esperado
-
-- Exchange Online sempre exibe insights do ultimo registro que contenha dados de Exchange
-- Entra ID sempre exibe insights do ultimo registro que contenha dados de Entra ID
-- Analises escopadas nao "apagam" os dados do outro produto na interface
+| `src/pages/admin/SettingsPage.tsx` | Remover aba M365, adicionar aba Chaves de API |
+| `supabase/functions/add-exchange-permission/index.ts` | `home_tenant_id` -> `validation_tenant_id` |
+| `supabase/functions/ensure-exchange-permission/index.ts` | `home_tenant_id` -> `validation_tenant_id` |
+| `supabase/functions/manage-api-keys/index.ts` | Nova edge function |
+| `supabase/functions/subdomain-enum/index.ts` | Ler API keys do banco com fallback para env |
+| `src/integrations/supabase/types.ts` | Remover `home_tenant_id` |
+| Migracao SQL | Remover coluna `home_tenant_id` |
