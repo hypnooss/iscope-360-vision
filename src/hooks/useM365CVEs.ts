@@ -9,6 +9,7 @@ export interface M365CVE {
   publishedDate: string;
   advisoryUrl: string;
   description: string;
+  customerActionRequired: boolean;
 }
 
 interface M365CVEsResponse {

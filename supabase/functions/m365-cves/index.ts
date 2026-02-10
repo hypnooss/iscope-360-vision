@@ -7,14 +7,14 @@ const corsHeaders = {
 
 const MSRC_BASE = 'https://api.msrc.microsoft.com/cvrf/v3.0';
 
-// M365 product name patterns to match in MSRC product tree
+// Cloud-only M365 product patterns (excludes on-premises servers)
 const M365_PRODUCT_PATTERNS = [
-  'exchange server',
+  'exchange online',
+  'sharepoint online',
   'microsoft 365 apps',
   'microsoft office',
-  'sharepoint',
-  'azure active directory',
   'entra',
+  'azure active directory',
   'microsoft teams',
   'outlook',
   'defender',
@@ -41,6 +41,7 @@ interface CVEResult {
   publishedDate: string;
   advisoryUrl: string;
   description: string;
+  customerActionRequired: boolean;
 }
 
 function mapSeverity(sev: string | undefined | null): CVEResult['severity'] {
@@ -68,7 +69,6 @@ function getProductNames(vuln: any, productTree: any): string[] {
   const productIds = new Set<string>();
   const names: string[] = [];
 
-  // Collect product IDs from ProductStatuses
   if (vuln.ProductStatuses) {
     for (const status of vuln.ProductStatuses) {
       if (status.ProductID) {
@@ -79,7 +79,6 @@ function getProductNames(vuln: any, productTree: any): string[] {
     }
   }
 
-  // Map product IDs to names from ProductTree
   if (productTree?.FullProductName) {
     for (const prod of productTree.FullProductName) {
       if (productIds.has(prod.ProductID)) {
@@ -109,7 +108,6 @@ function extractDescription(vuln: any): string {
         return note.Value || '';
       }
     }
-    // Fallback to first note
     if (vuln.Notes.length > 0 && vuln.Notes[0].Value) {
       return vuln.Notes[0].Value;
     }
@@ -128,6 +126,50 @@ function getMaxSeverity(vuln: any): string | null {
   return null;
 }
 
+function extractCustomerActionRequired(vuln: any): boolean {
+  if (!vuln.Remediations || !Array.isArray(vuln.Remediations)) {
+    return true; // No remediation info → assume action needed
+  }
+
+  for (const rem of vuln.Remediations) {
+    const desc = (rem.Description?.Value || '').toLowerCase();
+    const subType = (rem.SubType || '').toLowerCase();
+
+    // Explicit "customer action required" in description or subtype
+    if (desc.includes('customer action') || subType.includes('customer action')) {
+      return true;
+    }
+  }
+
+  // Check if there's an automatic vendor fix (Type 2 = VendorFix)
+  const hasAutoFix = vuln.Remediations.some((rem: any) =>
+    rem.Type === 2 && (rem.SubType || '').toLowerCase().includes('security update')
+  );
+
+  return !hasAutoFix;
+}
+
+function simplifyProductName(name: string): string | null {
+  const lower = name.toLowerCase();
+  // Exclude on-premises server products explicitly
+  if (lower.includes('exchange server')) return null;
+  if (lower.includes('sharepoint server')) return null;
+  if (lower.includes('sharepoint enterprise server')) return null;
+  if (lower.includes('sharepoint foundation')) return null;
+
+  if (lower.includes('exchange online')) return 'Exchange Online';
+  if (lower.includes('sharepoint online')) return 'SharePoint Online';
+  if (lower.includes('teams')) return 'Teams';
+  if (lower.includes('outlook')) return 'Outlook';
+  if (lower.includes('entra') || lower.includes('azure active directory')) return 'Entra ID';
+  if (lower.includes('defender')) return 'Defender';
+  if (lower.includes('intune')) return 'Intune';
+  if (lower.includes('onedrive')) return 'OneDrive';
+  if (lower.includes('microsoft 365 apps') || lower.includes('microsoft office')) return 'Microsoft 365 Apps';
+  if (lower.includes('microsoft 365')) return 'Microsoft 365';
+  return name;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -139,7 +181,6 @@ serve(async (req) => {
     const productsParam = url.searchParams.get('products');
     const filterProducts = productsParam ? productsParam.split(',').map(p => p.trim()) : null;
 
-    // 1. Get recent updates list
     const updatesRes = await fetch(`${MSRC_BASE}/updates`, {
       headers: { 'Accept': 'application/json' },
     });
@@ -151,7 +192,6 @@ serve(async (req) => {
     const updatesData = await updatesRes.json();
     const updates: MSRCUpdate[] = updatesData.value || updatesData;
 
-    // Sort by date descending and take requested months
     const sortedUpdates = updates
       .filter((u: MSRCUpdate) => u.ID && /^\d{4}-[A-Za-z]{3}$/.test(u.ID))
       .sort((a: MSRCUpdate, b: MSRCUpdate) => new Date(b.InitialReleaseDate).getTime() - new Date(a.InitialReleaseDate).getTime())
@@ -160,7 +200,6 @@ serve(async (req) => {
     const allCves: CVEResult[] = [];
     const seenCves = new Set<string>();
 
-    // 2. For each month, fetch CVRF document
     for (const update of sortedUpdates) {
       try {
         const cvrfRes = await fetch(`${MSRC_BASE}/cvrf/${update.ID}`, {
@@ -182,30 +221,25 @@ serve(async (req) => {
 
           const productNames = getProductNames(vuln, productTree);
 
-          // Filter: only M365-related products
           if (!matchesM365Products(productNames, filterProducts)) continue;
 
           seenCves.add(cveId);
 
-          // Deduplicate and simplify product names
-          const simplifiedProducts = [...new Set(productNames.map((name: string) => {
-            // Extract the main product family name
-            if (name.toLowerCase().includes('exchange')) return 'Exchange Online';
-            if (name.toLowerCase().includes('sharepoint')) return 'SharePoint Online';
-            if (name.toLowerCase().includes('teams')) return 'Teams';
-            if (name.toLowerCase().includes('outlook')) return 'Outlook';
-            if (name.toLowerCase().includes('entra') || name.toLowerCase().includes('azure active directory')) return 'Entra ID';
-            if (name.toLowerCase().includes('defender')) return 'Defender';
-            if (name.toLowerCase().includes('intune')) return 'Intune';
-            if (name.toLowerCase().includes('onedrive')) return 'OneDrive';
-            if (name.toLowerCase().includes('microsoft 365 apps') || name.toLowerCase().includes('microsoft office')) return 'Microsoft 365 Apps';
-            return name;
-          }))];
+          // Simplify and filter out on-premises products
+          const simplifiedProducts = [...new Set(
+            productNames
+              .map(simplifyProductName)
+              .filter((n): n is string => n !== null)
+          )];
+
+          // Skip if no cloud products remain after filtering
+          if (simplifiedProducts.length === 0) continue;
 
           const severity = mapSeverity(getMaxSeverity(vuln));
           const score = extractCVSSScore(vuln);
           const title = vuln.Title?.Value || cveId;
           const description = extractDescription(vuln);
+          const customerActionRequired = extractCustomerActionRequired(vuln);
 
           allCves.push({
             id: cveId,
@@ -216,6 +250,7 @@ serve(async (req) => {
             publishedDate: update.InitialReleaseDate?.split('T')[0] || '',
             advisoryUrl: `https://msrc.microsoft.com/update-guide/vulnerability/${cveId}`,
             description: description.substring(0, 500),
+            customerActionRequired,
           });
         }
       } catch (err) {
@@ -223,7 +258,6 @@ serve(async (req) => {
       }
     }
 
-    // Sort by score descending (nulls last), then by severity
     const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
     allCves.sort((a, b) => {
       if (a.score != null && b.score != null) return b.score - a.score;
