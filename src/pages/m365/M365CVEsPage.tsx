@@ -35,6 +35,13 @@ const SEVERITY_COLORS: Record<string, string> = {
 function CVECard({ cve }: { cve: M365CVE }) {
   const [open, setOpen] = useState(false);
 
+  const isNew = (() => {
+    if (!cve.publishedDate) return false;
+    const published = new Date(cve.publishedDate);
+    const now = new Date();
+    return (now.getTime() - published.getTime()) / (1000 * 3600 * 24) <= 30;
+  })();
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <Card className="border border-border/50">
@@ -47,6 +54,11 @@ function CVECard({ cve }: { cve: M365CVE }) {
                     <Badge className={cn('text-xs font-bold', SEVERITY_COLORS[cve.severity])}>
                       {cve.severity}
                     </Badge>
+                    {isNew && (
+                      <Badge className="text-xs font-bold bg-emerald-500 text-white border-emerald-500 animate-pulse">
+                        NEW
+                      </Badge>
+                    )}
                     {cve.customerActionRequired && (
                       <Badge className="text-xs font-bold bg-orange-500 text-white border-orange-500">
                         Ação Necessária
