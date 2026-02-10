@@ -181,15 +181,7 @@ function extractCustomerActionRequired(vuln: any): boolean {
   const hasCloudAutoFix = vuln.Remediations.some((rem: any) => {
     if (rem.Type !== 2) return false; // Type 2 = VendorFix
     const subType = (rem.SubType || '').toLowerCase();
-    if (!subType.includes('security update')) return false;
-
-    // Check if this fix targets cloud products (not just on-prem)
-    if (rem.ProductID && Array.isArray(rem.ProductID)) {
-      // If the remediation has no product IDs, it's generic
-      return true;
-    }
-    // Generic fix without product filter = applies broadly
-    return true;
+    return subType.includes('security update');
   });
 
   // If there's an automatic cloud fix and no explicit action required flag, 
