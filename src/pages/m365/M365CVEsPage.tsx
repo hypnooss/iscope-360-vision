@@ -201,52 +201,24 @@ export default function M365CVEsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Produtos:</span>
-            {ALL_PRODUCTS.map((product) => (
-              <Button
-                key={product}
-                variant={selectedProducts.includes(product) ? 'default' : 'outline'}
-                size="sm"
-                className="text-xs h-7"
-                onClick={() => toggleProduct(product)}
-              >
-                {product}
-              </Button>
-            ))}
-            {selectedProducts.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedProducts([])}>
-                Limpar
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Severidade:</span>
-              <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                <SelectTrigger className="w-[140px] h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="CRITICAL">Crítico</SelectItem>
-                  <SelectItem value="HIGH">Alto</SelectItem>
-                  <SelectItem value="MEDIUM">Médio</SelectItem>
-                  <SelectItem value="LOW">Baixo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium text-muted-foreground">Produtos:</span>
+          {ALL_PRODUCTS.map((product) => (
             <Button
-              variant={actionFilter ? 'default' : 'outline'}
+              key={product}
+              variant={selectedProducts.includes(product) ? 'default' : 'outline'}
               size="sm"
               className="text-xs h-7"
-              onClick={() => setActionFilter(!actionFilter)}
+              onClick={() => toggleProduct(product)}
             >
-              <UserCheck className="w-3 h-3 mr-1" />
-              Ação Necessária
+              {product}
             </Button>
-          </div>
+          ))}
+          {selectedProducts.length > 0 && (
+            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedProducts([])}>
+              Limpar
+            </Button>
+          )}
         </div>
 
         {/* CVE List */}
