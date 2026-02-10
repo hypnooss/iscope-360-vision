@@ -86,7 +86,7 @@ serve(async (req) => {
     // Get global M365 config
     const { data: globalConfig, error: configError } = await supabase
       .from('m365_global_config')
-      .select('app_id, app_object_id, client_secret_encrypted, home_tenant_id')
+      .select('app_id, app_object_id, client_secret_encrypted, validation_tenant_id')
       .limit(1)
       .single();
 
@@ -104,16 +104,16 @@ serve(async (req) => {
       );
     }
 
-    if (!globalConfig.home_tenant_id) {
+    if (!globalConfig.validation_tenant_id) {
       return new Response(
-        JSON.stringify({ error: "Home Tenant ID não configurado. Configure em Administração > Configurações." }),
+        JSON.stringify({ error: "Tenant ID não configurado. Configure em Administração > Configurações." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Get access token for home tenant
     const accessToken = await getAccessToken(
-      globalConfig.home_tenant_id,
+      globalConfig.validation_tenant_id,
       globalConfig.app_id,
       globalConfig.client_secret_encrypted
     );

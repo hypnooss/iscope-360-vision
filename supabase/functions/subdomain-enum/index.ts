@@ -315,6 +315,79 @@ const responseParsers: Record<string, ResponseParser> = {
 };
 
 // ============================================
+// Decrypt Helper for DB-stored API keys
+// ============================================
+
+function fromHex(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+async function decryptSecret(encryptedData: string): Promise<string> {
+  const encryptionKeyHex = Deno.env.get("M365_ENCRYPTION_KEY");
+  if (!encryptionKeyHex) {
+    return encryptedData;
+  }
+
+  const [ivHex, ciphertextHex] = encryptedData.split(":");
+  if (!ivHex || !ciphertextHex) {
+    return encryptedData;
+  }
+
+  const iv = fromHex(ivHex);
+  const ciphertext = fromHex(ciphertextHex);
+  const keyBytes = fromHex(encryptionKeyHex);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    cryptoKey,
+    ciphertext
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+async function resolveApiKey(envVarName: string): Promise<string | undefined> {
+  // Try system_settings (DB) first
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const settingsKey = `api_key_${envVarName}`;
+    const { data: setting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', settingsKey)
+      .maybeSingle();
+
+    if (setting?.value) {
+      const val = typeof setting.value === 'string' 
+        ? setting.value.replace(/^"|"$/g, '') 
+        : JSON.stringify(setting.value).replace(/^"|"$/g, '');
+      const decrypted = await decryptSecret(val);
+      if (decrypted) return decrypted;
+    }
+  } catch (e) {
+    console.log(`[resolveApiKey] DB lookup failed for ${envVarName}:`, e);
+  }
+
+  // Fallback to env var
+  return Deno.env.get(envVarName);
+}
+
+// ============================================
 // Dynamic API Executor (Blueprint-driven)
 // ============================================
 
@@ -328,7 +401,7 @@ async function executeApiStep(
 
   // Check if API key is required
   if (config.requires_api_key && config.api_key_env) {
-    const apiKey = Deno.env.get(config.api_key_env);
+    const apiKey = await resolveApiKey(config.api_key_env);
     if (!apiKey) {
       console.log(`[${config.name}] API key not configured (${config.api_key_env}), skipping`);
       return { name: config.name, subdomains, error: 'API key not configured' };
@@ -338,12 +411,12 @@ async function executeApiStep(
   // Build URL from template
   const url = config.url_template.replace(/{domain}/g, encodeURIComponent(domain));
 
-  // Build headers (replace API key placeholders)
+  // Build headers (replace API key placeholders - resolve from DB or env)
   const headers: Record<string, string> = {};
   for (const [key, value] of Object.entries(config.headers || {})) {
     if (value.startsWith('{{') && value.endsWith('}}')) {
       const envVar = value.slice(2, -2);
-      const envValue = Deno.env.get(envVar);
+      const envValue = await resolveApiKey(envVar);
       if (envValue) {
         headers[key] = envValue;
       }
