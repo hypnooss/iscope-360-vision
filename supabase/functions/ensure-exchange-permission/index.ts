@@ -77,7 +77,7 @@ serve(async (req) => {
     // Get global M365 config
     const { data: globalConfig, error: configError } = await supabase
       .from("m365_global_config")
-      .select("app_id, app_object_id, client_secret_encrypted, home_tenant_id")
+      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id")
       .limit(1)
       .single();
 
@@ -97,10 +97,10 @@ serve(async (req) => {
       );
     }
 
-    if (!globalConfig.home_tenant_id) {
-      console.log("[ensure-exchange-permission] No home_tenant_id configured");
+    if (!globalConfig.validation_tenant_id) {
+      console.log("[ensure-exchange-permission] No validation_tenant_id configured");
       return new Response(
-        JSON.stringify({ success: false, error: "Home Tenant ID not configured", skipped: true }),
+        JSON.stringify({ success: false, error: "Tenant ID not configured", skipped: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -109,9 +109,9 @@ serve(async (req) => {
     const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
 
     // Get access token for home tenant
-    console.log("[ensure-exchange-permission] Getting access token for home tenant...");
+    console.log("[ensure-exchange-permission] Getting access token for tenant...");
     const tokenResponse = await fetch(
-      `https://login.microsoftonline.com/${globalConfig.home_tenant_id}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${globalConfig.validation_tenant_id}/oauth2/v2.0/token`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },

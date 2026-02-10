@@ -72,3 +72,6 @@ verify_jwt = false
 [functions.ensure-exchange-permission]
 verify_jwt = false
 
+[functions.manage-api-keys]
+verify_jwt = false
+

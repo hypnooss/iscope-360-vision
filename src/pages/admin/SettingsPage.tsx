@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -10,31 +10,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, Cloud, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Clock, Bell, Layers, Bot, Upload, AlertTriangle } from 'lucide-react';
+import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Upload, AlertTriangle, Layers, Key } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
 
-interface PermissionStatus {
+interface ApiKeyStatus {
   name: string;
-  granted: boolean;
-  type: 'required' | 'recommended';
-}
-
-interface M365Config {
-  appId: string;
-  clientSecret: string;
-  isConfigured: boolean;
-  permissions: PermissionStatus[];
-  permissionsValidated: boolean;
-  lastValidatedAt: string | null;
-  validationTenantId: string | null;
-  // Azure certificate upload config
-  appObjectId: string | null;
-  hasAzureConfig: boolean;
+  label: string;
+  description: string;
+  configured: boolean;
+  source: string;
+  maskedValue: string;
+  updatedAt: string | null;
 }
 
 export default function SettingsPage() {
@@ -42,28 +31,14 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("m365");
+  const [activeTab, setActiveTab] = useState("api-keys");
   const initialLoadDone = useRef(false);
-  const [saving, setSaving] = useState(false);
-  const [validatingPermissions, setValidatingPermissions] = useState(false);
-  const [m365Config, setM365Config] = useState<M365Config>({
-    appId: '',
-    clientSecret: '',
-    isConfigured: false,
-    permissions: [],
-    permissionsValidated: false,
-    lastValidatedAt: null,
-    validationTenantId: null,
-    appObjectId: null,
-    hasAzureConfig: false,
-  });
-  const [newAppId, setNewAppId] = useState('');
-  const [newClientSecret, setNewClientSecret] = useState('');
-  const [tenantIdForValidation, setTenantIdForValidation] = useState('');
-  // Azure certificate upload config
-  const [newAppObjectId, setNewAppObjectId] = useState('');
-  // Exchange permission auto-add
-  const [addingExchangePermission, setAddingExchangePermission] = useState(false);
+
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKeyStatus[]>([]);
+  const [loadingApiKeys, setLoadingApiKeys] = useState(false);
+  const [apiKeyValues, setApiKeyValues] = useState<Record<string, string>>({});
+  const [savingApiKey, setSavingApiKey] = useState<string | null>(null);
   
   // Agent settings
   const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(120);
@@ -84,49 +59,6 @@ export default function SettingsPage() {
     outdated: { name: string; version: string; client: string }[];
   }>({ total: 0, upToDate: 0, outdated: [] });
 
-  const defaultPermissions: PermissionStatus[] = [
-    // Core permissions
-    { name: 'User.Read.All', granted: false, type: 'required' },
-    { name: 'Directory.Read.All', granted: false, type: 'required' },
-    { name: 'Organization.Read.All', granted: false, type: 'required' },
-    { name: 'Domain.Read.All', granted: false, type: 'required' },
-    { name: 'RoleManagement.ReadWrite.Directory', granted: false, type: 'required' }, // Required to assign Exchange Administrator Role
-    // Entra ID / Security
-    { name: 'Group.Read.All', granted: false, type: 'recommended' },
-    { name: 'Application.Read.All', granted: false, type: 'recommended' },
-    { name: 'Policy.Read.All', granted: false, type: 'recommended' },
-    { name: 'Reports.Read.All', granted: false, type: 'recommended' },
-    { name: 'RoleManagement.Read.Directory', granted: false, type: 'recommended' },
-    // Exchange Online (Graph)
-    { name: 'MailboxSettings.Read', granted: false, type: 'recommended' },
-    { name: 'Mail.Read', granted: false, type: 'recommended' },
-    // Exchange Online (CBA) - Office 365 Exchange Online resource
-    { name: 'Exchange.ManageAsApp', granted: false, type: 'required' },
-    // Certificate Upload
-    { name: 'Application.ReadWrite.All', granted: false, type: 'recommended' },
-  ];
-
-  // Group permissions by module for display
-  const corePermissions = ['User.Read.All', 'Directory.Read.All', 'Organization.Read.All', 'Domain.Read.All', 'RoleManagement.ReadWrite.Directory'];
-  const entraIdPermissions = ['Group.Read.All', 'Application.Read.All', 'Policy.Read.All', 'Reports.Read.All', 'RoleManagement.Read.Directory'];
-  const exchangeOnlinePermissions = ['MailboxSettings.Read', 'Mail.Read', 'Exchange.ManageAsApp'];
-  const certificatePermissions = ['Application.ReadWrite.All'];
-
-  // Merge backend permissions with default permissions to ensure all expected permissions are displayed
-  const mergedPermissions = useMemo(() => {
-    const permissionMap = new Map<string, PermissionStatus>();
-    
-    // Start with defaults
-    defaultPermissions.forEach(p => permissionMap.set(p.name, { ...p }));
-    
-    // Override with backend data
-    m365Config.permissions.forEach(p => {
-      permissionMap.set(p.name, { ...p });
-    });
-    
-    return Array.from(permissionMap.values());
-  }, [m365Config.permissions]);
-
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/auth');
@@ -140,12 +72,12 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user && role === 'super_admin' && !initialLoadDone.current) {
       initialLoadDone.current = true;
-      checkM365Config(true);
+      loadApiKeys();
       loadAgentSettings();
       loadAgentUpdateSettings();
       loadAgentStats();
+      setLoading(false);
       
-      // Polling every 5 seconds to keep agent stats synchronized
       const interval = setInterval(() => {
         loadAgentStats();
       }, 5000);
@@ -153,6 +85,59 @@ export default function SettingsPage() {
       return () => clearInterval(interval);
     }
   }, [user, role]);
+
+  // ==========================================
+  // API Keys Management
+  // ==========================================
+
+  const loadApiKeys = async () => {
+    setLoadingApiKeys(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-api-keys', {
+        method: 'GET',
+      });
+
+      if (error) throw error;
+      if (data?.keys) {
+        setApiKeys(data.keys);
+      }
+    } catch (error) {
+      console.error('Error loading API keys:', error);
+      toast.error('Erro ao carregar chaves de API');
+    } finally {
+      setLoadingApiKeys(false);
+    }
+  };
+
+  const handleSaveApiKey = async (keyName: string) => {
+    const value = apiKeyValues[keyName];
+    if (!value?.trim()) {
+      toast.error('Informe o valor da chave de API');
+      return;
+    }
+
+    setSavingApiKey(keyName);
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-api-keys', {
+        method: 'POST',
+        body: { key_name: keyName, value: value.trim() },
+      });
+
+      if (error) throw error;
+      toast.success(data?.message || 'Chave salva com sucesso');
+      setApiKeyValues(prev => ({ ...prev, [keyName]: '' }));
+      await loadApiKeys();
+    } catch (error: any) {
+      console.error('Error saving API key:', error);
+      toast.error('Erro ao salvar chave de API');
+    } finally {
+      setSavingApiKey(null);
+    }
+  };
+
+  // ==========================================
+  // Agent Settings
+  // ==========================================
 
   const loadAgentSettings = async () => {
     setLoadingAgentSettings(true);
@@ -175,7 +160,7 @@ export default function SettingsPage() {
 
   const loadAgentUpdateSettings = async () => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('system_settings')
         .select('key, value')
         .in('key', ['agent_latest_version', 'agent_force_update']);
@@ -200,7 +185,6 @@ export default function SettingsPage() {
 
   const loadAgentStats = async () => {
     try {
-      // Get all agents with their versions and client info
       const { data: agents, error } = await supabase
         .from('agents')
         .select(`
@@ -214,7 +198,6 @@ export default function SettingsPage() {
 
       if (error) throw error;
 
-      // Get the latest version from system_settings
       const { data: versionSetting } = await supabase
         .from('system_settings')
         .select('value')
@@ -252,8 +235,7 @@ export default function SettingsPage() {
     const buffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -292,7 +274,6 @@ export default function SettingsPage() {
 
     setPublishingUpdate(true);
     try {
-      // 1. Upload versioned file to Supabase Storage
       const versionedFilename = `iscope-agent-${newVersion}.tar.gz`;
       const { error: uploadError } = await supabase.storage
         .from('agent-releases')
@@ -303,7 +284,6 @@ export default function SettingsPage() {
 
       if (uploadError) throw uploadError;
 
-      // 2. Also upload as 'latest' for default installations
       const { error: latestUploadError } = await supabase.storage
         .from('agent-releases')
         .upload('iscope-agent-latest.tar.gz', selectedFile, {
@@ -316,7 +296,6 @@ export default function SettingsPage() {
         toast.warning('Versão publicada, mas erro ao atualizar arquivo latest');
       }
 
-      // 2. Update system_settings (upsert pattern)
       const settings = [
         { key: 'agent_latest_version', value: newVersion },
         { key: 'agent_update_checksum', value: calculatedChecksum },
@@ -324,7 +303,6 @@ export default function SettingsPage() {
       ];
 
       for (const setting of settings) {
-        // Try update first
         const { data: updateData, error: updateError } = await supabase
           .from('system_settings')
           .update({
@@ -335,7 +313,6 @@ export default function SettingsPage() {
           .eq('key', setting.key)
           .select();
 
-        // If no row was updated, insert
         if (!updateError && (!updateData || updateData.length === 0)) {
           await supabase
             .from('system_settings')
@@ -358,7 +335,6 @@ export default function SettingsPage() {
       setSelectedFile(null);
       setCalculatedChecksum('');
       
-      // Clear file input
       const fileInput = document.getElementById('agentPackageFile') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
       
@@ -372,7 +348,6 @@ export default function SettingsPage() {
   };
 
   const handleSaveAgentSettings = async () => {
-    // Validate range
     if (agentHeartbeatInterval < 60 || agentHeartbeatInterval > 300) {
       toast.error('O intervalo deve estar entre 60 e 300 segundos');
       return;
@@ -399,233 +374,6 @@ export default function SettingsPage() {
     }
   };
 
-  const checkM365Config = async (isInitialLoad = true) => {
-    try {
-      if (isInitialLoad) setLoading(true);
-      
-      // Verify session is still valid before calling
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate('/auth');
-        return;
-      }
-      
-      const { data, error } = await supabase.functions.invoke('get-m365-config');
-      
-      if (error) {
-        console.error('Error checking M365 config:', error);
-        
-        // Handle authentication errors with session refresh retry
-        const errorMessage = error.message || '';
-        if (errorMessage.includes('401') || errorMessage.includes('Invalid') || errorMessage.includes('expired') || errorMessage.includes('non-2xx')) {
-          console.log('Token may be expired, attempting session refresh...');
-          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-          
-          if (refreshError || !refreshData.session) {
-            console.error('Session refresh failed:', refreshError?.message);
-            // Force sign out to clear stale session data
-            await supabase.auth.signOut();
-            toast.error('Sessão expirada. Por favor, faça login novamente.');
-            navigate('/auth');
-            return;
-          }
-          
-          // Retry after successful refresh
-          const { data: retryData, error: retryError } = await supabase.functions.invoke('get-m365-config');
-          
-          if (retryError) {
-            console.error('Retry also failed:', retryError);
-            // If retry still fails, force logout
-            await supabase.auth.signOut();
-            toast.error('Erro de autenticação. Por favor, faça login novamente.');
-            navigate('/auth');
-            return;
-          }
-          
-          if (retryData?.configured && retryData?.app_id) {
-            setM365Config({
-              appId: retryData.app_id,
-              clientSecret: retryData.masked_secret || '',
-              isConfigured: retryData.has_client_secret,
-              permissions: (retryData.permissions && retryData.permissions.length > 0) ? retryData.permissions : defaultPermissions,
-              permissionsValidated: retryData.permissions_validated || false,
-              lastValidatedAt: retryData.last_validated_at || null,
-              validationTenantId: retryData.validation_tenant_id || null,
-              appObjectId: retryData.app_object_id || null,
-              hasAzureConfig: retryData.has_azure_config || false,
-            });
-            setNewAppId(retryData.app_id);
-            if (retryData.app_object_id) {
-              setNewAppObjectId(retryData.app_object_id);
-            }
-            if (retryData.validation_tenant_id) {
-              setTenantIdForValidation(retryData.validation_tenant_id);
-            }
-            return;
-          }
-        }
-        
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
-      } else if (data?.configured && data?.app_id) {
-        setM365Config({
-          appId: data.app_id,
-          clientSecret: data.masked_secret || '',
-          isConfigured: data.has_client_secret,
-          permissions: (data.permissions && data.permissions.length > 0) ? data.permissions : defaultPermissions,
-          permissionsValidated: data.permissions_validated || false,
-          lastValidatedAt: data.last_validated_at || null,
-          validationTenantId: data.validation_tenant_id || null,
-          appObjectId: data.app_object_id || null,
-          hasAzureConfig: data.has_azure_config || false,
-        });
-        setNewAppId(data.app_id);
-        if (data.app_object_id) {
-          setNewAppObjectId(data.app_object_id);
-        }
-        // Restore tenant ID if we have a saved one
-        if (data.validation_tenant_id) {
-          setTenantIdForValidation(data.validation_tenant_id);
-        }
-      } else {
-        setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
-        setNewAppId('');
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      setM365Config({ appId: '', clientSecret: '', isConfigured: false, permissions: [...defaultPermissions], permissionsValidated: false, lastValidatedAt: null, validationTenantId: null, appObjectId: null, hasAzureConfig: false });
-    } finally {
-      if (isInitialLoad) setLoading(false);
-    }
-  };
-
-  const validatePermissions = async () => {
-    if (!tenantIdForValidation.trim()) {
-      toast.error('Informe o Tenant ID para validar a configuração');
-      return;
-    }
-
-    setValidatingPermissions(true);
-    try {
-      // Call the validate-m365-permissions edge function with app_object_id for certificate validation
-      const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
-        body: { 
-          tenant_id: tenantIdForValidation,
-          app_object_id: newAppObjectId.trim() || undefined,
-        }
-      });
-
-      // Handle function errors (but check if response has useful data)
-      if (error) {
-        console.error('Edge function error:', error);
-        // Even on error, the tenant_id might have been saved
-        // Re-fetch config to get the latest state
-        await checkM365Config();
-        throw new Error(error.message || 'Erro ao chamar função de validação');
-      }
-
-      if (data.success && data.permissions) {
-        setM365Config(prev => ({
-          ...prev,
-          permissions: data.permissions,
-          permissionsValidated: true,
-          lastValidatedAt: data.validatedAt,
-          validationTenantId: tenantIdForValidation,
-        }));
-        
-        const failedRequired = data.failedRequired || 0;
-        const failedRecommended = data.failedRecommended || 0;
-        
-        if (failedRequired > 0) {
-          toast.error(`${failedRequired} permissão(ões) obrigatória(s) não concedida(s)`);
-        } else if (failedRecommended > 0) {
-          toast.warning(`Validado, mas ${failedRecommended} permissão(ões) recomendada(s) faltando`);
-        } else {
-          toast.success('Todas as permissões validadas com sucesso!');
-        }
-      } else if (data.skipped) {
-        toast.info(data.message || 'Validação ignorada');
-      } else if (data.tenantIdSaved) {
-        // Tenant ID was saved but validation failed
-        setM365Config(prev => ({
-          ...prev,
-          validationTenantId: tenantIdForValidation,
-        }));
-        toast.error(data.error || 'Falha na validação. Verifique o Tenant ID e se o Admin Consent foi concedido.');
-      } else {
-        throw new Error(data.error || 'Erro desconhecido na validação');
-      }
-    } catch (error: any) {
-      console.error('Error validating permissions:', error);
-      toast.error(error.message || 'Erro ao validar permissões. Verifique o Tenant ID e as credenciais.');
-    } finally {
-      setValidatingPermissions(false);
-    }
-  };
-
-  const handleSaveM365Config = async () => {
-    if (!newAppId.trim()) {
-      toast.error('O App ID é obrigatório');
-      return;
-    }
-    
-    // Only require secret if not configured or if user wants to update it
-    if (!m365Config.isConfigured && !newClientSecret.trim()) {
-      toast.error('O Client Secret é obrigatório para a configuração inicial');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const { error } = await supabase.functions.invoke('update-m365-config', {
-        body: {
-          app_id: newAppId.trim(),
-          client_secret: newClientSecret.trim() || undefined,
-          app_object_id: newAppObjectId.trim() || undefined,
-          home_tenant_id: tenantIdForValidation.trim() || undefined,
-        },
-      });
-
-      if (error) throw error;
-
-      toast.success('Configurações do M365 atualizadas com sucesso');
-      await checkM365Config();
-      setNewClientSecret('');
-    } catch (error) {
-      console.error('Error saving M365 config:', error);
-      toast.error('Erro ao salvar configurações');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAddExchangePermission = async () => {
-    setAddingExchangePermission(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('add-exchange-permission');
-
-      if (error) throw error;
-
-      if (data?.already_configured) {
-        toast.info('Permissão já configurada', {
-          description: 'A permissão Exchange.ManageAsApp já está no App Registration.',
-        });
-      } else if (data?.success) {
-        toast.success('Permissão adicionada!', {
-          description: 'Exchange.ManageAsApp adicionada. Reconecte os tenants clientes para aplicar.',
-        });
-      } else {
-        throw new Error(data?.error || 'Erro desconhecido');
-      }
-    } catch (error: any) {
-      console.error('Error adding Exchange permission:', error);
-      toast.error('Erro ao adicionar permissão', {
-        description: error.message || 'Verifique se o Tenant ID e App Object ID estão configurados.',
-      });
-    } finally {
-      setAddingExchangePermission(false);
-    }
-  };
-
   if (authLoading || loading) {
     return (
       <AppLayout>
@@ -641,7 +389,6 @@ export default function SettingsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Configurações' }]} />
         
-        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
           <p className="text-muted-foreground">
@@ -649,12 +396,11 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
-            <TabsTrigger value="m365" className="gap-2">
-              <Cloud className="w-4 h-4" />
-              Microsoft 365
+            <TabsTrigger value="api-keys" className="gap-2">
+              <Key className="w-4 h-4" />
+              Chaves de API
             </TabsTrigger>
             <TabsTrigger value="modules" className="gap-2">
               <Layers className="w-4 h-4" />
@@ -666,296 +412,96 @@ export default function SettingsPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="m365" className="space-y-6">
+          {/* API Keys Tab */}
+          <TabsContent value="api-keys" className="space-y-6">
             <Card className="border-border/50">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      Configuração Multi-Tenant do Microsoft 365
-                      {m365Config.isConfigured ? (
-                        <Badge variant="default" className="bg-green-600">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Configurado
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Não Configurado
-                        </Badge>
-                      )}
+                      <Key className="w-5 h-5" />
+                      Chaves de API de Terceiros
                     </CardTitle>
                     <CardDescription className="mt-2">
-                      Configure o Azure App Registration para permitir que clientes conectem seus tenants M365 ao sistema.
-                      Este app deve ser registrado como Multi-Tenant no Azure AD.
+                      Gerencie as chaves de API de serviços externos usados pelo sistema.
+                      Os valores são armazenados de forma encriptada.
                     </CardDescription>
                   </div>
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => checkM365Config(false)}
-                    disabled={loading}
+                    onClick={loadApiKeys}
+                    disabled={loadingApiKeys}
                   >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    Verificar
+                    <RefreshCw className={`w-4 h-4 mr-2 ${loadingApiKeys ? 'animate-spin' : ''}`} />
+                    Atualizar
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="appId">Application (Client) ID</Label>
-                    <Input
-                      id="appId"
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      value={newAppId}
-                      onChange={(e) => setNewAppId(e.target.value)}
-                    />
-                    {m365Config.isConfigured && m365Config.appId && (
-                      <p className="text-xs text-green-600 font-mono">
-                        Configurado: {m365Config.appId}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      O ID do aplicativo registrado no Azure AD
-                    </p>
+              <CardContent className="space-y-4">
+                {loadingApiKeys ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="clientSecret">Client Secret</Label>
-                    <PasswordInput
-                      id="clientSecret"
-                      placeholder={m365Config.isConfigured ? 'Deixe em branco para manter' : 'Digite o Client Secret'}
-                      value={newClientSecret}
-                      onChange={(e) => setNewClientSecret(e.target.value)}
-                    />
-                    {m365Config.isConfigured && m365Config.clientSecret && (
-                      <p className="text-xs text-green-600 font-mono">
-                        Configurado: {m365Config.clientSecret}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {m365Config.isConfigured 
-                        ? 'Deixe em branco para manter o valor atual' 
-                        : 'O segredo do cliente gerado no Azure AD'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                  <h4 className="font-medium text-sm">Instruções de Configuração:</h4>
-                  <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Acesse o <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Azure Portal → App Registrations</a></li>
-                    <li>Crie um novo registro de aplicativo ou selecione um existente</li>
-                    <li>Em "Supported account types", selecione "Accounts in any organizational directory (Any Azure AD directory - Multitenant)"</li>
-                    <li>Copie o "Application (client) ID" e cole acima</li>
-                    <li>Em "Certificates & secrets", crie um novo Client Secret e cole acima</li>
-                    <li>Em "API permissions", adicione as permissões do Microsoft Graph necessárias</li>
-                  </ol>
-                </div>
-
-                {/* Required Permissions Section */}
-                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-sm">Permissões do Microsoft Graph Necessárias:</h4>
-                      <p className="text-xs text-muted-foreground">
-                        Adicione as seguintes permissões de <strong>Application</strong> no Azure AD:
-                      </p>
-                    </div>
-                    {m365Config.permissionsValidated && (
-                      <Badge variant="outline" className="text-green-600 border-green-600">
-                        <ShieldCheck className="w-3 h-3 mr-1" />
-                        Validado
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Validation Section */}
-                  {m365Config.isConfigured && (
-                    <div className="p-3 bg-background rounded-lg border space-y-3">
-                      <p className="text-xs font-medium text-muted-foreground">Configuração para Validação e Monitoramento</p>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label htmlFor="tenantValidation" className="text-xs">Tenant ID</Label>
-                          <Input
-                            id="tenantValidation"
-                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                            value={tenantIdForValidation}
-                            onChange={(e) => setTenantIdForValidation(e.target.value)}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="appObjectIdValidation" className="text-xs">
-                            App Object ID <span className="text-muted-foreground">(opcional)</span>
-                          </Label>
-                          <Input
-                            id="appObjectIdValidation"
-                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                            value={newAppObjectId}
-                            onChange={(e) => setNewAppObjectId(e.target.value)}
-                            className="h-8 text-sm"
-                          />
-                          <p className="text-[10px] text-muted-foreground">
-                            Para validar upload automático de certificados
-                          </p>
+                ) : apiKeys.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    Nenhuma chave de API configurável encontrada
+                  </p>
+                ) : (
+                  apiKeys.map((key) => (
+                    <div key={key.name} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <h4 className="font-medium">{key.label}</h4>
+                          {key.configured ? (
+                            <Badge variant="default" className="bg-green-600 text-xs">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Configurada
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-xs">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              Não Configurada
+                            </Badge>
+                          )}
+                          {key.configured && key.source === 'environment' && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              via variável de ambiente
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                      <div className="flex justify-end">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={validatePermissions}
-                          disabled={validatingPermissions || !tenantIdForValidation.trim()}
+                      
+                      <p className="text-sm text-muted-foreground">{key.description}</p>
+                      
+                      {key.configured && key.maskedValue && (
+                        <p className="text-xs font-mono text-muted-foreground">
+                          Valor atual: {key.maskedValue}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <PasswordInput
+                          placeholder={key.configured ? 'Novo valor (deixe em branco para manter)' : 'Cole a chave de API aqui'}
+                          value={apiKeyValues[key.name] || ''}
+                          onChange={(e) => setApiKeyValues(prev => ({ ...prev, [key.name]: e.target.value }))}
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={() => handleSaveApiKey(key.name)}
+                          disabled={savingApiKey === key.name || !apiKeyValues[key.name]?.trim()}
+                          size="default"
                         >
-                          {validatingPermissions ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {savingApiKey === key.name ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <ShieldCheck className="w-4 h-4 mr-2" />
+                            <Save className="w-4 h-4" />
                           )}
-                          Validar Configuração
                         </Button>
                       </div>
                     </div>
-                  )}
-
-                  <div className="grid gap-4 md:grid-cols-4">
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Obrigatórias (Core)</p>
-                      <ul className="text-sm space-y-1">
-                        {mergedPermissions
-                          .filter(p => corePermissions.includes(p.name))
-                          .map(perm => (
-                            <li key={perm.name} className="flex items-center gap-2">
-                              <span 
-                                className={`w-2 h-2 rounded-full ${
-                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
-                                }`}
-                              />
-                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Entra ID / Security</p>
-                      <ul className="text-sm space-y-1">
-                        {mergedPermissions
-                          .filter(p => entraIdPermissions.includes(p.name))
-                          .map(perm => (
-                            <li key={perm.name} className="flex items-center gap-2">
-                              <span 
-                                className={`w-2 h-2 rounded-full ${
-                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
-                                }`}
-                              />
-                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Exchange Online</p>
-                      <ul className="text-sm space-y-1">
-                        {mergedPermissions
-                          .filter(p => exchangeOnlinePermissions.includes(p.name))
-                          .map(perm => (
-                            <li key={perm.name} className="flex items-center gap-2">
-                              <span 
-                                className={`w-2 h-2 rounded-full ${
-                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
-                                }`}
-                              />
-                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
-                              {perm.name === 'Exchange.ManageAsApp' && !perm.granted && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-5 px-1.5 text-[10px]"
-                                  onClick={handleAddExchangePermission}
-                                  disabled={addingExchangePermission || !m365Config.isConfigured}
-                                >
-                                  {addingExchangePermission ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    'Adicionar'
-                                  )}
-                                </Button>
-                              )}
-                            </li>
-                          ))}
-                      </ul>
-                      <p className="text-[10px] text-muted-foreground">
-                        Exchange.ManageAsApp é da API Office 365 Exchange Online
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Upload de Certificados</p>
-                      <ul className="text-sm space-y-1">
-                        {mergedPermissions
-                          .filter(p => certificatePermissions.includes(p.name))
-                          .map(perm => (
-                            <li key={perm.name} className="flex items-center gap-2">
-                              <span 
-                                className={`w-2 h-2 rounded-full ${
-                                  perm.granted ? 'bg-green-500' : 'bg-yellow-500'
-                                }`}
-                              />
-                              <code className="text-xs bg-background px-1.5 py-0.5 rounded">{perm.name}</code>
-                            </li>
-                          ))}
-                      </ul>
-                      <p className="text-[10px] text-muted-foreground">
-                        Requer App Object ID
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ⚠️ Lembre-se de conceder "Admin consent" para todas as permissões após adicioná-las.
-                  </p>
-                </div>
-
-                {/* Automated Validation Status - Separate Card */}
-                {m365Config.lastValidatedAt && (
-                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-full bg-primary/10">
-                          <Bell className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">Monitoramento Automático</p>
-                          <p className="text-xs text-muted-foreground">
-                            As permissões são validadas automaticamente a cada hora
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>
-                            Última validação: {format(new Date(m365Config.lastValidatedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                          </span>
-                        </div>
-                        {m365Config.validationTenantId && (
-                          <p className="text-xs text-muted-foreground/70 mt-0.5">
-                            Tenant: {m365Config.validationTenantId.substring(0, 8)}...
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveM365Config} disabled={saving}>
-                    {saving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4 mr-2" />
-                    )}
-                    Salvar Configurações
-                  </Button>
-                </div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1045,7 +591,6 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Nova Versão */}
                 <div className="space-y-4 p-4 border rounded-lg">
                   <h4 className="font-medium">Publicar Nova Versão</h4>
                   
@@ -1121,7 +666,6 @@ export default function SettingsPage() {
                   </Button>
                 </div>
 
-                {/* Status dos Agents */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium">Status dos Agents</h4>
