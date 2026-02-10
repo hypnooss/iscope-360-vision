@@ -1,110 +1,109 @@
 
+# Migrar Regras Entra ID para o Pipeline Data-Driven
 
-# Corrigir Scope Filtering e Erros Graph API no M365
+## Problema Raiz
 
-## Problema 1: Agent task criada desnecessariamente para scope `entra_id`
+As 25 regras de compliance do Entra ID (IDT-*, AUT-*, ADM-*, APP-*) usam um formato legado de `evaluation_logic` que nao contem `source_key`. A funcao `evaluateRule` retorna `null` na linha 199 quando `source_key` esta ausente, resultando em **0 insights gerados**.
 
-O `trigger-m365-posture-analysis` sempre cria uma agent task quando o tenant tem agent vinculado, independentemente do scope. Para `entra_id`, nao existe blueprint com `executor_type: 'hybrid'` ou `'agent'` -- toda a coleta e via Graph API (Edge Function). O agent recebe a task e executa 18 steps de Exchange desnecessariamente.
-
-**Correcao:** No `trigger-m365-posture-analysis`, antes de criar a agent task, verificar se existem blueprints com `executor_type IN ('agent', 'hybrid')` que correspondam ao scope solicitado. Se nao houver, pular a criacao da task.
-
+Formato legado (atual):
 ```text
-trigger-m365-posture-analysis/index.ts (linhas ~111-160)
-
-ANTES:
-  if (tenantAgent?.agent_id) {
-    // Sempre cria agent task
-  }
-
-DEPOIS:
-  if (tenantAgent?.agent_id) {
-    // Verificar se o scope requer coleta via agent
-    const needsAgent = await checkScopeNeedsAgent(supabaseAdmin, scope);
-    if (needsAgent) {
-      // Criar agent task
-    } else {
-      console.log('Scope does not require agent, skipping task creation');
-    }
-  }
+{ "type": "count_threshold", "field": "globalAdmins", "operator": "gt", "threshold": 5 }
 ```
 
-A funcao `checkScopeNeedsAgent` consulta `device_blueprints` para o device type M365 com `executor_type IN ('agent', 'hybrid')` e verifica se o nome do blueprint corresponde ao scope (ex: scope `exchange_online` -> blueprint com nome contendo "Exchange").
-
-## Problema 2: Erros 403/400 da Graph API nao geram insights `not_found`
-
-Atualmente, quando um step da Graph API falha com 403 (permissao ausente) ou 400 (endpoint invalido), o `evaluateRule` na funcao `m365-security-posture` retorna um insight com status `pass` e mensagem generica "Dados nao disponiveis". Isso e enganoso -- deveria ser `not_found`.
-
-**Correcao:** Na funcao `evaluateRule` (linha ~204-207), quando o step tem erro, retornar status `not_found` em vez de `pass`. Isso requer uma pequena alteracao no tipo de retorno para suportar o status adicional.
-
+Formato esperado:
 ```text
-m365-security-posture/index.ts (linhas ~204-207)
-
-ANTES:
-  if (stepResult.error) {
-    return createInsight(rule, 'pass', 0, [], 
-      rule.not_found_description || 'Dados nao disponiveis', now, stepResult.stepId);
-  }
-
-DEPOIS:
-  if (stepResult.error) {
-    // Determinar se e erro de permissao/licenca
-    const isPermissionError = stepResult.error.includes('403') || 
-                              stepResult.error.includes('Forbidden');
-    const isBadRequest = stepResult.error.includes('400') || 
-                         stepResult.error.includes('Bad Request');
-    
-    const detail = isPermissionError
-      ? 'Permissao insuficiente para acessar este recurso'
-      : isBadRequest
-        ? 'Endpoint nao suportado neste tenant'
-        : 'Dados nao disponiveis';
-    
-    return createNotFoundInsight(rule, 
-      rule.not_found_description || detail, now, stepResult.stepId);
-  }
+{ "source_key": "directory_roles", "evaluate": { "type": "count_role_members", ... } }
 ```
 
-A nova funcao `createNotFoundInsight` gera um insight com `status: 'not_found'` e `severity: 'info'`, garantindo que apareca na UI como neutro (cinza) em vez de pass (verde).
+## Solucao
 
-## Problema 3: Scope filtering no `m365-security-posture` nao cobre `entra_id`
+### 1. Migrar `evaluation_logic` de todas as 25 regras Entra ID (SQL)
 
-O filtro de blueprints na linha 686-688 so trata `exchange_online`. Precisa tambem tratar `entra_id` e outros scopes futuros.
+Atualizar o campo `evaluation_logic` de cada regra para incluir `source_key` (apontando para o step do blueprint) e `evaluate` (com o tipo de avaliacao compativel com `evaluateRule`).
 
-**Correcao:** Expandir o filtro para mapear scope -> nome de blueprint e categorias.
+**Mapeamento completo:**
+
+| Regra | source_key | evaluate.type |
+|-------|-----------|---------------|
+| IDT-001 | mfa_registration_details | count_missing_mfa |
+| IDT-002 | users_signin_activity | count_inactive_users |
+| IDT-003 | guests_list | count_problematic_guests (novo) |
+| IDT-004 | guests_signin_activity | count_inactive_guests (novo) |
+| IDT-005 | users_password_info | count_old_passwords (novo) |
+| IDT-006 | users_disabled_count | count_only |
+| AUT-001 | security_defaults | check_boolean |
+| AUT-002 | conditional_access_policies | check_ca_policies |
+| AUT-003 | risk_detections | count_risk_detections |
+| AUT-004 | risky_users | count_risky_users |
+| AUT-005 | auth_methods_policy | count_enabled_methods |
+| AUT-007 | named_locations | check_named_locations_exist |
+| ADM-001 | directory_roles | count_global_admins (novo) |
+| ADM-002 | directory_roles | check_admin_mfa (novo - cruza com mfa_registration_details) |
+| ADM-003 | directory_roles | count_privileged_users (novo) |
+| ADM-004 | directory_roles | count_multi_role_admins (novo) |
+| ADM-005 | directory_roles | count_guest_admins (novo) |
+| ADM-006 | service_principals | count_sp_admins (novo) |
+| APP-001 | applications | count_expiring_credentials (novo) |
+| APP-002 | applications | count_expired_credentials (novo) |
+| APP-003 | applications | count_high_privilege_apps (novo) |
+| APP-004 | applications | count_no_owner_apps (novo) |
+| APP-005 | oauth2_permissions | count_oauth_consents (novo) |
+| APP-006 | enterprise_apps_count | count_only |
+| APP-007 | applications_count | count_only |
+
+### 2. Adicionar novos tipos de avaliacao ao `evaluateRule` (Edge Function)
+
+**Arquivo:** `supabase/functions/m365-security-posture/index.ts`
+
+Adicionar os seguintes `case` ao `switch (evaluate?.type)`:
+
+- **count_problematic_guests**: Filtra guests com `externalUserState != 'Accepted'`
+- **count_inactive_guests**: Filtra guests sem login > 60 dias
+- **count_old_passwords**: Filtra usuarios com `lastPasswordChangeDateTime` > 1 ano
+- **count_global_admins**: Conta membros da role "Global Administrator" (requer step adicional ou cruzamento com `directory_roles`)
+- **check_admin_mfa**: Cruza Global Admins com dados de MFA (requer `secondary_source_key`)
+- **count_privileged_users**: Conta usuarios com qualquer role privilegiada
+- **count_multi_role_admins**: Conta usuarios com >1 role admin
+- **count_guest_admins**: Conta guests com roles admin
+- **count_sp_admins**: Conta service principals com roles admin
+- **count_expiring_credentials**: Filtra apps com credenciais expirando em 30 dias
+- **count_expired_credentials**: Filtra apps com credenciais ja expiradas
+- **count_high_privilege_apps**: Filtra apps com permissoes elevadas (ex: Mail.ReadWrite, Directory.ReadWrite.All)
+- **count_no_owner_apps**: Filtra apps sem owners
+- **count_oauth_consents**: Conta consentimentos OAuth com scope "AllPrincipals"
+
+Para regras que precisam cruzar dados de 2 steps (ex: ADM-002 precisa de `directory_roles` + `mfa_registration_details`), adicionar suporte a `secondary_source_key` no `evaluateRule`:
 
 ```text
-m365-security-posture/index.ts (linhas ~686-708)
+const evalLogic = rule.evaluation_logic;
+const stepResult = stepResults.get(evalLogic.source_key);
+const secondaryResult = evalLogic.secondary_source_key 
+  ? stepResults.get(evalLogic.secondary_source_key) 
+  : null;
+```
 
-// Mapa de scope para filtros
-const scopeConfig: Record<string, { blueprintPattern: string; categories: string[] }> = {
-  exchange_online: { 
-    blueprintPattern: '%Exchange%', 
-    categories: ['email_exchange', 'threats_activity', 'pim_governance'] 
-  },
-  entra_id: { 
-    blueprintPattern: '%Entra%', 
-    categories: ['identities', 'auth_access', 'admin_privileges', 'apps_integrations'] 
-  },
-};
+### 3. Adicionar step de membros de roles ao blueprint (SQL)
 
-if (blueprint_filter && scopeConfig[blueprint_filter]) {
-  const cfg = scopeConfig[blueprint_filter];
-  blueprintQuery = blueprintQuery.ilike('name', cfg.blueprintPattern);
-  rulesQuery = rulesQuery.in('category', cfg.categories);
-}
+O step `directory_roles` retorna apenas as roles, nao seus membros. Para avaliar ADM-001 a ADM-005, e necessario um step adicional que busque os membros. Duas opcoes:
+
+**Opcao A - Step separado por role (complexo):** Criar steps individuais para cada role importante. Nao escalavel.
+
+**Opcao B - Usar `directoryRoles` expandido com membros (preferido):** Alterar o endpoint do step `directory_roles` para incluir `$expand=members` e processar tudo em um unico step.
+
+```text
+Endpoint atualizado: /directoryRoles?$expand=members($select=id,displayName,userPrincipalName,userType)
 ```
 
 ## Arquivos afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Verificar se scope requer agent antes de criar task |
-| `supabase/functions/m365-security-posture/index.ts` | Scope filtering para `entra_id`; insights `not_found` para erros 403/400 |
+| Migracao SQL | Atualizar `evaluation_logic` de 25 regras + alterar endpoint do step `directory_roles` |
+| `supabase/functions/m365-security-posture/index.ts` | Adicionar ~14 novos `case` no `evaluateRule` + suporte a `secondary_source_key` |
 
 ## Resultado esperado
 
-- Analise com scope `entra_id` nao cria agent task desnecessaria
-- Steps Graph API com erro 403 geram insights "Nao Encontrado" (cinza) em vez de "Pass" (verde)
-- Filtragem correta de blueprints e regras para Entra ID (apenas categorias relevantes)
-- Contagem consistente de insights mesmo com permissoes ausentes
-
+- Todas as 25 regras Entra ID geram insights (pass/fail/not_found)
+- A pagina Entra ID exibe cards de conformidade preenchidos
+- Erros 403 geram insights "Nao Encontrado" (ja implementado)
+- Regras informacionais (IDT-006, APP-006, APP-007) exibem contagens neutras
