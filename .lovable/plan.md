@@ -1,58 +1,45 @@
 
+# Ajustes no Dashboard: Cor/Icone do Dominio Externo + CVEs no M365
 
-# Card de Infraestrutura Diferenciado
+## 1. Corrigir icone e cor do Dominio Externo
 
-## Objetivo
+O banco de dados define o modulo "Dominio Externo" com:
+- **Icone**: `Layers` (e nao `Globe` como esta no dashboard)
+- **Cor**: `text-green-500` (e nao `text-teal-500` como esta no dashboard)
 
-Separar o card de Infraestrutura dos Module Health Cards, pois ele atende todos os modulos e nao e um modulo de seguranca com score. Ele deve ter um layout proprio, similar ao da imagem de referencia, com metricas em lista.
+O card sera atualizado para usar `Layers` e `green-500` em todos os pontos (icone, fundo, borda).
 
-## Layout do card
+## 2. Substituir severidades do M365 por CVEs recentes
 
-```text
-+----------------------------------------+
-| [Server icon]  Infraestrutura          |
-|                                        |
-|  * Agents          10/10 online        |
-|  * Total de ativos            42       |
-|  * Ultimo scan       ha cerca de 10h   |
-+----------------------------------------+
-```
+Os badges "14 criticos / 8 altos" no card M365 nao sao severidades de postura -- sao CVEs da Microsoft. A proposta e:
 
-- Card com borda superior (em vez de lateral) em `emerald-500` para diferenciar visualmente
-- Sem ScoreGauge -- usa metricas em linhas com indicadores visuais
-- Indicador de status dos agents: bolinha verde (todos online), amarela (parcial), vermelha (nenhum)
-- Ocupa toda a largura abaixo dos Module Health Cards (full-width)
-- Clicavel, navega para `/agents`
+- **Remover os badges de severidade do card M365**
+- **Adicionar contagem de CVEs NEW** (ultimos 30 dias) ao lado do ScoreGauge
+- Layout: um pequeno indicador compacto abaixo ou ao lado do gauge mostrando algo como "12 CVEs recentes" com a tag NEW animada (ja existente no sistema de CVEs)
+- Usar o hook `useM365CVEs` (ja existe, com `months: 1` para 30 dias) para buscar a contagem
+- Exibir apenas se houver CVEs (>0), de forma discreta
 
 ## Alteracoes tecnicas
 
 ### Arquivo: `src/pages/GeneralDashboardPage.tsx`
 
-1. **Remover o card "agents" do array `moduleCards`** -- ele nao deve mais usar `ModuleHealthCard`
+1. **Importar `Layers`** do lucide-react (substituir `Globe` se nao for usado em outro lugar)
+2. **Corrigir o card de Dominio Externo**:
+   - `icon: Layers` (era `Globe`)
+   - `iconColor: 'text-green-500'` (era `text-teal-500`)
+   - `iconBg: 'bg-green-500/10'` (era `bg-teal-500/10`)
+   - `borderColor: 'border-l-green-500'` (era `border-l-teal-500`)
+3. **Importar e usar `useM365CVEs`** com `months: 1` para buscar CVEs dos ultimos 30 dias
+4. **Modificar `ModuleHealthCard`** para aceitar uma prop opcional `extraInfo` (ReactNode) que sera renderizada ao lado ou abaixo do ScoreGauge
+5. **Para o card M365**: passar como `extraInfo` um badge compacto com contagem de CVEs recentes e tag NEW animada, visivel apenas quando ha CVEs
+6. **Remover os badges de severidade do card M365** (manter para Firewall que tem severidades reais de postura)
 
-2. **Adicionar novo componente `InfrastructureCard`** (inline) com:
-   - Header: icone `Server` + titulo "Infraestrutura"
-   - 3 linhas de metricas:
-     - Agents: bolinha colorida + `X/Y online`
-     - Total de ativos: soma de firewalls + tenants + dominios
-     - Ultimo scan: `formatDistanceToNow` do mais recente `lastAnalysisDate` entre todos os modulos
-   - Borda superior emerald (`border-t-4 border-t-emerald-500`)
+### Arquivo: `src/hooks/useDashboardStats.ts`
 
-3. **Ajustar grid dos Module Health Cards** para considerar apenas os 3 modulos de seguranca (sem agents)
-
-4. **Renderizar o `InfrastructureCard`** como secao separada abaixo dos Module Health Cards
-
-### Dados necessarios (ja disponiveis no hook)
-
-- `stats.agentsOnline` / `stats.agentsTotal` -- ja existem
-- Total de ativos = `stats.firewall.assetCount + stats.m365.assetCount + stats.externalDomain.assetCount`
-- Ultimo scan = `max(firewall.lastAnalysisDate, m365.lastAnalysisDate, externalDomain.lastAnalysisDate)` -- calculado no componente
-
-Nenhuma alteracao no hook `useDashboardStats.ts` e necessaria.
+Nenhuma alteracao necessaria -- os dados de CVE vem do hook `useM365CVEs` separado.
 
 ### Resumo
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/GeneralDashboardPage.tsx` | Separar card Infraestrutura com layout proprio |
-
+| `src/pages/GeneralDashboardPage.tsx` | Corrigir icone/cor Ext. Domain + adicionar CVEs ao card M365 |
