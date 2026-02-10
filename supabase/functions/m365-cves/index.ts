@@ -154,7 +154,7 @@ function extractCustomerActionRequired(vuln: any): boolean {
   }
 
   if (!vuln.Remediations || !Array.isArray(vuln.Remediations) || vuln.Remediations.length === 0) {
-    return true; // No remediation info → assume action needed
+    return false; // No remediation info → likely auto-fixed SaaS, no action needed
   }
 
   // Check if any remediation explicitly mentions customer action
@@ -184,9 +184,9 @@ function extractCustomerActionRequired(vuln: any): boolean {
     return subType.includes('security update');
   });
 
-  // If there's an automatic cloud fix and no explicit action required flag, 
-  // it's auto-managed by Microsoft
-  return !hasCloudAutoFix;
+  // If there's a VendorFix/Security Update, the admin needs to apply it (client-side patch)
+  // If there's no VendorFix, it's auto-managed server-side by Microsoft
+  return hasCloudAutoFix;
 }
 
 serve(async (req) => {
