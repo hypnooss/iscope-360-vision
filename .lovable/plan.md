@@ -1,88 +1,41 @@
 
 
-# Corrigir filtragem de CVEs on-premises e deteccao de Customer Action
+# Inverter logica de "Customer Action Required"
 
-## Problema raiz
+## Problema
 
-### 1. CVEs de SharePoint Server / Exchange Server ainda aparecem
+A logica atual esta invertida. No contexto de produtos cloud/SaaS do Microsoft 365:
 
-Um CVE como "Microsoft SharePoint Server Remote Code Execution Vulnerability" lista multiplos produtos no MSRC Product Tree:
-- `Microsoft SharePoint Server 2019` (corretamente rejeitado como null)
-- `Microsoft Office LTSC 2021 for 32-bit editions` (incorretamente mapeado para "Microsoft 365 Apps")
-- `Microsoft 365 Apps for Enterprise` (incorretamente mapeado para "Microsoft 365 Apps")
+- CVEs que listam remediacao "Security Update" (VendorFix Type=2) sao patches para aplicativos **client-side** (Office desktop, Outlook desktop) que precisam ser instalados pelo cliente/admin via WSUS, Intune ou Windows Update. Esses **requerem acao**.
+- CVEs que **nao** listam VendorFix sao vulnerabilidades corrigidas diretamente no backend SaaS pela Microsoft (Exchange Online, SharePoint Online, Entra ID). Esses **nao requerem acao**.
 
-O filtro atual remove "SharePoint Server" mas aceita o CVE por causa dos produtos Office/365 Apps compartilhados. O CVE passa com o label "Microsoft 365 Apps" quando na verdade e uma vulnerabilidade de SharePoint Server.
-
-### 2. Customer Action Required sempre 0
-
-A funcao `hasCloudAutoFix` sempre retorna `true` porque a condicao na linha 187-189 e logicamente incorreta — `rem.ProductID && Array.isArray(rem.ProductID)` e sempre verdadeiro ja que toda remediacao tem um array de ProductIDs.
+Exemplo:
+- CVE-2025-55241: Nao tem VendorFix client-side, e um fix server-side automatico da Microsoft. Hoje mostra "Acao Necessaria" (errado).
+- CVE-2025-62554: Tem VendorFix "Security Update" que o admin precisa aplicar. Hoje nao mostra (errado).
 
 ## Solucao
 
-### Alteracao 1: Filtrar pelo titulo do CVE (nova camada de defesa)
-
-Adicionar verificacao do `vuln.Title.Value` antes de processar os produtos. Se o titulo contem indicadores claros de on-premises, rejeitar o CVE inteiro:
+Inverter a logica final na funcao `extractCustomerActionRequired`:
 
 ```
-Rejeitar se titulo contem:
-- "SharePoint Server"
-- "SharePoint Enterprise Server" 
-- "SharePoint Foundation"
-- "Exchange Server"
-- "Windows Server"
-- "Skype for Business Server"
-- "Lync Server"
+Logica corrigida:
+1. Se Flags ou Remediations mencionam "customer action" explicitamente -> true (manter)
+2. Se nao ha Remediations -> false (SaaS fix automatico, nao assume acao)  
+3. Se existe VendorFix com "Security Update" -> true (patch client-side, admin precisa aplicar)
+4. Se nao existe VendorFix -> false (fix automatico server-side)
 ```
 
-Isso impede que CVEs de servidor passem mesmo quando listam produtos genericos como "Microsoft Office".
+## Alteracao tecnica
 
-### Alteracao 2: Refinar `simplifyProductName` para rejeitar produtos ambiguos em contexto de servidor
+**Arquivo:** `supabase/functions/m365-cves/index.ts`
 
-Manter a logica atual, mas o titulo do CVE sera a barreira principal. Produtos como "Microsoft 365 Apps" e "Microsoft Office" continuam sendo aceitos para CVEs genuinamente cloud.
+Na funcao `extractCustomerActionRequired` (linhas 145-190):
 
-### Alteracao 3: Corrigir `extractCustomerActionRequired`
+1. **Linha 156-158**: Mudar o default quando nao ha remediations de `true` para `false` (sem info = provavelmente fix automatico SaaS)
 
-A logica atual na linha 181-193 e defeituosa. Corrigir para:
+2. **Linhas 181-189**: Inverter o retorno final:
+   - Atual: `return !hasCloudAutoFix` (se tem auto-fix, nao requer acao)
+   - Corrigido: `return hasCloudAutoFix` (se tem VendorFix/Security Update, requer acao do cliente para aplicar o patch)
 
-1. Manter checagens de `Flags` e texto "customer action" (linhas 147-176) — estas funcionam
-2. Corrigir a verificacao de auto-fix: em vez de checar se ProductID existe (sempre true), verificar se o `SubType` do VendorFix realmente indica patch automatico vs manual
-3. Para CVEs cloud/SaaS sem remediacao explicita do tipo VendorFix, manter `customerActionRequired = true`
-
-## Arquivo modificado
-
-`supabase/functions/m365-cves/index.ts`
-
-### Mudanca 1 — Novo filtro por titulo (no loop principal, antes de getProductNames)
-
-```typescript
-// Antes de processar produtos, verificar titulo do CVE
-const cveTitle = (vuln.Title?.Value || '').toLowerCase();
-const onPremTitlePatterns = [
-  'sharepoint server', 'sharepoint enterprise server', 'sharepoint foundation',
-  'exchange server', 'windows server', 'skype for business server', 'lync server'
-];
-if (onPremTitlePatterns.some(p => cveTitle.includes(p))) continue;
-```
-
-### Mudanca 2 — Corrigir hasCloudAutoFix
-
-Substituir a logica das linhas 181-193. A condicao `rem.ProductID && Array.isArray(rem.ProductID) return true` deve ser removida. Em vez disso, considerar que para produtos cloud (SaaS), se existe um VendorFix generico com SubType "Security Update" e nenhuma indicacao explicita de acao do cliente, o patch e automatico:
-
-```typescript
-const hasCloudAutoFix = vuln.Remediations.some((rem: any) => {
-  if (rem.Type !== 2) return false;
-  const subType = (rem.SubType || '').toLowerCase();
-  return subType.includes('security update');
-});
-return !hasCloudAutoFix;
-```
-
-## Resumo
-
-| Alteracao | Efeito |
-|-----------|--------|
-| Filtro por titulo do CVE | Rejeita CVEs de SharePoint Server, Exchange Server mesmo quando listam produtos genericos |
-| Correcao hasCloudAutoFix | Customer Action Required agora funciona corretamente para CVEs cloud |
-
-Apos alteracoes, reimplantar `m365-cves` e testar via curl.
+Reimplantar edge function `m365-cves` apos alteracao.
 
