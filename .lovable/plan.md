@@ -1,171 +1,180 @@
 
 
-# Repaginar o Dashboard Geral com insights reais e filtro por workspace
+# Redesign Completo do Dashboard Geral - Painel Executivo de Seguranca
 
-## Visao geral
+## Problema
 
-Transformar o Dashboard Geral de uma pagina com placeholders e dados minimos em um painel executivo rico, com score consolidado, contagem real de ativos por modulo, resumo de severidades, timeline de analises recentes e status dos agents. O layout sera organizado em secoes visuais claras para nao sobrecarregar a tela.
+O dashboard atual tem tres falhas fundamentais:
+1. **Score consolidado sem sentido** -- mistura scores de modulos completamente diferentes numa media unica que nao comunica nada acionavel
+2. **Layout generico** -- cards de contagem basica (contadores de ativos) sem contexto de saude ou risco, parecem um inventario e nao um painel de seguranca
+3. **Falta de hierarquia visual** -- todas as informacoes tem o mesmo peso visual; nada guia o olhar do usuario para o que e critico
 
-## Isolamento de dados por workspace
+## Pesquisa e Inspiracao
 
-O padrao ja existente no projeto sera replicado:
+Baseado em pesquisa de dashboards de seguranca profissionais (Secureworks Taegis, AT&T USM, Checkpoint Harmony, Tenable MSSP, Balbix) e artigos de UX para cybersecurity (DesignMonks, AufaitUX, CyberSaint), os principios que serao aplicados:
 
-```text
-Super Admin / Super Suporte:
-  - workspaceIds = null (sem filtro, ve tudo)
-  - No preview mode: usa previewTarget.workspaces
+1. **Score por modulo, nunca consolidado** -- cada dominio de seguranca tem seu proprio gauge, permitindo comparacao visual imediata e identificacao do "elo mais fraco"
+2. **Hierarquia de 3 niveis**: KPIs criticos no topo > detalhamento por modulo no meio > contexto historico embaixo
+3. **Alertas com urgencia visual** -- issues criticos e altos devem "saltar" da tela com cor e posicionamento
+4. **Zero ruido** -- mostrar apenas modulos acessiveis, sem cards desabilitados ou com opacity
+5. **Cada elemento e acionavel** -- cards de modulo levam ao dashboard do modulo, severidades sao links para filtros
 
-Workspace Admin / User:
-  - RLS do Supabase ja filtra por client_id automaticamente
-  - Queries retornam apenas dados do workspace do usuario
-```
-
-Todas as queries do dashboard seguirao o mesmo padrao de `workspaceIds` que ja existe em `GeneralDashboardPage.tsx` e `DashboardPage.tsx`, garantindo que clientes vejam apenas seus proprios dados.
-
-## Layout proposto
+## Layout Final Proposto
 
 ```text
-+---------------------------------------------------------------+
-|  Dashboard Geral                                    [data]     |
-|  Visao consolidada de seguranca                                |
-+---------------------------------------------------------------+
-|                                                                |
-|  SECAO 1 - Score e Ativos (hero)                               |
-|  +------------------+  +------+ +------+ +------+ +------+    |
-|  |   ScoreGauge     |  | FW   | | M365 | | Ext  | | Agts |    |
-|  |   Consolidado    |  | 12   | | 3    | | 8    | | 5/7  |    |
-|  |   78%            |  |      | |      | |      | |      |    |
-|  +------------------+  +------+ +------+ +------+ +------+    |
-|                                                                |
-|  SECAO 2 - Severidades cross-module                            |
-|  +----------+ +--------+ +--------+ +--------+                |
-|  | Criticos | | Altos  | | Medios | | Baixos |                |
-|  |    5     | |   12   | |   23   | |   8    |                |
-|  +----------+ +--------+ +--------+ +--------+                |
-|                                                                |
-|  SECAO 3 - Atividade recente (timeline unificada)              |
-|  +----------------------------------------------------------+ |
-|  | [icone FW]  FortiGate-HQ  |  ClienteA  |  82%  | 05/02  | |
-|  | [icone M365] Tenant Corp  |  ClienteB  |  71%  | 04/02  | |
-|  | [icone Ext]  example.com  |  ClienteA  |  90%  | 03/02  | |
-|  +----------------------------------------------------------+ |
-|                                                                |
-+---------------------------------------------------------------+
++------------------------------------------------------------------+
+|  Dashboard                                        Bem-vindo, Nome |
+|  Painel executivo de seguranca                                    |
++------------------------------------------------------------------+
+|                                                                    |
+|  SECAO 1 - Postura de Seguranca por Modulo (hero)                 |
+|  +-------------------+ +-------------------+ +-------------------+ |
+|  | [ScoreGauge sm]   | | [ScoreGauge sm]   | | [ScoreGauge sm]   | |
+|  |    Firewall        | |  Microsoft 365    | |  Dominio Externo  | |
+|  |    82 / Bom        | |  64 / Atencao     | |  91 / Excelente   | |
+|  |    12 ativos       | |  3 tenants        | |  8 dominios       | |
+|  |  C:2 H:5           | |  C:1 H:4          | |  H:1              | |
+|  |  Ultimo: 05/02     | |  Ultimo: 04/02    | |  Ultimo: 03/02    | |
+|  |   [Acessar ->]     | |   [Acessar ->]    | |   [Acessar ->]    | |
+|  +-------------------+ +-------------------+ +-------------------+ |
+|                                                                    |
+|  SECAO 2 - Resumo Operacional (2 colunas)                         |
+|  +---------------------------+ +--------------------------------+ |
+|  | Panorama de Riscos        | | Infraestrutura                 | |
+|  | [C:3] [H:9] [M:11] [B:8] | | Agents: 5/7 online [*--]      | |
+|  | (4 StatCards coloridos)   | | Total Ativos: 23               | |
+|  |                           | | Ultimo Scan: ha 2h             | |
+|  +---------------------------+ +--------------------------------+ |
+|                                                                    |
+|  SECAO 3 - Atividade Recente (timeline)                           |
+|  +--------------------------------------------------------------+ |
+|  | [FW] FortiGate-HQ    | ClienteA  |  82  | 05/02/2026         | |
+|  | [M365] Tenant Corp   | ClienteB  |  64  | 04/02/2026         | |
+|  | [EXT] example.com    | ClienteA  |  91  | 03/02/2026         | |
+|  | ... (ate 10 itens)                                            | |
+|  +--------------------------------------------------------------+ |
++------------------------------------------------------------------+
 ```
 
-## Secoes detalhadas
+## Detalhamento das Secoes
 
-### Secao 1 - Score consolidado + Ativos monitorados
+### Secao 1 -- Module Health Cards (a mudanca principal)
 
-**Score Gauge (lado esquerdo):**
-- Calcula a media ponderada dos scores mais recentes de Firewall (`analysis_history`) e M365 (`m365_posture_history`)
-- Usa o componente `ScoreGauge` existente com tamanho `md`
-- Se nao houver dados de nenhum modulo, exibe `--` com label "Sem dados"
+Cada modulo com acesso renderiza um **card independente** (componente `ModuleHealthCard` inline) contendo:
 
-**Cards de ativos (lado direito, 4 cards em grid):**
+- **ScoreGauge** (`size="sm"`, 100px) com o score medio mais recente do modulo (media dos scores mais recentes, 1 por recurso)
+- **Nome do modulo** com icone
+- **Contagem de ativos** (ex: "12 firewalls monitorados")
+- **Mini badges de severidade** (somente criticos e altos, em linha, usando badges `status-fail` / `status-warning` do design system)
+- **Data da ultima analise** em texto discreto
+- **Botao "Acessar"** que navega ao dashboard do modulo
+- **Card inteiro clicavel** com hover scale
 
-| Card | Fonte | Icone | Cor |
-|------|-------|-------|-----|
-| Firewalls | `firewalls` count | Shield | orange-500 |
-| Tenants M365 | `m365_tenants` count (status connected/partial) | Cloud | blue-500 |
-| Dominios Externos | `external_domains` count | Network | purple-500 |
-| Agents | `agents` (ativos/total) | Server | emerald-500 |
+Grid responsivo: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`. Se o usuario so tem 1 modulo, o card ocupa largura maior. Modulos sem acesso simplesmente nao aparecem (zero cards desabilitados).
 
-Cada card mostra o total e, quando o modulo esta disponivel, um botao "Acessar modulo" (reutilizando o padrao atual). Cards de modulos nao contratados aparecem com `opacity-60` e sem botao.
+Fontes de dados por modulo:
+- **Firewall**: Score = media dos `analysis_history.score` mais recentes (1 por `firewall_id`). Severidades do campo `report_data.summary`.
+- **M365**: Score = media dos `m365_posture_history.score` mais recentes (1 por `tenant_record_id`). Severidades do campo `summary`.
+- **Dominio Externo**: Score = media dos `external_domain_analysis_history.score` mais recentes (1 por `domain_id`). Sem severidades detalhadas (campo nao existe).
 
-### Secao 2 - Resumo de severidades cross-module
+### Secao 2 -- Resumo Operacional (dividido em 2 sub-cards)
 
-4 StatCards (reutilizando o componente existente) com contagens agregadas de:
-- **Firewall**: issues com score < thresholds do `analysis_history` mais recente de cada firewall
-- **M365**: severidades do campo `summary` da `m365_posture_history` mais recente de cada tenant
+**Card esquerdo -- "Panorama de Riscos":**
+4 StatCards compactos com contagem total cross-module de Critico/Alto/Medio/Baixo. Reutiliza o componente `StatCard` existente com `compact=true`. As contagens sao a soma de todos os modulos.
 
-Os dados vem do campo `summary` (JSON) que ja contem `critical`, `high`, `medium`, `low` contadores.
+**Card direito -- "Infraestrutura":**
+Card com 3 metricas operacionais:
+- **Agents online/total** com indicador visual (circulo verde/amarelo/vermelho)
+- **Total de ativos monitorados** (soma de firewalls + tenants + dominios)
+- **Ultima analise** (timestamp da analise mais recente entre todos os modulos)
 
-### Secao 3 - Timeline unificada de analises recentes
+### Secao 3 -- Atividade Recente (mantida e melhorada)
 
-Card com lista das ultimas 8 analises de qualquer modulo, ordenadas por data:
-- **Firewall**: `analysis_history` com join em `firewalls` e `clients`
-- **M365**: `m365_posture_history` com join em `m365_tenants` e `clients`
-- **Ext Domain**: `external_domain_analyses` com join em `external_domains` e `clients`
+Timeline unificada das ultimas 10 analises (aumentado de 8), com:
+- Icone do modulo com cor (ja existente)
+- Nome do recurso + nome do cliente
+- Badge de score com cor semantica
+- Data formatada
+- Hover destaque
 
-Cada item mostra: icone do modulo, nome do recurso, nome do cliente, score e data.
+## Alteracoes Tecnicas
 
-## Alteracoes tecnicas
+### Arquivo 1: `src/hooks/useDashboardStats.ts` -- Refatorar
 
-### 1. Novo hook: `src/hooks/useDashboardStats.ts`
-
-Hook dedicado que centraliza todas as queries do dashboard geral:
+Substituir `consolidatedScore: number | null` por scores individuais por modulo:
 
 ```typescript
-interface DashboardStats {
-  // Assets
-  totalFirewalls: number;
-  totalM365Tenants: number;
-  totalExternalDomains: number;
-  agentsOnline: number;
-  agentsTotal: number;
-  
-  // Consolidated score
-  consolidatedScore: number | null;
-  
-  // Severity summary (cross-module)
+interface ModuleHealth {
+  score: number | null;
+  assetCount: number;
+  lastAnalysisDate: string | null;
   severities: {
     critical: number;
     high: number;
     medium: number;
     low: number;
   };
-  
-  // Recent activity
-  recentActivity: Array<{
-    id: string;
-    module: 'firewall' | 'm365' | 'external_domain';
-    resourceName: string;
-    clientName: string;
-    score: number;
-    date: string;
-  }>;
+}
+
+interface DashboardStats {
+  firewall: ModuleHealth;
+  m365: ModuleHealth;
+  externalDomain: ModuleHealth;
+  agentsOnline: number;
+  agentsTotal: number;
+  // Severidades cross-module (soma dos 3)
+  totalSeverities: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  totalAssets: number;
+  lastOverallAnalysis: string | null;
+  recentActivity: RecentActivity[];
 }
 ```
 
-O hook recebe `workspaceIds` (do PreviewContext) e aplica filtros `.in('client_id', workspaceIds)` em todas as queries quando necessario, seguindo o padrao existente.
+As queries paralelas existentes serao mantidas (ja sao eficientes), mas a estrutura do retorno muda para separar os dados por modulo. O campo `consolidatedScore` sera removido.
 
-Queries executadas em paralelo com `Promise.all`:
-1. Count firewalls
-2. Count m365_tenants (connected/partial)
-3. Count external_domains
-4. Count agents (total + filtro last_seen > 5min para "online")
-5. Ultimo `analysis_history` por firewall (score)
-6. Ultimo `m365_posture_history` por tenant (summary + score)
-7. Ultimas 8 analises unificadas (3 queries separadas, merge + sort por data)
+A logica de calculo por modulo:
+- Dedup por resource_id (ja feito), guardar score + severidades + data da mais recente por modulo
+- `lastAnalysisDate` = data da analise mais recente daquele modulo
+- `lastOverallAnalysis` = max entre os 3 `lastAnalysisDate`
+- `totalAssets` = firewalls + tenants + dominios
 
-### 2. Refatorar: `src/pages/GeneralDashboardPage.tsx`
+### Arquivo 2: `src/pages/GeneralDashboardPage.tsx` -- Refatorar completamente
 
-Substituir o conteudo atual por:
-- Importar `useDashboardStats`, `useEffectiveModules`, `ScoreGauge`, `StatCard`
-- **Secao 1**: flex row com ScoreGauge + grid 2x2 de cards de ativos
-- **Secao 2**: grid de 4 StatCards de severidade
-- **Secao 3**: Card com lista de atividades recentes (mesmo padrao visual do `DashboardPage.tsx` existente)
-- Skeleton loading para todas as secoes
+Novo layout com 3 secoes:
 
-### 3. Visibilidade condicional por modulo
-
-Os cards de ativos e as contagens de severidade so incluem dados de modulos que o usuario tem acesso:
-
+**Sub-componente `ModuleHealthCard`** (definido inline no arquivo):
 ```typescript
-const hasFirewall = hasEffectiveModuleAccess('scope_firewall');
-const hasM365 = hasEffectiveModuleAccess('scope_m365');
-const hasExtDomain = hasEffectiveModuleAccess('scope_external_domain');
+interface ModuleHealthCardProps {
+  title: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+  borderColor: string;
+  health: ModuleHealth;
+  assetLabel: string;
+  loading: boolean;
+  onAccess: () => void;
+}
 ```
 
-Modulos sem acesso mostram o card com `opacity-60`, valor `--` e sem botao de acesso.
+Renderiza ScoreGauge (sm), contagem, badges, data e botao de acesso. Card inteiro clicavel com `hover:scale-[1.02]` e borda lateral colorida (`border-l-4`).
 
-### Resumo de arquivos
+**Sub-componente `InfrastructureCard`** (inline):
+Mostra agents, total ativos, e ultima analise com formatacao relativa (usando `date-fns` `formatDistanceToNow`).
+
+A pagina verifica `hasEffectiveModuleAccess` e renderiza apenas os ModuleHealthCards dos modulos disponiveis. A secao 2 sempre aparece (severidades e infra sao globais).
+
+### Resumo de Arquivos
 
 | Arquivo | Acao |
 |---------|------|
-| `src/hooks/useDashboardStats.ts` | Criar (hook com todas as queries) |
-| `src/pages/GeneralDashboardPage.tsx` | Refatorar (novo layout com 3 secoes) |
+| `src/hooks/useDashboardStats.ts` | Refatorar (scores e severidades por modulo) |
+| `src/pages/GeneralDashboardPage.tsx` | Reescrever (novo layout com Module Health Cards) |
 
-Nenhuma alteracao no backend ou em Edge Functions.
+Nenhuma alteracao no backend, Edge Functions, ou banco de dados.
 
