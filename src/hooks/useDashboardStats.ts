@@ -26,9 +26,7 @@ const emptyHealth: ModuleHealth = {
 
 
 export interface DashboardStats {
-  firewall: ModuleHealth;
-  m365: ModuleHealth;
-  externalDomain: ModuleHealth;
+  modules: Record<string, ModuleHealth>;
   agentsOnline: number;
   agentsTotal: number;
 }
@@ -186,9 +184,11 @@ const extHealth: ModuleHealth = {
       }
 
       setStats({
-        firewall: fwHealth,
-        m365: m365Health,
-        externalDomain: extHealth,
+        modules: {
+          firewall: fwHealth,
+          m365: m365Health,
+          externalDomain: extHealth,
+        },
         agentsOnline,
         agentsTotal,
       });
