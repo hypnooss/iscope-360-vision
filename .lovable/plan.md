@@ -1,19 +1,19 @@
 
+# Ajustes de Espacamento e Titulo nos Cards do Dashboard
 
-# Ajustar Espacamento entre Colunas e Centralizar Texto
+## Alteracoes no arquivo `src/pages/GeneralDashboardPage.tsx`
 
-## Problemas Identificados
+1. **Aumentar gap horizontal entre colunas CVEs e Conformidade**: Trocar `gap-10` por `gap-14`
 
-1. Gap entre as colunas "CVEs" e "Conformidade" muito pequeno (gap-6 insuficiente)
-2. Texto "Ultima analise" alinhado a esquerda, precisa ser centralizado
+2. **Aumentar espacamento vertical entre gauge/colunas e texto "Ultima analise"**: Aumentar o `py-2` do container do gauge para `py-4`, e adicionar `mt-2` ao texto da ultima analise
 
-## Alteracoes
+3. **Mostrar titulo "Conformidade" no card Dominio Externo**: Alterar a logica do titulo da coluna -- em vez de `title={hasCves ? 'Conformidade' : ''}`, usar sempre `title="Conformidade"`
 
-### Arquivo: `src/pages/GeneralDashboardPage.tsx`
+## Resumo das mudancas
 
-**Linha 146** - Aumentar gap entre colunas de severidade:
-- Trocar `flex gap-6` por `flex gap-10` para dar mais respiro entre as duas colunas
-
-**Linha 155** - Centralizar texto da ultima analise:
-- Adicionar `text-center` ao paragrafo de "Ultima analise"
-
+| Local | De | Para |
+|---|---|---|
+| Linha 144, gap das colunas | `gap-10` | `gap-14` |
+| Linha 133, padding vertical do container | `py-2` | `py-4` |
+| Linha 149, titulo da coluna conformidade | `hasCves ? 'Conformidade' : ''` | `'Conformidade'` |
+| Linha 158, texto ultima analise | sem margin top | adicionar `mt-2` |
