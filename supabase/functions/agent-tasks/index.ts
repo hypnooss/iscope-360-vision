@@ -8,6 +8,59 @@ const corsHeaders = {
 };
 
 // ============================================
+// Crypto helpers for credential decryption
+// ============================================
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+function isEncrypted(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{24}:[0-9a-f]+$/i.test(value);
+}
+
+async function decryptValue(encrypted: string, key: CryptoKey): Promise<string> {
+  const [ivHex, ciphertextHex] = encrypted.split(':');
+  const iv = hexToBytes(ivHex);
+  const ciphertext = hexToBytes(ciphertextHex);
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return new TextDecoder().decode(decrypted);
+}
+
+async function getEncryptionKey(): Promise<CryptoKey | null> {
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex) return null;
+  const keyData = hexToBytes(keyHex);
+  return crypto.subtle.importKey('raw', keyData, { name: 'AES-GCM' }, false, ['decrypt']);
+}
+
+async function decryptCredentials(
+  creds: { api_key?: string; username?: string; password?: string; azure_app_id?: string; certificate_thumbprint?: string } | undefined,
+  key: CryptoKey | null
+): Promise<typeof creds> {
+  if (!creds || !key) return creds;
+  try {
+    if (creds.api_key && isEncrypted(creds.api_key)) {
+      creds.api_key = await decryptValue(creds.api_key, key);
+    }
+    if (creds.username && isEncrypted(creds.username)) {
+      creds.username = await decryptValue(creds.username, key);
+    }
+    if (creds.password && isEncrypted(creds.password)) {
+      creds.password = await decryptValue(creds.password, key);
+    }
+  } catch (err) {
+    console.error('Failed to decrypt credentials, using raw values:', err);
+  }
+  return creds;
+}
+
+// ============================================
 // Types
 // ============================================
 
@@ -214,31 +267,43 @@ serve(async (req: Request) => {
       );
     }
 
+    // Get encryption key for credential decryption
+    const encryptionKey = await getEncryptionKey();
+
     // Transform RPC result to TaskResponse format
     const tasks = (tasksData as RpcTaskData[] || []);
-    const enrichedTasks: TaskResponse[] = tasks.map(task => ({
-      id: task.id,
-      type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
-      target: {
-        id: task.target?.id || task.target_id,
-        type: task.target?.type || task.target_type,
-        base_url: task.target?.base_url,
-        domain: task.target?.domain,
-        tenant_id: task.target?.tenant_id,
-        tenant_domain: task.target?.tenant_domain,
-        credentials: task.target?.credentials ? {
-          api_key: task.target.credentials.api_key || undefined,
-          username: task.target.credentials.username || undefined,
-          password: task.target.credentials.password || undefined,
-          azure_app_id: task.target.credentials.azure_app_id || undefined,
-          certificate_thumbprint: task.target.credentials.certificate_thumbprint || undefined,
-        } : undefined,
-      },
-      steps: task.blueprint?.steps || [],
-      payload: task.payload || undefined,
-      priority: task.priority,
-      expires_at: task.expires_at,
-    }));
+    const enrichedTasks: TaskResponse[] = [];
+    
+    for (const task of tasks) {
+      const credentials = task.target?.credentials ? {
+        api_key: task.target.credentials.api_key || undefined,
+        username: task.target.credentials.username || undefined,
+        password: task.target.credentials.password || undefined,
+        azure_app_id: task.target.credentials.azure_app_id || undefined,
+        certificate_thumbprint: task.target.credentials.certificate_thumbprint || undefined,
+      } : undefined;
+
+      // Decrypt any encrypted credential values
+      const decryptedCreds = await decryptCredentials(credentials, encryptionKey);
+
+      enrichedTasks.push({
+        id: task.id,
+        type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
+        target: {
+          id: task.target?.id || task.target_id,
+          type: task.target?.type || task.target_type,
+          base_url: task.target?.base_url,
+          domain: task.target?.domain,
+          tenant_id: task.target?.tenant_id,
+          tenant_domain: task.target?.tenant_domain,
+          credentials: decryptedCreds,
+        },
+        steps: task.blueprint?.steps || [],
+        payload: task.payload || undefined,
+        priority: task.priority,
+        expires_at: task.expires_at,
+      });
+    }
 
     console.log(`Returning ${enrichedTasks.length} tasks for agent ${agentId}`);
 
