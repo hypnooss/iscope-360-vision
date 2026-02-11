@@ -78,7 +78,14 @@ async function fetchFirmwareVersions(workspaceIds: string[]): Promise<VersionInf
   for (const row of data) {
     if (latestPerFirewall.has(row.firewall_id)) continue;
     const reportData = row.report_data as Record<string, unknown> | null;
-    const version = reportData?.firmwareVersion as string | undefined;
+    let version = reportData?.firmwareVersion as string | undefined;
+    if (!version) {
+      const sysInfo = reportData?.system_info as { firmware?: string } | undefined;
+      if (sysInfo?.firmware) {
+        const match = sysInfo.firmware.match(/(\d+\.\d+\.?\d*)/);
+        version = match ? match[1] : sysInfo.firmware;
+      }
+    }
     if (version) {
       const vendor = firewallVendorMap.get(row.firewall_id) || 'fortinet';
       latestPerFirewall.set(row.firewall_id, { version, vendor });
