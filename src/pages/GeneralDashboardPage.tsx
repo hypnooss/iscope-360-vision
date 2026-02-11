@@ -66,9 +66,9 @@ const PROGRESS_COLOR_MAP: Record<string, string> = {
 function getScoreHslColor(score: number | null): string {
   if (score == null) return 'hsl(0, 0%, 50%)';
   if (score >= 90) return 'hsl(175, 80%, 45%)';
-  if (score >= 75) return 'hsl(142, 71%, 45%)';
+  if (score >= 75) return 'hsl(158, 64%, 52%)';
   if (score >= 60) return 'hsl(48, 96%, 53%)';
-  return 'hsl(347, 77%, 50%)';
+  return 'hsl(351, 95%, 72%)';
 }
 
 // ─── Score color helper ───────────────────────────────────────────────────────
