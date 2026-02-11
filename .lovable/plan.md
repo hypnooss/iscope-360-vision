@@ -1,33 +1,27 @@
 
-# Padronizar cor do sparkline com a barra de Score
 
-## Mudancas
+# Corrigir cores HSL do sparkline para coincidir com a barra de progresso
 
-### 1. Sparkline usa a mesma cor da barra de Score (baseada no valor)
+## Problema
 
-Atualmente o sparkline usa uma cor fixa por modulo (laranja para firewall, azul para M365, etc). A barra de Score usa cor dinamica baseada no valor (primary >= 90, emerald >= 75, yellow >= 60, rose < 60).
+As cores do sparkline nao batem com as da barra de Score porque os valores HSL em `getScoreHslColor` estao incorretos em relacao as cores reais do Tailwind usadas em `getScoreProgressColor`.
 
-A mudanca e: remover o `SPARKLINE_COLOR_MAP` e passar ao `ScoreSparkline` a cor derivada do score atual, usando a mesma logica de `getScoreProgressColor` mas em formato HSL para o recharts.
+Exemplo: a barra usa `bg-emerald-400` que e `#34d399`, mas o sparkline usa `hsl(142, 71%, 45%)` que resulta numa cor diferente.
 
-Nova funcao auxiliar:
-```
-function getScoreHslColor(score: number | null): string {
-  if (score == null) return 'hsl(0, 0%, 50%)';
-  if (score >= 90) return 'hsl(175, 80%, 45%)';   // primary
-  if (score >= 75) return 'hsl(142, 71%, 45%)';   // emerald-400
-  if (score >= 60) return 'hsl(48, 96%, 53%)';    // yellow-500
-  return 'hsl(347, 77%, 50%)';                     // rose-400
-}
-```
+## Solucao
 
-No `ModuleHealthCard`, substituir `sparkColor` por `getScoreHslColor(health.score)`.
+Corrigir os valores HSL em `getScoreHslColor` para corresponder exatamente as cores Tailwind:
 
-### 2. Texto "Score" muda para "Score Atual"
+| Faixa | Tailwind class | Hex real | HSL correto |
+|---|---|---|---|
+| >= 90 | `bg-primary` | CSS var | `hsl(175, 80%, 45%)` (sem mudanca) |
+| >= 75 | `bg-emerald-400` | `#34d399` | `hsl(158, 64%, 52%)` |
+| >= 60 | `bg-yellow-500` | `#eab308` | `hsl(48, 96%, 53%)` (sem mudanca) |
+| < 60 | `bg-rose-400` | `#fb7185` | `hsl(351, 95%, 72%)` |
 
-Na linha 192, trocar `Score` por `Score Atual`.
-
-## Arquivos
+## Arquivo
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/GeneralDashboardPage.tsx` | Remover `SPARKLINE_COLOR_MAP`; adicionar `getScoreHslColor`; usar no sparkline; trocar texto "Score" para "Score Atual" |
+| `src/pages/GeneralDashboardPage.tsx` | Ajustar 2 valores HSL em `getScoreHslColor` (linhas 69 e 71) |
+
