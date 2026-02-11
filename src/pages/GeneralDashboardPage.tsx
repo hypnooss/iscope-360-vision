@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
   AlertTriangle, ShieldAlert, LucideIcon, Building2, Bot,
-  Globe, Network, CheckCircle2, Info, ExternalLink,
+  Globe, Network, CheckCircle2, Info, ExternalLink, Users,
 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -373,13 +373,17 @@ export default function GeneralDashboardPage() {
     ? 'grid-cols-1 md:grid-cols-2'
     : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
-  // Infrastructure grid: modules + agents (always present)
-  const infraColCount = moduleCards.length + 1; // +1 for Agents
+  // Infrastructure grid: modules + m365 users (if applicable) + agents (always present)
+  const hasM365Module = moduleCards.some(c => c.moduleCode === 'scope_m365');
+  const hasM365Users = hasM365Module && (stats?.m365ActiveUsers ?? 0) > 0;
+  const infraColCount = moduleCards.length + (hasM365Users ? 1 : 0) + 1; // +1 for Agents
   const infraGridCols = infraColCount <= 2
     ? 'grid-cols-2'
     : infraColCount === 3
     ? 'grid-cols-2 lg:grid-cols-3'
-    : 'grid-cols-2 lg:grid-cols-4';
+    : infraColCount <= 4
+    ? 'grid-cols-2 lg:grid-cols-4'
+    : 'grid-cols-2 lg:grid-cols-5';
 
   if (authLoading) return null;
 
@@ -481,6 +485,20 @@ export default function GeneralDashboardPage() {
                         </div>
                       );
                     })}
+
+                    {/* M365 Active Users - only when module is active and data exists */}
+                    {hasM365Users && (
+                      <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                        <div className="flex items-center gap-1.5">
+                          <Users className="w-4 h-4 text-violet-500" />
+                          <span className="text-base text-muted-foreground">Usuários M365</span>
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Ativos</span>
+                        <span className="text-lg font-bold text-foreground">
+                          {stats?.m365ActiveUsers?.toLocaleString('pt-BR') ?? 0}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Agents - always present */}
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
