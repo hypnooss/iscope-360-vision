@@ -32,12 +32,14 @@ export function PageBreadcrumb({ items }: PageBreadcrumbProps) {
                   <BreadcrumbPage className="px-2 py-1 rounded-md border border-primary/50 bg-primary/10 text-primary font-medium">
                     {item.label}
                   </BreadcrumbPage>
-                ) : (
+                ) : item.href ? (
                   <BreadcrumbLink asChild>
-                    <Link to={item.href!} className="hover:text-primary transition-colors">
+                    <Link to={item.href} className="hover:text-primary transition-colors">
                       {item.label}
                     </Link>
                   </BreadcrumbLink>
+                ) : (
+                  <span className="text-muted-foreground">{item.label}</span>
                 )}
               </BreadcrumbItem>
               {!isLast && <BreadcrumbSeparator />}
