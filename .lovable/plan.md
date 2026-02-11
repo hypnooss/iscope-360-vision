@@ -1,110 +1,48 @@
 
 
-# Redesign dos Cards do Dashboard -- Layout Completo com Sparkline e Top CVEs
+# Ajustes Visuais nos Cards do Dashboard
 
-## Visao Geral
+## 1. Sparkline em barras (acima da barra de progresso)
 
-Redesenhar completamente os cards de saude dos modulos no Dashboard Geral, substituindo o ScoreGauge circular por um layout mais informativo e acionavel, inspirado no mockup proposto. O novo card inclui: barra de progresso horizontal com score, sparkline de evolucao historica (ultimos 30 dias), severidades de conformidade, top 2 CVEs e botoes de acao rapida.
+Alterar o `ScoreSparkline` de `AreaChart` para `BarChart` com barras verticais, usando a mesma cor do score/barra horizontal. Reposicionar o sparkline para ficar **acima** da barra de progresso (em vez de ao lado), ocupando toda a largura disponivel.
 
-## Novo Layout do Card
+**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
+- Trocar `AreaChart` + `Area` por `BarChart` + `Bar`
+- Aumentar largura para 100% (em vez de 120px fixo)
+- Manter altura compacta (~40px)
+- Usar a cor do modulo (ja passada via prop `color`)
 
-```text
-+---------------------------------------------------------------+
-| [icon] Firewall                    Ultima analise: ha 2 horas |
-|                                                               |
-|  Score ██████████████████░░░░ 78/100   [sparkline 30 dias]    |
-|                                                               |
-|  CONFORMIDADE                                                 |
-|  [2] Critico  [5] Alto  [3] Medio  [1] Baixo                 |
-|                                                               |
-|  ALERTAS DE CVE                                               |
-|  CVE-2026-1234  CVSS 9.8  CRITICAL                            |
-|  CVE-2026-5678  CVSS 8.2  HIGH                                |
-|                                                               |
-|  [Conformidade]  [CVEs]                                       |
-+---------------------------------------------------------------+
-```
+**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
+- Mover `ScoreSparkline` para **acima** da linha de score/barra, ocupando largura total
+- Layout vertical: sparkline -> score label + valor + barra horizontal
 
-## Etapas de Implementacao
+## 2. Badges de conformidade distribuidas horizontalmente
 
-### 1. Expandir o Hook `useDashboardStats` para dados historicos
+**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
+- Na `SeverityBadgeRow`, trocar `flex flex-wrap gap-1.5` por `flex gap-2 justify-start` com badges de tamanho mais uniforme
+- Usar `flex-wrap` mas com gap maior e badges com padding adequado para nao ficarem comprimidas
 
-Adicionar ao tipo `ModuleHealth` um campo `scoreHistory` (array de `{ date: string, score: number }`), coletando ate 30 pontos historicos de cada tabela de analise:
+## 3. CVEs de Firewall ausentes
 
-- **Firewall**: `analysis_history` -- buscar scores agrupados por dia (ultimo de cada dia por firewall, media dos firewalls)
-- **M365**: `m365_posture_history` -- mesmo padrao
-- **Dominio Externo**: `external_domain_analysis_history` -- mesmo padrao
+O hook `useTopCVEs` busca CVEs do campo `report_data` da `analysis_history`. Pode estar falhando porque a estrutura do JSON nao bate. Adicionar logs e verificar. Tambem garantir que o `statsKey` "firewall" esta sendo corretamente mapeado ao renderizar o card.
 
-A query ja busca o historico ordenado por `created_at DESC`; a mudanca e **nao** parar no primeiro registro por asset, mas coletar todos e agregar por dia.
+**Arquivo**: `src/hooks/useTopCVEs.ts`
+- Melhorar a extracao: tentar mais caminhos no JSON (`report_data.cves`, `report_data.vulnerabilities`, `report_data.results.cves`, etc.)
+- Adicionar fallback robusto
 
-### 2. Criar hook `useTopCVEs` para os Top CVEs do Dashboard
+## 4. Botao "Conformidade" do Dominio Externo alinhado
 
-Criar um novo hook leve (`src/hooks/useTopCVEs.ts`) que busca da `cve_severity_cache` os modulos com CVEs e, para cada um, chama as Edge Functions existentes (`fortigate-cve` e `m365-cves`) retornando apenas os top N CVEs por score. O hook utiliza `staleTime` longo (30 min) para nao impactar performance.
+No card sem CVEs, o botao "Conformidade" ocupa `flex-1` mas nao tem par. Para alinhar com os outros cards (que tem 2 botoes lado a lado), fazer o botao unico ocupar a largura total com a mesma altura e estilo.
 
-O retorno sera um `Record<string, TopCVE[]>` mapeando statsKey para os top 2 CVEs com: `id`, `score`, `severity`.
+**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
+- No footer dos quick actions, quando nao ha botao de CVEs, o botao "Conformidade" deve ter `w-full` em vez de `flex-1`
+- Manter o `mt-auto` no container de acoes para empurrar os botoes para o fundo do card, garantindo alinhamento vertical entre cards
 
-### 3. Adicionar rotas de CVE ao `moduleDashboardConfig`
+## Resumo das Mudancas
 
-Adicionar um campo `cvePath` ao config:
-- `scope_firewall`: `/scope-firewall/cves`
-- `scope_m365`: `/scope-m365/cves`
-- `scope_external_domain`: sem CVEs (undefined)
-
-### 4. Redesenhar o `ModuleHealthCard`
-
-Substituir o layout atual pelo novo design:
-
-**Header** (linha superior):
-- Esquerda: icone + titulo do modulo
-- Direita: texto "Ultima analise: ha X" + seta de navegacao
-
-**Score + Sparkline** (segunda linha):
-- Esquerda: barra de progresso horizontal com label "Score" e valor numerico (ex: `78/100`)
-- Direita: mini sparkline (recharts `AreaChart` ou `LineChart`, ~120x40px) mostrando evolucao dos ultimos 30 dias
-- Cores da barra seguem a classificacao existente (Excelente/Bom/Atencao/Critico)
-
-**Conformidade** (terceira secao):
-- Titulo "CONFORMIDADE" em uppercase
-- Badges inline horizontais: `[count] Critico | [count] Alto | [count] Medio | [count] Baixo`
-- Se todos zerados, mostra icone verde "Nenhum alerta"
-
-**Top CVEs** (quarta secao, condicional):
-- Titulo "ALERTAS DE CVE"
-- Lista das 2 CVEs com maior score: ID, CVSS score, badge de severidade
-- Se nao houver CVEs, secao nao aparece
-
-**Acoes Rapidas** (footer):
-- Botoes ghost/outline: "Conformidade" (navega para pagina do modulo) e "CVEs" (navega para pagina de CVEs)
-- Para modulos sem CVE, apenas botao "Conformidade"
-
-### 5. Componente Sparkline
-
-Criar componente reutilizavel `src/components/dashboard/ScoreSparkline.tsx` usando recharts:
-- `AreaChart` com gradiente da cor do modulo
-- Sem eixos, sem legenda, sem tooltip (visual limpo)
-- Tamanho fixo ~140x48px
-- Mostra uma linha de referencia pontilhada no score atual
-
-## Dependencias
-
-- **recharts**: ja instalado no projeto
-- **date-fns**: ja instalado
-- Nenhuma nova dependencia necessaria
-
-## Arquivos Modificados/Criados
-
-| Arquivo | Acao |
+| Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | Modificar: adicionar `scoreHistory` ao `ModuleHealth`, coletar historico por dia |
-| `src/hooks/useTopCVEs.ts` | Criar: hook para buscar top 2 CVEs por modulo |
-| `src/config/moduleDashboardConfig.ts` | Modificar: adicionar campo `cvePath` |
-| `src/components/dashboard/ScoreSparkline.tsx` | Criar: componente sparkline com recharts |
-| `src/pages/GeneralDashboardPage.tsx` | Modificar: redesenhar `ModuleHealthCard` com novo layout completo |
-
-## Consideracoes de Performance
-
-- O historico de scores busca apenas `score` e `created_at` (sem `report_data` no historico), minimizando payload
-- Top CVEs usa cache com `staleTime: 30min` via React Query
-- Sparkline renderiza no maximo 30 pontos (leve para recharts)
-- As queries de historico rodam em paralelo com as queries existentes
+| `src/components/dashboard/ScoreSparkline.tsx` | Trocar AreaChart por BarChart, largura 100% |
+| `src/pages/GeneralDashboardPage.tsx` | Reposicionar sparkline acima da barra; distribuir badges; alinhar botoes; usar `mt-auto` no footer |
+| `src/hooks/useTopCVEs.ts` | Melhorar extracao de CVEs do report_data com mais caminhos de fallback |
 
