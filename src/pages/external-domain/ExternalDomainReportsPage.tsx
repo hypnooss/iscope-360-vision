@@ -310,20 +310,20 @@ export default function ExternalDomainReportsPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
           { label: 'Relatórios' },
         ]} />
         
         {/* Header */}
-        <div className="mb-8">
+        <div>
           <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
           <p className="text-muted-foreground">Histórico de análises de compliance</p>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-6">
+        <div className="flex flex-wrap gap-4">
           {clients.length > 1 && (
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-muted-foreground" />

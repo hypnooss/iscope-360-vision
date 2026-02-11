@@ -363,14 +363,14 @@ export default function ExternalDomainListPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
           { label: 'Domínios' },
         ]} />
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Domínios Externos</h1>
             <p className="text-muted-foreground">Gerencie e monitore seus domínios externos</p>

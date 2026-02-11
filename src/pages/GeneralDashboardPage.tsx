@@ -327,7 +327,7 @@ export default function GeneralDashboardPage() {
         {/* Infrastructure Card */}
         <section>
           <Card
-            className="glass-card border-t-4 border-t-primary cursor-pointer hover:scale-[1.01] transition-all duration-200 hover:shadow-lg"
+            className="glass-card border-t-4 border-t-violet-500 cursor-pointer hover:scale-[1.01] transition-all duration-200 hover:shadow-lg"
             onClick={() => navigate('/agents')}
           >
             <CardContent className="p-5">
@@ -341,8 +341,8 @@ export default function GeneralDashboardPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Server className="w-5 h-5 text-primary" />
+                       <div className="p-2 rounded-lg bg-violet-500/10">
+                        <Server className="w-5 h-5 text-violet-500" />
                       </div>
                       <h3 className="font-semibold text-foreground">Infraestrutura</h3>
                     </div>
@@ -350,7 +350,7 @@ export default function GeneralDashboardPage() {
                   </div>
 
                   {/* Assets by module - same style as Workspace Details */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 gap-x-6">
                     {/* Firewalls */}
                     <div className="flex items-center gap-2">
                       <Shield className="w-4 h-4 text-orange-500" />
