@@ -1,53 +1,42 @@
 
-# Mostrar Modulos Sem Acesso no Menu (Cinza/Desativado)
 
-## Objetivo
+# Ajustes nos Modulos Desabilitados do Menu
 
-Modulos ativos que o usuario nao tem acesso devem aparecer no menu lateral em cinza, sem acao (nao expande, nao navega), servindo como vitrine para o cliente saber que existem outros modulos disponiveis.
+## Alteracoes em `src/components/layout/AppLayout.tsx`
 
-## Alteracoes
+### 1. Remover tooltip "Modulo nao contratado"
 
-### 1. `src/hooks/useEffectiveModules.ts`
+O `DisabledModuleButton` passara a renderizar apenas o `div` sem o wrapper `Tooltip`/`TooltipTrigger`/`TooltipContent`. Manter o tooltip apenas quando a sidebar estiver colapsada (para mostrar o nome do modulo, igual aos outros itens).
 
-Expor a lista completa de modulos ativos (`allModules`) alem dos modulos acessiveis. Importar `modules` do `ModuleContext` e retorna-lo como `allActiveModules`.
+### 2. Ordenar todos os modulos alfabeticamente (acessiveis + inacessiveis juntos)
 
-### 2. `src/components/layout/AppLayout.tsx`
+Em vez de renderizar primeiro os acessiveis e depois os inacessiveis, construir uma lista unica de todos os modulos ativos, ordenada por nome, e renderizar cada um como `ModuleButton` ou `DisabledModuleButton` conforme o acesso do usuario.
 
-**Construir a lista de modulos do menu** combinando modulos acessiveis + modulos sem acesso:
+Logica:
 
-- Pegar `allActiveModules` do hook `useEffectiveModules`
-- Filtrar os que NAO estao em `effectiveUserModules`
-- Renderizar esses como items desabilitados
+```ts
+const allModulesSorted = allActiveModules
+  .slice()
+  .sort((a, b) => a.name.localeCompare(b.name));
 
-**Criar componente `DisabledModuleButton`**:
-
-- Exibe icone e nome do modulo
-- Cor cinza (`text-muted-foreground/50`) no icone e texto
-- Cursor `cursor-default` (sem pointer)
-- Sem onClick, sem Link, sem Collapsible
-- Tooltip com mensagem tipo "Modulo nao contratado" quando sidebar esta colapsado
-- Opacidade reduzida (`opacity-50`)
-
-**Ordem de renderizacao**:
-
-1. Modulos acessiveis (com interacao normal, como hoje)
-2. Modulos sem acesso (cinza, desabilitados) -- na mesma lista, ordenados por nome
-
-Na pratica, todos os modulos ativos serao mapeados juntos e ordenados, cada um renderizado como `ModuleButton` (se acessivel) ou `DisabledModuleButton` (se sem acesso).
-
-## Detalhes Tecnicos
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/hooks/useEffectiveModules.ts` | Adicionar `allActiveModules: Module[]` ao retorno |
-| `src/components/layout/AppLayout.tsx` | Criar `DisabledModuleButton`, combinar modulos acessiveis + desabilitados no menu |
-
-### Visual do item desabilitado
-
-```text
-+----------------------------------+
-|  [icon cinza]  Nome do Modulo    |
-|  opacity-50, cursor-default      |
-|  sem hover effect                |
-+----------------------------------+
+// No JSX:
+{allModulesSorted.map(module => {
+  const hasAccess = effectiveUserModules.some(em => em.module.code === module.code);
+  if (hasAccess) {
+    const config = accessibleModuleConfigs.find(c => c.code === module.code);
+    return config ? <ModuleButton key={module.id} moduleConfig={config} /> : null;
+  }
+  return <DisabledModuleButton key={module.id} module={module} />;
+})}
 ```
+
+Isso substituira os dois blocos separados (accessible + inaccessible) por um unico bloco ordenado.
+
+## Resumo
+
+| Alteracao | Detalhe |
+|-----------|---------|
+| Remover tooltip | Manter tooltip apenas com o nome quando sidebar colapsada |
+| Ordem alfabetica | Lista unica de todos os modulos ativos, ordenada por `name` |
+| Arquivo | `src/components/layout/AppLayout.tsx` |
+
