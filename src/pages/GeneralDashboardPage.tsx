@@ -143,7 +143,7 @@ function ModuleHealthCard({
               </div>
 
               {/* Severity columns: CVEs + Conformidade when CVEs exist, or just Conformidade */}
-              <div className={cn('flex gap-6')}>
+              <div className={cn('flex gap-10')}>
                 {hasCves && (
                   <SeverityColumn title="CVEs" severities={health.cveSeverities!} />
                 )}
@@ -156,7 +156,7 @@ function ModuleHealthCard({
 
             {/* Last analysis */}
             {health.lastAnalysisDate && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground text-center">
                 Última análise:{' '}
                 {formatDistanceToNow(new Date(health.lastAnalysisDate), {
                   addSuffix: true,
