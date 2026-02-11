@@ -1,49 +1,114 @@
 
-# Correção: Blueprint steps com executor `http_request` não são enviados ao Agent
 
-## Problema identificado
+# Agendamento de Firewalls: Tela de Edição + Schedule Funcional
 
-A função RPC `rpc_get_agent_tasks` filtra os steps do blueprint usando:
+## Problema
 
-```sql
-WHERE COALESCE(step->>'executor', 'agent') = 'agent'
-```
-
-Porém, todos os 23 steps do blueprint "FortiGate - Coleta Padrão" usam `executor: http_request`. Como `http_request` != `agent`, a RPC retorna **zero steps** para o agent. O agent recebe a task sem steps, reporta `completed` imediatamente, e nenhum dado é coletado -- logo nenhum relatório é gerado.
-
-Isso afeta **todos os firewalls FortiGate** que usam esse blueprint.
-
-## Causa raiz
-
-O executor `http_request` é um tipo de executor que roda **dentro do agent Python** (o agent faz chamadas HTTP à API do FortiGate). A RPC deveria considerar os tipos de executor que executam no agent: `agent`, `http_request`, `ssh`, `snmp`, `dns_query`.
-
-Apenas `edge_function` deveria ser excluído (pois roda no Supabase Edge).
+1. O modal de edição de firewall é pequeno e limitado -- precisa virar uma tela dedicada
+2. A tabela `analysis_schedules` armazena apenas a frequência (`daily`, `weekly`, `monthly`), sem informações de horário, dia da semana ou dia do mês
+3. Não existe nenhum cron job que dispare as análises agendadas -- o schedule é salvo mas nunca executado
 
 ## Solução
 
-Alterar a RPC `rpc_get_agent_tasks` para incluir todos os executores que rodam no agent, em vez de filtrar apenas por `executor = 'agent'`.
+### Parte 1: Tela de Edição (substituir modal)
 
-### Alteração na RPC (migration SQL)
+Criar uma nova rota `/scope-firewall/firewalls/:id/edit` com uma página dedicada (`FirewallEditPage.tsx`) que exibe o formulário completo de edição do firewall, incluindo os novos campos de agendamento.
 
-Em todos os 3 blocos da RPC (firewall, external_domain, m365_tenant), substituir o filtro:
+- O botão de edição (lápis) na lista passa a navegar para essa rota em vez de abrir o modal
+- A tela terá layout com Card, breadcrumb, e botão Voltar
+- O `EditFirewallDialog.tsx` será removido
 
-```sql
--- De:
-WHERE COALESCE(step->>'executor', 'agent') = 'agent'
+### Parte 2: Campos de agendamento detalhado
 
--- Para:
-WHERE COALESCE(step->>'executor', 'agent') NOT IN ('edge_function')
+Quando o usuário selecionar a frequência:
+
+| Frequência | Campos adicionais |
+|---|---|
+| Manual | Nenhum |
+| Diário | Horário (select com opções de 00:00 a 23:00) |
+| Semanal | Dia da semana (seg-dom) + Horário |
+| Mensal | Dia do mês (1-28) + Horário |
+
+### Parte 3: Schema do banco de dados (migration)
+
+Adicionar 3 colunas à tabela `analysis_schedules`:
+
+```text
+scheduled_hour   INTEGER (0-23)     -- horário da execução
+scheduled_day_of_week INTEGER (0-6) -- 0=domingo, 6=sábado (para weekly)
+scheduled_day_of_month INTEGER (1-28) -- dia do mês (para monthly)
 ```
 
-Isso usa uma abordagem de **exclusão** em vez de inclusão: qualquer executor que **não** seja `edge_function` será enviado ao agent. Isso é mais seguro para o futuro, pois novos tipos de executor criados para o agent serão automaticamente incluídos.
+Atualizar `next_run_at` automaticamente ao salvar, calculando a próxima data/hora de execução com base na frequência e nos novos campos.
 
-## Impacto
+### Parte 4: Edge Function de scheduler (`run-scheduled-analyses`)
 
-- Corrige a coleta de dados para todos os firewalls FortiGate
-- Mantém compatibilidade com external_domain e m365_tenant (cujos steps já podem ter executor `agent` ou outros tipos)
-- Nenhuma alteração no código do agent Python necessária
-- Nenhuma alteração no frontend necessária
+Criar uma nova edge function que:
 
-## Teste
+1. Consulta `analysis_schedules` onde `is_active = true` e `next_run_at <= NOW()`
+2. Para cada schedule encontrado, chama `trigger-firewall-analysis` para criar a task
+3. Atualiza `next_run_at` para a próxima execução com base na frequência/horário
+4. Registra logs de sucesso/erro
 
-Após aplicar a migration, basta disparar uma nova análise no firewall OCI-FW. O agent receberá os 23 steps e executará a coleta normalmente.
+### Parte 5: Cron job (pg_cron)
+
+Criar um cron job que executa a cada **15 minutos** chamando a edge function `run-scheduled-analyses`. Isso garante que as análises serão disparadas com precisão razoável (no máximo 15 min de atraso).
+
+```text
+*/15 * * * * -> POST /functions/v1/run-scheduled-analyses
+```
+
+## Detalhes técnicos
+
+### Arquivos novos
+
+| Arquivo | Descrição |
+|---|---|
+| `src/pages/firewall/FirewallEditPage.tsx` | Tela de edição com formulário completo e campos de schedule |
+| `supabase/functions/run-scheduled-analyses/index.ts` | Edge function que dispara análises agendadas |
+
+### Arquivos modificados
+
+| Arquivo | Alteração |
+|---|---|
+| `src/App.tsx` | Adicionar rota `/scope-firewall/firewalls/:id/edit` |
+| `src/pages/firewall/FirewallListPage.tsx` | Botão de editar navega para a nova rota; remover referências ao EditFirewallDialog |
+| `supabase/config.toml` | Adicionar config da nova edge function |
+
+### Arquivos removidos
+
+| Arquivo | Motivo |
+|---|---|
+| `src/components/firewall/EditFirewallDialog.tsx` | Substituído pela tela dedicada |
+
+### Migration SQL
+
+1. `ALTER TABLE analysis_schedules ADD COLUMN scheduled_hour INTEGER DEFAULT 0`
+2. `ALTER TABLE analysis_schedules ADD COLUMN scheduled_day_of_week INTEGER DEFAULT 1`  
+3. `ALTER TABLE analysis_schedules ADD COLUMN scheduled_day_of_month INTEGER DEFAULT 1`
+4. Update dos registros existentes (daily) para `scheduled_hour = 2` (executar às 2h da manhã por padrão)
+5. Calcular e preencher `next_run_at` para todos os schedules existentes
+
+### Cron job (INSERT via SQL, não migration)
+
+Criar cron job via insert tool para chamar `run-scheduled-analyses` a cada 15 minutos.
+
+### Lógica de cálculo do `next_run_at`
+
+A edge function `run-scheduled-analyses` calcula a próxima execução:
+
+- **Diário**: próximo dia no horário configurado
+- **Semanal**: próximo dia da semana configurado no horário configurado
+- **Mensal**: próximo mês no dia e horário configurados
+
+### Fluxo do agendamento
+
+```text
+pg_cron (a cada 15min)
+  -> POST run-scheduled-analyses
+    -> SELECT schedules WHERE next_run_at <= NOW()
+    -> Para cada schedule:
+       -> POST trigger-firewall-analysis (firewall_id)
+       -> UPDATE next_run_at = próxima execução
+```
+
