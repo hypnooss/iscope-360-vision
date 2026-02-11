@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -88,9 +88,17 @@ export default function SchedulesPage() {
   const [filterWorkspace, setFilterWorkspace] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
 
+  // Force re-render of relative time strings every 30s
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Fetch schedules with firewall and client info
   const { data: schedules, isLoading } = useQuery({
     queryKey: ['admin-schedules'],
+    refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analysis_schedules')
@@ -108,6 +116,7 @@ export default function SchedulesPage() {
   const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', firewallIds],
     enabled: firewallIds.length > 0,
+    refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
