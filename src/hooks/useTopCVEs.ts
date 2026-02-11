@@ -13,66 +13,46 @@ export function useTopCVEs() {
     queryFn: async () => {
       const result: Record<string, TopCVE[]> = {};
 
-      // Check cve_severity_cache to know which modules have CVEs
-      const { data: cveCache } = await supabase
-        .from('cve_severity_cache')
-        .select('module_code, total_cves');
+      // Extract top CVEs from the latest analysis reports stored in DB
+      try {
+        // Firewall: get CVEs from latest analysis_history report_data
+        const { data: fwHistory } = await supabase
+          .from('analysis_history')
+          .select('report_data')
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-      if (!cveCache || cveCache.length === 0) return result;
-
-      const modulesWithCves = new Set(
-        cveCache.filter(r => r.total_cves > 0).map(r => r.module_code)
-      );
-
-      // Firewall top CVEs
-      if (modulesWithCves.has('firewall')) {
-        try {
-          const { data } = await supabase.functions.invoke('fortigate-cve', {
-            body: { topN: 2 },
-          });
-          if (data?.success && data.cves) {
-            result.firewall = (data.cves as any[])
-              .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
+        if (fwHistory?.[0]?.report_data) {
+          const report = fwHistory[0].report_data as any;
+          const cves: any[] = report?.cves || report?.vulnerabilities || [];
+          if (cves.length > 0) {
+            result.firewall = cves
+              .sort((a, b) => (b.cvss_score || b.score || 0) - (a.cvss_score || a.score || 0))
               .slice(0, 2)
-              .map((c: any) => ({
-                id: c.id,
-                score: c.score || 0,
-                severity: c.severity || 'UNKNOWN',
+              .map(c => ({
+                id: c.cve_id || c.id || 'N/A',
+                score: c.cvss_score || c.score || 0,
+                severity: c.severity || (c.cvss_score >= 9 ? 'CRITICAL' : c.cvss_score >= 7 ? 'HIGH' : 'MEDIUM'),
               }));
           }
-        } catch (e) {
-          console.warn('Failed to fetch firewall top CVEs:', e);
         }
+      } catch (e) {
+        console.warn('Failed to extract firewall top CVEs:', e);
       }
 
-      // M365 top CVEs
-      if (modulesWithCves.has('m365')) {
-        try {
-          const res = await fetch(
-            `https://akbosdbyheezghieiefz.supabase.co/functions/v1/m365-cves?months=3`,
-            {
-              headers: {
-                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo',
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.success && data.cves) {
-              result.m365 = (data.cves as any[])
-                .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
-                .slice(0, 2)
-                .map((c: any) => ({
-                  id: c.id,
-                  score: c.score || 0,
-                  severity: c.severity || 'UNKNOWN',
-                }));
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to fetch M365 top CVEs:', e);
+      try {
+        // M365: get CVEs from cve_severity_cache counts only (no individual CVE data available)
+        const { data: m365Cache } = await supabase
+          .from('cve_severity_cache')
+          .select('*')
+          .eq('module_code', 'm365')
+          .limit(1);
+
+        if (m365Cache?.[0] && m365Cache[0].total_cves > 0) {
+          // We only have counts, not individual CVEs — skip individual listing for M365
         }
+      } catch (e) {
+        console.warn('Failed to fetch M365 CVE cache:', e);
       }
 
       return result;
