@@ -243,9 +243,9 @@ export default function FirewallListPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         fortigate_url: formData.fortigate_url.trim(),
-        api_key: formData.api_key?.trim() || '',
-        auth_username: formData.auth_username?.trim() || null,
-        auth_password: formData.auth_password?.trim() || null,
+        api_key: '', // placeholder, will be encrypted below
+        auth_username: null,
+        auth_password: null,
         client_id: formData.client_id,
         device_type_id: formData.device_type_id || null,
         agent_id: formData.agent_id || null,
@@ -257,6 +257,23 @@ export default function FirewallListPage() {
     if (fwError) {
       toast.error('Erro ao adicionar firewall: ' + fwError.message);
       throw fwError;
+    }
+
+    // Encrypt credentials via edge function
+    const { error: credError } = await supabase.functions.invoke('manage-firewall-credentials', {
+      body: {
+        operation: 'save',
+        firewall_id: firewall.id,
+        api_key: formData.api_key?.trim() || '',
+        auth_username: formData.auth_username?.trim() || null,
+        auth_password: formData.auth_password?.trim() || null,
+      },
+    });
+
+    if (credError) {
+      console.error('Failed to encrypt credentials:', credError);
+      // Firewall was created but credentials failed - warn user
+      toast.warning('Firewall criado, mas erro ao criptografar credenciais. Edite o firewall para salvar novamente.');
     }
 
     if (formData.schedule !== 'manual') {

@@ -181,13 +181,31 @@ export default function FirewallEditPage() {
       const fw = firewallRes.data;
       const schedule = scheduleRes.data;
 
+      // Load decrypted credentials via edge function
+      let decryptedCreds = { api_key: '', auth_username: '', auth_password: '' };
+      try {
+        const { data: credData, error: credError } = await supabase.functions.invoke('manage-firewall-credentials', {
+          body: { operation: 'read', firewall_id: id },
+        });
+        if (!credError && credData?.credentials) {
+          decryptedCreds = credData.credentials;
+        }
+      } catch (credErr) {
+        console.error('Failed to decrypt credentials, using raw values:', credErr);
+        decryptedCreds = {
+          api_key: fw.api_key || '',
+          auth_username: fw.auth_username || '',
+          auth_password: fw.auth_password || '',
+        };
+      }
+
       setFormData({
         name: fw.name,
         description: fw.description || '',
         fortigate_url: fw.fortigate_url,
-        api_key: fw.api_key,
-        auth_username: fw.auth_username || '',
-        auth_password: fw.auth_password || '',
+        api_key: decryptedCreds.api_key,
+        auth_username: decryptedCreds.auth_username,
+        auth_password: decryptedCreds.auth_password,
         client_id: fw.client_id,
         device_type_id: fw.device_type_id || '',
         agent_id: fw.agent_id || '',
@@ -226,16 +244,13 @@ export default function FirewallEditPage() {
 
     setSaving(true);
     try {
-      // Update firewall
+      // Update firewall (non-sensitive fields only, credentials set to placeholder)
       const { error } = await supabase
         .from('firewalls')
         .update({
           name: formData.name.trim(),
           description: formData.description.trim() || null,
           fortigate_url: formData.fortigate_url.trim(),
-          api_key: usesSessionAuth ? '' : (formData.api_key?.trim() || ''),
-          auth_username: usesSessionAuth ? formData.auth_username?.trim() || null : null,
-          auth_password: usesSessionAuth ? formData.auth_password?.trim() || null : null,
           client_id: formData.client_id,
           device_type_id: formData.device_type_id || null,
           agent_id: formData.agent_id || null,
@@ -243,6 +258,23 @@ export default function FirewallEditPage() {
         .eq('id', id!);
 
       if (error) throw error;
+
+      // Save encrypted credentials via edge function
+      const { error: credError } = await supabase.functions.invoke('manage-firewall-credentials', {
+        body: {
+          operation: 'save',
+          firewall_id: id,
+          api_key: usesSessionAuth ? '' : (formData.api_key?.trim() || ''),
+          auth_username: usesSessionAuth ? formData.auth_username?.trim() || null : null,
+          auth_password: usesSessionAuth ? formData.auth_password?.trim() || null : null,
+        },
+      });
+
+      if (credError) {
+        console.error('Failed to encrypt credentials:', credError);
+        toast.error('Erro ao criptografar credenciais');
+        return;
+      }
 
       // Delete existing schedule
       await supabase.from('analysis_schedules').delete().eq('firewall_id', id!);

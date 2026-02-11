@@ -81,3 +81,6 @@ verify_jwt = false
 [functions.run-scheduled-analyses]
 verify_jwt = false
 
+[functions.manage-firewall-credentials]
+verify_jwt = false
+
