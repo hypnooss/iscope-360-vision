@@ -195,7 +195,17 @@ class TaskExecutor:
                     continue
                 
                 try:
-                    result = executor.run(step, context)
+                    # Check if http_session step has sub-steps (login/request/logout cycle)
+                    config = step.get('config', {})
+                    sub_steps = config.get('steps', []) if executor_type == 'http_session' else []
+                    
+                    if sub_steps:
+                        result = self._execute_http_session_substeps(
+                            executor, step, sub_steps, config, context
+                        )
+                    else:
+                        result = executor.run(step, context)
+                    
                     step_duration = int((time.time() - step_start) * 1000)
                     
                     if result.get('session_data'):
@@ -549,6 +559,99 @@ class TaskExecutor:
         """Check if an error message indicates a connectivity problem."""
         error_lower = error_msg.lower()
         return any(pattern in error_lower for pattern in self.CONNECTIVITY_PATTERNS)
+
+    def _execute_http_session_substeps(self, executor, step, sub_steps, config, context):
+        """
+        Execute http_session sub-steps (login -> request -> logout) sequentially.
+        
+        Each blueprint step for SonicWall contains config.steps with sub-steps like:
+          [0] auth_login  (POST /api/sonicos/auth)
+          [1] request     (GET /api/sonicos/version)
+          [2] auth_logout (DELETE /api/sonicos/auth)
+        
+        Returns the result of the 'request' sub-step as the step's result.
+        """
+        step_id = step.get('id', 'unknown')
+        request_result = None
+        
+        # Shared config from parent step
+        parent_headers = config.get('headers', {})
+        verify_ssl = config.get('verify_ssl', False)
+        timeout = config.get('timeout', 30)
+        
+        for sub_step in sub_steps:
+            sub_id = sub_step.get('id', '')
+            
+            # Determine action from sub-step id
+            if 'auth_login' in sub_id or sub_id == 'login':
+                action = 'login'
+            elif 'auth_logout' in sub_id or sub_id == 'logout':
+                action = 'logout'
+            else:
+                action = 'request'
+            
+            # Merge headers: parent config headers + sub-step specific headers
+            merged_headers = dict(parent_headers)
+            if sub_step.get('headers'):
+                merged_headers.update(sub_step['headers'])
+            
+            # Build synthetic step for the executor
+            synthetic_step = {
+                'id': sub_id,
+                'action': action,
+                'method': sub_step.get('method', 'GET'),
+                'path': sub_step.get('path', '/'),
+                'headers': merged_headers,
+                'body': sub_step.get('body'),
+                'verify_ssl': verify_ssl,
+                'timeout': timeout,
+            }
+            
+            self.logger.debug(f"Step {step_id}: sub-step '{sub_id}' action={action}")
+            
+            try:
+                result = executor.run(synthetic_step, context)
+            except Exception as e:
+                self.logger.error(f"Step {step_id}: sub-step '{sub_id}' exception: {e}")
+                if action == 'logout':
+                    # Logout failure is non-fatal
+                    self.logger.warning(f"Step {step_id}: logout failed but data was already collected")
+                    continue
+                return {
+                    'status_code': 0,
+                    'data': None,
+                    'error': f"Sub-step '{sub_id}' failed: {str(e)}"
+                }
+            
+            # Propagate session data into context
+            if result.get('session_data'):
+                context.update(result['session_data'])
+            
+            if action == 'login':
+                if result.get('error'):
+                    self.logger.error(f"Step {step_id}: login failed, aborting remaining sub-steps")
+                    return result  # Propagate login error as the step result
+                    
+            elif action == 'request':
+                request_result = result
+                # Don't abort on request error — still try logout
+                
+            elif action == 'logout':
+                if result.get('error'):
+                    self.logger.warning(f"Step {step_id}: logout returned error (non-fatal): {result['error']}")
+                # Clean session keys from context after logout
+                context.pop('_session_key', None)
+                context.pop('_session_active', None)
+        
+        # Return the request result (the actual data), or error if no request was executed
+        if request_result is not None:
+            return request_result
+        
+        return {
+            'status_code': 0,
+            'data': None,
+            'error': f"Step {step_id}: no request sub-step found in config.steps"
+        }
 
     def _build_context(self, target: Dict[str, Any]) -> Dict[str, Any]:
         credentials = target.get('credentials', {})
