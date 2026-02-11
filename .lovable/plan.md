@@ -1,37 +1,38 @@
 
 
-# Incluir Agendamentos de Dominio Externo na pagina de Agendamentos
+# Exibir Usuarios Ativos M365 no Card de Infraestrutura
 
-## Problema
+## Contexto
 
-A pagina de Agendamentos (`/schedules`) consulta apenas a tabela `analysis_schedules` (firewalls). Os agendamentos de dominios externos ficam na tabela `external_domain_schedules` e nao sao exibidos.
-
-## Solucao
-
-Unificar as duas fontes de dados em uma unica lista, adicionando uma coluna "Tipo" para diferenciar Firewall de Dominio Externo.
+A Edge Function `m365-security-posture` ja coleta a contagem de usuarios via Graph API e salva no campo `environment_metrics` da tabela `m365_posture_history`. Os dados ja existem no banco (ex: 1491 ativos de 3120 total).
 
 ## Alteracoes
 
-### Arquivo: `src/pages/admin/SchedulesPage.tsx`
+### 1. `src/hooks/useDashboardStats.ts`
 
-1. **Nova query para buscar `external_domain_schedules`** com join em `external_domains` e `clients`, no mesmo formato da query de firewalls
+- Adicionar um novo campo `m365ActiveUsers` ao tipo `DashboardStats`
+- Na secao que ja busca `m365_posture_history`, incluir o campo `environment_metrics` no select
+- Para cada tenant (usando o snapshot mais recente ja identificado pelo loop `seen`), extrair `environment_metrics.activeUsers` e somar
+- Retornar o total em `stats.m365ActiveUsers`
 
-2. **Unificar os dados** em um tipo normalizado (ex: `UnifiedSchedule`) com campos comuns:
-   - `id`, `targetId`, `targetName`, `targetType` ("firewall" | "external_domain")
-   - `frequency`, `isActive`, `nextRunAt`, `scheduledHour`, `scheduledDayOfWeek`, `scheduledDayOfMonth`
-   - `clientId`, `clientName`, `lastScore`
+### 2. `src/pages/GeneralDashboardPage.tsx`
 
-3. **Atualizar a query de `latestTasks`** para buscar tarefas tanto de `target_type = 'firewall'` quanto `target_type = 'external_domain'`
+- No grid de Infraestrutura, adicionar um novo bloco para "Usuarios M365" (somente se o modulo M365 estiver ativo para o usuario)
+- Icone: `Users` (lucide-react), cor violet-500 (consistente com o card de Infraestrutura)
+- Mini-tag: "ATIVOS"
+- Valor: `stats.m365ActiveUsers`
+- Atualizar o calculo de `infraColCount` para incluir +1 quando o modulo M365 estiver presente
 
-4. **Adicionar coluna "Tipo" na tabela** com badge visual diferenciando:
-   - Firewall: badge com icone Shield
-   - Dominio Externo: badge com icone Globe
+## Resultado visual
 
-5. **Atualizar filtros e stats** para considerar ambos os tipos
+O card de Infraestrutura passara a exibir um bloco adicional:
 
-6. **Atualizar filtro de busca** para buscar por nome em ambos os tipos
+```text
++-------------------+-------------------+-------------------+-------------------+-------------------+
+|   Scope Firewall  |   Scope M365      | Scope External    |  Usuarios M365    |     Agents        |
+|      TOTAL        |      TOTAL        |     TOTAL         |     ATIVOS        |     ONLINE        |
+|        3          |        2          |       5           |      2188         |      2/3          |
++-------------------+-------------------+-------------------+-------------------+-------------------+
+```
 
-7. **Atualizar placeholder** do campo de busca de "Buscar firewall..." para "Buscar ativo..."
-
-Nenhum outro arquivo precisa ser modificado. Nenhuma migracao de banco necessaria.
-
+Nenhuma migracao de banco necessaria. Nenhuma nova dependencia.
