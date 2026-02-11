@@ -1,67 +1,49 @@
 
+# Fix: Submenus inacessiveis no menu colapsado
 
-# Administracao > Agendamentos - Painel Centralizado de Schedules
+## Problema
 
-## Objetivo
+Quando o menu lateral esta colapsado, os modulos com submenus (Dominio Externo, Firewall, Microsoft 365, Administracao) mostram apenas um tooltip com o nome e navegam para a primeira rota ao clicar. Os subitens ficam completamente inacessiveis.
 
-Criar uma nova pagina em **Administracao > Agendamentos** (`/schedules`) que permita acompanhar todos os agendamentos ativos de analise de firewall em um painel centralizado.
+## Solucao
 
-## O que sera exibido
-
-- Cards de resumo: total de agendamentos ativos, proximas execucoes nas proximas 1h/6h/24h, e ultima execucao com falha
-- Tabela com todos os schedules mostrando:
-  - Firewall (nome)
-  - Workspace (cliente)
-  - Frequencia (badge: Diario/Semanal/Mensal)
-  - Horario/dia programado
-  - Proxima execucao (com indicador visual de "em breve" para as proximas 1h)
-  - Ultima analise (data + score com badge colorido)
-  - Status da ultima execucao (sucesso/falha baseado na ultima task do firewall)
-  - Status do agendamento (ativo/inativo)
-- Filtros por workspace e frequencia
-- Busca por nome de firewall
+Substituir o `Tooltip` por um `HoverCard` (ou `Popover` com trigger hover) quando o sidebar esta colapsado, exibindo a lista completa de subitens ao passar o mouse sobre o icone do modulo.
 
 ## Detalhes Tecnicos
 
-### 1. Nova pagina: `src/pages/admin/SchedulesPage.tsx`
+### Arquivo: `src/components/layout/AppLayout.tsx`
 
-- Segue o padrao `AppLayout` + `PageBreadcrumb` + `p-6 lg:p-8 space-y-6`
-- Query principal: `analysis_schedules` com join em `firewalls` (nome, last_score, last_analysis_at) e `clients` (nome)
-- Query secundaria: busca a ultima `agent_task` de cada firewall para verificar se completou com sucesso ou falhou
-- Acesso restrito a `super_admin` e `workspace_admin`
+**ModuleButton (collapsed mode, linhas 316-337)**:
+- Substituir `Tooltip` por `HoverCard` do Radix UI (ja instalado)
+- O trigger sera o icone do modulo
+- O content sera um mini-menu flutuante com fundo solido (`bg-sidebar`), posicionado a direita (`side="right"`)
+- Cada subitem sera um `Link` com o mesmo estilo dos subitens expandidos
+- O nome do modulo aparece como titulo no topo do mini-menu
 
-### 2. Navegacao: `src/components/layout/AppLayout.tsx`
+**AdminButton (collapsed mode, linhas 420-440)**:
+- Mesma abordagem: substituir `Tooltip` por `HoverCard`
+- Exibir todos os itens de administracao (Administradores, Workspaces, Configuracoes, Templates, Agendamentos)
+- Manter o estilo `warning` dos itens
 
-- Adicionar link "Agendamentos" no menu Administracao (abaixo de "Templates")
-- Icone: `Clock` (do lucide-react)
-- Atualizar a deteccao de rota admin para incluir `/schedules`
+### Estrutura visual do mini-menu (collapsed hover)
 
-### 3. Roteamento: `src/App.tsx`
+```text
++---------------------------+
+| [icon] Nome do Modulo     |
+|---------------------------|
+| [icon] Subitem 1          |
+| [icon] Subitem 2          |
+| [icon] Subitem 3          |
++---------------------------+
+```
 
-- Adicionar rota: `<Route path="/schedules" element={<SchedulesPage />} />`
-- Lazy load como as demais paginas admin
+- Fundo: `bg-sidebar` com `border border-sidebar-border`
+- Sombra: `shadow-lg`
+- z-index alto para ficar acima do conteudo
+- Item ativo destacado com o mesmo estilo usado na sidebar expandida
 
-### 4. Dados utilizados
+### Arquivos modificados
 
-| Tabela | Campos | Proposito |
-|---|---|---|
-| `analysis_schedules` | id, firewall_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month | Dados do agendamento |
-| `firewalls` | id, name, last_score, last_analysis_at, client_id | Info do firewall |
-| `clients` | id, name | Nome do workspace |
-| `agent_tasks` | status, target_id, completed_at | Status da ultima execucao |
-
-### 5. Indicadores visuais
-
-- **Proxima execucao**: texto relativo ("em 2 horas") + badge verde pulsante se < 1h
-- **Score**: badge colorido seguindo o padrao de design (>=90 primary, >=75 emerald, >=60 yellow, <60 rose)
-- **Status ultima task**: badge verde "Sucesso" ou vermelho "Falhou" ou cinza "Sem execucao"
-- **Frequencia**: badges com mesmo estilo da FirewallListPage
-
-### Arquivos modificados/criados
-
-| Arquivo | Acao |
+| Arquivo | Alteracao |
 |---|---|
-| `src/pages/admin/SchedulesPage.tsx` | Criar |
-| `src/components/layout/AppLayout.tsx` | Editar (adicionar link no menu admin + deteccao de rota) |
-| `src/App.tsx` | Editar (adicionar rota lazy) |
-
+| `src/components/layout/AppLayout.tsx` | Substituir Tooltip por HoverCard nos componentes ModuleButton e AdminButton quando colapsado |
