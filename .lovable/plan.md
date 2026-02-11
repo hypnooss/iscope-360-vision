@@ -1,39 +1,45 @@
 
-# Fix: Estado colapsado do sidebar nao persiste entre navegacoes
+
+# Auto-refresh para a pagina de Agendamentos
 
 ## Problema
 
-O estado do sidebar (`sidebarOpen`) e gerenciado com `useState(true)` no componente `AppLayout`. Quando o usuario navega para outra pagina (via Link ou navigate), o componente pode ser remontado e o estado volta para `true` (expandido), perdendo a preferencia do usuario.
+Os dados da pagina de Agendamentos sao carregados uma unica vez e nunca atualizados. Os textos relativos como "em 9 minutos" ficam desatualizados porque o `formatDistanceToNow` so e calculado no momento da renderizacao inicial.
 
 ## Solucao
 
-Persistir o estado do sidebar no `localStorage`. Ao montar o componente, ler o valor salvo; ao alterar, gravar no `localStorage`.
+Adicionar `refetchInterval` nas queries do React Query para recarregar os dados periodicamente, e tambem forcar re-render dos textos relativos.
 
 ## Alteracoes
 
-### Arquivo: `src/components/layout/AppLayout.tsx`
+### Arquivo: `src/pages/admin/SchedulesPage.tsx`
 
-**Linha ~175** - Substituir o `useState(true)` por uma inicializacao que le do `localStorage`:
+1. Adicionar `refetchInterval: 30_000` (30 segundos) na query `admin-schedules` para manter os dados atualizados
+2. Adicionar `refetchInterval: 30_000` na query `admin-schedule-tasks`
+3. Adicionar um estado de "tick" com `setInterval` de 30s para forcar o recalculo dos textos relativos (`formatDistanceToNow`) mesmo que os dados nao mudem
 
 ```tsx
-const [sidebarOpen, setSidebarOpen] = useState(() => {
-  const saved = localStorage.getItem('sidebar-open');
-  return saved !== null ? saved === 'true' : true;
+// Adicionar nas queries:
+const { data: schedules, isLoading } = useQuery({
+  queryKey: ['admin-schedules'],
+  refetchInterval: 30_000,
+  queryFn: async () => { ... },
 });
-```
 
-**Adicionar um `useEffect`** logo apos o useState para persistir alteracoes:
+const { data: latestTasks } = useQuery({
+  queryKey: ['admin-schedule-tasks', firewallIds],
+  enabled: firewallIds.length > 0,
+  refetchInterval: 30_000,
+  queryFn: async () => { ... },
+});
 
-```tsx
+// Adicionar tick para forcar re-render dos textos relativos:
+const [, setTick] = useState(0);
 useEffect(() => {
-  localStorage.setItem('sidebar-open', String(sidebarOpen));
-}, [sidebarOpen]);
+  const interval = setInterval(() => setTick(t => t + 1), 30_000);
+  return () => clearInterval(interval);
+}, []);
 ```
 
-Nenhuma outra alteracao necessaria. Todos os pontos que chamam `setSidebarOpen` continuam funcionando normalmente.
+Isso garante que tanto os dados quanto os textos relativos de tempo sejam atualizados a cada 30 segundos.
 
-### Arquivos modificados
-
-| Arquivo | Alteracao |
-|---|---|
-| `src/components/layout/AppLayout.tsx` | Persistir `sidebarOpen` no localStorage (inicializacao + useEffect) |
