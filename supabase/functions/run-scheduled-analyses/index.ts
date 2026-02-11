@@ -116,10 +116,85 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[run-scheduled-analyses] Done. Triggered: ${triggered}, Errors: ${errors}`);
+    console.log(`[run-scheduled-analyses] Firewalls done. Triggered: ${triggered}, Errors: ${errors}`);
+
+    // ========================================================
+    // External Domain Schedules
+    // ========================================================
+    const { data: dueDomainSchedules, error: domainFetchError } = await supabase
+      .from('external_domain_schedules')
+      .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .eq('is_active', true)
+      .not('frequency', 'eq', 'manual')
+      .lte('next_run_at', new Date().toISOString());
+
+    if (domainFetchError) {
+      console.error('[run-scheduled-analyses] Error fetching domain schedules:', domainFetchError);
+    }
+
+    let domainTriggered = 0;
+    let domainErrors = 0;
+
+    if (dueDomainSchedules && dueDomainSchedules.length > 0) {
+      console.log(`[run-scheduled-analyses] Found ${dueDomainSchedules.length} external domain schedule(s) due.`);
+
+      for (const schedule of dueDomainSchedules) {
+        try {
+          const triggerUrl = `${supabaseUrl}/functions/v1/trigger-external-domain-analysis`;
+          const response = await fetch(triggerUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ domain_id: schedule.domain_id }),
+          });
+
+          const result = await response.json();
+
+          if (result.success || response.status === 409) {
+            console.log(`[run-scheduled-analyses] Triggered domain ${schedule.domain_id}: ${result.message || 'success'}`);
+            domainTriggered++;
+          } else {
+            console.error(`[run-scheduled-analyses] Failed to trigger domain ${schedule.domain_id}:`, result.error);
+            domainErrors++;
+          }
+
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency,
+            schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1,
+            schedule.scheduled_day_of_month ?? 1
+          );
+
+          await supabase
+            .from('external_domain_schedules')
+            .update({ next_run_at: nextRunAt })
+            .eq('id', schedule.id);
+
+          console.log(`[run-scheduled-analyses] Updated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
+        } catch (err) {
+          console.error(`[run-scheduled-analyses] Error processing domain schedule ${schedule.id}:`, err);
+          domainErrors++;
+        }
+      }
+    } else {
+      console.log('[run-scheduled-analyses] No external domain schedules due.');
+    }
+
+    const totalTriggered = triggered + domainTriggered;
+    const totalErrors = errors + domainErrors;
+
+    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Errors: ${totalErrors}`);
 
     return new Response(
-      JSON.stringify({ success: true, triggered, errors, total: dueSchedules.length }),
+      JSON.stringify({
+        success: true,
+        triggered: totalTriggered,
+        errors: totalErrors,
+        firewalls: { triggered, errors, total: dueSchedules.length },
+        domains: { triggered: domainTriggered, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
