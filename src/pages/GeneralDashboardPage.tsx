@@ -22,6 +22,7 @@ import {
   AlertTriangle, ShieldAlert, LucideIcon, Building2, Bot,
   Globe, Network, CheckCircle2, Info, ExternalLink,
 } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -188,20 +189,32 @@ function ModuleHealthCard({
 
             {/* Sparkline + Score bar (encaixado) */}
             <div className="space-y-0">
-              <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium shrink-0">Score Atual</span>
-                <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className={cn('h-full rounded-full transition-all duration-500', getScoreProgressColor(health.score))}
-                    style={{ width: `${health.score ?? 0}%` }}
-                  />
-                </div>
-                <span className={cn('text-sm font-bold tabular-nums shrink-0', getScoreColor(health.score))}>
-                  {health.score != null ? `${health.score}` : '—'}
-                  <span className="text-[10px] font-normal text-muted-foreground">/100</span>
-                </span>
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Score nos últimos 30 dias</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium shrink-0">Score Atual</span>
+                    <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className={cn('h-full rounded-full transition-all duration-500', getScoreProgressColor(health.score))}
+                        style={{ width: `${health.score ?? 0}%` }}
+                      />
+                    </div>
+                    <span className={cn('text-sm font-bold tabular-nums shrink-0', getScoreColor(health.score))}>
+                      {health.score != null ? `${health.score}` : '—'}
+                      <span className="text-[10px] font-normal text-muted-foreground">/100</span>
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Score Atual</TooltipContent>
+              </Tooltip>
             </div>
 
             {/* Conformidade severities */}
