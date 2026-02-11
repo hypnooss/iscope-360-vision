@@ -1,40 +1,37 @@
 
 
-# Fix: Analyzer Blueprint Missing Authentication Headers
+# Fix: Analyzer Blueprint - Incorrect API Endpoint Paths (404)
 
 ## Problem
 
-All 5 steps in the "FortiGate - Analyzer" blueprint are returning **HTTP 401 Unauthorized** because they are missing the `Authorization` header. 
+All 5 collection steps return **HTTP 404** because the FortiGate REST API requires a **storage location** segment in log endpoint paths.
 
-Comparing the two blueprints:
+**Current (broken):** `/api/v2/log/traffic/forward`
+**Correct format:** `/api/v2/log/{device}/traffic/forward`
 
-- **Compliance blueprint** (working): each step has `headers: { "Authorization": "Bearer {{api_key}}" }`
-- **Analyzer blueprint** (broken): steps have NO `headers` field at all
+Where `{device}` must be one of: `memory`, `disk`, `fortianalyzer`, `forticloud`.
 
-The agent sends the HTTP requests exactly as configured in the blueprint, so without the auth header, the FortiGate API rejects every call.
+The compliance blueprint works because it uses `/api/v2/cmdb/...` and `/api/v2/monitor/...` endpoints (which don't need a storage location). Log endpoints are different.
 
 ## Fix
 
-A single SQL migration to update the analyzer blueprint's `collection_steps`, adding the missing `headers` to all 5 steps:
+Update each step's path in the analyzer blueprint, using `memory` as the default storage (always available; `disk` requires explicit disk logging enabled):
 
-| Step ID | Endpoint |
-|---------|----------|
-| denied_traffic | `/api/v2/log/traffic/forward?filter=action==deny&rows=500` |
-| auth_events | `/api/v2/log/event/system?filter=logdesc=~auth&rows=500` |
-| vpn_events | `/api/v2/log/event/vpn?rows=500` |
-| ips_events | `/api/v2/log/ips/forward?filter=severity<=2&rows=500` |
-| config_changes | `/api/v2/log/event/system?filter=logdesc=~config&rows=200` |
+| Step ID | Current Path (404) | Corrected Path |
+|---------|-------------------|----------------|
+| denied_traffic | `/api/v2/log/traffic/forward?filter=action==deny&rows=500` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500` |
+| auth_events | `/api/v2/log/event/system?filter=logdesc=~auth&rows=500` | `/api/v2/log/memory/event/system?filter=logdesc=~auth&rows=500` |
+| vpn_events | `/api/v2/log/event/vpn?rows=500` | `/api/v2/log/memory/event/vpn?rows=500` |
+| ips_events | `/api/v2/log/ips/forward?filter=severity<=2&rows=500` | `/api/v2/log/memory/ips/forward?filter=severity<=2&rows=500` |
+| config_changes | `/api/v2/log/event/system?filter=logdesc=~config&rows=200` | `/api/v2/log/memory/event/system?filter=logdesc=~config&rows=200` |
 
-Each step will get:
-```json
-"headers": { "Authorization": "Bearer {{api_key}}" }
-```
+The only change is inserting `/memory` after `/api/v2/log/`.
 
 ## Technical Details
 
 | Resource | Change |
 |----------|--------|
-| SQL migration | `UPDATE device_blueprints SET collection_steps = ...` adding headers to all analyzer steps |
+| SQL migration | `UPDATE device_blueprints SET collection_steps = ...` with corrected paths for the analyzer blueprint |
 
-No frontend or edge function changes needed. After the migration, trigger the analysis again and the agent will authenticate correctly.
+No frontend or edge function changes needed. After the migration, re-trigger the analysis.
 
