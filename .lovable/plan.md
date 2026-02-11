@@ -2,47 +2,58 @@
 
 # Ajustes Visuais nos Cards do Dashboard
 
-## 1. Sparkline em barras (acima da barra de progresso)
+## Problemas Atuais
 
-Alterar o `ScoreSparkline` de `AreaChart` para `BarChart` com barras verticais, usando a mesma cor do score/barra horizontal. Reposicionar o sparkline para ficar **acima** da barra de progresso (em vez de ao lado), ocupando toda a largura disponivel.
+1. **Sparkline**: Ocupa largura total, separado da barra de progresso. Deveria estar "encaixado" logo acima da barra, com o valor "80/100" ao lado direito, ambos na mesma coluna visual.
+2. **Badges de conformidade**: Alinhados a esquerda e comprimidos. Precisam ser distribuidos uniformemente.
+3. **CVEs ausentes nos cards Firewall e M365**: O hook `useTopCVEs` tenta extrair CVEs individuais do `report_data`, mas esse campo contem apenas checks de conformidade, nao CVEs. CVEs individuais nao existem no banco -- apenas **contagens por severidade** na tabela `cve_severity_cache`, que ja sao carregadas em `health.cveSeverities`. A solucao e exibir as contagens de CVE por severidade (igual ao bloco de conformidade) em vez de CVEs individuais.
 
-**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
-- Trocar `AreaChart` + `Area` por `BarChart` + `Bar`
-- Aumentar largura para 100% (em vez de 120px fixo)
-- Manter altura compacta (~40px)
-- Usar a cor do modulo (ja passada via prop `color`)
+## Mudancas
 
-**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
-- Mover `ScoreSparkline` para **acima** da linha de score/barra, ocupando largura total
-- Layout vertical: sparkline -> score label + valor + barra horizontal
+### 1. Sparkline encaixado acima da barra (`GeneralDashboardPage.tsx`)
 
-## 2. Badges de conformidade distribuidas horizontalmente
+Reorganizar a secao de score para ficar visualmente "encaixado":
 
-**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
-- Na `SeverityBadgeRow`, trocar `flex flex-wrap gap-1.5` por `flex gap-2 justify-start` com badges de tamanho mais uniforme
-- Usar `flex-wrap` mas com gap maior e badges com padding adequado para nao ficarem comprimidas
+```text
+   ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐
+  SCORE ████████████████████████████████████  81 /100
+```
 
-## 3. CVEs de Firewall ausentes
+- Sparkline fica na linha de cima, sem gap (margin-bottom: 0)
+- Abaixo, na mesma linha horizontal: label "SCORE", barra `Progress` (`flex-1`), e valor "81/100"
+- Remover o `space-y-2` entre sparkline e barra, usar `space-y-0` ou `gap-0`
 
-O hook `useTopCVEs` busca CVEs do campo `report_data` da `analysis_history`. Pode estar falhando porque a estrutura do JSON nao bate. Adicionar logs e verificar. Tambem garantir que o `statsKey` "firewall" esta sendo corretamente mapeado ao renderizar o card.
+### 2. Badges de conformidade distribuidos (`GeneralDashboardPage.tsx`)
 
-**Arquivo**: `src/hooks/useTopCVEs.ts`
-- Melhorar a extracao: tentar mais caminhos no JSON (`report_data.cves`, `report_data.vulnerabilities`, `report_data.results.cves`, etc.)
-- Adicionar fallback robusto
+- Trocar `flex gap-2` no `SeverityBadgeRow` por `grid grid-cols-4 gap-2`
+- Mostrar todos os 4 badges sempre (com valor 0 em opacidade reduzida) para manter distribuicao uniforme
 
-## 4. Botao "Conformidade" do Dominio Externo alinhado
+### 3. CVEs como contagens por severidade (`GeneralDashboardPage.tsx`)
 
-No card sem CVEs, o botao "Conformidade" ocupa `flex-1` mas nao tem par. Para alinhar com os outros cards (que tem 2 botoes lado a lado), fazer o botao unico ocupar a largura total com a mesma altura e estilo.
+Ja temos `health.cveSeverities` com `{ critical, high, medium, low }`. Em vez de mostrar CVEs individuais (que nao existem no DB), exibir um bloco identico ao de conformidade:
 
-**Arquivo**: `src/pages/GeneralDashboardPage.tsx`
-- No footer dos quick actions, quando nao ha botao de CVEs, o botao "Conformidade" deve ter `w-full` em vez de `flex-1`
-- Manter o `mt-auto` no container de acoes para empurrar os botoes para o fundo do card, garantindo alinhamento vertical entre cards
+```text
+  ALERTAS DE CVE
+  [3 Critico]  [11 Alto]  [14 Medio]  [9 Baixo]
+```
 
-## Resumo das Mudancas
+- Remover a importacao e uso de `useTopCVEs` e `CveAlertRow`
+- Reutilizar `SeverityBadgeRow` passando `health.cveSeverities`
+- Remover prop `topCves` do `ModuleHealthCard`
+
+### 4. Limpar `useTopCVEs.ts`
+
+Este hook pode ser removido pois os dados de CVE ja vem do `useDashboardStats` via `cveSeverities`.
+
+### 5. Sparkline sem opacity (`ScoreSparkline.tsx`)
+
+- Remover `opacity={0.7}` para barras mais solidas
+
+## Arquivos
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/components/dashboard/ScoreSparkline.tsx` | Trocar AreaChart por BarChart, largura 100% |
-| `src/pages/GeneralDashboardPage.tsx` | Reposicionar sparkline acima da barra; distribuir badges; alinhar botoes; usar `mt-auto` no footer |
-| `src/hooks/useTopCVEs.ts` | Melhorar extracao de CVEs do report_data com mais caminhos de fallback |
+| `src/pages/GeneralDashboardPage.tsx` | Sparkline encaixado; badges grid-cols-4; CVEs como contagens; remover useTopCVEs |
+| `src/components/dashboard/ScoreSparkline.tsx` | Remover opacity das barras |
+| `src/hooks/useTopCVEs.ts` | Remover (nao mais necessario) |
 
