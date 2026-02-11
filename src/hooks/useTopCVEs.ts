@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import type { Json } from '@/integrations/supabase/types';
 
 export interface TopCVE {
@@ -9,19 +8,15 @@ export interface TopCVE {
   severity: string;
 }
 
-export function useTopCVEs(): Record<string, TopCVE[]> {
-  const { effectiveWorkspaces } = useEffectiveAuth();
-  const clientIds = effectiveWorkspaces.map((w) => w.id);
-
+export function useTopCVEs(clientIds?: string[]): Record<string, TopCVE[]> {
   const { data } = useQuery({
-    queryKey: ['top-cves-cache', clientIds],
+    queryKey: ['top-cves-cache', clientIds ?? []],
     queryFn: async () => {
       let query = supabase
         .from('cve_severity_cache')
         .select('module_code, top_cves');
 
-      if (clientIds.length > 0) {
-        // Firewall rows are per-client, M365 rows have client_id = null
+      if (clientIds && clientIds.length > 0) {
         query = query.or(
           `client_id.in.(${clientIds.join(',')}),client_id.is.null`
         );
