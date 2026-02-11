@@ -171,7 +171,7 @@ export default function M365CVEsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">
-              CVEs — Produtos Microsoft 365
+              CVEs - Microsoft 365
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Vulnerabilidades conhecidas nos produtos do ecossistema Microsoft 365
