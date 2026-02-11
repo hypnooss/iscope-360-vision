@@ -1,87 +1,57 @@
 
+# Ajustes nos Cards do Dashboard
 
-# Melhorar exibicao dos ativos no Card Infraestrutura
+## 1. Card Infraestrutura (Print 1)
 
-## Problema atual
+**Aumentar fonte dos nomes dos modulos**: Trocar `text-sm` para `text-base` nos labels "Firewalls", "Tenants M365", "Dominios" e "Agents".
 
-Os dados aparecem como "Firewalls 13", "Tenants M365 5" -- o nome do modulo e o numero ficam grudados sem contexto, parecendo informacao jogada na tela.
+**Icone para Agents**: Substituir o circulo colorido (`span` com `rounded-full`) pelo icone `Monitor` do Lucide com cor `text-violet-500` (mesma cor do card Infraestrutura). A cor do status (online/offline) sera mantida no indicador do "agentStatusColor" mas movido para um pequeno dot ao lado do numero.
 
-## Solucao
+## 2. Module Health Cards (Print 2)
 
-Mudar o layout de cada ativo de uma linha horizontal para um bloco vertical compacto com 3 niveis:
+**Remover textos de contagem de ativos**: Remover as linhas "13 firewalls", "5 tenants", "24 dominios" que aparecem abaixo do titulo do modulo no header dos cards.
 
-```text
-+------------------+
-| [icon] Firewalls |   <- nome do modulo (text-sm, text-muted-foreground)
-|      Total       |   <- tag pequena (text-xs, text-muted-foreground, uppercase, tracking-wider)
-|       13         |   <- numero grande (text-lg, font-bold, text-foreground)
-+------------------+
-```
-
-Cada ativo sera um `flex flex-col items-center` com:
-1. Linha do icone + nome do modulo (tamanho pequeno, cor muted)
-2. Texto "Total" como mini-tag (text-xs, uppercase, tracking-wider, cor muted mais suave)
-3. Numero em destaque (text-lg, font-bold)
-
-Para Agents, o numero sera "10/10" com o texto "Online" em vez de "Total".
+**Centralizar titulo com icone**: Simplificar o header para que o icone e o titulo fiquem alinhados verticalmente ao centro (`items-center`), removendo o `div` extra com `flex-1 min-w-0` e o paragrafo de contagem.
 
 ## Alteracoes tecnicas
 
-### Arquivo: `src/pages/GeneralDashboardPage.tsx` (linhas 353-383)
+### Arquivo: `src/pages/GeneralDashboardPage.tsx`
 
-Substituir o grid atual por:
-
+**Module Health Cards (linhas 65-74)** - Simplificar header:
 ```tsx
-<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-  {/* Firewalls */}
-  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-    <div className="flex items-center gap-1.5">
-      <Shield className="w-4 h-4 text-orange-500" />
-      <span className="text-sm text-muted-foreground">Firewalls</span>
-    </div>
-    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-    <span className="text-lg font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
+// Antes:
+<div className="flex items-center gap-2 w-full">
+  <div className={cn('p-2 rounded-lg', iconBg)}>
+    <Icon className={cn('w-5 h-5', iconColor)} />
   </div>
+  <div className="flex-1 min-w-0">
+    <h3 className="font-semibold text-foreground text-sm">{title}</h3>
+    <p className="text-xs text-muted-foreground">
+      {health.assetCount} {assetLabel}
+    </p>
+  </div>
+  <ArrowRight ... />
+</div>
 
-  {/* M365 Tenants */}
-  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-    <div className="flex items-center gap-1.5">
-      <Cloud className="w-4 h-4 text-blue-500" />
-      <span className="text-sm text-muted-foreground">Tenants M365</span>
-    </div>
-    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-    <span className="text-lg font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
+// Depois:
+<div className="flex items-center gap-2 w-full">
+  <div className={cn('p-2 rounded-lg', iconBg)}>
+    <Icon className={cn('w-5 h-5', iconColor)} />
   </div>
-
-  {/* Dominios */}
-  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-    <div className="flex items-center gap-1.5">
-      <Layers className="w-4 h-4 text-green-500" />
-      <span className="text-sm text-muted-foreground">Dominios</span>
-    </div>
-    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-    <span className="text-lg font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
-  </div>
-
-  {/* Agents */}
-  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-    <div className="flex items-center gap-1.5">
-      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-      <span className="text-sm text-muted-foreground">Agents</span>
-    </div>
-    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Online</span>
-    <span className="text-lg font-bold text-foreground">
-      {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
-    </span>
-  </div>
+  <h3 className="font-semibold text-foreground text-sm flex-1">{title}</h3>
+  <ArrowRight ... />
 </div>
 ```
 
-Cada bloco tera um fundo sutil (`bg-muted/30`) com cantos arredondados para criar uma separacao visual clara entre os ativos, tornando a informacao muito mais legivel.
+**Card Infraestrutura (linhas 354-394)** - Aumentar fonte e adicionar icone Agents:
+- Labels: `text-sm` para `text-base`
+- Agents: substituir `<span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />` por `<Monitor className="w-4 h-4 text-violet-500" />`
+- Importar `Monitor` do lucide-react
 
 ### Resumo
 
-| Arquivo | Acao |
-|---------|------|
-| `GeneralDashboardPage.tsx` | Layout vertical com tag "Total"/"Online" nos blocos de ativos |
-
+| Alteracao | Detalhe |
+|-----------|---------|
+| Fonte infra labels | `text-sm` para `text-base` |
+| Icone Agents | `Monitor` com `text-violet-500` |
+| Header module cards | Remover contagem de ativos, manter titulo inline com icone |
