@@ -1,45 +1,35 @@
 
+# Adicionar botao "Atualizando..." na pagina de Agendamentos
 
-# Auto-refresh para a pagina de Agendamentos
+## Objetivo
 
-## Problema
-
-Os dados da pagina de Agendamentos sao carregados uma unica vez e nunca atualizados. Os textos relativos como "em 9 minutos" ficam desatualizados porque o `formatDistanceToNow` so e calculado no momento da renderizacao inicial.
-
-## Solucao
-
-Adicionar `refetchInterval` nas queries do React Query para recarregar os dados periodicamente, e tambem forcar re-render dos textos relativos.
+Adicionar o mesmo botao de refresh visual usado nas paginas de Execucoes, mostrando "Atualizando..." com icone girando quando ha polling ativo, seguindo o padrao existente.
 
 ## Alteracoes
 
 ### Arquivo: `src/pages/admin/SchedulesPage.tsx`
 
-1. Adicionar `refetchInterval: 30_000` (30 segundos) na query `admin-schedules` para manter os dados atualizados
-2. Adicionar `refetchInterval: 30_000` na query `admin-schedule-tasks`
-3. Adicionar um estado de "tick" com `setInterval` de 30s para forcar o recalculo dos textos relativos (`formatDistanceToNow`) mesmo que os dados nao mudem
+1. **Imports**: Adicionar `Button` de `@/components/ui/button`, `RefreshCw` de `lucide-react`, e `cn` de `@/lib/utils`
+
+2. **Refetch manual**: Extrair `refetch` da query `admin-schedules`
+
+3. **Botao no header**: Transformar o bloco do titulo em um `flex` com o botao alinhado a direita, seguindo o mesmo padrao das paginas de Execucoes:
 
 ```tsx
-// Adicionar nas queries:
-const { data: schedules, isLoading } = useQuery({
-  queryKey: ['admin-schedules'],
-  refetchInterval: 30_000,
-  queryFn: async () => { ... },
-});
-
-const { data: latestTasks } = useQuery({
-  queryKey: ['admin-schedule-tasks', firewallIds],
-  enabled: firewallIds.length > 0,
-  refetchInterval: 30_000,
-  queryFn: async () => { ... },
-});
-
-// Adicionar tick para forcar re-render dos textos relativos:
-const [, setTick] = useState(0);
-useEffect(() => {
-  const interval = setInterval(() => setTick(t => t + 1), 30_000);
-  return () => clearInterval(interval);
-}, []);
+<div className="flex items-center justify-between">
+  <div>
+    <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
+    <p className="text-muted-foreground mt-1">Painel centralizado de agendamentos de analise</p>
+  </div>
+  <Button onClick={() => refetch()} variant="outline" size="sm">
+    <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
+    Atualizando...
+  </Button>
+</div>
 ```
 
-Isso garante que tanto os dados quanto os textos relativos de tempo sejam atualizados a cada 30 segundos.
+O icone ficara sempre girando (ja que o `refetchInterval` esta sempre ativo) e o texto sera "Atualizando...", indicando visualmente que a pagina se atualiza sozinha. Clicar no botao forca um refetch imediato.
 
+| Arquivo | Alteracao |
+|---|---|
+| `src/pages/admin/SchedulesPage.tsx` | Adicionar botao "Atualizando..." no header da pagina |
