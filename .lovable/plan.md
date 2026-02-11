@@ -1,67 +1,37 @@
 
 
-# Migrar Edicao de Dominio Externo de Modal para Pagina Dedicada
+# Incluir Agendamentos de Dominio Externo na pagina de Agendamentos
 
-## Resumo
+## Problema
 
-Transformar o modal `EditExternalDomainDialog` em uma pagina dedicada em `/scope-external-domain/domains/:id/edit`, seguindo o mesmo padrao da pagina `FirewallEditPage`. A nova pagina tera dois cards: Informacoes do Dominio e Agendamento de Analise (com hora, dia da semana e dia do mes).
+A pagina de Agendamentos (`/schedules`) consulta apenas a tabela `analysis_schedules` (firewalls). Os agendamentos de dominios externos ficam na tabela `external_domain_schedules` e nao sao exibidos.
 
-## Arquivos a criar
+## Solucao
 
-| Arquivo | Descricao |
-|---|---|
-| `src/pages/external-domain/ExternalDomainEditPage.tsx` | Nova pagina de edicao, seguindo a estrutura do `FirewallEditPage` |
+Unificar as duas fontes de dados em uma unica lista, adicionando uma coluna "Tipo" para diferenciar Firewall de Dominio Externo.
 
-## Arquivos a modificar
+## Alteracoes
 
-| Arquivo | Alteracao |
-|---|---|
-| `src/App.tsx` | Adicionar rota `/scope-external-domain/domains/:id/edit` |
-| `src/pages/external-domain/ExternalDomainListPage.tsx` | Trocar `openEditDialog` para navegar com `navigate`, remover `EditExternalDomainDialog` e estados relacionados (`showEditDialog`, `editingDomain`, `handleEditDomain`) |
-| `src/components/external-domain/ExternalDomainTable.tsx` | (Sem alteracao - o `onEdit` ja recebe o dominio, a list page apenas muda o handler) |
+### Arquivo: `src/pages/admin/SchedulesPage.tsx`
 
-## Estrutura da nova pagina
+1. **Nova query para buscar `external_domain_schedules`** com join em `external_domains` e `clients`, no mesmo formato da query de firewalls
 
-### Card 1 - Informacoes do Dominio
-- Workspace (select se super_admin, input disabled caso contrario)
-- Dominio (input disabled - nao editavel)
-- Agent (select filtrado por workspace)
+2. **Unificar os dados** em um tipo normalizado (ex: `UnifiedSchedule`) com campos comuns:
+   - `id`, `targetId`, `targetName`, `targetType` ("firewall" | "external_domain")
+   - `frequency`, `isActive`, `nextRunAt`, `scheduledHour`, `scheduledDayOfWeek`, `scheduledDayOfMonth`
+   - `clientId`, `clientName`, `lastScore`
 
-### Card 2 - Agendamento de Analise
-Identico ao `FirewallEditPage`:
-- Frequencia (manual / diario / semanal / mensal)
-- Horario (select de 00:00 a 23:00) - aparece quando nao e manual
-- Dia da semana (select) - aparece quando semanal
-- Dia do mes (select 1-28) - aparece quando mensal
-- Texto descritivo do agendamento
+3. **Atualizar a query de `latestTasks`** para buscar tarefas tanto de `target_type = 'firewall'` quanto `target_type = 'external_domain'`
 
-### Botoes
-- Cancelar (volta para lista)
-- Salvar (salva dominio + schedule com `next_run_at` calculado)
+4. **Adicionar coluna "Tipo" na tabela** com badge visual diferenciando:
+   - Firewall: badge com icone Shield
+   - Dominio Externo: badge com icone Globe
 
-## Detalhes tecnicos
+5. **Atualizar filtros e stats** para considerar ambos os tipos
 
-### Migracao da tabela `external_domain_schedules`
+6. **Atualizar filtro de busca** para buscar por nome em ambos os tipos
 
-A tabela `external_domain_schedules` atualmente so tem `frequency` e `domain_id`. Para suportar hora/dia da semana/dia do mes, sera necessario adicionar as colunas:
-- `scheduled_hour` (integer, default 0)
-- `scheduled_day_of_week` (integer, default 1)
-- `scheduled_day_of_month` (integer, default 1)
+7. **Atualizar placeholder** do campo de busca de "Buscar firewall..." para "Buscar ativo..."
 
-Isso requer uma migracao SQL.
-
-### Logica de save
-
-1. Atualizar `external_domains` (agent_id, client_id se mudou)
-2. Deletar schedules existentes para o domain_id
-3. Se frequencia != manual, inserir novo schedule com `frequency`, `scheduled_hour`, `scheduled_day_of_week`, `scheduled_day_of_month`, `next_run_at` calculado e `is_active: true`
-4. Reutilizar a funcao `calculateNextRunAt` do `FirewallEditPage` (copiar para a nova pagina)
-
-### Fetch de dados
-
-Ao carregar a pagina:
-- Buscar `external_domains` pelo id
-- Buscar `external_domain_schedules` pelo domain_id (maybeSingle)
-- Buscar `clients` e `agents` (filtrados por client_id)
-- Preencher o formulario com os dados existentes
+Nenhum outro arquivo precisa ser modificado. Nenhuma migracao de banco necessaria.
 
