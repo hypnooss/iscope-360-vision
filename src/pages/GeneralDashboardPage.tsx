@@ -5,7 +5,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth, SeverityBlock } from '@/hooks/useDashboardStats';
-import { useTopCVEs, TopCVE } from '@/hooks/useTopCVEs';
+
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -106,41 +106,23 @@ function SeverityBadgeRow({ severities }: { severities: SeverityBlock }) {
     );
   }
   return (
-    <div className="flex gap-2">
+    <div className="grid grid-cols-4 gap-2">
       {SEVERITY_ITEMS.map(({ key, label, badgeCn }) => (
-        severities[key] > 0 && (
-          <Badge key={key} className={cn('text-xs gap-1 px-2 py-0.5', badgeCn)}>
-            {severities[key]} {label}
-          </Badge>
-        )
+        <Badge
+          key={key}
+          className={cn(
+            'text-xs gap-1 px-2 py-0.5 justify-center',
+            badgeCn,
+            severities[key] === 0 && 'opacity-40',
+          )}
+        >
+          {severities[key]} {label}
+        </Badge>
       ))}
     </div>
   );
 }
 
-// ─── CVE Alert Row ────────────────────────────────────────────────────────────
-
-const CVE_SEVERITY_BADGE: Record<string, string> = {
-  CRITICAL: 'bg-red-500/15 text-red-400 border-red-500/30',
-  HIGH: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-  MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  LOW: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
-  UNKNOWN: 'bg-muted text-muted-foreground',
-};
-
-function CveAlertRow({ cve }: { cve: TopCVE }) {
-  return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="font-mono text-foreground truncate">{cve.id}</span>
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-muted-foreground">CVSS {cve.score.toFixed(1)}</span>
-        <Badge className={cn('text-[10px] px-1.5', CVE_SEVERITY_BADGE[cve.severity] || CVE_SEVERITY_BADGE.UNKNOWN)}>
-          {cve.severity}
-        </Badge>
-      </div>
-    </div>
-  );
-}
 
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
@@ -152,7 +134,6 @@ interface ModuleHealthCardProps {
   borderColor: string;
   colorBase: string;
   health: ModuleHealth;
-  topCves?: TopCVE[];
   loading: boolean;
   onAccessCompliance: () => void;
   onAccessCves?: () => void;
@@ -160,7 +141,7 @@ interface ModuleHealthCardProps {
 
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor, colorBase,
-  health, topCves, loading, onAccessCompliance, onAccessCves,
+  health, loading, onAccessCompliance, onAccessCves,
 }: ModuleHealthCardProps) {
   const hasCves = !!health.cveSeverities;
   const sparkColor = SPARKLINE_COLOR_MAP[colorBase] || 'hsl(175, 80%, 45%)';
@@ -194,23 +175,21 @@ function ModuleHealthCard({
               )}
             </div>
 
-            {/* Sparkline (bar chart) + Score bar */}
-            <div className="space-y-2">
+            {/* Sparkline + Score bar (encaixado) */}
+            <div className="space-y-0">
               <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Score</span>
-                  <span className={cn('text-lg font-bold tabular-nums', getScoreColor(health.score))}>
-                    {health.score != null ? `${health.score}` : '—'}
-                    <span className="text-xs font-normal text-muted-foreground">/100</span>
-                  </span>
-                </div>
-                <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium shrink-0">Score</span>
+                <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-secondary">
                   <div
                     className={cn('h-full rounded-full transition-all duration-500', getScoreProgressColor(health.score))}
                     style={{ width: `${health.score ?? 0}%` }}
                   />
                 </div>
+                <span className={cn('text-sm font-bold tabular-nums shrink-0', getScoreColor(health.score))}>
+                  {health.score != null ? `${health.score}` : '—'}
+                  <span className="text-[10px] font-normal text-muted-foreground">/100</span>
+                </span>
               </div>
             </div>
 
@@ -220,15 +199,11 @@ function ModuleHealthCard({
               <SeverityBadgeRow severities={health.severities} />
             </div>
 
-            {/* Top CVE alerts */}
-            {hasCves && topCves && topCves.length > 0 && (
+            {/* CVE severity counts */}
+            {hasCves && health.cveSeverities && (
               <div className="space-y-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Alertas de CVE</span>
-                <div className="space-y-1">
-                  {topCves.map(cve => (
-                    <CveAlertRow key={cve.id} cve={cve} />
-                  ))}
-                </div>
+                <SeverityBadgeRow severities={health.cveSeverities} />
               </div>
             )}
 
@@ -284,7 +259,6 @@ export default function GeneralDashboardPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
-  const { data: topCvesMap } = useTopCVEs();
 
   // Fetch workspaces for super roles
   useEffect(() => {
@@ -420,9 +394,7 @@ export default function GeneralDashboardPage() {
         {/* Module Health Cards */}
         <section>
           <div className={cn('grid gap-4', gridCols)}>
-            {moduleCards.map((card) => {
-              const statsKey = MODULE_DASHBOARD_CONFIG[card.moduleCode]?.statsKey;
-              return (
+            {moduleCards.map((card) => (
                 <ModuleHealthCard
                   key={card.key}
                   title={card.title}
@@ -432,13 +404,11 @@ export default function GeneralDashboardPage() {
                   borderColor={card.borderColor}
                   colorBase={card.colorBase}
                   health={card.health}
-                  topCves={statsKey ? topCvesMap?.[statsKey] : undefined}
                   loading={loading}
                   onAccessCompliance={() => handleGoToModule(card.moduleCode, card.path)}
                   onAccessCves={card.cvePath ? () => handleGoToModule(card.moduleCode, card.cvePath!) : undefined}
                 />
-              );
-            })}
+            ))}
           </div>
         </section>
 
