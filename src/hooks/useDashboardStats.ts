@@ -42,17 +42,31 @@ function extractSeveritiesFromReport(reportData: any): SeverityCounts {
     counts.low = reportData.summary.low || 0;
     return counts;
   }
-  // Otherwise walk categories → checks/rules
-  const categories = reportData.categories as any[] | undefined;
-  if (!Array.isArray(categories)) return counts;
+  // Walk categories – handle both object (dict) and array formats
+  const categories = reportData.categories;
+  if (!categories || typeof categories !== 'object') return counts;
+
+  // Object format: { "CategoryName": [ {severity, status}, ... ], ... }
+  if (!Array.isArray(categories)) {
+    for (const rules of Object.values(categories)) {
+      if (Array.isArray(rules)) {
+        for (const rule of rules as any[]) {
+          if (rule.status === 'pass') continue;
+          const sev = rule.severity as string;
+          if (sev in counts) counts[sev as keyof SeverityCounts]++;
+        }
+      }
+    }
+    return counts;
+  }
+
+  // Array format: [ { checks/rules: [...] }, ... ]
   for (const cat of categories) {
     const rules = (cat.checks || cat.rules || []) as any[];
     for (const rule of rules) {
       if (rule.status === 'pass') continue;
       const sev = rule.severity as string;
-      if (sev in counts) {
-        counts[sev as keyof SeverityCounts]++;
-      }
+      if (sev in counts) counts[sev as keyof SeverityCounts]++;
     }
   }
   return counts;
