@@ -331,11 +331,11 @@ export default function AgentsPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Agents' }]} />
         
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Agents</h1>
             <p className="text-muted-foreground">Gerencie todos os agents externos do sistema</p>
