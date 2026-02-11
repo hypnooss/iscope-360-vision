@@ -5,18 +5,21 @@ import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth, SeverityBlock } from '@/hooks/useDashboardStats';
+import { useTopCVEs, TopCVE } from '@/hooks/useTopCVEs';
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
-import { ScoreGauge } from '@/components/ScoreGauge';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScoreSparkline } from '@/components/dashboard/ScoreSparkline';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
   AlertTriangle, ShieldAlert, LucideIcon, Building2, Bot,
-  Globe, Network, CheckCircle2, Info,
+  Globe, Network, CheckCircle2, Info, ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -29,7 +32,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Shield, Cloud, Layers, Globe, Server, Network, Bot,
 };
 
-// ─── Static color maps for Tailwind JIT (dynamic class concatenation doesn't work reliably) ──
+// ─── Static color maps for Tailwind JIT ──
 const BORDER_COLOR_MAP: Record<string, string> = {
   'orange-500': 'border-l-orange-500',
   'blue-500': 'border-l-blue-500',
@@ -52,6 +55,93 @@ const ICON_BG_MAP: Record<string, string> = {
   'cyan-500': 'bg-cyan-500/10',
 };
 
+const PROGRESS_COLOR_MAP: Record<string, string> = {
+  'orange-500': 'bg-orange-500',
+  'blue-500': 'bg-blue-500',
+  'green-500': 'bg-green-500',
+  'primary': 'bg-primary',
+};
+
+const SPARKLINE_COLOR_MAP: Record<string, string> = {
+  'orange-500': 'hsl(25, 95%, 53%)',
+  'blue-500': 'hsl(217, 91%, 60%)',
+  'green-500': 'hsl(142, 71%, 45%)',
+  'primary': 'hsl(175, 80%, 45%)',
+};
+
+// ─── Score color helper ───────────────────────────────────────────────────────
+function getScoreColor(score: number | null): string {
+  if (score == null) return 'text-muted-foreground';
+  if (score >= 90) return 'text-primary';
+  if (score >= 75) return 'text-emerald-400';
+  if (score >= 60) return 'text-yellow-500';
+  return 'text-rose-400';
+}
+
+function getScoreProgressColor(score: number | null): string {
+  if (score == null) return 'bg-muted-foreground';
+  if (score >= 90) return 'bg-primary';
+  if (score >= 75) return 'bg-emerald-400';
+  if (score >= 60) return 'bg-yellow-500';
+  return 'bg-rose-400';
+}
+
+// ─── Severity Badge Row ───────────────────────────────────────────────────────
+
+const SEVERITY_ITEMS = [
+  { key: 'critical' as const, label: 'Crítico', badgeCn: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  { key: 'high' as const, label: 'Alto', badgeCn: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  { key: 'medium' as const, label: 'Médio', badgeCn: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+  { key: 'low' as const, label: 'Baixo', badgeCn: 'bg-blue-400/15 text-blue-400 border-blue-400/30' },
+] as const;
+
+function SeverityBadgeRow({ severities }: { severities: SeverityBlock }) {
+  const total = severities.critical + severities.high + severities.medium + severities.low;
+  if (total === 0) {
+    return (
+      <div className="flex items-center gap-1.5 text-emerald-400">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        <span className="text-xs">Nenhum alerta</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {SEVERITY_ITEMS.map(({ key, label, badgeCn }) => (
+        severities[key] > 0 && (
+          <Badge key={key} className={cn('text-xs gap-1 px-1.5', badgeCn)}>
+            {severities[key]} {label}
+          </Badge>
+        )
+      ))}
+    </div>
+  );
+}
+
+// ─── CVE Alert Row ────────────────────────────────────────────────────────────
+
+const CVE_SEVERITY_BADGE: Record<string, string> = {
+  CRITICAL: 'bg-red-500/15 text-red-400 border-red-500/30',
+  HIGH: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  LOW: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
+  UNKNOWN: 'bg-muted text-muted-foreground',
+};
+
+function CveAlertRow({ cve }: { cve: TopCVE }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="font-mono text-foreground truncate">{cve.id}</span>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-muted-foreground">CVSS {cve.score.toFixed(1)}</span>
+        <Badge className={cn('text-[10px] px-1.5', CVE_SEVERITY_BADGE[cve.severity] || CVE_SEVERITY_BADGE.UNKNOWN)}>
+          {cve.severity}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
 interface ModuleHealthCardProps {
@@ -60,110 +150,111 @@ interface ModuleHealthCardProps {
   iconColor: string;
   iconBg: string;
   borderColor: string;
+  colorBase: string;
   health: ModuleHealth;
+  topCves?: TopCVE[];
   loading: boolean;
-  onAccess: () => void;
-}
-
-const SEVERITY_ITEMS = [
-  { key: 'critical' as const, label: 'Crítico', icon: ShieldAlert, badgeCn: 'bg-red-500/15 text-red-400 border-red-500/30' },
-  { key: 'high' as const, label: 'Alto', icon: AlertTriangle, badgeCn: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  { key: 'medium' as const, label: 'Médio', icon: Info, badgeCn: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-  { key: 'low' as const, label: 'Baixo', icon: Info, badgeCn: 'bg-blue-400/15 text-blue-400 border-blue-400/30' },
-] as const;
-
-function SeverityColumn({ title, severities }: { title: string; severities: SeverityBlock }) {
-  const total = severities.critical + severities.high + severities.medium + severities.low;
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">{title}</span>
-      {total > 0 ? (
-        SEVERITY_ITEMS.map(({ key, label, icon: SevIcon, badgeCn }) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <Badge className={cn('text-xs gap-1 px-1.5 min-w-[24px] justify-center', badgeCn)}>
-              <SevIcon className="w-3 h-3" />
-              {severities[key]}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground">{label}</span>
-          </div>
-        ))
-      ) : (
-        <div className="flex items-center gap-1.5 text-emerald-400">
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span className="text-[10px]">Nenhum</span>
-        </div>
-      )}
-    </div>
-  );
+  onAccessCompliance: () => void;
+  onAccessCves?: () => void;
 }
 
 function ModuleHealthCard({
-  title, icon: Icon, iconColor, iconBg, borderColor,
-  health, loading, onAccess,
+  title, icon: Icon, iconColor, iconBg, borderColor, colorBase,
+  health, topCves, loading, onAccessCompliance, onAccessCves,
 }: ModuleHealthCardProps) {
   const hasCves = !!health.cveSeverities;
+  const sparkColor = SPARKLINE_COLOR_MAP[colorBase] || 'hsl(175, 80%, 45%)';
 
   return (
-    <Card
-      className={cn(
-        'glass-card border-l-4 cursor-pointer hover:scale-[1.02] transition-all duration-200 hover:shadow-lg',
-        borderColor,
-      )}
-      onClick={onAccess}
-    >
+    <Card className={cn('glass-card border-l-4 transition-all duration-200 hover:shadow-lg', borderColor)}>
       <CardContent className="p-5">
         {loading ? (
           <div className="space-y-3">
             <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-[100px] w-[100px] rounded-full mx-auto" />
-            <Skeleton className="h-4 w-24 mx-auto" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-4 w-24" />
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {/* Header */}
-            <div className="flex items-center gap-2 w-full">
-              <div className={cn('p-2 rounded-lg', iconBg)}>
-                <Icon className={cn('w-5 h-5', iconColor)} />
+          <div className="flex flex-col gap-4">
+            {/* Header: icon + title left, last analysis right */}
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <div className={cn('p-1.5 rounded-lg', iconBg)}>
+                  <Icon className={cn('w-4 h-4', iconColor)} />
+                </div>
+                <h3 className="font-semibold text-foreground text-sm">{title}</h3>
               </div>
-              <h3 className="font-semibold text-foreground text-sm flex-1">{title}</h3>
-              <ArrowRight className="w-4 h-4 text-muted-foreground" />
+              {health.lastAnalysisDate ? (
+                <span className="text-[10px] text-muted-foreground">
+                  {formatDistanceToNow(new Date(health.lastAnalysisDate), { addSuffix: true, locale: ptBR })}
+                </span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground">Sem análise</span>
+              )}
             </div>
 
-            {/* Score Gauge + Severity columns */}
-            <div className="flex items-center justify-evenly py-4">
-              <div className="shrink-0">
-                {health.score != null ? (
-                  <ScoreGauge score={health.score} size="sm" />
-                ) : (
-                  <div className="flex flex-col items-center gap-1 py-4">
-                    <span className="text-2xl font-bold text-muted-foreground">—</span>
-                    <span className="text-xs text-muted-foreground">Sem análise</span>
-                  </div>
-                )}
+            {/* Score bar + Sparkline */}
+            <div className="flex items-center gap-4">
+              <div className="flex-1 space-y-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Score</span>
+                  <span className={cn('text-lg font-bold tabular-nums', getScoreColor(health.score))}>
+                    {health.score != null ? `${health.score}` : '—'}
+                    <span className="text-xs font-normal text-muted-foreground">/100</span>
+                  </span>
+                </div>
+                <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className={cn('h-full rounded-full transition-all duration-500', getScoreProgressColor(health.score))}
+                    style={{ width: `${health.score ?? 0}%` }}
+                  />
+                </div>
               </div>
-
-              {/* Severity columns: CVEs + Conformidade when CVEs exist, or just Conformidade */}
-              <div className={cn('flex gap-14')}>
-                {hasCves && (
-                  <SeverityColumn title="CVEs" severities={health.cveSeverities!} />
-                )}
-                <SeverityColumn
-                  title="Conformidade"
-                  severities={health.severities}
-                />
-              </div>
+              <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
             </div>
 
-            {/* Last analysis */}
-            {health.lastAnalysisDate && (
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                Última análise:{' '}
-                {formatDistanceToNow(new Date(health.lastAnalysisDate), {
-                  addSuffix: true,
-                  locale: ptBR,
-                })}
-              </p>
+            {/* Conformidade severities */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Conformidade</span>
+              <SeverityBadgeRow severities={health.severities} />
+            </div>
+
+            {/* Top CVE alerts */}
+            {hasCves && topCves && topCves.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Alertas de CVE</span>
+                <div className="space-y-1">
+                  {topCves.map(cve => (
+                    <CveAlertRow key={cve.id} cve={cve} />
+                  ))}
+                </div>
+              </div>
             )}
+
+            {/* Quick actions */}
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs h-7"
+                onClick={(e) => { e.stopPropagation(); onAccessCompliance(); }}
+              >
+                Conformidade
+                <ExternalLink className="w-3 h-3 ml-1" />
+              </Button>
+              {hasCves && onAccessCves && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-xs h-7"
+                  onClick={(e) => { e.stopPropagation(); onAccessCves(); }}
+                >
+                  CVEs
+                  <ExternalLink className="w-3 h-3 ml-1" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -178,6 +269,7 @@ const emptyHealth: ModuleHealth = {
   assetCount: 0,
   lastAnalysisDate: null,
   severities: { critical: 0, high: 0, medium: 0, low: 0 },
+  scoreHistory: [],
 };
 
 export default function GeneralDashboardPage() {
@@ -192,6 +284,7 @@ export default function GeneralDashboardPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
+  const { data: topCvesMap } = useTopCVEs();
 
   // Fetch workspaces for super roles
   useEffect(() => {
@@ -226,9 +319,11 @@ export default function GeneralDashboardPage() {
     iconColor: string;
     iconBg: string;
     borderColor: string;
+    colorBase: string;
     health: ModuleHealth;
     moduleCode: string;
     path: string;
+    cvePath?: string;
     infraLabel: string;
   };
 
@@ -248,9 +343,11 @@ export default function GeneralDashboardPage() {
         iconColor: um.module.color || 'text-primary',
         iconBg: ICON_BG_MAP[colorBase] || 'bg-primary/10',
         borderColor: BORDER_COLOR_MAP[colorBase] || 'border-l-primary',
+        colorBase,
         health: stats?.modules[config.statsKey] || emptyHealth,
         moduleCode: um.module.code,
         path: config.path,
+        cvePath: config.cvePath,
         infraLabel: config.infraLabel,
       } as CardDef;
     })
@@ -323,19 +420,25 @@ export default function GeneralDashboardPage() {
         {/* Module Health Cards */}
         <section>
           <div className={cn('grid gap-4', gridCols)}>
-            {moduleCards.map((card) => (
-              <ModuleHealthCard
-                key={card.key}
-                title={card.title}
-                icon={card.icon}
-                iconColor={card.iconColor}
-                iconBg={card.iconBg}
-                borderColor={card.borderColor}
-                health={card.health}
-                loading={loading}
-                onAccess={() => handleGoToModule(card.moduleCode, card.path)}
-              />
-            ))}
+            {moduleCards.map((card) => {
+              const statsKey = MODULE_DASHBOARD_CONFIG[card.moduleCode]?.statsKey;
+              return (
+                <ModuleHealthCard
+                  key={card.key}
+                  title={card.title}
+                  icon={card.icon}
+                  iconColor={card.iconColor}
+                  iconBg={card.iconBg}
+                  borderColor={card.borderColor}
+                  colorBase={card.colorBase}
+                  health={card.health}
+                  topCves={statsKey ? topCvesMap?.[statsKey] : undefined}
+                  loading={loading}
+                  onAccessCompliance={() => handleGoToModule(card.moduleCode, card.path)}
+                  onAccessCves={card.cvePath ? () => handleGoToModule(card.moduleCode, card.cvePath!) : undefined}
+                />
+              );
+            })}
           </div>
         </section>
 

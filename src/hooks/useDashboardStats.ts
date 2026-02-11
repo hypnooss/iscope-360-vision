@@ -13,12 +13,18 @@ export type SeverityBlock = {
   low: number;
 };
 
+export interface ScoreHistoryPoint {
+  date: string;
+  score: number;
+}
+
 export interface ModuleHealth {
   score: number | null;
   assetCount: number;
   lastAnalysisDate: string | null;
   severities: SeverityBlock;
   cveSeverities?: SeverityBlock | null;
+  scoreHistory: ScoreHistoryPoint[];
 }
 
 const emptyHealth: ModuleHealth = {
@@ -26,6 +32,7 @@ const emptyHealth: ModuleHealth = {
   assetCount: 0,
   lastAnalysisDate: null,
   severities: { critical: 0, high: 0, medium: 0, low: 0 },
+  scoreHistory: [],
 };
 
 
@@ -73,6 +80,26 @@ function extractSeveritiesFromReport(reportData: any): SeverityCounts {
     }
   }
   return counts;
+}
+
+
+/** Aggregate scores by day (avg across assets per day), returning newest-first up to 30 days */
+function aggregateScoreHistory(
+  rows: { score: number | null; created_at: string | null }[],
+): ScoreHistoryPoint[] {
+  const dayMap = new Map<string, number[]>();
+  for (const r of rows) {
+    if (r.score == null || !r.created_at) continue;
+    const day = r.created_at.slice(0, 10); // YYYY-MM-DD
+    if (!dayMap.has(day)) dayMap.set(day, []);
+    dayMap.get(day)!.push(r.score);
+  }
+  const points: ScoreHistoryPoint[] = [];
+  for (const [date, scores] of dayMap) {
+    points.push({ date, score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) });
+  }
+  points.sort((a, b) => a.date.localeCompare(b.date));
+  return points.slice(-30);
 }
 
 
@@ -143,6 +170,7 @@ const fwHealth: ModuleHealth = {
         assetCount: fwRes.count || 0,
         lastAnalysisDate: null,
         severities: { critical: 0, high: 0, medium: 0, low: 0 },
+        scoreHistory: [],
       };
       if (firewallIds.length > 0) {
         const { data: fwHistory } = await supabase
@@ -167,6 +195,7 @@ const fwHealth: ModuleHealth = {
         }
         fwHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         fwHealth.lastAnalysisDate = latestDate;
+        fwHealth.scoreHistory = aggregateScoreHistory((fwHistory || []).map(h => ({ score: h.score, created_at: h.created_at })));
       }
 
       // --- M365 ---
@@ -175,6 +204,7 @@ const m365Health: ModuleHealth = {
         assetCount: m365Res.count || 0,
         lastAnalysisDate: null,
         severities: { critical: 0, high: 0, medium: 0, low: 0 },
+        scoreHistory: [],
       };
       if (tenantIds.length > 0) {
         const { data: m365History } = await supabase
@@ -202,6 +232,7 @@ const m365Health: ModuleHealth = {
         }
         m365Health.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         m365Health.lastAnalysisDate = latestDate;
+        m365Health.scoreHistory = aggregateScoreHistory((m365History || []).map(h => ({ score: h.score, created_at: h.created_at })));
       }
 
       // --- External Domain ---
@@ -210,6 +241,7 @@ const extHealth: ModuleHealth = {
         assetCount: extRes.count || 0,
         lastAnalysisDate: null,
         severities: { critical: 0, high: 0, medium: 0, low: 0 },
+        scoreHistory: [],
       };
       if (extDomainIds.length > 0) {
         const { data: extHistory } = await supabase
@@ -235,6 +267,7 @@ const extHealth: ModuleHealth = {
         }
         extHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         extHealth.lastAnalysisDate = latestDate;
+        extHealth.scoreHistory = aggregateScoreHistory((extHistory || []).map(h => ({ score: h.score, created_at: h.created_at })));
       }
 
       const modulesRecord: Record<string, ModuleHealth> = {
