@@ -17,7 +17,7 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
     period_start: (row.period_start as string) ?? undefined,
     period_end: (row.period_end as string) ?? undefined,
     score: (row.score as number) ?? undefined,
-    summary: summary as AnalyzerSummary,
+    summary: rawSummary,
     insights,
     metrics: {
       topBlockedIPs: (metrics.topBlockedIPs as AnalyzerMetrics['topBlockedIPs']) ?? [],
