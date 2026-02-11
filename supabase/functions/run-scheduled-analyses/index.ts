@@ -60,11 +60,7 @@ Deno.serve(async (req) => {
     }
 
     if (!dueSchedules || dueSchedules.length === 0) {
-      console.log('[run-scheduled-analyses] No schedules due for execution.');
-      return new Response(
-        JSON.stringify({ success: true, triggered: 0, message: 'No schedules due' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      console.log('[run-scheduled-analyses] No firewall schedules due.');
     }
 
     console.log(`[run-scheduled-analyses] Found ${dueSchedules.length} schedule(s) due for execution.`);
