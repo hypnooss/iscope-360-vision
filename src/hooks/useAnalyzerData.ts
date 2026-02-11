@@ -71,10 +71,11 @@ export function useLatestAnalyzerSnapshot(firewallId?: string) {
         query = query.eq('firewall_id', firewallId);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query as any;
       if (error) throw error;
-      if (!data || data.length === 0) return null;
-      return parseSnapshot(data[0] as Record<string, unknown>);
+      const rows = (data as any[]) || [];
+      if (rows.length === 0) return null;
+      return parseSnapshot(rows[0] as Record<string, unknown>);
     },
     enabled: true,
     staleTime: 1000 * 60 * 2,
