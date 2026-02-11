@@ -4188,6 +4188,31 @@ serve(async (req: Request) => {
     }
 
     // ========================================================
+    // Firewall Analyzer: Process log data into security insights
+    // ========================================================
+    if ((body.status === 'completed' || body.status === 'partial') && task.task_type === 'firewall_analyzer' && rawData) {
+      const taskPayload = task.payload as Record<string, unknown> | null;
+      const snapshotId = taskPayload?.snapshot_id as string | undefined;
+
+      if (snapshotId) {
+        console.log(`[firewall_analyzer] Processing insights for snapshot: ${snapshotId}`);
+        try {
+          const analyzerUrl = `${supabaseUrl}/functions/v1/firewall-analyzer`;
+          const analyzerResponse = await fetch(analyzerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({ snapshot_id: snapshotId, task_id: body.task_id, raw_data: rawData }),
+          });
+          const analyzerResult = await analyzerResponse.json();
+          console.log(`[firewall_analyzer] Result: score=${analyzerResult.score}, insights=${analyzerResult.insights_count}`);
+        } catch (e) {
+          console.error(`[firewall_analyzer] Error:`, e);
+          await supabase.from('analyzer_snapshots').update({ status: 'failed' }).eq('id', snapshotId);
+        }
+      }
+    }
+
+    // ========================================================
     // M365 Tenant: Process agent-collected insights (Exchange, SharePoint)
     // This handles PowerShell-based data collected by the Python agent
     // ========================================================
