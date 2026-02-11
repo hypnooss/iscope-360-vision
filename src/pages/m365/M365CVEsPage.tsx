@@ -173,7 +173,7 @@ export default function M365CVEsPage() {
             <h1 className="text-2xl font-bold">
               CVEs - Microsoft 365
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-muted-foreground">
               Vulnerabilidades conhecidas nos produtos do ecossistema Microsoft 365
             </p>
           </div>

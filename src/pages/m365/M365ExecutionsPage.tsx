@@ -391,7 +391,7 @@ export default function M365ExecutionsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Execuções de Análise</h1>
-            <p className="text-muted-foreground">Monitore as análises de postura e tasks do agente M365</p>
+            <p className="text-muted-foreground">Monitore as análises de postura e tarefas do agente M365</p>
           </div>
           <Button onClick={handleRefresh} variant="outline" size="sm">
             <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
