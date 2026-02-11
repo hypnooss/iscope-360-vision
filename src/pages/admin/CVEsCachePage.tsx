@@ -1,42 +1,30 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent } from '@/components/ui/card';
+import { StatCard } from '@/components/StatCard';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bug, Search, AlertTriangle, Shield, RefreshCw, Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useCVECache, useCVESources, CachedCVE } from '@/hooks/useCVECache';
+import { CVESourcesConfigDialog } from '@/components/admin/CVESourcesConfigDialog';
+import {
+  Bug, Search, AlertTriangle, ShieldAlert, Shield, RefreshCw,
+  ChevronDown, ChevronRight, ExternalLink, Info, Settings, Database,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-interface TopCve {
-  id: string;
-  score: number;
-}
-
-interface CveCacheRow {
-  id: string;
-  module_code: string;
-  client_id: string | null;
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  total_cves: number;
-  top_cves: TopCve[] | null;
-  updated_at: string;
-  clients: { name: string } | null;
-}
-
-const MODULE_LABELS: Record<string, string> = {
-  firewall: 'Firewall',
-  m365: 'Microsoft 365',
+const SEVERITY_COLORS: Record<string, string> = {
+  CRITICAL: 'bg-destructive text-destructive-foreground',
+  HIGH: 'bg-orange-600 text-white',
+  MEDIUM: 'bg-warning text-warning-foreground',
+  LOW: 'bg-muted text-muted-foreground',
+  UNKNOWN: 'bg-muted text-muted-foreground',
 };
 
 const MODULE_COLORS: Record<string, string> = {
@@ -44,20 +32,112 @@ const MODULE_COLORS: Record<string, string> = {
   m365: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
 };
 
-function getCveScoreColor(score: number) {
-  if (score >= 9.0) return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
-  if (score >= 7.0) return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
-  if (score >= 4.0) return 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
-  return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-}
+const MODULE_LABELS: Record<string, string> = {
+  firewall: 'Firewall',
+  m365: 'M365',
+};
 
-function getCveUrl(cveId: string) {
-  return `https://nvd.nist.gov/vuln/detail/${cveId}`;
+function CVECard({ cve }: { cve: CachedCVE }) {
+  const [open, setOpen] = useState(false);
+
+  const isNew = (() => {
+    if (!cve.published_date) return false;
+    const published = new Date(cve.published_date);
+    const now = new Date();
+    return (now.getTime() - published.getTime()) / (1000 * 3600 * 24) <= 30;
+  })();
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card className="border border-border/50">
+        <CollapsibleTrigger asChild>
+          <button className="w-full text-left">
+            <CardHeader className="p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={cn('text-xs font-bold', SEVERITY_COLORS[cve.severity] || SEVERITY_COLORS.UNKNOWN)}>
+                      {cve.severity}
+                    </Badge>
+                    <Badge variant="outline" className={cn('text-xs', MODULE_COLORS[cve.module_code] || '')}>
+                      {MODULE_LABELS[cve.module_code] || cve.module_code}
+                    </Badge>
+                    {isNew && (
+                      <Badge className="text-xs font-bold bg-emerald-500 text-white border-emerald-500 animate-pulse">
+                        NEW
+                      </Badge>
+                    )}
+                    {cve.score != null && (
+                      <span className="text-xs font-mono text-muted-foreground">
+                        CVSS {Number(cve.score).toFixed(1)}
+                      </span>
+                    )}
+                    <a
+                      href={cve.advisory_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs font-mono text-primary hover:underline flex items-center gap-1"
+                    >
+                      {cve.cve_id}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <CardTitle className="text-sm font-medium leading-snug">
+                    {cve.title || cve.cve_id}
+                  </CardTitle>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {cve.products.slice(0, 4).map((p) => (
+                      <Badge key={String(p)} variant="outline" className="text-[10px] py-0">
+                        {String(p)}
+                      </Badge>
+                    ))}
+                    {cve.products.length > 4 && (
+                      <span className="text-[10px] text-muted-foreground">+{cve.products.length - 4}</span>
+                    )}
+                    {cve.published_date && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {new Date(cve.published_date).toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="pt-1">
+                  {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                </div>
+              </div>
+            </CardHeader>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="px-4 pb-4 pt-0">
+            <div className="text-sm text-muted-foreground leading-relaxed border-t pt-3">
+              {cve.description || 'Descrição não disponível.'}
+            </div>
+            <a
+              href={cve.advisory_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline flex items-center gap-1 mt-2"
+            >
+              Ver advisory completo
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
 }
 
 export default function CVEsCachePage() {
   const [search, setSearch] = useState('');
   const [filterModule, setFilterModule] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [sourcesDialogOpen, setSourcesDialogOpen] = useState(false);
+
+  const { data: cves, isLoading, refetch } = useCVECache();
+  const { data: sources } = useCVESources();
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -65,127 +145,79 @@ export default function CVEsCachePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const { data: cveCache, isLoading, refetch } = useQuery({
-    queryKey: ['admin-cve-cache'],
-    refetchInterval: 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cve_severity_cache')
-        .select('*, clients(name)')
-        .order('updated_at', { ascending: false });
-
-      if (error) throw error;
-      return (data as unknown as CveCacheRow[]) || [];
-    },
-  });
-
-  // Compute stats
   const stats = useMemo(() => {
-    if (!cveCache) return { total: 0, critical: 0, high: 0, lastUpdate: null as string | null };
-    let total = 0, critical = 0, high = 0;
-    let lastUpdate: string | null = null;
+    if (!cves) return { total: 0, critical: 0, high: 0, medium: 0, low: 0 };
+    return {
+      total: cves.length,
+      critical: cves.filter(c => c.severity === 'CRITICAL').length,
+      high: cves.filter(c => c.severity === 'HIGH').length,
+      medium: cves.filter(c => c.severity === 'MEDIUM').length,
+      low: cves.filter(c => c.severity === 'LOW').length,
+    };
+  }, [cves]);
 
-    for (const row of cveCache) {
-      total += row.total_cves;
-      critical += row.critical;
-      high += row.high;
-      if (!lastUpdate || row.updated_at > lastUpdate) {
-        lastUpdate = row.updated_at;
-      }
-    }
-    return { total, critical, high, lastUpdate };
-  }, [cveCache]);
-
-  // Filter and search
   const filtered = useMemo(() => {
-    if (!cveCache) return [];
-    return cveCache.filter(row => {
-      if (filterModule !== 'all' && row.module_code !== filterModule) return false;
+    if (!cves) return [];
+    return cves.filter(cve => {
+      if (filterModule !== 'all' && cve.module_code !== filterModule) return false;
+      if (severityFilter !== 'all' && cve.severity !== severityFilter) return false;
       if (search) {
-        const clientName = row.clients?.name || 'Global';
-        if (!clientName.toLowerCase().includes(search.toLowerCase())) return false;
+        const q = search.toLowerCase();
+        if (
+          !cve.cve_id.toLowerCase().includes(q) &&
+          !(cve.title || '').toLowerCase().includes(q) &&
+          !(cve.description || '').toLowerCase().includes(q)
+        ) return false;
       }
       return true;
     });
-  }, [cveCache, search, filterModule]);
+  }, [cves, filterModule, severityFilter, search]);
+
+  // Determine last sync time from sources
+  const lastSync = useMemo(() => {
+    if (!sources || sources.length === 0) return null;
+    const synced = sources.filter(s => s.last_sync_at).map(s => new Date(s.last_sync_at!).getTime());
+    return synced.length > 0 ? new Date(Math.max(...synced)) : null;
+  }, [sources]);
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb
-          items={[
-            { label: 'Administração' },
-            { label: 'CVEs' },
-          ]}
-        />
+      <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
+        <PageBreadcrumb items={[
+          { label: 'Administração' },
+          { label: 'CVEs' },
+        ]} />
 
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">CVEs</h1>
-            <p className="text-muted-foreground">Cache centralizado de vulnerabilidades por módulo</p>
+            <p className="text-muted-foreground">Central de vulnerabilidades da plataforma</p>
           </div>
-          <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
-            Atualizando...
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setSourcesDialogOpen(true)} variant="outline" size="sm">
+              <Settings className="w-4 h-4 mr-2" />
+              Configurar Fontes
+            </Button>
+            <Button onClick={() => refetch()} variant="outline" size="sm">
+              <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
+              Atualizando...
+            </Button>
+          </div>
         </div>
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Bug className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.total}</p>
-                  <p className="text-xs text-muted-foreground">Total de CVEs</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-rose-500/10">
-                  <AlertTriangle className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.critical}</p>
-                  <p className="text-xs text-muted-foreground">Críticos</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-500/10">
-                  <Shield className="w-5 h-5 text-orange-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.high}</p>
-                  <p className="text-xs text-muted-foreground">Altos</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <Clock className="w-5 h-5 text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground">
-                    {isLoading || !stats.lastUpdate ? '—' : formatDistanceToNow(new Date(stats.lastUpdate), { addSuffix: true, locale: ptBR })}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Última atualização</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <StatCard title="Total CVEs" value={stats.total} icon={Bug} variant="default" delay={0} compact
+            onClick={() => setSeverityFilter('all')} active={severityFilter === 'all'} />
+          <StatCard title="Críticos" value={stats.critical} icon={ShieldAlert} variant="destructive" delay={0.05} compact
+            onClick={() => setSeverityFilter(prev => prev === 'CRITICAL' ? 'all' : 'CRITICAL')} active={severityFilter === 'CRITICAL'} />
+          <StatCard title="Altos" value={stats.high} icon={AlertTriangle} variant="warning" delay={0.1} compact
+            onClick={() => setSeverityFilter(prev => prev === 'HIGH' ? 'all' : 'HIGH')} active={severityFilter === 'HIGH'} />
+          <StatCard title="Médios" value={stats.medium} icon={Info} variant="warning" delay={0.15} compact
+            onClick={() => setSeverityFilter(prev => prev === 'MEDIUM' ? 'all' : 'MEDIUM')} active={severityFilter === 'MEDIUM'} />
+          <StatCard title="Baixos" value={stats.low} icon={Shield} variant="default" delay={0.2} compact
+            onClick={() => setSeverityFilter(prev => prev === 'LOW' ? 'all' : 'LOW')} active={severityFilter === 'LOW'} />
         </div>
 
         {/* Filters */}
@@ -193,7 +225,7 @@ export default function CVEsCachePage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar workspace..."
+              placeholder="Buscar por CVE ID ou descrição..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9"
@@ -211,111 +243,38 @@ export default function CVEsCachePage() {
           </Select>
         </div>
 
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-6 space-y-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="p-12 text-center text-muted-foreground">
-                Nenhum registro de CVE encontrado no cache.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Módulo</TableHead>
-                    <TableHead>Workspace</TableHead>
-                    <TableHead className="text-center">Críticos</TableHead>
-                    <TableHead className="text-center">Altos</TableHead>
-                    <TableHead className="text-center">Médios</TableHead>
-                    <TableHead className="text-center">Baixos</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
-                    <TableHead>Top CVEs</TableHead>
-                    <TableHead>Última Atualização</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map(row => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <Badge variant="outline" className={MODULE_COLORS[row.module_code] || ''}>
-                          {MODULE_LABELS[row.module_code] || row.module_code}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-medium text-foreground">
-                        {row.clients?.name || 'Global'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {row.critical > 0 ? (
-                          <span className="text-rose-400 font-semibold">{row.critical}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {row.high > 0 ? (
-                          <span className="text-orange-400 font-semibold">{row.high}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {row.medium > 0 ? (
-                          <span className="text-yellow-400 font-semibold">{row.medium}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {row.low > 0 ? (
-                          <span className="text-blue-400 font-semibold">{row.low}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center font-semibold text-foreground">
-                        {row.total_cves}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(row.top_cves as TopCve[] | null)?.map((cve) => (
-                            <a
-                              key={cve.id}
-                              href={getCveUrl(cve.id)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="no-underline"
-                            >
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  'cursor-pointer hover:opacity-80 transition-opacity gap-1',
-                                  getCveScoreColor(cve.score)
-                                )}
-                              >
-                                {cve.id}
-                                <span className="font-bold">{cve.score}</span>
-                              </Badge>
-                            </a>
-                          )) || <span className="text-muted-foreground">—</span>}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {formatDistanceToNow(new Date(row.updated_at), { addSuffix: true, locale: ptBR })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {/* CVE List */}
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <Card className="p-12 text-center">
+            <Database className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground">
+              {(cves?.length ?? 0) === 0
+                ? 'Nenhuma CVE no cache. Clique em "Configurar Fontes" e sincronize.'
+                : 'Nenhuma CVE encontrada para os filtros selecionados.'}
+            </p>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Mostrando {filtered.length} de {cves?.length ?? 0} CVEs
+              {lastSync && (
+                <> · Última sincronização {formatDistanceToNow(lastSync, { addSuffix: true, locale: ptBR })}</>
+              )}
+            </p>
+            {filtered.map((cve) => (
+              <CVECard key={cve.id} cve={cve} />
+            ))}
+          </div>
+        )}
       </div>
+
+      <CVESourcesConfigDialog open={sourcesDialogOpen} onOpenChange={setSourcesDialogOpen} />
     </AppLayout>
   );
 }

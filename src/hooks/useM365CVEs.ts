@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface M365CVE {
   id: string;
@@ -23,30 +24,54 @@ interface M365CVEsResponse {
 
 export function useM365CVEs(months: number = 3, products?: string[]) {
   return useQuery<M365CVEsResponse>({
-    queryKey: ['m365-cves', months, products],
+    queryKey: ['m365-cves-cache', months, products],
     queryFn: async () => {
-      const params = new URLSearchParams({ months: String(months) });
-      if (products && products.length > 0) {
-        params.set('products', products.join(','));
-      }
+      const { data, error } = await supabase
+        .from('cve_cache')
+        .select('*')
+        .eq('module_code', 'm365')
+        .order('score', { ascending: false, nullsFirst: false });
 
-      const res = await fetch(
-        `https://akbosdbyheezghieiefz.supabase.co/functions/v1/m365-cves?${params.toString()}`,
-        {
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo',
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      if (error) throw error;
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch CVEs: ${res.status}`);
-      }
+      // Filter by months
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
 
-      return res.json();
+      const cves: M365CVE[] = (data || [])
+        .filter((row: any) => {
+          if (!row.published_date) return true;
+          return new Date(row.published_date) >= cutoff;
+        })
+        .filter((row: any) => {
+          if (!products || products.length === 0) return true;
+          const rowProducts = Array.isArray(row.products) ? row.products : [];
+          return rowProducts.some((p: string) => products.includes(p));
+        })
+        .map((row: any) => {
+          const raw = row.raw_data || {};
+          return {
+            id: row.cve_id,
+            title: row.title || row.cve_id,
+            severity: (row.severity || 'UNKNOWN') as M365CVE['severity'],
+            score: row.score != null ? Number(row.score) : null,
+            products: Array.isArray(row.products) ? row.products.map(String) : [],
+            publishedDate: row.published_date || '',
+            advisoryUrl: row.advisory_url || `https://msrc.microsoft.com/update-guide/vulnerability/${row.cve_id}`,
+            description: row.description || '',
+            customerActionRequired: raw.customerActionRequired || false,
+          };
+        });
+
+      return {
+        success: true,
+        totalCVEs: cves.length,
+        cves,
+        months: [],
+        source: 'CVE Cache (MSRC)',
+      };
     },
-    staleTime: 1000 * 60 * 30,
+    staleTime: 1000 * 60 * 5,
     retry: 1,
   });
 }
