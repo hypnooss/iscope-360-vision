@@ -8,6 +8,9 @@ export interface EffectiveModulesResult {
   // Effective modules (preview target when in preview mode, otherwise real)
   effectiveUserModules: UserModuleAccess[];
   
+  // All active modules in the system (regardless of user access)
+  allActiveModules: Module[];
+  
   // Helper function to check module access with effective permissions
   hasEffectiveModuleAccess: (moduleCode: string) => boolean;
   
@@ -21,7 +24,7 @@ export interface EffectiveModulesResult {
  * When not in preview mode, returns the real user's modules.
  */
 export function useEffectiveModules(): EffectiveModulesResult {
-  const { userModules } = useModules();
+  const { userModules, modules } = useModules();
   const { isPreviewMode, previewTarget } = usePreview();
   
   // Convert PreviewModuleAccess to UserModuleAccess format
@@ -52,6 +55,7 @@ export function useEffectiveModules(): EffectiveModulesResult {
   return {
     realUserModules: userModules,
     effectiveUserModules,
+    allActiveModules: modules,
     hasEffectiveModuleAccess,
     isPreviewMode,
   };
