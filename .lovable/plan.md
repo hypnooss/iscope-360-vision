@@ -1,50 +1,87 @@
 
 
-# Padronizacao de Espacamento e Ajuste do Card Infraestrutura
+# Melhorar exibicao dos ativos no Card Infraestrutura
 
-## Problema identificado
+## Problema atual
 
-Existem dois padroes de espacamento nas paginas:
-- **Padrao A** (Dashboard, Execucoes): `space-y-6` no container principal, sem `mb-*` manuais
-- **Padrao B** (Dominios Externos, Relatorios): sem `space-y-*`, usando `mb-8` no header e `mb-6` nos filtros manualmente
+Os dados aparecem como "Firewalls 13", "Tenants M365 5" -- o nome do modulo e o numero ficam grudados sem contexto, parecendo informacao jogada na tela.
 
-## Solucao: padronizar com `space-y-6`
+## Solucao
 
-Adotar `space-y-6` como padrao unico, removendo todos os `mb-8` e `mb-6` manuais dos headers e secoes.
+Mudar o layout de cada ativo de uma linha horizontal para um bloco vertical compacto com 3 niveis:
 
-## Alteracoes por arquivo
+```text
++------------------+
+| [icon] Firewalls |   <- nome do modulo (text-sm, text-muted-foreground)
+|      Total       |   <- tag pequena (text-xs, text-muted-foreground, uppercase, tracking-wider)
+|       13         |   <- numero grande (text-lg, font-bold, text-foreground)
++------------------+
+```
 
-### 1. `src/pages/GeneralDashboardPage.tsx`
-- Trocar cor do card Infraestrutura de `primary` (teal) para `violet-500` (nao usada por nenhum modulo: orange=Firewall, blue=M365, green=Ext Domain)
-- Ajustar gap dos itens no grid de ativos de `gap-2` para `gap-2.5` (equilibrio entre colado e distante)
+Cada ativo sera um `flex flex-col items-center` com:
+1. Linha do icone + nome do modulo (tamanho pequeno, cor muted)
+2. Texto "Total" como mini-tag (text-xs, uppercase, tracking-wider, cor muted mais suave)
+3. Numero em destaque (text-lg, font-bold)
 
-### 2. `src/pages/external-domain/ExternalDomainListPage.tsx`
-- Container: trocar `<div className="p-6 lg:p-8">` para `<div className="p-6 lg:p-8 space-y-6">`
-- Header: remover `mb-8` do div do header
-- Os componentes `ExternalDomainStatsCards` e `ExternalDomainTable` ja serao espacados automaticamente pelo `space-y-6`
+Para Agents, o numero sera "10/10" com o texto "Online" em vez de "Total".
 
-### 3. `src/pages/external-domain/ExternalDomainReportsPage.tsx`
-- Container: trocar `<div className="p-6 lg:p-8">` para `<div className="p-6 lg:p-8 space-y-6">`
-- Header: remover `mb-8` do div do header
-- Filtros: remover `mb-6` do div dos filtros
-- O Card de relatorios ja sera espacado automaticamente
+## Alteracoes tecnicas
 
-### 4. `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
-- Ja usa `space-y-6` -- nenhuma alteracao necessaria
+### Arquivo: `src/pages/GeneralDashboardPage.tsx` (linhas 353-383)
 
-## Cores do Card Infraestrutura
+Substituir o grid atual por:
 
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| Borda superior | `border-t-primary` (teal) | `border-t-violet-500` |
-| Fundo do icone | `bg-primary/10` | `bg-violet-500/10` |
-| Cor do icone | `text-primary` | `text-violet-500` |
+```tsx
+<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+  {/* Firewalls */}
+  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+    <div className="flex items-center gap-1.5">
+      <Shield className="w-4 h-4 text-orange-500" />
+      <span className="text-sm text-muted-foreground">Firewalls</span>
+    </div>
+    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+    <span className="text-lg font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
+  </div>
 
-## Resumo
+  {/* M365 Tenants */}
+  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+    <div className="flex items-center gap-1.5">
+      <Cloud className="w-4 h-4 text-blue-500" />
+      <span className="text-sm text-muted-foreground">Tenants M365</span>
+    </div>
+    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+    <span className="text-lg font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
+  </div>
+
+  {/* Dominios */}
+  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+    <div className="flex items-center gap-1.5">
+      <Layers className="w-4 h-4 text-green-500" />
+      <span className="text-sm text-muted-foreground">Dominios</span>
+    </div>
+    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+    <span className="text-lg font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
+  </div>
+
+  {/* Agents */}
+  <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+    <div className="flex items-center gap-1.5">
+      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
+      <span className="text-sm text-muted-foreground">Agents</span>
+    </div>
+    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Online</span>
+    <span className="text-lg font-bold text-foreground">
+      {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
+    </span>
+  </div>
+</div>
+```
+
+Cada bloco tera um fundo sutil (`bg-muted/30`) com cantos arredondados para criar uma separacao visual clara entre os ativos, tornando a informacao muito mais legivel.
+
+### Resumo
 
 | Arquivo | Acao |
 |---------|------|
-| `GeneralDashboardPage.tsx` | Cor infra card violet + gap 2.5 nos ativos |
-| `ExternalDomainListPage.tsx` | Adicionar space-y-6, remover mb-8 |
-| `ExternalDomainReportsPage.tsx` | Adicionar space-y-6, remover mb-8 e mb-6 |
+| `GeneralDashboardPage.tsx` | Layout vertical com tag "Total"/"Online" nos blocos de ativos |
 
