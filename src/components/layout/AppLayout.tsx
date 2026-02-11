@@ -386,7 +386,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const DisabledModuleButton = ({ module }: { module: import('@/contexts/ModuleContext').Module }) => {
     const Icon = getIconFromName(module.icon);
     
-    const buttonContent = (
+    const content = (
       <div
         className={cn(
           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium opacity-40 cursor-default select-none',
@@ -398,14 +398,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
     );
 
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
-        <TooltipContent side="right" sideOffset={10}>
-          Módulo não contratado
-        </TooltipContent>
-      </Tooltip>
-    );
+    if (!sidebarOpen) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>{content}</TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            {module.name}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return content;
   };
 
   // Helper for admin section
@@ -532,17 +536,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         isActive={location.pathname === '/dashboard'} 
       />
 
-      {/* Accessible Modules */}
-      {accessibleModuleConfigs.map((moduleConfig) => (
-        <ModuleButton key={moduleConfig.code} moduleConfig={moduleConfig} />
-      ))}
-
-      {/* Inaccessible Modules (disabled, showcase) */}
+      {/* All active modules sorted alphabetically */}
       {allActiveModules
-        .filter(m => !effectiveUserModules.some(em => em.module.code === m.code))
-        .map(m => (
-          <DisabledModuleButton key={m.id} module={m} />
-        ))}
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(module => {
+          const hasAccess = effectiveUserModules.some(em => em.module.code === module.code);
+          if (hasAccess) {
+            const config = accessibleModuleConfigs.find(c => c.code === module.code);
+            return config ? <ModuleButton key={module.id} moduleConfig={config} /> : null;
+          }
+          return <DisabledModuleButton key={module.id} module={module} />;
+        })}
 
       {/* Divider */}
       {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
