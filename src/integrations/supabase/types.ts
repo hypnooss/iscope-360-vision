@@ -286,6 +286,123 @@ export type Database = {
           },
         ]
       }
+      analyzer_schedules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          firewall_id: string
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id: string
+          is_active: boolean
+          next_run_at: string | null
+          scheduled_day_of_month: number | null
+          scheduled_day_of_week: number | null
+          scheduled_hour: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          firewall_id: string
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          firewall_id?: string
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyzer_schedules_firewall_id_fkey"
+            columns: ["firewall_id"]
+            isOneToOne: false
+            referencedRelation: "firewalls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analyzer_snapshots: {
+        Row: {
+          agent_task_id: string | null
+          client_id: string
+          created_at: string
+          firewall_id: string
+          id: string
+          insights: Json | null
+          metrics: Json | null
+          period_end: string | null
+          period_start: string | null
+          score: number | null
+          status: string
+          summary: Json | null
+        }
+        Insert: {
+          agent_task_id?: string | null
+          client_id: string
+          created_at?: string
+          firewall_id: string
+          id?: string
+          insights?: Json | null
+          metrics?: Json | null
+          period_end?: string | null
+          period_start?: string | null
+          score?: number | null
+          status?: string
+          summary?: Json | null
+        }
+        Update: {
+          agent_task_id?: string | null
+          client_id?: string
+          created_at?: string
+          firewall_id?: string
+          id?: string
+          insights?: Json | null
+          metrics?: Json | null
+          period_end?: string | null
+          period_start?: string | null
+          score?: number | null
+          status?: string
+          summary?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyzer_snapshots_agent_task_id_fkey"
+            columns: ["agent_task_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analyzer_snapshots_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analyzer_snapshots_firewall_id_fkey"
+            columns: ["firewall_id"]
+            isOneToOne: false
+            referencedRelation: "firewalls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       blueprint_step_templates: {
         Row: {
           category: string | null
@@ -2018,6 +2135,7 @@ export type Database = {
         | "ping_check"
         | "external_domain_analysis"
         | "m365_powershell"
+        | "firewall_analyzer"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       blueprint_executor_type: "agent" | "edge_function" | "hybrid"
       device_category:
@@ -2192,6 +2310,7 @@ export const Constants = {
         "ping_check",
         "external_domain_analysis",
         "m365_powershell",
+        "firewall_analyzer",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       blueprint_executor_type: ["agent", "edge_function", "hybrid"],
