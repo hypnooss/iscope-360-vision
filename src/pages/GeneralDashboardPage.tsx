@@ -188,7 +188,7 @@ function ModuleHealthCard({
             </div>
 
             {/* Sparkline + Score (horizontal) */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-6">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex-1 min-w-0">
