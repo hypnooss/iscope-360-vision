@@ -1,65 +1,83 @@
 
 
-# Administracao > CVEs - Painel centralizado do cache de CVEs
+# Administracao > CVEs - Lista detalhada de CVEs individuais
 
-## Objetivo
+## Problema
 
-Criar uma nova pagina administrativa em `/cves` que exibe o conteudo da tabela `cve_severity_cache`, seguindo o mesmo padrao visual da pagina de Agendamentos (`/schedules`).
+A pagina atual exibe dados agregados da tabela `cve_severity_cache` (contagens por workspace), mas o usuario quer ver as CVEs individuais com todos os detalhes: ID, pontuacao CVSS, severidade, descricao, produtos afetados, data de publicacao, links para advisory.
 
-## O que existe hoje (resumo do sistema de CVEs)
+## O que o cache realmente armazena
 
-- **Tabela `cve_severity_cache`**: armazena contagens de CVEs por severidade (critical, high, medium, low, total_cves), top 2 CVEs, modulo (firewall/m365) e client_id
-- **Edge Function `refresh-cve-cache`**: executa diariamente as 06:00 UTC via cron, consulta NIST NVD (firewalls) e MSRC (M365) e popula o cache
-- **Paginas por modulo**: `/scope-firewall/cves` e `/scope-m365/cves` buscam dados ao vivo das APIs
-- **Dashboard**: usa o cache via `useTopCVEs` para exibir alertas prioritarios
+A tabela `cve_severity_cache` armazena apenas:
+- Contagens por severidade (critical, high, medium, low, total)
+- Top 2 CVEs (apenas id + score + severity, sem descricao)
+- Modulo e client_id
 
-## Pagina nova: `/cves` (Administracao > CVEs)
+Os detalhes completos das CVEs sao obtidos em tempo real pelas Edge Functions `fortigate-cve` (NVD API) e `m365-cves` (MSRC API).
 
-### Layout (espelhando SchedulesPage)
+## Solucao
+
+Redesenhar completamente `CVEsCachePage.tsx` para buscar dados ao vivo das mesmas Edge Functions que as paginas de modulo usam, combinando tudo numa unica lista unificada.
+
+### Fonte de dados
+
+| Modulo | Edge Function | Dados retornados |
+|---|---|---|
+| Firewall | `fortigate-cve` (via `useFirewallCVEs`) | id, description, severity, score, publishedDate, affectedVersions, references, vendor |
+| M365 | `m365-cves` (via `useM365CVEs`) | id, title, severity, score, publishedDate, products, description, advisoryUrl, customerActionRequired |
+
+### Layout da nova pagina
 
 1. **Breadcrumb**: Administracao > CVEs
-2. **Header**: titulo "CVEs" + subtitulo "Cache centralizado de vulnerabilidades por modulo"
-3. **Cards de resumo** (4 cards):
-   - Total de CVEs (soma de todos os registros)
-   - Criticos (soma de `critical`)
-   - Altos (soma de `high`)
-   - Ultima atualizacao (data mais recente de `updated_at`)
-4. **Filtros**: busca por workspace (client name), filtro por modulo (firewall/m365/todos)
-5. **Tabela** com colunas:
-   - Modulo (firewall / m365)
-   - Workspace (nome do client, ou "Global" quando client_id e null)
-   - Criticos / Altos / Medios / Baixos / Total
-   - Top CVEs (badges com ID e score)
-   - Ultima Atualizacao (tempo relativo)
+2. **Header**: titulo + subtitulo "Todas as vulnerabilidades monitoradas na plataforma"
+3. **Cards de resumo** (5 cards): Total, Criticos, Altos, Medios, Baixos (calculados a partir dos dados ao vivo, clicaveis para filtrar)
+4. **Filtros**:
+   - Busca textual (por CVE ID ou descricao)
+   - Filtro por modulo (Todos / Firewall / M365)
+   - Filtro por severidade (via StatCards clicaveis)
+5. **Lista de CVEs**: Cards expandiveis (Collapsible) mostrando:
+   - Badge de severidade + badge do modulo (Firewall/M365)
+   - CVE ID clicavel (link para NVD ou MSRC)
+   - Score CVSS
+   - Titulo/descricao resumida
+   - Produtos afetados (M365) ou versao de firmware (Firewall)
+   - Data de publicacao
+   - Ao expandir: descricao completa + links para advisories
 
-### Dados
+### Unificacao dos dados
 
-A query busca de `cve_severity_cache` com join em `clients` para resolver o nome do workspace:
+As CVEs de ambos os modulos serao normalizadas para um tipo unificado:
 
-```sql
-SELECT c.*, clients.name as client_name
-FROM cve_severity_cache c
-LEFT JOIN clients ON c.client_id = clients.id
-ORDER BY c.updated_at DESC
+```text
+UnifiedCVE {
+  id: string           // CVE-XXXX-XXXXX
+  module: 'firewall' | 'm365'
+  severity: string
+  score: number | null
+  title: string
+  description: string
+  publishedDate: string
+  products: string[]   // M365: produtos cloud, Firewall: "FortiOS 7.x.x"
+  advisoryUrl: string
+  isNew: boolean       // publicado nos ultimos 30 dias
+}
 ```
 
-### Navegacao
+A lista e ordenada por score (maior primeiro), com fallback por severidade.
 
-Adicionar item "CVEs" no menu de Administracao (sidebar) com icone `Bug`, na mesma posicao apos "Agendamentos".
-
-## Arquivos a criar/modificar
+## Arquivos a modificar
 
 | Arquivo | Acao |
 |---|---|
-| `src/pages/admin/CVEsCachePage.tsx` | Criar - pagina completa seguindo padrao SchedulesPage |
-| `src/App.tsx` | Modificar - adicionar lazy import e rota `/cves` |
-| `src/components/layout/AppLayout.tsx` | Modificar - adicionar item "CVEs" no menu admin (desktop, collapsed e mobile) |
+| `src/pages/admin/CVEsCachePage.tsx` | Reescrever completamente - buscar dados ao vivo das Edge Functions, exibir CVEs individuais com detalhes |
+
+Nenhum arquivo novo necessario. Nenhuma alteracao no banco de dados. Rota e menu ja estao configurados.
 
 ## Detalhes tecnicos
 
-- Usa `useQuery` com `queryKey: ['admin-cve-cache']` e `refetchInterval: 60_000`
-- Resolve `client_id` para nome via join no select do Supabase: `.select('*, clients(name)')`
-- Quando `client_id` e null (M365 global), exibe "Global" na coluna Workspace
-- Top CVEs renderizados como badges clicaveis que abrem o NVD em nova aba
-- Nenhuma alteracao no banco de dados necessaria (tabela `cve_severity_cache` ja existe com RLS adequado)
+- Reutiliza os hooks `useFirewallCVEs()` e `useM365CVEs()` para buscar dados
+- Combina e deduplica os resultados numa lista unificada
+- Mantém `staleTime` de 30 min (ja configurado nos hooks) para evitar chamadas excessivas as APIs
+- Componente `CVECard` similar ao das paginas de modulo mas com badge indicando a origem (Firewall/M365)
+- StatCards clicaveis para filtrar por severidade (mesmo padrao das paginas existentes)
 
