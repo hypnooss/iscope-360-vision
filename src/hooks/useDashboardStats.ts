@@ -25,6 +25,7 @@ export interface ModuleHealth {
   severities: SeverityBlock;
   cveSeverities?: SeverityBlock | null;
   scoreHistory: ScoreHistoryPoint[];
+  activeUsers?: number | null;
 }
 
 const emptyHealth: ModuleHealth = {
@@ -107,6 +108,7 @@ export interface DashboardStats {
   modules: Record<string, ModuleHealth>;
   agentsOnline: number;
   agentsTotal: number;
+  m365ActiveUsers: number | null;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -209,13 +211,14 @@ const m365Health: ModuleHealth = {
       if (tenantIds.length > 0) {
         const { data: m365History } = await supabase
           .from('m365_posture_history')
-          .select('tenant_record_id, score, summary, created_at')
+          .select('tenant_record_id, score, summary, environment_metrics, created_at')
           .in('tenant_record_id', tenantIds)
           .eq('status', 'completed')
           .order('created_at', { ascending: false });
 
         const scores: number[] = [];
         let latestDate: string | null = null;
+        let totalActiveUsers = 0;
         const seen = new Set<string>();
         for (const h of (m365History || [])) {
           if (seen.has(h.tenant_record_id)) continue;
@@ -229,10 +232,15 @@ const m365Health: ModuleHealth = {
             m365Health.severities.medium += summary.medium || 0;
             m365Health.severities.low += summary.low || 0;
           }
+          const envMetrics = h.environment_metrics as any;
+          if (envMetrics?.activeUsers != null) {
+            totalActiveUsers += envMetrics.activeUsers;
+          }
         }
         m365Health.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         m365Health.lastAnalysisDate = latestDate;
         m365Health.scoreHistory = aggregateScoreHistory((m365History || []).map(h => ({ score: h.score, created_at: h.created_at })));
+        m365Health.activeUsers = totalActiveUsers > 0 ? totalActiveUsers : null;
       }
 
       // --- External Domain ---
@@ -323,6 +331,7 @@ const extHealth: ModuleHealth = {
         modules: modulesRecord,
         agentsOnline,
         agentsTotal,
+        m365ActiveUsers: modulesRecord.m365?.activeUsers ?? null,
       });
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
