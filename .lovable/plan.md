@@ -1,35 +1,19 @@
 
-# Adicionar botao "Atualizando..." na pagina de Agendamentos
 
-## Objetivo
+# Corrigir Breadcrumbs das paginas de Administracao
 
-Adicionar o mesmo botao de refresh visual usado nas paginas de Execucoes, mostrando "Atualizando..." com icone girando quando ha polling ativo, seguindo o padrao existente.
+## Problema
+
+As paginas **Administradores**, **Workspaces** e **Configuracoes** estao mostrando o breadcrumb apenas com o nome da pagina (ex: "Administradores"), sem o prefixo "Administracao >". Enquanto isso, as paginas **Templates** e **Agendamentos** ja exibem corretamente "Administracao > Templates".
+
+As paginas **Usuarios** e **Agents** estao corretas, pois sao itens de nivel superior no menu lateral (nao pertencem ao grupo Administracao).
 
 ## Alteracoes
 
-### Arquivo: `src/pages/admin/SchedulesPage.tsx`
-
-1. **Imports**: Adicionar `Button` de `@/components/ui/button`, `RefreshCw` de `lucide-react`, e `cn` de `@/lib/utils`
-
-2. **Refetch manual**: Extrair `refetch` da query `admin-schedules`
-
-3. **Botao no header**: Transformar o bloco do titulo em um `flex` com o botao alinhado a direita, seguindo o mesmo padrao das paginas de Execucoes:
-
-```tsx
-<div className="flex items-center justify-between">
-  <div>
-    <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
-    <p className="text-muted-foreground mt-1">Painel centralizado de agendamentos de analise</p>
-  </div>
-  <Button onClick={() => refetch()} variant="outline" size="sm">
-    <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
-    Atualizando...
-  </Button>
-</div>
-```
-
-O icone ficara sempre girando (ja que o `refetchInterval` esta sempre ativo) e o texto sera "Atualizando...", indicando visualmente que a pagina se atualiza sozinha. Clicar no botao forca um refetch imediato.
-
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/admin/SchedulesPage.tsx` | Adicionar botao "Atualizando..." no header da pagina |
+| `src/pages/AdministratorsPage.tsx` | Alterar breadcrumb de `[{ label: 'Administradores' }]` para `[{ label: 'Administracao' }, { label: 'Administradores' }]` |
+| `src/pages/ClientsPage.tsx` | Alterar breadcrumb de `[{ label: 'Workspaces' }]` para `[{ label: 'Administracao' }, { label: 'Workspaces' }]` |
+| `src/pages/admin/SettingsPage.tsx` | Alterar breadcrumb de `[{ label: 'Configuracoes' }]` para `[{ label: 'Administracao' }, { label: 'Configuracoes' }]` |
+
+Nenhum item de breadcrumb intermediario ("Administracao") tera link, seguindo o mesmo padrao de Templates e Agendamentos.
