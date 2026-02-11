@@ -432,6 +432,50 @@ export type Database = {
           },
         ]
       }
+      cve_severity_cache: {
+        Row: {
+          client_id: string | null
+          critical: number
+          high: number
+          id: string
+          low: number
+          medium: number
+          module_code: string
+          total_cves: number
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          critical?: number
+          high?: number
+          id?: string
+          low?: number
+          medium?: number
+          module_code: string
+          total_cves?: number
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          critical?: number
+          high?: number
+          id?: string
+          low?: number
+          medium?: number
+          module_code?: string
+          total_cves?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cve_severity_cache_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       device_blueprints: {
         Row: {
           collection_steps: Json

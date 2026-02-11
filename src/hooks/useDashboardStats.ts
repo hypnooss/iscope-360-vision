@@ -6,16 +6,19 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type SeverityBlock = {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+};
+
 export interface ModuleHealth {
   score: number | null;
   assetCount: number;
   lastAnalysisDate: string | null;
-  severities: {
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
+  severities: SeverityBlock;
+  cveSeverities?: SeverityBlock | null;
 }
 
 const emptyHealth: ModuleHealth = {
@@ -245,6 +248,42 @@ const extHealth: ModuleHealth = {
         if (!modulesRecord[config.statsKey]) {
           modulesRecord[config.statsKey] = { ...emptyHealth };
         }
+      }
+
+      // ── 3. CVE severity cache ──────────────────────────────────────
+      try {
+        let cveQuery = supabase
+          .from('cve_severity_cache')
+          .select('module_code, client_id, critical, high, medium, low');
+
+        const { data: cveCache } = await cveQuery;
+
+        if (cveCache && cveCache.length > 0) {
+          for (const row of cveCache) {
+            // Map module_code to statsKey
+            const statsKey = row.module_code === 'firewall' ? 'firewall'
+              : row.module_code === 'm365' ? 'm365'
+              : null;
+            if (!statsKey || !modulesRecord[statsKey]) continue;
+
+            // For firewall: filter by workspace
+            if (row.module_code === 'firewall' && row.client_id) {
+              if (selectedWorkspaceId && row.client_id !== selectedWorkspaceId) continue;
+              if (workspaceIds && workspaceIds.length > 0 && !workspaceIds.includes(row.client_id)) continue;
+            }
+
+            // Accumulate CVE severities
+            const existing = modulesRecord[statsKey].cveSeverities || { critical: 0, high: 0, medium: 0, low: 0 };
+            modulesRecord[statsKey].cveSeverities = {
+              critical: existing.critical + (row.critical || 0),
+              high: existing.high + (row.high || 0),
+              medium: existing.medium + (row.medium || 0),
+              low: existing.low + (row.low || 0),
+            };
+          }
+        }
+      } catch (cveErr) {
+        console.warn('Error fetching CVE cache:', cveErr);
       }
 
       setStats({

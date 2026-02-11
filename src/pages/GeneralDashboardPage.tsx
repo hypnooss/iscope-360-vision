@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
-import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
+import { useDashboardStats, ModuleHealth, SeverityBlock } from '@/hooks/useDashboardStats';
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -72,11 +72,36 @@ const SEVERITY_ITEMS = [
   { key: 'low' as const, label: 'Baixo', icon: Info, badgeCn: 'bg-blue-400/15 text-blue-400 border-blue-400/30' },
 ] as const;
 
+function SeverityColumn({ title, severities }: { title: string; severities: SeverityBlock }) {
+  const total = severities.critical + severities.high + severities.medium + severities.low;
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">{title}</span>
+      {total > 0 ? (
+        SEVERITY_ITEMS.map(({ key, label, icon: SevIcon, badgeCn }) => (
+          <div key={key} className="flex items-center gap-1.5">
+            <Badge className={cn('text-xs gap-1 px-1.5 min-w-[24px] justify-center', badgeCn)}>
+              <SevIcon className="w-3 h-3" />
+              {severities[key]}
+            </Badge>
+            <span className="text-[10px] text-muted-foreground">{label}</span>
+          </div>
+        ))
+      ) : (
+        <div className="flex items-center gap-1.5 text-emerald-400">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span className="text-[10px]">Nenhum</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor,
   health, loading, onAccess,
 }: ModuleHealthCardProps) {
-  const totalSeverities = health.severities.critical + health.severities.high + health.severities.medium + health.severities.low;
+  const hasCves = !!health.cveSeverities;
 
   return (
     <Card
@@ -104,8 +129,8 @@ function ModuleHealthCard({
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Score Gauge (left) + Severity Badges (right) */}
-            <div className="flex items-center gap-6 py-2">
+            {/* Score Gauge + Severity columns */}
+            <div className="flex items-center gap-4 py-2">
               <div className="shrink-0">
                 {health.score != null ? (
                   <ScoreGauge score={health.score} size="sm" />
@@ -117,24 +142,15 @@ function ModuleHealthCard({
                 )}
               </div>
 
-              {/* Severity grid */}
-              <div className="flex-1 flex flex-col gap-1.5">
-                {totalSeverities > 0 ? (
-                  SEVERITY_ITEMS.map(({ key, label, icon: SevIcon, badgeCn }) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <Badge className={cn('text-xs gap-1 px-2 min-w-[28px] justify-center', badgeCn)}>
-                        <SevIcon className="w-3 h-3" />
-                        {health.severities[key]}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{label}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex items-center gap-2 text-emerald-400">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span className="text-xs">Nenhum alerta</span>
-                  </div>
+              {/* Severity columns: CVEs + Conformidade when CVEs exist, or just Conformidade */}
+              <div className={cn('flex-1 flex gap-4', hasCves ? 'justify-around' : '')}>
+                {hasCves && (
+                  <SeverityColumn title="CVEs" severities={health.cveSeverities!} />
                 )}
+                <SeverityColumn
+                  title={hasCves ? 'Conformidade' : ''}
+                  severities={health.severities}
+                />
               </div>
             </div>
 

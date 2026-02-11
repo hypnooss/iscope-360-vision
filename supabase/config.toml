@@ -84,3 +84,6 @@ verify_jwt = false
 [functions.manage-firewall-credentials]
 verify_jwt = false
 
+[functions.refresh-cve-cache]
+verify_jwt = false
+
