@@ -63,12 +63,13 @@ const PROGRESS_COLOR_MAP: Record<string, string> = {
   'primary': 'bg-primary',
 };
 
-const SPARKLINE_COLOR_MAP: Record<string, string> = {
-  'orange-500': 'hsl(25, 95%, 53%)',
-  'blue-500': 'hsl(217, 91%, 60%)',
-  'green-500': 'hsl(142, 71%, 45%)',
-  'primary': 'hsl(175, 80%, 45%)',
-};
+function getScoreHslColor(score: number | null): string {
+  if (score == null) return 'hsl(0, 0%, 50%)';
+  if (score >= 90) return 'hsl(175, 80%, 45%)';
+  if (score >= 75) return 'hsl(142, 71%, 45%)';
+  if (score >= 60) return 'hsl(48, 96%, 53%)';
+  return 'hsl(347, 77%, 50%)';
+}
 
 // ─── Score color helper ───────────────────────────────────────────────────────
 function getScoreColor(score: number | null): string {
@@ -154,7 +155,7 @@ function ModuleHealthCard({
   health, loading, topCves, onAccessCompliance, onAccessCves,
 }: ModuleHealthCardProps) {
   const hasCves = !!health.cveSeverities;
-  const sparkColor = SPARKLINE_COLOR_MAP[colorBase] || 'hsl(175, 80%, 45%)';
+  const sparkColor = getScoreHslColor(health.score);
 
   return (
     <Card className={cn('glass-card border-l-4 transition-all duration-200 hover:shadow-lg', borderColor)}>
@@ -189,7 +190,7 @@ function ModuleHealthCard({
             <div className="space-y-0">
               <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
               <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium shrink-0">Score</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium shrink-0">Score Atual</span>
                 <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-secondary">
                   <div
                     className={cn('h-full rounded-full transition-all duration-500', getScoreProgressColor(health.score))}
