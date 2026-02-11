@@ -39,7 +39,15 @@ interface Agent {
   client_id: string | null;
 }
 
-interface Firewall {
+  interface ScheduleInfo {
+    frequency: string;
+    is_active: boolean;
+    scheduled_hour?: number | null;
+    scheduled_day_of_week?: number | null;
+    scheduled_day_of_month?: number | null;
+  }
+
+  interface Firewall {
   id: string;
   name: string;
   description: string | null;
@@ -54,7 +62,7 @@ interface Firewall {
   agent_id: string | null;
   device_type_id: string | null;
   clients?: { name: string } | null;
-  analysis_schedules?: { frequency: string; is_active: boolean }[] | { frequency: string; is_active: boolean } | null;
+  analysis_schedules?: ScheduleInfo[] | ScheduleInfo | null;
   pending_task?: boolean;
   device_type?: DeviceType | null;
   agent?: Agent | null;
@@ -139,17 +147,23 @@ export default function FirewallListPage() {
       const firewallIds = firewallsRes.data.map(f => f.id);
       const { data: schedulesData } = await supabase
         .from('analysis_schedules')
-        .select('firewall_id, frequency, is_active')
+        .select('firewall_id, frequency, is_active, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
         .in('firewall_id', firewallIds);
 
       const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c]));
       const deviceTypeMap = new Map((deviceTypesRes.data || []).map(d => [d.id, d]));
       const agentMap = new Map((agentsRes.data || []).map(a => [a.id, a]));
-      const scheduleMap = new Map<string, { frequency: string; is_active: boolean }[]>();
+      const scheduleMap = new Map<string, ScheduleInfo[]>();
       
       for (const schedule of (schedulesData || [])) {
         const existing = scheduleMap.get(schedule.firewall_id) || [];
-        existing.push({ frequency: schedule.frequency, is_active: schedule.is_active });
+        existing.push({
+          frequency: schedule.frequency,
+          is_active: schedule.is_active,
+          scheduled_hour: (schedule as any).scheduled_hour,
+          scheduled_day_of_week: (schedule as any).scheduled_day_of_week,
+          scheduled_day_of_month: (schedule as any).scheduled_day_of_month,
+        });
         scheduleMap.set(schedule.firewall_id, existing);
       }
 
@@ -358,6 +372,43 @@ export default function FirewallListPage() {
     }
   };
 
+  const getDayOfWeekLabel = (day: number) => {
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    return days[day] || '—';
+  };
+
+  const getScheduleDetailBadges = (schedule: ScheduleInfo | null | undefined) => {
+    if (!schedule || schedule.frequency === 'manual') return null;
+    const hour = schedule.scheduled_hour ?? null;
+    const badges: React.ReactNode[] = [];
+
+    if (schedule.frequency === 'weekly' && schedule.scheduled_day_of_week != null) {
+      badges.push(
+        <Badge key="dow" variant="secondary" className="text-[10px] px-1.5 py-0">
+          {getDayOfWeekLabel(schedule.scheduled_day_of_week)}
+        </Badge>
+      );
+    }
+
+    if (schedule.frequency === 'monthly' && schedule.scheduled_day_of_month != null) {
+      badges.push(
+        <Badge key="dom" variant="secondary" className="text-[10px] px-1.5 py-0">
+          Dia {schedule.scheduled_day_of_month}
+        </Badge>
+      );
+    }
+
+    if (hour != null) {
+      badges.push(
+        <Badge key="hour" variant="secondary" className="text-[10px] px-1.5 py-0">
+          {hour.toString().padStart(2, '0')}:00
+        </Badge>
+      );
+    }
+
+    return badges.length > 0 ? badges : null;
+  };
+
   const canEdit = hasPermission('firewall', 'edit');
 
   if (authLoading) return null;
@@ -466,9 +517,12 @@ export default function FirewallListPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">
-                            {schedule ? getScheduleLabel(schedule.frequency) : 'Manual'}
-                          </Badge>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="outline">
+                              {schedule ? getScheduleLabel(schedule.frequency) : 'Manual'}
+                            </Badge>
+                            {getScheduleDetailBadges(schedule as ScheduleInfo)}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">

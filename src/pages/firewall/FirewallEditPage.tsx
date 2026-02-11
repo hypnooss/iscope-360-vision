@@ -301,14 +301,14 @@ export default function FirewallEditPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 max-w-3xl mx-auto">
+      <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
         <PageBreadcrumb items={[
           { label: 'Firewall', href: '/scope-firewall/dashboard' },
           { label: 'Firewalls', href: '/scope-firewall/firewalls' },
           { label: 'Editar' },
         ]} />
 
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/firewalls')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -319,7 +319,7 @@ export default function FirewallEditPage() {
         </div>
 
         {/* Device Info */}
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Settings className="w-5 h-5" />
@@ -410,7 +410,7 @@ export default function FirewallEditPage() {
         </Card>
 
         {/* Schedule */}
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Clock className="w-5 h-5" />
