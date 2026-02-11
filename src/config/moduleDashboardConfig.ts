@@ -31,4 +31,9 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
     path: '/scope-network/dashboard',
     infraLabel: 'Network',
   },
+  scope_cloud: {
+    statsKey: 'cloud',
+    path: '/scope-cloud/dashboard',
+    infraLabel: 'Cloud',
+  },
 };

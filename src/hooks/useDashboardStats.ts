@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { usePreview } from '@/contexts/PreviewContext';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -183,13 +184,21 @@ const extHealth: ModuleHealth = {
         extHealth.lastAnalysisDate = latestDate;
       }
 
+      const modulesRecord: Record<string, ModuleHealth> = {
+        firewall: fwHealth,
+        m365: m365Health,
+        externalDomain: extHealth,
+      };
+
+      // Auto-fill remaining modules from config with emptyHealth
+      for (const config of Object.values(MODULE_DASHBOARD_CONFIG)) {
+        if (!modulesRecord[config.statsKey]) {
+          modulesRecord[config.statsKey] = { ...emptyHealth };
+        }
+      }
+
       setStats({
-        modules: {
-          firewall: fwHealth,
-          m365: m365Health,
-          externalDomain: extHealth,
-          network: { ...emptyHealth },
-        },
+        modules: modulesRecord,
         agentsOnline,
         agentsTotal,
       });
