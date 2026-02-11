@@ -301,7 +301,7 @@ export default function FirewallEditPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Firewall', href: '/scope-firewall/dashboard' },
           { label: 'Firewalls', href: '/scope-firewall/firewalls' },

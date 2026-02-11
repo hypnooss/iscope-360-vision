@@ -415,14 +415,14 @@ export default function FirewallListPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Firewall', href: '/scope-firewall/dashboard' },
           { label: 'Firewalls' },
         ]} />
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Firewalls</h1>
             <p className="text-muted-foreground">Gerencie seus dispositivos FortiGate</p>
