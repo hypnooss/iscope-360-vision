@@ -1,30 +1,44 @@
 
-# Adicionar Suporte a Dominios Externos no Scheduler Automatico
 
-## Problema
+# Corrigir Early Return e Disparar Agendamentos Atrasados
 
-A Edge Function `run-scheduled-analyses` consulta apenas a tabela `analysis_schedules` (firewalls) e chama `trigger-firewall-analysis`. A tabela `external_domain_schedules` nunca e verificada, por isso os agendamentos de dominios externos ficam marcados como "Atrasado" e nenhuma execucao e criada.
+## Problema Raiz
 
-## Solucao
+Na Edge Function `run-scheduled-analyses`, linhas 62-68, existe um `return` prematuro: quando nao ha agendamentos de firewall vencidos (`dueSchedules` vazio), a funcao retorna imediatamente com "No schedules due" e **nunca executa a secao de dominios externos** (linhas 121+).
 
-Adicionar uma segunda etapa na mesma Edge Function para tambem consultar e processar agendamentos de dominios externos.
+```text
+Fluxo atual (BUG):
+  Busca firewalls vencidos -> Nenhum encontrado -> RETURN "No schedules due" -> FIM
+                                                   (dominios NUNCA verificados)
+```
 
-## Alteracoes
+## Correcao
 
 ### Arquivo: `supabase/functions/run-scheduled-analyses/index.ts`
 
-Apos o loop dos firewalls, adicionar:
+Remover o early return das linhas 62-68. Em vez de retornar quando nao ha firewalls, simplesmente pular o loop de firewalls e continuar para a secao de dominios externos.
 
-1. **Query em `external_domain_schedules`** buscando agendamentos ativos, nao-manuais e com `next_run_at <= NOW()`
-2. **Loop para cada agendamento vencido**:
-   - Chamar `trigger-external-domain-analysis` com `{ domain_id: schedule.domain_id }`
-   - Tratar 409 como sucesso (analise ja em andamento)
-   - Calcular e atualizar `next_run_at` usando a mesma funcao `calculateNextRunAt` ja existente
-3. **Somar os contadores** (`triggered`, `errors`) com os resultados de ambas as etapas
-4. **Atualizar a resposta** para incluir detalhes de ambos os tipos no log e no JSON de retorno
+Substituir:
+```
+if (!dueSchedules || dueSchedules.length === 0) {
+  console.log('No schedules due for execution.');
+  return new Response(...);
+}
+```
 
-## Resultado esperado
+Por:
+```
+if (!dueSchedules || dueSchedules.length === 0) {
+  console.log('No firewall schedules due.');
+}
+```
 
-Quando o cron job invocar `run-scheduled-analyses` a cada 15 minutos, ele agora verificara ambas as tabelas e disparara analises tanto para firewalls quanto para dominios externos automaticamente.
+O resto do codigo ja trata corretamente o caso de `dueSchedules` vazio porque o `for` simplesmente nao executa.
 
-Nenhuma migracao de banco necessaria. Nenhum arquivo frontend alterado.
+### Apos o deploy
+
+Invocar manualmente a funcao para disparar os 2 agendamentos atrasados (next_run_at = 21:00 UTC).
+
+## Resultado
+
+O cron job passara a verificar **ambas** as tabelas independentemente, sem que uma bloqueie a outra.
