@@ -4,9 +4,9 @@ import type { AnalyzerSnapshot, AnalyzerInsight, AnalyzerMetrics, AnalyzerSummar
 import type { Json } from '@/integrations/supabase/types';
 
 function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
-  const summary = (row.summary as Record<string, number>) ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const rawSummary = (row.summary ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 }) as unknown as AnalyzerSummary;
   const insights = (Array.isArray(row.insights) ? row.insights : []) as unknown as AnalyzerInsight[];
-  const metrics = (row.metrics as Record<string, unknown>) ?? {};
+  const metrics = (row.metrics ?? {}) as Record<string, unknown>;
 
   return {
     id: row.id as string,
