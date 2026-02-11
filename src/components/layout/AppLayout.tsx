@@ -29,6 +29,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
+import {
   LayoutDashboard,
   Server,
   FileText,
@@ -314,12 +319,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const firstRoute = moduleConfig.items[0]?.href || `/${moduleConfig.code.replace(/_/g, '-')}/dashboard`;
     
     if (!sidebarOpen) {
-      // In collapsed mode, show tooltip and navigate on click
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to={firstRoute}
+        <HoverCard openDelay={100} closeDelay={150}>
+          <HoverCardTrigger asChild>
+            <button
               className={cn(
                 'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isModuleActive(moduleConfig.code)
@@ -328,12 +331,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               )}
             >
               <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>
-            {moduleConfig.name}
-          </TooltipContent>
-        </Tooltip>
+            </button>
+          </HoverCardTrigger>
+          <HoverCardContent side="right" sideOffset={10} align="start" className="w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-sidebar-border">
+              <moduleConfig.icon className={cn('w-4 h-4', moduleConfig.color)} />
+              <span className="text-sm font-semibold text-sidebar-foreground">{moduleConfig.name}</span>
+            </div>
+            <div className="space-y-0.5">
+              {moduleConfig.items.map((item) => (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    'flex items-center gap-3 px-2 py-2 rounded-md text-sm transition-colors',
+                    isActiveRoute(item.href)
+                      ? 'bg-sidebar-accent/70 text-sidebar-primary font-medium'
+                      : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/30'
+                  )}
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       );
     }
 
@@ -419,10 +442,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     
     if (!sidebarOpen) {
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/settings"
+        <HoverCard openDelay={100} closeDelay={150}>
+          <HoverCardTrigger asChild>
+            <button
               className={cn(
                 'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isAdminRoute
@@ -431,12 +453,38 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               )}
             >
               <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>
-            Administração
-          </TooltipContent>
-        </Tooltip>
+            </button>
+          </HoverCardTrigger>
+          <HoverCardContent side="right" sideOffset={10} align="start" className="w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-sidebar-border">
+              <ShieldCheck className="w-4 h-4 text-warning" />
+              <span className="text-sm font-semibold text-warning">Administração</span>
+            </div>
+            <div className="space-y-0.5">
+              {[
+                { href: '/administrators', icon: ShieldCheck, label: 'Administradores' },
+                { href: '/workspaces', icon: Building, label: 'Workspaces' },
+                { href: '/settings', icon: Settings, label: 'Configurações' },
+                { href: '/templates', icon: ClipboardList, label: 'Templates' },
+                { href: '/schedules', icon: Clock, label: 'Agendamentos' },
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    'flex items-center gap-3 px-2 py-2 rounded-md text-sm transition-colors',
+                    location.pathname === item.href
+                      ? 'bg-warning/20 text-warning font-medium'
+                      : 'text-warning/80 hover:bg-warning/10'
+                  )}
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       );
     }
 
