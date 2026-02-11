@@ -6,6 +6,7 @@ import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
 import { useM365CVEs } from '@/hooks/useM365CVEs';
+import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,11 +17,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
   AlertTriangle, ShieldAlert, LucideIcon, Building2, Monitor,
+  Globe, Network,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
+
+// ─── Icon map: resolves DB string → Lucide component ─────────────────────────
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  Shield, Cloud, Layers, Globe, Server, Network, Monitor,
+};
 
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
@@ -31,7 +39,6 @@ interface ModuleHealthCardProps {
   iconBg: string;
   borderColor: string;
   health: ModuleHealth;
-  assetLabel: string;
   loading: boolean;
   onAccess: () => void;
   extraInfo?: ReactNode;
@@ -40,7 +47,7 @@ interface ModuleHealthCardProps {
 
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor,
-  health, assetLabel, loading, onAccess, extraInfo, hideSeverities,
+  health, loading, onAccess, extraInfo, hideSeverities,
 }: ModuleHealthCardProps) {
   const hasSeverities = !hideSeverities && (health.severities.critical > 0 || health.severities.high > 0);
 
@@ -120,10 +127,17 @@ function ModuleHealthCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const emptyHealth: ModuleHealth = {
+  score: null,
+  assetCount: 0,
+  lastAnalysisDate: null,
+  severities: { critical: 0, high: 0, medium: 0, low: 0 },
+};
+
 export default function GeneralDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { setActiveModule } = useModules();
-  const { hasEffectiveModuleAccess } = useEffectiveModules();
+  const { effectiveUserModules } = useEffectiveModules();
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
 
@@ -158,20 +172,9 @@ export default function GeneralDashboardPage() {
     navigate(path);
   };
 
-  const hasFirewall = hasEffectiveModuleAccess('scope_firewall');
-  const hasM365 = hasEffectiveModuleAccess('scope_m365');
-  const hasExtDomain = hasEffectiveModuleAccess('scope_external_domain');
-
-  const emptyHealth: ModuleHealth = {
-    score: null,
-    assetCount: 0,
-    lastAnalysisDate: null,
-    severities: { critical: 0, high: 0, medium: 0, low: 0 },
-  };
-
-
-
   const recentCVECount = cveData?.totalCVEs ?? 0;
+
+  // ─── Build dynamic module cards from effectiveUserModules + config ──────────
 
   type CardDef = {
     key: string;
@@ -181,69 +184,57 @@ export default function GeneralDashboardPage() {
     iconBg: string;
     borderColor: string;
     health: ModuleHealth;
-    assetLabel: string;
     moduleCode: string;
     path: string;
+    infraLabel: string;
     extraInfo?: ReactNode;
     hideSeverities?: boolean;
   };
 
-  const moduleCards: CardDef[] = [
-    hasFirewall && {
-      key: 'firewall',
-      title: 'Firewall',
-      icon: Shield,
-      iconColor: 'text-orange-500',
-      iconBg: 'bg-orange-500/10',
-      borderColor: 'border-l-orange-500',
-      health: stats?.firewall || emptyHealth,
-      assetLabel: 'firewalls',
-      moduleCode: 'scope_firewall',
-      path: '/scope-firewall/dashboard',
-    },
-    hasM365 && {
-      key: 'm365',
-      title: 'Microsoft 365',
-      icon: Cloud,
-      iconColor: 'text-blue-500',
-      iconBg: 'bg-blue-500/10',
-      borderColor: 'border-l-blue-500',
-      health: stats?.m365 || emptyHealth,
-      assetLabel: 'tenants',
-      moduleCode: 'scope_m365',
-      path: '/scope-m365/posture',
-      hideSeverities: true,
-      extraInfo: recentCVECount > 0 ? (
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-lg font-bold text-foreground">{recentCVECount}</span>
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded animate-pulse">NEW</span>
-            <span className="text-xs text-muted-foreground">CVEs</span>
-          </div>
-        </div>
-      ) : undefined,
-    },
-    hasExtDomain && {
-      key: 'external_domain',
-      title: 'Domínio Externo',
-      icon: Layers,
-      iconColor: 'text-green-500',
-      iconBg: 'bg-green-500/10',
-      borderColor: 'border-l-green-500',
-      health: stats?.externalDomain || emptyHealth,
-      assetLabel: 'domínios',
-      moduleCode: 'scope_external_domain',
-      path: '/scope-external-domain/domains',
-    },
-  ].filter(Boolean) as CardDef[];
+  const moduleCards: CardDef[] = effectiveUserModules
+    .filter(um => um.permission !== 'none')
+    .map(um => {
+      const config = MODULE_DASHBOARD_CONFIG[um.module.code];
+      if (!config) return null;
 
-  // Infrastructure metrics
-  const totalAssets = stats
-    ? (stats.firewall.assetCount + stats.m365.assetCount + stats.externalDomain.assetCount)
-    : 0;
+      const Icon = ICON_MAP[um.module.icon || ''] || Shield;
+      const colorBase = um.module.color?.replace('text-', '') || 'primary';
+
+      let extraInfo: ReactNode | undefined;
+      if (um.module.code === 'scope_m365' && recentCVECount > 0) {
+        extraInfo = (
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-lg font-bold text-foreground">{recentCVECount}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded animate-pulse">NEW</span>
+              <span className="text-xs text-muted-foreground">CVEs</span>
+            </div>
+          </div>
+        );
+      }
+
+      return {
+        key: um.module.code,
+        title: um.module.name,
+        icon: Icon,
+        iconColor: um.module.color || 'text-primary',
+        iconBg: `bg-${colorBase}/10`,
+        borderColor: `border-l-${colorBase}`,
+        health: stats?.modules[config.statsKey] || emptyHealth,
+        moduleCode: um.module.code,
+        path: config.path,
+        infraLabel: config.infraLabel,
+        hideSeverities: config.hideSeverities,
+        extraInfo,
+      } as CardDef;
+    })
+    .filter(Boolean) as CardDef[];
+
+  // ─── Derived metrics ───────────────────────────────────────────────────────
 
   const lastOverallScan = stats
-    ? [stats.firewall.lastAnalysisDate, stats.m365.lastAnalysisDate, stats.externalDomain.lastAnalysisDate]
+    ? Object.values(stats.modules)
+        .map(m => m.lastAnalysisDate)
         .filter(Boolean)
         .sort()
         .pop() || null
@@ -264,6 +255,14 @@ export default function GeneralDashboardPage() {
     : moduleCards.length === 3
     ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
     : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+
+  // Infrastructure grid: modules + agents (always present)
+  const infraColCount = moduleCards.length + 1; // +1 for Agents
+  const infraGridCols = infraColCount <= 2
+    ? 'grid-cols-2'
+    : infraColCount === 3
+    ? 'grid-cols-3'
+    : 'grid-cols-2 lg:grid-cols-4';
 
   if (authLoading) return null;
 
@@ -300,20 +299,19 @@ export default function GeneralDashboardPage() {
         {/* Module Health Cards */}
         <section>
           <div className={cn('grid gap-4', gridCols)}>
-            {moduleCards.map(({ key, title, icon, iconColor, iconBg, borderColor, health, assetLabel, moduleCode, path, extraInfo, hideSeverities }) => (
+            {moduleCards.map((card) => (
               <ModuleHealthCard
-                key={key}
-                title={title}
-                icon={icon}
-                iconColor={iconColor}
-                iconBg={iconBg}
-                borderColor={borderColor}
-                health={health}
-                assetLabel={assetLabel}
+                key={card.key}
+                title={card.title}
+                icon={card.icon}
+                iconColor={card.iconColor}
+                iconBg={card.iconBg}
+                borderColor={card.borderColor}
+                health={card.health}
                 loading={loading}
-                onAccess={() => handleGoToModule(moduleCode, path)}
-                extraInfo={extraInfo}
-                hideSeverities={hideSeverities}
+                onAccess={() => handleGoToModule(card.moduleCode, card.path)}
+                extraInfo={card.extraInfo}
+                hideSeverities={card.hideSeverities}
               />
             ))}
           </div>
@@ -344,39 +342,25 @@ export default function GeneralDashboardPage() {
                     <ArrowRight className="w-4 h-4 text-muted-foreground" />
                   </div>
 
-                  {/* Assets by module - same style as Workspace Details */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Firewalls */}
-                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-1.5">
-                        <Shield className="w-4 h-4 text-orange-500" />
-                        <span className="text-base text-muted-foreground">Firewalls</span>
-                      </div>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-                      <span className="text-lg font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
-                    </div>
+                  {/* Assets by module - dynamic */}
+                  <div className={cn('grid gap-4', infraGridCols)}>
+                    {moduleCards.map((card) => {
+                      const CardIcon = card.icon;
+                      return (
+                        <div key={card.key} className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                          <div className="flex items-center gap-1.5">
+                            <CardIcon className={cn('w-4 h-4', card.iconColor)} />
+                            <span className="text-base text-muted-foreground">{card.infraLabel}</span>
+                          </div>
+                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+                          <span className="text-lg font-bold text-foreground">
+                            {card.health.assetCount}
+                          </span>
+                        </div>
+                      );
+                    })}
 
-                    {/* M365 Tenants */}
-                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-1.5">
-                        <Cloud className="w-4 h-4 text-blue-500" />
-                        <span className="text-base text-muted-foreground">Tenants M365</span>
-                      </div>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-                      <span className="text-lg font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
-                    </div>
-
-                    {/* Domínios */}
-                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-1.5">
-                        <Layers className="w-4 h-4 text-green-500" />
-                        <span className="text-base text-muted-foreground">Domínios</span>
-                      </div>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
-                      <span className="text-lg font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
-                    </div>
-
-                    {/* Agents */}
+                    {/* Agents - always present */}
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
                         <Monitor className="w-4 h-4 text-violet-500" />
