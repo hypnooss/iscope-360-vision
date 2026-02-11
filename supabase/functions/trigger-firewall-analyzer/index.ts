@@ -54,8 +54,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Auto-cleanup expired tasks
+    // Auto-cleanup expired tasks and stale pending tasks (>30min without being picked up)
     const now = new Date().toISOString();
+    const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    
     await supabase
       .from('agent_tasks')
       .update({ status: 'timeout', error_message: 'Task expirada', completed_at: now })
@@ -63,6 +65,15 @@ Deno.serve(async (req) => {
       .eq('task_type', 'firewall_analyzer')
       .in('status', ['pending', 'running'])
       .lt('expires_at', now);
+
+    // Cleanup pending tasks that were never picked up (stale > 30min)
+    await supabase
+      .from('agent_tasks')
+      .update({ status: 'timeout', error_message: 'Task não foi executada pelo agent', completed_at: now })
+      .eq('target_id', firewall_id)
+      .eq('task_type', 'firewall_analyzer')
+      .eq('status', 'pending')
+      .lt('created_at', staleThreshold);
 
     // Check for existing active task
     const { data: existing } = await supabase
