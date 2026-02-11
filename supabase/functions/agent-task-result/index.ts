@@ -4320,7 +4320,7 @@ serve(async (req: Request) => {
     }
 
     // If task completed successfully and has raw data, process with compliance rules
-    if ((body.status === 'completed' || body.status === 'partial') && rawData) {
+    if ((body.status === 'completed' || body.status === 'partial') && rawData && task.task_type !== 'firewall_analyzer') {
       let deviceTypeId: string | null = null;
 
       if (task.target_type === 'firewall') {
