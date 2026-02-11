@@ -130,7 +130,7 @@ function ModuleHealthCard({
             </div>
 
             {/* Score Gauge + Severity columns */}
-            <div className="flex items-center justify-evenly py-2">
+            <div className="flex items-center justify-evenly py-4">
               <div className="shrink-0">
                 {health.score != null ? (
                   <ScoreGauge score={health.score} size="sm" />
@@ -143,12 +143,12 @@ function ModuleHealthCard({
               </div>
 
               {/* Severity columns: CVEs + Conformidade when CVEs exist, or just Conformidade */}
-              <div className={cn('flex gap-10')}>
+              <div className={cn('flex gap-14')}>
                 {hasCves && (
                   <SeverityColumn title="CVEs" severities={health.cveSeverities!} />
                 )}
                 <SeverityColumn
-                  title={hasCves ? 'Conformidade' : ''}
+                  title="Conformidade"
                   severities={health.severities}
                 />
               </div>
@@ -156,7 +156,7 @@ function ModuleHealthCard({
 
             {/* Last analysis */}
             {health.lastAnalysisDate && (
-              <p className="text-xs text-muted-foreground text-center">
+              <p className="text-xs text-muted-foreground text-center mt-2">
                 Última análise:{' '}
                 {formatDistanceToNow(new Date(health.lastAnalysisDate), {
                   addSuffix: true,
