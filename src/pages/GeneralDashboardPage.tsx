@@ -1,8 +1,9 @@
-import { useEffect, ReactNode } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
 import { useM365CVEs } from '@/hooks/useM365CVEs';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -11,13 +12,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
-  AlertTriangle, ShieldAlert, LucideIcon,
+  AlertTriangle, ShieldAlert, LucideIcon, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
 
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
@@ -126,9 +129,28 @@ export default function GeneralDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { setActiveModule } = useModules();
   const { hasEffectiveModuleAccess } = useEffectiveModules();
-  const { stats, loading } = useDashboardStats();
-  const { data: cveData } = useM365CVEs(1);
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
+
+  const { stats, loading } = useDashboardStats(selectedWorkspaceId);
+  const { data: cveData } = useM365CVEs(1);
+
+  // Fetch workspaces for super roles
+  useEffect(() => {
+    if (!isSuperRole) return;
+    const fetchWorkspaces = async () => {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+      if (data) setWorkspaces(data);
+    };
+    fetchWorkspaces();
+  }, [isSuperRole]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -252,13 +274,32 @@ export default function GeneralDashboardPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Dashboard' }]} />
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Postura de Segurança por Módulo</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground">Postura de Segurança por Módulo</p>
+          </div>
+          {isSuperRole && workspaces.length > 0 && (
+            <Select
+              value={selectedWorkspaceId ?? 'all'}
+              onValueChange={(v) => setSelectedWorkspaceId(v === 'all' ? null : v)}
+            >
+              <SelectTrigger className="w-[220px] bg-background">
+                <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Todos os workspaces" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                <SelectItem value="all">Todos os workspaces</SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Module Health Cards */}
@@ -311,41 +352,33 @@ export default function GeneralDashboardPage() {
                   {/* Assets by module - same style as Workspace Details */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Firewalls */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-orange-500" />
-                        <span className="text-sm font-medium text-foreground">Firewalls</span>
-                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.firewall.assetCount ?? 0}</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-orange-500" />
+                      <span className="text-sm font-medium text-foreground">Firewalls</span>
+                      <span className="text-sm font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
                     </div>
 
                     {/* M365 Tenants */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <Cloud className="w-4 h-4 text-blue-500" />
-                        <span className="text-sm font-medium text-foreground">Tenants M365</span>
-                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.m365.assetCount ?? 0}</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <Cloud className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm font-medium text-foreground">Tenants M365</span>
+                      <span className="text-sm font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
                     </div>
 
                     {/* External Domains */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-green-500" />
-                        <span className="text-sm font-medium text-foreground">Domínios</span>
-                        <span className="text-sm font-bold text-foreground ml-auto">{stats?.externalDomain.assetCount ?? 0}</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-green-500" />
+                      <span className="text-sm font-medium text-foreground">Domínios</span>
+                      <span className="text-sm font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
                     </div>
 
                     {/* Agents */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-                        <span className="text-sm font-medium text-foreground">Agents</span>
-                        <span className="text-sm font-bold text-foreground ml-auto">
-                          {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
+                      <span className="text-sm font-medium text-foreground">Agents</span>
+                      <span className="text-sm font-bold text-foreground">
+                        {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
+                      </span>
                     </div>
                   </div>
 

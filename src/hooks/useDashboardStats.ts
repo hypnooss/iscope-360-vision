@@ -35,7 +35,7 @@ export interface DashboardStats {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useDashboardStats() {
+export function useDashboardStats(selectedWorkspaceId?: string | null) {
   const { user } = useAuth();
   const { isPreviewMode, previewTarget } = usePreview();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -49,7 +49,7 @@ export function useDashboardStats() {
     if (user) {
       fetchStats();
     }
-  }, [user, isPreviewMode, previewTarget]);
+  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId]);
 
   const fetchStats = async () => {
     try {
@@ -61,7 +61,12 @@ export function useDashboardStats() {
       let agentsQuery = supabase.from('agents').select('id, client_id, last_seen, revoked')
         .eq('revoked', false);
 
-      if (workspaceIds && workspaceIds.length > 0) {
+      if (selectedWorkspaceId) {
+        fwQuery = fwQuery.eq('client_id', selectedWorkspaceId);
+        m365Query = m365Query.eq('client_id', selectedWorkspaceId);
+        extQuery = extQuery.eq('client_id', selectedWorkspaceId);
+        agentsQuery = agentsQuery.eq('client_id', selectedWorkspaceId);
+      } else if (workspaceIds && workspaceIds.length > 0) {
         fwQuery = fwQuery.in('client_id', workspaceIds);
         m365Query = m365Query.in('client_id', workspaceIds);
         extQuery = extQuery.in('client_id', workspaceIds);
