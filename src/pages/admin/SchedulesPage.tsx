@@ -9,7 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -96,7 +98,7 @@ export default function SchedulesPage() {
   }, []);
 
   // Fetch schedules with firewall and client info
-  const { data: schedules, isLoading } = useQuery({
+  const { data: schedules, isLoading, refetch } = useQuery({
     queryKey: ['admin-schedules'],
     refetchInterval: 30_000,
     queryFn: async () => {
@@ -252,9 +254,15 @@ export default function SchedulesPage() {
           ]}
         />
 
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
-          <p className="text-muted-foreground mt-1">Painel centralizado de agendamentos de análise</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
+            <p className="text-muted-foreground mt-1">Painel centralizado de agendamentos de análise</p>
+          </div>
+          <Button onClick={() => refetch()} variant="outline" size="sm">
+            <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
+            Atualizando...
+          </Button>
         </div>
 
         {/* Summary cards */}
