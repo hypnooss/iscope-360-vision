@@ -1,37 +1,57 @@
 
 
-# Fix: Analyzer Blueprint - Incorrect API Endpoint Paths (404)
+# Bug: Analyzer gera relatório de Compliance indevidamente
 
-## Problem
+## Causa Raiz
 
-All 5 collection steps return **HTTP 404** because the FortiGate REST API requires a **storage location** segment in log endpoint paths.
+No arquivo `supabase/functions/agent-task-result/index.ts`, apos o bloco do Analyzer (linha ~4193) processar corretamente os logs e enviar para a edge function `firewall-analyzer`, o codigo **continua executando** e cai no bloco generico de compliance (linha ~4322):
 
-**Current (broken):** `/api/v2/log/traffic/forward`
-**Correct format:** `/api/v2/log/{device}/traffic/forward`
+```text
+if ((body.status === 'completed' || body.status === 'partial') && rawData) {
+    // Carrega compliance rules do FortiGate
+    // Executa processComplianceRules() nos dados de LOG do analyzer
+    // Gera relatório de compliance FALSO
+    // Salva em analysis_history
+    // Atualiza last_score e last_analysis_at do firewall
+}
+```
 
-Where `{device}` must be one of: `memory`, `disk`, `fortianalyzer`, `forticloud`.
+Este bloco verifica apenas `target_type === 'firewall'` mas **NAO verifica o `task_type`**. Como o analyzer tambem tem `target_type = 'firewall'`, ele entra neste bloco e tenta avaliar os dados de log (denied_traffic, auth_events, etc.) contra as regras de compliance (system_status, firewall_policy, etc.), gerando um relatorio invalido.
 
-The compliance blueprint works because it uses `/api/v2/cmdb/...` and `/api/v2/monitor/...` endpoints (which don't need a storage location). Log endpoints are different.
+## Consequencias do Bug
 
-## Fix
+1. Um relatorio de compliance **falso** e salvo em `analysis_history` a cada execucao do analyzer
+2. O `last_score` e `last_analysis_at` do firewall sao sobrescritos com valores incorretos
+3. Um alerta de sistema "Analise Concluida" e criado incorretamente
 
-Update each step's path in the analyzer blueprint, using `memory` as the default storage (always available; `disk` requires explicit disk logging enabled):
+## Correcao
 
-| Step ID | Current Path (404) | Corrected Path |
-|---------|-------------------|----------------|
-| denied_traffic | `/api/v2/log/traffic/forward?filter=action==deny&rows=500` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500` |
-| auth_events | `/api/v2/log/event/system?filter=logdesc=~auth&rows=500` | `/api/v2/log/memory/event/system?filter=logdesc=~auth&rows=500` |
-| vpn_events | `/api/v2/log/event/vpn?rows=500` | `/api/v2/log/memory/event/vpn?rows=500` |
-| ips_events | `/api/v2/log/ips/forward?filter=severity<=2&rows=500` | `/api/v2/log/memory/ips/forward?filter=severity<=2&rows=500` |
-| config_changes | `/api/v2/log/event/system?filter=logdesc=~config&rows=200` | `/api/v2/log/memory/event/system?filter=logdesc=~config&rows=200` |
+Adicionar uma condicao para **excluir** o `task_type = 'firewall_analyzer'` do bloco de processamento de compliance.
 
-The only change is inserting `/memory` after `/api/v2/log/`.
+### Arquivo: `supabase/functions/agent-task-result/index.ts`
 
-## Technical Details
+**Linha ~4323** - Alterar de:
 
-| Resource | Change |
-|----------|--------|
-| SQL migration | `UPDATE device_blueprints SET collection_steps = ...` with corrected paths for the analyzer blueprint |
+```typescript
+if ((body.status === 'completed' || body.status === 'partial') && rawData) {
+```
 
-No frontend or edge function changes needed. After the migration, re-trigger the analysis.
+Para:
+
+```typescript
+if ((body.status === 'completed' || body.status === 'partial') && rawData && task.task_type !== 'firewall_analyzer') {
+```
+
+Esta unica condicao adicional garante que:
+- Tasks de compliance (`firewall_analysis`) continuam gerando relatorio normalmente
+- Tasks do analyzer (`firewall_analyzer`) processam apenas via edge function dedicada, sem gerar relatorio de compliance falso
+- Tasks de external domain e M365 nao sao afetadas
+
+## Resumo
+
+| Recurso | Alteracao |
+|---------|-----------|
+| `supabase/functions/agent-task-result/index.ts` | Adicionar `&& task.task_type !== 'firewall_analyzer'` na condicao da linha ~4323 |
+
+Uma linha de codigo resolve o problema.
 
