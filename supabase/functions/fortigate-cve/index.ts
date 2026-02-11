@@ -3,6 +3,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface VendorConfig {
+  cpeVendor: string;
+  cpeProduct: string;
+  cpeType: string;
+  keyword: string;
+  descriptionFilter: string;
+  vendorLabel: string;
+}
+
+const VENDOR_CONFIG: Record<string, VendorConfig> = {
+  fortinet: {
+    cpeVendor: 'fortinet',
+    cpeProduct: 'fortios',
+    cpeType: 'o',
+    keyword: 'FortiOS',
+    descriptionFilter: 'fortios',
+    vendorLabel: 'Fortinet',
+  },
+  sonicwall: {
+    cpeVendor: 'sonicwall',
+    cpeProduct: 'sonicos',
+    cpeType: 'o',
+    keyword: 'SonicOS',
+    descriptionFilter: 'sonicos',
+    vendorLabel: 'SonicWall',
+  },
+};
+
 interface CVEItem {
   id: string;
   description: string;
@@ -14,55 +42,64 @@ interface CVEItem {
   references: string[];
 }
 
-// Extrai apenas a parte da descrição relacionada ao FortiOS
-function extractFortiOSInfo(fullDescription: string): {
-  fortiOSDescription: string;
+// Extracts version-specific info from NVD descriptions for the given vendor product
+function extractVendorInfo(fullDescription: string, config: VendorConfig): {
+  productDescription: string;
   affectedVersions: string;
   technicalDescription: string;
 } {
   const descLower = fullDescription.toLowerCase();
-  
-  // Se não menciona FortiOS, retornar descrição original
-  if (!descLower.includes('fortios')) {
+  const filterTerm = config.descriptionFilter.toLowerCase();
+
+  if (!descLower.includes(filterTerm)) {
     return {
-      fortiOSDescription: fullDescription,
+      productDescription: fullDescription,
       affectedVersions: '',
-      technicalDescription: fullDescription
+      technicalDescription: fullDescription,
     };
   }
-  
-  // Padrões comuns de versão FortiOS na descrição
-  const fortiOSPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s*(?:through|to|before|and later|and earlier|-)\s*(\d+\.\d+(?:\.\d+)?)/gi;
-  const fortiOSSinglePattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?(?:\s*,?\s*\d+\.\d+(?:\.\d+)?)*)/gi;
-  // Padrão para "all versions"
-  const fortiOSAllVersionsPattern = /FortiOS\s+(?:version\s+)?(\d+\.\d+(?:\.\d+)?)\s+all\s+versions/gi;
-  
-  // Encontrar versões FortiOS afetadas
+
+  const keyword = config.keyword;
+
+  // Common version range patterns
+  const rangePattern = new RegExp(
+    `${keyword}\\s+(?:version\\s+)?(\\d+\\.\\d+(?:\\.\\d+)?)\\s*(?:through|to|before|and later|and earlier|-)\\s*(\\d+\\.\\d+(?:\\.\\d+)?)`,
+    'gi'
+  );
+  const singlePattern = new RegExp(
+    `${keyword}\\s+(?:version\\s+)?(\\d+\\.\\d+(?:\\.\\d+)?(?:\\s*,?\\s*\\d+\\.\\d+(?:\\.\\d+)?)*)`,
+    'gi'
+  );
+  const allVersionsPattern = new RegExp(
+    `${keyword}\\s+(?:version\\s+)?(\\d+\\.\\d+(?:\\.\\d+)?)\\s+all\\s+versions`,
+    'gi'
+  );
+
   let affectedVersions = '';
-  
-  // Primeiro: verificar padrão "all versions"
-  const allVersionsMatches = fullDescription.match(fortiOSAllVersionsPattern);
+
+  // Check "all versions" pattern first
+  const allVersionsMatches = fullDescription.match(allVersionsPattern);
   if (allVersionsMatches && allVersionsMatches.length > 0) {
     affectedVersions = allVersionsMatches.join(', ');
   }
-  
-  // Segundo: verificar range de versões (through/to/before)
+
+  // Then check range patterns
   if (!affectedVersions) {
-    const matches = fullDescription.match(fortiOSPattern);
+    const matches = fullDescription.match(rangePattern);
     if (matches && matches.length > 0) {
       affectedVersions = matches.join(', ');
     }
   }
-  
-  // Terceiro: verificar versão única
+
+  // Then check single version
   if (!affectedVersions) {
-    const singleMatches = fullDescription.match(fortiOSSinglePattern);
+    const singleMatches = fullDescription.match(singlePattern);
     if (singleMatches) {
       affectedVersions = singleMatches.join(', ');
     }
   }
-  
-  // Extrair a parte técnica da descrição
+
+  // Extract technical description
   const technicalPatterns = [
     /\b(allows?\s+.+)/i,
     /\b(may\s+allow\s+.+)/i,
@@ -71,7 +108,7 @@ function extractFortiOSInfo(fullDescription: string): {
     /\b(permits?\s+.+)/i,
     /\b(makes?\s+it\s+possible\s+.+)/i,
   ];
-  
+
   let technicalDescription = '';
   for (const pattern of technicalPatterns) {
     const techMatch = fullDescription.match(pattern);
@@ -80,42 +117,88 @@ function extractFortiOSInfo(fullDescription: string): {
       break;
     }
   }
-  
-  // Construir descrição focada no FortiOS
-  let fortiOSDescription = '';
+
+  // Build product-focused description
+  let productDescription = '';
   if (affectedVersions) {
-    fortiOSDescription = affectedVersions;
+    productDescription = affectedVersions;
     if (technicalDescription) {
-      fortiOSDescription += ' - ' + technicalDescription;
+      productDescription += ' - ' + technicalDescription;
     }
   } else {
     const sentences = fullDescription.split(/[.;]/);
     for (const sentence of sentences) {
-      if (sentence.toLowerCase().includes('fortios')) {
-        fortiOSDescription = sentence.trim();
+      if (sentence.toLowerCase().includes(filterTerm)) {
+        productDescription = sentence.trim();
         break;
       }
     }
-    if (!fortiOSDescription) {
-      fortiOSDescription = fullDescription;
+    if (!productDescription) {
+      productDescription = fullDescription;
     }
   }
-  
+
   return {
-    fortiOSDescription: fortiOSDescription.substring(0, 400) + (fortiOSDescription.length > 400 ? '...' : ''),
+    productDescription: productDescription.substring(0, 400) + (productDescription.length > 400 ? '...' : ''),
     affectedVersions,
-    technicalDescription: technicalDescription || fullDescription
+    technicalDescription: technicalDescription || fullDescription,
+  };
+}
+
+function parseCVEFromNVD(vuln: any, config: VendorConfig): CVEItem | null {
+  const cve = vuln.cve;
+
+  // Ensure CVE actually mentions the vendor product
+  const desc = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
+  if (!desc.toLowerCase().includes(config.descriptionFilter)) {
+    return null;
+  }
+
+  // Get CVSS score and severity
+  let score = 0;
+  let severity = 'UNKNOWN';
+
+  if (cve.metrics?.cvssMetricV31?.[0]) {
+    score = cve.metrics.cvssMetricV31[0].cvssData.baseScore;
+    severity = cve.metrics.cvssMetricV31[0].cvssData.baseSeverity;
+  } else if (cve.metrics?.cvssMetricV30?.[0]) {
+    score = cve.metrics.cvssMetricV30[0].cvssData.baseScore;
+    severity = cve.metrics.cvssMetricV30[0].cvssData.baseSeverity;
+  } else if (cve.metrics?.cvssMetricV2?.[0]) {
+    score = cve.metrics.cvssMetricV2[0].cvssData.baseScore;
+    if (score >= 9.0) severity = 'CRITICAL';
+    else if (score >= 7.0) severity = 'HIGH';
+    else if (score >= 4.0) severity = 'MEDIUM';
+    else severity = 'LOW';
+  }
+
+  const fullDescription =
+    cve.descriptions?.find((d: any) => d.lang === 'en')?.value ||
+    cve.descriptions?.[0]?.value ||
+    'No description available';
+
+  const vendorInfo = extractVendorInfo(fullDescription, config);
+  const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
+
+  return {
+    id: cve.id,
+    description: vendorInfo.productDescription,
+    affectedVersions: vendorInfo.affectedVersions,
+    severity,
+    score,
+    publishedDate: cve.published,
+    lastModifiedDate: cve.lastModified,
+    references,
   };
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { version } = await req.json();
+    const { version, vendor = 'fortinet' } = await req.json();
 
     if (!version) {
       return new Response(
@@ -124,29 +207,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Searching CVEs for FortiOS version: ${version}`);
+    const config = VENDOR_CONFIG[vendor];
+    if (!config) {
+      return new Response(
+        JSON.stringify({ success: false, error: `Unsupported vendor: ${vendor}` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Parse version to create search range
+    console.log(`Searching CVEs for ${config.keyword} version: ${version} (vendor: ${vendor})`);
+
     const versionParts = version.replace('v', '').split('.');
     const majorMinor = versionParts.slice(0, 2).join('.');
-    
-    // Build NVD API query for FortiOS CVEs
-    // Using CPE match for fortinet:fortios
-    const cpeMatch = `cpe:2.3:o:fortinet:fortios:${version.replace('v', '')}:*:*:*:*:*:*:*`;
-    
-    // NVD API 2.0 endpoint
+
+    // Build NVD CPE match dynamically
+    const cpeMatch = `cpe:2.3:${config.cpeType}:${config.cpeVendor}:${config.cpeProduct}:${version.replace('v', '')}:*:*:*:*:*:*:*`;
     const nvdUrl = new URL('https://services.nvd.nist.gov/rest/json/cves/2.0');
     nvdUrl.searchParams.set('cpeName', cpeMatch);
-    
+
     console.log(`Querying NVD API: ${nvdUrl.toString()}`);
 
     let cves: CVEItem[] = [];
 
     try {
       const nvdResponse = await fetch(nvdUrl.toString(), {
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { Accept: 'application/json' },
       });
 
       if (nvdResponse.ok) {
@@ -155,53 +240,8 @@ Deno.serve(async (req) => {
 
         if (nvdData.vulnerabilities && nvdData.vulnerabilities.length > 0) {
           cves = nvdData.vulnerabilities
-            .filter((vuln: any) => {
-              // Garantir que o CVE realmente afeta FortiOS
-              const desc = vuln.cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
-              return desc.toLowerCase().includes('fortios');
-            })
-            .map((vuln: any) => {
-              const cve = vuln.cve;
-            
-              // Get CVSS score and severity
-              let score = 0;
-              let severity = 'UNKNOWN';
-            
-              if (cve.metrics?.cvssMetricV31?.[0]) {
-                score = cve.metrics.cvssMetricV31[0].cvssData.baseScore;
-                severity = cve.metrics.cvssMetricV31[0].cvssData.baseSeverity;
-              } else if (cve.metrics?.cvssMetricV30?.[0]) {
-                score = cve.metrics.cvssMetricV30[0].cvssData.baseScore;
-                severity = cve.metrics.cvssMetricV30[0].cvssData.baseSeverity;
-              } else if (cve.metrics?.cvssMetricV2?.[0]) {
-                score = cve.metrics.cvssMetricV2[0].cvssData.baseScore;
-                if (score >= 9.0) severity = 'CRITICAL';
-                else if (score >= 7.0) severity = 'HIGH';
-                else if (score >= 4.0) severity = 'MEDIUM';
-                else severity = 'LOW';
-              }
-
-              // Get description in English
-              const fullDescription = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
-                                cve.descriptions?.[0]?.value || 'No description available';
-
-              // Extrair apenas informações do FortiOS
-              const fortiOSInfo = extractFortiOSInfo(fullDescription);
-
-              // Get references
-              const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
-
-              return {
-                id: cve.id,
-                description: fortiOSInfo.fortiOSDescription,
-                affectedVersions: fortiOSInfo.affectedVersions,
-                severity,
-                score,
-                publishedDate: cve.published,
-                lastModifiedDate: cve.lastModified,
-                references,
-              };
-            });
+            .map((vuln: any) => parseCVEFromNVD(vuln, config))
+            .filter(Boolean) as CVEItem[];
         }
       } else {
         console.log(`NVD API returned status ${nvdResponse.status}, trying keyword search`);
@@ -210,19 +250,17 @@ Deno.serve(async (req) => {
       console.log(`CPE search failed: ${nvdError}, trying keyword search`);
     }
 
-    // If CPE search returned no results, try keyword search
+    // Fallback: keyword search
     if (cves.length === 0) {
       const keywordUrl = new URL('https://services.nvd.nist.gov/rest/json/cves/2.0');
-      keywordUrl.searchParams.set('keywordSearch', `FortiOS ${majorMinor}`);
+      keywordUrl.searchParams.set('keywordSearch', `${config.keyword} ${majorMinor}`);
       keywordUrl.searchParams.set('resultsPerPage', '20');
-      
+
       console.log(`Trying keyword search: ${keywordUrl.toString()}`);
 
       try {
         const keywordResponse = await fetch(keywordUrl.toString(), {
-          headers: {
-            'Accept': 'application/json',
-          },
+          headers: { Accept: 'application/json' },
         });
 
         if (keywordResponse.ok) {
@@ -231,51 +269,9 @@ Deno.serve(async (req) => {
 
           if (keywordData.vulnerabilities && keywordData.vulnerabilities.length > 0) {
             cves = keywordData.vulnerabilities
-              .filter((vuln: any) => {
-                // Filtrar apenas CVEs que mencionam FortiOS
-                const desc = vuln.cve.descriptions?.find((d: any) => d.lang === 'en')?.value || '';
-                return desc.toLowerCase().includes('fortios');
-              })
               .slice(0, 15)
-              .map((vuln: any) => {
-                const cve = vuln.cve;
-                
-                let score = 0;
-                let severity = 'UNKNOWN';
-                
-                if (cve.metrics?.cvssMetricV31?.[0]) {
-                  score = cve.metrics.cvssMetricV31[0].cvssData.baseScore;
-                  severity = cve.metrics.cvssMetricV31[0].cvssData.baseSeverity;
-                } else if (cve.metrics?.cvssMetricV30?.[0]) {
-                  score = cve.metrics.cvssMetricV30[0].cvssData.baseScore;
-                  severity = cve.metrics.cvssMetricV30[0].cvssData.baseSeverity;
-                } else if (cve.metrics?.cvssMetricV2?.[0]) {
-                  score = cve.metrics.cvssMetricV2[0].cvssData.baseScore;
-                  if (score >= 9.0) severity = 'CRITICAL';
-                  else if (score >= 7.0) severity = 'HIGH';
-                  else if (score >= 4.0) severity = 'MEDIUM';
-                  else severity = 'LOW';
-                }
-
-                const fullDescription = cve.descriptions?.find((d: any) => d.lang === 'en')?.value || 
-                                  cve.descriptions?.[0]?.value || 'No description available';
-
-                // Extrair apenas informações do FortiOS
-                const fortiOSInfo = extractFortiOSInfo(fullDescription);
-
-                const references = cve.references?.slice(0, 3).map((ref: any) => ref.url) || [];
-
-                return {
-                  id: cve.id,
-                  description: fortiOSInfo.fortiOSDescription,
-                  affectedVersions: fortiOSInfo.affectedVersions,
-                  severity,
-                  score,
-                  publishedDate: cve.published,
-                  lastModifiedDate: cve.lastModified,
-                  references,
-                };
-              });
+              .map((vuln: any) => parseCVEFromNVD(vuln, config))
+              .filter(Boolean) as CVEItem[];
           }
         }
       } catch (keywordError) {
@@ -283,23 +279,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Sort by score (highest first)
     cves.sort((a, b) => b.score - a.score);
 
-    console.log(`Returning ${cves.length} CVEs`);
+    console.log(`Returning ${cves.length} CVEs for ${config.keyword}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         version,
+        vendor,
         totalCVEs: cves.length,
         cves,
         source: 'NIST National Vulnerability Database',
-        disclaimer: 'Esta é uma lista informativa de CVEs conhecidos. Verifique os advisories oficiais da Fortinet para informações precisas sobre versões afetadas.',
+        disclaimer: `Esta é uma lista informativa de CVEs conhecidos. Verifique os advisories oficiais da ${config.vendorLabel} para informações precisas sobre versões afetadas.`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (error) {
     console.error('Error fetching CVEs:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch CVEs';

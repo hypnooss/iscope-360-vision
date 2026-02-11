@@ -12,64 +12,100 @@ export interface FirewallCVE {
   lastModifiedDate: string;
   references: string[];
   firmwareVersion: string;
+  vendor: string;
 }
 
-interface FortigateCVEResponse {
+export interface VersionInfo {
+  version: string;
+  vendor: string;
+}
+
+interface FirewallCVEResponse {
   success: boolean;
   version: string;
+  vendor?: string;
   totalCVEs: number;
-  cves: Omit<FirewallCVE, 'firmwareVersion'>[];
+  cves: Omit<FirewallCVE, 'firmwareVersion' | 'vendor'>[];
   source: string;
   disclaimer?: string;
   error?: string;
 }
 
-async function fetchFirmwareVersions(workspaceIds: string[]): Promise<string[]> {
-  // When filtering by workspace, first get firewall IDs for those workspaces
-  let firewallIds: string[] | null = null;
+const VENDOR_OS_LABELS: Record<string, string> = {
+  fortinet: 'FortiOS',
+  sonicwall: 'SonicOS',
+};
+
+export function getOsLabel(vendor: string): string {
+  return VENDOR_OS_LABELS[vendor] || vendor;
+}
+
+async function fetchFirmwareVersions(workspaceIds: string[]): Promise<VersionInfo[]> {
+  // Get firewalls with their device_type vendor info
+  let firewallQuery = supabase
+    .from('firewalls')
+    .select('id, device_type_id, device_types(vendor)');
+
   if (workspaceIds.length > 0) {
-    const { data: firewalls, error: fwError } = await supabase
-      .from('firewalls')
-      .select('id')
-      .in('client_id', workspaceIds);
-    if (fwError) throw fwError;
-    if (!firewalls || firewalls.length === 0) return [];
-    firewallIds = firewalls.map((f) => f.id);
+    firewallQuery = firewallQuery.in('client_id', workspaceIds);
   }
 
-  let query = supabase
+  const { data: firewalls, error: fwError } = await firewallQuery;
+  if (fwError) throw fwError;
+  if (!firewalls || firewalls.length === 0) return [];
+
+  const firewallIds = firewalls.map((f) => f.id);
+
+  // Build firewall_id -> vendor map
+  const firewallVendorMap = new Map<string, string>();
+  for (const fw of firewalls) {
+    const deviceType = fw.device_types as { vendor: string } | null;
+    const vendor = deviceType?.vendor?.toLowerCase() || 'fortinet';
+    firewallVendorMap.set(fw.id, vendor);
+  }
+
+  const { data, error } = await supabase
     .from('analysis_history')
     .select('firewall_id, report_data, created_at')
+    .in('firewall_id', firewallIds)
     .order('created_at', { ascending: false });
 
-  if (firewallIds) {
-    query = query.in('firewall_id', firewallIds);
-  }
-
-  const { data, error } = await query;
   if (error) throw error;
   if (!data || data.length === 0) return [];
 
-  const latestPerFirewall = new Map<string, string>();
+  // Get latest firmware per firewall
+  const latestPerFirewall = new Map<string, { version: string; vendor: string }>();
   for (const row of data) {
     if (latestPerFirewall.has(row.firewall_id)) continue;
     const reportData = row.report_data as Record<string, unknown> | null;
     const version = reportData?.firmwareVersion as string | undefined;
     if (version) {
-      latestPerFirewall.set(row.firewall_id, version);
+      const vendor = firewallVendorMap.get(row.firewall_id) || 'fortinet';
+      latestPerFirewall.set(row.firewall_id, { version, vendor });
     }
   }
 
-  return [...new Set(latestPerFirewall.values())];
+  // Deduplicate by version+vendor
+  const seen = new Set<string>();
+  const results: VersionInfo[] = [];
+  for (const info of latestPerFirewall.values()) {
+    const key = `${info.vendor}:${info.version}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push(info);
+    }
+  }
+
+  return results;
 }
 
-async function fetchCVEsForVersion(version: string): Promise<FirewallCVE[]> {
-  const { data, error } = await supabase.functions.invoke<FortigateCVEResponse>('fortigate-cve', {
-    body: { version },
+async function fetchCVEsForVersion(info: VersionInfo): Promise<FirewallCVE[]> {
+  const { data, error } = await supabase.functions.invoke<FirewallCVEResponse>('fortigate-cve', {
+    body: { version: info.version, vendor: info.vendor },
   });
 
   if (error) {
-    console.error(`Error fetching CVEs for version ${version}:`, error);
+    console.error(`Error fetching CVEs for ${info.vendor} ${info.version}:`, error);
     return [];
   }
 
@@ -77,7 +113,8 @@ async function fetchCVEsForVersion(version: string): Promise<FirewallCVE[]> {
 
   return data.cves.map((cve) => ({
     ...cve,
-    firmwareVersion: version,
+    firmwareVersion: info.version,
+    vendor: info.vendor,
   }));
 }
 
@@ -88,13 +125,18 @@ export function useFirewallCVEs() {
   return useQuery({
     queryKey: ['firewall-cves', workspaceIds],
     queryFn: async () => {
-      const versions = await fetchFirmwareVersions(workspaceIds);
+      const versionInfos = await fetchFirmwareVersions(workspaceIds);
 
-      if (versions.length === 0) {
-        return { cves: [] as FirewallCVE[], versions: [] as string[] };
+      if (versionInfos.length === 0) {
+        return {
+          cves: [] as FirewallCVE[],
+          versions: [] as string[],
+          versionInfos: [] as VersionInfo[],
+          vendors: [] as string[],
+        };
       }
 
-      const results = await Promise.all(versions.map(fetchCVEsForVersion));
+      const results = await Promise.all(versionInfos.map(fetchCVEsForVersion));
       const allCves = results.flat();
 
       const seen = new Map<string, FirewallCVE>();
@@ -105,8 +147,14 @@ export function useFirewallCVEs() {
       }
 
       const dedupedCves = [...seen.values()].sort((a, b) => b.score - a.score);
+      const vendors = [...new Set(versionInfos.map((v) => v.vendor))];
 
-      return { cves: dedupedCves, versions };
+      return {
+        cves: dedupedCves,
+        versions: versionInfos.map((v) => v.version),
+        versionInfos,
+        vendors,
+      };
     },
     staleTime: 1000 * 60 * 30,
     retry: 1,

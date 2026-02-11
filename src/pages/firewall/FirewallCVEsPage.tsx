@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useFirewallCVEs, FirewallCVE } from '@/hooks/useFirewallCVEs';
+import { useFirewallCVEs, FirewallCVE, getOsLabel } from '@/hooks/useFirewallCVEs';
 import { AlertTriangle, ShieldAlert, Shield, ChevronDown, ChevronRight, ExternalLink, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +19,24 @@ const SEVERITY_COLORS: Record<string, string> = {
   LOW: 'bg-muted text-muted-foreground',
   UNKNOWN: 'bg-muted text-muted-foreground',
 };
+
+const VENDOR_ADVISORY: Record<string, { label: string; baseUrl: string }> = {
+  fortinet: { label: 'Fortiguard PSIRT', baseUrl: 'https://www.fortiguard.com/psirt' },
+  sonicwall: { label: 'SonicWall PSIRT', baseUrl: 'https://psirt.global.sonicwall.com' },
+};
+
+function getAdvisoryUrl(cve: FirewallCVE): string | null {
+  const config = VENDOR_ADVISORY[cve.vendor];
+  if (!config) return null;
+
+  // Check if any reference matches the vendor advisory
+  const advisoryRef = cve.references?.find((r) =>
+    config.baseUrl.split('//')[1]?.split('/')[0]
+      ? r.includes(config.baseUrl.split('//')[1].split('/')[0])
+      : false
+  );
+  return advisoryRef || null;
+}
 
 function CVECard({ cve }: { cve: FirewallCVE }) {
   const [open, setOpen] = useState(false);
@@ -31,7 +49,9 @@ function CVECard({ cve }: { cve: FirewallCVE }) {
   })();
 
   const nvdUrl = `https://nvd.nist.gov/vuln/detail/${cve.id}`;
-  const fortiguardUrl = cve.references?.find(r => r.includes('fortiguard')) || nvdUrl;
+  const advisoryUrl = getAdvisoryUrl(cve);
+  const advisoryConfig = VENDOR_ADVISORY[cve.vendor];
+  const osLabel = getOsLabel(cve.vendor);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -71,7 +91,7 @@ function CVECard({ cve }: { cve: FirewallCVE }) {
                   </CardTitle>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className="text-[10px] py-0">
-                      FortiOS {cve.firmwareVersion}
+                      {osLabel} {cve.firmwareVersion}
                     </Badge>
                     <span className="text-xs text-muted-foreground ml-1">
                       {new Date(cve.publishedDate).toLocaleDateString('pt-BR')}
@@ -100,14 +120,14 @@ function CVECard({ cve }: { cve: FirewallCVE }) {
                 Ver detalhes no NVD
                 <ExternalLink className="w-3 h-3" />
               </a>
-              {fortiguardUrl !== nvdUrl && (
+              {advisoryUrl && advisoryConfig && (
                 <a
-                  href={fortiguardUrl}
+                  href={advisoryUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
-                  Ver advisory Fortiguard PSIRT
+                  Ver advisory {advisoryConfig.label}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               )}
@@ -126,6 +146,26 @@ export default function FirewallCVEsPage() {
 
   const { data, isLoading, error } = useFirewallCVEs();
 
+  // Derive dynamic title and disclaimer from vendors present
+  const vendors = data?.vendors || [];
+  const pageTitle = useMemo(() => {
+    if (vendors.length === 1) return `CVEs - ${getOsLabel(vendors[0])}`;
+    if (vendors.length > 1) return 'CVEs - Firewalls';
+    return 'CVEs - Firewalls';
+  }, [vendors]);
+
+  const disclaimerText = useMemo(() => {
+    const vendorLabels = vendors.map((v) => {
+      switch (v) {
+        case 'fortinet': return 'Fortinet';
+        case 'sonicwall': return 'SonicWall';
+        default: return v;
+      }
+    });
+    const joined = vendorLabels.length > 0 ? vendorLabels.join('/') : 'dos fabricantes';
+    return `Dados fornecidos pelo NIST National Vulnerability Database (NVD). Verifique os advisories oficiais da ${joined} para informações precisas.`;
+  }, [vendors]);
+
   // Filter CVEs by published date (months)
   const cvesFilteredByDate = useMemo(() => {
     if (!data?.cves) return [];
@@ -139,7 +179,7 @@ export default function FirewallCVEsPage() {
 
   const filteredCves = useMemo(() => {
     return cvesFilteredByDate.filter((cve) => {
-      if (selectedVersions.length > 0 && !selectedVersions.includes(cve.firmwareVersion)) {
+      if (selectedVersions.length > 0 && !selectedVersions.includes(`${cve.vendor}:${cve.firmwareVersion}`)) {
         return false;
       }
       if (severityFilter !== 'all' && cve.severity !== severityFilter) {
@@ -159,11 +199,13 @@ export default function FirewallCVEsPage() {
     };
   }, [cvesFilteredByDate]);
 
-  const toggleVersion = (version: string) => {
+  const toggleVersion = (key: string) => {
     setSelectedVersions((prev) =>
-      prev.includes(version) ? prev.filter((v) => v !== version) : [...prev, version]
+      prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key]
     );
   };
+
+  const versionInfos = data?.versionInfos || [];
 
   return (
     <AppLayout>
@@ -176,7 +218,7 @@ export default function FirewallCVEsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">CVEs - FortiOS</h1>
+            <h1 className="text-2xl font-bold">{pageTitle}</h1>
             <p className="text-muted-foreground">
               Vulnerabilidades conhecidas nas versões de firmware dos firewalls cadastrados
             </p>
@@ -203,20 +245,24 @@ export default function FirewallCVEsPage() {
         </div>
 
         {/* Version Filters */}
-        {data?.versions && data.versions.length > 0 && (
+        {versionInfos.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-muted-foreground">Versões:</span>
-            {data.versions.map((version) => (
-              <Button
-                key={version}
-                variant={selectedVersions.includes(version) ? 'default' : 'outline'}
-                size="sm"
-                className="text-xs h-7"
-                onClick={() => toggleVersion(version)}
-              >
-                {version}
-              </Button>
-            ))}
+            {versionInfos.map((info) => {
+              const key = `${info.vendor}:${info.version}`;
+              const label = `${getOsLabel(info.vendor)} ${info.version}`;
+              return (
+                <Button
+                  key={key}
+                  variant={selectedVersions.includes(key) ? 'default' : 'outline'}
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => toggleVersion(key)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
             {selectedVersions.length > 0 && (
               <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedVersions([])}>
                 Limpar
@@ -239,7 +285,7 @@ export default function FirewallCVEsPage() {
         ) : filteredCves.length === 0 ? (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground">
-              {data?.versions?.length === 0
+              {versionInfos.length === 0
                 ? 'Nenhuma versão de firmware encontrada. Execute uma análise em pelo menos um firewall.'
                 : 'Nenhum CVE encontrado para os filtros selecionados.'}
             </p>
@@ -254,7 +300,7 @@ export default function FirewallCVEsPage() {
 
         {/* Source disclaimer */}
         <p className="text-xs text-muted-foreground text-center pt-2">
-          Dados fornecidos pelo NIST National Vulnerability Database (NVD). Verifique os advisories oficiais da Fortinet para informações precisas.
+          {disclaimerText}
         </p>
       </div>
     </AppLayout>
