@@ -34,6 +34,9 @@ const FirewallCVEsPage = lazy(() => import("./pages/firewall/FirewallCVEsPage"))
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
+const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardPage"));
+const AnalyzerInsightsPage = lazy(() => import("./pages/firewall/AnalyzerInsightsPage"));
+const AnalyzerCriticalPage = lazy(() => import("./pages/firewall/AnalyzerCriticalPage"));
 
 // External Domain Module Pages - lazy loaded
 const ExternalDomainListPage = lazy(() => import("./pages/external-domain/ExternalDomainListPage"));
