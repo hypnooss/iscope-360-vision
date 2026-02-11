@@ -1,89 +1,36 @@
 
 
-# Completar Infraestrutura do Analyzer: Blueprint + RPC
+# Fix: RPC `rpc_get_agent_tasks` - Type Cast Error
 
-## O que falta
+## Problem
 
-Duas pecas essenciais para o fluxo funcionar de ponta a ponta:
-
-1. **Blueprint "Analyzer"** na tabela `device_blueprints` com os steps de coleta de logs do FortiGate
-2. **Atualizacao da RPC `rpc_get_agent_tasks`** para selecionar o blueprint correto com base no `task_type`
-
-## Problema Atual na RPC
-
-A RPC atual seleciona o blueprint para tasks de firewall assim:
-
-```text
-WHERE db.device_type_id = f.device_type_id
-  AND db.is_active = true
-ORDER BY db.version DESC
-LIMIT 1
+The RPC is failing with:
+```
+operator does not exist: blueprint_executor_type = text
 ```
 
-Isso sempre retorna o blueprint de **compliance** (unico existente hoje). Quando tivermos o blueprint **Analyzer** para o mesmo device type, a RPC precisa diferenciar qual blueprint enviar ao agent com base no `task_type`.
+The `CASE WHEN` expression in the updated RPC returns a plain `text` value (`'hybrid'` / `'agent'`), but the column `db.executor_type` is of type `blueprint_executor_type` (an enum). PostgreSQL cannot compare them without an explicit cast.
 
-## Solucao
+This blocks **ALL** agent task fetching, not just analyzer tasks.
 
-### 1. Migracao SQL
+## Fix
 
-**Inserir Blueprint Analyzer** com `executor_type = 'hybrid'` e `name = 'FortiGate - Analyzer'`:
+A single SQL migration to replace the RPC function, adding `::blueprint_executor_type` cast to the CASE expression result:
 
-Steps de coleta:
-- `denied_traffic`: GET `/api/v2/log/traffic/forward?filter=action==deny&rows=500`
-- `auth_events`: GET `/api/v2/log/event/system?filter=logdesc=~auth&rows=500`
-- `vpn_events`: GET `/api/v2/log/event/vpn?rows=500`
-- `ips_events`: GET `/api/v2/log/ips/forward?filter=severity<=2&rows=500`
-- `config_changes`: GET `/api/v2/log/event/system?filter=logdesc=~config&rows=200`
-
-Cada step usa o executor `http_request` (ja suportado pelo agent).
-
-**Atualizar RPC `rpc_get_agent_tasks`**:
-
-Separar a secao de firewall em duas queries:
-- Tasks com `task_type != 'firewall_analyzer'` -> seleciona blueprint onde `executor_type IN ('agent')` (compliance)
-- Tasks com `task_type = 'firewall_analyzer'` -> seleciona blueprint onde `executor_type IN ('hybrid')` (analyzer)
-
-Ou, de forma mais simples: adicionar um filtro por `executor_type` baseado no `task_type` dentro da subquery do blueprint.
-
-### 2. Arquivos Modificados
-
-Nenhum arquivo de codigo -- apenas migracao SQL:
-
-| Recurso | Alteracao |
-|---------|-----------|
-| `device_blueprints` (tabela) | INSERT novo blueprint Analyzer |
-| `rpc_get_agent_tasks` (funcao) | CREATE OR REPLACE com logica de selecao por task_type |
-
-### 3. Detalhes da RPC Atualizada
-
-A secao de firewall tasks sera modificada para:
-
-```text
--- Subquery do blueprint agora filtra por executor_type baseado no task_type
-FROM public.device_blueprints db
-WHERE db.device_type_id = f.device_type_id
-  AND db.is_active = true
-  AND db.executor_type = CASE 
-    WHEN t.task_type = 'firewall_analyzer' THEN 'hybrid'
-    ELSE 'agent'
-  END
-ORDER BY db.version DESC
-LIMIT 1
+```sql
+AND db.executor_type = CASE 
+  WHEN t.task_type = 'firewall_analyzer' THEN 'hybrid'::blueprint_executor_type
+  ELSE 'agent'::blueprint_executor_type
+END
 ```
 
-Isso garante que:
-- `firewall_analysis` tasks recebem o blueprint de compliance (`executor_type = 'agent'`)
-- `firewall_analyzer` tasks recebem o blueprint de logs (`executor_type = 'hybrid'`)
+This cast needs to be applied in the firewall section of the RPC query.
 
-### 4. Resultado
+## Files Changed
 
-Apos esta migracao, o fluxo completo estara funcional:
-1. Usuario clica "Executar Analise" no dashboard do Analyzer
-2. `trigger-firewall-analyzer` cria a task com `task_type = 'firewall_analyzer'`
-3. Agent busca tasks via `rpc_get_agent_tasks` e recebe o blueprint correto com steps de coleta de logs
-4. Agent executa os steps (HTTP requests ao FortiGate)
-5. Agent envia resultados via `agent-task-result`
-6. `agent-task-result` chama `firewall-analyzer` Edge Function
-7. Insights sao salvos em `analyzer_snapshots`
-8. Frontend exibe o dashboard
+| Resource | Change |
+|----------|--------|
+| SQL migration | `CREATE OR REPLACE FUNCTION rpc_get_agent_tasks` with explicit enum casts |
+
+No frontend or edge function changes needed.
 
