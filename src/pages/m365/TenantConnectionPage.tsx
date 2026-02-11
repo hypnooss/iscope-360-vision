@@ -442,6 +442,7 @@ export default function TenantConnectionPage() {
                       onTest={handleTest}
                       onDisconnect={handleDisconnect}
                       onDelete={handleDelete}
+                      onUpdatePermissions={handleUpdatePermissions}
                       onEdit={handleEdit}
                       lastAnalysis={analysisMap.get(tenant.id) || null}
                     />
