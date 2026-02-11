@@ -1,52 +1,59 @@
 
 
-# Corrigir Contagem de Severidades para Firewall e Dominio Externo
+# Corrigir Extracao de Severidades - Formato de Dados
 
-## Diagnostico
+## Causa Raiz
 
-Os cards de Firewall e Dominio Externo mostram "Nenhum alerta" porque o hook `useDashboardStats` busca severidades em `report_data.summary` -- mas esse campo **nao existe** nesses modulos. 
+O campo `report_data.categories` nos modulos Firewall e Dominio Externo e um **objeto** (dicionario), nao um **array**:
 
-- **M365**: Tem `m365_posture_history.summary = {critical: 1, high: 0, ...}` (funciona)
-- **Firewall**: `analysis_history.report_data` tem apenas `categories` com regras individuais, sem `summary`
-- **External Domain**: `external_domain_analysis_history.report_data` tem apenas `categories`, sem `summary`
+```text
+report_data.categories = {
+  "Licenciamento": [ {severity: "critical", status: "unknown", ...}, ... ],
+  "Seguranca DNS": [ {severity: "high", status: "fail", ...}, ... ],
+  ...
+}
+```
 
-A solucao e computar as severidades percorrendo as regras dentro de `report_data.categories`, contando itens com `status != 'pass'` agrupados por `severity`.
+O codigo atual faz `Array.isArray(categories)` que retorna `false` para objetos, fazendo a funcao retornar zeros imediatamente.
 
-## Alteracao
+## Correcao
 
 ### Arquivo: `src/hooks/useDashboardStats.ts`
 
-Criar uma funcao utilitaria que extrai severidades de `report_data`:
+Alterar a funcao `extractSeveritiesFromReport` (linhas 45-57) para tratar `categories` como objeto ou array:
 
 ```text
-function extractSeveritiesFromCategories(reportData):
-  Se reportData.summary existir -> retornar summary (compatibilidade)
-  Se reportData.categories existir:
-    Para cada categoria em categories:
-      Para cada regra na categoria:
-        Se regra.status != 'pass':
-          Incrementar contagem de regra.severity (critical/high/medium/low)
-    Retornar contagens
-  Retornar zeros
+// Verificar se categories e um objeto (dicionario)
+if (categories && typeof categories === 'object' && !Array.isArray(categories)) {
+  // Iterar sobre os valores do objeto (cada valor e um array de regras)
+  for (const rules of Object.values(categories)) {
+    if (Array.isArray(rules)) {
+      for (const rule of rules) {
+        if (rule.status === 'pass') continue;
+        if (rule.severity in counts) counts[rule.severity]++;
+      }
+    }
+  }
+  return counts;
+}
+
+// Fallback: se for um array (formato antigo), manter logica atual
+if (Array.isArray(categories)) {
+  for (const cat of categories) {
+    const rules = (cat.checks || cat.rules || []);
+    for (const rule of rules) {
+      if (rule.status === 'pass') continue;
+      if (rule.severity in counts) counts[rule.severity]++;
+    }
+  }
+}
 ```
 
-Aplicar esta funcao nos blocos de Firewall (linha ~112) e External Domain (linha ~182), substituindo o acesso direto a `report.summary`.
+Essa alteracao suporta ambos os formatos (objeto e array), garantindo compatibilidade com qualquer formato futuro.
 
-### Logica de contagem
-
-Cada regra no `report_data.categories` possui:
-- `status`: `pass`, `fail`, `warn`, `unknown`
-- `severity`: `critical`, `high`, `medium`, `low`
-
-Contabilizar como alerta: qualquer regra com `status` diferente de `pass`.
-
-## Detalhes tecnicos
-
-A funcao sera adicionada antes do hook e reutilizada nos dois blocos (firewall e external domain). O bloco M365 continua usando `summary` diretamente, pois ja funciona.
-
-## Arquivos modificados
+## Arquivo modificado
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | Adicionar funcao `extractSeveritiesFromReport` e usa-la nos blocos de Firewall e External Domain |
+| `src/hooks/useDashboardStats.ts` | Tratar `categories` como objeto (dicionario) alem de array |
 
