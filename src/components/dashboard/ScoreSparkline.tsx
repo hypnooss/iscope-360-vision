@@ -14,7 +14,8 @@ function getColorForScore(score: number): string {
 }
 
 export function ScoreSparkline({ data }: ScoreSparklineProps) {
-  const gradientId = useMemo(() => `sparkGradient-${Math.random().toString(36).slice(2, 8)}`, []);
+  const gradientId = useMemo(() => `sparkStroke-${Math.random().toString(36).slice(2, 8)}`, []);
+  const fillGradientId = useMemo(() => `sparkFill-${Math.random().toString(36).slice(2, 8)}`, []);
 
   const gradientStops = useMemo(() => {
     if (data.length < 2) return [];
@@ -43,6 +44,10 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
                 <stop key={i} offset={stop.offset} stopColor={stop.color} />
               ))}
             </linearGradient>
+            <linearGradient id={fillGradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={gradientStops[gradientStops.length - 1]?.color || 'hsl(175, 80%, 45%)'} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={gradientStops[gradientStops.length - 1]?.color || 'hsl(175, 80%, 45%)'} stopOpacity={0} />
+            </linearGradient>
           </defs>
           <YAxis domain={[0, 100]} hide />
           <XAxis dataKey="date" hide />
@@ -51,7 +56,7 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
             dataKey="score"
             stroke={`url(#${gradientId})`}
             strokeWidth={2}
-            fill="none"
+            fill={`url(#${fillGradientId})`}
             isAnimationActive={false}
             dot={false}
           />
