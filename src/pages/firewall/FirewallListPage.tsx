@@ -384,7 +384,7 @@ export default function FirewallListPage() {
 
     if (schedule.frequency === 'weekly' && schedule.scheduled_day_of_week != null) {
       badges.push(
-        <Badge key="dow" variant="secondary" className="text-[10px] px-1.5 py-0">
+        <Badge key="dow" variant="outline">
           {getDayOfWeekLabel(schedule.scheduled_day_of_week)}
         </Badge>
       );
@@ -392,7 +392,7 @@ export default function FirewallListPage() {
 
     if (schedule.frequency === 'monthly' && schedule.scheduled_day_of_month != null) {
       badges.push(
-        <Badge key="dom" variant="secondary" className="text-[10px] px-1.5 py-0">
+        <Badge key="dom" variant="outline">
           Dia {schedule.scheduled_day_of_month}
         </Badge>
       );
@@ -400,7 +400,7 @@ export default function FirewallListPage() {
 
     if (hour != null) {
       badges.push(
-        <Badge key="hour" variant="secondary" className="text-[10px] px-1.5 py-0">
+        <Badge key="hour" variant="outline">
           {hour.toString().padStart(2, '0')}:00
         </Badge>
       );
