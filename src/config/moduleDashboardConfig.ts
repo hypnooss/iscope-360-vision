@@ -5,6 +5,8 @@ export interface ModuleDashboardConfig {
   path: string;
   /** Label shown in the infrastructure card (e.g. "Firewalls", "Tenants M365") */
   infraLabel: string;
+  /** Route to CVE page (undefined = module has no CVEs) */
+  cvePath?: string;
 }
 
 export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
@@ -12,11 +14,13 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
     statsKey: 'firewall',
     path: '/scope-firewall/dashboard',
     infraLabel: 'Firewalls',
+    cvePath: '/scope-firewall/cves',
   },
   scope_m365: {
     statsKey: 'm365',
     path: '/scope-m365/posture',
     infraLabel: 'Tenants M365',
+    cvePath: '/scope-m365/cves',
   },
   scope_external_domain: {
     statsKey: 'externalDomain',
