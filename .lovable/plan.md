@@ -1,66 +1,53 @@
 
+# Mostrar Modulos Sem Acesso no Menu (Cinza/Desativado)
 
-# Adicionar Modulo Cloud e Tornar Stats Dinamico
+## Objetivo
 
-## Problema
-
-1. O modulo Cloud (`scope_cloud`) existe no banco mas nao tem entrada no `moduleDashboardConfig.ts` nem no hook de stats
-2. Cada vez que um modulo novo e criado, e preciso manualmente adicionar uma entrada no `setStats()` -- isso deveria ser automatico
+Modulos ativos que o usuario nao tem acesso devem aparecer no menu lateral em cinza, sem acao (nao expande, nao navega), servindo como vitrine para o cliente saber que existem outros modulos disponiveis.
 
 ## Alteracoes
 
-### 1. `src/config/moduleDashboardConfig.ts`
+### 1. `src/hooks/useEffectiveModules.ts`
 
-Adicionar entrada para `scope_cloud`:
+Expor a lista completa de modulos ativos (`allModules`) alem dos modulos acessiveis. Importar `modules` do `ModuleContext` e retorna-lo como `allActiveModules`.
 
-```ts
-scope_cloud: {
-  statsKey: 'cloud',
-  path: '/scope-cloud/dashboard',
-  infraLabel: 'Cloud',
-},
+### 2. `src/components/layout/AppLayout.tsx`
+
+**Construir a lista de modulos do menu** combinando modulos acessiveis + modulos sem acesso:
+
+- Pegar `allActiveModules` do hook `useEffectiveModules`
+- Filtrar os que NAO estao em `effectiveUserModules`
+- Renderizar esses como items desabilitados
+
+**Criar componente `DisabledModuleButton`**:
+
+- Exibe icone e nome do modulo
+- Cor cinza (`text-muted-foreground/50`) no icone e texto
+- Cursor `cursor-default` (sem pointer)
+- Sem onClick, sem Link, sem Collapsible
+- Tooltip com mensagem tipo "Modulo nao contratado" quando sidebar esta colapsado
+- Opacidade reduzida (`opacity-50`)
+
+**Ordem de renderizacao**:
+
+1. Modulos acessiveis (com interacao normal, como hoje)
+2. Modulos sem acesso (cinza, desabilitados) -- na mesma lista, ordenados por nome
+
+Na pratica, todos os modulos ativos serao mapeados juntos e ordenados, cada um renderizado como `ModuleButton` (se acessivel) ou `DisabledModuleButton` (se sem acesso).
+
+## Detalhes Tecnicos
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/hooks/useEffectiveModules.ts` | Adicionar `allActiveModules: Module[]` ao retorno |
+| `src/components/layout/AppLayout.tsx` | Criar `DisabledModuleButton`, combinar modulos acessiveis + desabilitados no menu |
+
+### Visual do item desabilitado
+
+```text
++----------------------------------+
+|  [icon cinza]  Nome do Modulo    |
+|  opacity-50, cursor-default      |
+|  sem hover effect                |
++----------------------------------+
 ```
-
-### 2. `src/hooks/useDashboardStats.ts`
-
-Tornar a construcao do objeto `modules` dinamica: importar `MODULE_DASHBOARD_CONFIG` e gerar automaticamente uma entrada `emptyHealth` para todo modulo que nao tenha fetch especifico.
-
-```ts
-import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
-
-// Ao final do fetchStats, construir o Record dinamicamente:
-const modulesRecord: Record<string, ModuleHealth> = {};
-
-// Modulos com fetch especifico
-modulesRecord['firewall'] = fwHealth;
-modulesRecord['m365'] = m365Health;
-modulesRecord['externalDomain'] = extHealth;
-
-// Preencher todos os outros modulos do config com emptyHealth
-for (const config of Object.values(MODULE_DASHBOARD_CONFIG)) {
-  if (!modulesRecord[config.statsKey]) {
-    modulesRecord[config.statsKey] = { ...emptyHealth };
-  }
-}
-
-setStats({
-  modules: modulesRecord,
-  agentsOnline,
-  agentsTotal,
-});
-```
-
-Dessa forma, quando qualquer modulo novo for adicionado ao `MODULE_DASHBOARD_CONFIG`, ele automaticamente aparecera no dashboard com "Sem analise" e 0 ativos, sem precisar tocar no hook.
-
-## Resultado
-
-- Modulo Cloud aparecera no dashboard quando ativado
-- Qualquer modulo futuro adicionado ao config sera automaticamente incluido no stats com `emptyHealth`
-
-## Arquivos
-
-| Arquivo | Acao |
-|---------|------|
-| `src/config/moduleDashboardConfig.ts` | Adicionar `scope_cloud` |
-| `src/hooks/useDashboardStats.ts` | Construir `modules` dinamicamente a partir do config |
-
