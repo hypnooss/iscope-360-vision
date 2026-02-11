@@ -37,7 +37,7 @@ const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
 async function assignExchangeAdminRole(
   accessToken: string, 
   appId: string
-): Promise<{ success: boolean; error?: string; alreadyAssigned?: boolean }> {
+): Promise<{ success: boolean; error?: string; alreadyAssigned?: boolean; retryable?: boolean }> {
   try {
     // 1. Get Service Principal by App ID in the target tenant
     console.log('Looking up Service Principal for app:', appId);
@@ -115,7 +115,8 @@ async function assignExchangeAdminRole(
       console.warn('Insufficient permissions to assign Exchange Administrator role:', errorMessage);
       return { 
         success: false, 
-        error: 'Permissão RoleManagement.ReadWrite.Directory não concedida. Atribuição manual necessária.' 
+        retryable: true,
+        error: 'Permissão RoleManagement.ReadWrite.Directory ainda não propagou ou não foi concedida.' 
       };
     }
     
@@ -677,8 +678,19 @@ Deno.serve(async (req) => {
 
     // === Attempt to assign Exchange Administrator role for PowerShell CBA ===
     // This is non-blocking - if it fails, Graph API features still work
+    // Uses retry with backoff to wait for RoleManagement.ReadWrite.Directory propagation
     console.log('Attempting to assign Exchange Administrator role for PowerShell connectivity...');
-    const roleResult = await assignExchangeAdminRole(accessToken, appId);
+    const retryDelays = [5000, 10000, 15000]; // 5s, 10s, 15s between retries
+    let roleResult = await assignExchangeAdminRole(accessToken, appId);
+    
+    if (!roleResult.success && roleResult.retryable) {
+      for (let attempt = 0; attempt < retryDelays.length; attempt++) {
+        console.log(`Exchange Admin role assignment failed (retryable). Waiting ${retryDelays[attempt] / 1000}s before retry ${attempt + 2}/${retryDelays.length + 1}...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+        roleResult = await assignExchangeAdminRole(accessToken, appId);
+        if (roleResult.success || !roleResult.retryable) break;
+      }
+    }
     
     // Add role assignment result to permissions list for UI visibility
     permissionResults.push({
