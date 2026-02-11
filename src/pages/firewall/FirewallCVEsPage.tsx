@@ -148,11 +148,7 @@ export default function FirewallCVEsPage() {
 
   // Derive dynamic title and disclaimer from vendors present
   const vendors = data?.vendors || [];
-  const pageTitle = useMemo(() => {
-    if (vendors.length === 1) return `CVEs - ${getOsLabel(vendors[0])}`;
-    if (vendors.length > 1) return 'CVEs - Firewalls';
-    return 'CVEs - Firewalls';
-  }, [vendors]);
+  const pageTitle = 'CVEs - Firewalls';
 
   const disclaimerText = useMemo(() => {
     const vendorLabels = vendors.map((v) => {
