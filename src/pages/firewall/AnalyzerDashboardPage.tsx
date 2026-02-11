@@ -56,7 +56,16 @@ export default function AnalyzerDashboardPage() {
       const res = await supabase.functions.invoke('trigger-firewall-analyzer', {
         body: { firewall_id: selectedFirewall },
       });
-      if (res.error) throw res.error;
+      const body = res.data;
+      if (res.error || (body && !body.success)) {
+        const msg = body?.error || res.error?.message || 'Falha ao disparar análise';
+        if (msg.includes('já em andamento')) {
+          toast({ title: 'Análise em andamento', description: 'Aguarde a conclusão da análise atual antes de iniciar outra.' });
+        } else {
+          toast({ title: 'Erro', description: msg, variant: 'destructive' });
+        }
+        return;
+      }
       toast({ title: 'Análise iniciada', description: 'O agent irá coletar os logs em breve.' });
       setTimeout(() => refetch(), 5000);
     } catch (e: any) {
