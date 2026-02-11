@@ -1,59 +1,55 @@
 
 
-# Ajustes Visuais nos Cards do Dashboard
+# Corrigir seção de CVEs nos cards do Dashboard
 
-## Problemas Atuais
+## Problema
 
-1. **Sparkline**: Ocupa largura total, separado da barra de progresso. Deveria estar "encaixado" logo acima da barra, com o valor "80/100" ao lado direito, ambos na mesma coluna visual.
-2. **Badges de conformidade**: Alinhados a esquerda e comprimidos. Precisam ser distribuidos uniformemente.
-3. **CVEs ausentes nos cards Firewall e M365**: O hook `useTopCVEs` tenta extrair CVEs individuais do `report_data`, mas esse campo contem apenas checks de conformidade, nao CVEs. CVEs individuais nao existem no banco -- apenas **contagens por severidade** na tabela `cve_severity_cache`, que ja sao carregadas em `health.cveSeverities`. A solucao e exibir as contagens de CVE por severidade (igual ao bloco de conformidade) em vez de CVEs individuais.
+A seção de CVEs nos cards de Firewall e M365 está exibindo contagens por severidade como **badges** (usando `SeverityBadgeRow`). O correto é exibir uma **lista com as 2 CVEs de maior pontuação CVSS**, mostrando o ID e o score de cada uma.
 
-## Mudancas
+## Solução
 
-### 1. Sparkline encaixado acima da barra (`GeneralDashboardPage.tsx`)
+### 1. Criar hook `useTopCVEs.ts`
 
-Reorganizar a secao de score para ficar visualmente "encaixado":
+Novo hook que reutiliza os dados já disponíveis nos hooks existentes (`useFirewallCVEs` e `useM365CVEs`) para extrair os top 2 CVEs por score CVSS de cada módulo. O hook retorna um objeto `Record<string, TopCVE[]>` mapeando `statsKey` para as CVEs.
 
 ```text
-   ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐  ▐▐
-  SCORE ████████████████████████████████████  81 /100
+Interface TopCVE {
+  id: string        // ex: "CVE-2024-21762"
+  score: number     // ex: 9.8
+  severity: string  // ex: "CRITICAL"
+}
 ```
 
-- Sparkline fica na linha de cima, sem gap (margin-bottom: 0)
-- Abaixo, na mesma linha horizontal: label "SCORE", barra `Progress` (`flex-1`), e valor "81/100"
-- Remover o `space-y-2` entre sparkline e barra, usar `space-y-0` ou `gap-0`
+O hook faz:
+- Chama `useFirewallCVEs()` para obter CVEs de firewall (já ordenados por score desc)
+- Chama `useM365CVEs()` para obter CVEs de M365
+- Retorna os 2 primeiros de cada, mapeados por statsKey ("firewall", "m365")
 
-### 2. Badges de conformidade distribuidos (`GeneralDashboardPage.tsx`)
+### 2. Alterar `GeneralDashboardPage.tsx`
 
-- Trocar `flex gap-2` no `SeverityBadgeRow` por `grid grid-cols-4 gap-2`
-- Mostrar todos os 4 badges sempre (com valor 0 em opacidade reduzida) para manter distribuicao uniforme
-
-### 3. CVEs como contagens por severidade (`GeneralDashboardPage.tsx`)
-
-Ja temos `health.cveSeverities` com `{ critical, high, medium, low }`. Em vez de mostrar CVEs individuais (que nao existem no DB), exibir um bloco identico ao de conformidade:
+Substituir o bloco de badges de CVE (linhas 202-208) por uma lista simples com as 2 CVEs de maior pontuação:
 
 ```text
-  ALERTAS DE CVE
-  [3 Critico]  [11 Alto]  [14 Medio]  [9 Baixo]
+ALERTAS DE CVE
+⚠ CVE-2024-21762  CVSS 9.8
+⚠ CVE-2024-23113  CVSS 9.1
 ```
 
-- Remover a importacao e uso de `useTopCVEs` e `CveAlertRow`
-- Reutilizar `SeverityBadgeRow` passando `health.cveSeverities`
-- Remover prop `topCves` do `ModuleHealthCard`
+Cada linha mostra:
+- Icone `AlertTriangle` pequeno com cor baseada na severidade
+- ID da CVE (texto, sem link, sem badge)
+- Score CVSS alinhado à direita
 
-### 4. Limpar `useTopCVEs.ts`
+Quando não houver CVEs, não exibir a seção (mesmo comportamento atual com `hasCves`).
 
-Este hook pode ser removido pois os dados de CVE ja vem do `useDashboardStats` via `cveSeverities`.
+### 3. Passar `topCves` ao `ModuleHealthCard`
 
-### 5. Sparkline sem opacity (`ScoreSparkline.tsx`)
+Adicionar prop `topCves?: TopCVE[]` ao componente `ModuleHealthCard`. A página principal busca os dados via `useTopCVEs` e passa para cada card.
 
-- Remover `opacity={0.7}` para barras mais solidas
+## Detalhes técnicos
 
-## Arquivos
-
-| Arquivo | Alteracao |
+| Arquivo | Alteração |
 |---|---|
-| `src/pages/GeneralDashboardPage.tsx` | Sparkline encaixado; badges grid-cols-4; CVEs como contagens; remover useTopCVEs |
-| `src/components/dashboard/ScoreSparkline.tsx` | Remover opacity das barras |
-| `src/hooks/useTopCVEs.ts` | Remover (nao mais necessario) |
+| `src/hooks/useTopCVEs.ts` | **Criar**: hook que usa `useFirewallCVEs` e `useM365CVEs` para extrair top 2 CVEs por módulo |
+| `src/pages/GeneralDashboardPage.tsx` | Importar `useTopCVEs`; adicionar prop `topCves` ao `ModuleHealthCard`; substituir `SeverityBadgeRow` por lista de CVEs com ID + score |
 
