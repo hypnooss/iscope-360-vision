@@ -1,55 +1,50 @@
 
-# Ajustes no Dashboard: Workspace Selector + Espacamento + Infraestrutura
 
-## 1. Dropdown de Workspace para Super Admins
+# Padronizacao de Espacamento e Ajuste do Card Infraestrutura
 
-Adicionar um dropdown (Select) no canto superior direito do header do Dashboard (area do retangulo vermelho na imagem) que permite Super Admins filtrar os dados por workspace.
+## Problema identificado
 
-- Visivel apenas para `super_admin` e `super_suporte`
-- Opcao padrao: "Todos os workspaces" (sem filtro)
-- Listar todos os workspaces da tabela `clients`
-- Ao selecionar um workspace, os dados dos cards (Module Health + Infraestrutura) devem refletir apenas aquele workspace
+Existem dois padroes de espacamento nas paginas:
+- **Padrao A** (Dashboard, Execucoes): `space-y-6` no container principal, sem `mb-*` manuais
+- **Padrao B** (Dominios Externos, Relatorios): sem `space-y-*`, usando `mb-8` no header e `mb-6` nos filtros manualmente
 
-### Implementacao:
-- Buscar lista de workspaces (`clients`) via query Supabase no componente
-- Armazenar `selectedWorkspaceId` em state local
-- Modificar `useDashboardStats` para aceitar um parametro opcional `workspaceId: string | null` que, quando fornecido, filtra todas as queries por `client_id`
-- Passar o `selectedWorkspaceId` para o hook
+## Solucao: padronizar com `space-y-6`
 
-## 2. Corrigir espacamento (setas verdes)
+Adotar `space-y-6` como padrao unico, removendo todos os `mb-8` e `mb-6` manuais dos headers e secoes.
 
-O Dashboard atualmente usa `space-y-8` enquanto o padrao do sistema e `space-y-6`. Ajustar:
-- Container principal: `space-y-8` para `space-y-6`
-- Manter `p-6 lg:p-8` (padrao do sistema)
+## Alteracoes por arquivo
 
-## 3. Card de Infraestrutura - cor e layout (setas azuis)
+### 1. `src/pages/GeneralDashboardPage.tsx`
+- Trocar cor do card Infraestrutura de `primary` (teal) para `violet-500` (nao usada por nenhum modulo: orange=Firewall, blue=M365, green=Ext Domain)
+- Ajustar gap dos itens no grid de ativos de `gap-2` para `gap-2.5` (equilibrio entre colado e distante)
 
-A borda e icone do card de Infraestrutura ja usam `primary` (teal), que e a cor do centro do gauge. Isso esta correto.
+### 2. `src/pages/external-domain/ExternalDomainListPage.tsx`
+- Container: trocar `<div className="p-6 lg:p-8">` para `<div className="p-6 lg:p-8 space-y-6">`
+- Header: remover `mb-8` do div do header
+- Os componentes `ExternalDomainStatsCards` e `ExternalDomainTable` ja serao espacados automaticamente pelo `space-y-6`
 
-Sobre o numero distante do texto no card de Infraestrutura: o grid de 4 colunas usa `ml-auto` nos numeros, empurrando-os para longe. Vou ajustar para que o numero fique proximo ao label, removendo o `ml-auto` e usando `gap-1.5` mais compacto.
+### 3. `src/pages/external-domain/ExternalDomainReportsPage.tsx`
+- Container: trocar `<div className="p-6 lg:p-8">` para `<div className="p-6 lg:p-8 space-y-6">`
+- Header: remover `mb-8` do div do header
+- Filtros: remover `mb-6` do div dos filtros
+- O Card de relatorios ja sera espacado automaticamente
 
-## Alteracoes tecnicas
+### 4. `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+- Ja usa `space-y-6` -- nenhuma alteracao necessaria
 
-### Arquivo: `src/hooks/useDashboardStats.ts`
+## Cores do Card Infraestrutura
 
-- Adicionar parametro `selectedWorkspaceId?: string | null` ao hook
-- Na logica de filtragem: se `selectedWorkspaceId` for fornecido, usar `eq('client_id', selectedWorkspaceId)` em vez de `in('client_id', workspaceIds)`
-- Se preview mode estiver ativo, priorizar os filtros de preview (manter comportamento existente)
-- Adicionar `selectedWorkspaceId` como dependencia do useEffect
+| Elemento | Antes | Depois |
+|----------|-------|--------|
+| Borda superior | `border-t-primary` (teal) | `border-t-violet-500` |
+| Fundo do icone | `bg-primary/10` | `bg-violet-500/10` |
+| Cor do icone | `text-primary` | `text-violet-500` |
 
-### Arquivo: `src/pages/GeneralDashboardPage.tsx`
-
-1. **Imports**: Adicionar `Select, SelectContent, SelectItem, SelectTrigger, SelectValue` de `@/components/ui/select` e `useState` do React
-2. **State**: `selectedWorkspaceId` (string | null, default null) e `workspaces` (array de {id, name})
-3. **Fetch workspaces**: useEffect para buscar `clients` quando usuario for super_admin/super_suporte
-4. **Dropdown**: Renderizar o Select no header, alinhado a direita, ao lado do titulo "Dashboard"
-5. **Passar para hook**: `useDashboardStats(selectedWorkspaceId)`
-6. **Espacamento**: Alterar `space-y-8` para `space-y-6`
-7. **Numeros no Infra Card**: Remover `ml-auto` dos spans de contagem e ajustar layout para ficarem proximos ao label
-
-### Resumo
+## Resumo
 
 | Arquivo | Acao |
 |---------|------|
-| `src/hooks/useDashboardStats.ts` | Aceitar `selectedWorkspaceId` para filtro por workspace |
-| `src/pages/GeneralDashboardPage.tsx` | Dropdown workspace + espacamento + layout numeros |
+| `GeneralDashboardPage.tsx` | Cor infra card violet + gap 2.5 nos ativos |
+| `ExternalDomainListPage.tsx` | Adicionar space-y-6, remover mb-8 |
+| `ExternalDomainReportsPage.tsx` | Adicionar space-y-6, remover mb-8 e mb-6 |
+
