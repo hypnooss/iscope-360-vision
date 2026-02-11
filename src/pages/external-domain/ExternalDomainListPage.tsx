@@ -16,7 +16,6 @@ import {
 } from '@/components/external-domain/AddExternalDomainDialog';
 import { ExternalDomainStatsCards } from '@/components/external-domain/ExternalDomainStatsCards';
 import { ExternalDomainTable, type ExternalDomainRow } from '@/components/external-domain/ExternalDomainTable';
-import { EditExternalDomainDialog } from '@/components/external-domain/EditExternalDomainDialog';
 import { DeleteExternalDomainDialog } from '@/components/external-domain/DeleteExternalDomainDialog';
 
 interface Client {
@@ -38,8 +37,6 @@ export default function ExternalDomainListPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editingDomain, setEditingDomain] = useState<ExternalDomainRow | null>(null);
   const [deletingDomain, setDeletingDomain] = useState<ExternalDomainRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -249,70 +246,8 @@ export default function ExternalDomainListPage() {
     }
   };
 
-  const openEditDialog = (domain: ExternalDomainRow) => {
-    setEditingDomain(domain);
-    setShowEditDialog(true);
-  };
-
-  const handleEditDomain = async (payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency }) => {
-    if (!user?.id) {
-      toast.error('Usuário não autenticado');
-      return;
-    }
-    if (!editingDomain) return;
-    if (!payload.agent_id) {
-      toast.error('Selecione um agent');
-      return;
-    }
-
-    // Build update data - include client_id if it was changed
-    const updateData: { agent_id: string; client_id?: string } = { 
-      agent_id: payload.agent_id 
-    };
-    
-    if (payload.client_id && payload.client_id !== editingDomain.client_id) {
-      updateData.client_id = payload.client_id;
-    }
-
-    const { error: updateError } = await supabase
-      .from('external_domains')
-      .update(updateData)
-      .eq('id', editingDomain.id);
-
-    if (updateError) {
-      toast.error('Erro ao atualizar domínio', { description: updateError.message });
-      return;
-    }
-
-    const { error: deleteSchedulesError } = await supabase
-      .from('external_domain_schedules')
-      .delete()
-      .eq('domain_id', editingDomain.id);
-
-    if (deleteSchedulesError) {
-      toast.error('Erro ao atualizar frequência', { description: deleteSchedulesError.message });
-      return;
-    }
-
-    if (payload.schedule !== 'manual') {
-      const { error: insertScheduleError } = await supabase
-        .from('external_domain_schedules')
-        .insert({
-          domain_id: editingDomain.id,
-          frequency: payload.schedule,
-          is_active: true,
-          created_by: user.id,
-        });
-
-      if (insertScheduleError) {
-        toast.error('Erro ao salvar frequência', { description: insertScheduleError.message });
-        return;
-      }
-    }
-
-    await fetchData();
-    setEditingDomain(null);
-    toast.success('Domínio atualizado com sucesso!');
+  const openEditPage = (domain: ExternalDomainRow) => {
+    navigate(`/scope-external-domain/domains/${domain.id}/edit`);
   };
 
   const handleDeleteDomain = async (domain: ExternalDomainRow) => {
@@ -395,20 +330,8 @@ export default function ExternalDomainListPage() {
           canEdit={canEdit}
           analyzingId={analyzing}
           onAnalyze={handleAnalyze}
-          onEdit={openEditDialog}
+          onEdit={openEditPage}
           onDelete={(d) => setDeletingDomain(d)}
-        />
-
-        <EditExternalDomainDialog
-          open={showEditDialog}
-          onOpenChange={(open) => {
-            setShowEditDialog(open);
-            if (!open) setEditingDomain(null);
-          }}
-          domain={editingDomain}
-          clients={clients}
-          isSuperAdmin={isSuperAdmin() || role === 'super_suporte'}
-          onSave={handleEditDomain}
         />
 
         <DeleteExternalDomainDialog

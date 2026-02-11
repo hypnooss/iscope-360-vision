@@ -40,6 +40,7 @@ const ExternalDomainListPage = lazy(() => import("./pages/external-domain/Extern
 const ExternalDomainExecutionsPage = lazy(() => import("./pages/external-domain/ExternalDomainExecutionsPage"));
 const ExternalDomainReportsPage = lazy(() => import("./pages/external-domain/ExternalDomainReportsPage"));
 const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-domain/ExternalDomainAnalysisReportPage"));
+const ExternalDomainEditPage = lazy(() => import("./pages/external-domain/ExternalDomainEditPage"));
 
 // Microsoft 365 Module Pages - lazy loaded
 const M365ExecutionsPage = lazy(() => import("./pages/m365/M365ExecutionsPage"));
@@ -103,6 +104,7 @@ const App = () => (
                   <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
                   <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
                   <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
+                  <Route path="/scope-external-domain/domains/:id/edit" element={<ExternalDomainEditPage />} />
 
                   {/* Microsoft 365 Module */}
                   <Route path="/scope-m365" element={<Navigate to="/scope-m365/tenant-connection" replace />} />
