@@ -1,55 +1,60 @@
 
 
-# Corrigir seção de CVEs nos cards do Dashboard
+# Corrigir performance: usar cache para top CVEs no Dashboard
 
 ## Problema
 
-A seção de CVEs nos cards de Firewall e M365 está exibindo contagens por severidade como **badges** (usando `SeverityBadgeRow`). O correto é exibir uma **lista com as 2 CVEs de maior pontuação CVSS**, mostrando o ID e o score de cada uma.
+O hook `useTopCVEs` chama `useFirewallCVEs()` e `useM365CVEs()` que fazem requisicoes HTTP em tempo real ao NIST NVD e MSRC. Isso leva 10+ segundos e trava o dashboard. O cron job `refresh-cve-cache` ja roda diariamente e popula `cve_severity_cache`, mas essa tabela so guarda contagens por severidade, nao os CVEs individuais.
 
-## Solução
+## Solucao
 
-### 1. Criar hook `useTopCVEs.ts`
+### 1. Adicionar coluna `top_cves` na tabela `cve_severity_cache`
 
-Novo hook que reutiliza os dados já disponíveis nos hooks existentes (`useFirewallCVEs` e `useM365CVEs`) para extrair os top 2 CVEs por score CVSS de cada módulo. O hook retorna um objeto `Record<string, TopCVE[]>` mapeando `statsKey` para as CVEs.
+Nova coluna JSONB para armazenar os 2 CVEs de maior score:
 
-```text
-Interface TopCVE {
-  id: string        // ex: "CVE-2024-21762"
-  score: number     // ex: 9.8
-  severity: string  // ex: "CRITICAL"
-}
+```sql
+ALTER TABLE cve_severity_cache 
+ADD COLUMN top_cves jsonb DEFAULT '[]'::jsonb;
 ```
 
-O hook faz:
-- Chama `useFirewallCVEs()` para obter CVEs de firewall (já ordenados por score desc)
-- Chama `useM365CVEs()` para obter CVEs de M365
-- Retorna os 2 primeiros de cada, mapeados por statsKey ("firewall", "m365")
-
-### 2. Alterar `GeneralDashboardPage.tsx`
-
-Substituir o bloco de badges de CVE (linhas 202-208) por uma lista simples com as 2 CVEs de maior pontuação:
-
-```text
-ALERTAS DE CVE
-⚠ CVE-2024-21762  CVSS 9.8
-⚠ CVE-2024-23113  CVSS 9.1
+Formato:
+```json
+[
+  {"id": "CVE-2024-21762", "score": 9.8, "severity": "CRITICAL"},
+  {"id": "CVE-2024-23113", "score": 9.1, "severity": "CRITICAL"}
+]
 ```
 
-Cada linha mostra:
-- Icone `AlertTriangle` pequeno com cor baseada na severidade
-- ID da CVE (texto, sem link, sem badge)
-- Score CVSS alinhado à direita
+### 2. Atualizar edge function `refresh-cve-cache`
 
-Quando não houver CVEs, não exibir a seção (mesmo comportamento atual com `hasCves`).
+Nas funcoes `refreshFirewallCVEs` e `refreshM365CVEs`, apos calcular as contagens, ordenar os CVEs por score e guardar os top 2 na nova coluna `top_cves` ao fazer o upsert.
 
-### 3. Passar `topCves` ao `ModuleHealthCard`
+### 3. Reescrever `useTopCVEs.ts`
 
-Adicionar prop `topCves?: TopCVE[]` ao componente `ModuleHealthCard`. A página principal busca os dados via `useTopCVEs` e passa para cada card.
+Em vez de chamar `useFirewallCVEs` e `useM365CVEs` (que fazem HTTP externo), o hook fara uma unica query leve ao Supabase:
 
-## Detalhes técnicos
+```typescript
+const { data } = useQuery({
+  queryKey: ['top-cves-cache', clientId],
+  queryFn: () => supabase
+    .from('cve_severity_cache')
+    .select('module_code, top_cves')
+    .or(`client_id.eq.${clientId},client_id.is.null`)
+});
+```
 
-| Arquivo | Alteração |
+Isso retorna instantaneamente os top CVEs do cache local, sem nenhuma chamada externa.
+
+### 4. Remover dependencias pesadas
+
+O `useTopCVEs` nao importara mais `useFirewallCVEs` nem `useM365CVEs`, eliminando as chamadas HTTP ao NIST/MSRC no dashboard.
+
+## Arquivos
+
+| Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useTopCVEs.ts` | **Criar**: hook que usa `useFirewallCVEs` e `useM365CVEs` para extrair top 2 CVEs por módulo |
-| `src/pages/GeneralDashboardPage.tsx` | Importar `useTopCVEs`; adicionar prop `topCves` ao `ModuleHealthCard`; substituir `SeverityBadgeRow` por lista de CVEs com ID + score |
+| Migracao SQL | Adicionar coluna `top_cves` a `cve_severity_cache` |
+| `supabase/functions/refresh-cve-cache/index.ts` | Salvar top 2 CVEs no upsert |
+| `src/hooks/useTopCVEs.ts` | Reescrever para ler do cache via Supabase query |
+| `src/pages/GeneralDashboardPage.tsx` | Ajustar desestruturacao do retorno se necessario |
 
