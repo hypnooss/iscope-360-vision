@@ -78,3 +78,6 @@ verify_jwt = false
 [functions.m365-cves]
 verify_jwt = false
 
+[functions.run-scheduled-analyses]
+verify_jwt = false
+
