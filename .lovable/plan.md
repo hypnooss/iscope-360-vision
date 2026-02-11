@@ -1,59 +1,52 @@
 
 
-# Reestruturar Cards de Modulo no Dashboard
+# Corrigir Contagem de Severidades para Firewall e Dominio Externo
 
-## O que muda
+## Diagnostico
 
-Os cards de modulo no Dashboard General passam de um layout centralizado (gauge no meio) para um layout horizontal:
-- **Gauge a esquerda**
-- **Badges de severidade a direita** (Critico, Alto, Medio, Baixo) com os totais de cada modulo/workspace
-- **Remover** o elemento de CVEs do card Microsoft 365 e a propriedade `hideSeverities`
+Os cards de Firewall e Dominio Externo mostram "Nenhum alerta" porque o hook `useDashboardStats` busca severidades em `report_data.summary` -- mas esse campo **nao existe** nesses modulos. 
 
-## Layout do Card (novo)
+- **M365**: Tem `m365_posture_history.summary = {critical: 1, high: 0, ...}` (funciona)
+- **Firewall**: `analysis_history.report_data` tem apenas `categories` com regras individuais, sem `summary`
+- **External Domain**: `external_domain_analysis_history.report_data` tem apenas `categories`, sem `summary`
+
+A solucao e computar as severidades percorrendo as regras dentro de `report_data.categories`, contando itens com `status != 'pass'` agrupados por `severity`.
+
+## Alteracao
+
+### Arquivo: `src/hooks/useDashboardStats.ts`
+
+Criar uma funcao utilitaria que extrai severidades de `report_data`:
 
 ```text
-+--------------------------------------------------+
-| [icon] Titulo do Modulo                     [->]  |
-|                                                   |
-|  [ ScoreGauge ]    Critico:  2                    |
-|  [   86 BOM  ]    Alto:     5                     |
-|                    Medio:   12                    |
-|                    Baixo:    3                    |
-|                                                   |
-|  Ultima analise: ha 6 dias                        |
-+--------------------------------------------------+
+function extractSeveritiesFromCategories(reportData):
+  Se reportData.summary existir -> retornar summary (compatibilidade)
+  Se reportData.categories existir:
+    Para cada categoria em categories:
+      Para cada regra na categoria:
+        Se regra.status != 'pass':
+          Incrementar contagem de regra.severity (critical/high/medium/low)
+    Retornar contagens
+  Retornar zeros
 ```
 
-As badges usam o padrao visual ja existente no projeto (cores de severidade: rose para critico, orange para alto, amber para medio, blue para baixo).
+Aplicar esta funcao nos blocos de Firewall (linha ~112) e External Domain (linha ~182), substituindo o acesso direto a `report.summary`.
 
-## Alteracoes Tecnicas
+### Logica de contagem
 
-### 1. `src/pages/GeneralDashboardPage.tsx`
+Cada regra no `report_data.categories` possui:
+- `status`: `pass`, `fail`, `warn`, `unknown`
+- `severity`: `critical`, `high`, `medium`, `low`
 
-- **Remover** o bloco `extraInfo` que gera o elemento CVE para M365 (linhas 226-237)
-- **Remover** a prop `hideSeverities` do `ModuleHealthCard`
-- **Remover** a prop `extraInfo` do `ModuleHealthCard`
-- **Remover** o import e uso de `useM365CVEs`
-- **Reestruturar** o layout interno do `ModuleHealthCard`:
-  - Trocar `flex-col items-center` por `flex-col` no container principal
-  - A area central passa a ser `flex flex-row items-center gap-6`:
-    - Esquerda: `ScoreGauge` (size sm)
-    - Direita: grade vertical com 4 badges de severidade (critico, alto, medio, baixo), cada um mostrando icone + contagem + label
-  - Se todas as severidades forem 0, exibir um indicador "Nenhum alerta" com icone de check
+Contabilizar como alerta: qualquer regra com `status` diferente de `pass`.
 
-### 2. `src/config/moduleDashboardConfig.ts`
+## Detalhes tecnicos
 
-- Remover a propriedade `hideSeverities` da interface e do registro de `scope_m365`
+A funcao sera adicionada antes do hook e reutilizada nos dois blocos (firewall e external domain). O bloco M365 continua usando `summary` diretamente, pois ja funciona.
 
-### 3. `src/hooks/useDashboardStats.ts`
+## Arquivos modificados
 
-- **External Domain**: adicionar coleta de severidades a partir de `external_domain_analysis_history.report_data.summary` (mesmo padrao do firewall), para que os badges tenham dados reais
-
-## Arquivos Modificados
-
-| Arquivo | Acao |
+| Arquivo | Alteracao |
 |---|---|
-| `src/pages/GeneralDashboardPage.tsx` | Reestruturar layout do card, remover CVE e hideSeverities |
-| `src/config/moduleDashboardConfig.ts` | Remover `hideSeverities` |
-| `src/hooks/useDashboardStats.ts` | Coletar severidades do External Domain |
+| `src/hooks/useDashboardStats.ts` | Adicionar funcao `extractSeveritiesFromReport` e usa-la nos blocos de Firewall e External Domain |
 
