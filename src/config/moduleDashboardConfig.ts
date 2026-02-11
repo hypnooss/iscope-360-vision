@@ -26,4 +26,9 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
     path: '/scope-external-domain/domains',
     infraLabel: 'Domínios',
   },
+  scope_network: {
+    statsKey: 'network',
+    path: '/scope-network/dashboard',
+    infraLabel: 'Network',
+  },
 };

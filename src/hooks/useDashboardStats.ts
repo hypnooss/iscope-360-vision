@@ -188,6 +188,7 @@ const extHealth: ModuleHealth = {
           firewall: fwHealth,
           m365: m365Health,
           externalDomain: extHealth,
+          network: { ...emptyHealth },
         },
         agentsOnline,
         agentsTotal,
