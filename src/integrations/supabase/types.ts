@@ -778,6 +778,9 @@ export type Database = {
           id: string
           is_active: boolean
           next_run_at: string | null
+          scheduled_day_of_month: number | null
+          scheduled_day_of_week: number | null
+          scheduled_hour: number | null
           updated_at: string
         }
         Insert: {
@@ -788,6 +791,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
           updated_at?: string
         }
         Update: {
@@ -798,6 +804,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
           updated_at?: string
         }
         Relationships: [
