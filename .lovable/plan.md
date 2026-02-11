@@ -1,36 +1,40 @@
 
 
-# Fix: RPC `rpc_get_agent_tasks` - Type Cast Error
+# Fix: Analyzer Blueprint Missing Authentication Headers
 
 ## Problem
 
-The RPC is failing with:
-```
-operator does not exist: blueprint_executor_type = text
-```
+All 5 steps in the "FortiGate - Analyzer" blueprint are returning **HTTP 401 Unauthorized** because they are missing the `Authorization` header. 
 
-The `CASE WHEN` expression in the updated RPC returns a plain `text` value (`'hybrid'` / `'agent'`), but the column `db.executor_type` is of type `blueprint_executor_type` (an enum). PostgreSQL cannot compare them without an explicit cast.
+Comparing the two blueprints:
 
-This blocks **ALL** agent task fetching, not just analyzer tasks.
+- **Compliance blueprint** (working): each step has `headers: { "Authorization": "Bearer {{api_key}}" }`
+- **Analyzer blueprint** (broken): steps have NO `headers` field at all
+
+The agent sends the HTTP requests exactly as configured in the blueprint, so without the auth header, the FortiGate API rejects every call.
 
 ## Fix
 
-A single SQL migration to replace the RPC function, adding `::blueprint_executor_type` cast to the CASE expression result:
+A single SQL migration to update the analyzer blueprint's `collection_steps`, adding the missing `headers` to all 5 steps:
 
-```sql
-AND db.executor_type = CASE 
-  WHEN t.task_type = 'firewall_analyzer' THEN 'hybrid'::blueprint_executor_type
-  ELSE 'agent'::blueprint_executor_type
-END
+| Step ID | Endpoint |
+|---------|----------|
+| denied_traffic | `/api/v2/log/traffic/forward?filter=action==deny&rows=500` |
+| auth_events | `/api/v2/log/event/system?filter=logdesc=~auth&rows=500` |
+| vpn_events | `/api/v2/log/event/vpn?rows=500` |
+| ips_events | `/api/v2/log/ips/forward?filter=severity<=2&rows=500` |
+| config_changes | `/api/v2/log/event/system?filter=logdesc=~config&rows=200` |
+
+Each step will get:
+```json
+"headers": { "Authorization": "Bearer {{api_key}}" }
 ```
 
-This cast needs to be applied in the firewall section of the RPC query.
-
-## Files Changed
+## Technical Details
 
 | Resource | Change |
 |----------|--------|
-| SQL migration | `CREATE OR REPLACE FUNCTION rpc_get_agent_tasks` with explicit enum casts |
+| SQL migration | `UPDATE device_blueprints SET collection_steps = ...` adding headers to all analyzer steps |
 
-No frontend or edge function changes needed.
+No frontend or edge function changes needed. After the migration, trigger the analysis again and the agent will authenticate correctly.
 
