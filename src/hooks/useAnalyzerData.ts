@@ -47,9 +47,9 @@ export function useAnalyzerData(firewallId?: string) {
         query = query.eq('firewall_id', firewallId);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query as any;
       if (error) throw error;
-      return (data || []).map((r: any) => parseSnapshot(r as Record<string, unknown>));
+      return ((data as any[]) || []).map((r) => parseSnapshot(r as Record<string, unknown>));
     },
     enabled: true,
     staleTime: 1000 * 60 * 2,
