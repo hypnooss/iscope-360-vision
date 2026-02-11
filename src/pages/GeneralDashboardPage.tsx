@@ -277,7 +277,7 @@ export default function GeneralDashboardPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
-  const topCvesByModule = useTopCVEs();
+  const topCvesByModule = useTopCVEs(selectedWorkspaceId ? [selectedWorkspaceId] : undefined);
 
   // Fetch workspaces for super roles
   useEffect(() => {
