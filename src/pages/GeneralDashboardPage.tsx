@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
-  AlertTriangle, ShieldAlert, LucideIcon, Building2,
+  AlertTriangle, ShieldAlert, LucideIcon, Building2, Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -66,12 +66,7 @@ function ModuleHealthCard({
               <div className={cn('p-2 rounded-lg', iconBg)}>
                 <Icon className={cn('w-5 h-5', iconColor)} />
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-foreground text-sm">{title}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {health.assetCount} {assetLabel}
-                </p>
-              </div>
+              <h3 className="font-semibold text-foreground text-sm flex-1">{title}</h3>
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
@@ -355,7 +350,7 @@ export default function GeneralDashboardPage() {
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-orange-500" />
-                        <span className="text-sm text-muted-foreground">Firewalls</span>
+                        <span className="text-base text-muted-foreground">Firewalls</span>
                       </div>
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
                       <span className="text-lg font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
@@ -365,7 +360,7 @@ export default function GeneralDashboardPage() {
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
                         <Cloud className="w-4 h-4 text-blue-500" />
-                        <span className="text-sm text-muted-foreground">Tenants M365</span>
+                        <span className="text-base text-muted-foreground">Tenants M365</span>
                       </div>
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
                       <span className="text-lg font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
@@ -375,7 +370,7 @@ export default function GeneralDashboardPage() {
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
                         <Layers className="w-4 h-4 text-green-500" />
-                        <span className="text-sm text-muted-foreground">Domínios</span>
+                        <span className="text-base text-muted-foreground">Domínios</span>
                       </div>
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
                       <span className="text-lg font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
@@ -384,8 +379,8 @@ export default function GeneralDashboardPage() {
                     {/* Agents */}
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
-                        <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-                        <span className="text-sm text-muted-foreground">Agents</span>
+                        <Monitor className="w-4 h-4 text-violet-500" />
+                        <span className="text-base text-muted-foreground">Agents</span>
                       </div>
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Online</span>
                       <span className="text-lg font-bold text-foreground">
