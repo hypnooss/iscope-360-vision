@@ -3806,6 +3806,11 @@ function processComplianceRules(
     }
   }
   
+  // Fallback: extract from systemInfo.firmware (e.g. SonicWall stores "SonicOS 7.3.0-7012")
+  if (!firmwareVersion && systemInfo.firmware) {
+    firmwareVersion = extractFirmwareVersion(systemInfo.firmware as string);
+  }
+
   console.log(`Extracted firmware version: "${firmwareVersion}" from raw data`);
 
   // External Domain: lightweight DNS summary for the report header card
