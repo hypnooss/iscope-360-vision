@@ -178,8 +178,52 @@ Deno.serve(async (req) => {
       console.log('[run-scheduled-analyses] No external domain schedules due.');
     }
 
-    const totalTriggered = triggered + domainTriggered;
-    const totalErrors = errors + domainErrors;
+    // ========================================================
+    // Analyzer Schedules
+    // ========================================================
+    const { data: dueAnalyzerSchedules, error: analyzerFetchError } = await supabase
+      .from('analyzer_schedules')
+      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .eq('is_active', true)
+      .not('frequency', 'eq', 'manual')
+      .lte('next_run_at', new Date().toISOString());
+
+    if (analyzerFetchError) {
+      console.error('[run-scheduled-analyses] Error fetching analyzer schedules:', analyzerFetchError);
+    }
+
+    let analyzerTriggered = 0;
+    let analyzerErrors = 0;
+
+    if (dueAnalyzerSchedules && dueAnalyzerSchedules.length > 0) {
+      console.log(`[run-scheduled-analyses] Found ${dueAnalyzerSchedules.length} analyzer schedule(s) due.`);
+
+      for (const schedule of dueAnalyzerSchedules) {
+        try {
+          const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analyzer`;
+          const response = await fetch(triggerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({ firewall_id: schedule.firewall_id }),
+          });
+          const result = await response.json();
+          if (result.success || response.status === 409) { analyzerTriggered++; }
+          else { analyzerErrors++; }
+
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1
+          );
+          await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        } catch (err) {
+          console.error(`[run-scheduled-analyses] Analyzer schedule error:`, err);
+          analyzerErrors++;
+        }
+      }
+    }
+
+    const totalTriggered = triggered + domainTriggered + analyzerTriggered;
+    const totalErrors = errors + domainErrors + analyzerErrors;
 
     console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Errors: ${totalErrors}`);
 

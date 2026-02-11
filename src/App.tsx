@@ -34,6 +34,9 @@ const FirewallCVEsPage = lazy(() => import("./pages/firewall/FirewallCVEsPage"))
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
+const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardPage"));
+const AnalyzerInsightsPage = lazy(() => import("./pages/firewall/AnalyzerInsightsPage"));
+const AnalyzerCriticalPage = lazy(() => import("./pages/firewall/AnalyzerCriticalPage"));
 
 // External Domain Module Pages - lazy loaded
 const ExternalDomainListPage = lazy(() => import("./pages/external-domain/ExternalDomainListPage"));
@@ -98,6 +101,9 @@ const App = () => (
                   <Route path="/scope-firewall/cves" element={<FirewallCVEsPage />} />
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
+                  <Route path="/scope-firewall/analyzer" element={<AnalyzerDashboardPage />} />
+                  <Route path="/scope-firewall/analyzer/insights" element={<AnalyzerInsightsPage />} />
+                  <Route path="/scope-firewall/analyzer/critical" element={<AnalyzerCriticalPage />} />
 
                   {/* External Domain Module */}
                   <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
