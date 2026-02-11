@@ -441,6 +441,7 @@ export type Database = {
           low: number
           medium: number
           module_code: string
+          top_cves: Json | null
           total_cves: number
           updated_at: string
         }
@@ -452,6 +453,7 @@ export type Database = {
           low?: number
           medium?: number
           module_code: string
+          top_cves?: Json | null
           total_cves?: number
           updated_at?: string
         }
@@ -463,6 +465,7 @@ export type Database = {
           low?: number
           medium?: number
           module_code?: string
+          top_cves?: Json | null
           total_cves?: number
           updated_at?: string
         }
