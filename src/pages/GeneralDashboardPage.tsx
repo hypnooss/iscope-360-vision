@@ -130,7 +130,7 @@ function ModuleHealthCard({
             </div>
 
             {/* Score Gauge + Severity columns */}
-            <div className="flex items-center gap-4 py-2">
+            <div className="flex items-center justify-evenly py-2">
               <div className="shrink-0">
                 {health.score != null ? (
                   <ScoreGauge score={health.score} size="sm" />
@@ -143,7 +143,7 @@ function ModuleHealthCard({
               </div>
 
               {/* Severity columns: CVEs + Conformidade when CVEs exist, or just Conformidade */}
-              <div className={cn('flex-1 flex gap-4', hasCves ? 'justify-around' : '')}>
+              <div className={cn('flex gap-6')}>
                 {hasCves && (
                   <SeverityColumn title="CVEs" severities={health.cveSeverities!} />
                 )}
