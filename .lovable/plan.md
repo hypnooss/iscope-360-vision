@@ -1,44 +1,39 @@
 
-
-# Fix: Menu flutuante renderizado atras do conteudo
+# Fix: Estado colapsado do sidebar nao persiste entre navegacoes
 
 ## Problema
 
-O `HoverCardContent` do Radix UI nao usa Portal por padrao, diferente do `PopoverContent` ou `TooltipContent`. Isso significa que o menu flutuante e renderizado dentro do DOM do sidebar, herdando seu contexto de empilhamento (stacking context). Mesmo com `z-50`, ele nao consegue ultrapassar outros elementos fora desse contexto.
+O estado do sidebar (`sidebarOpen`) e gerenciado com `useState(true)` no componente `AppLayout`. Quando o usuario navega para outra pagina (via Link ou navigate), o componente pode ser remontado e o estado volta para `true` (expandido), perdendo a preferencia do usuario.
 
 ## Solucao
 
-Envolver o `HoverCardContent` em um `HoverCardPrimitive.Portal` dentro do componente `hover-card.tsx`, da mesma forma que o `PopoverContent` ja faz com `PopoverPrimitive.Portal`.
+Persistir o estado do sidebar no `localStorage`. Ao montar o componente, ler o valor salvo; ao alterar, gravar no `localStorage`.
 
 ## Alteracoes
 
-### Arquivo: `src/components/ui/hover-card.tsx`
+### Arquivo: `src/components/layout/AppLayout.tsx`
 
-Adicionar o wrapper `HoverCardPrimitive.Portal` ao redor do `HoverCardPrimitive.Content`, igual ao padrao usado em `popover.tsx`:
+**Linha ~175** - Substituir o `useState(true)` por uma inicializacao que le do `localStorage`:
 
 ```tsx
-const HoverCardContent = React.forwardRef<...>(
-  ({ className, align = "center", sideOffset = 4, ...props }, ref) => (
-    <HoverCardPrimitive.Portal>
-      <HoverCardPrimitive.Content
-        ref={ref}
-        align={align}
-        sideOffset={sideOffset}
-        className={cn("z-50 w-64 rounded-md border bg-popover p-4 ...", className)}
-        {...props}
-      />
-    </HoverCardPrimitive.Portal>
-  )
-);
+const [sidebarOpen, setSidebarOpen] = useState(() => {
+  const saved = localStorage.getItem('sidebar-open');
+  return saved !== null ? saved === 'true' : true;
+});
 ```
 
-Isso faz com que o conteudo do HoverCard seja renderizado no `document.body`, fora de qualquer stacking context do sidebar, resolvendo definitivamente o problema de sobreposicao.
+**Adicionar um `useEffect`** logo apos o useState para persistir alteracoes:
+
+```tsx
+useEffect(() => {
+  localStorage.setItem('sidebar-open', String(sidebarOpen));
+}, [sidebarOpen]);
+```
+
+Nenhuma outra alteracao necessaria. Todos os pontos que chamam `setSidebarOpen` continuam funcionando normalmente.
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/components/ui/hover-card.tsx` | Envolver Content com Portal |
-
-Nenhuma outra alteracao necessaria -- o `z-50` ja presente no className sera suficiente quando o elemento estiver no root do DOM.
-
+| `src/components/layout/AppLayout.tsx` | Persistir `sidebarOpen` no localStorage (inicializacao + useEffect) |
