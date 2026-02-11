@@ -87,3 +87,9 @@ verify_jwt = false
 [functions.refresh-cve-cache]
 verify_jwt = false
 
+[functions.trigger-firewall-analyzer]
+verify_jwt = false
+
+[functions.firewall-analyzer]
+verify_jwt = false
+
