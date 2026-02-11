@@ -33,8 +33,32 @@ interface TopBlockedIP {
 
 // Sensitive ports
 const SENSITIVE_PORTS = new Set([22, 23, 135, 139, 389, 445, 636, 1433, 1521, 3306, 3389, 5432, 5900, 8080, 8443]);
-const PORT_SCAN_THRESHOLD = 10; // different ports from same IP
-const BRUTE_FORCE_THRESHOLD = 10; // failed logins in window
+const PORT_SCAN_THRESHOLD = 10;
+const BRUTE_FORCE_THRESHOLD = 5; // lowered from 10
+const HIGH_VOLUME_AUTH_THRESHOLD = 20;
+const HIGH_VOLUME_CONFIG_THRESHOLD = 50;
+const HIGH_VOLUME_BLOCKED_THRESHOLD = 50; // lowered from 100
+
+// ============================================
+// Config change categories
+// ============================================
+
+function categorizeCfgPath(cfgpath: string): { category: string; label: string; severity: AnalyzerInsight['severity'] } {
+  const p = cfgpath.toLowerCase();
+  if (p.includes('firewall.policy') || p.includes('firewall.address') || p.includes('firewall.addrgrp') || p.includes('firewall.service'))
+    return { category: 'Política de Firewall', label: 'Regras de acesso e objetos de firewall', severity: 'high' };
+  if (p.includes('vpn.ipsec') || p.includes('vpn.ssl'))
+    return { category: 'VPN', label: 'Configuração de túneis VPN', severity: 'high' };
+  if (p.includes('system.admin') || p.includes('system.accprofile'))
+    return { category: 'Administração', label: 'Contas e perfis administrativos', severity: 'critical' };
+  if (p.includes('system.ha'))
+    return { category: 'Alta Disponibilidade', label: 'Configuração de HA/cluster', severity: 'high' };
+  if (p.includes('router.') || p.includes('system.interface'))
+    return { category: 'Rede/Roteamento', label: 'Interfaces e rotas', severity: 'medium' };
+  if (p.includes('system.'))
+    return { category: 'Sistema', label: 'Configurações gerais do sistema', severity: 'low' };
+  return { category: 'Outros', label: 'Outras configurações', severity: 'low' };
+}
 
 // ============================================
 // Analysis Modules
@@ -44,7 +68,6 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
   const insights: AnalyzerInsight[] = [];
   if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { totalDenied: 0 } };
 
-  // Group by source IP
   const ipMap: Record<string, { count: number; ports: Set<number>; country?: string }> = {};
 
   for (const log of logs) {
@@ -58,7 +81,6 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     if (dstport > 0) ipMap[srcip].ports.add(dstport);
   }
 
-  // Build top blocked IPs
   const topBlockedIPs: TopBlockedIP[] = Object.entries(ipMap)
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 20)
@@ -69,7 +91,7 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
       targetPorts: [...data.ports].sort((a, b) => a - b),
     }));
 
-  // Detect port scans
+  // Port scans
   for (const [ip, data] of Object.entries(ipMap)) {
     if (data.ports.size >= PORT_SCAN_THRESHOLD) {
       insights.push({
@@ -86,7 +108,7 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     }
   }
 
-  // Detect sensitive port attacks
+  // Sensitive port attacks
   for (const [ip, data] of Object.entries(ipMap)) {
     const sensitivePorts = [...data.ports].filter(p => SENSITIVE_PORTS.has(p));
     if (sensitivePorts.length > 0 && data.count >= 5) {
@@ -104,9 +126,9 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     }
   }
 
-  // High-volume blocked IPs
+  // High-volume blocked IPs (threshold lowered to 50)
   for (const [ip, data] of Object.entries(ipMap)) {
-    if (data.count >= 100) {
+    if (data.count >= HIGH_VOLUME_BLOCKED_THRESHOLD) {
       insights.push({
         id: `highvol_${ip}`,
         category: 'denied_traffic',
@@ -161,7 +183,7 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
     if (ip) userFailures[user].ips.add(ip);
   }
 
-  // Detect brute force
+  // Detect brute force per user (threshold lowered to 5)
   for (const [user, data] of Object.entries(userFailures)) {
     if (data.count >= BRUTE_FORCE_THRESHOLD) {
       insights.push({
@@ -169,13 +191,36 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
         category: 'authentication',
         name: 'Possível Brute Force',
         description: `Usuário "${user}" teve ${data.count} falhas de login`,
-        severity: data.count >= 50 ? 'critical' : 'high',
+        severity: data.count >= 50 ? 'critical' : data.count >= 20 ? 'high' : 'medium',
         affectedUsers: [user],
         sourceIPs: [...data.ips],
         count: data.count,
         recommendation: 'Verifique se a conta está comprometida. Considere bloqueio temporário.',
       });
     }
+  }
+
+  // === NEW: Aggregate high-volume auth failures insight ===
+  if (vpnFailures.length >= HIGH_VOLUME_AUTH_THRESHOLD) {
+    const topUsers = Object.entries(userFailures)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 5);
+
+    const topUsersDesc = topUsers
+      .map(([user, data]) => `${user} (${data.count} falhas, IPs: ${[...data.ips].slice(0, 3).join(', ')})`)
+      .join('; ');
+
+    insights.push({
+      id: 'high_volume_auth_failures',
+      category: 'authentication',
+      name: 'Alto Volume de Falhas de Autenticação',
+      description: `${vpnFailures.length} falhas de autenticação detectadas no período, afetando ${Object.keys(userFailures).length} usuário(s)`,
+      severity: vpnFailures.length >= 100 ? 'critical' : vpnFailures.length >= 50 ? 'high' : 'medium',
+      count: vpnFailures.length,
+      details: `Top usuários afetados: ${topUsersDesc}`,
+      affectedUsers: topUsers.map(([u]) => u),
+      recommendation: 'Investigue a origem das falhas. Verifique se há tentativas de acesso não autorizado ou problemas de configuração de credenciais.',
+    });
   }
 
   // Detect admin login via WAN
@@ -195,7 +240,7 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
         sourceIPs: [log.srcip || log.remip].filter(Boolean),
         recommendation: 'Login admin via WAN é um risco crítico. Restrinja acesso administrativo à LAN.',
       });
-      break; // One insight is enough
+      break;
     }
   }
 
@@ -209,7 +254,6 @@ function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partia
   const insights: AnalyzerInsight[] = [];
   if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { ipsEvents: 0 } };
 
-  // Group by attack name/type
   const attackMap: Record<string, { count: number; severity: string; srcIPs: Set<string>; dstIPs: Set<string> }> = {};
 
   for (const log of logs) {
@@ -222,7 +266,7 @@ function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partia
     if (log.dstip) attackMap[attack].dstIPs.add(log.dstip);
   }
 
-  // Detect C2 patterns
+  // C2 patterns
   for (const log of logs) {
     const msg = ((log.msg || '') + ' ' + (log.attack || '')).toLowerCase();
     if (msg.includes('command') && msg.includes('control') || msg.includes('c2') || msg.includes('beacon') || msg.includes('botnet')) {
@@ -239,7 +283,7 @@ function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partia
     }
   }
 
-  // Generate insights per attack type
+  // Per attack type
   for (const [attack, data] of Object.entries(attackMap)) {
     const sevNum = parseInt(data.severity);
     const mappedSeverity: AnalyzerInsight['severity'] = 
@@ -266,10 +310,29 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
   const insights: AnalyzerInsight[] = [];
   if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { configChanges: 0 } };
 
+  // === Categorize by cfgpath for FortiGate-specific parsing ===
+  const cfgCategories: Record<string, { count: number; users: Set<string>; objects: Set<string>; actions: Set<string> }> = {};
+
   for (const log of logs) {
     const msg = (log.msg || log.logdesc || log.action || '').toLowerCase();
     const user = log.user || log.ui || 'unknown';
+    const cfgpath = log.cfgpath || '';
+    const cfgobj = log.cfgobj || '';
+    const cfgattr = log.cfgattr || '';
+    const logAction = (log.action || '').toLowerCase();
 
+    // --- FortiGate cfgpath-based detection ---
+    if (cfgpath) {
+      const cat = categorizeCfgPath(cfgpath);
+      const key = cat.category;
+      if (!cfgCategories[key]) cfgCategories[key] = { count: 0, users: new Set(), objects: new Set(), actions: new Set() };
+      cfgCategories[key].count++;
+      cfgCategories[key].users.add(user);
+      if (cfgobj) cfgCategories[key].objects.add(`${cfgpath}:${cfgobj}`);
+      if (logAction) cfgCategories[key].actions.add(logAction);
+    }
+
+    // --- Legacy msg-based detection ---
     // Detect admin creation
     if (msg.includes('add') && msg.includes('admin')) {
       insights.push({
@@ -283,18 +346,75 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
       });
     }
 
-    // Detect policy/rule changes
-    if (msg.includes('policy') || msg.includes('rule') || msg.includes('firewall')) {
+    // Detect policy/rule changes (expanded keywords)
+    if (msg.includes('policy') || msg.includes('rule') || msg.includes('firewall') ||
+        msg.includes('edit') || msg.includes('set') || msg.includes('delete') ||
+        msg.includes('modify') || msg.includes('add')) {
+      // Only create individual insight for critical keywords (policy/rule/firewall/admin)
+      if (msg.includes('policy') || msg.includes('rule') || msg.includes('firewall')) {
+        insights.push({
+          id: `configchg_${log.logid || log.id || Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          category: 'config_changes',
+          name: 'Alteração de Política',
+          description: `Alteração detectada: ${log.msg || log.logdesc || 'política de segurança modificada'}`,
+          severity: 'medium',
+          affectedUsers: [user],
+          details: `Usuário: ${user}, Ação: ${log.action || 'N/A'}${cfgpath ? `, Path: ${cfgpath}` : ''}${cfgobj ? `, Objeto: ${cfgobj}` : ''}`,
+        });
+      }
+    }
+  }
+
+  // === NEW: Generate insights per cfgpath category ===
+  for (const [catName, data] of Object.entries(cfgCategories)) {
+    if (data.count >= 1) {
+      const cat = categorizeCfgPath(
+        catName === 'Política de Firewall' ? 'firewall.policy' :
+        catName === 'VPN' ? 'vpn.ipsec' :
+        catName === 'Administração' ? 'system.admin' :
+        catName === 'Alta Disponibilidade' ? 'system.ha' :
+        catName === 'Rede/Roteamento' ? 'router.static' :
+        catName === 'Sistema' ? 'system.global' : 'other'
+      );
+
+      const objectsList = [...data.objects].slice(0, 5).join(', ');
+
       insights.push({
-        id: `configchg_${log.logid || Date.now()}`,
+        id: `cfgcat_${catName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`,
         category: 'config_changes',
-        name: 'Alteração de Política',
-        description: `Alteração detectada: ${log.msg || log.logdesc || 'política de segurança modificada'}`,
-        severity: 'medium',
-        affectedUsers: [user],
-        details: `Usuário: ${user}, Ação: ${log.action || 'N/A'}`,
+        name: `Alterações em ${catName}`,
+        description: `${data.count} alteração(ões) em ${catName.toLowerCase()} por ${data.users.size} usuário(s)`,
+        severity: cat.severity,
+        count: data.count,
+        affectedUsers: [...data.users],
+        details: objectsList ? `Objetos alterados: ${objectsList}` : undefined,
+        recommendation: catName === 'Administração'
+          ? 'Alterações administrativas devem ser auditadas com rigor. Verifique se foram autorizadas.'
+          : catName === 'Política de Firewall'
+          ? 'Mudanças em políticas de firewall podem abrir brechas de segurança. Revise as alterações.'
+          : undefined,
       });
     }
+  }
+
+  // === NEW: Aggregate high-volume config changes insight ===
+  if (logs.length >= HIGH_VOLUME_CONFIG_THRESHOLD) {
+    const allUsers = new Set<string>();
+    for (const log of logs) {
+      allUsers.add(log.user || log.ui || 'unknown');
+    }
+
+    insights.push({
+      id: 'high_volume_config_changes',
+      category: 'config_changes',
+      name: 'Volume Elevado de Alterações',
+      description: `${logs.length} alterações de configuração detectadas no período`,
+      severity: logs.length >= 200 ? 'high' : 'medium',
+      count: logs.length,
+      affectedUsers: [...allUsers],
+      details: `Realizado por ${allUsers.size} usuário(s). Categorias: ${Object.keys(cfgCategories).join(', ') || 'não categorizadas'}`,
+      recommendation: 'Um volume alto de alterações pode indicar manutenção programada ou atividade não autorizada. Revise o contexto.',
+    });
   }
 
   return {
@@ -348,7 +468,6 @@ Deno.serve(async (req) => {
 
     console.log(`[firewall-analyzer] Processing snapshot ${snapshot_id}`);
 
-    // Update status to processing
     await supabase.from('analyzer_snapshots').update({ status: 'processing' }).eq('id', snapshot_id);
 
     // Extract step data
@@ -378,7 +497,6 @@ Deno.serve(async (req) => {
     // Deduplicate by id
     const uniqueInsights = [...new Map(allInsights.map(i => [i.id, i])).values()];
 
-    // Build summary
     const summary = {
       critical: uniqueInsights.filter(i => i.severity === 'critical').length,
       high: uniqueInsights.filter(i => i.severity === 'high').length,
@@ -387,7 +505,6 @@ Deno.serve(async (req) => {
       info: uniqueInsights.filter(i => i.severity === 'info').length,
     };
 
-    // Build metrics
     const metrics = {
       topBlockedIPs: deniedResult.metrics.topBlockedIPs || [],
       topCountries: deniedResult.metrics.topCountries || [],
@@ -400,7 +517,6 @@ Deno.serve(async (req) => {
 
     const score = calculateScore(uniqueInsights);
 
-    // Save results
     const { error: updateError } = await supabase
       .from('analyzer_snapshots')
       .update({
