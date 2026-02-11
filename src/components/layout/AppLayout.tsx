@@ -163,7 +163,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, role, signOut } = useAuth();
   const { activeModule, setActiveModule, hasModuleAccess } = useModules();
   const { effectiveProfile, effectiveRole, isPreviewMode } = useEffectiveAuth();
-  const { effectiveUserModules } = useEffectiveModules();
+  const { effectiveUserModules, allActiveModules } = useEffectiveModules();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -382,6 +382,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     );
   };
 
+  // Disabled module button for modules without access
+  const DisabledModuleButton = ({ module }: { module: import('@/contexts/ModuleContext').Module }) => {
+    const Icon = getIconFromName(module.icon);
+    
+    const buttonContent = (
+      <div
+        className={cn(
+          'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium opacity-40 cursor-default select-none',
+          !sidebarOpen && 'justify-center'
+        )}
+      >
+        <Icon className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
+        {sidebarOpen && <span className="text-muted-foreground">{module.name}</span>}
+      </div>
+    );
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10}>
+          Módulo não contratado
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   // Helper for admin section
   const AdminButton = () => {
     const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates';
@@ -506,10 +532,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         isActive={location.pathname === '/dashboard'} 
       />
 
-      {/* Modules */}
+      {/* Accessible Modules */}
       {accessibleModuleConfigs.map((moduleConfig) => (
         <ModuleButton key={moduleConfig.code} moduleConfig={moduleConfig} />
       ))}
+
+      {/* Inaccessible Modules (disabled, showcase) */}
+      {allActiveModules
+        .filter(m => !effectiveUserModules.some(em => em.module.code === m.code))
+        .map(m => (
+          <DisabledModuleButton key={m.id} module={m} />
+        ))}
 
       {/* Divider */}
       {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
