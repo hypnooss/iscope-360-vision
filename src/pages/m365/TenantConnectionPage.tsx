@@ -322,14 +322,14 @@ export default function TenantConnectionPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/tenant-connection' },
           { label: 'Tenants' },
         ]} />
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Tenants Microsoft 365</h1>
             <p className="text-muted-foreground">
@@ -343,7 +343,7 @@ export default function TenantConnectionPage() {
         </div>
 
         {/* Info Card */}
-        <Card className="mb-6 border-yellow-500/20 bg-yellow-500/5">
+        <Card className="border-yellow-500/20 bg-yellow-500/5">
           <CardContent className="py-4">
             <div className="flex gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />

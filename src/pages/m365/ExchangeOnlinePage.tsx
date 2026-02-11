@@ -93,13 +93,13 @@ export default function ExchangeOnlinePage() {
   if (!tenantsLoading && tenants.length === 0) {
     return (
       <AppLayout>
-        <div className="p-6 lg:p-8">
+        <div className="p-6 lg:p-8 space-y-6">
           <PageBreadcrumb items={[
             { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
             { label: 'Exchange Online' },
           ]} />
           
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Exchange Online</h1>
               <p className="text-muted-foreground">
@@ -130,18 +130,16 @@ export default function ExchangeOnlinePage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
           { label: 'Exchange Online' },
         ]} />
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-foreground">Exchange Online</h1>
-            </div>
+            <h1 className="text-2xl font-bold text-foreground">Exchange Online</h1>
             <p className="text-muted-foreground">
               Análise de riscos e configurações do serviço de e-mail
             </p>
@@ -157,7 +155,7 @@ export default function ExchangeOnlinePage() {
         </div>
 
         {/* Tenant Selector */}
-        <Card className="mb-6 border-primary/20 bg-primary/5">
+        <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <TenantSelector
@@ -183,13 +181,11 @@ export default function ExchangeOnlinePage() {
         </Card>
 
         {/* Summary Cards */}
-        <div className="mb-8">
-          <ExoInsightSummaryCards summary={summary} loading={insightsLoading} />
-        </div>
+        <ExoInsightSummaryCards summary={summary} loading={insightsLoading} />
 
         {/* Error State */}
         {error && (
-          <Card className="mb-6 border-destructive/30 bg-destructive/5">
+          <Card className="border-destructive/30 bg-destructive/5">
             <CardContent className="py-6 text-center">
               <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
               <h3 className="font-semibold mb-1">{error}</h3>

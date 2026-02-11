@@ -263,19 +263,19 @@ export default function M365ReportsPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
           { label: 'Relatórios' },
         ]} />
 
-        <div className="mb-8">
+        <div>
           <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
           <p className="text-muted-foreground">Histórico de análises de postura de segurança</p>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-6">
+        <div className="flex flex-wrap gap-4">
           {availableClients.length > 1 && (
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-muted-foreground" />
