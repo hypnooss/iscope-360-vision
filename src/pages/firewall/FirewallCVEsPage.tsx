@@ -5,6 +5,7 @@ import { StatCard } from '@/components/StatCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFirewallCVEs, FirewallCVE } from '@/hooks/useFirewallCVEs';
@@ -121,12 +122,23 @@ function CVECard({ cve }: { cve: FirewallCVE }) {
 export default function FirewallCVEsPage() {
   const [selectedVersions, setSelectedVersions] = useState<string[]>([]);
   const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [months, setMonths] = useState(3);
 
   const { data, isLoading, error } = useFirewallCVEs();
 
-  const filteredCves = useMemo(() => {
+  // Filter CVEs by published date (months)
+  const cvesFilteredByDate = useMemo(() => {
     if (!data?.cves) return [];
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
     return data.cves.filter((cve) => {
+      if (!cve.publishedDate) return true;
+      return new Date(cve.publishedDate) >= cutoff;
+    });
+  }, [data?.cves, months]);
+
+  const filteredCves = useMemo(() => {
+    return cvesFilteredByDate.filter((cve) => {
       if (selectedVersions.length > 0 && !selectedVersions.includes(cve.firmwareVersion)) {
         return false;
       }
@@ -135,18 +147,17 @@ export default function FirewallCVEsPage() {
       }
       return true;
     });
-  }, [data?.cves, selectedVersions, severityFilter]);
+  }, [cvesFilteredByDate, selectedVersions, severityFilter]);
 
   const stats = useMemo(() => {
-    const cves = data?.cves ?? [];
     return {
-      total: cves.length,
-      critical: cves.filter((c) => c.severity === 'CRITICAL').length,
-      high: cves.filter((c) => c.severity === 'HIGH').length,
-      medium: cves.filter((c) => c.severity === 'MEDIUM').length,
-      low: cves.filter((c) => c.severity === 'LOW').length,
+      total: cvesFilteredByDate.length,
+      critical: cvesFilteredByDate.filter((c) => c.severity === 'CRITICAL').length,
+      high: cvesFilteredByDate.filter((c) => c.severity === 'HIGH').length,
+      medium: cvesFilteredByDate.filter((c) => c.severity === 'MEDIUM').length,
+      low: cvesFilteredByDate.filter((c) => c.severity === 'LOW').length,
     };
-  }, [data?.cves]);
+  }, [cvesFilteredByDate]);
 
   const toggleVersion = (version: string) => {
     setSelectedVersions((prev) =>
@@ -158,16 +169,28 @@ export default function FirewallCVEsPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
         <PageBreadcrumb items={[
-          { label: 'Scope Firewall', href: '/scope-firewall/firewalls' },
+          { label: 'Firewall', href: '/scope-firewall/firewalls' },
           { label: 'CVEs' },
         ]} />
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold">CVEs - FortiOS</h1>
-          <p className="text-muted-foreground">
-            Vulnerabilidades conhecidas nas versões de firmware dos firewalls cadastrados
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">CVEs - FortiOS</h1>
+            <p className="text-muted-foreground">
+              Vulnerabilidades conhecidas nas versões de firmware dos firewalls cadastrados
+            </p>
+          </div>
+          <Select value={String(months)} onValueChange={(v) => setMonths(Number(v))}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Último mês</SelectItem>
+              <SelectItem value="3">Últimos 3 meses</SelectItem>
+              <SelectItem value="6">Últimos 6 meses</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Stats */}
