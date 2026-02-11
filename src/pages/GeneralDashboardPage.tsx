@@ -350,33 +350,45 @@ export default function GeneralDashboardPage() {
                   </div>
 
                   {/* Assets by module - same style as Workspace Details */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 gap-x-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Firewalls */}
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-orange-500" />
-                      <span className="text-sm font-medium text-foreground">Firewalls</span>
-                      <span className="text-sm font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
+                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-1.5">
+                        <Shield className="w-4 h-4 text-orange-500" />
+                        <span className="text-sm text-muted-foreground">Firewalls</span>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+                      <span className="text-lg font-bold text-foreground">{stats?.firewall.assetCount ?? 0}</span>
                     </div>
 
                     {/* M365 Tenants */}
-                    <div className="flex items-center gap-2">
-                      <Cloud className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm font-medium text-foreground">Tenants M365</span>
-                      <span className="text-sm font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
+                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-1.5">
+                        <Cloud className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm text-muted-foreground">Tenants M365</span>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+                      <span className="text-lg font-bold text-foreground">{stats?.m365.assetCount ?? 0}</span>
                     </div>
 
-                    {/* External Domains */}
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-green-500" />
-                      <span className="text-sm font-medium text-foreground">Domínios</span>
-                      <span className="text-sm font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
+                    {/* Domínios */}
+                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-muted-foreground">Domínios</span>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
+                      <span className="text-lg font-bold text-foreground">{stats?.externalDomain.assetCount ?? 0}</span>
                     </div>
 
                     {/* Agents */}
-                    <div className="flex items-center gap-2">
-                      <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
-                      <span className="text-sm font-medium text-foreground">Agents</span>
-                      <span className="text-sm font-bold text-foreground">
+                    <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn('w-2.5 h-2.5 rounded-full', agentStatusColor)} />
+                        <span className="text-sm text-muted-foreground">Agents</span>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Online</span>
+                      <span className="text-lg font-bold text-foreground">
                         {stats?.agentsOnline ?? 0}/{stats?.agentsTotal ?? 0}
                       </span>
                     </div>
