@@ -30,6 +30,29 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Shield, Cloud, Layers, Globe, Server, Network, Bot,
 };
 
+// ─── Static color maps for Tailwind JIT (dynamic class concatenation doesn't work reliably) ──
+const BORDER_COLOR_MAP: Record<string, string> = {
+  'orange-500': 'border-l-orange-500',
+  'blue-500': 'border-l-blue-500',
+  'green-500': 'border-l-green-500',
+  'primary': 'border-l-primary',
+  'red-500': 'border-l-red-500',
+  'violet-500': 'border-l-violet-500',
+  'yellow-500': 'border-l-yellow-500',
+  'cyan-500': 'border-l-cyan-500',
+};
+
+const ICON_BG_MAP: Record<string, string> = {
+  'orange-500': 'bg-orange-500/10',
+  'blue-500': 'bg-blue-500/10',
+  'green-500': 'bg-green-500/10',
+  'primary': 'bg-primary/10',
+  'red-500': 'bg-red-500/10',
+  'violet-500': 'bg-violet-500/10',
+  'yellow-500': 'bg-yellow-500/10',
+  'cyan-500': 'bg-cyan-500/10',
+};
+
 // ─── Module Health Card ───────────────────────────────────────────────────────
 
 interface ModuleHealthCardProps {
@@ -218,8 +241,8 @@ export default function GeneralDashboardPage() {
         title: um.module.name,
         icon: Icon,
         iconColor: um.module.color || 'text-primary',
-        iconBg: `bg-${colorBase}/10`,
-        borderColor: `border-l-${colorBase}`,
+        iconBg: ICON_BG_MAP[colorBase] || 'bg-primary/10',
+        borderColor: BORDER_COLOR_MAP[colorBase] || 'border-l-primary',
         health: stats?.modules[config.statsKey] || emptyHealth,
         moduleCode: um.module.code,
         path: config.path,
