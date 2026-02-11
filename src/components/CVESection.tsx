@@ -24,23 +24,38 @@ export function CVESection({ firmwareVersion, onCVEsLoaded }: CVESectionProps) {
     setError(null);
     
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('fortigate-cve', {
-        body: { version: firmwareVersion },
+      const { data, error: dbError } = await supabase
+        .from('cve_cache')
+        .select('*')
+        .eq('module_code', 'firewall')
+        .order('score', { ascending: false, nullsFirst: false });
+
+      if (dbError) {
+        throw new Error(dbError.message);
+      }
+
+      const filtered = (data || []).filter((row) => {
+        const products = Array.isArray(row.products) ? row.products : [];
+        return products.some((p: unknown) =>
+          typeof p === 'string' && p.toLowerCase().includes(firmwareVersion.toLowerCase())
+        );
       });
 
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
+      const mapped: CVEInfo[] = filtered.map((row) => ({
+        id: row.cve_id,
+        severity: (row.severity || 'MEDIUM').toUpperCase(),
+        score: Number(row.score) || 0,
+        description: row.description || '',
+        publishedDate: row.published_date || '',
+        lastModifiedDate: row.updated_at || row.published_date || '',
+        references: row.advisory_url ? [row.advisory_url] : [],
+        affectedVersions: row.title || undefined,
+      }));
 
-      if (data.success) {
-        const loadedCves = data.cves || [];
-        setCves(loadedCves);
-        onCVEsLoaded?.(loadedCves);
-      } else {
-        throw new Error(data.error || 'Failed to fetch CVEs');
-      }
+      setCves(mapped);
+      onCVEsLoaded?.(mapped);
     } catch (err) {
-      console.error('Error fetching CVEs:', err);
+      console.error('Error fetching CVEs from cache:', err);
       setError(err instanceof Error ? err.message : 'Erro ao buscar CVEs');
     } finally {
       setLoading(false);
