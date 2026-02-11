@@ -252,16 +252,14 @@ export default function GeneralDashboardPage() {
 
   const gridCols = moduleCards.length <= 2
     ? 'grid-cols-1 md:grid-cols-2'
-    : moduleCards.length === 3
-    ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-    : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+    : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
   // Infrastructure grid: modules + agents (always present)
   const infraColCount = moduleCards.length + 1; // +1 for Agents
   const infraGridCols = infraColCount <= 2
     ? 'grid-cols-2'
     : infraColCount === 3
-    ? 'grid-cols-3'
+    ? 'grid-cols-2 lg:grid-cols-3'
     : 'grid-cols-2 lg:grid-cols-4';
 
   if (authLoading) return null;
@@ -350,7 +348,7 @@ export default function GeneralDashboardPage() {
                         <div key={card.key} className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                           <div className="flex items-center gap-1.5">
                             <CardIcon className={cn('w-4 h-4', card.iconColor)} />
-                            <span className="text-base text-muted-foreground">{card.infraLabel}</span>
+                            <span className="text-base text-muted-foreground">{card.title}</span>
                           </div>
                           <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Total</span>
                           <span className="text-lg font-bold text-foreground">
