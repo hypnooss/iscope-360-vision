@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 
 export interface FirewallCVE {
   id: string;
@@ -23,17 +24,32 @@ interface FortigateCVEResponse {
   error?: string;
 }
 
-async function fetchFirmwareVersions(): Promise<string[]> {
-  // Get the latest analysis for each firewall and extract firmwareVersion
-  const { data, error } = await supabase
+async function fetchFirmwareVersions(workspaceIds: string[]): Promise<string[]> {
+  // When filtering by workspace, first get firewall IDs for those workspaces
+  let firewallIds: string[] | null = null;
+  if (workspaceIds.length > 0) {
+    const { data: firewalls, error: fwError } = await supabase
+      .from('firewalls')
+      .select('id')
+      .in('client_id', workspaceIds);
+    if (fwError) throw fwError;
+    if (!firewalls || firewalls.length === 0) return [];
+    firewallIds = firewalls.map((f) => f.id);
+  }
+
+  let query = supabase
     .from('analysis_history')
     .select('firewall_id, report_data, created_at')
     .order('created_at', { ascending: false });
 
+  if (firewallIds) {
+    query = query.in('firewall_id', firewallIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   if (!data || data.length === 0) return [];
 
-  // Get distinct latest firmware versions per firewall
   const latestPerFirewall = new Map<string, string>();
   for (const row of data) {
     if (latestPerFirewall.has(row.firewall_id)) continue;
@@ -44,7 +60,6 @@ async function fetchFirmwareVersions(): Promise<string[]> {
     }
   }
 
-  // Return unique versions
   return [...new Set(latestPerFirewall.values())];
 }
 
@@ -67,20 +82,21 @@ async function fetchCVEsForVersion(version: string): Promise<FirewallCVE[]> {
 }
 
 export function useFirewallCVEs() {
+  const { effectiveWorkspaces, isPreviewMode } = useEffectiveAuth();
+  const workspaceIds = isPreviewMode ? effectiveWorkspaces.map((w) => w.id) : [];
+
   return useQuery({
-    queryKey: ['firewall-cves'],
+    queryKey: ['firewall-cves', workspaceIds],
     queryFn: async () => {
-      const versions = await fetchFirmwareVersions();
+      const versions = await fetchFirmwareVersions(workspaceIds);
 
       if (versions.length === 0) {
         return { cves: [] as FirewallCVE[], versions: [] as string[] };
       }
 
-      // Fetch CVEs for all versions in parallel
       const results = await Promise.all(versions.map(fetchCVEsForVersion));
       const allCves = results.flat();
 
-      // Deduplicate by CVE id (same CVE may appear for multiple versions)
       const seen = new Map<string, FirewallCVE>();
       for (const cve of allCves) {
         if (!seen.has(cve.id)) {
@@ -88,7 +104,6 @@ export function useFirewallCVEs() {
         }
       }
 
-      // Sort by score descending
       const dedupedCves = [...seen.values()].sort((a, b) => b.score - a.score);
 
       return { cves: dedupedCves, versions };
