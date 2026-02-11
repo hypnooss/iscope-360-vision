@@ -357,9 +357,9 @@ export default function AdministratorsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Administradores' }]} />
         
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Administradores</h1>
+            <h1 className="text-2xl font-bold text-foreground">Administradores</h1>
             <p className="text-muted-foreground">
               Gerencie usuários com acesso administrativo ao sistema
             </p>
