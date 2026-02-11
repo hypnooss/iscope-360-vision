@@ -26,6 +26,7 @@ const TemplateDetailPage = lazy(() => import("./pages/admin/TemplateDetailPage")
 
 // Firewall Module Pages - lazy loaded
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
+const FirewallEditPage = lazy(() => import("./pages/firewall/FirewallEditPage"));
 const FirewallListPage = lazy(() => import("./pages/firewall/FirewallListPage"));
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
@@ -89,6 +90,7 @@ const App = () => (
                   <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
                   <Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
                   <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
+                  <Route path="/scope-firewall/firewalls/:id/edit" element={<FirewallEditPage />} />
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
 

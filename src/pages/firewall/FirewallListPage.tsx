@@ -19,7 +19,7 @@ import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FirewallStatsCards } from '@/components/firewall/FirewallStatsCards';
 import { AddFirewallDialog } from '@/components/firewall/AddFirewallDialog';
-import { EditFirewallDialog } from '@/components/firewall/EditFirewallDialog';
+
 
 interface Client {
   id: string;
@@ -73,8 +73,6 @@ export default function FirewallListPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showClientDialog, setShowClientDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editingFirewall, setEditingFirewall] = useState<Firewall | null>(null);
   const [deletingFirewall, setDeletingFirewall] = useState<Firewall | null>(null);
   
   const [analyzing, setAnalyzing] = useState<string | null>(null);
@@ -338,79 +336,10 @@ export default function FirewallListPage() {
     }
   };
 
-  const openEditDialog = (fw: Firewall) => {
-    setEditingFirewall(fw);
-    setShowEditDialog(true);
+  const openEditPage = (fw: Firewall) => {
+    navigate(`/scope-firewall/firewalls/${fw.id}/edit`);
   };
 
-  const handleEditFirewall = async (formData: {
-    name: string;
-    description: string;
-    fortigate_url: string;
-    api_key: string;
-    auth_username?: string;
-    auth_password?: string;
-    client_id: string;
-    schedule: ScheduleFrequency;
-    device_type_id: string;
-    agent_id: string;
-  }) => {
-    if (!editingFirewall) return;
-
-    // Validate required fields - either api_key or (auth_username + auth_password)
-    const hasApiKey = formData.api_key?.trim();
-    const hasSessionAuth = formData.auth_username?.trim() && formData.auth_password?.trim();
-
-    if (!formData.name.trim() || !formData.fortigate_url.trim() || !formData.client_id) {
-      toast.error('Preencha todos os campos obrigatórios');
-      throw new Error('Campos obrigatórios não preenchidos');
-    }
-
-    if (!hasApiKey && !hasSessionAuth) {
-      toast.error('Preencha as credenciais de autenticação');
-      throw new Error('Credenciais não preenchidas');
-    }
-
-    const { error } = await supabase
-      .from('firewalls')
-      .update({
-        name: formData.name.trim(),
-        description: formData.description.trim() || null,
-        fortigate_url: formData.fortigate_url.trim(),
-        api_key: formData.api_key?.trim() || '',
-        auth_username: formData.auth_username?.trim() || null,
-        auth_password: formData.auth_password?.trim() || null,
-        client_id: formData.client_id,
-        device_type_id: formData.device_type_id || null,
-        agent_id: formData.agent_id || null,
-      })
-      .eq('id', editingFirewall.id);
-
-    if (error) {
-      toast.error('Erro ao atualizar firewall: ' + error.message);
-      throw error;
-    }
-
-    await supabase
-      .from('analysis_schedules')
-      .delete()
-      .eq('firewall_id', editingFirewall.id);
-
-    if (formData.schedule !== 'manual') {
-      await supabase
-        .from('analysis_schedules')
-        .insert({
-          firewall_id: editingFirewall.id,
-          frequency: formData.schedule,
-          is_active: true,
-          created_by: user?.id,
-        });
-    }
-
-    await fetchData();
-    setEditingFirewall(null);
-    toast.success('Firewall atualizado com sucesso!');
-  };
 
   const getScoreColor = (score: number | null) => {
     if (score === null) return 'bg-muted text-muted-foreground';
@@ -561,7 +490,7 @@ export default function FirewallListPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => openEditDialog(fw)}
+                                  onClick={() => openEditPage(fw)}
                                   title="Editar"
                                 >
                                   <Pencil className="w-4 h-4" />
@@ -588,14 +517,6 @@ export default function FirewallListPage() {
           </CardContent>
         </Card>
 
-        {/* Edit Firewall Dialog */}
-        <EditFirewallDialog
-          open={showEditDialog}
-          onOpenChange={setShowEditDialog}
-          firewall={editingFirewall}
-          clients={clients}
-          onSave={handleEditFirewall}
-        />
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={!!deletingFirewall} onOpenChange={() => setDeletingFirewall(null)}>
