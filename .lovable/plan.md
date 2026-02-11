@@ -1,60 +1,33 @@
 
+# Padronizar cor do sparkline com a barra de Score
 
-# Corrigir performance: usar cache para top CVEs no Dashboard
+## Mudancas
 
-## Problema
+### 1. Sparkline usa a mesma cor da barra de Score (baseada no valor)
 
-O hook `useTopCVEs` chama `useFirewallCVEs()` e `useM365CVEs()` que fazem requisicoes HTTP em tempo real ao NIST NVD e MSRC. Isso leva 10+ segundos e trava o dashboard. O cron job `refresh-cve-cache` ja roda diariamente e popula `cve_severity_cache`, mas essa tabela so guarda contagens por severidade, nao os CVEs individuais.
+Atualmente o sparkline usa uma cor fixa por modulo (laranja para firewall, azul para M365, etc). A barra de Score usa cor dinamica baseada no valor (primary >= 90, emerald >= 75, yellow >= 60, rose < 60).
 
-## Solucao
+A mudanca e: remover o `SPARKLINE_COLOR_MAP` e passar ao `ScoreSparkline` a cor derivada do score atual, usando a mesma logica de `getScoreProgressColor` mas em formato HSL para o recharts.
 
-### 1. Adicionar coluna `top_cves` na tabela `cve_severity_cache`
-
-Nova coluna JSONB para armazenar os 2 CVEs de maior score:
-
-```sql
-ALTER TABLE cve_severity_cache 
-ADD COLUMN top_cves jsonb DEFAULT '[]'::jsonb;
+Nova funcao auxiliar:
+```
+function getScoreHslColor(score: number | null): string {
+  if (score == null) return 'hsl(0, 0%, 50%)';
+  if (score >= 90) return 'hsl(175, 80%, 45%)';   // primary
+  if (score >= 75) return 'hsl(142, 71%, 45%)';   // emerald-400
+  if (score >= 60) return 'hsl(48, 96%, 53%)';    // yellow-500
+  return 'hsl(347, 77%, 50%)';                     // rose-400
+}
 ```
 
-Formato:
-```json
-[
-  {"id": "CVE-2024-21762", "score": 9.8, "severity": "CRITICAL"},
-  {"id": "CVE-2024-23113", "score": 9.1, "severity": "CRITICAL"}
-]
-```
+No `ModuleHealthCard`, substituir `sparkColor` por `getScoreHslColor(health.score)`.
 
-### 2. Atualizar edge function `refresh-cve-cache`
+### 2. Texto "Score" muda para "Score Atual"
 
-Nas funcoes `refreshFirewallCVEs` e `refreshM365CVEs`, apos calcular as contagens, ordenar os CVEs por score e guardar os top 2 na nova coluna `top_cves` ao fazer o upsert.
-
-### 3. Reescrever `useTopCVEs.ts`
-
-Em vez de chamar `useFirewallCVEs` e `useM365CVEs` (que fazem HTTP externo), o hook fara uma unica query leve ao Supabase:
-
-```typescript
-const { data } = useQuery({
-  queryKey: ['top-cves-cache', clientId],
-  queryFn: () => supabase
-    .from('cve_severity_cache')
-    .select('module_code, top_cves')
-    .or(`client_id.eq.${clientId},client_id.is.null`)
-});
-```
-
-Isso retorna instantaneamente os top CVEs do cache local, sem nenhuma chamada externa.
-
-### 4. Remover dependencias pesadas
-
-O `useTopCVEs` nao importara mais `useFirewallCVEs` nem `useM365CVEs`, eliminando as chamadas HTTP ao NIST/MSRC no dashboard.
+Na linha 192, trocar `Score` por `Score Atual`.
 
 ## Arquivos
 
 | Arquivo | Alteracao |
 |---|---|
-| Migracao SQL | Adicionar coluna `top_cves` a `cve_severity_cache` |
-| `supabase/functions/refresh-cve-cache/index.ts` | Salvar top 2 CVEs no upsert |
-| `src/hooks/useTopCVEs.ts` | Reescrever para ler do cache via Supabase query |
-| `src/pages/GeneralDashboardPage.tsx` | Ajustar desestruturacao do retorno se necessario |
-
+| `src/pages/GeneralDashboardPage.tsx` | Remover `SPARKLINE_COLOR_MAP`; adicionar `getScoreHslColor`; usar no sparkline; trocar texto "Score" para "Score Atual" |
