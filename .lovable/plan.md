@@ -1,49 +1,33 @@
 
-# Fix: Submenus inacessiveis no menu colapsado
+# Fix: Menu flutuante do sidebar se misturando com o conteudo
 
 ## Problema
 
-Quando o menu lateral esta colapsado, os modulos com submenus (Dominio Externo, Firewall, Microsoft 365, Administracao) mostram apenas um tooltip com o nome e navegam para a primeira rota ao clicar. Os subitens ficam completamente inacessiveis.
+Os menus flutuantes (HoverCard) que aparecem ao passar o mouse sobre os modulos no sidebar colapsado estao sendo renderizados atras do conteudo da pagina, causando sobreposicao visual.
+
+## Causa
+
+O `HoverCardContent` nao possui uma classe de `z-index` suficientemente alta. O conteudo principal da pagina acaba ficando por cima do menu flutuante.
 
 ## Solucao
 
-Substituir o `Tooltip` por um `HoverCard` (ou `Popover` com trigger hover) quando o sidebar esta colapsado, exibindo a lista completa de subitens ao passar o mouse sobre o icone do modulo.
+Adicionar `z-50` ao className de ambos os `HoverCardContent` (ModuleButton e AdminButton) no arquivo `src/components/layout/AppLayout.tsx`.
 
-## Detalhes Tecnicos
+## Alteracoes
 
 ### Arquivo: `src/components/layout/AppLayout.tsx`
 
-**ModuleButton (collapsed mode, linhas 316-337)**:
-- Substituir `Tooltip` por `HoverCard` do Radix UI (ja instalado)
-- O trigger sera o icone do modulo
-- O content sera um mini-menu flutuante com fundo solido (`bg-sidebar`), posicionado a direita (`side="right"`)
-- Cada subitem sera um `Link` com o mesmo estilo dos subitens expandidos
-- O nome do modulo aparece como titulo no topo do mini-menu
+Duas linhas afetadas:
 
-**AdminButton (collapsed mode, linhas 420-440)**:
-- Mesma abordagem: substituir `Tooltip` por `HoverCard`
-- Exibir todos os itens de administracao (Administradores, Workspaces, Configuracoes, Templates, Agendamentos)
-- Manter o estilo `warning` dos itens
+1. **Linha ~336** (ModuleButton HoverCardContent): adicionar `z-50` ao className
+2. **Linha ~458** (AdminButton HoverCardContent): adicionar `z-50` ao className
 
-### Estrutura visual do mini-menu (collapsed hover)
-
-```text
-+---------------------------+
-| [icon] Nome do Modulo     |
-|---------------------------|
-| [icon] Subitem 1          |
-| [icon] Subitem 2          |
-| [icon] Subitem 3          |
-+---------------------------+
+Antes:
+```
+className="w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg"
 ```
 
-- Fundo: `bg-sidebar` com `border border-sidebar-border`
-- Sombra: `shadow-lg`
-- z-index alto para ficar acima do conteudo
-- Item ativo destacado com o mesmo estilo usado na sidebar expandida
-
-### Arquivos modificados
-
-| Arquivo | Alteracao |
-|---|---|
-| `src/components/layout/AppLayout.tsx` | Substituir Tooltip por HoverCard nos componentes ModuleButton e AdminButton quando colapsado |
+Depois:
+```
+className="z-50 w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg"
+```
