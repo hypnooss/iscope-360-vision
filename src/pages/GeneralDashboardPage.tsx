@@ -5,6 +5,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth, SeverityBlock } from '@/hooks/useDashboardStats';
+import { useTopCVEs, TopCVE } from '@/hooks/useTopCVEs';
 
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -135,13 +136,22 @@ interface ModuleHealthCardProps {
   colorBase: string;
   health: ModuleHealth;
   loading: boolean;
+  topCves?: TopCVE[];
   onAccessCompliance: () => void;
   onAccessCves?: () => void;
 }
 
+function CveSeverityIcon({ severity }: { severity: string }) {
+  const color =
+    severity === 'CRITICAL' ? 'text-red-400' :
+    severity === 'HIGH' ? 'text-orange-400' :
+    severity === 'MEDIUM' ? 'text-amber-400' : 'text-blue-400';
+  return <AlertTriangle className={cn('w-3.5 h-3.5 shrink-0', color)} />;
+}
+
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor, colorBase,
-  health, loading, onAccessCompliance, onAccessCves,
+  health, loading, topCves, onAccessCompliance, onAccessCves,
 }: ModuleHealthCardProps) {
   const hasCves = !!health.cveSeverities;
   const sparkColor = SPARKLINE_COLOR_MAP[colorBase] || 'hsl(175, 80%, 45%)';
@@ -199,11 +209,19 @@ function ModuleHealthCard({
               <SeverityBadgeRow severities={health.severities} />
             </div>
 
-            {/* CVE severity counts */}
-            {hasCves && health.cveSeverities && (
+            {/* Top CVEs list */}
+            {topCves && topCves.length > 0 && (
               <div className="space-y-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Alertas de CVE</span>
-                <SeverityBadgeRow severities={health.cveSeverities} />
+                <div className="space-y-1">
+                  {topCves.map((cve) => (
+                    <div key={cve.id} className="flex items-center gap-2 text-xs">
+                      <CveSeverityIcon severity={cve.severity} />
+                      <span className="text-foreground font-medium truncate flex-1">{cve.id}</span>
+                      <span className="text-muted-foreground tabular-nums shrink-0">CVSS {cve.score.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -259,6 +277,7 @@ export default function GeneralDashboardPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
+  const topCvesByModule = useTopCVEs();
 
   // Fetch workspaces for super roles
   useEffect(() => {
@@ -394,7 +413,10 @@ export default function GeneralDashboardPage() {
         {/* Module Health Cards */}
         <section>
           <div className={cn('grid gap-4', gridCols)}>
-            {moduleCards.map((card) => (
+            {moduleCards.map((card) => {
+              const config = MODULE_DASHBOARD_CONFIG[card.moduleCode];
+              const statsKey = config?.statsKey;
+              return (
                 <ModuleHealthCard
                   key={card.key}
                   title={card.title}
@@ -405,10 +427,12 @@ export default function GeneralDashboardPage() {
                   colorBase={card.colorBase}
                   health={card.health}
                   loading={loading}
+                  topCves={statsKey ? topCvesByModule[statsKey] : undefined}
                   onAccessCompliance={() => handleGoToModule(card.moduleCode, card.path)}
                   onAccessCves={card.cvePath ? () => handleGoToModule(card.moduleCode, card.cvePath!) : undefined}
                 />
-            ))}
+              );
+            })}
           </div>
         </section>
 
