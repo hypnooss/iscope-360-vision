@@ -1,57 +1,72 @@
 
+# Corrigir: Analyzer tem dados mas nao popula a tela
 
-# Bug: Analyzer gera relatório de Compliance indevidamente
+## Diagnostico
+
+O snapshot mais recente tem metricas reais (`vpnFailures: 64`, `configChanges: 200`, `totalEvents: 264`) mas **0 insights gerados** e todos os severity cards em 0. A tela aparece "vazia" porque os widgets dependem de dados que nao estao sendo calculados:
+
+| Widget | Status | Motivo |
+|--------|--------|--------|
+| Score de Risco | 100 (verde) | Sem insights = sem penalidade |
+| Severity Cards | Todos 0 | Sem insights gerados |
+| Top IPs Bloqueados | Vazio | `denied_traffic` coletou 0 logs |
+| Top Paises | Vazio | Depende de denied_traffic |
+| Resumo de Eventos | **OK** | Mostra vpnFailures=64, configChanges=200 |
+| Insights Recentes | Vazio | 0 insights gerados |
 
 ## Causa Raiz
 
-No arquivo `supabase/functions/agent-task-result/index.ts`, apos o bloco do Analyzer (linha ~4193) processar corretamente os logs e enviar para a edge function `firewall-analyzer`, o codigo **continua executando** e cai no bloco generico de compliance (linha ~4322):
+A edge function `firewall-analyzer` tem thresholds muito restritos e parsing de campos que nao coincidem com o formato real dos logs do FortiGate:
 
-```text
-if ((body.status === 'completed' || body.status === 'partial') && rawData) {
-    // Carrega compliance rules do FortiGate
-    // Executa processComplianceRules() nos dados de LOG do analyzer
-    // Gera relatório de compliance FALSO
-    // Salva em analysis_history
-    // Atualiza last_score e last_analysis_at do firewall
-}
-```
+1. **VPN/Auth**: So gera insight de brute force quando UM usuario tem 10+ falhas. 64 falhas distribuidas = 0 insights
+2. **Config Changes**: So detecta "add admin" ou "policy/rule/firewall" no campo `msg` — os 200 logs de config provavelmente usam outros termos
+3. **Denied Traffic**: 0 logs coletados (pode ser que o filtro da API nao retornou nada, ou o firewall realmente nao teve trafego negado no periodo)
 
-Este bloco verifica apenas `target_type === 'firewall'` mas **NAO verifica o `task_type`**. Como o analyzer tambem tem `target_type = 'firewall'`, ele entra neste bloco e tenta avaliar os dados de log (denied_traffic, auth_events, etc.) contra as regras de compliance (system_status, firewall_policy, etc.), gerando um relatorio invalido.
+## Plano de Correcao
 
-## Consequencias do Bug
+### 1. Edge Function `firewall-analyzer`: Adicionar insights agregados
 
-1. Um relatorio de compliance **falso** e salvo em `analysis_history` a cada execucao do analyzer
-2. O `last_score` e `last_analysis_at` do firewall sao sobrescritos com valores incorretos
-3. Um alerta de sistema "Analise Concluida" e criado incorretamente
+Modificar `supabase/functions/firewall-analyzer/index.ts`:
 
-## Correcao
+**a) Em `analyzeAuthentication()`** -- Adicionar 2 novos insights:
+- "Alto Volume de Falhas de Autenticacao" quando total de falhas > 20
+- Listar os top 5 usuarios com mais falhas e seus IPs
 
-Adicionar uma condicao para **excluir** o `task_type = 'firewall_analyzer'` do bloco de processamento de compliance.
+**b) Em `analyzeConfigChanges()`** -- Adicionar insight de volume:
+- "Volume Elevado de Alteracoes" quando total de config changes > 50
+- Incluir contagem total e periodo
 
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
+**c) Em `analyzeConfigChanges()`** -- Ampliar deteccao:
+- Alem de "policy/rule/firewall", detectar tambem: "edit", "set", "delete", "add", "modify"
+- Detectar alteracoes de HA, VPN, routing
 
-**Linha ~4323** - Alterar de:
+**d) Adicionar parsing melhorado dos campos FortiGate**:
+- O FortiGate usa campos como `cfgpath`, `cfgobj`, `cfgattr` para config changes
+- Usar esses campos para gerar insights mais especificos (ex: "Politica de Firewall Alterada: policy 15")
 
-```typescript
-if ((body.status === 'completed' || body.status === 'partial') && rawData) {
-```
+### 2. Ajustar thresholds
 
-Para:
+| Insight | Threshold Atual | Novo Threshold |
+|---------|----------------|----------------|
+| Brute Force (por usuario) | 10 falhas | 5 falhas |
+| Alto Volume Auth (total) | N/A | 20 falhas |
+| Alto Volume Config | N/A | 50 alteracoes |
+| Volume Alto Bloqueios (por IP) | 100 tentativas | 50 tentativas |
 
-```typescript
-if ((body.status === 'completed' || body.status === 'partial') && rawData && task.task_type !== 'firewall_analyzer') {
-```
+### 3. Melhorar parsing de config changes
 
-Esta unica condicao adicional garante que:
-- Tasks de compliance (`firewall_analysis`) continuam gerando relatorio normalmente
-- Tasks do analyzer (`firewall_analyzer`) processam apenas via edge function dedicada, sem gerar relatorio de compliance falso
-- Tasks de external domain e M365 nao sao afetadas
+Os logs de config do FortiGate tipicamente tem esta estrutura:
+- `cfgpath`: ex. "firewall.policy", "system.interface", "vpn.ipsec.phase1-interface"
+- `cfgobj`: o objeto alterado
+- `cfgattr`: atributos modificados
+- `action`: "Edit", "Add", "Delete"
 
-## Resumo
+A funcao atual so verifica `msg` e `logdesc`. Adicionar verificacao de `cfgpath` para categorizar alteracoes automaticamente.
 
-| Recurso | Alteracao |
+### Resumo de Arquivos
+
+| Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/agent-task-result/index.ts` | Adicionar `&& task.task_type !== 'firewall_analyzer'` na condicao da linha ~4323 |
+| `supabase/functions/firewall-analyzer/index.ts` | Adicionar insights agregados, ampliar parsing de config, ajustar thresholds |
 
-Uma linha de codigo resolve o problema.
-
+Nenhuma alteracao de banco de dados necessaria. Apos o deploy, re-trigger da analise para validar que os insights sao gerados.
