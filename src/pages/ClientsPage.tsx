@@ -317,7 +317,7 @@ export default function ClientsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Workspaces' }]} />
+        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Workspaces' }]} />
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

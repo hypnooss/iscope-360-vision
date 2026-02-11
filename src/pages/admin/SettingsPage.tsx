@@ -387,7 +387,7 @@ export default function SettingsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Configurações' }]} />
+        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Configurações' }]} />
         
         <div>
           <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
