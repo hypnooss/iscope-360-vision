@@ -26,6 +26,39 @@ const emptyHealth: ModuleHealth = {
 };
 
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+type SeverityCounts = { critical: number; high: number; medium: number; low: number };
+
+/** Extract severity counts from report_data by walking categories[].checks[] */
+function extractSeveritiesFromReport(reportData: any): SeverityCounts {
+  const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  if (!reportData) return counts;
+  // If a pre-computed summary exists, use it
+  if (reportData.summary) {
+    counts.critical = reportData.summary.critical || 0;
+    counts.high = reportData.summary.high || 0;
+    counts.medium = reportData.summary.medium || 0;
+    counts.low = reportData.summary.low || 0;
+    return counts;
+  }
+  // Otherwise walk categories → checks/rules
+  const categories = reportData.categories as any[] | undefined;
+  if (!Array.isArray(categories)) return counts;
+  for (const cat of categories) {
+    const rules = (cat.checks || cat.rules || []) as any[];
+    for (const rule of rules) {
+      if (rule.status === 'pass') continue;
+      const sev = rule.severity as string;
+      if (sev in counts) {
+        counts[sev as keyof SeverityCounts]++;
+      }
+    }
+  }
+  return counts;
+}
+
+
 export interface DashboardStats {
   modules: Record<string, ModuleHealth>;
   agentsOnline: number;
@@ -109,13 +142,11 @@ const fwHealth: ModuleHealth = {
           seen.add(h.firewall_id);
           scores.push(h.score);
           if (!latestDate || h.created_at > latestDate) latestDate = h.created_at;
-          const report = h.report_data as any;
-          if (report?.summary) {
-            fwHealth.severities.critical += report.summary.critical || 0;
-            fwHealth.severities.high += report.summary.high || 0;
-            fwHealth.severities.medium += report.summary.medium || 0;
-            fwHealth.severities.low += report.summary.low || 0;
-          }
+          const sevs = extractSeveritiesFromReport(h.report_data);
+          fwHealth.severities.critical += sevs.critical;
+          fwHealth.severities.high += sevs.high;
+          fwHealth.severities.medium += sevs.medium;
+          fwHealth.severities.low += sevs.low;
         }
         fwHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         fwHealth.lastAnalysisDate = latestDate;
@@ -179,13 +210,11 @@ const extHealth: ModuleHealth = {
           seen.add(h.domain_id);
           if (h.score != null) scores.push(h.score);
           if (!latestDate || h.created_at > latestDate) latestDate = h.created_at;
-          const report = h.report_data as any;
-          if (report?.summary) {
-            extHealth.severities.critical += report.summary.critical || 0;
-            extHealth.severities.high += report.summary.high || 0;
-            extHealth.severities.medium += report.summary.medium || 0;
-            extHealth.severities.low += report.summary.low || 0;
-          }
+          const sevs = extractSeveritiesFromReport(h.report_data);
+          extHealth.severities.critical += sevs.critical;
+          extHealth.severities.high += sevs.high;
+          extHealth.severities.medium += sevs.medium;
+          extHealth.severities.low += sevs.low;
         }
         extHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         extHealth.lastAnalysisDate = latestDate;
