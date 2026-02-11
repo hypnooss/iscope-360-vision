@@ -106,10 +106,10 @@ function SeverityBadgeRow({ severities }: { severities: SeverityBlock }) {
     );
   }
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex gap-2">
       {SEVERITY_ITEMS.map(({ key, label, badgeCn }) => (
         severities[key] > 0 && (
-          <Badge key={key} className={cn('text-xs gap-1 px-1.5', badgeCn)}>
+          <Badge key={key} className={cn('text-xs gap-1 px-2 py-0.5', badgeCn)}>
             {severities[key]} {label}
           </Badge>
         )
@@ -194,9 +194,10 @@ function ModuleHealthCard({
               )}
             </div>
 
-            {/* Score bar + Sparkline */}
-            <div className="flex items-center gap-4">
-              <div className="flex-1 space-y-1">
+            {/* Sparkline (bar chart) + Score bar */}
+            <div className="space-y-2">
+              <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
+              <div className="space-y-1">
                 <div className="flex items-baseline justify-between">
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">Score</span>
                   <span className={cn('text-lg font-bold tabular-nums', getScoreColor(health.score))}>
@@ -211,7 +212,6 @@ function ModuleHealthCard({
                   />
                 </div>
               </div>
-              <ScoreSparkline data={health.scoreHistory} color={sparkColor} />
             </div>
 
             {/* Conformidade severities */}
@@ -233,11 +233,11 @@ function ModuleHealthCard({
             )}
 
             {/* Quick actions */}
-            <div className="flex gap-2 pt-1">
+            <div className="flex gap-2 pt-1 mt-auto">
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 text-xs h-7"
+                className={cn('text-xs h-7', hasCves && onAccessCves ? 'flex-1' : 'w-full')}
                 onClick={(e) => { e.stopPropagation(); onAccessCompliance(); }}
               >
                 Conformidade

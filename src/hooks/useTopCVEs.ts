@@ -24,15 +24,25 @@ export function useTopCVEs() {
 
         if (fwHistory?.[0]?.report_data) {
           const report = fwHistory[0].report_data as any;
-          const cves: any[] = report?.cves || report?.vulnerabilities || [];
+          // Try multiple paths for CVE data
+          const cves: any[] =
+            report?.cves ||
+            report?.vulnerabilities ||
+            report?.results?.cves ||
+            report?.results?.vulnerabilities ||
+            report?.cve_results ||
+            [];
           if (cves.length > 0) {
             result.firewall = cves
-              .sort((a, b) => (b.cvss_score || b.score || 0) - (a.cvss_score || a.score || 0))
+              .sort((a, b) => (b.cvss_score || b.score || b.cvss || 0) - (a.cvss_score || a.score || a.cvss || 0))
               .slice(0, 2)
               .map(c => ({
-                id: c.cve_id || c.id || 'N/A',
-                score: c.cvss_score || c.score || 0,
-                severity: c.severity || (c.cvss_score >= 9 ? 'CRITICAL' : c.cvss_score >= 7 ? 'HIGH' : 'MEDIUM'),
+                id: c.cve_id || c.id || c.cve || 'N/A',
+                score: c.cvss_score || c.score || c.cvss || 0,
+                severity: c.severity || (
+                  (c.cvss_score || c.score || c.cvss || 0) >= 9 ? 'CRITICAL' :
+                  (c.cvss_score || c.score || c.cvss || 0) >= 7 ? 'HIGH' : 'MEDIUM'
+                ),
               }));
           }
         }
