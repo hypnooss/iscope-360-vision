@@ -333,7 +333,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <moduleConfig.icon className={cn('w-5 h-5 flex-shrink-0', moduleConfig.color)} />
             </button>
           </HoverCardTrigger>
-          <HoverCardContent side="right" sideOffset={10} align="start" className="w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
+          <HoverCardContent side="right" sideOffset={10} align="start" className="z-50 w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
             <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-sidebar-border">
               <moduleConfig.icon className={cn('w-4 h-4', moduleConfig.color)} />
               <span className="text-sm font-semibold text-sidebar-foreground">{moduleConfig.name}</span>
@@ -455,7 +455,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <ShieldCheck className="w-5 h-5 flex-shrink-0 text-warning" />
             </button>
           </HoverCardTrigger>
-          <HoverCardContent side="right" sideOffset={10} align="start" className="w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
+          <HoverCardContent side="right" sideOffset={10} align="start" className="z-50 w-auto min-w-[200px] p-2 bg-sidebar border-sidebar-border shadow-lg">
             <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-sidebar-border">
               <ShieldCheck className="w-4 h-4 text-warning" />
               <span className="text-sm font-semibold text-warning">Administração</span>
