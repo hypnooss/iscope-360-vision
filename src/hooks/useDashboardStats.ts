@@ -166,7 +166,7 @@ const extHealth: ModuleHealth = {
       if (extDomainIds.length > 0) {
         const { data: extHistory } = await supabase
           .from('external_domain_analysis_history')
-          .select('domain_id, score, created_at')
+          .select('domain_id, score, report_data, created_at')
           .in('domain_id', extDomainIds)
           .eq('status', 'completed')
           .order('created_at', { ascending: false });
@@ -179,6 +179,13 @@ const extHealth: ModuleHealth = {
           seen.add(h.domain_id);
           if (h.score != null) scores.push(h.score);
           if (!latestDate || h.created_at > latestDate) latestDate = h.created_at;
+          const report = h.report_data as any;
+          if (report?.summary) {
+            extHealth.severities.critical += report.summary.critical || 0;
+            extHealth.severities.high += report.summary.high || 0;
+            extHealth.severities.medium += report.summary.medium || 0;
+            extHealth.severities.low += report.summary.low || 0;
+          }
         }
         extHealth.score = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
         extHealth.lastAnalysisDate = latestDate;
