@@ -3,38 +3,34 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow, differenceInHours, differenceInMinutes, format } from 'date-fns';
+import { formatDistanceToNow, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-interface ScheduleRow {
+// ── Unified type ──
+
+interface UnifiedSchedule {
   id: string;
-  firewall_id: string;
+  targetId: string;
+  targetName: string;
+  targetType: 'firewall' | 'external_domain';
   frequency: string;
-  is_active: boolean;
-  next_run_at: string | null;
-  scheduled_hour: number | null;
-  scheduled_day_of_week: number | null;
-  scheduled_day_of_month: number | null;
-  firewalls: {
-    id: string;
-    name: string;
-    last_score: number | null;
-    last_analysis_at: string | null;
-    client_id: string;
-    clients: {
-      id: string;
-      name: string;
-    };
-  };
+  isActive: boolean;
+  nextRunAt: string | null;
+  scheduledHour: number | null;
+  scheduledDayOfWeek: number | null;
+  scheduledDayOfMonth: number | null;
+  clientId: string;
+  clientName: string;
+  lastScore: number | null;
 }
 
 interface TaskRow {
@@ -42,6 +38,8 @@ interface TaskRow {
   status: string;
   completed_at: string | null;
 }
+
+// ── Constants ──
 
 const FREQUENCY_LABELS: Record<string, string> = {
   daily: 'Diário',
@@ -57,6 +55,8 @@ const FREQUENCY_COLORS: Record<string, string> = {
 
 const DAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
+// ── Helpers ──
+
 function getScoreColor(score: number | null) {
   if (score === null) return 'bg-muted text-muted-foreground';
   if (score >= 90) return 'bg-primary/15 text-primary border-primary/30';
@@ -65,19 +65,19 @@ function getScoreColor(score: number | null) {
   return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
 }
 
-function getScheduleDescription(schedule: ScheduleRow) {
-  const hour = schedule.scheduled_hour ?? 0;
+function getScheduleDescription(s: UnifiedSchedule) {
+  const hour = s.scheduledHour ?? 0;
   const timeStr = `${String(hour).padStart(2, '0')}:00`;
 
-  switch (schedule.frequency) {
+  switch (s.frequency) {
     case 'daily':
       return `Todos os dias às ${timeStr}`;
     case 'weekly': {
-      const day = DAY_NAMES[schedule.scheduled_day_of_week ?? 1] || 'Segunda';
+      const day = DAY_NAMES[s.scheduledDayOfWeek ?? 1] || 'Segunda';
       return `${day} às ${timeStr}`;
     }
     case 'monthly': {
-      const dom = schedule.scheduled_day_of_month ?? 1;
+      const dom = s.scheduledDayOfMonth ?? 1;
       return `Dia ${dom} às ${timeStr}`;
     }
     default:
@@ -85,10 +85,13 @@ function getScheduleDescription(schedule: ScheduleRow) {
   }
 }
 
+// ── Component ──
+
 export default function SchedulesPage() {
   const [search, setSearch] = useState('');
   const [filterWorkspace, setFilterWorkspace] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
+  const [filterType, setFilterType] = useState('all');
 
   // Force re-render of relative time strings every 30s
   const [, setTick] = useState(0);
@@ -97,39 +100,90 @@ export default function SchedulesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch schedules with firewall and client info
-  const { data: schedules, isLoading, refetch } = useQuery({
-    queryKey: ['admin-schedules'],
+  // ── Fetch firewall schedules ──
+  const { data: firewallSchedules, isLoading: loadingFw, refetch: refetchFw } = useQuery({
+    queryKey: ['admin-schedules-fw'],
     refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analysis_schedules')
-        .select('id, firewall_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, firewalls(id, name, last_score, last_analysis_at, client_id, clients(id, name))')
+        .select('id, firewall_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, firewalls(id, name, last_score, client_id, clients(id, name))')
         .order('next_run_at', { ascending: true, nullsFirst: false });
-
       if (error) throw error;
-      return (data as unknown as ScheduleRow[]) || [];
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id,
+        targetId: s.firewall_id,
+        targetName: s.firewalls?.name || '—',
+        targetType: 'firewall',
+        frequency: s.frequency,
+        isActive: s.is_active,
+        nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour,
+        scheduledDayOfWeek: s.scheduled_day_of_week,
+        scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.firewalls?.clients?.id || '',
+        clientName: s.firewalls?.clients?.name || '—',
+        lastScore: s.firewalls?.last_score ?? null,
+      }));
     },
   });
 
-  // Fetch latest task per firewall
-  const firewallIds = useMemo(() => schedules?.map(s => s.firewall_id) || [], [schedules]);
+  // ── Fetch external domain schedules ──
+  const { data: domainSchedules, isLoading: loadingDom, refetch: refetchDom } = useQuery({
+    queryKey: ['admin-schedules-dom'],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('external_domain_schedules')
+        .select('id, domain_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, external_domains(id, name, last_score, client_id, clients(id, name))')
+        .order('next_run_at', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id,
+        targetId: s.domain_id,
+        targetName: s.external_domains?.name || '—',
+        targetType: 'external_domain',
+        frequency: s.frequency,
+        isActive: s.is_active,
+        nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour,
+        scheduledDayOfWeek: s.scheduled_day_of_week,
+        scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.external_domains?.clients?.id || '',
+        clientName: s.external_domains?.clients?.name || '—',
+        lastScore: s.external_domains?.last_score ?? null,
+      }));
+    },
+  });
+
+  const isLoading = loadingFw || loadingDom;
+
+  const schedules = useMemo(() => {
+    const all = [...(firewallSchedules || []), ...(domainSchedules || [])];
+    // Sort by next_run_at ascending, nulls last
+    return all.sort((a, b) => {
+      if (!a.nextRunAt && !b.nextRunAt) return 0;
+      if (!a.nextRunAt) return 1;
+      if (!b.nextRunAt) return -1;
+      return new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime();
+    });
+  }, [firewallSchedules, domainSchedules]);
+
+  // ── Fetch latest task per target ──
+  const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
 
   const { data: latestTasks } = useQuery({
-    queryKey: ['admin-schedule-tasks', firewallIds],
-    enabled: firewallIds.length > 0,
+    queryKey: ['admin-schedule-tasks', targetIds],
+    enabled: targetIds.length > 0,
     refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
         .select('target_id, status, completed_at')
-        .in('target_id', firewallIds)
-        .eq('target_type', 'firewall')
+        .in('target_id', targetIds)
+        .in('target_type', ['firewall', 'external_domain'])
         .order('completed_at', { ascending: false });
-
       if (error) throw error;
-
-      // Keep only the latest task per firewall
       const map = new Map<string, TaskRow>();
       for (const task of (data || []) as TaskRow[]) {
         if (!map.has(task.target_id)) {
@@ -140,61 +194,54 @@ export default function SchedulesPage() {
     },
   });
 
-  // Compute stats
+  // ── Stats ──
   const stats = useMemo(() => {
-    if (!schedules) return { active: 0, next1h: 0, next6h: 0, next24h: 0, failed: 0 };
+    if (!schedules.length) return { active: 0, next1h: 0, next6h: 0, next24h: 0, failed: 0 };
     const now = new Date();
     let active = 0, next1h = 0, next6h = 0, next24h = 0, failed = 0;
-
     for (const s of schedules) {
-      if (s.is_active) active++;
-      if (s.next_run_at) {
-        const diff = differenceInHours(new Date(s.next_run_at), now);
+      if (s.isActive) active++;
+      if (s.nextRunAt) {
+        const diff = differenceInHours(new Date(s.nextRunAt), now);
         if (diff >= 0 && diff < 1) next1h++;
         if (diff >= 0 && diff < 6) next6h++;
         if (diff >= 0 && diff < 24) next24h++;
       }
-      const task = latestTasks?.get(s.firewall_id);
+      const task = latestTasks?.get(s.targetId);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
   }, [schedules, latestTasks]);
 
-  // Filter and search
+  // ── Filter & search ──
   const filtered = useMemo(() => {
-    if (!schedules) return [];
     return schedules.filter(s => {
-      if (search && !s.firewalls?.name?.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterWorkspace !== 'all' && s.firewalls?.clients?.id !== filterWorkspace) return false;
+      if (search && !s.targetName.toLowerCase().includes(search.toLowerCase())) return false;
+      if (filterWorkspace !== 'all' && s.clientId !== filterWorkspace) return false;
       if (filterFrequency !== 'all' && s.frequency !== filterFrequency) return false;
+      if (filterType !== 'all' && s.targetType !== filterType) return false;
       return true;
     });
-  }, [schedules, search, filterWorkspace, filterFrequency]);
+  }, [schedules, search, filterWorkspace, filterFrequency, filterType]);
 
-  // Unique workspaces for filter
+  // ── Workspaces for filter ──
   const workspaces = useMemo(() => {
-    if (!schedules) return [];
     const map = new Map<string, string>();
     for (const s of schedules) {
-      if (s.firewalls?.clients) {
-        map.set(s.firewalls.clients.id, s.firewalls.clients.name);
-      }
+      if (s.clientId) map.set(s.clientId, s.clientName);
     }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [schedules]);
+
+  // ── Renderers ──
 
   const renderNextRun = (nextRunAt: string | null) => {
     if (!nextRunAt) return <span className="text-muted-foreground">—</span>;
     const next = new Date(nextRunAt);
     const now = new Date();
     const diffMin = differenceInMinutes(next, now);
-
-    if (diffMin < 0) {
-      return <span className="text-muted-foreground">Atrasado</span>;
-    }
-
+    if (diffMin < 0) return <span className="text-muted-foreground">Atrasado</span>;
     const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
-
     if (diffMin < 60) {
       return (
         <div className="flex items-center gap-2">
@@ -206,12 +253,11 @@ export default function SchedulesPage() {
         </div>
       );
     }
-
     return <span className="text-foreground">{relative}</span>;
   };
 
-  const renderTaskStatus = (firewallId: string) => {
-    const task = latestTasks?.get(firewallId);
+  const renderTaskStatus = (targetId: string) => {
+    const task = latestTasks?.get(targetId);
     if (!task) {
       return (
         <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border gap-1">
@@ -244,6 +290,28 @@ export default function SchedulesPage() {
     );
   };
 
+  const renderTypeBadge = (type: 'firewall' | 'external_domain') => {
+    if (type === 'firewall') {
+      return (
+        <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
+          <Shield className="w-3 h-3" />
+          Firewall
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
+        <Globe className="w-3 h-3" />
+        Domínio Externo
+      </Badge>
+    );
+  };
+
+  const handleRefresh = () => {
+    refetchFw();
+    refetchDom();
+  };
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
@@ -259,9 +327,9 @@ export default function SchedulesPage() {
             <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
             <p className="text-muted-foreground">Painel centralizado de agendamentos de análise</p>
           </div>
-          <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
-            Atualizando...
+          <Button onClick={handleRefresh} variant="outline" size="sm">
+            <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
           </Button>
         </div>
 
@@ -339,12 +407,22 @@ export default function SchedulesPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar firewall..."
+              placeholder="Buscar ativo..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9"
             />
           </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="firewall">Firewall</SelectItem>
+              <SelectItem value="external_domain">Domínio Externo</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Workspace" />
@@ -386,7 +464,8 @@ export default function SchedulesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Firewall</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Nome</TableHead>
                     <TableHead>Workspace</TableHead>
                     <TableHead>Frequência</TableHead>
                     <TableHead>Programação</TableHead>
@@ -399,11 +478,14 @@ export default function SchedulesPage() {
                 <TableBody>
                   {filtered.map(schedule => (
                     <TableRow key={schedule.id}>
+                      <TableCell>
+                        {renderTypeBadge(schedule.targetType)}
+                      </TableCell>
                       <TableCell className="font-medium text-foreground">
-                        {schedule.firewalls?.name || '—'}
+                        {schedule.targetName}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {schedule.firewalls?.clients?.name || '—'}
+                        {schedule.clientName}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={FREQUENCY_COLORS[schedule.frequency] || ''}>
@@ -414,22 +496,22 @@ export default function SchedulesPage() {
                         {getScheduleDescription(schedule)}
                       </TableCell>
                       <TableCell>
-                        {renderNextRun(schedule.next_run_at)}
+                        {renderNextRun(schedule.nextRunAt)}
                       </TableCell>
                       <TableCell>
-                        {schedule.firewalls?.last_score !== null && schedule.firewalls?.last_score !== undefined ? (
-                          <Badge variant="outline" className={getScoreColor(schedule.firewalls.last_score)}>
-                            {schedule.firewalls.last_score}
+                        {schedule.lastScore !== null && schedule.lastScore !== undefined ? (
+                          <Badge variant="outline" className={getScoreColor(schedule.lastScore)}>
+                            {schedule.lastScore}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {renderTaskStatus(schedule.firewall_id)}
+                        {renderTaskStatus(schedule.targetId)}
                       </TableCell>
                       <TableCell>
-                        {schedule.is_active ? (
+                        {schedule.isActive ? (
                           <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                             Ativo
                           </Badge>
