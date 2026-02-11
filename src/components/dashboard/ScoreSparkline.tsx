@@ -24,7 +24,7 @@ export function ScoreSparkline({ data, color = 'hsl(175, 80%, 45%)' }: ScoreSpar
             fill={color}
             radius={[2, 2, 0, 0]}
             isAnimationActive={false}
-            opacity={0.7}
+            opacity={1}
           />
         </BarChart>
       </ResponsiveContainer>
