@@ -1,41 +1,49 @@
 
+# Correção: Blueprint steps com executor `http_request` não são enviados ao Agent
 
-# Retry com delay para atribuicao da role Exchange Administrator
+## Problema identificado
 
-## Problema
+A função RPC `rpc_get_agent_tasks` filtra os steps do blueprint usando:
 
-Na linha 681 do `m365-oauth-callback/index.ts`, a funcao `assignExchangeAdminRole` e chamada imediatamente apos o Admin Consent. Nesse momento, a permissao `RoleManagement.ReadWrite.Directory` ainda nao propagou no Entra ID, resultando em erro 403. Na segunda tentativa (via "Revalidar Permissoes"), a permissao ja propagou e funciona normalmente.
-
-## Solucao
-
-Adicionar logica de retry com backoff na chamada `assignExchangeAdminRole` (linhas 678-699), aguardando a propagacao da permissao antes de desistir.
-
-## Detalhes tecnicos
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `supabase/functions/m365-oauth-callback/index.ts` | Envolver a chamada `assignExchangeAdminRole` (linha 681) em um loop de retry com delays de 5s, 10s e 15s. Se o resultado for erro 403 / `Authorization_RequestDenied`, aguardar e tentar novamente. Manter o comportamento nao-bloqueante (nao impede a conexao se falhar apos todas as tentativas). |
-
-### Logica de retry
-
-```text
-Tentativa 1: chamar assignExchangeAdminRole imediatamente
-  Se 403 -> aguardar 5s
-Tentativa 2: chamar assignExchangeAdminRole
-  Se 403 -> aguardar 10s
-Tentativa 3: chamar assignExchangeAdminRole
-  Se 403 -> aguardar 15s
-Tentativa 4 (final): chamar assignExchangeAdminRole
-  Se falhar -> registrar como falha (comportamento atual)
+```sql
+WHERE COALESCE(step->>'executor', 'agent') = 'agent'
 ```
 
-Tempo maximo adicional: 30 segundos. Isso e aceitavel pois o usuario ja aguarda o retorno do fluxo OAuth e a funcao ja possui retry de ate 60s para o endpoint `/organization`.
+Porém, todos os 23 steps do blueprint "FortiGate - Coleta Padrão" usam `executor: http_request`. Como `http_request` != `agent`, a RPC retorna **zero steps** para o agent. O agent recebe a task sem steps, reporta `completed` imediatamente, e nenhum dado é coletado -- logo nenhum relatório é gerado.
 
-### Modificacao na funcao assignExchangeAdminRole
+Isso afeta **todos os firewalls FortiGate** que usam esse blueprint.
 
-Alterar o retorno de erro para incluir um campo `retryable: true` quando o erro for 403, permitindo que o caller saiba quando vale a pena tentar novamente.
+## Causa raiz
 
-### Modificacao no caller (linhas 678-699)
+O executor `http_request` é um tipo de executor que roda **dentro do agent Python** (o agent faz chamadas HTTP à API do FortiGate). A RPC deveria considerar os tipos de executor que executam no agent: `agent`, `http_request`, `ssh`, `snmp`, `dns_query`.
 
-Substituir a chamada direta por um loop que verifica `roleResult.success` ou se o erro e retryable, aplicando os delays antes de cada nova tentativa.
+Apenas `edge_function` deveria ser excluído (pois roda no Supabase Edge).
 
+## Solução
+
+Alterar a RPC `rpc_get_agent_tasks` para incluir todos os executores que rodam no agent, em vez de filtrar apenas por `executor = 'agent'`.
+
+### Alteração na RPC (migration SQL)
+
+Em todos os 3 blocos da RPC (firewall, external_domain, m365_tenant), substituir o filtro:
+
+```sql
+-- De:
+WHERE COALESCE(step->>'executor', 'agent') = 'agent'
+
+-- Para:
+WHERE COALESCE(step->>'executor', 'agent') NOT IN ('edge_function')
+```
+
+Isso usa uma abordagem de **exclusão** em vez de inclusão: qualquer executor que **não** seja `edge_function` será enviado ao agent. Isso é mais seguro para o futuro, pois novos tipos de executor criados para o agent serão automaticamente incluídos.
+
+## Impacto
+
+- Corrige a coleta de dados para todos os firewalls FortiGate
+- Mantém compatibilidade com external_domain e m365_tenant (cujos steps já podem ter executor `agent` ou outros tipos)
+- Nenhuma alteração no código do agent Python necessária
+- Nenhuma alteração no frontend necessária
+
+## Teste
+
+Após aplicar a migration, basta disparar uma nova análise no firewall OCI-FW. O agent receberá os 23 steps e executará a coleta normalmente.
