@@ -172,7 +172,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { effectiveUserModules, allActiveModules } = useEffectiveModules();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('sidebar-open');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-open', String(sidebarOpen));
+  }, [sidebarOpen]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
