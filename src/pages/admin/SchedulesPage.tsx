@@ -254,10 +254,10 @@ export default function SchedulesPage() {
           ]}
         />
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Agendamentos</h1>
-            <p className="text-muted-foreground mt-1">Painel centralizado de agendamentos de análise</p>
+            <p className="text-muted-foreground">Painel centralizado de agendamentos de análise</p>
           </div>
           <Button onClick={() => refetch()} variant="outline" size="sm">
             <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />

@@ -316,11 +316,11 @@ export default function ClientsPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Workspaces' }]} />
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Workspaces</h1>
             <p className="text-muted-foreground">Gerencie todos os workspaces do sistema</p>
