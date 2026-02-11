@@ -432,6 +432,65 @@ export type Database = {
           },
         ]
       }
+      cve_cache: {
+        Row: {
+          advisory_url: string | null
+          created_at: string
+          cve_id: string
+          description: string | null
+          id: string
+          module_code: string
+          products: Json | null
+          published_date: string | null
+          raw_data: Json | null
+          score: number | null
+          severity: string | null
+          source_id: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          advisory_url?: string | null
+          created_at?: string
+          cve_id: string
+          description?: string | null
+          id?: string
+          module_code: string
+          products?: Json | null
+          published_date?: string | null
+          raw_data?: Json | null
+          score?: number | null
+          severity?: string | null
+          source_id: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          advisory_url?: string | null
+          created_at?: string
+          cve_id?: string
+          description?: string | null
+          id?: string
+          module_code?: string
+          products?: Json | null
+          published_date?: string | null
+          raw_data?: Json | null
+          score?: number | null
+          severity?: string | null
+          source_id?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cve_cache_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "cve_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cve_severity_cache: {
         Row: {
           client_id: string | null
@@ -478,6 +537,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cve_sources: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          last_sync_at: string | null
+          last_sync_count: number | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          module_code: string
+          source_label: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_sync_at?: string | null
+          last_sync_count?: number | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          module_code: string
+          source_label: string
+          source_type: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_sync_at?: string | null
+          last_sync_count?: number | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          module_code?: string
+          source_label?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       device_blueprints: {
         Row: {
