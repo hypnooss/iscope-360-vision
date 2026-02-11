@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
-  AlertTriangle, ShieldAlert, LucideIcon, Building2, Monitor,
+  AlertTriangle, ShieldAlert, LucideIcon, Building2, Bot,
   Globe, Network,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 // ─── Icon map: resolves DB string → Lucide component ─────────────────────────
 
 const ICON_MAP: Record<string, LucideIcon> = {
-  Shield, Cloud, Layers, Globe, Server, Network, Monitor,
+  Shield, Cloud, Layers, Globe, Server, Network, Bot,
 };
 
 // ─── Module Health Card ───────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ export default function GeneralDashboardPage() {
                     {/* Agents - always present */}
                     <div className="flex flex-col items-center gap-0.5 p-3 rounded-lg bg-muted/30">
                       <div className="flex items-center gap-1.5">
-                        <Monitor className="w-4 h-4 text-violet-500" />
+                        <Bot className="w-4 h-4 text-violet-500" />
                         <span className="text-base text-muted-foreground">Agents</span>
                       </div>
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Online</span>
