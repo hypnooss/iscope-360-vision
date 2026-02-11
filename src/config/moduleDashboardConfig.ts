@@ -5,8 +5,6 @@ export interface ModuleDashboardConfig {
   path: string;
   /** Label shown in the infrastructure card (e.g. "Firewalls", "Tenants M365") */
   infraLabel: string;
-  /** Hide severity counters in the health card? */
-  hideSeverities?: boolean;
 }
 
 export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
@@ -19,7 +17,6 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
     statsKey: 'm365',
     path: '/scope-m365/posture',
     infraLabel: 'Tenants M365',
-    hideSeverities: true,
   },
   scope_external_domain: {
     statsKey: 'externalDomain',

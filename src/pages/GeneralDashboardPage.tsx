@@ -1,11 +1,10 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useDashboardStats, ModuleHealth } from '@/hooks/useDashboardStats';
-import { useM365CVEs } from '@/hooks/useM365CVEs';
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -17,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Shield, Cloud, Layers, Server, ArrowRight,
   AlertTriangle, ShieldAlert, LucideIcon, Building2, Bot,
-  Globe, Network,
+  Globe, Network, CheckCircle2, Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -64,15 +63,20 @@ interface ModuleHealthCardProps {
   health: ModuleHealth;
   loading: boolean;
   onAccess: () => void;
-  extraInfo?: ReactNode;
-  hideSeverities?: boolean;
 }
+
+const SEVERITY_ITEMS = [
+  { key: 'critical' as const, label: 'Crítico', icon: ShieldAlert, badgeCn: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  { key: 'high' as const, label: 'Alto', icon: AlertTriangle, badgeCn: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  { key: 'medium' as const, label: 'Médio', icon: Info, badgeCn: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+  { key: 'low' as const, label: 'Baixo', icon: Info, badgeCn: 'bg-blue-400/15 text-blue-400 border-blue-400/30' },
+] as const;
 
 function ModuleHealthCard({
   title, icon: Icon, iconColor, iconBg, borderColor,
-  health, loading, onAccess, extraInfo, hideSeverities,
+  health, loading, onAccess,
 }: ModuleHealthCardProps) {
-  const hasSeverities = !hideSeverities && (health.severities.critical > 0 || health.severities.high > 0);
+  const totalSeverities = health.severities.critical + health.severities.high + health.severities.medium + health.severities.low;
 
   return (
     <Card
@@ -90,7 +94,7 @@ function ModuleHealthCard({
             <Skeleton className="h-4 w-24 mx-auto" />
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col gap-3">
             {/* Header */}
             <div className="flex items-center gap-2 w-full">
               <div className={cn('p-2 rounded-lg', iconBg)}>
@@ -100,36 +104,39 @@ function ModuleHealthCard({
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Score Gauge + Extra Info */}
-            <div className="py-2 flex items-center gap-4">
-              {health.score != null ? (
-                <ScoreGauge score={health.score} size="sm" />
-              ) : (
-                <div className="flex flex-col items-center gap-1 py-4">
-                  <span className="text-2xl font-bold text-muted-foreground">—</span>
-                  <span className="text-xs text-muted-foreground">Sem análise</span>
-                </div>
-              )}
-              {extraInfo}
-            </div>
-
-            {/* Severity badges */}
-            {hasSeverities && (
-              <div className="flex items-center gap-2">
-                {health.severities.critical > 0 && (
-                  <Badge variant="destructive" className="text-xs gap-1 px-2">
-                    <ShieldAlert className="w-3 h-3" />
-                    {health.severities.critical} críticos
-                  </Badge>
-                )}
-                {health.severities.high > 0 && (
-                  <Badge className="text-xs gap-1 px-2 bg-orange-500/15 text-orange-400 border-orange-500/30">
-                    <AlertTriangle className="w-3 h-3" />
-                    {health.severities.high} altos
-                  </Badge>
+            {/* Score Gauge (left) + Severity Badges (right) */}
+            <div className="flex items-center gap-6 py-2">
+              <div className="shrink-0">
+                {health.score != null ? (
+                  <ScoreGauge score={health.score} size="sm" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 py-4">
+                    <span className="text-2xl font-bold text-muted-foreground">—</span>
+                    <span className="text-xs text-muted-foreground">Sem análise</span>
+                  </div>
                 )}
               </div>
-            )}
+
+              {/* Severity grid */}
+              <div className="flex-1 flex flex-col gap-1.5">
+                {totalSeverities > 0 ? (
+                  SEVERITY_ITEMS.map(({ key, label, icon: SevIcon, badgeCn }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <Badge className={cn('text-xs gap-1 px-2 min-w-[28px] justify-center', badgeCn)}>
+                        <SevIcon className="w-3 h-3" />
+                        {health.severities[key]}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span className="text-xs">Nenhum alerta</span>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Last analysis */}
             {health.lastAnalysisDate && (
@@ -169,7 +176,6 @@ export default function GeneralDashboardPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
-  const { data: cveData } = useM365CVEs(1);
 
   // Fetch workspaces for super roles
   useEffect(() => {
@@ -195,8 +201,6 @@ export default function GeneralDashboardPage() {
     navigate(path);
   };
 
-  const recentCVECount = cveData?.totalCVEs ?? 0;
-
   // ─── Build dynamic module cards from effectiveUserModules + config ──────────
 
   type CardDef = {
@@ -210,8 +214,6 @@ export default function GeneralDashboardPage() {
     moduleCode: string;
     path: string;
     infraLabel: string;
-    extraInfo?: ReactNode;
-    hideSeverities?: boolean;
   };
 
   const moduleCards: CardDef[] = effectiveUserModules
@@ -222,19 +224,6 @@ export default function GeneralDashboardPage() {
 
       const Icon = ICON_MAP[um.module.icon || ''] || Shield;
       const colorBase = um.module.color?.replace('text-', '') || 'primary';
-
-      let extraInfo: ReactNode | undefined;
-      if (um.module.code === 'scope_m365' && recentCVECount > 0) {
-        extraInfo = (
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-lg font-bold text-foreground">{recentCVECount}</span>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded animate-pulse">NEW</span>
-              <span className="text-xs text-muted-foreground">CVEs</span>
-            </div>
-          </div>
-        );
-      }
 
       return {
         key: um.module.code,
@@ -247,8 +236,6 @@ export default function GeneralDashboardPage() {
         moduleCode: um.module.code,
         path: config.path,
         infraLabel: config.infraLabel,
-        hideSeverities: config.hideSeverities,
-        extraInfo,
       } as CardDef;
     })
     .filter(Boolean) as CardDef[];
@@ -331,8 +318,6 @@ export default function GeneralDashboardPage() {
                 health={card.health}
                 loading={loading}
                 onAccess={() => handleGoToModule(card.moduleCode, card.path)}
-                extraInfo={card.extraInfo}
-                hideSeverities={card.hideSeverities}
               />
             ))}
           </div>
