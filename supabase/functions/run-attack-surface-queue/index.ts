@@ -189,21 +189,31 @@ Deno.serve(async (req) => {
         .eq('client_id', client.id)
 
       for (const fw of (firewalls || [])) {
+        // Get the latest completed firewall task ID
         const { data: tasks } = await supabase
           .from('agent_tasks')
-          .select('step_results')
+          .select('id')
           .eq('target_id', fw.id)
           .eq('target_type', 'firewall')
           .eq('status', 'completed')
           .order('completed_at', { ascending: false })
           .limit(1)
 
-        if (tasks?.[0]?.step_results && Array.isArray(tasks[0].step_results)) {
-          const fwIPs = extractFirewallIPs(tasks[0].step_results, fw.name)
-          for (const fip of fwIPs) {
-            if (!seenIPs.has(fip.ip)) {
-              seenIPs.add(fip.ip)
-              allIPs.push(fip)
+        if (tasks?.[0]?.id) {
+          // Read step results from the correct table
+          const { data: stepResults } = await supabase
+            .from('task_step_results')
+            .select('step_id, data')
+            .eq('task_id', tasks[0].id)
+            .eq('step_id', 'system_interface')
+
+          if (stepResults && stepResults.length > 0) {
+            const fwIPs = extractFirewallIPs(stepResults, fw.name)
+            for (const fip of fwIPs) {
+              if (!seenIPs.has(fip.ip)) {
+                seenIPs.add(fip.ip)
+                allIPs.push(fip)
+              }
             }
           }
         }
