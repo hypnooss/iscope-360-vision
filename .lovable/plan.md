@@ -1,44 +1,54 @@
 
+# Corrigir deteccao de IPs publicos do Firewall no Attack Surface Analyzer
 
-# Exibir scans do Attack Surface Analyzer na pagina de Execucoes
+## Problema identificado
 
-## Problema
+A funcao `extractFirewallIPs()` no edge function `attack-surface-scan` filtra interfaces exclusivamente por nome/role/type contendo "wan". No firewall IDA-FW da Taschibra, a interface `port20` possui o IP publico `200.170.147.25` mas tem `role: undefined` e `name: port20`, sendo ignorada.
 
-O scan do Attack Surface Analyzer (`attack-surface-scan`) grava resultados na tabela `attack_surface_snapshots`. A pagina de Execucoes (`ExternalDomainExecutionsPage`) consulta apenas duas fontes:
-- `external_domain_analysis_history` (source = 'api')
-- `agent_tasks` (target_type = 'external_domain')
-
-Nenhuma dessas tabelas recebe registros do Attack Surface scan, por isso ele nunca aparece na listagem.
+### Dados reais do firewall Taschibra:
+- `wan1` (role: wan) -> IP `0.0.0.0` (inativo, ignorado corretamente)
+- `wan2` (role: wan) -> IP `177.200.196.230` (capturado, mas via DNS, nao via firewall)
+- `port20` (role: undefined) -> IP `200.170.147.25` (IP publico IGNORADO)
 
 ## Solucao
 
-Adicionar `attack_surface_snapshots` como terceira fonte de dados na pagina de Execucoes.
+Alterar a logica de `extractFirewallIPs()` para capturar **qualquer interface que tenha IP publico**, independente do nome ou role. Se a interface tem um IP valido e nao-privado, ela e relevante para o Attack Surface.
 
-### Arquivo: `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+### Arquivo: `supabase/functions/attack-surface-scan/index.ts`
 
-1. **Nova query**: buscar `attack_surface_snapshots` filtrados por `client_id` (usando os mesmos `workspaceIds` ja disponiveis), com filtros de tempo e status equivalentes.
+#### Alterar funcao `extractFirewallIPs` (linhas 152-181)
 
-2. **Novo tipo no `UnifiedExecution`**: adicionar `type: 'attack_surface'` alem de `'api'` e `'agent'`.
+**Logica atual:**
+```
+Para cada interface:
+  - Verificar se nome/role/type contem "wan"
+  - Se sim, extrair IP e filtrar privados
+```
 
-3. **Novo badge visual**: criar entrada em `typeConfig` para `attack_surface` com icone `Radar` e cor teal/ciano para diferenciar dos demais.
+**Nova logica:**
+```
+Para cada interface:
+  - Extrair o campo IP
+  - Se o IP e publico (nao-privado, nao 0.0.0.0):
+    - Adicionar ao resultado, usando o nome da interface como label
+    - Sem filtro por role ou tipo
+```
 
-4. **Merge no `unifiedExecutions`**: mapear cada snapshot para `UnifiedExecution` com:
-   - `source: 'attack_surface'`
-   - `domainId`: vazio (nao e vinculado a um dominio especifico)
-   - `status`: campo `status` do snapshot
-   - `duration`: calculado de `created_at` ate `completed_at`
-   - Label customizado: "Attack Surface Scan" em vez de nome de dominio
+Isso e mais seguro porque:
+- Captura interfaces com nomes customizados (port20, custom-wan, link-externo, etc.)
+- Nao depende do administrador ter configurado o role corretamente
+- IPs privados (RFC1918, loopback, APIPA) continuam filtrados automaticamente por `isPrivateIP()`
+- Interfaces sem IP (0.0.0.0) continuam ignoradas
 
-5. **Detalhes ao clicar**: abrir dialog mostrando `summary` (IPs, portas, servicos, CVEs), `score` e timestamp de conclusao.
+#### Melhorar o label
 
-6. **Polling**: incluir snapshots pendentes/running na logica de refetch automatico (10s).
+O label indicara o tipo de interface quando possivel:
+- Se role = "wan": `"FirewallName - InterfaceName (WAN)"`
+- Se role = outro: `"FirewallName - InterfaceName"`
 
-7. **Filtro de busca**: incluir "attack surface" como termo pesquisavel.
+### Resultado esperado
 
-### Secao tecnica
-
-- A query usara os `client_id` dos workspaces acessiveis (mesmo padrao dos dominos)
-- Para usuarios nao-super, o `client_id` vira do `user_clients` (ja resolvido no componente)
-- O campo `domainId` sera `''` para snapshots do attack surface, e o `getDomainLabel` retornara "Attack Surface Scan" nesse caso
-- Nenhuma alteracao no backend ou no edge function e necessaria
-
+Apos a correcao, um novo scan da Taschibra devera identificar:
+- `177.200.196.230` (wan2) -> source: firewall
+- `200.170.147.25` (port20) -> source: firewall
+- Todos os IPs de DNS (mantidos como estao)
