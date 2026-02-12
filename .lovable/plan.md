@@ -1,37 +1,31 @@
 
-# Corrigir alinhamento da tabela de IPs
 
-## Problema
+# Adicionar Shodan API Key
 
-O componente `Collapsible` do Radix UI renderiza uma `<div>` ao redor dos `<tr>` da tabela, quebrando a estrutura HTML da `<table>`. Isso causa o desalinhamento visivel entre os headers (IP, Origem, Portas, Servicos, CVEs, Referencia) e os dados nas linhas.
+## O que sera feito
 
-## Solucao
+1. **Salvar o segredo `SHODAN_API_KEY`** como secret do Supabase (para uso direto nas Edge Functions)
+2. **Registrar a chave Shodan no painel de gestao** adicionando-a ao array `MANAGED_KEYS` na edge function `manage-api-keys`
 
-Remover o uso de `Collapsible`/`CollapsibleContent` e usar apenas `useState` para controlar a expansao de cada linha. Isso mantem a estrutura `<table> > <tbody> > <tr> > <td>` intacta.
+## Mudancas tecnicas
 
-## Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+### 1. Secret do Supabase
+Adicionar `SHODAN_API_KEY` com o valor fornecido como secret do projeto, para que a edge function `attack-surface-scan` consiga ler via `Deno.env.get("SHODAN_API_KEY")`.
 
-### Mudancas no componente `IPDetailRow`:
+### 2. Edge Function `supabase/functions/manage-api-keys/index.ts`
+Adicionar um novo item ao array `MANAGED_KEYS` (linha ~11):
 
-1. Remover `Collapsible`, `CollapsibleContent` e `CollapsibleTrigger` do componente
-2. Manter o `useState` para `open` que ja existe
-3. Renderizar diretamente um fragmento React (`<>`) contendo:
-   - O `<TableRow>` principal (clicavel para toggle)
-   - Condicionalmente (`{open && ...}`), um segundo `<tr>` com o conteudo expandido (o `<td colSpan={7}>` com detalhes)
-4. Remover os imports de `Collapsible`, `CollapsibleContent`, `CollapsibleTrigger` do topo do arquivo (se nao forem usados em outro lugar)
-
-### Resultado esperado:
-
-A estrutura DOM ficara correta:
-```text
-<table>
-  <thead><tr><th>IP</th><th>Origem</th>...</tr></thead>
-  <tbody>
-    <tr><td>3.133.227.151</td><td>DNS</td><td>0</td><td>0</td><td>0</td><td>briimage...</td><td>></td></tr>
-    <!-- se expandido: -->
-    <tr><td colspan="7">...detalhes...</td></tr>
-  </tbody>
-</table>
+```typescript
+{
+  name: "SHODAN_API_KEY",
+  label: "Shodan",
+  description: "Usada para enriquecimento de IPs no Attack Surface Analyzer (portas, serviços, CVEs)",
+},
 ```
 
-As colunas ficarao alinhadas corretamente com os headers.
+Isso fara a chave Shodan aparecer automaticamente na aba "Chaves de API" em Administracao > Configuracoes, no mesmo padrao visual das chaves VirusTotal e SecurityTrails ja existentes.
+
+### Resultado
+- A edge function `attack-surface-scan` podera usar `Deno.env.get("SHODAN_API_KEY")` imediatamente
+- No painel de Configuracoes, a chave Shodan aparecera com status "Configurada" (via variavel de ambiente) e podera ser gerenciada (atualizada/removida) como as demais
+
