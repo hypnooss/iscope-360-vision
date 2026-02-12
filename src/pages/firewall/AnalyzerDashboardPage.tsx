@@ -9,18 +9,72 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
+import { getCountryCode } from '@/lib/countryUtils';
+import { AttackMap } from '@/components/firewall/AttackMap';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
-  Globe, Wifi, Eye, Server, Lock, KeyRound,
+  Globe, Wifi, Eye, Server, Lock, KeyRound, Map, ExternalLink,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import 'flag-icons/css/flag-icons.min.css';
+import type { TopBlockedIP, TopCountry } from '@/types/analyzerInsights';
 
-interface FirewallOption {
-  id: string;
-  name: string;
+interface FirewallOption { id: string; name: string; }
+
+// Reusable country name + flag renderer
+function CountryName({ country }: { country: string }) {
+  const code = getCountryCode(country);
+  return (
+    <span className="flex items-center gap-1.5">
+      {code && <span className={`fi fi-${code} text-sm`} />}
+      <span>{country}</span>
+    </span>
+  );
+}
+
+// Reusable IP list widget
+function IPListWidget({ ips, title, icon: Icon }: { ips: TopBlockedIP[]; title: string; icon: any }) {
+  if (!ips?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
+  return (
+    <div className="space-y-2">
+      {ips.slice(0, 10).map((ip, i) => (
+        <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+          <div className="flex items-center gap-2 font-mono text-sm">
+            <span className="text-muted-foreground w-5">{i + 1}.</span>
+            <span className="text-foreground">{ip.ip}</span>
+            {ip.country && <span className="text-muted-foreground text-xs">(<CountryName country={ip.country} />)</span>}
+          </div>
+          <div className="flex items-center gap-3">
+            {ip.targetPorts?.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                Portas: {ip.targetPorts.slice(0, 3).join(', ')}{ip.targetPorts.length > 3 ? '...' : ''}
+              </span>
+            )}
+            <Badge variant="secondary" className="font-mono">{ip.count}</Badge>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Reusable country list widget
+function CountryListWidget({ countries }: { countries: TopCountry[] }) {
+  if (!countries?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
+  return (
+    <div className="space-y-2">
+      {countries.slice(0, 10).map((c, i) => (
+        <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+          <span className="text-sm text-foreground"><CountryName country={c.country} /></span>
+          <Badge variant="secondary" className="font-mono">{c.count}</Badge>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function AnalyzerDashboardPage() {
@@ -31,6 +85,7 @@ export default function AnalyzerDashboardPage() {
   const [firewalls, setFirewalls] = useState<FirewallOption[]>([]);
   const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) { navigate('/auth'); return; }
@@ -40,10 +95,7 @@ export default function AnalyzerDashboardPage() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('firewalls').select('id, name').order('name');
-      if (data && data.length > 0) {
-        setFirewalls(data);
-        setSelectedFirewall(data[0].id);
-      }
+      if (data && data.length > 0) { setFirewalls(data); setSelectedFirewall(data[0].id); }
     })();
   }, []);
 
@@ -53,9 +105,7 @@ export default function AnalyzerDashboardPage() {
     if (!selectedFirewall) return;
     setTriggering(true);
     try {
-      const res = await supabase.functions.invoke('trigger-firewall-analyzer', {
-        body: { firewall_id: selectedFirewall },
-      });
+      const res = await supabase.functions.invoke('trigger-firewall-analyzer', { body: { firewall_id: selectedFirewall } });
       const body = res.data;
       if (res.error || (body && !body.success)) {
         const msg = body?.error || res.error?.message || 'Falha ao disparar análise';
@@ -82,6 +132,14 @@ export default function AnalyzerDashboardPage() {
     { label: 'Low', value: snapshot?.summary?.low ?? 0, color: 'text-primary bg-primary/10 border-primary/30', icon: Info },
   ];
 
+  const m = snapshot?.metrics;
+
+  // Use split metrics when available, fallback to combined
+  const authIPsFailed = m?.topAuthIPsFailed?.length ? m.topAuthIPsFailed : m?.topAuthIPs ?? [];
+  const authIPsSuccess = m?.topAuthIPsSuccess ?? [];
+  const authCountriesFailed = m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? [];
+  const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
+
   if (authLoading) return null;
 
   return (
@@ -96,13 +154,9 @@ export default function AnalyzerDashboardPage() {
           </div>
           <div className="flex items-center gap-3">
             <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Selecionar firewall" />
-              </SelectTrigger>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Selecionar firewall" /></SelectTrigger>
               <SelectContent>
-                {firewalls.map(fw => (
-                  <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>
-                ))}
+                {firewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button onClick={handleTrigger} disabled={triggering || !selectedFirewall}>
@@ -116,10 +170,7 @@ export default function AnalyzerDashboardPage() {
         {snapshot && (
           <div className="mb-6 flex items-center gap-4">
             <div className="text-sm text-muted-foreground">Score de Risco</div>
-            <div className={cn(
-              'text-3xl font-bold',
-              (snapshot.score ?? 100) >= 75 ? 'text-success' : (snapshot.score ?? 100) >= 50 ? 'text-warning' : 'text-destructive'
-            )}>
+            <div className={cn('text-3xl font-bold', (snapshot.score ?? 100) >= 75 ? 'text-success' : (snapshot.score ?? 100) >= 50 ? 'text-warning' : 'text-destructive')}>
               {snapshot.score ?? '—'}
             </div>
             <Badge variant="outline" className="text-xs text-muted-foreground">
@@ -132,26 +183,45 @@ export default function AnalyzerDashboardPage() {
 
         {/* Severity Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {isLoading ? (
-            Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-          ) : (
-            severityCards.map(c => (
-              <Card key={c.label} className={cn('glass-card border', c.color)}>
-                <CardContent className="flex items-center gap-4 p-5">
-                  <c.icon className="w-8 h-8" />
-                  <div>
-                    <div className="text-2xl font-bold">{c.value}</div>
-                    <div className="text-xs opacity-80">{c.label}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
+          {isLoading
+            ? Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
+            : severityCards.map(c => (
+                <Card key={c.label} className={cn('glass-card border', c.color)}>
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <c.icon className="w-8 h-8" />
+                    <div>
+                      <div className="text-2xl font-bold">{c.value}</div>
+                      <div className="text-xs opacity-80">{c.label}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
         </div>
 
-        {/* Widgets */}
+        {/* Attack Map Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground">Visão Geográfica</h2>
+          <Button variant={showMap ? 'default' : 'outline'} size="sm" onClick={() => setShowMap(!showMap)}>
+            <Map className="w-4 h-4 mr-2" />
+            {showMap ? 'Ocultar Mapa' : 'Mapa de Ataques'}
+          </Button>
+        </div>
+
+        {showMap && snapshot && (
+          <Card className="glass-card mb-6">
+            <CardContent className="p-4">
+              <AttackMap
+                deniedCountries={m?.topCountries ?? []}
+                authFailedCountries={authCountriesFailed}
+                authSuccessCountries={authCountriesSuccess}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Widgets Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top Blocked IPs */}
+          {/* Top Blocked IPs - Denied Traffic */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -160,33 +230,12 @@ export default function AnalyzerDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-              ) : !snapshot?.metrics?.topBlockedIPs?.length ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
-              ) : (
-                <div className="space-y-2">
-                  {snapshot.metrics.topBlockedIPs.slice(0, 10).map((ip, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                      <div className="flex items-center gap-2 font-mono text-sm">
-                        <span className="text-muted-foreground w-5">{i + 1}.</span>
-                        <span className="text-foreground">{ip.ip}</span>
-                        {ip.country && <span className="text-muted-foreground text-xs">({ip.country})</span>}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground">
-                          Portas: {ip.targetPorts.slice(0, 3).join(', ')}{ip.targetPorts.length > 3 ? '...' : ''}
-                        </span>
-                        <Badge variant="secondary" className="font-mono">{ip.count}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+                : <IPListWidget ips={m?.topBlockedIPs ?? []} title="IPs Bloqueados" icon={Globe} />}
             </CardContent>
           </Card>
 
-          {/* Top Countries */}
+          {/* Top Countries - Denied Traffic */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -195,24 +244,12 @@ export default function AnalyzerDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-              ) : !snapshot?.metrics?.topCountries?.length ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
-              ) : (
-                <div className="space-y-2">
-                  {snapshot.metrics.topCountries.slice(0, 10).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                      <span className="text-sm text-foreground">{c.country}</span>
-                      <Badge variant="secondary" className="font-mono">{c.count}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+                : <CountryListWidget countries={m?.topCountries ?? []} />}
             </CardContent>
           </Card>
 
-          {/* Top Auth IPs */}
+          {/* Top Auth IPs - with tabs */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -221,28 +258,24 @@ export default function AnalyzerDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-              ) : !snapshot?.metrics?.topAuthIPs?.length ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
-              ) : (
-                <div className="space-y-2">
-                  {snapshot.metrics.topAuthIPs.slice(0, 10).map((ip, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                      <div className="flex items-center gap-2 font-mono text-sm">
-                        <span className="text-muted-foreground w-5">{i + 1}.</span>
-                        <span className="text-foreground">{ip.ip}</span>
-                        {ip.country && <span className="text-muted-foreground text-xs">({ip.country})</span>}
-                      </div>
-                      <Badge variant="secondary" className="font-mono">{ip.count}</Badge>
-                    </div>
-                  ))}
-                </div>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="failed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="failed">Falhas</TabsTrigger>
+                    <TabsTrigger value="success">Sucessos</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="failed">
+                    <IPListWidget ips={authIPsFailed} title="Falhas" icon={KeyRound} />
+                  </TabsContent>
+                  <TabsContent value="success">
+                    <IPListWidget ips={authIPsSuccess} title="Sucessos" icon={KeyRound} />
+                  </TabsContent>
+                </Tabs>
               )}
             </CardContent>
           </Card>
 
-          {/* Top Auth Countries */}
+          {/* Top Auth Countries - with tabs */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -251,19 +284,19 @@ export default function AnalyzerDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-              ) : !snapshot?.metrics?.topAuthCountries?.length ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
-              ) : (
-                <div className="space-y-2">
-                  {snapshot.metrics.topAuthCountries.slice(0, 10).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                      <span className="text-sm text-foreground">{c.country}</span>
-                      <Badge variant="secondary" className="font-mono">{c.count}</Badge>
-                    </div>
-                  ))}
-                </div>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="failed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="failed">Falhas</TabsTrigger>
+                    <TabsTrigger value="success">Sucessos</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="failed">
+                    <CountryListWidget countries={authCountriesFailed} />
+                  </TabsContent>
+                  <TabsContent value="success">
+                    <CountryListWidget countries={authCountriesSuccess} />
+                  </TabsContent>
+                </Tabs>
               )}
             </CardContent>
           </Card>
@@ -279,18 +312,31 @@ export default function AnalyzerDashboardPage() {
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {[
-                  { label: 'Tráfego Negado', value: snapshot?.metrics?.totalDenied ?? 0, icon: Shield },
-                  { label: 'Login Firewall', value: snapshot?.metrics?.firewallAuthFailures ?? 0, icon: Lock },
-                  { label: 'Falhas VPN', value: snapshot?.metrics?.vpnFailures ?? 0, icon: Wifi },
-                  { label: 'Eventos IPS', value: snapshot?.metrics?.ipsEvents ?? 0, icon: AlertTriangle },
-                  { label: 'Alterações Config', value: snapshot?.metrics?.configChanges ?? 0, icon: Server },
+                  { label: 'Tráfego Negado', value: m?.totalDenied ?? 0, icon: Shield },
+                  { label: 'Login Firewall', value: m?.firewallAuthFailures ?? 0, icon: Lock },
+                  { label: 'Falhas VPN', value: m?.vpnFailures ?? 0, icon: Wifi },
+                  { label: 'Eventos IPS', value: m?.ipsEvents ?? 0, icon: AlertTriangle },
+                  {
+                    label: 'Alterações Config',
+                    value: m?.configChanges ?? 0,
+                    icon: Server,
+                    onClick: () => navigate('/scope-firewall/analyzer/config-changes'),
+                  },
                 ].map(s => (
-                  <div key={s.label} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <div
+                    key={s.label}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-lg bg-secondary/30',
+                      'onClick' in s && s.onClick && 'cursor-pointer hover:bg-secondary/50 transition-colors'
+                    )}
+                    onClick={'onClick' in s ? s.onClick : undefined}
+                  >
                     <s.icon className="w-5 h-5 text-muted-foreground" />
-                    <div>
+                    <div className="flex-1">
                       <div className="text-lg font-bold text-foreground">{s.value}</div>
                       <div className="text-xs text-muted-foreground">{s.label}</div>
                     </div>
+                    {'onClick' in s && s.onClick && <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />}
                   </div>
                 ))}
               </div>
