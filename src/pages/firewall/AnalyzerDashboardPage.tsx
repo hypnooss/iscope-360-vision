@@ -37,24 +37,37 @@ function CountryName({ country }: { country: string }) {
 }
 
 // Reusable IP list widget
-function IPListWidget({ ips, title, icon: Icon }: { ips: TopBlockedIP[]; title: string; icon: any }) {
+function IPListWidget({ ips }: { ips: TopBlockedIP[] }) {
   if (!ips?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
+  const maxCount = Math.max(...ips.map(ip => ip.count), 1);
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {ips.slice(0, 10).map((ip, i) => (
-        <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-          <div className="flex items-center gap-2 font-mono text-sm">
-            <span className="text-muted-foreground w-5">{i + 1}.</span>
-            <span className="text-foreground">{ip.ip}</span>
-            {ip.country && <span className="text-muted-foreground text-xs">(<CountryName country={ip.country} />)</span>}
-          </div>
+        <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
           <div className="flex items-center gap-3">
+            <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+              {i + 1}
+            </span>
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <span className="font-mono text-sm font-medium text-foreground">{ip.ip}</span>
+              {ip.country && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                  <CountryName country={ip.country} />
+                </span>
+              )}
+            </div>
             {ip.targetPorts?.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                Portas: {ip.targetPorts.slice(0, 3).join(', ')}{ip.targetPorts.length > 3 ? '...' : ''}
+              <span className="text-[10px] text-muted-foreground hidden md:inline shrink-0">
+                {ip.targetPorts.slice(0, 3).join(', ')}{ip.targetPorts.length > 3 ? '…' : ''}
               </span>
             )}
-            <Badge variant="secondary" className="font-mono">{ip.count}</Badge>
+            <Badge variant="secondary" className="font-mono text-xs shrink-0">{ip.count}</Badge>
+          </div>
+          <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary/50 rounded-full transition-all"
+              style={{ width: `${(ip.count / maxCount) * 100}%` }}
+            />
           </div>
         </div>
       ))}
@@ -231,7 +244,7 @@ export default function AnalyzerDashboardPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-                : <IPListWidget ips={m?.topBlockedIPs ?? []} title="IPs Bloqueados" icon={Globe} />}
+                : <IPListWidget ips={m?.topBlockedIPs ?? []} />}
             </CardContent>
           </Card>
 
@@ -265,10 +278,10 @@ export default function AnalyzerDashboardPage() {
                     <TabsTrigger value="success">Sucessos</TabsTrigger>
                   </TabsList>
                   <TabsContent value="failed">
-                    <IPListWidget ips={authIPsFailed} title="Falhas" icon={KeyRound} />
+                    <IPListWidget ips={authIPsFailed} />
                   </TabsContent>
                   <TabsContent value="success">
-                    <IPListWidget ips={authIPsSuccess} title="Sucessos" icon={KeyRound} />
+                    <IPListWidget ips={authIPsSuccess} />
                   </TabsContent>
                 </Tabs>
               )}
