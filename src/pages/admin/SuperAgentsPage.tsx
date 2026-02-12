@@ -539,7 +539,7 @@ export default function SuperAgentsPage() {
               <DialogDescription>Copie e cole o comando no servidor Linux para ativar o Super Agent.</DialogDescription>
             </DialogHeader>
             {instructionsAgent?.activation_code && (
-              <div className="py-2"><AgentInstallInstructions activationCode={instructionsAgent.activation_code} /></div>
+              <div className="py-2"><AgentInstallInstructions activationCode={instructionsAgent.activation_code} isSuperAgent /></div>
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setInstructionsOpen(false)}>Fechar</Button>
