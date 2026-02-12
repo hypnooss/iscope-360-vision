@@ -48,113 +48,71 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      // Get workspace IDs for filtering in preview mode
       const workspaceIds = isPreviewMode && previewTarget?.workspaces
         ? previewTarget.workspaces.map(w => w.id)
         : null;
 
-      // Build queries with optional filtering
-      let clientsQuery = supabase.from('clients').select('id', { count: 'exact', head: true });
-      let firewallsQuery = supabase.from('firewalls').select('id, client_id', { count: 'exact' });
-
-      if (workspaceIds && workspaceIds.length > 0) {
-        clientsQuery = clientsQuery.in('id', workspaceIds);
-        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
-      }
-
-      const [clientsRes, firewallsRes] = await Promise.all([
-        clientsQuery,
-        firewallsQuery,
-      ]);
-
-      const totalClients = clientsRes.count || 0;
-      const totalFirewalls = firewallsRes.count || 0;
-
-      // Get firewall IDs for filtering analysis history
-      const firewallIds = (firewallsRes.data || []).map((f: any) => f.id);
-
-      // Fetch analysis history filtered by accessible firewalls
-      let historyQuery = supabase.from('analysis_history').select('id, score', { count: 'exact' }).limit(100);
-      if (workspaceIds && workspaceIds.length > 0 && firewallIds.length > 0) {
-        historyQuery = historyQuery.in('firewall_id', firewallIds);
-      } else if (workspaceIds && workspaceIds.length > 0 && firewallIds.length === 0) {
-        // No accessible firewalls, return empty result
-        setStats({
-          totalClients,
-          totalFirewalls: 0,
-          recentAnalyses: 0,
-          averageScore: 0,
-          criticalIssues: 0,
-          pendingSchedules: 0,
-        });
-        setRecentAnalyses([]);
-        setLoading(false);
-        return;
-      }
-
-      const historyRes = await historyQuery;
-      const analyses = historyRes.data || [];
-      
-      const averageScore = analyses.length > 0
-        ? Math.round(analyses.reduce((sum, a) => sum + a.score, 0) / analyses.length)
-        : 0;
-
-      // Fetch recent analyses with firewall info
+      // Build all queries
+      let clientsQuery = supabase.from('clients').select('id, name');
+      let firewallsQuery = supabase.from('firewalls').select('id, name, client_id, last_score');
       let recentQuery = supabase
         .from('analysis_history')
         .select('id, score, created_at, firewall_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (workspaceIds && workspaceIds.length > 0 && firewallIds.length > 0) {
-        recentQuery = recentQuery.in('firewall_id', firewallIds);
+      if (workspaceIds && workspaceIds.length > 0) {
+        clientsQuery = clientsQuery.in('id', workspaceIds);
+        firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
       }
 
-      const { data: recentData, error: recentError } = await recentQuery;
+      // Execute ALL queries in parallel (single round-trip)
+      const [clientsRes, firewallsRes, recentRes] = await Promise.all([
+        clientsQuery,
+        firewallsQuery,
+        recentQuery,
+      ]);
 
-      if (recentError) {
-        console.error('Error fetching recent analyses:', recentError);
+      const clientsData = clientsRes.data || [];
+      const firewallsData = firewallsRes.data || [];
+      const recentData = recentRes.data || [];
+
+      // Build lookup maps from already-fetched data
+      const firewallMap = new Map(firewallsData.map(f => [f.id, f]));
+      const clientMap = new Map(clientsData.map(c => [c.id, c]));
+
+      // Calculate stats from firewalls.last_score (no extra queries)
+      const firewallsWithScore = firewallsData.filter(f => f.last_score != null);
+      const averageScore = firewallsWithScore.length > 0
+        ? Math.round(firewallsWithScore.reduce((sum, f) => sum + (f.last_score || 0), 0) / firewallsWithScore.length)
+        : 0;
+
+      // Filter recent analyses by accessible firewalls in preview mode
+      let filteredRecent = recentData;
+      if (workspaceIds && workspaceIds.length > 0) {
+        const firewallIds = new Set(firewallsData.map(f => f.id));
+        filteredRecent = recentData.filter(a => firewallIds.has(a.firewall_id));
       }
 
-      // Get firewall and client info separately
-      const formattedRecent: RecentAnalysis[] = [];
-      if (recentData && recentData.length > 0) {
-        const recentFirewallIds = [...new Set(recentData.map(a => a.firewall_id))];
-        
-        const { data: firewallsData } = await supabase
-          .from('firewalls')
-          .select('id, name, client_id')
-          .in('id', recentFirewallIds);
-
-        const clientIds = [...new Set((firewallsData || []).map(f => f.client_id))];
-        
-        const { data: clientsData } = await supabase
-          .from('clients')
-          .select('id, name')
-          .in('id', clientIds);
-
-        const firewallMap = new Map((firewallsData || []).map(f => [f.id, f]));
-        const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
-
-        for (const item of recentData) {
-          const firewall = firewallMap.get(item.firewall_id);
-          const client = firewall ? clientMap.get(firewall.client_id) : null;
-          formattedRecent.push({
-            id: item.id,
-            firewall_name: firewall?.name || 'N/A',
-            client_name: client?.name || 'N/A',
-            score: item.score,
-            created_at: item.created_at,
-          });
-        }
-      }
+      // Resolve names using Maps (no additional queries)
+      const formattedRecent: RecentAnalysis[] = filteredRecent.map(item => {
+        const firewall = firewallMap.get(item.firewall_id);
+        const client = firewall ? clientMap.get(firewall.client_id) : null;
+        return {
+          id: item.id,
+          firewall_name: firewall?.name || 'N/A',
+          client_name: client?.name || 'N/A',
+          score: item.score,
+          created_at: item.created_at,
+        };
+      });
 
       setStats({
-        totalClients,
-        totalFirewalls,
-        recentAnalyses: analyses.length,
+        totalClients: clientsData.length,
+        totalFirewalls: firewallsData.length,
+        recentAnalyses: firewallsWithScore.length,
         averageScore,
-        criticalIssues: analyses.filter(a => a.score < 50).length,
+        criticalIssues: firewallsData.filter(f => f.last_score != null && f.last_score < 50).length,
         pendingSchedules: 0,
       });
 
