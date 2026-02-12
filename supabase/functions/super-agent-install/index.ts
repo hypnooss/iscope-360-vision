@@ -615,22 +615,22 @@ check_and_install_httpx() {
     fi
     log "httpx ausente. Instalando..."
     local arch
-    arch="$(uname -m)"
-    case "$arch" in
+    arch="\$(uname -m)"
+    case "\$arch" in
         x86_64)  arch="amd64" ;;
         aarch64) arch="arm64" ;;
         *)
-            log_error "Arquitetura $arch não suportada para httpx"
+            log_error "Arquitetura \$arch não suportada para httpx"
             return 1
             ;;
     esac
     local version="1.6.9"
-    local url="https://github.com/projectdiscovery/httpx/releases/download/v${version}/httpx_${version}_linux_${arch}.zip"
+    local url="https://github.com/projectdiscovery/httpx/releases/download/v\${version}/httpx_\${version}_linux_\${arch}.zip"
     local tmp_dir
-    tmp_dir="$(mktemp -d)"
-    curl -fsSL "$url" -o "${tmp_dir}/httpx.zip" 2>/dev/null || {
+    tmp_dir="\$(mktemp -d)"
+    curl -fsSL "\$url" -o "\${tmp_dir}/httpx.zip" 2>/dev/null || {
         log_error "Falha ao baixar httpx"
-        rm -rf "$tmp_dir"
+        rm -rf "\$tmp_dir"
         return 1
     }
     if ! command -v unzip >/dev/null 2>&1; then
@@ -640,19 +640,19 @@ check_and_install_httpx() {
             dnf install -y unzip 2>/dev/null || true
         fi
     fi
-    unzip -q "${tmp_dir}/httpx.zip" -d "$tmp_dir" 2>/dev/null
+    unzip -q "\${tmp_dir}/httpx.zip" -d "\$tmp_dir" 2>/dev/null
     local bin_path
-    bin_path="$(find "$tmp_dir" -name 'httpx' -type f 2>/dev/null | head -1)"
-    if [[ -n "$bin_path" ]]; then
-        mv "$bin_path" /usr/local/bin/httpx
+    bin_path="\$(find "\$tmp_dir" -name 'httpx' -type f 2>/dev/null | head -1)"
+    if [[ -n "\$bin_path" ]]; then
+        mv "\$bin_path" /usr/local/bin/httpx
         chmod +x /usr/local/bin/httpx
         log "httpx instalado em /usr/local/bin/httpx"
     else
         log_error "Binário httpx não encontrado no pacote"
-        rm -rf "$tmp_dir"
+        rm -rf "\$tmp_dir"
         return 1
     fi
-    rm -rf "$tmp_dir"
+    rm -rf "\$tmp_dir"
     return 0
 }
 
