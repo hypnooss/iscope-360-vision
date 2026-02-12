@@ -1,101 +1,38 @@
 
+# Fix: Race condition no seletor de Workspace em Dominios Externos
 
-# Redesign da pagina Usuarios (estilo Firewalls/Agendamentos)
+## Problema
 
-## Resumo
+O seletor de Workspace exibe "BRINQUEDOS ESTRELA" mas a tabela mostra dominios de PRECISIO, MOVECTA e OURO SAFRA. Isso ocorre por uma condicao de corrida (race condition) no carregamento dos dados:
 
-Aplicar o mesmo layout das paginas de Firewalls e Dominios Externos: titulo atualizado, seletor de workspace para super roles, cards compactos de estatisticas, barra de busca e tabela com badges coloridos (sem card wrapper com header separado).
+1. O componente monta com `selectedWorkspaceId = null` e `isSuperRole = false` (role ainda nao carregou)
+2. `fetchData` dispara imediatamente sem filtro, buscando TODOS os dominios
+3. Depois, `effectiveRole` carrega como `super_admin`, o auto-select define o workspace
+4. `fetchData` dispara novamente COM filtro
+5. Se a busca sem filtro (passo 2) resolve DEPOIS da busca filtrada (passo 4), ela sobrescreve os dados corretos
 
-## Mudancas no arquivo `src/pages/UsersPage.tsx`
+## Solucao
 
-### 1. Titulo
-- "Usuarios" -> "Gerenciamento de Usuarios"
-- Breadcrumb atualizado para "Gerenciamento de Usuarios"
+### Arquivo: `src/pages/external-domain/ExternalDomainListPage.tsx`
 
-### 2. Seletor de Workspace (Super Admin / Super Suporte)
-Identico ao FirewallListPage:
-- Importar `useEffectiveAuth`, `useQuery` do tanstack
-- Estado `selectedWorkspaceId` (inicial `null`)
-- `useQuery` para buscar workspaces da tabela `clients` (staleTime 5min)
-- Auto-selecionar primeiro workspace
-- Renderizar seletor ao lado do botao "Convidar Usuario"
-- Integrar filtro no `fetchData`: quando super role e workspace selecionado, filtrar `user_clients` e `clients` por esse workspace
+**Impedir fetchData de rodar quando super role ainda nao tem workspace selecionado:**
 
-### 3. Cards compactos de estatisticas (inline)
-Substituir o card "Lista de Usuarios" por 4 cards compactos calculados via `useMemo`:
-- **Total de Usuarios** (Users icon)
-- **Workspace Admins** (Shield icon) - contagem de users com role workspace_admin
-- **Com Modulos** (Layers icon) - usuarios com pelo menos 1 modulo atribuido
-- **Sem Workspace** (Building icon) - usuarios sem nenhum client_id
+Adicionar uma guarda no useEffect de fetch (linha 126): se o usuario e super role e nao esta em preview mode, so disparar fetchData quando `selectedWorkspaceId` estiver definido. Isso elimina a busca inicial sem filtro.
 
-### 4. Barra de busca
-- Input com icone `Search` e placeholder "Buscar usuario..."
-- Filtro local por nome, email ou workspace name
-
-### 5. Refatorar tabela (flat style)
-Remover `CardHeader` com "Lista de Usuarios". Usar `Card` + `CardContent p-0`:
-- **Usuario**: font-medium + email em text-muted-foreground (manter como esta)
-- **Role**: Badge colorido (manter `getRoleBadge` existente)
-- **Modulos**: Badges secondary (manter logica existente)
-- **Clientes**: Badges secondary (manter logica existente)
-- **Cadastro**: data formatada
-- **Acoes**: botoes ghost (manter como estao)
-
-### Secao tecnica
-
-**Imports a adicionar**: `useEffectiveAuth`, `useQuery` do @tanstack/react-query, `Search`, `Input`, `Building2`, `TrendingUp`, `AlertTriangle`
-
-**Workspace query** (identico ao Firewall):
-```
-const { effectiveRole } = useEffectiveAuth();
-const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-
-const { data: allWorkspaces } = useQuery({
-  queryKey: ['clients-list'],
-  queryFn: async () => {
-    const { data } = await supabase.from('clients').select('id, name').order('name');
-    return data ?? [];
-  },
-  enabled: isSuperRole && !isPreviewMode,
-  staleTime: 1000 * 60 * 5,
-});
-```
-
-**Auto-selecao**:
-```
+```typescript
 useEffect(() => {
-  if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
-    setSelectedWorkspaceId(allWorkspaces[0].id);
+  if (user && hasModuleAccess('scope_external_domain')) {
+    // Super roles must wait for workspace selection before fetching
+    if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
+    fetchData();
   }
-}, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+}, [user, isPreviewMode, previewTarget, selectedWorkspaceId, isSuperRole]);
 ```
 
-**Filtro de workspace no fetchData**: Quando `isSuperRole && selectedWorkspaceId`, usar `selectedWorkspaceId` como filtro (mesma logica do preview mode). Adicionar `selectedWorkspaceId` ao array de dependencias do useEffect de fetch.
+Mudancas:
+- Adicionar `isSuperRole` ao array de dependencias
+- Adicionar guarda: se `isSuperRole && !isPreviewMode && !selectedWorkspaceId`, retornar sem buscar
 
-**Stats**:
-```
-const stats = useMemo(() => ({
-  total: users.length,
-  admins: users.filter(u => u.role === 'workspace_admin').length,
-  withModules: users.filter(u => (u.module_permissions?.filter(p => p.permission !== 'none').length || 0) > 0).length,
-  noWorkspace: users.filter(u => !u.client_ids?.length).length,
-}), [users]);
-```
-
-**Busca**:
-```
-const [search, setSearch] = useState('');
-const filtered = useMemo(() => {
-  if (!search) return users;
-  const q = search.toLowerCase();
-  return users.filter(u =>
-    u.full_name?.toLowerCase().includes(q) ||
-    u.email.toLowerCase().includes(q) ||
-    getClientNames(u.client_ids).some(n => n.toLowerCase().includes(q))
-  );
-}, [users, search, clients]);
-```
-
-**Dialogs e funcoes existentes**: `openEditDialog`, `handleSave`, `handleDeleteUser`, `getRoleBadge`, `toggleClient`, `setModulePermission`, `getClientNames`, `getModuleNames`, `canEditUser`, `canDeleteUser`, `getAssignableClients`, `getAvailableRoles` -- todos permanecem inalterados.
-
+Essa mesma correcao deve ser verificada/aplicada nos outros arquivos que usam o mesmo padrao:
+- `src/pages/firewall/FirewallListPage.tsx` (mesmo padrao)
+- `src/pages/UsersPage.tsx` (mesmo padrao)
