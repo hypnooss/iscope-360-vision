@@ -251,6 +251,33 @@ install_scanner_tools() {
 }
 
 install_masscan_from_source() {
+  echo "Tentando instalar masscan via binário ou compilação..."
+
+  # --- Tentativa 1: Download de binário pré-compilado ---
+  local arch
+  arch="\$(uname -m)"
+  local bin_arch=""
+  case "\$arch" in
+    x86_64)  bin_arch="amd64" ;;
+    aarch64) bin_arch="arm64" ;;
+  esac
+
+  if [[ -n "\$bin_arch" ]]; then
+    echo "Tentando baixar binário masscan para \$bin_arch..."
+    local masscan_url="https://github.com/robertdavidgraham/masscan/releases/latest/download/masscan-linux-\${bin_arch}"
+    local tmp_bin
+    tmp_bin="\$(mktemp)"
+    if curl -fsSL "\$masscan_url" -o "\$tmp_bin" 2>/dev/null && file "\$tmp_bin" | grep -qi "elf"; then
+      chmod +x "\$tmp_bin"
+      mv "\$tmp_bin" /usr/local/bin/masscan
+      echo "masscan binário instalado em /usr/local/bin/masscan"
+      return
+    fi
+    rm -f "\$tmp_bin"
+    echo "Binário pré-compilado não disponível. Tentando compilar do fonte..."
+  fi
+
+  # --- Tentativa 2: Compilação do fonte ---
   echo "Compilando masscan a partir do código-fonte..."
   local tmp_dir
   tmp_dir="\$(mktemp -d)"
@@ -258,13 +285,33 @@ install_masscan_from_source() {
   if command -v apt-get >/dev/null 2>&1; then
     apt-get install -y git make gcc libpcap-dev || true
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y git make gcc libpcap-devel || true
+    # Habilitar repositórios CRB/CodeReady Builder (necessário para libpcap-devel no OL/RHEL 9)
+    echo "Habilitando repositórios adicionais para dependências de compilação..."
+    dnf config-manager --set-enabled crb 2>/dev/null || true
+    dnf config-manager --set-enabled ol9_codeready_builder 2>/dev/null || true
+    dnf config-manager --set-enabled ol9_developer_EPEL 2>/dev/null || true
+
+    # Instalar git separadamente (vem do appstream, geralmente disponível)
+    echo "Instalando git..."
+    dnf install -y git 2>/dev/null || true
+
+    # Instalar dependências de compilação
+    echo "Instalando dependências de compilação (make, gcc, libpcap-devel)..."
+    dnf install -y make gcc libpcap-devel 2>/dev/null || {
+      echo "Tentando instalar libpcap-devel com --enablerepo=* ..."
+      dnf install -y --enablerepo='*' libpcap-devel 2>/dev/null || true
+    }
   fi
 
   if ! command -v git >/dev/null 2>&1; then
-    echo "Aviso: git não disponível. Não foi possível compilar masscan."
+    echo "Aviso: git não disponível após tentativas de instalação. Não foi possível compilar masscan."
     rm -rf "\$tmp_dir"
     return
+  fi
+
+  # Verificar se libpcap-devel foi instalado (necessário para compilação)
+  if ! rpm -q libpcap-devel >/dev/null 2>&1 && ! dpkg -s libpcap-dev >/dev/null 2>&1; then
+    echo "Aviso: libpcap-devel não instalado. Tentando compilar mesmo assim..."
   fi
 
   git clone --depth 1 https://github.com/robertdavidgraham/masscan.git "\$tmp_dir/masscan" 2>/dev/null || {
@@ -280,7 +327,7 @@ install_masscan_from_source() {
   if command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]; then
     echo "masscan compilado e instalado em /usr/local/bin/masscan"
   else
-    echo "Aviso: falha ao compilar masscan."
+    echo "Aviso: falha ao compilar masscan. Verifique se libpcap-devel está disponível."
   fi
 }
 
