@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -88,7 +88,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
   );
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <>
       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => setOpen(!open)}>
         <TableCell className="font-mono font-medium">{ip}</TableCell>
         <TableCell>
@@ -105,7 +105,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
         </TableCell>
       </TableRow>
 
-      <CollapsibleContent asChild>
+      {open && (
         <tr>
           <td colSpan={7} className="p-0">
             <div className="bg-muted/30 border-t border-border/50 p-4 space-y-3">
@@ -198,8 +198,8 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
             </div>
           </td>
         </tr>
-      </CollapsibleContent>
-    </Collapsible>
+      )}
+    </>
   );
 }
 
