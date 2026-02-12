@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Timer,
   Play,
+  XCircle,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -31,6 +32,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot,
   useAttackSurfaceScan,
+  useAttackSurfaceCancelScan,
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
 } from '@/hooks/useAttackSurfaceData';
@@ -417,6 +419,7 @@ export default function AttackSurfaceAnalyzerPage() {
   const selectedClientId = isSuperRole ? selectedWorkspaceId : userClientId;
 
   const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
+  const cancelMutation = useAttackSurfaceCancelScan(selectedClientId ?? undefined);
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
@@ -466,11 +469,11 @@ export default function AttackSurfaceAnalyzerPage() {
                 </Select>
               )}
 
-              {isSuperRole && (
+              {isSuperRole && !isRunning && (
                 <Button
                   size="sm"
                   onClick={() => scanMutation.mutate()}
-                  disabled={isRunning || scanMutation.isPending}
+                  disabled={scanMutation.isPending}
                 >
                   {scanMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -478,6 +481,21 @@ export default function AttackSurfaceAnalyzerPage() {
                     <Play className="w-4 h-4" />
                   )}
                   Disparar Scan
+                </Button>
+              )}
+              {isSuperRole && isRunning && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => cancelMutation.mutate()}
+                  disabled={cancelMutation.isPending}
+                >
+                  {cancelMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <XCircle className="w-4 h-4" />
+                  )}
+                  Cancelar Scan
                 </Button>
               )}
             </div>
