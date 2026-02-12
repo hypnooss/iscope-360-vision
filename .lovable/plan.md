@@ -1,38 +1,99 @@
 
-# Fix: Race condition no seletor de Workspace em Dominios Externos
+# Redesign da pagina Agents (estilo Firewalls/Dominios Externos/Usuarios)
 
-## Problema
+## Resumo
 
-O seletor de Workspace exibe "BRINQUEDOS ESTRELA" mas a tabela mostra dominios de PRECISIO, MOVECTA e OURO SAFRA. Isso ocorre por uma condicao de corrida (race condition) no carregamento dos dados:
+Aplicar o mesmo layout padrao: titulo atualizado para "Gerenciamento de Agents", seletor de workspace para super roles, cards compactos de estatisticas, barra de busca e tabela flat (sem CardHeader separado).
 
-1. O componente monta com `selectedWorkspaceId = null` e `isSuperRole = false` (role ainda nao carregou)
-2. `fetchData` dispara imediatamente sem filtro, buscando TODOS os dominios
-3. Depois, `effectiveRole` carrega como `super_admin`, o auto-select define o workspace
-4. `fetchData` dispara novamente COM filtro
-5. Se a busca sem filtro (passo 2) resolve DEPOIS da busca filtrada (passo 4), ela sobrescreve os dados corretos
+## Mudancas no arquivo `src/pages/AgentsPage.tsx`
 
-## Solucao
+### 1. Titulo
+- "Agents" -> "Gerenciamento de Agents"
+- Breadcrumb atualizado para "Gerenciamento de Agents"
+- Subtitulo mantido
 
-### Arquivo: `src/pages/external-domain/ExternalDomainListPage.tsx`
+### 2. Seletor de Workspace (Super Admin / Super Suporte)
+- Importar `useEffectiveAuth` e `useQuery` do tanstack
+- Estado `selectedWorkspaceId` (inicial `null`)
+- `useQuery` para buscar workspaces da tabela `clients` (staleTime 5min)
+- Auto-selecionar primeiro workspace via useEffect
+- Renderizar seletor entre o titulo e o botao "Novo Agent"
+- Integrar filtro no `fetchData`: quando super role e workspace selecionado, filtrar agents por `client_id` e clients por `id`
+- Guarda no useEffect de fetch: super roles aguardam workspace antes de buscar
 
-**Impedir fetchData de rodar quando super role ainda nao tem workspace selecionado:**
+### 3. Cards compactos de estatisticas (inline via useMemo)
+Substituir o CardHeader "Lista de Agents" por 4 cards compactos:
+- **Bot / Total Agents**: `agents.length`
+- **Check / Online**: agents com last_seen nos ultimos 5 min e nao revogados
+- **Clock / Pendentes**: agents sem last_seen e nao revogados
+- **Ban / Revogados**: agents com `revoked === true`
 
-Adicionar uma guarda no useEffect de fetch (linha 126): se o usuario e super role e nao esta em preview mode, so disparar fetchData quando `selectedWorkspaceId` estiver definido. Isso elimina a busca inicial sem filtro.
+### 4. Barra de busca
+- Input com icone `Search` e placeholder "Buscar agent..."
+- Filtro local por nome do agent ou nome do workspace (client_name)
 
-```typescript
-useEffect(() => {
-  if (user && hasModuleAccess('scope_external_domain')) {
-    // Super roles must wait for workspace selection before fetching
-    if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
-    fetchData();
-  }
-}, [user, isPreviewMode, previewTarget, selectedWorkspaceId, isSuperRole]);
+### 5. Refatorar tabela (flat style)
+- Remover `CardHeader` com "Lista de Agents"
+- Usar `Card` + `CardContent p-0` (sem glass-card)
+- Manter colunas: Nome, Cliente, Versao, Status, Last Seen, Acoes
+- Badges de status com cores existentes (mantidas)
+- Acoes mantidas identicas
+
+### 6. Race condition fix
+- Adicionar guarda no useEffect: `if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;`
+- Adicionar `selectedWorkspaceId` e `isSuperRole` nas dependencias do useEffect e do useCallback
+
+### Secao tecnica
+
+**Imports a adicionar**: `useEffectiveAuth`, `useQuery` do @tanstack/react-query, `Search`, `Building2`, `Shield`, `Skeleton`
+
+**Imports a remover**: nenhum
+
+**Workspace query e auto-select** (identico ao Firewall/Dominios/Usuarios):
+```text
+const { effectiveRole } = useEffectiveAuth();
+const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+const [search, setSearch] = useState('');
+
+const { data: allWorkspaces } = useQuery({
+  queryKey: ['clients-list'],
+  queryFn: ...,
+  enabled: isSuperRole && !isPreviewMode,
+  staleTime: 5min,
+});
 ```
 
-Mudancas:
-- Adicionar `isSuperRole` ao array de dependencias
-- Adicionar guarda: se `isSuperRole && !isPreviewMode && !selectedWorkspaceId`, retornar sem buscar
+**fetchData atualizado** (useCallback):
+```text
+const workspaceIds = isPreviewMode && previewTarget?.workspaces
+  ? previewTarget.workspaces.map(w => w.id)
+  : (isSuperRole && selectedWorkspaceId ? [selectedWorkspaceId] : null);
+```
 
-Essa mesma correcao deve ser verificada/aplicada nos outros arquivos que usam o mesmo padrao:
-- `src/pages/firewall/FirewallListPage.tsx` (mesmo padrao)
-- `src/pages/UsersPage.tsx` (mesmo padrao)
+**Stats**:
+```text
+const stats = useMemo(() => {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+  return {
+    total: agents.length,
+    online: agents.filter(a => !a.revoked && a.last_seen && new Date(a.last_seen) > fiveMinAgo).length,
+    pending: agents.filter(a => !a.revoked && !a.last_seen).length,
+    revoked: agents.filter(a => a.revoked).length,
+  };
+}, [agents]);
+```
+
+**Busca**:
+```text
+const filtered = useMemo(() => {
+  if (!search) return agents;
+  const q = search.toLowerCase();
+  return agents.filter(a =>
+    a.name.toLowerCase().includes(q) ||
+    a.client_name?.toLowerCase().includes(q)
+  );
+}, [agents, search]);
+```
+
+**Dialogs e funcoes existentes**: `handleCreateAgent`, `handleRevokeAgent`, `handleDeleteAgent`, `openInstructions`, `getAgentStatus`, `generateActivationCode` -- todos permanecem inalterados.
