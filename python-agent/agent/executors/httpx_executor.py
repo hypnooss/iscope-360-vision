@@ -27,8 +27,8 @@ class HttpxExecutor(BaseExecutor):
         ports = params.get('ports', [])
         if not ports:
             all_ports = context.get('ports', [])
-            # Filter to likely HTTP ports
-            ports = [p for p in all_ports if p in self.DEFAULT_HTTP_PORTS] or self.DEFAULT_HTTP_PORTS[:4]
+            # Probe all discovered ports - web servers can run on any port
+            ports = all_ports if all_ports else self.DEFAULT_HTTP_PORTS[:4]
 
         port_str = ','.join(str(p) for p in ports)
         timeout = params.get('timeout', 60)
