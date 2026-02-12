@@ -78,12 +78,26 @@ function IPListWidget({ ips }: { ips: TopBlockedIP[] }) {
 // Reusable country list widget
 function CountryListWidget({ countries }: { countries: TopCountry[] }) {
   if (!countries?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
+  const maxCount = Math.max(...countries.map(c => c.count), 1);
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {countries.slice(0, 10).map((c, i) => (
-        <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-          <span className="text-sm text-foreground"><CountryName country={c.country} /></span>
-          <Badge variant="secondary" className="font-mono">{c.count}</Badge>
+        <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+          <div className="flex items-center gap-3">
+            <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+              {i + 1}
+            </span>
+            <div className="flex-1 min-w-0 text-sm text-foreground">
+              <CountryName country={c.country} />
+            </div>
+            <Badge variant="secondary" className="font-mono text-xs shrink-0">{c.count}</Badge>
+          </div>
+          <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary/50 rounded-full transition-all"
+              style={{ width: `${(c.count / maxCount) * 100}%` }}
+            />
+          </div>
         </div>
       ))}
     </div>
