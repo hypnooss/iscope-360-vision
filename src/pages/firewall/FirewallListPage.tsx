@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Server, Play, Trash2, Loader2, Building, Pencil, Building2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -95,21 +96,29 @@ export default function FirewallListPage() {
 
   // Workspace selector for super roles
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('all');
-  const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
-  // Fetch workspaces for super roles
-  useEffect(() => {
-    if (isSuperRole && !isPreviewMode) {
-      supabase
+  // Fetch workspaces for super roles (Analyzer pattern)
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from('clients')
         .select('id, name')
-        .order('name')
-        .then(({ data }) => {
-          if (data) setAllWorkspaces(data);
-        });
+        .order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Auto-select first workspace
+  useEffect(() => {
+    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(allWorkspaces[0].id);
     }
-  }, [isSuperRole, isPreviewMode]);
+  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -134,7 +143,7 @@ export default function FirewallListPage() {
       let workspaceIds: string[] | null = null;
       if (isPreviewMode && previewTarget?.workspaces) {
         workspaceIds = previewTarget.workspaces.map(w => w.id);
-      } else if (isSuperRole && selectedWorkspaceId && selectedWorkspaceId !== 'all') {
+      } else if (isSuperRole && selectedWorkspaceId) {
         workspaceIds = [selectedWorkspaceId];
       }
 
@@ -469,14 +478,13 @@ export default function FirewallListPage() {
             <p className="text-muted-foreground">Gerencie e monitore seus firewalls</p>
           </div>
           <div className="flex items-center gap-3">
-            {isSuperRole && !isPreviewMode && allWorkspaces.length > 0 && (
-              <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+            {isSuperRole && !isPreviewMode && allWorkspaces && allWorkspaces.length > 0 && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
                   <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Selecione o workspace" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos os workspaces</SelectItem>
                   {allWorkspaces.map((ws) => (
                     <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
                   ))}
@@ -497,7 +505,7 @@ export default function FirewallListPage() {
           workspaceIds={
             isPreviewMode && previewTarget?.workspaces 
               ? previewTarget.workspaces.map(w => w.id)
-              : isSuperRole && selectedWorkspaceId && selectedWorkspaceId !== 'all'
+              : isSuperRole && selectedWorkspaceId
                 ? [selectedWorkspaceId]
                 : undefined
           } 
