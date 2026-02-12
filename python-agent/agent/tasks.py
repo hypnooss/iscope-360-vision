@@ -217,6 +217,11 @@ class TaskExecutor:
                     if result.get('session_data'):
                         context.update(result['session_data'])
                     
+                    # Propagar dados do step para o contexto dos steps seguintes
+                    # Ex: masscan.data.ports -> context.ports -> nmap usa
+                    if result.get('data') and isinstance(result['data'], dict):
+                        context.update(result['data'])
+                    
                     # Check for connectivity errors on first step (fail-fast)
                     if i == 0 and result.get('error'):
                         error_msg = result.get('error', '')
