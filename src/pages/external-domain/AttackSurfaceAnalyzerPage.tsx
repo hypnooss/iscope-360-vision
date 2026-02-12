@@ -21,9 +21,12 @@ import {
   Building2,
   Clock,
   CheckCircle2,
-  Timer,
   Play,
   XCircle,
+  Shield,
+  Lock,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -36,10 +39,13 @@ import {
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
   type AttackSurfaceWebService,
+  type AttackSurfaceCVE,
 } from '@/hooks/useAttackSurfaceData';
 import { Button } from '@/components/ui/button';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInDays, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+/* ──────────────────────────── hooks ──────────────────────────── */
 
 function useClientId() {
   const { profile } = useAuth();
@@ -62,44 +68,37 @@ function useClientId() {
   });
 }
 
-/** Progress of the current (or latest) scan for a given client */
 function useAttackSurfaceProgress(clientId?: string) {
   return useQuery({
     queryKey: ['attack-surface-progress', clientId],
     queryFn: async () => {
       if (!clientId) return null;
-
-      // Get latest snapshot (any status)
       const { data, error } = await (supabase
         .from('attack_surface_snapshots' as any)
         .select('id, status, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false })
         .limit(1) as any);
-
       if (error) throw error;
       const snapshot = (data as any[])?.[0];
       if (!snapshot) return null;
-
       if (snapshot.status === 'completed') return { status: 'completed' as const, percent: 100, total: 0, done: 0 };
-
-      // Count tasks
       const [totalRes, doneRes] = await Promise.all([
         supabase.from('attack_surface_tasks').select('id', { count: 'exact', head: true }).eq('snapshot_id', snapshot.id),
         supabase.from('attack_surface_tasks').select('id', { count: 'exact', head: true }).eq('snapshot_id', snapshot.id).eq('status', 'completed'),
       ]);
-
       const total = totalRes.count ?? 0;
       const done = doneRes.count ?? 0;
       const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-
       return { status: snapshot.status as string, percent, total, done };
     },
     enabled: !!clientId,
-    refetchInterval: 10000, // poll every 10s when scan is running
+    refetchInterval: 10000,
     staleTime: 5000,
   });
 }
+
+/* ──────────────────────────── small components ──────────────────────────── */
 
 function SeverityBadge({ severity }: { severity: string }) {
   const colors: Record<string, string> = {
@@ -124,12 +123,10 @@ function ExposureScoreGauge({ score }: { score: number | null }) {
       </div>
     );
   }
-
   const color = score >= 70 ? 'text-destructive' : score >= 40 ? 'text-warning' : 'text-primary';
   const label = score >= 70 ? 'Alto Risco' : score >= 40 ? 'Risco Moderado' : 'Baixo Risco';
   const bgRing = score >= 70 ? 'stroke-destructive/20' : score >= 40 ? 'stroke-warning/20' : 'stroke-primary/20';
   const fgRing = score >= 70 ? 'stroke-destructive' : score >= 40 ? 'stroke-warning' : 'stroke-primary';
-
   const radius = 45;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
@@ -157,6 +154,8 @@ function ExposureScoreGauge({ score }: { score: number | null }) {
   );
 }
 
+/* ──────────────────────────── Port Heatmap ──────────────────────────── */
+
 function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   const portCounts = useMemo(() => {
     const counts: Record<number, number> = {};
@@ -164,13 +163,12 @@ function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
       (r.ports || []).forEach((p: number) => {
         counts[p] = (counts[p] || 0) + 1;
       });
-      // Extract ports from web_services URLs when masscan data is missing
       (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
         try {
           const url = new URL(ws.url);
           const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
           counts[port] = (counts[port] || 0) + 1;
-        } catch { /* ignore invalid URLs */ }
+        } catch { /* ignore */ }
       });
     });
     return Object.entries(counts)
@@ -180,7 +178,6 @@ function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   }, [snapshot.results]);
 
   if (portCounts.length === 0) return null;
-
   const maxCount = portCounts[0]?.count ?? 1;
 
   return (
@@ -207,9 +204,7 @@ function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                       {port}
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent>
-                    Porta {port} — encontrada em {count} IP(s)
-                  </TooltipContent>
+                  <TooltipContent>Porta {port} — encontrada em {count} IP(s)</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             );
@@ -219,6 +214,8 @@ function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
     </Card>
   );
 }
+
+/* ──────────────────────────── Tech Stack ──────────────────────────── */
 
 function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   const techStack = useMemo(() => {
@@ -232,7 +229,6 @@ function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
           products.set(svc.product, existing);
         }
       });
-      // Include technologies from httpx web_services
       (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
         (ws.technologies || []).forEach((tech) => {
           const existing = products.get(tech) || { count: 0, versions: new Set<string>() };
@@ -287,13 +283,276 @@ function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   );
 }
 
+/* ──────────────────────────── CVE Alert Banner ──────────────────────────── */
+
+function CVEAlertSection({ cves }: { cves: AttackSurfaceCVE[] }) {
+  const grouped = useMemo(() => {
+    if (!cves || cves.length === 0) return [];
+    const order = ['critical', 'high', 'medium', 'low'];
+    const sorted = [...cves].sort((a, b) => {
+      const ai = order.indexOf(a.severity?.toLowerCase());
+      const bi = order.indexOf(b.severity?.toLowerCase());
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+    return sorted;
+  }, [cves]);
+
+  if (grouped.length === 0) return null;
+
+  return (
+    <Card className="border-destructive/40 bg-destructive/5">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
+          <ShieldAlert className="w-4 h-4" />
+          Vulnerabilidades Detectadas ({cves.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {grouped.map((cve) => (
+            <div key={cve.cve_id} className="flex items-center gap-3 py-1.5 border-b border-border/30 last:border-0">
+              <SeverityBadge severity={cve.severity} />
+              <a
+                href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-sm text-foreground hover:text-info transition-colors flex items-center gap-1.5"
+              >
+                {cve.cve_id}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              {cve.score !== null && (
+                <span className="text-xs font-mono text-muted-foreground">CVSS {cve.score}</span>
+              )}
+              <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────── Web Services Section ──────────────────────────── */
+
+interface WebServiceRow {
+  ip: string;
+  label: string;
+  ws: AttackSurfaceWebService;
+}
+
+function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
+  const rows = useMemo(() => {
+    const result: WebServiceRow[] = [];
+    snapshot.source_ips.forEach((src) => {
+      const ipResult = snapshot.results[src.ip];
+      if (!ipResult?.web_services) return;
+      ipResult.web_services.forEach((ws) => {
+        result.push({ ip: src.ip, label: src.label, ws });
+      });
+    });
+    return result;
+  }, [snapshot]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Globe className="w-4 h-4 text-teal-400" />
+          Web Services Descobertos ({rows.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">URL</TableHead>
+                <TableHead className="text-xs">IP</TableHead>
+                <TableHead className="text-xs text-center">Status</TableHead>
+                <TableHead className="text-xs">Servidor</TableHead>
+                <TableHead className="text-xs">Título</TableHead>
+                <TableHead className="text-xs">Tecnologias</TableHead>
+                <TableHead className="text-xs">TLS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-mono text-xs max-w-[220px] truncate">
+                    <a href={row.ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline flex items-center gap-1">
+                      {row.ws.url}
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="font-mono cursor-help">{row.ip}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>{row.label}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant="outline" className={
+                      row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
+                      row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
+                      'border-destructive/50 text-destructive'
+                    }>
+                      {row.ws.status_code}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]">{row.ws.title || '—'}</TableCell>
+                  <TableCell className="text-xs">
+                    {row.ws.technologies?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {row.ws.technologies.map((t, j) => (
+                          <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0">{t}</Badge>
+                        ))}
+                      </div>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {row.ws.tls?.subject_cn ? (
+                      <span className="flex items-center gap-1 text-primary">
+                        <Lock className="w-3 h-3" />
+                        {row.ws.tls.subject_cn}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────── TLS Certificates Section ──────────────────────────── */
+
+interface TLSCertInfo {
+  subject_cn: string;
+  issuer: string;
+  not_after: string | null;
+  ip: string;
+  url: string;
+  daysRemaining: number | null;
+}
+
+function TLSCertificatesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
+  const certs = useMemo(() => {
+    const seen = new Map<string, TLSCertInfo>();
+    snapshot.source_ips.forEach((src) => {
+      const ipResult = snapshot.results[src.ip];
+      if (!ipResult?.web_services) return;
+      ipResult.web_services.forEach((ws) => {
+        if (!ws.tls?.subject_cn) return;
+        const key = `${ws.tls.subject_cn}__${ws.tls.not_after ?? ''}`;
+        if (seen.has(key)) return;
+        const issuer = ws.tls.issuer
+          ? (Array.isArray(ws.tls.issuer) ? ws.tls.issuer.join(', ') : ws.tls.issuer)
+          : '—';
+        let daysRemaining: number | null = null;
+        if (ws.tls.not_after) {
+          try {
+            daysRemaining = differenceInDays(parseISO(ws.tls.not_after), new Date());
+          } catch { /* ignore */ }
+        }
+        seen.set(key, {
+          subject_cn: ws.tls.subject_cn,
+          issuer,
+          not_after: ws.tls.not_after ?? null,
+          ip: src.ip,
+          url: ws.url,
+          daysRemaining,
+        });
+      });
+    });
+    return Array.from(seen.values()).sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
+  }, [snapshot]);
+
+  if (certs.length === 0) return null;
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Shield className="w-4 h-4 text-primary" />
+          Certificados TLS ({certs.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Common Name</TableHead>
+                <TableHead className="text-xs">Emissor</TableHead>
+                <TableHead className="text-xs">IP</TableHead>
+                <TableHead className="text-xs">Expira em</TableHead>
+                <TableHead className="text-xs text-center">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {certs.map((cert, i) => {
+                const isExpiringSoon = cert.daysRemaining !== null && cert.daysRemaining <= 30;
+                const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
+                return (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs font-medium">{cert.subject_cn}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{cert.issuer}</TableCell>
+                    <TableCell className="text-xs font-mono">{cert.ip}</TableCell>
+                    <TableCell className="text-xs">
+                      {cert.not_after
+                        ? new Date(cert.not_after).toLocaleDateString('pt-BR')
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {isExpired ? (
+                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
+                          Expirado
+                        </Badge>
+                      ) : isExpiringSoon ? (
+                        <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+                          {cert.daysRemaining}d restantes
+                        </Badge>
+                      ) : cert.daysRemaining !== null ? (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+                          {cert.daysRemaining}d restantes
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────── IP Detail Row ──────────────────────────── */
+
 function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnapshot }) {
   const [open, setOpen] = useState(false);
   const sourceIP = snapshot.source_ips.find((s) => s.ip === ip);
   const result = snapshot.results[ip];
-  const ipCVEs = snapshot.cve_matches.filter((c) =>
-    result?.vulns?.includes(c.cve_id)
-  );
+  const ipCVEs = snapshot.cve_matches.filter((c) => result?.vulns?.includes(c.cve_id));
+  const serviceCount = (result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0);
+  const webCount = result?.web_services?.length ?? 0;
 
   return (
     <>
@@ -304,13 +563,17 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
             {sourceIP?.source === 'dns' ? 'DNS' : 'Firewall'}
           </Badge>
         </TableCell>
-        <TableCell className="text-center">{result?.ports?.length ?? 0}</TableCell>
-        <TableCell className="text-center">{(result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0) + (result?.web_services?.length ?? 0)}</TableCell>
-        <TableCell className="text-center">{ipCVEs.length}</TableCell>
         <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{sourceIP?.label || '—'}</TableCell>
-        <TableCell>
-          {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        <TableCell className="text-center font-mono">{result?.ports?.length ?? 0}</TableCell>
+        <TableCell className="text-center font-mono">{serviceCount + webCount}</TableCell>
+        <TableCell className="text-center">
+          {ipCVEs.length > 0 ? (
+            <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">{ipCVEs.length}</Badge>
+          ) : (
+            <span className="text-muted-foreground font-mono">0</span>
+          )}
         </TableCell>
+        <TableCell>{open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</TableCell>
       </TableRow>
 
       {open && (
@@ -349,7 +612,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                           <TableHead className="text-xs">Protocolo</TableHead>
                           <TableHead className="text-xs">Produto</TableHead>
                           <TableHead className="text-xs">Versão</TableHead>
-                          <TableHead className="text-xs">Banner</TableHead>
+                          <TableHead className="text-xs">CPE</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -359,91 +622,8 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                             <TableCell className="text-xs">{svc.transport}</TableCell>
                             <TableCell className="text-xs font-medium">{svc.product || '—'}</TableCell>
                             <TableCell className="text-xs">{svc.version || '—'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground truncate max-w-[300px]">
-                              {svc.banner ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help">{svc.banner.substring(0, 80)}...</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-md">
-                                    <pre className="text-xs whitespace-pre-wrap">{svc.banner}</pre>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : '—'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              {/* Web Services from httpx */}
-              {result?.web_services && result.web_services.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Web Services Detectados</h4>
-                  <div className="rounded-lg border border-border/50 overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">URL</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                          <TableHead className="text-xs">Server</TableHead>
-                          <TableHead className="text-xs">Tecnologias</TableHead>
-                          <TableHead className="text-xs">TLS</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {result.web_services.map((ws: AttackSurfaceWebService, i: number) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-mono text-xs max-w-[250px] truncate">
-                              <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
-                                {ws.url}
-                              </a>
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              <Badge variant="outline" className={
-                                ws.status_code >= 200 && ws.status_code < 300 ? 'border-primary/50 text-primary' :
-                                ws.status_code >= 300 && ws.status_code < 400 ? 'border-warning/50 text-warning' :
-                                'border-destructive/50 text-destructive'
-                              }>
-                                {ws.status_code}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs">{ws.server || '—'}</TableCell>
-                            <TableCell className="text-xs">
-                              {ws.technologies?.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {ws.technologies.slice(0, 4).map((t, j) => (
-                                    <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0">
-                                      {t}
-                                    </Badge>
-                                  ))}
-                                  {ws.technologies.length > 4 && (
-                                    <span className="text-muted-foreground text-[10px]">+{ws.technologies.length - 4}</span>
-                                  )}
-                                </div>
-                              ) : '—'}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {ws.tls?.subject_cn ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-help text-primary">🔒 {ws.tls.subject_cn}</span>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs">
-                                      <div className="space-y-1 text-xs">
-                                        {ws.tls.issuer && <div><strong>Emissor:</strong> {Array.isArray(ws.tls.issuer) ? ws.tls.issuer.join(', ') : ws.tls.issuer}</div>}
-                                        {ws.tls.version && <div><strong>Versão:</strong> {ws.tls.version}</div>}
-                                        {ws.tls.cipher && <div><strong>Cipher:</strong> {ws.tls.cipher}</div>}
-                                        {ws.tls.not_after && <div><strong>Expira:</strong> {ws.tls.not_after}</div>}
-                                      </div>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : '—'}
+                            <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-[250px]">
+                              {svc.cpe?.length > 0 ? svc.cpe.join(', ') : '—'}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -474,8 +654,8 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                 </div>
               )}
 
-              {(!result?.services || result.services.length === 0) && (!result?.web_services || result.web_services.length === 0) && !result?.error && (
-                <p className="text-sm text-muted-foreground">Nenhum dado disponível para este IP.</p>
+              {(!result?.services || result.services.length === 0) && !result?.error && (
+                <p className="text-sm text-muted-foreground">Nenhum serviço identificado neste IP.</p>
               )}
             </div>
           </td>
@@ -484,6 +664,8 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
     </>
   );
 }
+
+/* ──────────────────────────── Page ──────────────────────────── */
 
 export default function AttackSurfaceAnalyzerPage() {
   const { effectiveRole } = useEffectiveAuth();
@@ -495,10 +677,7 @@ export default function AttackSurfaceAnalyzerPage() {
   const { data: workspaces } = useQuery({
     queryKey: ['clients-list'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('id, name')
-        .order('name');
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
       if (error) throw error;
       return data ?? [];
     },
@@ -539,6 +718,7 @@ export default function AttackSurfaceAnalyzerPage() {
             { label: 'Analyzer' },
           ]} />
 
+          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -549,7 +729,6 @@ export default function AttackSurfaceAnalyzerPage() {
                 Análise automática de superfície de ataque — executada diariamente pelo Super Agent
               </p>
             </div>
-
             <div className="flex items-center gap-3">
               {isSuperRole && workspaces && (
                 <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
@@ -564,40 +743,22 @@ export default function AttackSurfaceAnalyzerPage() {
                   </SelectContent>
                 </Select>
               )}
-
               {isSuperRole && !isRunning && (
-                <Button
-                  size="sm"
-                  onClick={() => scanMutation.mutate()}
-                  disabled={scanMutation.isPending}
-                >
-                  {scanMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Play className="w-4 h-4" />
-                  )}
+                <Button size="sm" onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending}>
+                  {scanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                   Disparar Scan
                 </Button>
               )}
               {isSuperRole && isRunning && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => cancelMutation.mutate()}
-                  disabled={cancelMutation.isPending}
-                >
-                  {cancelMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <XCircle className="w-4 h-4" />
-                  )}
+                <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                  {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                   Cancelar Scan
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Progress Bar when scan is running */}
+          {/* Progress */}
           {isRunning && progress && (
             <Card className="glass-card border-teal-500/30">
               <CardContent className="p-4">
@@ -613,11 +774,17 @@ export default function AttackSurfaceAnalyzerPage() {
             </Card>
           )}
 
-          {/* Score + Stats */}
+          {/* ── 1. Score + Stats ── */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Card className="glass-card md:col-span-1 flex flex-col items-center justify-center p-6">
               <span className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Score de Exposição</span>
               <ExposureScoreGauge score={snapshot?.score ?? null} />
+              {snapshot?.completed_at && (
+                <div className="flex items-center gap-1.5 mt-3 text-[10px] text-muted-foreground">
+                  <Clock className="w-3 h-3" />
+                  {formatDistanceToNow(new Date(snapshot.completed_at), { locale: ptBR, addSuffix: true })}
+                </div>
+              )}
             </Card>
 
             {statCards.map((s) => (
@@ -635,7 +802,10 @@ export default function AttackSurfaceAnalyzerPage() {
             ))}
           </div>
 
-          {/* Port Heatmap + Tech Stack */}
+          {/* ── 2. CVE Alert Banner ── */}
+          {snapshot && <CVEAlertSection cves={snapshot.cve_matches} />}
+
+          {/* ── 3. Port Heatmap + Tech Stack ── */}
           {snapshot && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <PortHeatmap snapshot={snapshot} />
@@ -643,32 +813,18 @@ export default function AttackSurfaceAnalyzerPage() {
             </div>
           )}
 
-          {/* Last Scan Info */}
-          {snapshot?.completed_at && (
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-primary" />
-                <span>Último scan concluído</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                <span>
-                  {formatDistanceToNow(new Date(snapshot.completed_at), { locale: ptBR, addSuffix: true })}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Timer className="w-4 h-4" />
-                <span>{new Date(snapshot.completed_at).toLocaleString('pt-BR')}</span>
-              </div>
-            </div>
-          )}
+          {/* ── 4. Web Services ── */}
+          {snapshot && <WebServicesSection snapshot={snapshot} />}
 
-          {/* Main Table */}
+          {/* ── 5. TLS Certificates ── */}
+          {snapshot && <TLSCertificatesSection snapshot={snapshot} />}
+
+          {/* ── 6. IP Inventory Table ── */}
           <Card className="glass-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Globe className="w-5 h-5 text-teal-400" />
-                IPs Públicos Descobertos
+                Inventário de IPs Públicos
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -689,20 +845,16 @@ export default function AttackSurfaceAnalyzerPage() {
                       <TableRow>
                         <TableHead>IP</TableHead>
                         <TableHead>Origem</TableHead>
+                        <TableHead>Referência</TableHead>
                         <TableHead className="text-center">Portas</TableHead>
                         <TableHead className="text-center">Serviços</TableHead>
                         <TableHead className="text-center">CVEs</TableHead>
-                        <TableHead>Referência</TableHead>
                         <TableHead className="w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {ips.map((sourceIP) => (
-                        <IPDetailRow
-                          key={sourceIP.ip}
-                          ip={sourceIP.ip}
-                          snapshot={snapshot!}
-                        />
+                        <IPDetailRow key={sourceIP.ip} ip={sourceIP.ip} snapshot={snapshot!} />
                       ))}
                     </TableBody>
                   </Table>
@@ -710,6 +862,16 @@ export default function AttackSurfaceAnalyzerPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Last scan timestamp */}
+          {snapshot?.completed_at && (
+            <div className="flex items-center gap-4 text-xs text-muted-foreground pb-4">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                Último scan concluído em {new Date(snapshot.completed_at).toLocaleString('pt-BR')}
+              </div>
+            </div>
+          )}
         </div>
       </TooltipProvider>
     </AppLayout>
