@@ -1,31 +1,33 @@
 
 
-# Adicionar Shodan API Key
+# Filtrar IPs privados e APIPA do Attack Surface Scan
 
-## O que sera feito
+## Problema
 
-1. **Salvar o segredo `SHODAN_API_KEY`** como secret do Supabase (para uso direto nas Edge Functions)
-2. **Registrar a chave Shodan no painel de gestao** adicionando-a ao array `MANAGED_KEYS` na edge function `manage-api-keys`
+A funcao `isPrivateIP` na edge function `attack-surface-scan` nao filtra enderecos **169.254.0.0/16 (APIPA/link-local)**, permitindo que IPs como `169.254.10.5`, `169.254.10.6`, etc. aparecam nos resultados do scan.
 
-## Mudancas tecnicas
+## Correcao
 
-### 1. Secret do Supabase
-Adicionar `SHODAN_API_KEY` com o valor fornecido como secret do projeto, para que a edge function `attack-surface-scan` consiga ler via `Deno.env.get("SHODAN_API_KEY")`.
+Adicionar a verificacao do range APIPA na funcao `isPrivateIP` em `supabase/functions/attack-surface-scan/index.ts`:
 
-### 2. Edge Function `supabase/functions/manage-api-keys/index.ts`
-Adicionar um novo item ao array `MANAGED_KEYS` (linha ~11):
-
-```typescript
-{
-  name: "SHODAN_API_KEY",
-  label: "Shodan",
-  description: "Usada para enriquecimento de IPs no Attack Surface Analyzer (portas, serviços, CVEs)",
-},
+```
+if (a === 169 && b === 254) return true   // APIPA / link-local
 ```
 
-Isso fara a chave Shodan aparecer automaticamente na aba "Chaves de API" em Administracao > Configuracoes, no mesmo padrao visual das chaves VirusTotal e SecurityTrails ja existentes.
+Apos a correcao, a funcao cobrira todos os ranges privados/reservados:
 
-### Resultado
-- A edge function `attack-surface-scan` podera usar `Deno.env.get("SHODAN_API_KEY")` imediatamente
-- No painel de Configuracoes, a chave Shodan aparecera com status "Configurada" (via variavel de ambiente) e podera ser gerenciada (atualizada/removida) como as demais
+- 10.0.0.0/8 (classe A privado)
+- 172.16.0.0/12 (classe B privado)
+- 192.168.0.0/16 (classe C privado)
+- 127.0.0.0/8 (loopback)
+- 169.254.0.0/16 (APIPA / link-local) -- **NOVO**
+- 0.0.0.0/8 (rede atual)
+- 224.0.0.0+ (multicast e reservado)
 
+## Arquivo alterado
+
+`supabase/functions/attack-surface-scan/index.ts` -- uma unica linha adicionada na funcao `isPrivateIP` (por volta da linha 17).
+
+## Apos a correcao
+
+Sera necessario fazer um **novo Scan** no workspace IE MADEIRA para que os resultados reflitam a filtragem corrigida. Os IPs APIPA serao descartados automaticamente durante a coleta.
