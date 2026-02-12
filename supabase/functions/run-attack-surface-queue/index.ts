@@ -126,11 +126,26 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, serviceKey)
 
-    // Get all active clients
-    const { data: clients, error: clientsError } = await supabase
-      .from('clients')
-      .select('id, name')
-    if (clientsError) throw clientsError
+    // Read optional client_id from request body
+    const body = await req.json().catch(() => ({}))
+    const targetClientId = body.client_id
+
+    let clients: any[]
+    if (targetClientId) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('id', targetClientId)
+        .single()
+      if (error) throw error
+      clients = [data]
+    } else {
+      const { data, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, name')
+      if (clientsError) throw clientsError
+      clients = data || []
+    }
 
     console.log(`[queue] Processing ${clients?.length || 0} clients`)
 

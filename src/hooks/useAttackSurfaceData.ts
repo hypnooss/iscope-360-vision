@@ -117,7 +117,7 @@ export function useAttackSurfaceScan(clientId?: string) {
   return useMutation({
     mutationFn: async () => {
       if (!clientId) throw new Error('client_id is required');
-      const { data, error } = await supabase.functions.invoke('attack-surface-scan', {
+      const { data, error } = await supabase.functions.invoke('run-attack-surface-queue', {
         body: { client_id: clientId },
       });
       if (error) throw error;
