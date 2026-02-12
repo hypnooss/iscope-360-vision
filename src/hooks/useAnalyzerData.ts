@@ -88,6 +88,6 @@ export function useLatestAnalyzerSnapshot(firewallId?: string) {
       return parseSnapshot(rows[0] as Record<string, unknown>);
     },
     enabled: true,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
   });
 }

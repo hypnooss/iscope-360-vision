@@ -12,7 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
 import type { ConfigChangeDetail } from '@/types/analyzerInsights';
-import { Server, Search, Filter } from 'lucide-react';
+import { Server, Search, Filter, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface FirewallOption { id: string; name: string; }
 
@@ -44,7 +46,8 @@ export default function AnalyzerConfigChangesPage() {
     })();
   }, []);
 
-  const { data: snapshot, isLoading } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
+  const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
+  const configChangesCount = snapshot?.metrics?.configChanges || 0;
   const details: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
 
   const categories = useMemo(() => {
@@ -79,12 +82,17 @@ export default function AnalyzerConfigChangesPage() {
             </h1>
             <p className="text-muted-foreground text-sm">Auditoria detalhada de modificações no firewall</p>
           </div>
-          <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
-            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Selecionar firewall" /></SelectTrigger>
-            <SelectContent>
-              {firewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Selecionar firewall" /></SelectTrigger>
+              <SelectContent>
+                {firewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={() => refetch()} title="Atualizar dados">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -110,6 +118,17 @@ export default function AnalyzerConfigChangesPage() {
             </SelectContent>
           </Select>
         </div>
+
+        {configChangesCount > 0 && details.length === 0 && !isLoading && (
+          <Alert className="mb-6 border-warning/30 bg-warning/5">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertTitle className="text-warning">Detalhes indisponíveis</AlertTitle>
+            <AlertDescription>
+              {configChangesCount} alteração(ões) detectada(s), mas os detalhes não estão disponíveis neste snapshot.
+              Execute uma nova análise para gerar os dados detalhados.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card className="glass-card">
           <CardHeader>
