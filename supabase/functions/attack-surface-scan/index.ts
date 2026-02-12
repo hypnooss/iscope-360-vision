@@ -34,6 +34,21 @@ function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
 
   if (!reportData) return ips
 
+  // Path 0: subdomain enumeration format (source: api)
+  // Format: { subdomains: [{ subdomain: "x.example.com", ips: ["1.2.3.4"], is_alive: true }] }
+  if (reportData.subdomains && Array.isArray(reportData.subdomains)) {
+    for (const sub of reportData.subdomains) {
+      if (sub.ips && Array.isArray(sub.ips)) {
+        for (const ip of sub.ips) {
+          if (typeof ip === 'string' && !seen.has(ip) && !isPrivateIP(ip)) {
+            seen.add(ip)
+            ips.push({ ip, source: 'dns', label: sub.subdomain || domainName })
+          }
+        }
+      }
+    }
+  }
+
   // Path 1: subdomainSummary (from subdomain-enum edge function)
   const subSummary = reportData.subdomainSummary
   if (subSummary?.subdomains && Array.isArray(subSummary.subdomains)) {
@@ -95,7 +110,7 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
   for (const step of stepResults) {
     if (step.step_id !== 'system_interface') continue
 
-    const resultData = step.result_data
+    const resultData = step.data
     if (!resultData) continue
 
     // result_data can be an object with results array or directly an array
@@ -289,17 +304,22 @@ Deno.serve(async (req) => {
       if (domains && domains.length > 0) {
         for (const domain of domains) {
           // Get latest completed analysis
+          // Fetch both agent and api analyses to get subdomain IPs
           const { data: analyses } = await supabase
             .from('external_domain_analysis_history')
-            .select('report_data')
+            .select('report_data, source')
             .eq('domain_id', domain.id)
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
-            .limit(1)
+            .limit(5)
 
-          if (analyses && analyses.length > 0 && analyses[0].report_data) {
-            const domainIPs = extractDomainIPs(analyses[0].report_data, domain.domain)
-            allIPs.push(...domainIPs)
+          if (analyses && analyses.length > 0) {
+            for (const analysis of analyses) {
+              if (analysis.report_data) {
+                const domainIPs = extractDomainIPs(analysis.report_data, domain.domain)
+                allIPs.push(...domainIPs)
+              }
+            }
           }
         }
       }
@@ -325,7 +345,7 @@ Deno.serve(async (req) => {
           if (tasks && tasks.length > 0) {
             const { data: stepResults } = await supabase
               .from('task_step_results')
-              .select('step_id, result_data')
+              .select('step_id, data')
               .eq('task_id', tasks[0].id)
               .eq('step_id', 'system_interface')
 
