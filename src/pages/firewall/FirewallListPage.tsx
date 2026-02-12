@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { AddFirewallDialog } from '@/components/firewall/AddFirewallDialog';
+import { Plus } from 'lucide-react';
 
 
 interface Client {
@@ -505,10 +505,10 @@ export default function FirewallListPage() {
               </Select>
             )}
             {canEdit && (
-              <AddFirewallDialog 
-                clients={clients} 
-                onFirewallAdded={handleAddFirewall} 
-              />
+              <Button className="gap-2" onClick={() => navigate('/scope-firewall/firewalls/new')}>
+                <Plus className="w-4 h-4" />
+                Novo Firewall
+              </Button>
             )}
           </div>
         </div>
