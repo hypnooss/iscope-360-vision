@@ -182,7 +182,7 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
 
 // ── Enrichment result type ──────────────────────────────────────────────────
 
-type EnrichmentSource = 'shodan' | 'internetdb' | 'securitytrails' | 'mixed' | 'none'
+type EnrichmentSource = 'shodan' | 'censys' | 'shodan+censys' | 'internetdb' | 'shodan+st' | 'censys+st' | 'shodan+censys+st' | 'internetdb+st' | 'none'
 
 interface EnrichedIP {
   ip: string
@@ -211,10 +211,7 @@ async function queryShodan(ip: string, apiKey: string): Promise<EnrichedIP | nul
       signal: AbortSignal.timeout(15000),
     })
 
-    if (!resp.ok) {
-      // 403 = plan restriction, 404 = no data → fallback
-      return null
-    }
+    if (!resp.ok) return null
 
     const data = await resp.json()
     const services: EnrichedIP['services'] = []
@@ -248,7 +245,137 @@ async function queryShodan(ip: string, apiKey: string): Promise<EnrichedIP | nul
   }
 }
 
-// ── Shodan InternetDB (free, no auth) ───────────────────────────────────────
+// ── Censys API (primary) ────────────────────────────────────────────────────
+
+async function queryCensys(ip: string, apiKey: string): Promise<EnrichedIP | null> {
+  try {
+    // apiKey format: API_ID:API_SECRET
+    const basicAuth = btoa(apiKey)
+
+    const resp = await fetch(`https://search.censys.io/api/v2/hosts/${ip}`, {
+      headers: {
+        'Authorization': `Basic ${basicAuth}`,
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!resp.ok) {
+      console.warn(`Censys API error for ${ip}: ${resp.status}`)
+      return null
+    }
+
+    const json = await resp.json()
+    const host = json.result || {}
+
+    const ports: number[] = []
+    const services: EnrichedIP['services'] = []
+    const vulns: string[] = []
+
+    // Parse services
+    if (host.services && Array.isArray(host.services)) {
+      for (const svc of host.services) {
+        const port = svc.port || 0
+        if (port && !ports.includes(port)) ports.push(port)
+
+        const product = svc.software?.product || svc.service_name || ''
+        const version = svc.software?.version || ''
+        const banner = (svc.banner || '').substring(0, 500)
+        const transport = svc.transport_protocol?.toLowerCase() || 'tcp'
+
+        // Extract CPEs from software
+        const cpe: string[] = []
+        if (svc.software?.uniform_resource_identifier) {
+          cpe.push(svc.software.uniform_resource_identifier)
+        }
+
+        services.push({ port, transport, product, version, banner, cpe })
+
+        // Collect CVEs from observed_at or labels
+        if (svc.cve && Array.isArray(svc.cve)) {
+          for (const c of svc.cve) vulns.push(typeof c === 'string' ? c : c.id || '')
+        }
+      }
+    }
+
+    // OS detection
+    const os = host.operating_system?.product
+      ? `${host.operating_system.vendor || ''} ${host.operating_system.product} ${host.operating_system.version || ''}`.trim()
+      : ''
+
+    // Hostnames from DNS
+    const hostnames: string[] = []
+    if (host.dns?.names && Array.isArray(host.dns.names)) {
+      hostnames.push(...host.dns.names)
+    }
+    if (host.dns?.reverse_dns?.names && Array.isArray(host.dns.reverse_dns.names)) {
+      for (const h of host.dns.reverse_dns.names) {
+        if (!hostnames.includes(h)) hostnames.push(h)
+      }
+    }
+
+    return {
+      ip,
+      ports,
+      services,
+      vulns: [...new Set(vulns.filter(Boolean))],
+      os,
+      hostnames,
+      tags: host.labels || [],
+      enrichment_source: 'censys',
+    }
+  } catch (e) {
+    console.warn(`Censys API failed for ${ip}: ${(e as Error).message}`)
+    return null
+  }
+}
+
+// ── Merge Shodan + Censys results ───────────────────────────────────────────
+
+function mergeEnrichmentResults(shodan: EnrichedIP | null, censys: EnrichedIP | null, ip: string): EnrichedIP | null {
+  if (!shodan && !censys) return null
+  if (!shodan) return censys!
+  if (!censys) return shodan
+
+  // Both succeeded — merge
+  const ports = [...new Set([...shodan.ports, ...censys.ports])].sort((a, b) => a - b)
+
+  // Merge services: prefer the one with more info per port
+  const serviceMap = new Map<number, EnrichedIP['services'][0]>()
+  for (const svc of shodan.services) {
+    serviceMap.set(svc.port, svc)
+  }
+  for (const svc of censys.services) {
+    const existing = serviceMap.get(svc.port)
+    if (!existing) {
+      serviceMap.set(svc.port, svc)
+    } else {
+      // Prefer whichever has more detail (banner or product)
+      if (!existing.product && svc.product) {
+        serviceMap.set(svc.port, { ...svc, cpe: [...new Set([...existing.cpe, ...svc.cpe])] })
+      } else if (existing.product && svc.banner && !existing.banner) {
+        serviceMap.set(svc.port, { ...existing, banner: svc.banner, cpe: [...new Set([...existing.cpe, ...svc.cpe])] })
+      }
+    }
+  }
+
+  const vulns = [...new Set([...shodan.vulns, ...censys.vulns])]
+  const hostnames = [...new Set([...shodan.hostnames, ...censys.hostnames])]
+  const tags = [...new Set([...shodan.tags, ...censys.tags])]
+
+  return {
+    ip,
+    ports,
+    services: Array.from(serviceMap.values()),
+    vulns,
+    os: shodan.os || censys.os, // Prefer Shodan OS
+    hostnames,
+    tags,
+    enrichment_source: 'shodan+censys',
+  }
+}
+
+// ── Shodan InternetDB (fallback, free) ──────────────────────────────────────
 
 // Well-known port to service mapping
 const KNOWN_PORTS: Record<number, { product: string; transport: string }> = {
@@ -288,7 +415,6 @@ const KNOWN_PORTS: Record<number, { product: string; transport: string }> = {
 }
 
 function parseCPE(cpe: string): { vendor: string; product: string; version: string } {
-  // CPE format: cpe:/a:vendor:product:version or cpe:2.3:a:vendor:product:version:...
   const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':')
   return {
     vendor: parts[1] || '',
@@ -310,7 +436,6 @@ async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
     const cpes: string[] = data.cpes || []
     const parsedCpes = cpes.map(parseCPE)
 
-    // Detect OS from CPEs (look for 'o' type)
     let os = ''
     for (const cpe of cpes) {
       const normalized = cpe.replace('cpe:2.3:', '').replace('cpe:/', '')
@@ -321,20 +446,16 @@ async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
       }
     }
 
-    // Build services with enriched data
     const services: EnrichedIP['services'] = []
     for (const port of ports) {
       const known = KNOWN_PORTS[port]
-      // Try to find a matching CPE for application-level products
       let matchedProduct = known?.product || ''
       let matchedVersion = ''
       const matchedCpeList: string[] = []
 
-      // Best-effort CPE matching by product name similarity
       for (let i = 0; i < parsedCpes.length; i++) {
         const pc = parsedCpes[i]
         const productLower = pc.product.toLowerCase()
-        // Match web servers to HTTP ports, SSH to 22, etc.
         const isMatch =
           (port === 22 && productLower.includes('ssh')) ||
           (port === 21 && productLower.includes('ftp')) ||
@@ -384,7 +505,7 @@ async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
   }
 }
 
-// ── SecurityTrails (reverse DNS) ────────────────────────────────────────────
+// ── SecurityTrails (reverse DNS only) ───────────────────────────────────────
 
 interface SecurityTrailsData {
   hostnames: string[]
@@ -393,7 +514,6 @@ interface SecurityTrailsData {
 
 async function querySecurityTrails(ip: string, apiKey: string): Promise<SecurityTrailsData | null> {
   try {
-    // Use the IP neighbors/reverse DNS endpoint
     const resp = await fetch(`https://api.securitytrails.com/v1/ips/nearby/${ip}`, {
       headers: { 'APIKEY': apiKey, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(10000),
@@ -408,14 +528,12 @@ async function querySecurityTrails(ip: string, apiKey: string): Promise<Security
     const hostnames: string[] = []
     const domains = new Set<string>()
 
-    // Extract blocks with hostnames
     if (data.blocks && Array.isArray(data.blocks)) {
       for (const block of data.blocks) {
         if (block.hostnames && Array.isArray(block.hostnames)) {
           for (const h of block.hostnames) {
             if (typeof h === 'string') {
               hostnames.push(h)
-              // Extract root domain
               const parts = h.split('.')
               if (parts.length >= 2) {
                 domains.add(parts.slice(-2).join('.'))
@@ -433,14 +551,14 @@ async function querySecurityTrails(ip: string, apiKey: string): Promise<Security
   }
 }
 
-// ── Enrichment orchestrator (cascade) ───────────────────────────────────────
+// ── Enrichment orchestrator ─────────────────────────────────────────────────
 
 async function enrichIP(
   ip: string,
   shodanApiKey: string | null,
+  censysApiKey: string | null,
   securityTrailsApiKey: string | null,
 ): Promise<EnrichedIP> {
-  // Start with empty result
   let result: EnrichedIP = {
     ip,
     ports: [],
@@ -452,38 +570,44 @@ async function enrichIP(
     enrichment_source: 'none',
   }
 
-  // Step 1: Try Shodan primary API
-  if (shodanApiKey) {
-    const shodanResult = await queryShodan(ip, shodanApiKey)
-    if (shodanResult) {
-      result = shodanResult
-    }
-  }
+  // Step 1: Shodan + Censys in parallel (primary)
+  const primaryPromises: Promise<EnrichedIP | null>[] = []
+  if (shodanApiKey) primaryPromises.push(queryShodan(ip, shodanApiKey))
+  else primaryPromises.push(Promise.resolve(null))
+  if (censysApiKey) primaryPromises.push(queryCensys(ip, censysApiKey))
+  else primaryPromises.push(Promise.resolve(null))
 
-  // Step 2: If Shodan failed or no key, try InternetDB
-  if (result.enrichment_source === 'none') {
+  const [shodanSettled, censysSettled] = await Promise.allSettled(primaryPromises)
+
+  const shodanResult = shodanSettled.status === 'fulfilled' ? shodanSettled.value : null
+  const censysResult = censysSettled.status === 'fulfilled' ? censysSettled.value : null
+
+  const merged = mergeEnrichmentResults(shodanResult, censysResult, ip)
+
+  if (merged) {
+    result = merged
+  } else {
+    // Step 2: Both failed → InternetDB fallback
+    console.log(`Primary APIs failed for ${ip}, trying InternetDB fallback`)
     const idbResult = await queryInternetDB(ip)
     if (idbResult) {
       result = idbResult
     }
   }
 
-  // Step 3: Complement with SecurityTrails
+  // Step 3: SecurityTrails for reverse DNS only
   if (securityTrailsApiKey) {
     const stData = await querySecurityTrails(ip, securityTrailsApiKey)
     if (stData) {
-      // Merge hostnames (deduplicate)
       const existingHostnames = new Set(result.hostnames)
       for (const h of stData.hostnames) {
         if (!existingHostnames.has(h)) {
           result.hostnames.push(h)
         }
       }
-      // Update source
+      // Append +st to source
       if (result.enrichment_source !== 'none') {
-        result.enrichment_source = 'mixed'
-      } else {
-        result.enrichment_source = 'securitytrails'
+        result.enrichment_source = `${result.enrichment_source}+st` as EnrichmentSource
       }
     }
   }
@@ -543,12 +667,13 @@ Deno.serve(async (req) => {
     }
 
     // Resolve API keys: DB (encrypted) → env fallback
-    const [shodanApiKey, securityTrailsApiKey] = await Promise.all([
+    const [shodanApiKey, censysApiKey, securityTrailsApiKey] = await Promise.all([
       resolveApiKey(supabase, 'SHODAN_API_KEY'),
+      resolveApiKey(supabase, 'CENSYS_API_KEY'),
       resolveApiKey(supabase, 'SECURITYTRAILS_API_KEY'),
     ])
 
-    console.log(`API keys resolved — Shodan: ${shodanApiKey ? 'yes' : 'no'}, SecurityTrails: ${securityTrailsApiKey ? 'yes' : 'no'}`)
+    console.log(`API keys resolved — Shodan: ${shodanApiKey ? 'yes' : 'no'}, Censys: ${censysApiKey ? 'yes' : 'no'}, SecurityTrails: ${securityTrailsApiKey ? 'yes' : 'no'}`)
 
     // Create snapshot record
     const { data: snapshot, error: snapError } = await supabase
@@ -642,15 +767,15 @@ Deno.serve(async (req) => {
 
       console.log(`Collected ${uniqueIPs.length} unique public IPs for enrichment`)
 
-      // ── Step 2: Enrich IPs (cascade: Shodan → InternetDB → SecurityTrails) ─
+      // ── Step 2: Enrich IPs (Shodan+Censys → InternetDB fallback → SecurityTrails DNS) ─
 
       const enrichedResults: EnrichedIP[] = []
 
       for (let i = 0; i < uniqueIPs.length; i++) {
-        // Rate limit: ~1 req/sec for Shodan, ~2 req/sec for SecurityTrails
+        // Rate limit: ~1.1s between IPs (Shodan 1req/s, Censys 2.5req/s)
         if (i > 0) await new Promise(r => setTimeout(r, 1100))
 
-        const result = await enrichIP(uniqueIPs[i].ip, shodanApiKey, securityTrailsApiKey)
+        const result = await enrichIP(uniqueIPs[i].ip, shodanApiKey, censysApiKey, securityTrailsApiKey)
         enrichedResults.push(result)
 
         console.log(`[${i + 1}/${uniqueIPs.length}] ${result.ip}: ${result.enrichment_source} — ${result.ports.length} ports, ${result.vulns.length} vulns`)
