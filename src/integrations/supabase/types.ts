@@ -403,6 +403,48 @@ export type Database = {
           },
         ]
       }
+      attack_surface_snapshots: {
+        Row: {
+          client_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          cve_matches: Json | null
+          id: string
+          results: Json | null
+          score: number | null
+          source_ips: Json | null
+          status: string
+          summary: Json | null
+        }
+        Insert: {
+          client_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          cve_matches?: Json | null
+          id?: string
+          results?: Json | null
+          score?: number | null
+          source_ips?: Json | null
+          status?: string
+          summary?: Json | null
+        }
+        Update: {
+          client_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          cve_matches?: Json | null
+          id?: string
+          results?: Json | null
+          score?: number | null
+          source_ips?: Json | null
+          status?: string
+          summary?: Json | null
+        }
+        Relationships: []
+      }
       blueprint_step_templates: {
         Row: {
           category: string | null
