@@ -678,6 +678,7 @@ class TaskExecutor:
         context = {
             'base_url': base_url,
             'domain': domain,
+            'ip': target.get('ip'),
             'api_key': credentials.get('api_key'),
             'host': target.get('host'),
             'port': target.get('port'),
