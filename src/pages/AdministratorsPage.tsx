@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -34,7 +34,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Edit2, Trash2, ShieldCheck, HeadsetIcon, History } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, ShieldCheck, HeadsetIcon, History, Search, Users, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AdminEditDialog } from "@/components/admin/AdminEditDialog";
@@ -352,14 +352,37 @@ export default function AdministratorsPage() {
     return null;
   }
 
+  const [search, setSearch] = useState("");
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      total: administrators.length,
+      superAdmin: administrators.filter((a) => a.role === "super_admin").length,
+      superSuporte: administrators.filter((a) => a.role === "super_suporte").length,
+      thisMonth: administrators.filter((a) => new Date(a.created_at) >= startOfMonth).length,
+    };
+  }, [administrators]);
+
+  const filtered = useMemo(() => {
+    if (!search) return administrators;
+    const q = search.toLowerCase();
+    return administrators.filter(
+      (a) =>
+        (a.full_name || "").toLowerCase().includes(q) ||
+        a.email.toLowerCase().includes(q)
+    );
+  }, [administrators, search]);
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Administradores' }]} />
+        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Gerenciamento de Administradores' }]} />
         
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Administradores</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Administradores</h1>
             <p className="text-muted-foreground">
               Gerencie usuários com acesso administrativo ao sistema
             </p>
@@ -370,17 +393,76 @@ export default function AdministratorsPage() {
           </Button>
         </div>
 
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5" />
-              Lista de Administradores
-            </CardTitle>
-            <CardDescription>
-              {administrators.length} administrador(es) registrado(s)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Users className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total</p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500/10">
+                  <ShieldCheck className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Super Admin</p>
+                  <p className="text-2xl font-bold">{stats.superAdmin}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <HeadsetIcon className="w-5 h-5 text-purple-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Super Suporte</p>
+                  <p className="text-2xl font-bold">{stats.superSuporte}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Calendar className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Criados este mês</p>
+                  <p className="text-2xl font-bold">{stats.thisMonth}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar administrador..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 max-w-sm"
+          />
+        </div>
+
+        {/* Table */}
+        <Card>
+          <CardContent className="p-0">
             <Table>
             <TableHeader>
               <TableRow>
@@ -392,14 +474,14 @@ export default function AdministratorsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {administrators.length === 0 ? (
+              {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     Nenhum administrador encontrado
                   </TableCell>
                 </TableRow>
               ) : (
-                administrators.map((admin) => (
+                filtered.map((admin) => (
                   <TableRow key={admin.id}>
                     <TableCell className="font-medium">
                       {admin.full_name || "-"}

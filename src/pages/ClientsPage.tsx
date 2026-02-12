@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot, Globe } from "lucide-react";
+import { Building, Plus, Loader2, Pencil, Trash2, Eye, Shield, Cloud, Bot, Globe, Search, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -102,6 +102,23 @@ export default function ClientsPage() {
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [workspaceDetails, setWorkspaceDetails] = useState<WorkspaceDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const [search, setSearch] = useState("");
+
+  const stats = useMemo(() => ({
+    total: clients.length,
+    scopes: clients.reduce((sum, c) => sum + (c.scopes_count || 0), 0),
+    agents: clients.reduce((sum, c) => sum + (c.agents_count || 0), 0),
+    noScopes: clients.filter((c) => (c.scopes_count || 0) === 0).length,
+  }), [clients]);
+
+  const filteredClients = useMemo(() => {
+    if (!search) return clients;
+    const q = search.toLowerCase();
+    return clients.filter(
+      (c) => c.name.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q)
+    );
+  }, [clients, search]);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
 
@@ -317,12 +334,12 @@ export default function ClientsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Workspaces' }]} />
+        <PageBreadcrumb items={[{ label: 'Administração' }, { label: 'Gerenciamento de Workspaces' }]} />
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Workspaces</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Workspaces</h1>
             <p className="text-muted-foreground">Gerencie todos os workspaces do sistema</p>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -373,21 +390,79 @@ export default function ClientsPage() {
           </Dialog>
         </div>
 
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Building className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Workspaces</p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Globe className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Escopos</p>
+                  <p className="text-2xl font-bold">{stats.scopes}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Bot className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Agents</p>
+                  <p className="text-2xl font-bold">{stats.agents}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-destructive/10">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Sem Escopos</p>
+                  <p className="text-2xl font-bold">{stats.noScopes}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar workspace..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 max-w-sm"
+          />
+        </div>
+
         {/* Workspaces Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building className="w-5 h-5 text-primary" />
-              Lista de Workspaces
-            </CardTitle>
-            <CardDescription>{clients.length} workspace(s) registrado(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {clients.length === 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            {filteredClients.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Building className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum workspace cadastrado</p>
-                <p className="text-sm">Clique em "Novo Workspace" para adicionar</p>
+                <p>Nenhum workspace encontrado</p>
               </div>
             ) : (
               <Table>
@@ -401,7 +476,7 @@ export default function ClientsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {clients.map((client) => (
+                  {filteredClients.map((client) => (
                     <TableRow key={client.id} className="border-border/50">
                       <TableCell className="font-medium">{client.name}</TableCell>
                       <TableCell className="text-center">{client.scopes_count}</TableCell>
