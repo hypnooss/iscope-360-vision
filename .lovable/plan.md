@@ -1,42 +1,57 @@
 
-# Adicionar Barra de Progresso nos Widgets de Top Paises
+# Corrigir Exibicao de Alteracoes de Configuracao Vazias
 
-## Problema
+## Problema Raiz
 
-Os widgets de "Top Paises" (tanto Trafego Negado quanto Autenticacao) nao possuem a barra de progresso proporcional que ja existe nos widgets de "Top IPs". Isso cria inconsistencia visual.
+Os snapshots mais antigos do BAU-FW foram processados ANTES do edge function ser atualizado com a logica de `configChangeDetails`. Resultado:
+- `configChanges: 3` (contagem correta)
+- `configChangeDetails: []` (array vazio - dados nao foram gerados)
 
-## Mudanca
+O snapshot mais recente (17:15) JA TEM os dados corretos com 3 detalhes. Porem a pagina pode estar mostrando dados em cache (React Query staleTime de 2 minutos).
 
-Editar a funcao `CountryListWidget` em `src/pages/firewall/AnalyzerDashboardPage.tsx` para adicionar:
+## Mudancas
 
-- Calculo de `maxCount` (maior valor entre os paises)
-- Numero de ranking (badge numerico como nos IPs)
-- Barra de progresso proporcional abaixo de cada entrada
-- Mesmo estilo visual usado no `IPListWidget`: barra `h-1 bg-primary/50 rounded-full` sobre fundo `bg-secondary/60`
+### 1. Reduzir staleTime e forcar refetch na pagina de Config Changes
 
-### Antes (CountryListWidget)
+No `AnalyzerConfigChangesPage.tsx`, usar o hook com opcoes que forcam dados frescos:
+- Criar uma chamada direta ao `useLatestAnalyzerSnapshot` ou usar `refetchOnMount: 'always'`
+- Como o hook `useLatestAnalyzerSnapshot` nao aceita opcoes extras, a solucao e adicionar um botao de "Atualizar" que chama `refetch()` manualmente
+
+### 2. Mostrar mensagem informativa quando dados estao incompletos
+
+Quando `configChanges > 0` mas `configChangeDetails` esta vazio, exibir uma mensagem explicando que os dados de detalhe nao estao disponiveis neste snapshot e sugerindo re-executar a analise.
+
+### 3. Expor `refetch` no hook e adicionar botao de refresh
+
+Alterar a pagina para usar o retorno `refetch` do hook e adicionar um botao de atualizar na interface.
+
+## Secao tecnica
+
+### Arquivo: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+
+1. Extrair `refetch` do hook:
 ```text
-<div className="flex items-center justify-between py-1.5 px-2 ...">
-  <CountryName country={c.country} />
-  <Badge>{c.count}</Badge>
-</div>
+const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 ```
 
-### Depois
+2. Adicionar botao de refresh no header ao lado do select de firewall
+
+3. Adicionar logica de fallback:
 ```text
-<div className="py-2 px-2 ...">
-  <div className="flex items-center gap-3">
-    <span className="w-5 h-5 ... rounded bg-secondary">{i+1}</span>
-    <div className="flex-1">
-      <CountryName country={c.country} />
-    </div>
-    <Badge>{c.count}</Badge>
-  </div>
-  <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
-    <div className="h-full bg-primary/50 rounded-full" style={{ width: `${(c.count/maxCount)*100}%` }} />
-  </div>
-</div>
+const configChangesCount = snapshot?.metrics?.configChanges || 0;
+const details = snapshot?.metrics?.configChangeDetails || [];
+
+// Se tem contagem mas sem detalhes, mostrar aviso
+if (configChangesCount > 0 && details.length === 0) {
+  // Mostrar: "X alteracoes detectadas, mas os detalhes nao estao disponiveis 
+  // neste snapshot. Execute uma nova analise para gerar os dados detalhados."
+}
 ```
 
-### Arquivo a editar
-- `src/pages/firewall/AnalyzerDashboardPage.tsx` - Funcao `CountryListWidget` (linhas 79-91)
+### Arquivo: `src/hooks/useAnalyzerData.ts`
+
+Reduzir `staleTime` do hook `useLatestAnalyzerSnapshot` de 2 minutos para 30 segundos, garantindo que dados frescos sejam buscados mais rapidamente apos nova analise.
+
+### Arquivos a editar
+- `src/pages/firewall/AnalyzerConfigChangesPage.tsx` - Adicionar botao refresh, mensagem de fallback
+- `src/hooks/useAnalyzerData.ts` - Reduzir staleTime para 30s
