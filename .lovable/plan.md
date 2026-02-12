@@ -1,57 +1,83 @@
 
-# Corrigir Exibicao de Alteracoes de Configuracao Vazias
+# Correcao: Dados Duplicados entre Login Firewall e VPN
 
-## Problema Raiz
+## Diagnostico
 
-Os snapshots mais antigos do BAU-FW foram processados ANTES do edge function ser atualizado com a logica de `configChangeDetails`. Resultado:
-- `configChanges: 3` (contagem correta)
-- `configChangeDetails: []` (array vazio - dados nao foram gerados)
+A investigacao revelou que os dados de autenticacao estao **duplicados**. Ambos os steps do blueprint (`auth_events` e `vpn_events`) retornaram exatamente os mesmos 500 registros do FortiGate. Isso acontece porque a API do FortiGate esta retornando o mesmo buffer de log de memoria para ambas as consultas.
 
-O snapshot mais recente (17:15) JA TEM os dados corretos com 3 detalhes. Porem a pagina pode estar mostrando dados em cache (React Query staleTime de 2 minutos).
+**Evidencia concreta:**
+- `auth_events`: 46 system + 416 vpn + 37 wireless = 500 registros
+- `vpn_events`: 46 system + 416 vpn + 37 wireless = 500 registros (identicos)
+- Resultado: 61 falhas de firewall + 61 falhas de VPN = **mesmos eventos contados duas vezes**
+- Por isso os mesmos usuarios (admin, love, umang.singh, etc.) e IPs aparecem em ambos os insights
 
-## Mudancas
+## Causa Raiz
 
-### 1. Reduzir staleTime e forcar refetch na pagina de Config Changes
+1. O endpoint da API do FortiGate `/api/v2/log/memory/event/system?filter=logdesc=~auth` retorna um mix de eventos (incluindo VPN e wireless)
+2. O endpoint `/api/v2/log/memory/event/vpn` tambem retorna o mesmo mix de eventos
+3. O edge function `analyzeAuthentication()` recebe dados identicos nos parametros `authLogs` e `vpnLogs`
 
-No `AnalyzerConfigChangesPage.tsx`, usar o hook com opcoes que forcam dados frescos:
-- Criar uma chamada direta ao `useLatestAnalyzerSnapshot` ou usar `refetchOnMount: 'always'`
-- Como o hook `useLatestAnalyzerSnapshot` nao aceita opcoes extras, a solucao e adicionar um botao de "Atualizar" que chama `refetch()` manualmente
+## Solucao
 
-### 2. Mostrar mensagem informativa quando dados estao incompletos
+### 1. Filtrar por `subtype` no Edge Function (`firewall-analyzer/index.ts`)
 
-Quando `configChanges > 0` mas `configChangeDetails` esta vazio, exibir uma mensagem explicando que os dados de detalhe nao estao disponiveis neste snapshot e sugerindo re-executar a analise.
+Adicionar filtragem por `subtype` no inicio de `analyzeAuthentication()` para separar corretamente os eventos:
 
-### 3. Expor `refetch` no hook e adicionar botao de refresh
-
-Alterar a pagina para usar o retorno `refetch` do hook e adicionar um botao de atualizar na interface.
-
-## Secao tecnica
-
-### Arquivo: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
-
-1. Extrair `refetch` do hook:
 ```text
-const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
+// Antes de processar, filtrar por subtype para evitar duplicatas
+const realAuthLogs = safeAuth.filter(l => {
+  const subtype = (l.subtype || '').toLowerCase();
+  const logdesc = (l.logdesc || '').toLowerCase();
+  // Eventos de sistema com contexto de autenticacao
+  return subtype === 'system' || subtype === 'admin' || 
+         logdesc.includes('admin login') || logdesc.includes('authentication');
+});
+
+const realVpnLogs = safeVpn.filter(l => {
+  const subtype = (l.subtype || '').toLowerCase();
+  // Apenas eventos realmente de VPN
+  return subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl';
+});
 ```
 
-2. Adicionar botao de refresh no header ao lado do select de firewall
+Em seguida, usar `realAuthLogs` no lugar de `safeAuth` e `realVpnLogs` no lugar de `safeVpn` em todo o resto da funcao.
 
-3. Adicionar logica de fallback:
+### 2. Deduplicacao por ID de log
+
+Como protecao adicional contra dados identicos vindos de ambos os steps, adicionar deduplicacao baseada no campo `id` ou `eventid` do log:
+
 ```text
-const configChangesCount = snapshot?.metrics?.configChanges || 0;
-const details = snapshot?.metrics?.configChangeDetails || [];
-
-// Se tem contagem mas sem detalhes, mostrar aviso
-if (configChangesCount > 0 && details.length === 0) {
-  // Mostrar: "X alteracoes detectadas, mas os detalhes nao estao disponiveis 
-  // neste snapshot. Execute uma nova analise para gerar os dados detalhados."
-}
+// Coletar IDs ja vistos para evitar contar o mesmo evento duas vezes
+const seenIds = new Set<string>();
+const dedup = (logs: any[]) => logs.filter(l => {
+  const logId = l.id || l.eventid || `${l.date}_${l.time}_${l.srcip}_${l.user}`;
+  if (seenIds.has(logId)) return false;
+  seenIds.add(logId);
+  return true;
+});
 ```
 
-### Arquivo: `src/hooks/useAnalyzerData.ts`
+### 3. Melhorar as queries do Blueprint (banco de dados)
 
-Reduzir `staleTime` do hook `useLatestAnalyzerSnapshot` de 2 minutos para 30 segundos, garantindo que dados frescos sejam buscados mais rapidamente apos nova analise.
+Atualizar os paths da API no blueprint "FortiGate - Analyzer" para filtros mais especificos:
 
-### Arquivos a editar
-- `src/pages/firewall/AnalyzerConfigChangesPage.tsx` - Adicionar botao refresh, mensagem de fallback
-- `src/hooks/useAnalyzerData.ts` - Reduzir staleTime para 30s
+- **auth_events**: `/api/v2/log/memory/event/system?filter=logdesc=~"Admin login"&rows=500`
+  (filtrar especificamente por "Admin login" em vez de apenas "auth")
+- **vpn_events**: `/api/v2/log/memory/event/vpn?filter=subtype==vpn&rows=500`
+  (adicionar filtro de subtype)
+
+Esta alteracao sera feita via UPDATE no banco de dados.
+
+## Arquivos a editar
+
+- **Editar**: `supabase/functions/firewall-analyzer/index.ts` - Adicionar filtragem por subtype e deduplicacao na funcao `analyzeAuthentication()`
+- **Reimplantar**: Edge function `firewall-analyzer`
+- **SQL**: Atualizar filtros do blueprint no banco de dados
+
+## Impacto
+
+Apos a correcao:
+- Os contadores de "Login Firewall" e "Falhas VPN" mostrarao valores reais e distintos
+- Os insights de brute force serao separados corretamente (se houver brute force em ambos, sera por dados diferentes)
+- Os rankings de Top IPs/Paises refletirao origens distintas para cada tipo de evento
+- O usuario precisara **re-executar a analise** para gerar dados corretos
