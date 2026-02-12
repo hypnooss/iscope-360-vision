@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Shield,
   Globe,
@@ -56,6 +57,7 @@ import {
   Router,
   Box,
   Package,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -149,6 +151,7 @@ export default function TemplatesPage() {
   const [editForm, setEditForm] = useState<Partial<DeviceType & { icon: string }>>({});
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateTemplateForm>(initialCreateForm);
+  const [templateSearch, setTemplateSearch] = useState('');
 
   // Access control - only super_admin and super_suporte
   useEffect(() => {
@@ -174,6 +177,18 @@ export default function TemplatesPage() {
     },
     enabled: !!user && (role === 'super_admin' || role === 'super_suporte'),
   });
+
+  const filteredTemplates = useMemo(() => {
+    if (!templates) return [];
+    if (!templateSearch) return templates;
+    const q = templateSearch.toLowerCase();
+    return templates.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.vendor.toLowerCase().includes(q) ||
+        t.code.toLowerCase().includes(q)
+    );
+  }, [templates, templateSearch]);
 
   // Create mutation
   const createMutation = useMutation({
@@ -280,13 +295,13 @@ export default function TemplatesPage() {
         <PageBreadcrumb
           items={[
             { label: 'Administração' },
-            { label: 'Templates' },
+            { label: 'Gerenciamento de Templates' },
           ]}
         />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Templates</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Templates</h1>
             <p className="text-muted-foreground">
               Gerencie os templates de dispositivos disponíveis no sistema
             </p>
@@ -297,92 +312,169 @@ export default function TemplatesPage() {
           </Button>
         </div>
 
+        {/* Stats Cards */}
+        {(() => {
+          const tpl = templates || [];
+          const activeCount = tpl.filter(t => t.is_active).length;
+          const inactiveCount = tpl.filter(t => !t.is_active).length;
+          const categories = new Set(tpl.map(t => t.category)).size;
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Layers className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Templates</p>
+                      <p className="text-2xl font-bold">{tpl.length}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Activity className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ativos</p>
+                      <p className="text-2xl font-bold">{activeCount}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-muted">
+                      <Package className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Inativos</p>
+                      <p className="text-2xl font-bold">{inactiveCount}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Box className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Categorias</p>
+                      <p className="text-2xl font-bold">{categories}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
+
         <TemplatePipelineFlow />
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar template..."
+            value={templateSearch}
+            onChange={(e) => setTemplateSearch(e.target.value)}
+            className="pl-10 max-w-sm"
+          />
+        </div>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="rounded-md border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right w-24">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {templates?.map((template) => {
-                  const categoryDisplay = categoryDisplayMap[template.category] || template.category;
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12"></TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right w-24">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTemplates.map((template) => {
+                    const categoryDisplay = categoryDisplayMap[template.category] || template.category;
 
-                  return (
-                    <TableRow key={template.id} className="group">
-                      <TableCell>
-                        <div className="p-1.5 rounded bg-primary/10 w-fit">
-                          {getIconComponent(template.icon)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        <Link 
-                          to={`/templates/${template.id}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {template.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{template.vendor}</TableCell>
-                      <TableCell>
-                        <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
-                          {template.code}
-                        </code>
-                      </TableCell>
-                      <TableCell>{categoryDisplay}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={template.is_active ? 'default' : 'secondary'}>
-                          {template.is_active ? 'Ativo' : 'Inativo'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => setViewingTemplate(template)}
-                            title="Visualizar"
+                    return (
+                      <TableRow key={template.id} className="group">
+                        <TableCell>
+                          <div className="p-1.5 rounded bg-primary/10 w-fit">
+                            {getIconComponent(template.icon)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          <Link 
+                            to={`/templates/${template.id}`}
+                            className="hover:text-primary hover:underline"
                           >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleOpenEdit(template)}
-                            title="Editar"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                        </div>
+                            {template.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{template.vendor}</TableCell>
+                        <TableCell>
+                          <code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
+                            {template.code}
+                          </code>
+                        </TableCell>
+                        <TableCell>{categoryDisplay}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant={template.is_active ? 'default' : 'secondary'}>
+                            {template.is_active ? 'Ativo' : 'Inativo'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setViewingTemplate(template)}
+                              title="Visualizar"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleOpenEdit(template)}
+                              title="Editar"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filteredTemplates.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        Nenhum template encontrado
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-                {templates?.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      Nenhum template encontrado
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
 
