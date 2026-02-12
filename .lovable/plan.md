@@ -1,39 +1,51 @@
 
-# Fix: IP Extraction Mismatch in Attack Surface Queue
 
-## Root Cause
-The edge function `run-attack-surface-queue` cannot find any IPs because of **key name mismatches** between the extraction code and the actual `report_data` structure:
+# Fix: Heartbeat nao detecta tasks do Attack Surface para Super Agent
 
-| Code expects | Actual data |
-|---|---|
-| `reportData.subdomainSummary` | `reportData.subdomain_summary` |
-| `sub.hostname` | `sub.subdomain` |
-| `reportData.subdomains` (top-level array) | Does not exist at top level |
-
-The `addr.ip` field does match, but the parent paths are wrong so it never reaches that code.
-
-## Fix
-
-### File: `supabase/functions/run-attack-surface-queue/index.ts`
-
-1. **Line 52**: Change `reportData.subdomainSummary` to `reportData.subdomain_summary`
-2. **Line 60**: Change `sub.hostname` to `sub.subdomain`
-3. Keep the camelCase fallback as a secondary check (for backward compatibility)
-4. Also check `reportData.dns_summary` as an additional IP source
-
-### Technical Details
-
-The `extractDomainIPs` function needs these specific changes:
+## Problema
+A funcao RPC `rpc_agent_heartbeat` conta tarefas pendentes apenas na tabela `agent_tasks`:
 
 ```text
-// Line 52 - Fix key name (snake_case, not camelCase)
-const subSummary = reportData.subdomain_summary || reportData.subdomainSummary
-
-// Line 60 - Fix field name
-ips.push({ ip, source: 'dns', label: sub.subdomain || sub.hostname || domainName })
+SELECT COUNT(*) INTO v_pending_count
+FROM agent_tasks
+WHERE agent_id = p_agent_id AND status = 'pending' AND expires_at > NOW();
 ```
 
-### Deployment
-- Deploy updated `run-attack-surface-queue` edge function
-- No database or frontend changes needed
-- After deploy, clicking "Disparar Scan" should correctly extract IPs and create tasks for the Super Agent
+Porem, as tasks do Attack Surface ficam em uma tabela separada: `attack_surface_tasks`. Como o Super Agent nunca tem registros em `agent_tasks`, o heartbeat sempre retorna `has_pending_tasks=False`, e o Python agent pula a etapa de buscar tarefas (linha 126 do `main.py`).
+
+## Solucao
+
+Alterar a funcao RPC `rpc_agent_heartbeat` para, quando o agente for `is_system_agent=true`, tambem verificar a tabela `attack_surface_tasks` por tasks com status `pending`.
+
+### Alteracao no banco de dados (SQL)
+
+Adicionar um check condicional na funcao:
+
+```text
+-- Apos o SELECT COUNT(*) existente em agent_tasks:
+IF v_agent.is_system_agent THEN
+  SELECT COUNT(*) INTO v_attack_pending
+  FROM attack_surface_tasks
+  WHERE status = 'pending';
+
+  v_pending_count := v_pending_count + v_attack_pending;
+END IF;
+```
+
+Isso requer:
+1. Adicionar `is_system_agent` ao SELECT inicial do agente (ja existe na tabela, mas nao e consultado)
+2. Declarar uma variavel `v_attack_pending INTEGER`
+3. Adicionar o bloco IF acima apos a contagem de `agent_tasks`
+
+### Arquivos alterados
+
+- **Migration SQL**: Nova migration para atualizar a funcao `rpc_agent_heartbeat`
+- Nenhuma alteracao no Python agent ou frontend necessaria
+
+### Resultado esperado
+
+Apos a correcao:
+1. Heartbeat do Super Agent retorna `has_pending_tasks=True` quando existem tasks pendentes em `attack_surface_tasks`
+2. Python agent detecta tasks pendentes e chama `rpc_get_agent_tasks`
+3. A funcao `rpc_get_agent_tasks` ja possui a logica correta para Super Agents (claim de tasks com `FOR UPDATE SKIP LOCKED`)
+4. Super Agent executa masscan, nmap, httpx e envia resultados
