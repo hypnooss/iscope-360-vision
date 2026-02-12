@@ -1,49 +1,79 @@
 
-# Corrigir Edge Function attack-surface-scan
+# Workspace Selector + Validacao no Attack Surface Analyzer
 
-## Problemas Encontrados
+## Objetivo
 
-O scan executou com sucesso, mas retornou 0 IPs por dois bugs na edge function:
+Adicionar um dropdown de workspace (apenas para Super Admin e Super Suporte) ao lado do botao "Executar Scan", e desabilitar o botao com tooltip caso o workspace selecionado nao tenha pelo menos 1 dominio externo e 1 firewall cadastrados.
 
-### Bug 1: Coluna errada na tabela `task_step_results`
-A edge function busca `step.result_data`, mas a coluna real chama-se `data`.
+## Mudancas
 
-### Bug 2: Formato de IPs dos subdominios nao reconhecido
-A funcao `extractDomainIPs()` procura por:
-- `subdomainSummary.subdomains[*].addresses[*].ip` 
-- `checks[*].rawData` com campos `ip` ou `address`
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Mas o formato real dos dados de enumeracao de subdominios (source: api) e:
-```json
-{
-  "type": "subdomain_enumeration",
-  "subdomains": [
-    { "subdomain": "briimage.example.com", "ips": ["3.133.227.151"], "is_alive": true }
-  ]
-}
+**1. Workspace Selector (Super Roles)**
+
+Seguindo o padrao ja usado em `GeneralDashboardPage.tsx`:
+- Verificar `effectiveRole === 'super_admin' || effectiveRole === 'super_suporte'`
+- Se for super role: buscar todos os `clients` (workspaces) e exibir um `Select` dropdown ao lado do botao "Executar Scan"
+- Se NAO for super role: usar o `useClientId()` atual (workspace atrelado ao usuario)
+- O dropdown nao tera opcao "Todos" — o usuario deve selecionar um workspace especifico para executar o scan
+- O `selectedClientId` sera usado tanto para carregar o snapshot quanto para disparar o scan
+
+**2. Validacao de pre-requisitos**
+
+Criar uma query que verifica, para o `selectedClientId`, se existe:
+- Pelo menos 1 registro em `external_domains` com `client_id = selectedClientId`
+- Pelo menos 1 registro em `firewalls` com `client_id = selectedClientId`
+
+Se alguma das condicoes nao for atendida, o botao "Executar Scan" ficara desabilitado e envolvido por um `Tooltip` com a mensagem:
+- "E necessario ter pelo menos um dominio externo e um firewall cadastrados neste workspace para executar o scan."
+
+**3. Layout do header**
+
+O header ficara assim:
+```text
+[Titulo + Descricao]                    [Workspace Dropdown (se super role)] [Executar Scan]
 ```
 
-Os IPs estao em `report_data.subdomains[*].ips[]` (array de strings), nao dentro de `subdomainSummary.subdomains[*].addresses[*].ip`.
+O dropdown e o botao ficarao agrupados com `flex items-center gap-3`.
 
-### Dado adicional: Firewall WAN IPs
-As interfaces WAN do firewall deste cliente sao tuneis com IPs privados (`10.0.0.13`), entao e esperado que nao retornem IPs publicos. A logica de filtragem RFC1918 esta correta. Os IPs publicos virao primariamente dos subdominios DNS.
+## Detalhes Tecnicos
 
-## Correcoes
+### Novo estado e queries na pagina:
 
-### Arquivo: `supabase/functions/attack-surface-scan/index.ts`
+- `useEffectiveAuth()` para detectar `effectiveRole`
+- `useState` para `selectedWorkspaceId` (super roles)
+- `useEffect` para carregar lista de workspaces (`clients` table) — mesmo padrao de `GeneralDashboardPage`
+- `useQuery` para verificar existencia de dominio e firewall no workspace selecionado:
+  ```typescript
+  const { data: prereqs } = useQuery({
+    queryKey: ['attack-surface-prereqs', selectedClientId],
+    queryFn: async () => {
+      const [domains, firewalls] = await Promise.all([
+        supabase.from('external_domains').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
+        supabase.from('firewalls').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
+      ]);
+      return { hasDomains: (domains.count ?? 0) > 0, hasFirewalls: (firewalls.count ?? 0) > 0 };
+    },
+    enabled: !!selectedClientId,
+  });
+  ```
 
-**Correcao 1**: Na funcao `extractDomainIPs()`, adicionar Path 0 para o formato de subdomain enumeration:
-- Buscar `report_data.subdomains[]` (array)
-- Para cada subdomain, iterar `subdomain.ips[]` (array de strings)
-- Criar SourceIP com `source: 'dns'` e `label: subdomain.subdomain`
+### Logica do `clientId` final:
 
-**Correcao 2**: Na secao de firewall, alterar `step.result_data` para `step.data`.
+```text
+Se super role:
+  clientId = selectedWorkspaceId (do dropdown)
+Senao:
+  clientId = resultado do useClientId() (workspace do usuario)
+```
 
-**Correcao 3**: Ao buscar analises de dominio, buscar AMBOS os tipos (agent e api), pois os IPs estao nas analises de source `api` (subdomain enumeration), nao nas de source `agent` (compliance).
+### Botao com Tooltip condicional:
 
-### Resultado esperado
-Com essas correcoes, o scan devera encontrar pelo menos os IPs:
-- `3.133.227.151` (briimage.brinquedosestrela.com.br)
-- `3.132.6.138` (brilink, brispf.brinquedosestrela.com.br)
-- `13.248.161.86` e `76.223.33.242` (www.brinquedosestrela.com.br)
-- Mais IPs do dominio estrela.com.br
+Quando `prereqs` indica que falta dominio ou firewall, o botao sera envolvido por `Tooltip` com mensagem explicativa. Usar `TooltipProvider` > `Tooltip` > `TooltipTrigger` (com `asChild`) > `Button disabled`.
+
+### Imports adicionais:
+
+- `Select, SelectContent, SelectItem, SelectTrigger, SelectValue` de `@/components/ui/select`
+- `Building2` de `lucide-react` (icone do seletor, consistente com Dashboard)
+- `useEffectiveAuth` de `@/hooks/useEffectiveAuth`
+- `TooltipProvider` de `@/components/ui/tooltip`
