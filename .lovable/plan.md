@@ -1,102 +1,40 @@
 
-# Script de Instalacao do Super Agent
+# Fix: Super Agent Install Edge Function - ReferenceError
 
-## Resumo
+## Problema
 
-Criar uma nova Edge Function `super-agent-install` que serve um script bash dedicado para instalacao de Super Agents. Esse script e uma versao simplificada do `agent-install` existente, mas adaptada para o perfil do Super Agent:
+O erro `ReferenceError: version is not defined` ocorre porque o script bash do `check-deps` esta embutido dentro de um template literal do JavaScript (backticks). Variaveis bash como `${version}`, `${arch}`, `${tmp_dir}` e `${bin_path}` sao interpretadas pelo JS como expressoes de template, mas essas variaveis nao existem no contexto do JavaScript.
 
-- **Inclui**: masscan, nmap, httpx (ferramentas de scan ativo)
-- **Exclui**: PowerShell, modulos M365, certificados M365, Amass
-- **Adiciona**: flag `is_system_agent.flag` em `/var/lib/iscope-agent/`
+## Causa Raiz
 
-## Diferencas entre Agent Regular vs Super Agent
+Dentro da funcao `write_check_deps_script()` (linhas ~540-680), o heredoc `<<'CHECKDEPS'` eh corretamente delimitado para o bash nao interpolar, porem o conteudo inteiro ja esta dentro de um template literal JS. O JS processa `${version}` antes do bash sequer ver o script.
 
-```text
-+-------------------------+------------------+------------------+
-| Componente              | Agent Regular    | Super Agent      |
-+-------------------------+------------------+------------------+
-| Python + venv           | Sim              | Sim              |
-| Amass                   | Sim              | Nao              |
-| PowerShell Core         | Sim              | Nao              |
-| Modulos M365            | Sim              | Nao              |
-| Certificado M365        | Sim              | Nao              |
-| masscan                 | Nao              | Sim              |
-| nmap                    | Nao              | Sim              |
-| httpx                   | Nao              | Sim              |
-| is_system_agent.flag    | Nao              | Sim              |
-| systemd service         | Sim              | Sim (mesmo)      |
-| check-deps.sh           | Sim              | Sim (ja adaptado)|
-+-------------------------+------------------+------------------+
-```
+## Correcao
 
-## Arquivos a Criar
+Escapar todas as referencias `${...}` dentro do bloco `check_and_install_httpx()` do heredoc embutido (linhas 618-656) para que o JS as trate como texto literal:
 
-### 1. `supabase/functions/super-agent-install/index.ts`
+- `${version}` -> `\${version}`
+- `${arch}` -> `\${arch}`  
+- `${tmp_dir}` -> `\${tmp_dir}`
+- `${bin_path}` -> `\${bin_path}`
 
-Nova Edge Function (publica, sem JWT) que retorna o script bash de instalacao. Estrutura identica ao `agent-install`:
-- Mesmo fluxo: parse args, require root, detect OS, install deps, download release, setup venv, write env, write systemd, start service
-- Substitui `install_amass()` + `install_powershell()` + `generate_m365_certificate()` por `install_scanner_tools()` que instala masscan, nmap e httpx
-- Adiciona criacao do arquivo `/var/lib/iscope-agent/is_system_agent.flag` em `ensure_dirs()`
-- O `check-deps.sh` embutido ja esta adaptado (feito na Fase 1) para detectar a flag e instalar as ferramentas
+Variaveis afetadas (linhas 618-655):
+- Linha 618: `arch="$(uname -m)"` -> `arch="\$(uname -m)"`
+- Linha 623: `$arch` -> `\$arch`
+- Linha 628: `${version}` e `${arch}` -> `\${version}` e `\${arch}`
+- Linha 630: `$(mktemp -d)` -> `\$(mktemp -d)`
+- Linha 631: `${tmp_dir}` -> `\${tmp_dir}`
+- Linha 633: `$tmp_dir` -> `\$tmp_dir`
+- Linha 643: `${tmp_dir}` -> `\${tmp_dir}` e `$tmp_dir` -> `\$tmp_dir`
+- Linha 645: `$tmp_dir` e `$bin_path` -> `\$tmp_dir` e `\$bin_path`
+- Linha 646-649: `$bin_path` -> `\$bin_path`
+- Linha 652: `$tmp_dir` -> `\$tmp_dir`
+- Linha 655: `$tmp_dir` -> `\$tmp_dir`
 
-## Arquivos a Editar
+## Arquivo a Editar
 
-### 2. `src/components/agents/AgentInstallInstructions.tsx`
+- `supabase/functions/super-agent-install/index.ts` — escapar variaveis bash no bloco check_and_install_httpx (linhas 611-657)
 
-Adicionar prop opcional `isSuperAgent` que altera a URL de instalacao para `super-agent-install` e ajusta o texto de pre-requisitos.
+## Verificacao
 
-### 3. `src/pages/admin/SuperAgentsPage.tsx`
-
-Passar `isSuperAgent={true}` ao componente `AgentInstallInstructions`.
-
-### 4. `supabase/config.toml`
-
-Registrar a nova funcao `super-agent-install` com `verify_jwt = false` (endpoint publico, mesmo padrao do `agent-install`).
-
-## Detalhes Tecnicos do Script
-
-O script `super-agent-install` segue o mesmo padrao do instalador atual mas com as seguintes funcoes substituidas:
-
-**install_scanner_tools()** (substitui install_amass + install_powershell + generate_m365_certificate):
-
-```text
-1. masscan:
-   - apt install -y masscan (Debian/Ubuntu)
-   - dnf install -y masscan (RHEL/CentOS)
-
-2. nmap:
-   - apt install -y nmap (Debian/Ubuntu)
-   - dnf install -y nmap (RHEL/CentOS)
-
-3. httpx (projectdiscovery):
-   - Detecta arquitetura (amd64/arm64)
-   - Baixa release v1.6.9 do GitHub
-   - Extrai para /usr/local/bin/httpx
-```
-
-**ensure_dirs()** adicional:
-```text
-touch /var/lib/iscope-agent/is_system_agent.flag
-```
-
-Essa flag e lida pelo `check-deps.sh` (ja implementado na Fase 1) para instalar/verificar as ferramentas de scan em cada restart do servico.
-
-## Fluxo de Instalacao
-
-```text
-Admin cria Super Agent na UI
-         |
-         v
-Recebe codigo de ativacao
-         |
-         v
-curl -fsSL .../super-agent-install | sudo bash -s -- --activation-code "XXXX"
-         |
-         v
-1. Instala Python + venv
-2. Instala masscan, nmap, httpx
-3. Baixa release do agent (mesmo pacote)
-4. Cria flag is_system_agent.flag
-5. Registra servico systemd
-6. Inicia servico -> agent faz register -> heartbeat -> pega tasks da fila
-```
+Apos o fix, re-deploy da edge function e testar o curl novamente. O script deve ser servido corretamente como texto bash.
