@@ -326,7 +326,7 @@ export default function SuperAgentsPage() {
                       </div>
                     </div>
                   </div>
-                  <AgentInstallInstructions activationCode={activationCode} />
+                  <AgentInstallInstructions activationCode={activationCode} isSuperAgent />
                   <div className="flex items-center gap-2 text-sm text-warning">
                     <Clock className="w-4 h-4" />
                     <span>Expira {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}</span>

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 const PROJECT_REF = "akbosdbyheezghieiefz";
 const INSTALL_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/agent-install`;
+const SUPER_AGENT_INSTALL_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/super-agent-install`;
 
 const STATUS_CMD = "systemctl status iscope-agent --no-pager";
 const LOGS_CMD = "journalctl -u iscope-agent -f --no-pager";
@@ -14,6 +15,7 @@ const LOGS_CMD = "journalctl -u iscope-agent -f --no-pager";
 type Props = {
   activationCode: string;
   className?: string;
+  isSuperAgent?: boolean;
 };
 
 async function copyToClipboard(text: string, label: string) {
@@ -21,12 +23,14 @@ async function copyToClipboard(text: string, label: string) {
   toast.success(`${label} copiado!`);
 }
 
-export function AgentInstallInstructions({ activationCode, className }: Props) {
+export function AgentInstallInstructions({ activationCode, className, isSuperAgent = false }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
 
+  const baseUrl = isSuperAgent ? SUPER_AGENT_INSTALL_URL : INSTALL_URL;
+
   const installCommand = useMemo(
-    () => `curl -fsSL ${INSTALL_URL} | sudo bash -s -- --activation-code "${activationCode}"`,
-    [activationCode],
+    () => `curl -fsSL ${baseUrl} | sudo bash -s -- --activation-code "${activationCode}"`,
+    [activationCode, baseUrl],
   );
 
   const doCopy = async (key: string, value: string, label: string) => {
@@ -38,7 +42,7 @@ export function AgentInstallInstructions({ activationCode, className }: Props) {
   return (
     <div className={cn("space-y-4", className)}>
       <div className="space-y-2">
-        <Label>Instalar agent (Linux)</Label>
+        <Label>{isSuperAgent ? "Instalar Super Agent (Linux)" : "Instalar agent (Linux)"}</Label>
 
         <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-sm">
           <p className="text-foreground">
@@ -46,6 +50,11 @@ export function AgentInstallInstructions({ activationCode, className }: Props) {
             <code className="font-mono text-xs">iscope-agent-latest.tar.gz</code> no Supabase Storage (bucket{" "}
             <code className="font-mono text-xs">agent-releases</code>).
           </p>
+          {isSuperAgent && (
+            <p className="mt-2 text-foreground">
+              <span className="font-medium">Ferramentas instaladas:</span> masscan, nmap, httpx (projectdiscovery).
+            </p>
+          )}
           <p className="mt-2 text-muted-foreground">
             Link do Storage:{" "}
             <a
