@@ -223,6 +223,16 @@ install_scanner_tools() {
     fi
   fi
 
+  # Conceder CAP_NET_RAW ao masscan (necessário para raw sockets sem root)
+  local masscan_path
+  masscan_path="\$(command -v masscan 2>/dev/null || echo '/usr/local/bin/masscan')"
+  if [[ -x "\$masscan_path" ]]; then
+    echo "Configurando CAP_NET_RAW para masscan em \$masscan_path..."
+    setcap cap_net_raw+ep "\$masscan_path" 2>/dev/null || {
+      echo "Aviso: falha ao configurar CAP_NET_RAW. masscan pode precisar de root para funcionar."
+    }
+  fi
+
   # --- nmap ---
   if command -v nmap >/dev/null 2>&1; then
     echo "nmap já instalado: \$(nmap --version 2>&1 | head -1)"
