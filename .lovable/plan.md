@@ -1,82 +1,65 @@
 
 
-# Melhorar Mapa de Ataques e Visual dos Top IPs de Autenticacao
+# Mapa Realista e Correção de Config Changes Vazias
 
 ## Problemas Identificados
 
-1. **Mapa**: O SVG atual usa paths simplificados de continentes que nao parecem um mapa real - sao formas abstratas sem definicao geografica
-2. **Top IPs - Autenticacao**: O layout da lista esta desorganizado - nome do pais e bandeira aparecem em formato estranho com parenteses e quebras de linha
+1. **Mapa**: Os paths SVG atuais (`CONTINENT_PATHS`) sao formas geometricas aproximadas, nao parecem um mapa real. Precisam ser substituidos por contornos reais de paises.
+
+2. **Config Changes vazio**: O banco confirma que o snapshot mais recente (BAU-FW) tem `configChanges: 3` mas `configChangeDetails: null`. Isso aconteceu porque o snapshot foi processado ANTES da versao do edge function que gera `configChangeDetails` ser implantada. A logica no codigo esta correta - basta reimplantar o edge function e re-executar a analise.
+
+3. **Visual dos Top IPs/Paises**: O screenshot mostra que o visual atual ja esta bom (bandeiras, barras de progresso, layout limpo). Nenhuma alteracao necessaria.
 
 ## Mudancas
 
-### 1. Componente `AttackMap.tsx` - Mapa mundial realista
+### 1. Mapa Realista (`AttackMap.tsx`)
 
-Substituir os paths SVG simplificados por um mapa do mundo detalhado usando GeoJSON natural earth simplificado. O SVG tera paths reais dos continentes/paises com:
+Substituir os `CONTINENT_PATHS` por um mapa mundial real usando a abordagem:
 
-- Contornos de paises em estilo dark (preenchimento escuro, bordas sutis)
-- Projecao equiretangular mantida (simples e funcional)
-- Os pontos de ataque continuam com as mesmas cores e animacoes pulse
-- Fundo escuro com grid sutil para efeito "cyber"
-- Usar um SVG world map inline com paths reais (existe um SVG simplificado de ~15KB que cobre todos os paises principais)
+- Utilizar uma imagem de mapa mundial escuro como fundo (PNG embutido via URL publica ou asset local)
+- Manter o SVG overlay com os pontos de ataque (pulses, cores, tooltips)
+- Usar uma imagem de mapa dark-themed de alta qualidade posicionada como background do container SVG
+- O SVG fica transparente (sem os paths de continentes), apenas com grid sutil e os pontos de ataque
+- Coordenadas projetadas com a mesma funcao equiretangular ja existente
 
-### 2. Widget `IPListWidget` no `AnalyzerDashboardPage.tsx` - Melhorar visual
+Alternativa (mais robusta): Usar paths SVG de paises reais extraidos do Natural Earth (110m simplificado). Isso requer paths maiores (~40KB) mas garante um mapa vetorial nitido em qualquer resolucao. Cada pais tera seu proprio path com preenchimento escuro e borda sutil.
 
-Problemas atuais vistos no screenshot:
-- O pais aparece como `( bandeira NomePais )` com parenteses e quebra de linha
-- Layout desalinhado
+Decisao: Usar paths SVG reais do Natural Earth para manter tudo vetorial e responsivo. Os paths serao agrupados por regiao (Americas, Europa, Africa, Asia, Oceania) com coordenadas de projecao equiretangular pre-calculadas para o viewBox 2000x1000.
 
-Correcoes:
-- Remover os parenteses ao redor do pais
-- Colocar IP e pais na mesma linha, com layout limpo: `IP  [bandeira] Pais` a esquerda, contagem a direita
-- Adicionar barra de progresso visual proporcional ao maior valor para dar contexto visual
-- Numerar com badge ao inves de texto simples
-- Melhorar espacamento e tipografia
+### 2. Reimplantar Edge Function
 
-Layout proposto para cada linha:
-```text
-[#1]  192.168.1.1    [bandeira] Netherlands    ████████░░  8
-```
+- Reimplantar `firewall-analyzer` para garantir que a versao com `configChangeDetails` esteja ativa
+- Apos reimplantacao, o usuario deve executar nova analise para gerar os detalhes
 
-### Arquivos a editar
+### 3. Sem alteracoes nos widgets de IPs/Paises
 
-- `src/components/firewall/AttackMap.tsx` - Substituir WORLD_PATH por paths reais de continentes
-- `src/pages/firewall/AnalyzerDashboardPage.tsx` - Refatorar `IPListWidget` para visual limpo e profissional
+O visual atual (screenshot image-318) ja esta adequado com bandeiras, barras de progresso e layout limpo.
 
 ## Secao tecnica
 
-### AttackMap - SVG paths reais
+### Paths SVG reais
 
-Usar um conjunto de paths SVG de continentes simplificados (Africa, Americas, Europa, Asia, Oceania) que formam um mapa mundial reconhecivel. Os paths serao definidos com viewBox `0 0 1000 500` e projecao natural. Cada continente tera preenchimento `hsl(var(--muted))` com opacidade baixa e borda sutil, criando um visual escuro e profissional.
+Os paths do Natural Earth 110m serao convertidos para projecao equiretangular com viewBox `0 0 2000 1000`. Cada pais sera um `<path>` com:
+- `fill="hsl(var(--muted))"` com opacidade 0.4
+- `stroke="hsl(var(--muted-foreground))"` com opacidade 0.2 e strokeWidth 0.5
 
-### IPListWidget - Novo layout
+Os paths reais cobrem ~180 paises com contornos precisos. O arquivo ficara maior (~50-80KB de paths) mas garante fidelidade visual.
 
+A funcao `project()` sera ajustada para o novo viewBox:
 ```text
-function IPListWidget({ ips }) {
-  const maxCount = Math.max(...ips.map(ip => ip.count));
-  return ips.map((ip, i) => (
-    <div className="flex items-center gap-3">
-      <span className="w-6 text-center font-mono text-xs text-muted-foreground">{i+1}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-medium">{ip.ip}</span>
-          {ip.country && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <flag /> {ip.country}
-            </span>
-          )}
-        </div>
-        // Barra de progresso proporcional
-        <div className="h-1 bg-secondary rounded mt-1">
-          <div style={{ width: `${(ip.count/maxCount)*100}%` }} className="h-1 bg-primary/60 rounded" />
-        </div>
-      </div>
-      <Badge>{ip.count}</Badge>
-    </div>
-  ));
+function project(lat, lng) {
+  const x = ((lng + 180) / 360) * 2000;
+  const y = ((90 - lat) / 180) * 1000;
+  return [x, y];
 }
 ```
 
+### Reimplantacao do edge function
+
+O codigo atual em `firewall-analyzer/index.ts` ja gera `configChangeDetails` corretamente (linhas 516-531). O problema e que a versao implantada nao inclui essa logica. Reimplantar resolve.
+
 ### Arquivos a editar
-- `src/components/firewall/AttackMap.tsx`
-- `src/pages/firewall/AnalyzerDashboardPage.tsx`
+
+- **Editar**: `src/components/firewall/AttackMap.tsx` - Substituir CONTINENT_PATHS por paths reais do Natural Earth
+- **Reimplantar**: `supabase/functions/firewall-analyzer` - Garantir versao mais recente ativa
 
