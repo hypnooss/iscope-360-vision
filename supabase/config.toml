@@ -105,3 +105,6 @@ verify_jwt = false
 [functions.check-attack-surface-progress]
 verify_jwt = false
 
+[functions.super-agent-install]
+verify_jwt = false
+

@@ -1,0 +1,801 @@
+// Public installer script for Linux Super Agents (curl | bash)
+// Installs masscan, nmap, httpx instead of PowerShell/M365/Amass.
+// NOTE: keep this endpoint public (verify_jwt = false) and avoid exposing secrets.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const PROJECT_REF = "akbosdbyheezghieiefz";
+const API_BASE_URL = `https://${PROJECT_REF}.supabase.co/functions/v1`;
+const RELEASE_BASE_URL = `https://${PROJECT_REF}.supabase.co/storage/v1/object/public/agent-releases`;
+
+function script(): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+API_BASE_URL="${API_BASE_URL}"
+RELEASE_BASE_URL="${RELEASE_BASE_URL}"
+
+ACTIVATION_CODE=""
+AGENT_VERSION="latest"
+POLL_INTERVAL="60"
+
+PYTHON_BIN=""
+
+INSTALL_DIR="/opt/iscope-agent"
+CONFIG_DIR="/etc/iscope-agent"
+STATE_DIR="/var/lib/iscope-agent"
+
+SERVICE_NAME="iscope-agent"
+SERVICE_USER="iscope"
+
+UPDATE="0"
+UNINSTALL="0"
+
+mask_code() {
+  local code="$1"
+  if [[ "\${#code}" -le 8 ]]; then
+    echo "****"
+    return
+  fi
+  echo "\${code:0:4}-****-****-\${code: -4}"
+}
+
+usage() {
+  cat <<EOF
+Uso:
+  sudo bash -s -- --activation-code "XXXX-XXXX-XXXX-XXXX" [opções]
+
+Opções:
+  --activation-code   (obrigatório)
+  --version           (default: latest)
+  --poll-interval     (default: 60)
+  --install-dir       (default: /opt/iscope-agent)
+  --config-dir        (default: /etc/iscope-agent)
+  --state-dir         (default: /var/lib/iscope-agent)
+  --update            (reinstala/atualiza)
+  --uninstall         (remove serviço e diretórios)
+EOF
+}
+
+require_root() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    echo "Erro: execute como root (use sudo)."
+    exit 1
+  fi
+}
+
+require_systemd() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "Erro: este instalador requer systemd (systemctl não encontrado)."
+    exit 1
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --activation-code)
+        ACTIVATION_CODE="\${2:-}"; shift 2 ;;
+      --version)
+        AGENT_VERSION="\${2:-}"; shift 2 ;;
+      --poll-interval)
+        POLL_INTERVAL="\${2:-}"; shift 2 ;;
+      --install-dir)
+        INSTALL_DIR="\${2:-}"; shift 2 ;;
+      --config-dir)
+        CONFIG_DIR="\${2:-}"; shift 2 ;;
+      --state-dir)
+        STATE_DIR="\${2:-}"; shift 2 ;;
+      --update)
+        UPDATE="1"; shift 1 ;;
+      --uninstall)
+        UNINSTALL="1"; shift 1 ;;
+      -h|--help)
+        usage; exit 0 ;;
+      *)
+        echo "Argumento desconhecido: $1"; usage; exit 1 ;;
+    esac
+  done
+
+  if [[ "$UNINSTALL" -eq 0 ]] && [[ "$UPDATE" -eq 0 ]] && [[ -z "$ACTIVATION_CODE" ]]; then
+    echo "Erro: --activation-code é obrigatório para instalação nova."
+    exit 1
+  fi
+}
+
+detect_os() {
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    echo "\${ID:-unknown}"
+  else
+    echo "unknown"
+  fi
+}
+
+choose_python() {
+  local candidates=("python3.11" "python3.10" "python3.9" "python3.8" "python3")
+  local c
+  for c in "\${candidates[@]}"; do
+    if command -v "$c" >/dev/null 2>&1; then
+      PYTHON_BIN="$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+require_python_min_version() {
+  if [[ -z "\${PYTHON_BIN:-}" ]]; then
+    echo "Erro: não consegui localizar Python no sistema."
+    echo "Instale python39 e tente novamente. Ex.: sudo dnf install -y python39 python39-pip"
+    exit 1
+  fi
+
+  local ver
+  ver="\$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
+  local maj min
+  maj="\${ver%%.*}"
+  min="\${ver#*.}"
+
+  if [[ -z "\${maj:-}" || -z "\${min:-}" ]]; then
+    echo "Erro: falha ao detectar versão do Python usando '$PYTHON_BIN'."
+    exit 1
+  fi
+
+  if [[ "$maj" -lt 3 || ( "$maj" -eq 3 && "$min" -lt 9 ) ]]; then
+    echo "Erro: Python >= 3.9 é obrigatório. Detectado: $ver ($PYTHON_BIN)"
+    echo "Oracle Linux/RHEL 8: sudo dnf install -y python39 python39-pip"
+    exit 1
+  fi
+}
+
+install_deps() {
+  local os_id
+  os_id="$(detect_os)"
+  echo "Instalando dependências (OS: \${os_id})..."
+
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y
+    apt-get install -y tar curl python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
+    return
+  fi
+
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y tar curl gcc openssl-devel libffi-devel || true
+    dnf install -y epel-release 2>/dev/null || true
+
+    if [[ -f /etc/centos-release ]] && grep -q "CentOS Linux.*8" /etc/centos-release 2>/dev/null; then
+      echo "Detectado CentOS Linux 8 (EOL) - redirecionando repos para vault..."
+      sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+      sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+      dnf clean all 2>/dev/null || true
+    fi
+
+    dnf config-manager --set-enabled appstream 2>/dev/null || true
+    dnf config-manager --set-enabled powertools 2>/dev/null || true
+
+    dnf module reset python39 -y 2>/dev/null || true
+    dnf module enable python39:3.9 -y 2>/dev/null || dnf module enable python39 -y 2>/dev/null || true
+
+    dnf install -y python39 python39-pip python39-devel 2>/dev/null || \\
+    dnf install -y python3.9 python3.9-pip python3.9-devel 2>/dev/null || \\
+    dnf install -y python3 python3-pip python3-devel 2>/dev/null || true
+
+    return
+  fi
+
+  if command -v yum >/dev/null 2>&1; then
+    yum install -y tar curl gcc openssl-devel libffi-devel || true
+    yum install -y python39 python39-pip python39-devel || true
+    yum install -y python3 python3-pip python3-devel || true
+    return
+  fi
+
+  echo "Erro: gerenciador de pacotes não suportado. Instale python3, venv e pip manualmente."
+  exit 1
+}
+
+install_scanner_tools() {
+  echo "Instalando ferramentas de scan (masscan, nmap, httpx)..."
+
+  # --- masscan ---
+  if command -v masscan >/dev/null 2>&1; then
+    echo "masscan já instalado: \$(masscan --version 2>&1 | head -1)"
+  else
+    echo "Instalando masscan..."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y masscan || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y masscan || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y masscan || true
+    fi
+    if command -v masscan >/dev/null 2>&1; then
+      echo "masscan instalado: \$(masscan --version 2>&1 | head -1)"
+    else
+      echo "Aviso: falha ao instalar masscan via pacote. Tentando compilar..."
+      install_masscan_from_source
+    fi
+  fi
+
+  # --- nmap ---
+  if command -v nmap >/dev/null 2>&1; then
+    echo "nmap já instalado: \$(nmap --version 2>&1 | head -1)"
+  else
+    echo "Instalando nmap..."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y nmap || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y nmap || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y nmap || true
+    fi
+    if command -v nmap >/dev/null 2>&1; then
+      echo "nmap instalado: \$(nmap --version 2>&1 | head -1)"
+    else
+      echo "Aviso: falha ao instalar nmap."
+    fi
+  fi
+
+  # --- httpx (projectdiscovery) ---
+  if command -v httpx >/dev/null 2>&1 || [[ -x /usr/local/bin/httpx ]]; then
+    echo "httpx já instalado"
+  else
+    install_httpx
+  fi
+}
+
+install_masscan_from_source() {
+  echo "Compilando masscan a partir do código-fonte..."
+  local tmp_dir
+  tmp_dir="\$(mktemp -d)"
+
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get install -y git make gcc libpcap-dev || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y git make gcc libpcap-devel || true
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    echo "Aviso: git não disponível. Não foi possível compilar masscan."
+    rm -rf "\$tmp_dir"
+    return
+  fi
+
+  git clone --depth 1 https://github.com/robertdavidgraham/masscan.git "\$tmp_dir/masscan" 2>/dev/null || {
+    echo "Aviso: falha ao clonar masscan."
+    rm -rf "\$tmp_dir"
+    return
+  }
+
+  cd "\$tmp_dir/masscan" && make -j"\$(nproc)" 2>/dev/null && cp bin/masscan /usr/local/bin/masscan && chmod +x /usr/local/bin/masscan
+  cd /
+  rm -rf "\$tmp_dir"
+
+  if command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]; then
+    echo "masscan compilado e instalado em /usr/local/bin/masscan"
+  else
+    echo "Aviso: falha ao compilar masscan."
+  fi
+}
+
+install_httpx() {
+  echo "Instalando httpx (projectdiscovery)..."
+
+  local arch
+  arch="\$(uname -m)"
+  case "\$arch" in
+    x86_64)  arch="amd64" ;;
+    aarch64) arch="arm64" ;;
+    *)
+      echo "Aviso: arquitetura \$arch não suportada para httpx. Pulando."
+      return
+      ;;
+  esac
+
+  local version="1.6.9"
+  local filename="httpx_\${version}_linux_\${arch}.zip"
+  local url="https://github.com/projectdiscovery/httpx/releases/download/v\${version}/\${filename}"
+  local tmp_dir
+  tmp_dir="\$(mktemp -d)"
+
+  echo "Baixando httpx v\${version} (\${arch})..."
+
+  if ! curl -fsSL "\$url" -o "\${tmp_dir}/httpx.zip"; then
+    echo "Aviso: falha ao baixar httpx. Continuando sem ele."
+    rm -rf "\$tmp_dir"
+    return
+  fi
+
+  # Instalar unzip se necessário
+  if ! command -v unzip >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get install -y unzip || true
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y unzip || true
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y unzip || true
+    fi
+  fi
+
+  unzip -q "\${tmp_dir}/httpx.zip" -d "\$tmp_dir"
+
+  local bin_path
+  bin_path="\$(find "\$tmp_dir" -name 'httpx' -type f 2>/dev/null | head -1)"
+
+  if [[ -n "\$bin_path" ]]; then
+    mv "\$bin_path" /usr/local/bin/httpx
+    chmod +x /usr/local/bin/httpx
+    echo "httpx instalado: /usr/local/bin/httpx"
+  else
+    echo "Aviso: binário httpx não encontrado no pacote."
+  fi
+
+  rm -rf "\$tmp_dir"
+}
+
+ensure_user() {
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    local user_home
+    user_home="\\$(eval echo ~$SERVICE_USER)"
+    if [[ -n "\\$user_home" ]] && [[ ! -d "\\$user_home" ]]; then
+      mkdir -p "\\$user_home"
+      chown "$SERVICE_USER":"$SERVICE_USER" "\\$user_home"
+    fi
+    return
+  fi
+
+  if command -v useradd >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER" || true
+    mkdir -p /home/$SERVICE_USER
+    chown "$SERVICE_USER":"$SERVICE_USER" /home/$SERVICE_USER
+  else
+    echo "Aviso: useradd não encontrado; continuando sem criar usuário dedicado."
+  fi
+}
+
+ensure_dirs() {
+  mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "/var/log/iscope-agent"
+
+  # Marcar como Super Agent (system agent)
+  touch "$STATE_DIR/is_system_agent.flag"
+  echo "Flag de Super Agent criada: $STATE_DIR/is_system_agent.flag"
+}
+
+stop_service_if_exists() {
+  if systemctl list-unit-files | grep -q "^\${SERVICE_NAME}\\.service"; then
+    systemctl stop "$SERVICE_NAME" || true
+    systemctl disable "$SERVICE_NAME" || true
+  fi
+}
+
+uninstall_all() {
+  echo "Removendo \${SERVICE_NAME}..."
+  stop_service_if_exists
+  rm -f "/etc/systemd/system/\${SERVICE_NAME}.service"
+  systemctl daemon-reload || true
+  rm -rf "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
+  echo "Uninstall concluído."
+}
+
+download_release() {
+  local file
+  if [[ "$AGENT_VERSION" == "latest" ]]; then
+    file="iscope-agent-latest.tar.gz"
+  else
+    file="iscope-agent-\${AGENT_VERSION}.tar.gz"
+  fi
+
+  local url
+  url="\${RELEASE_BASE_URL}/\${file}"
+  echo "Baixando pacote do agent: \${file}"
+
+  local curl_fail_flag
+  if curl --help all 2>/dev/null | grep -q "fail-with-body"; then
+    curl_fail_flag="--fail-with-body"
+  else
+    curl_fail_flag="--fail"
+  fi
+
+  if ! curl -fsSI "$url" >/dev/null 2>&1; then
+    echo ""
+    echo "Erro: não encontrei o pacote no Supabase Storage: agent-releases/\${file}"
+    echo "URL: \${url}"
+    echo ""
+    echo "Próximos passos:"
+    echo "1) Faça upload do arquivo \${file} no bucket 'agent-releases' (público)"
+    echo "2) Teste a URL acima com: curl -I \\"\${url}\\""
+    echo "3) Rode o instalador novamente"
+    echo ""
+    echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
+    exit 1
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if ! curl -sS "$curl_fail_flag" -L "$url" -o "$tmp"; then
+    echo "Erro: falha ao baixar pacote do agent em: \${url}"
+    exit 1
+  fi
+
+  if [[ ! -s "$tmp" ]]; then
+    echo "Erro: download retornou um arquivo vazio."
+    exit 1
+  fi
+
+  rm -rf "$INSTALL_DIR"/*
+  tar -xzf "$tmp" -C "$INSTALL_DIR"
+  rm -f "$tmp"
+}
+
+setup_venv() {
+  echo "Configurando ambiente Python (venv)..."
+  if ! choose_python; then
+    echo "Erro: Python não encontrado após instalar dependências."
+    exit 1
+  fi
+
+  require_python_min_version
+
+  "$PYTHON_BIN" -m venv "$INSTALL_DIR/venv"
+  "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
+
+  if [[ -d "$INSTALL_DIR/wheels" ]] && compgen -G "$INSTALL_DIR/wheels/*.whl" >/dev/null 2>&1; then
+    echo "Instalando dependências (offline wheels bundle)..."
+    "$INSTALL_DIR/venv/bin/pip" install --no-index --find-links "$INSTALL_DIR/wheels" -r "$INSTALL_DIR/requirements.txt"
+  else
+    "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+  fi
+
+  fix_certifi_bundle
+}
+
+fix_certifi_bundle() {
+  echo "Verificando certificados CA do Python..."
+
+  local certifi_dir
+  certifi_dir="\$(find "$INSTALL_DIR/venv" -type d -name certifi 2>/dev/null | head -1)"
+
+  if [[ -z "\$certifi_dir" ]]; then
+    echo "Aviso: diretório certifi não encontrado no venv."
+    return
+  fi
+
+  local cacert_pem="\$certifi_dir/cacert.pem"
+
+  if [[ -f "\$cacert_pem" ]] && [[ -s "\$cacert_pem" ]]; then
+    echo "Certificados CA OK: \$cacert_pem"
+    return
+  fi
+
+  echo "Aviso: cacert.pem ausente ou vazio. Criando link para certificados do sistema..."
+
+  local system_ca=""
+  for ca_path in \\
+    /etc/ssl/certs/ca-certificates.crt \\
+    /etc/pki/tls/certs/ca-bundle.crt \\
+    /etc/ssl/ca-bundle.pem \\
+    /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \\
+    /etc/ssl/cert.pem; do
+    if [[ -f "\$ca_path" ]]; then
+      system_ca="\$ca_path"
+      break
+    fi
+  done
+
+  if [[ -z "\$system_ca" ]]; then
+    echo "Erro: Não foi possível encontrar CA bundle do sistema."
+    return
+  fi
+
+  ln -sf "\$system_ca" "\$cacert_pem"
+  echo "Link criado: \$cacert_pem -> \$system_ca"
+}
+
+write_env_file() {
+  local env_file
+  env_file="$CONFIG_DIR/agent.env"
+
+  cat > "$env_file" <<EOF
+AGENT_API_BASE_URL=\${API_BASE_URL}
+AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
+AGENT_STATE_FILE=\${STATE_DIR}/state.json
+AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
+AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
+EOF
+
+  chmod 600 "$env_file"
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown "$SERVICE_USER":"$SERVICE_USER" "$env_file"
+  fi
+}
+
+ensure_state_file() {
+  local state_file
+  state_file="$STATE_DIR/state.json"
+  if [[ ! -f "$state_file" ]]; then
+    cat > "$state_file" <<EOF
+{}
+EOF
+  fi
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR" || true
+    chown -R "$SERVICE_USER":"$SERVICE_USER" "/var/log/iscope-agent" || true
+  fi
+}
+
+write_check_deps_script() {
+  local script_file="$INSTALL_DIR/check-deps.sh"
+
+  echo "Escrevendo script de verificação de componentes (Super Agent)..."
+
+  cat > "$script_file" <<'CHECKDEPS'
+#!/usr/bin/env bash
+# iScope Super Agent - Scanner Components Pre-Start Check
+# Runs as root via ExecStartPre before the agent starts.
+set -uo pipefail
+
+FLAG_FILE="/var/lib/iscope-agent/check_components.flag"
+SYSTEM_FLAG="/var/lib/iscope-agent/is_system_agent.flag"
+LOG_FILE="/var/log/iscope-agent/components.log"
+
+log() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    echo "$msg"
+    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+log_error() {
+    log "ERROR: $*"
+}
+
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+
+# Only run if check_components flag is set
+if [[ ! -f "$FLAG_FILE" ]]; then
+    exit 0
+fi
+
+log "=========================================="
+log "Super Agent: Verificação de componentes"
+log "=========================================="
+
+rm -f "$FLAG_FILE" 2>/dev/null || true
+
+check_and_install_masscan() {
+    if command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]; then
+        log "masscan OK"
+        return 0
+    fi
+    log "masscan ausente. Instalando..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y masscan 2>/dev/null || true
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y masscan 2>/dev/null || true
+    fi
+    if command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]; then
+        log "masscan instalado"
+        return 0
+    fi
+    log_error "Falha ao instalar masscan"
+    return 1
+}
+
+check_and_install_nmap() {
+    if command -v nmap >/dev/null 2>&1; then
+        log "nmap OK"
+        return 0
+    fi
+    log "nmap ausente. Instalando..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y nmap 2>/dev/null || true
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y nmap 2>/dev/null || true
+    fi
+    if command -v nmap >/dev/null 2>&1; then
+        log "nmap instalado"
+        return 0
+    fi
+    log_error "Falha ao instalar nmap"
+    return 1
+}
+
+check_and_install_httpx() {
+    if command -v httpx >/dev/null 2>&1 || [[ -x /usr/local/bin/httpx ]]; then
+        log "httpx OK"
+        return 0
+    fi
+    log "httpx ausente. Instalando..."
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)  arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        *)
+            log_error "Arquitetura $arch não suportada para httpx"
+            return 1
+            ;;
+    esac
+    local version="1.6.9"
+    local url="https://github.com/projectdiscovery/httpx/releases/download/v${version}/httpx_${version}_linux_${arch}.zip"
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    curl -fsSL "$url" -o "${tmp_dir}/httpx.zip" 2>/dev/null || {
+        log_error "Falha ao baixar httpx"
+        rm -rf "$tmp_dir"
+        return 1
+    }
+    if ! command -v unzip >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+            apt-get install -y unzip 2>/dev/null || true
+        elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y unzip 2>/dev/null || true
+        fi
+    fi
+    unzip -q "${tmp_dir}/httpx.zip" -d "$tmp_dir" 2>/dev/null
+    local bin_path
+    bin_path="$(find "$tmp_dir" -name 'httpx' -type f 2>/dev/null | head -1)"
+    if [[ -n "$bin_path" ]]; then
+        mv "$bin_path" /usr/local/bin/httpx
+        chmod +x /usr/local/bin/httpx
+        log "httpx instalado em /usr/local/bin/httpx"
+    else
+        log_error "Binário httpx não encontrado no pacote"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+    rm -rf "$tmp_dir"
+    return 0
+}
+
+main() {
+    local errors=0
+    if ! check_and_install_masscan; then
+        ((errors++)) || true
+    fi
+    if ! check_and_install_nmap; then
+        ((errors++)) || true
+    fi
+    if ! check_and_install_httpx; then
+        ((errors++)) || true
+    fi
+    log "=========================================="
+    if [[ $errors -eq 0 ]]; then
+        log "Verificação concluída com sucesso"
+    else
+        log "Verificação concluída com $errors erro(s)"
+    fi
+    log "=========================================="
+    exit 0
+}
+
+main
+CHECKDEPS
+
+  chmod +x "$script_file"
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    chown "$SERVICE_USER":"$SERVICE_USER" "$script_file" || true
+  fi
+
+  sed -i 's/\\r$//' "$script_file"
+
+  echo "Script check-deps.sh (Super Agent) instalado: $script_file"
+}
+
+write_systemd_service() {
+  local unit_file
+  unit_file="/etc/systemd/system/\${SERVICE_NAME}.service"
+
+  cat > "$unit_file" <<EOF
+[Unit]
+Description=iScope Super Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=\${CONFIG_DIR}/agent.env
+WorkingDirectory=\${INSTALL_DIR}
+# Run component check as root before starting agent (- prefix = ignore failures)
+ExecStartPre=-/bin/bash \${INSTALL_DIR}/check-deps.sh
+ExecStart=\${INSTALL_DIR}/venv/bin/python \${INSTALL_DIR}/main.py
+Restart=always
+RestartSec=5
+EOF
+
+  if id "$SERVICE_USER" >/dev/null 2>&1; then
+    cat >> "$unit_file" <<EOF
+User=\${SERVICE_USER}
+Group=\${SERVICE_USER}
+EOF
+  fi
+
+  cat >> "$unit_file" <<EOF
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+setup_sudoers() {
+  local sudoers_file="/etc/sudoers.d/iscope-agent"
+  echo "Configurando permissão sudoers para restart do serviço..."
+  echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME" > "$sudoers_file"
+  chmod 440 "$sudoers_file"
+  echo "Sudoers configurado: $sudoers_file"
+}
+
+start_service() {
+  systemctl daemon-reload
+  systemctl enable --now "$SERVICE_NAME"
+}
+
+main() {
+  require_root
+  require_systemd
+  parse_args "$@"
+
+  if [[ "$UNINSTALL" -eq 1 ]]; then
+    uninstall_all
+    exit 0
+  fi
+
+  echo "Iniciando instalação do Super Agent (code: $(mask_code "$ACTIVATION_CODE"))"
+
+  if [[ "$UPDATE" -eq 1 ]]; then
+    stop_service_if_exists
+  fi
+
+  install_deps
+  install_scanner_tools
+  ensure_user
+  ensure_dirs
+  download_release
+  setup_venv
+  write_env_file
+  ensure_state_file
+  write_check_deps_script
+  write_systemd_service
+  setup_sudoers
+  start_service
+
+  echo ""
+  echo "Super Agent instalado com sucesso!"
+  echo "Verificar status: systemctl status \${SERVICE_NAME} --no-pager"
+  echo "Ver logs:       journalctl -u \${SERVICE_NAME} -f --no-pager"
+  echo ""
+  echo "Ferramentas instaladas:"
+  command -v masscan >/dev/null 2>&1 && echo "  masscan: \$(masscan --version 2>&1 | head -1)" || echo "  masscan: não encontrado"
+  command -v nmap >/dev/null 2>&1 && echo "  nmap: \$(nmap --version 2>&1 | head -1)" || echo "  nmap: não encontrado"
+  (command -v httpx >/dev/null 2>&1 || [[ -x /usr/local/bin/httpx ]]) && echo "  httpx: instalado" || echo "  httpx: não encontrado"
+}
+
+main "$@"
+`;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "GET") {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  return new Response(script(), {
+    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+  });
+});
