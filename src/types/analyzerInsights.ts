@@ -54,6 +54,9 @@ export interface AnalyzerMetrics {
   topBlockedIPs: TopBlockedIP[];
   topCountries: TopCountry[];
   vpnFailures: number;
+  firewallAuthFailures: number;
+  topAuthIPs: TopBlockedIP[];
+  topAuthCountries: TopCountry[];
   ipsEvents: number;
   configChanges: number;
   totalDenied: number;

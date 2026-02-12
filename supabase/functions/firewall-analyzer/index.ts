@@ -163,67 +163,132 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
 
 function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  const allLogs = [...(Array.isArray(authLogs) ? authLogs : []), ...(Array.isArray(vpnLogs) ? vpnLogs : [])];
-  if (allLogs.length === 0) return { insights, metrics: { vpnFailures: 0 } };
+  const safeAuth = Array.isArray(authLogs) ? authLogs : [];
+  const safeVpn = Array.isArray(vpnLogs) ? vpnLogs : [];
+  if (safeAuth.length === 0 && safeVpn.length === 0) return { insights, metrics: { vpnFailures: 0, firewallAuthFailures: 0, topAuthIPs: [], topAuthCountries: [] } };
 
-  // Count VPN failures
-  const vpnFailures = allLogs.filter(l => {
+  const isFailure = (l: any) => {
     const action = (l.action || l.status || '').toLowerCase();
     const logdesc = (l.logdesc || l.msg || '').toLowerCase();
     return action.includes('deny') || action.includes('fail') || logdesc.includes('fail') || logdesc.includes('denied');
-  });
+  };
 
-  // Group failures by user
-  const userFailures: Record<string, { count: number; ips: Set<string> }> = {};
-  for (const log of vpnFailures) {
-    const user = log.user || log.username || log.srcuser || 'unknown';
-    if (!userFailures[user]) userFailures[user] = { count: 0, ips: new Set() };
-    userFailures[user].count++;
-    const ip = log.srcip || log.remip || log.src;
-    if (ip) userFailures[user].ips.add(ip);
-  }
+  // Separate firewall admin login failures vs VPN failures
+  const firewallFailures = safeAuth.filter(isFailure);
+  const vpnOnlyFailures = safeVpn.filter(isFailure);
 
-  // Detect brute force per user (threshold lowered to 5)
-  for (const [user, data] of Object.entries(userFailures)) {
-    if (data.count >= BRUTE_FORCE_THRESHOLD) {
-      insights.push({
-        id: `bruteforce_${user}`,
-        category: 'authentication',
-        name: 'Possível Brute Force',
-        description: `Usuário "${user}" teve ${data.count} falhas de login`,
-        severity: data.count >= 50 ? 'critical' : data.count >= 20 ? 'high' : 'medium',
-        affectedUsers: [user],
-        sourceIPs: [...data.ips],
-        count: data.count,
-        recommendation: 'Verifique se a conta está comprometida. Considere bloqueio temporário.',
-      });
+  // Collect IPs and countries from both sources for top auth rankings
+  const authIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+  const authCountryMap: Record<string, number> = {};
+
+  const collectIPData = (logs: any[]) => {
+    for (const log of logs) {
+      const ip = log.srcip || log.remip || log.src;
+      const country = log.srccountry || log.src_country || undefined;
+      if (!ip) continue;
+      if (!authIPMap[ip]) authIPMap[ip] = { count: 0, country, ports: new Set() };
+      authIPMap[ip].count++;
+      const port = parseInt(log.dstport || log.dst_port || '0');
+      if (port > 0) authIPMap[ip].ports.add(port);
+      if (country) authCountryMap[country] = (authCountryMap[country] || 0) + 1;
     }
+  };
+  collectIPData(firewallFailures);
+  collectIPData(vpnOnlyFailures);
+
+  const topAuthIPs = Object.entries(authIPMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+
+  const topAuthCountries = Object.entries(authCountryMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([country, count]) => ({ country, count }));
+
+  // Group failures by user for brute force detection
+  const groupByUser = (logs: any[]) => {
+    const map: Record<string, { count: number; ips: Set<string> }> = {};
+    for (const log of logs) {
+      const user = log.user || log.username || log.srcuser || 'unknown';
+      if (!map[user]) map[user] = { count: 0, ips: new Set() };
+      map[user].count++;
+      const ip = log.srcip || log.remip || log.src;
+      if (ip) map[user].ips.add(ip);
+    }
+    return map;
+  };
+
+  const fwUserFailures = groupByUser(firewallFailures);
+  const vpnUserFailures = groupByUser(vpnOnlyFailures);
+
+  // Brute force per user (both sources)
+  const detectBruteForce = (userMap: Record<string, { count: number; ips: Set<string> }>, source: string) => {
+    for (const [user, data] of Object.entries(userMap)) {
+      if (data.count >= BRUTE_FORCE_THRESHOLD) {
+        insights.push({
+          id: `bruteforce_${source}_${user}`,
+          category: 'authentication',
+          name: `Possível Brute Force (${source})`,
+          description: `Usuário "${user}" teve ${data.count} falhas de login via ${source}`,
+          severity: data.count >= 50 ? 'critical' : data.count >= 20 ? 'high' : 'medium',
+          affectedUsers: [user],
+          sourceIPs: [...data.ips],
+          count: data.count,
+          recommendation: 'Verifique se a conta está comprometida. Considere bloqueio temporário.',
+        });
+      }
+    }
+  };
+  detectBruteForce(fwUserFailures, 'Firewall');
+  detectBruteForce(vpnUserFailures, 'VPN');
+
+  // High volume firewall auth failures insight
+  if (firewallFailures.length >= HIGH_VOLUME_AUTH_THRESHOLD) {
+    const topUsers = Object.entries(fwUserFailures).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
+    const topUsersDesc = topUsers.map(([user, data]) => `${user} (${data.count} falhas, IPs: ${[...data.ips].slice(0, 3).join(', ')})`).join('; ');
+    insights.push({
+      id: 'high_volume_firewall_auth_failures',
+      category: 'authentication',
+      name: 'Alto Volume de Falhas de Login no Firewall',
+      description: `${firewallFailures.length} falhas de login administrativo detectadas no período`,
+      severity: firewallFailures.length >= 100 ? 'critical' : firewallFailures.length >= 50 ? 'high' : 'medium',
+      count: firewallFailures.length,
+      details: `Top usuários: ${topUsersDesc}`,
+      affectedUsers: topUsers.map(([u]) => u),
+      recommendation: 'Investigue tentativas de acesso não autorizado ao painel administrativo do firewall.',
+    });
   }
 
-  // === NEW: Aggregate high-volume auth failures insight ===
-  if (vpnFailures.length >= HIGH_VOLUME_AUTH_THRESHOLD) {
-    const topUsers = Object.entries(userFailures)
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 5);
+  // High volume VPN failures insight
+  if (vpnOnlyFailures.length >= HIGH_VOLUME_AUTH_THRESHOLD) {
+    // Detect VPN type breakdown
+    let sslCount = 0, ipsecCount = 0, otherCount = 0;
+    for (const log of vpnOnlyFailures) {
+      const tunnel = (log.tunneltype || log.logdesc || log.msg || '').toLowerCase();
+      if (tunnel.includes('ssl')) sslCount++;
+      else if (tunnel.includes('ipsec')) ipsecCount++;
+      else otherCount++;
+    }
+    const typeBreakdown = [sslCount > 0 ? `SSL: ${sslCount}` : '', ipsecCount > 0 ? `IPsec: ${ipsecCount}` : '', otherCount > 0 ? `Outros: ${otherCount}` : ''].filter(Boolean).join(', ');
 
-    const topUsersDesc = topUsers
-      .map(([user, data]) => `${user} (${data.count} falhas, IPs: ${[...data.ips].slice(0, 3).join(', ')})`)
-      .join('; ');
-
+    const topUsers = Object.entries(vpnUserFailures).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
+    const topUsersDesc = topUsers.map(([user, data]) => `${user} (${data.count} falhas)`).join('; ');
     insights.push({
-      id: 'high_volume_auth_failures',
+      id: 'high_volume_vpn_failures',
       category: 'authentication',
-      name: 'Alto Volume de Falhas de Autenticação',
-      description: `${vpnFailures.length} falhas de autenticação detectadas no período, afetando ${Object.keys(userFailures).length} usuário(s)`,
-      severity: vpnFailures.length >= 100 ? 'critical' : vpnFailures.length >= 50 ? 'high' : 'medium',
-      count: vpnFailures.length,
-      details: `Top usuários afetados: ${topUsersDesc}`,
+      name: 'Alto Volume de Falhas de VPN',
+      description: `${vpnOnlyFailures.length} falhas de VPN detectadas no período`,
+      severity: vpnOnlyFailures.length >= 100 ? 'critical' : vpnOnlyFailures.length >= 50 ? 'high' : 'medium',
+      count: vpnOnlyFailures.length,
+      details: `Tipos: ${typeBreakdown}. Top usuários: ${topUsersDesc}`,
       affectedUsers: topUsers.map(([u]) => u),
-      recommendation: 'Investigue a origem das falhas. Verifique se há tentativas de acesso não autorizado ou problemas de configuração de credenciais.',
+      recommendation: 'Investigue a origem das falhas de VPN. Verifique credenciais e configurações de acesso remoto.',
     });
   }
 
   // Detect admin login via WAN
+  const allLogs = [...safeAuth, ...safeVpn];
   for (const log of allLogs) {
     const user = (log.user || log.username || '').toLowerCase();
     const ui = (log.ui || log.interface || '').toLowerCase();
@@ -246,7 +311,12 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
 
   return {
     insights,
-    metrics: { vpnFailures: vpnFailures.length },
+    metrics: {
+      vpnFailures: vpnOnlyFailures.length,
+      firewallAuthFailures: firewallFailures.length,
+      topAuthIPs,
+      topAuthCountries,
+    },
   };
 }
 
@@ -397,10 +467,22 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
     }
   }
 
-  // === NEW: Aggregate high-volume config changes insight ===
-  if (logs.length >= HIGH_VOLUME_CONFIG_THRESHOLD) {
+  // Filter real modifications (not reads/queries)
+  const MODIFY_ACTIONS = ['add', 'edit', 'delete', 'set', 'move', 'modify', 'create', 'remove'];
+  const realChanges = logs.filter(log => {
+    const action = (log.action || '').toLowerCase();
+    const msg = (log.msg || log.logdesc || '').toLowerCase();
+    // If action field exists, use it; otherwise check msg for modification keywords
+    if (action) return MODIFY_ACTIONS.some(a => action.includes(a));
+    return MODIFY_ACTIONS.some(a => msg.includes(a));
+  });
+
+  const realCount = realChanges.length > 0 ? realChanges.length : logs.length;
+
+  // === Aggregate high-volume config changes insight ===
+  if (realCount >= HIGH_VOLUME_CONFIG_THRESHOLD) {
     const allUsers = new Set<string>();
-    for (const log of logs) {
+    for (const log of (realChanges.length > 0 ? realChanges : logs)) {
       allUsers.add(log.user || log.ui || 'unknown');
     }
 
@@ -408,9 +490,9 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
       id: 'high_volume_config_changes',
       category: 'config_changes',
       name: 'Volume Elevado de Alterações',
-      description: `${logs.length} alterações de configuração detectadas no período`,
-      severity: logs.length >= 200 ? 'high' : 'medium',
-      count: logs.length,
+      description: `${realCount} alterações de configuração detectadas no período`,
+      severity: realCount >= 200 ? 'high' : 'medium',
+      count: realCount,
       affectedUsers: [...allUsers],
       details: `Realizado por ${allUsers.size} usuário(s). Categorias: ${Object.keys(cfgCategories).join(', ') || 'não categorizadas'}`,
       recommendation: 'Um volume alto de alterações pode indicar manutenção programada ou atividade não autorizada. Revise o contexto.',
@@ -419,7 +501,7 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
 
   return {
     insights,
-    metrics: { configChanges: logs.length },
+    metrics: { configChanges: realCount },
   };
 }
 
@@ -509,10 +591,13 @@ Deno.serve(async (req) => {
       topBlockedIPs: deniedResult.metrics.topBlockedIPs || [],
       topCountries: deniedResult.metrics.topCountries || [],
       vpnFailures: authResult.metrics.vpnFailures || 0,
+      firewallAuthFailures: authResult.metrics.firewallAuthFailures || 0,
+      topAuthIPs: authResult.metrics.topAuthIPs || [],
+      topAuthCountries: authResult.metrics.topAuthCountries || [],
       ipsEvents: ipsResult.metrics.ipsEvents || 0,
       configChanges: configResult.metrics.configChanges || 0,
       totalDenied: deniedResult.metrics.totalDenied || 0,
-      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0),
+      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0),
     };
 
     const score = calculateScore(uniqueInsights);

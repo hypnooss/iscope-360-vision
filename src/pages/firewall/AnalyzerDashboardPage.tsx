@@ -14,7 +14,7 @@ import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
-  Globe, Wifi, Eye, Server,
+  Globe, Wifi, Eye, Server, Lock, KeyRound,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -156,7 +156,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Globe className="w-4 h-4 text-primary" />
-                Top IPs Bloqueados
+                Top IPs Bloqueados (Tráfego Negado)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -191,7 +191,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Globe className="w-4 h-4 text-primary" />
-                Top Países
+                Top Países (Tráfego Negado)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -212,6 +212,62 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Top Auth IPs */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="w-4 h-4 text-primary" />
+                Top IPs - Autenticação
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+              ) : !snapshot?.metrics?.topAuthIPs?.length ? (
+                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
+              ) : (
+                <div className="space-y-2">
+                  {snapshot.metrics.topAuthIPs.slice(0, 10).map((ip, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+                      <div className="flex items-center gap-2 font-mono text-sm">
+                        <span className="text-muted-foreground w-5">{i + 1}.</span>
+                        <span className="text-foreground">{ip.ip}</span>
+                        {ip.country && <span className="text-muted-foreground text-xs">({ip.country})</span>}
+                      </div>
+                      <Badge variant="secondary" className="font-mono">{ip.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Auth Countries */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="w-4 h-4 text-primary" />
+                Top Países - Autenticação
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+              ) : !snapshot?.metrics?.topAuthCountries?.length ? (
+                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>
+              ) : (
+                <div className="space-y-2">
+                  {snapshot.metrics.topAuthCountries.slice(0, 10).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+                      <span className="text-sm text-foreground">{c.country}</span>
+                      <Badge variant="secondary" className="font-mono">{c.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Quick Stats */}
           <Card className="glass-card">
             <CardHeader>
@@ -221,9 +277,10 @@ export default function AnalyzerDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {[
                   { label: 'Tráfego Negado', value: snapshot?.metrics?.totalDenied ?? 0, icon: Shield },
+                  { label: 'Login Firewall', value: snapshot?.metrics?.firewallAuthFailures ?? 0, icon: Lock },
                   { label: 'Falhas VPN', value: snapshot?.metrics?.vpnFailures ?? 0, icon: Wifi },
                   { label: 'Eventos IPS', value: snapshot?.metrics?.ipsEvents ?? 0, icon: AlertTriangle },
                   { label: 'Alterações Config', value: snapshot?.metrics?.configChanges ?? 0, icon: Server },
