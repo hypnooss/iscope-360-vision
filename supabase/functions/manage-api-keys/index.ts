@@ -19,6 +19,11 @@ const MANAGED_KEYS = [
     label: "SecurityTrails",
     description: "Usada para enumeração de subdomínios via SecurityTrails API",
   },
+  {
+    name: "SHODAN_API_KEY",
+    label: "Shodan",
+    description: "Usada para enriquecimento de IPs no Attack Surface Analyzer (portas, serviços, CVEs)",
+  },
 ];
 
 function fromHex(hex: string): Uint8Array {
