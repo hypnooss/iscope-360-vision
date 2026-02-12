@@ -1,75 +1,46 @@
 
 
-# Fix: Agent nao consegue executar nem reportar tasks do Attack Surface
+# Adicionar botao "Cancelar Scan" ao Attack Surface Analyzer
 
-## Problemas identificados
+## Problema
+Quando um scan esta em andamento (status `pending` ou `running`), nao existe forma de cancela-lo pela interface. O botao "Disparar Scan" fica desabilitado, impedindo iniciar um novo scan.
 
-### Problema 1: "Executor desconhecido 'masscan'" (Python Agent)
-O agent v1.2.7 no servidor **nao reconhece** os executors `masscan`, `nmap` e `httpx`. Embora o codigo-fonte no repositorio ja tenha esses executors registrados (tasks.py linhas 53-55), o agent **rodando no servidor** precisa ser atualizado para a versao mais recente.
+## Solucao
 
-**Acao necessaria (manual):** Atualizar o Python Agent no servidor para a versao mais recente que contem os executors de masscan/nmap/httpx. Isso pode ser feito via o mecanismo de auto-update ou reinstalacao manual.
+### 1. Nova Edge Function: `cancel-attack-surface-scan`
 
-### Problema 2: "POST /agent-step-result -> NOT_FOUND" (Edge Functions)
-Mesmo que o executor funcione, os resultados nunca seriam salvos. O agent Python envia resultados para:
-- `/agent-step-result` (step individual)
-- `/agent-task-result` (resultado final)
+Criar `supabase/functions/cancel-attack-surface-scan/index.ts` que:
+- Recebe `client_id` no body
+- Busca o snapshot mais recente com status `pending` ou `running` para esse client
+- Atualiza o snapshot para `status: 'cancelled'`
+- Atualiza todas as `attack_surface_tasks` pendentes/assigned/running desse snapshot para `status: 'cancelled'`
+- Retorna sucesso
 
-Porem, essas edge functions buscam a tarefa na tabela `agent_tasks` (linha 177 do agent-step-result). As tarefas de Attack Surface ficam na tabela `attack_surface_tasks`, entao a busca retorna NOT_FOUND.
+### 2. Hook de cancelamento em `useAttackSurfaceData.ts`
 
-## Solucao para o Problema 2
+Adicionar `useAttackSurfaceCancelScan(clientId)` - uma mutation que:
+- Chama a edge function `cancel-attack-surface-scan`
+- Invalida as queries de snapshots e progress
+- Exibe toast de confirmacao
 
-Modificar as edge functions `agent-step-result` e `agent-task-result` para detectar tarefas de attack surface e roteá-las corretamente.
+### 3. Botao na pagina `AttackSurfaceAnalyzerPage.tsx`
 
-### Arquivo: `supabase/functions/agent-step-result/index.ts`
-
-Apos a busca falhar em `agent_tasks`, tentar buscar em `attack_surface_tasks`. Se encontrado, redirecionar o resultado para a logica do `attack-surface-step-result` (atualizar diretamente a task e verificar se o snapshot esta completo).
-
-Alteracao principal (apos linha 188):
-
-```text
-// Se nao encontrou em agent_tasks, tentar em attack_surface_tasks
-if (taskError || !task) {
-  const { data: asTask, error: asError } = await supabase
-    .from('attack_surface_tasks')
-    .select('id, assigned_agent_id, status, snapshot_id, ip')
-    .eq('id', body.task_id)
-    .single()
-
-  if (!asError && asTask) {
-    // Delegar para logica de attack surface
-    return handleAttackSurfaceStepResult(supabase, body, asTask, corsHeaders)
-  }
-
-  // Nenhuma das tabelas tem a task
-  return NOT_FOUND response
-}
-```
-
-### Arquivo: `supabase/functions/agent-task-result/index.ts`
-
-Mesma abordagem: apos falhar em `agent_tasks`, verificar `attack_surface_tasks`. Se encontrado, atualizar o status da task e consolidar o snapshot quando todas as tasks completarem.
+Quando `isRunning === true`, mostrar um botao "Cancelar" ao lado da barra de progresso (ou substituir o botao "Disparar Scan"). Ao clicar, chama a mutation de cancelamento. Apos cancelar, o botao "Disparar Scan" volta a ficar habilitado.
 
 ### Detalhes tecnicos
 
-A funcao `handleAttackSurfaceStepResult` ira:
-1. Acumular os resultados dos 3 steps (masscan, nmap, httpx) no campo `result` da `attack_surface_tasks`
-2. No ultimo step (ou no task-result final), marcar a task como completed
-3. Verificar se todas as tasks do snapshot estao completas
-4. Se sim, consolidar o snapshot (mesma logica que ja existe em `attack-surface-step-result`)
+**Edge Function** (`cancel-attack-surface-scan/index.ts`):
+```text
+1. Receber { client_id } do body
+2. SELECT snapshot com status IN ('pending','running') ORDER BY created_at DESC LIMIT 1
+3. UPDATE attack_surface_snapshots SET status='cancelled', completed_at=NOW()
+4. UPDATE attack_surface_tasks SET status='cancelled' WHERE snapshot_id=X AND status IN ('pending','assigned','running')
+5. Retornar { success: true, cancelled_tasks: count }
+```
 
-A funcao `handleAttackSurfaceTaskResult` ira:
-1. Atualizar status da task em `attack_surface_tasks`
-2. Salvar o resultado consolidado
-3. Verificar e consolidar o snapshot se necessario
+**Hook** - nova funcao exportada `useAttackSurfaceCancelScan`:
+- `useMutation` chamando `supabase.functions.invoke('cancel-attack-surface-scan', { body: { client_id } })`
+- `onSuccess`: invalidar queries `attack-surface-snapshots`, `attack-surface-latest`, `attack-surface-progress`
 
-### Arquivos alterados
-- `supabase/functions/agent-step-result/index.ts` - Fallback para attack_surface_tasks
-- `supabase/functions/agent-task-result/index.ts` - Fallback para attack_surface_tasks
-- Deploy de ambas as edge functions
-
-### Sobre o Problema 1 (Python Agent)
-Apos verificar, os executors `masscan`, `nmap` e `httpx` **ja existem** no codigo-fonte do agent (tasks.py linhas 53-55). O agent no servidor precisa ser atualizado. Opcoes:
-- Usar o sistema de auto-update (se configurado)
-- Reinstalar manualmente: `cd /opt/iscope-agent && git pull && systemctl restart iscope-agent`
-- Verificar se a versao correta esta no storage bucket `agent-releases`
+**Pagina** - dentro do card de progresso (linhas 487-500), adicionar botao "Cancelar Scan" com icone `XCircle` e estilo destrutivo/outline. Tambem ajustar o botao "Disparar Scan" para mostrar "Cancelar" quando `isRunning`.
 
