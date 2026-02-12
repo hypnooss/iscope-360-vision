@@ -1,51 +1,75 @@
 
 
-# Fix: Heartbeat nao detecta tasks do Attack Surface para Super Agent
+# Fix: Agent nao consegue executar nem reportar tasks do Attack Surface
 
-## Problema
-A funcao RPC `rpc_agent_heartbeat` conta tarefas pendentes apenas na tabela `agent_tasks`:
+## Problemas identificados
+
+### Problema 1: "Executor desconhecido 'masscan'" (Python Agent)
+O agent v1.2.7 no servidor **nao reconhece** os executors `masscan`, `nmap` e `httpx`. Embora o codigo-fonte no repositorio ja tenha esses executors registrados (tasks.py linhas 53-55), o agent **rodando no servidor** precisa ser atualizado para a versao mais recente.
+
+**Acao necessaria (manual):** Atualizar o Python Agent no servidor para a versao mais recente que contem os executors de masscan/nmap/httpx. Isso pode ser feito via o mecanismo de auto-update ou reinstalacao manual.
+
+### Problema 2: "POST /agent-step-result -> NOT_FOUND" (Edge Functions)
+Mesmo que o executor funcione, os resultados nunca seriam salvos. O agent Python envia resultados para:
+- `/agent-step-result` (step individual)
+- `/agent-task-result` (resultado final)
+
+Porem, essas edge functions buscam a tarefa na tabela `agent_tasks` (linha 177 do agent-step-result). As tarefas de Attack Surface ficam na tabela `attack_surface_tasks`, entao a busca retorna NOT_FOUND.
+
+## Solucao para o Problema 2
+
+Modificar as edge functions `agent-step-result` e `agent-task-result` para detectar tarefas de attack surface e roteá-las corretamente.
+
+### Arquivo: `supabase/functions/agent-step-result/index.ts`
+
+Apos a busca falhar em `agent_tasks`, tentar buscar em `attack_surface_tasks`. Se encontrado, redirecionar o resultado para a logica do `attack-surface-step-result` (atualizar diretamente a task e verificar se o snapshot esta completo).
+
+Alteracao principal (apos linha 188):
 
 ```text
-SELECT COUNT(*) INTO v_pending_count
-FROM agent_tasks
-WHERE agent_id = p_agent_id AND status = 'pending' AND expires_at > NOW();
+// Se nao encontrou em agent_tasks, tentar em attack_surface_tasks
+if (taskError || !task) {
+  const { data: asTask, error: asError } = await supabase
+    .from('attack_surface_tasks')
+    .select('id, assigned_agent_id, status, snapshot_id, ip')
+    .eq('id', body.task_id)
+    .single()
+
+  if (!asError && asTask) {
+    // Delegar para logica de attack surface
+    return handleAttackSurfaceStepResult(supabase, body, asTask, corsHeaders)
+  }
+
+  // Nenhuma das tabelas tem a task
+  return NOT_FOUND response
+}
 ```
 
-Porem, as tasks do Attack Surface ficam em uma tabela separada: `attack_surface_tasks`. Como o Super Agent nunca tem registros em `agent_tasks`, o heartbeat sempre retorna `has_pending_tasks=False`, e o Python agent pula a etapa de buscar tarefas (linha 126 do `main.py`).
+### Arquivo: `supabase/functions/agent-task-result/index.ts`
 
-## Solucao
+Mesma abordagem: apos falhar em `agent_tasks`, verificar `attack_surface_tasks`. Se encontrado, atualizar o status da task e consolidar o snapshot quando todas as tasks completarem.
 
-Alterar a funcao RPC `rpc_agent_heartbeat` para, quando o agente for `is_system_agent=true`, tambem verificar a tabela `attack_surface_tasks` por tasks com status `pending`.
+### Detalhes tecnicos
 
-### Alteracao no banco de dados (SQL)
+A funcao `handleAttackSurfaceStepResult` ira:
+1. Acumular os resultados dos 3 steps (masscan, nmap, httpx) no campo `result` da `attack_surface_tasks`
+2. No ultimo step (ou no task-result final), marcar a task como completed
+3. Verificar se todas as tasks do snapshot estao completas
+4. Se sim, consolidar o snapshot (mesma logica que ja existe em `attack-surface-step-result`)
 
-Adicionar um check condicional na funcao:
-
-```text
--- Apos o SELECT COUNT(*) existente em agent_tasks:
-IF v_agent.is_system_agent THEN
-  SELECT COUNT(*) INTO v_attack_pending
-  FROM attack_surface_tasks
-  WHERE status = 'pending';
-
-  v_pending_count := v_pending_count + v_attack_pending;
-END IF;
-```
-
-Isso requer:
-1. Adicionar `is_system_agent` ao SELECT inicial do agente (ja existe na tabela, mas nao e consultado)
-2. Declarar uma variavel `v_attack_pending INTEGER`
-3. Adicionar o bloco IF acima apos a contagem de `agent_tasks`
+A funcao `handleAttackSurfaceTaskResult` ira:
+1. Atualizar status da task em `attack_surface_tasks`
+2. Salvar o resultado consolidado
+3. Verificar e consolidar o snapshot se necessario
 
 ### Arquivos alterados
+- `supabase/functions/agent-step-result/index.ts` - Fallback para attack_surface_tasks
+- `supabase/functions/agent-task-result/index.ts` - Fallback para attack_surface_tasks
+- Deploy de ambas as edge functions
 
-- **Migration SQL**: Nova migration para atualizar a funcao `rpc_agent_heartbeat`
-- Nenhuma alteracao no Python agent ou frontend necessaria
+### Sobre o Problema 1 (Python Agent)
+Apos verificar, os executors `masscan`, `nmap` e `httpx` **ja existem** no codigo-fonte do agent (tasks.py linhas 53-55). O agent no servidor precisa ser atualizado. Opcoes:
+- Usar o sistema de auto-update (se configurado)
+- Reinstalar manualmente: `cd /opt/iscope-agent && git pull && systemctl restart iscope-agent`
+- Verificar se a versao correta esta no storage bucket `agent-releases`
 
-### Resultado esperado
-
-Apos a correcao:
-1. Heartbeat do Super Agent retorna `has_pending_tasks=True` quando existem tasks pendentes em `attack_surface_tasks`
-2. Python agent detecta tasks pendentes e chama `rpc_get_agent_tasks`
-3. A funcao `rpc_get_agent_tasks` ja possui a logica correta para Super Agents (claim de tasks com `FOR UPDATE SKIP LOCKED`)
-4. Super Agent executa masscan, nmap, httpx e envia resultados
