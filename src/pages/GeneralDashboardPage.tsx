@@ -290,7 +290,10 @@ export default function GeneralDashboardPage() {
         .from('clients')
         .select('id, name')
         .order('name');
-      if (data) setWorkspaces(data);
+      if (data && data.length > 0) {
+        setWorkspaces(data);
+        setSelectedWorkspaceId(data[0].id);
+      }
     };
     fetchWorkspaces();
   }, [isSuperRole]);
@@ -400,15 +403,14 @@ export default function GeneralDashboardPage() {
           </div>
           {isSuperRole && workspaces.length > 0 && (
             <Select
-              value={selectedWorkspaceId ?? 'all'}
-              onValueChange={(v) => setSelectedWorkspaceId(v === 'all' ? null : v)}
+              value={selectedWorkspaceId ?? ''}
+              onValueChange={(v) => setSelectedWorkspaceId(v)}
             >
               <SelectTrigger className="w-[220px] bg-background">
                 <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Todos os workspaces" />
+                <SelectValue placeholder="Selecione um workspace" />
               </SelectTrigger>
               <SelectContent className="bg-popover">
-                <SelectItem value="all">Todos os workspaces</SelectItem>
                 {workspaces.map((ws) => (
                   <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
                 ))}
