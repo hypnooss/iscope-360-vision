@@ -1,33 +1,66 @@
 
 
-# Filtrar IPs privados e APIPA do Attack Surface Scan
+# Enriquecimento Multi-Source: InternetDB + SecurityTrails
 
-## Problema
+## Problema atual
 
-A funcao `isPrivateIP` na edge function `attack-surface-scan` nao filtra enderecos **169.254.0.0/16 (APIPA/link-local)**, permitindo que IPs como `169.254.10.5`, `169.254.10.6`, etc. aparecam nos resultados do scan.
+A API principal do Shodan (`/shodan/host/{ip}`) retorna erro 403 para a maioria dos IPs devido a restricoes do plano. Isso resulta em dados de enriquecimento vazios para quase todos os IPs descobertos.
 
-## Correcao
+## Solucao
 
-Adicionar a verificacao do range APIPA na funcao `isPrivateIP` em `supabase/functions/attack-surface-scan/index.ts`:
+Implementar uma estrategia de enriquecimento em cascata com 3 fontes, na edge function `attack-surface-scan`:
 
+```text
+Para cada IP:
+  1. Shodan API principal (se key configurada)
+     |
+     +-- Sucesso? Usar dados completos (ports, services, banners, vulns, os)
+     |
+     +-- Erro 403/404? Fallback para InternetDB
+                          |
+  2. Shodan InternetDB (gratuito, sem autenticacao)
+     |
+     +-- Retorna: ports, vulns, cpes, hostnames, tags
+     |
+  3. SecurityTrails (se key configurada)
+     |
+     +-- Complementa com: reverse DNS, dominios associados ao IP
 ```
-if (a === 169 && b === 254) return true   // APIPA / link-local
-```
 
-Apos a correcao, a funcao cobrira todos os ranges privados/reservados:
+## Mudancas tecnicas
 
-- 10.0.0.0/8 (classe A privado)
-- 172.16.0.0/12 (classe B privado)
-- 192.168.0.0/16 (classe C privado)
-- 127.0.0.0/8 (loopback)
-- 169.254.0.0/16 (APIPA / link-local) -- **NOVO**
-- 0.0.0.0/8 (rede atual)
-- 224.0.0.0+ (multicast e reservado)
+### Arquivo: `supabase/functions/attack-surface-scan/index.ts`
 
-## Arquivo alterado
+#### 1. Nova funcao `queryInternetDB(ip)`
+- Endpoint: `https://internetdb.shodan.io/{ip}`
+- Gratuito, sem autenticacao, sem rate limit agressivo
+- Retorna: `ports`, `vulns`, `cpes`, `hostnames`, `tags`
+- Mapeamento para o mesmo formato `ShodanResult` existente (services gerados a partir dos ports/cpes)
 
-`supabase/functions/attack-surface-scan/index.ts` -- uma unica linha adicionada na funcao `isPrivateIP` (por volta da linha 17).
+#### 2. Nova funcao `querySecurityTrails(ip, apiKey)`
+- Endpoint: `https://api.securitytrails.com/v1/ips/nearby/{ip}` e/ou reverse DNS
+- Header: `APIKEY: {apiKey}`
+- Complementa hostnames e dominios associados ao IP
 
-## Apos a correcao
+#### 3. Alterar `queryShodan()` para retornar fallback automatico
+- Se a API principal retornar 403, chamar `queryInternetDB()` automaticamente
+- Marcar a `source` do resultado (ex: `enrichment_source: 'shodan' | 'internetdb' | 'securitytrails'`)
 
-Sera necessario fazer um **novo Scan** no workspace IE MADEIRA para que os resultados reflitam a filtragem corrigida. Os IPs APIPA serao descartados automaticamente durante a coleta.
+#### 4. Leitura das API keys com fallback DB -> env
+- Buscar `SHODAN_API_KEY` e `SECURITYTRAILS_API_KEY` primeiro na tabela `system_settings` (criptografado), com fallback para `Deno.env.get()`
+- Reaproveitar a logica de decrypt que ja existe em `manage-api-keys`
+
+#### 5. Integrar SecurityTrails no fluxo principal
+- Apos o enriquecimento Shodan/InternetDB, para cada IP, consultar SecurityTrails para adicionar hostnames adicionais
+- Rate limit respeitado (2 req/sec para SecurityTrails)
+
+#### 6. Campo `enrichment_source` nos resultados
+- Cada IP no `resultsMap` tera um campo indicando de onde vieram os dados: `shodan`, `internetdb`, `securitytrails` ou `mixed`
+- Permite que a UI futuramente mostre badges diferenciados
+
+### Resultado esperado
+
+- IPs que antes retornavam "Shodan API error: 403" agora terao dados do InternetDB (portas, CVEs, CPEs)
+- SecurityTrails complementa com DNS reverso e dominios associados
+- O score de exposicao sera calculado com dados reais em vez de ficar zerado
+- Nenhuma mudanca no frontend necessaria neste momento (dados continuam no mesmo formato)
