@@ -1,67 +1,44 @@
 
 
-# Reestruturar Enriquecimento: Shodan + Censys (primarios), InternetDB (fallback), SecurityTrails (DNS)
+# Exibir scans do Attack Surface Analyzer na pagina de Execucoes
 
-## Hierarquia de fontes
+## Problema
 
-```text
-Para cada IP:
-  1. Shodan API + Censys API (primarios, em paralelo)
-     |
-     +-- Merge dos resultados (portas, servicos, CVEs, banners, OS, certificados TLS)
-     |
-     +-- Se AMBOS falharem -> Fallback para InternetDB
-     |
-  2. Shodan InternetDB (fallback, gratuito)
-     |
-     +-- Usado SOMENTE se Shodan E Censys falharam
-     |
-  3. SecurityTrails (complementar)
-     |
-     +-- SOMENTE DNS reverso / hostnames associados ao IP
-```
+O scan do Attack Surface Analyzer (`attack-surface-scan`) grava resultados na tabela `attack_surface_snapshots`. A pagina de Execucoes (`ExternalDomainExecutionsPage`) consulta apenas duas fontes:
+- `external_domain_analysis_history` (source = 'api')
+- `agent_tasks` (target_type = 'external_domain')
 
-## Mudancas tecnicas
+Nenhuma dessas tabelas recebe registros do Attack Surface scan, por isso ele nunca aparece na listagem.
 
-### Arquivo: `supabase/functions/attack-surface-scan/index.ts`
+## Solucao
 
-#### 1. Nova funcao `queryCensys(ip, apiKey)`
-- Endpoint: `GET https://search.censys.io/api/v2/hosts/{ip}`
-- Autenticacao: Basic Auth (a CENSYS_API_KEY deve conter `API_ID:API_SECRET`)
-- Retorna: portas, servicos com banners, protocolo de transporte, software detectado, certificados TLS, OS
-- Mapeamento para o mesmo formato `EnrichedIP`
+Adicionar `attack_surface_snapshots` como terceira fonte de dados na pagina de Execucoes.
 
-#### 2. Alterar `enrichIP()` - novo fluxo
-- Chamar Shodan e Censys em paralelo (`Promise.allSettled`)
-- Fazer merge inteligente dos resultados:
-  - Portas: uniao de ambos
-  - Servicos: preferir o que tiver banner/product preenchido
-  - CVEs: uniao
-  - OS: preferir Shodan (mais preciso), fallback Censys
-  - Hostnames: uniao
-- Se AMBOS falharem, chamar InternetDB como fallback
-- SecurityTrails continua complementando apenas hostnames (DNS reverso)
+### Arquivo: `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
 
-#### 3. Resolver CENSYS_API_KEY
-- Adicionar `resolveApiKey(supabase, 'CENSYS_API_KEY')` no bloco de resolucao de chaves
-- Log indicando se a chave esta disponivel
+1. **Nova query**: buscar `attack_surface_snapshots` filtrados por `client_id` (usando os mesmos `workspaceIds` ja disponiveis), com filtros de tempo e status equivalentes.
 
-#### 4. Atualizar `EnrichmentSource` type
-- Adicionar `'censys'` como fonte possivel
-- Logica: se apenas Shodan = `'shodan'`, se apenas Censys = `'censys'`, se ambos = `'shodan+censys'`, se fallback = `'internetdb'`, se SecurityTrails complementou = adicionar `'+st'`
+2. **Novo tipo no `UnifiedExecution`**: adicionar `type: 'attack_surface'` alem de `'api'` e `'agent'`.
 
-#### 5. Rate limiting
-- Shodan: 1 req/sec
-- Censys: 2.5 req/sec (Free tier = ~250 req/5min)
-- Como rodam em paralelo, manter delay de ~1.1s entre IPs
+3. **Novo badge visual**: criar entrada em `typeConfig` para `attack_surface` com icone `Radar` e cor teal/ciano para diferenciar dos demais.
 
-### Formato da Censys API Key
-- A chave armazenada deve ser no formato `API_ID:API_SECRET` (separados por `:`)
-- A descricao no card de configuracao sera atualizada para indicar esse formato
+4. **Merge no `unifiedExecutions`**: mapear cada snapshot para `UnifiedExecution` com:
+   - `source: 'attack_surface'`
+   - `domainId`: vazio (nao e vinculado a um dominio especifico)
+   - `status`: campo `status` do snapshot
+   - `duration`: calculado de `created_at` ate `completed_at`
+   - Label customizado: "Attack Surface Scan" em vez de nome de dominio
 
-### Resultado esperado
-- Dados mais completos: Censys traz banners e certificados TLS que o Shodan pode nao ter (e vice-versa)
-- InternetDB so e usado quando as duas APIs primarias falham (ex: IP sem dados em nenhuma)
-- SecurityTrails continua exclusivamente para DNS reverso
-- Nenhuma mudanca no frontend necessaria
+5. **Detalhes ao clicar**: abrir dialog mostrando `summary` (IPs, portas, servicos, CVEs), `score` e timestamp de conclusao.
+
+6. **Polling**: incluir snapshots pendentes/running na logica de refetch automatico (10s).
+
+7. **Filtro de busca**: incluir "attack surface" como termo pesquisavel.
+
+### Secao tecnica
+
+- A query usara os `client_id` dos workspaces acessiveis (mesmo padrao dos dominos)
+- Para usuarios nao-super, o `client_id` vira do `user_clients` (ja resolvido no componente)
+- O campo `domainId` sera `''` para snapshots do attack surface, e o `getDomainLabel` retornara "Attack Surface Scan" nesse caso
+- Nenhuma alteracao no backend ou no edge function e necessaria
 
