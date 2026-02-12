@@ -163,9 +163,35 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
 
 function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  const safeAuth = Array.isArray(authLogs) ? authLogs : [];
-  const safeVpn = Array.isArray(vpnLogs) ? vpnLogs : [];
-  if (safeAuth.length === 0 && safeVpn.length === 0) return { insights, metrics: { vpnFailures: 0, firewallAuthFailures: 0, firewallAuthSuccesses: 0, vpnSuccesses: 0, topAuthIPs: [], topAuthCountries: [], topAuthIPsFailed: [], topAuthIPsSuccess: [], topAuthCountriesFailed: [], topAuthCountriesSuccess: [] } };
+  const rawAuth = Array.isArray(authLogs) ? authLogs : [];
+  const rawVpn = Array.isArray(vpnLogs) ? vpnLogs : [];
+  if (rawAuth.length === 0 && rawVpn.length === 0) return { insights, metrics: { vpnFailures: 0, firewallAuthFailures: 0, firewallAuthSuccesses: 0, vpnSuccesses: 0, topAuthIPs: [], topAuthCountries: [], topAuthIPsFailed: [], topAuthIPsSuccess: [], topAuthCountriesFailed: [], topAuthCountriesSuccess: [] } };
+
+  // ── Deduplication: prevent the same log from being counted in both sets ──
+  const seenIds = new Set<string>();
+  const dedup = (logs: any[]) => logs.filter(l => {
+    const logId = l.id || l.eventid || `${l.date}_${l.time}_${l.srcip}_${l.user}`;
+    if (seenIds.has(logId)) return false;
+    seenIds.add(logId);
+    return true;
+  });
+
+  // ── Filter by subtype to separate firewall auth from VPN events ──
+  const safeAuth = dedup(rawAuth.filter(l => {
+    const subtype = (l.subtype || '').toLowerCase();
+    const logdesc = (l.logdesc || '').toLowerCase();
+    // Keep only system/admin authentication events
+    return subtype === 'system' || subtype === 'admin' ||
+           logdesc.includes('admin login') || logdesc.includes('authentication');
+  }));
+
+  const safeVpn = dedup(rawVpn.filter(l => {
+    const subtype = (l.subtype || '').toLowerCase();
+    // Keep only real VPN events
+    return subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl';
+  }));
+
+  console.log(`[analyzeAuthentication] After filtering: auth=${safeAuth.length} (raw=${rawAuth.length}), vpn=${safeVpn.length} (raw=${rawVpn.length})`);
 
   const isFailure = (l: any) => {
     const action = (l.action || l.status || '').toLowerCase();
