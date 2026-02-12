@@ -10,16 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Globe,
   Server,
-  Bug,
   Activity,
   ChevronDown,
   ChevronRight,
   Loader2,
   Radar,
   AlertTriangle,
-  Network,
   Building2,
-  Clock,
   CheckCircle2,
   Play,
   XCircle,
@@ -42,8 +39,7 @@ import {
   type AttackSurfaceCVE,
 } from '@/hooks/useAttackSurfaceData';
 import { Button } from '@/components/ui/button';
-import { formatDistanceToNow, differenceInDays, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { differenceInDays, parseISO } from 'date-fns';
 
 /* ──────────────────────────── hooks ──────────────────────────── */
 
@@ -114,45 +110,6 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-function ExposureScoreGauge({ score }: { score: number | null }) {
-  if (score === null || score === undefined) {
-    return (
-      <div className="flex flex-col items-center justify-center">
-        <span className="text-3xl font-mono font-bold text-muted-foreground">—</span>
-        <span className="text-xs text-muted-foreground mt-1">Sem dados</span>
-      </div>
-    );
-  }
-  const color = score >= 70 ? 'text-destructive' : score >= 40 ? 'text-warning' : 'text-primary';
-  const label = score >= 70 ? 'Alto Risco' : score >= 40 ? 'Risco Moderado' : 'Baixo Risco';
-  const bgRing = score >= 70 ? 'stroke-destructive/20' : score >= 40 ? 'stroke-warning/20' : 'stroke-primary/20';
-  const fgRing = score >= 70 ? 'stroke-destructive' : score >= 40 ? 'stroke-warning' : 'stroke-primary';
-  const radius = 45;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-
-  return (
-    <div className="flex flex-col items-center justify-center">
-      <div className="relative w-28 h-28">
-        <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="8" className={bgRing} />
-          <circle
-            cx="50" cy="50" r={radius} fill="none" strokeWidth="8"
-            className={fgRing}
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            style={{ transition: 'stroke-dashoffset 0.6s ease' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`text-2xl font-mono font-bold ${color}`}>{score}</span>
-        </div>
-      </div>
-      <span className={`text-xs mt-2 font-medium ${color}`}>{label}</span>
-    </div>
-  );
-}
 
 /* ──────────────────────────── Port Heatmap ──────────────────────────── */
 
@@ -702,12 +659,6 @@ export default function AttackSurfaceAnalyzerPage() {
   const ips = snapshot?.source_ips ?? [];
   const isRunning = progress?.status === 'pending' || progress?.status === 'running';
 
-  const statCards = [
-    { label: 'IPs Públicos', value: summary.total_ips, icon: Network, color: 'text-teal-400' },
-    { label: 'Portas Abertas', value: summary.open_ports, icon: Server, color: 'text-orange-400' },
-    { label: 'Serviços', value: summary.services, icon: Activity, color: 'text-info' },
-    { label: 'CVEs', value: summary.cves, icon: Bug, color: 'text-destructive' },
-  ];
 
   return (
     <AppLayout>
@@ -774,35 +725,7 @@ export default function AttackSurfaceAnalyzerPage() {
             </Card>
           )}
 
-          {/* ── 1. Score + Stats ── */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <Card className="glass-card md:col-span-1 flex flex-col items-center justify-center p-6">
-              <span className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Score de Exposição</span>
-              <ExposureScoreGauge score={snapshot?.score ?? null} />
-              {snapshot?.completed_at && (
-                <div className="flex items-center gap-1.5 mt-3 text-[10px] text-muted-foreground">
-                  <Clock className="w-3 h-3" />
-                  {formatDistanceToNow(new Date(snapshot.completed_at), { locale: ptBR, addSuffix: true })}
-                </div>
-              )}
-            </Card>
-
-            {statCards.map((s) => (
-              <Card key={s.label} className="glass-card">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="p-2.5 rounded-lg bg-muted/50">
-                    <s.icon className={`w-5 h-5 ${s.color}`} />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{s.value}</p>
-                    <p className="text-xs text-muted-foreground">{s.label}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* ── 2. CVE Alert Banner ── */}
+          {/* ── CVE Alert Banner ── */}
           {snapshot && <CVEAlertSection cves={snapshot.cve_matches} />}
 
           {/* ── 3. Port Heatmap + Tech Stack ── */}
