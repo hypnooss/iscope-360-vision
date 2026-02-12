@@ -1,72 +1,80 @@
 
-# Corrigir: Analyzer tem dados mas nao popula a tela
+# Otimizar Performance da Dashboard
 
-## Diagnostico
+## Problema Identificado
 
-O snapshot mais recente tem metricas reais (`vpnFailures: 64`, `configChanges: 200`, `totalEvents: 264`) mas **0 insights gerados** e todos os severity cards em 0. A tela aparece "vazia" porque os widgets dependem de dados que nao estao sendo calculados:
+A funcao `fetchDashboardData()` no `DashboardPage.tsx` executa **5 queries sequenciais em cascata** (waterfall), onde cada query espera o resultado da anterior antes de executar:
 
-| Widget | Status | Motivo |
-|--------|--------|--------|
-| Score de Risco | 100 (verde) | Sem insights = sem penalidade |
-| Severity Cards | Todos 0 | Sem insights gerados |
-| Top IPs Bloqueados | Vazio | `denied_traffic` coletou 0 logs |
-| Top Paises | Vazio | Depende de denied_traffic |
-| Resumo de Eventos | **OK** | Mostra vpnFailures=64, configChanges=200 |
-| Insights Recentes | Vazio | 0 insights gerados |
+```text
+Query 1+2 (paralelo): clients + firewalls ............ ~200ms
+    |
+    v  aguarda resultado
+Query 3: analysis_history (com firewallIds) ........... ~200ms
+    |
+    v  aguarda resultado
+Query 4: analysis_history recentes .................... ~200ms
+    |
+    v  aguarda resultado
+Query 5: firewalls (nomes) ............................ ~200ms
+    |
+    v  aguarda resultado
+Query 6: clients (nomes) ............................. ~200ms
+                                            Total: ~1000ms+
+```
 
-## Causa Raiz
+Alem disso, a query de `analysis_history` busca ate 100 registros apenas para calcular media e contar criticos -- dados que poderiam vir de forma mais eficiente.
 
-A edge function `firewall-analyzer` tem thresholds muito restritos e parsing de campos que nao coincidem com o formato real dos logs do FortiGate:
+## Solucao
 
-1. **VPN/Auth**: So gera insight de brute force quando UM usuario tem 10+ falhas. 64 falhas distribuidas = 0 insights
-2. **Config Changes**: So detecta "add admin" ou "policy/rule/firewall" no campo `msg` — os 200 logs de config provavelmente usam outros termos
-3. **Denied Traffic**: 0 logs coletados (pode ser que o filtro da API nao retornou nada, ou o firewall realmente nao teve trafego negado no periodo)
+### 1. Paralelizar todas as queries independentes
 
-## Plano de Correcao
+Reorganizar `fetchDashboardData()` para executar o maximo de queries em paralelo:
 
-### 1. Edge Function `firewall-analyzer`: Adicionar insights agregados
+- **Batch 1** (paralelo): `clients count`, `firewalls (id, name, client_id, last_score)`, `analysis_history recentes (top 5 com firewall_id)`
+- **Batch 2**: Nenhum -- todos os dados necessarios ja vem no Batch 1
 
-Modificar `supabase/functions/firewall-analyzer/index.ts`:
+### 2. Eliminar queries redundantes
 
-**a) Em `analyzeAuthentication()`** -- Adicionar 2 novos insights:
-- "Alto Volume de Falhas de Autenticacao" quando total de falhas > 20
-- Listar os top 5 usuarios com mais falhas e seus IPs
+- A query de `firewalls` ja traz `id, name, client_id` -- nao precisa buscar novamente para resolver nomes
+- O campo `last_score` nos firewalls pode ser usado para calcular score medio e contar criticos, eliminando a query de `analysis_history` para estatisticas
+- Os nomes dos clientes podem ser buscados no mesmo batch inicial
 
-**b) Em `analyzeConfigChanges()`** -- Adicionar insight de volume:
-- "Volume Elevado de Alteracoes" quando total de config changes > 50
-- Incluir contagem total e periodo
+### 3. Resultado Otimizado
 
-**c) Em `analyzeConfigChanges()`** -- Ampliar deteccao:
-- Alem de "policy/rule/firewall", detectar tambem: "edit", "set", "delete", "add", "modify"
-- Detectar alteracoes de HA, VPN, routing
+```text
+Query 1+2+3+4 (todas paralelas):
+  - clients (id, name)
+  - firewalls (id, name, client_id, last_score)
+  - analysis_history recentes (top 5)
+                                            Total: ~200ms (1 round-trip)
+```
 
-**d) Adicionar parsing melhorado dos campos FortiGate**:
-- O FortiGate usa campos como `cfgpath`, `cfgobj`, `cfgattr` para config changes
-- Usar esses campos para gerar insights mais especificos (ex: "Politica de Firewall Alterada: policy 15")
+Reducao de **5 round-trips para 1**, com ganho estimado de **80% no tempo de carregamento**.
 
-### 2. Ajustar thresholds
+## Detalhes Tecnicos
 
-| Insight | Threshold Atual | Novo Threshold |
-|---------|----------------|----------------|
-| Brute Force (por usuario) | 10 falhas | 5 falhas |
-| Alto Volume Auth (total) | N/A | 20 falhas |
-| Alto Volume Config | N/A | 50 alteracoes |
-| Volume Alto Bloqueios (por IP) | 100 tentativas | 50 tentativas |
+### Arquivo: `src/pages/DashboardPage.tsx`
 
-### 3. Melhorar parsing de config changes
+Reescrever `fetchDashboardData()` para:
 
-Os logs de config do FortiGate tipicamente tem esta estrutura:
-- `cfgpath`: ex. "firewall.policy", "system.interface", "vpn.ipsec.phase1-interface"
-- `cfgobj`: o objeto alterado
-- `cfgattr`: atributos modificados
-- `action`: "Edit", "Add", "Delete"
+1. Executar todas as queries em um unico `Promise.all`:
+   - `clients` com `select('id, name')`
+   - `firewalls` com `select('id, name, client_id, last_score')`
+   - `analysis_history` com `select('id, score, created_at, firewall_id').order('created_at', { ascending: false }).limit(5)`
 
-A funcao atual so verifica `msg` e `logdesc`. Adicionar verificacao de `cfgpath` para categorizar alteracoes automaticamente.
+2. Calcular stats a partir dos dados de `firewalls`:
+   - `totalFirewalls`: count do array
+   - `averageScore`: media de `last_score` dos firewalls que tem score
+   - `criticalIssues`: firewalls com `last_score < 50`
 
-### Resumo de Arquivos
+3. Resolver nomes de firewall e cliente para analises recentes usando Maps construidos a partir dos dados ja buscados no batch, sem queries adicionais.
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `supabase/functions/firewall-analyzer/index.ts` | Adicionar insights agregados, ampliar parsing de config, ajustar thresholds |
+4. Manter toda a logica de workspace filtering (preview mode).
 
-Nenhuma alteracao de banco de dados necessaria. Apos o deploy, re-trigger da analise para validar que os insights sao gerados.
+### Resultado
+
+| Metrica | Antes | Depois |
+|---------|-------|--------|
+| Queries ao Supabase | 5-6 sequenciais | 3 paralelas |
+| Round-trips de rede | 5 | 1 |
+| Tempo estimado | ~1000ms+ | ~200-300ms |
