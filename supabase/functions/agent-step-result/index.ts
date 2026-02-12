@@ -180,7 +180,56 @@ serve(async (req: Request) => {
       .single();
 
     if (taskError || !task) {
-      console.log('Task not found:', body.task_id);
+      // Fallback: check attack_surface_tasks for Super Agent tasks
+      const { data: asTask, error: asError } = await supabase
+        .from('attack_surface_tasks')
+        .select('id, assigned_agent_id, status, snapshot_id, ip')
+        .eq('id', body.task_id)
+        .maybeSingle();
+
+      if (!asError && asTask) {
+        // Verify agent owns this attack surface task
+        if (asTask.assigned_agent_id !== agentId) {
+          return new Response(
+            JSON.stringify({ error: 'Tarefa não pertence a este agent', code: 'FORBIDDEN' } as StepResultErrorResponse),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Update task to running if still assigned/pending
+        if (asTask.status === 'pending' || asTask.status === 'assigned') {
+          await supabase
+            .from('attack_surface_tasks')
+            .update({ status: 'running', started_at: new Date().toISOString() })
+            .eq('id', body.task_id);
+        }
+
+        // Accumulate step result into the task's result field
+        const currentResult = (asTask as any).result || {};
+        const updatedResult = {
+          ...currentResult,
+          [body.step_id]: {
+            status: body.status,
+            data: body.data || null,
+            error: body.error || null,
+            duration_ms: body.duration_ms || 0,
+          },
+        };
+
+        await supabase
+          .from('attack_surface_tasks')
+          .update({ result: updatedResult })
+          .eq('id', body.task_id);
+
+        console.log(`[attack-surface] Step ${body.step_id} saved for task ${body.task_id} (ip: ${asTask.ip})`);
+
+        return new Response(
+          JSON.stringify({ success: true, task_id: body.task_id, step_id: body.step_id, steps_completed: Object.keys(updatedResult).length, steps_total: 3 }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('Task not found in agent_tasks or attack_surface_tasks:', body.task_id);
       return new Response(
         JSON.stringify({ error: 'Tarefa não encontrada', code: 'NOT_FOUND' } as StepResultErrorResponse),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
