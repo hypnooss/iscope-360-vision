@@ -35,6 +35,7 @@ import {
   useAttackSurfaceCancelScan,
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
+  type AttackSurfaceWebService,
 } from '@/hooks/useAttackSurfaceData';
 import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
@@ -163,6 +164,14 @@ function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
       (r.ports || []).forEach((p: number) => {
         counts[p] = (counts[p] || 0) + 1;
       });
+      // Extract ports from web_services URLs when masscan data is missing
+      (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
+        try {
+          const url = new URL(ws.url);
+          const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
+          counts[port] = (counts[port] || 0) + 1;
+        } catch { /* ignore invalid URLs */ }
+      });
     });
     return Object.entries(counts)
       .map(([port, count]) => ({ port: Number(port), count }))
@@ -221,6 +230,19 @@ function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
           existing.count++;
           if (svc.version) existing.versions.add(svc.version);
           products.set(svc.product, existing);
+        }
+      });
+      // Include technologies from httpx web_services
+      (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
+        (ws.technologies || []).forEach((tech) => {
+          const existing = products.get(tech) || { count: 0, versions: new Set<string>() };
+          existing.count++;
+          products.set(tech, existing);
+        });
+        if (ws.server) {
+          const existing = products.get(ws.server) || { count: 0, versions: new Set<string>() };
+          existing.count++;
+          products.set(ws.server, existing);
         }
       });
     });
@@ -283,7 +305,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
           </Badge>
         </TableCell>
         <TableCell className="text-center">{result?.ports?.length ?? 0}</TableCell>
-        <TableCell className="text-center">{result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0}</TableCell>
+        <TableCell className="text-center">{(result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0) + (result?.web_services?.length ?? 0)}</TableCell>
         <TableCell className="text-center">{ipCVEs.length}</TableCell>
         <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{sourceIP?.label || '—'}</TableCell>
         <TableCell>
@@ -357,6 +379,80 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                 </div>
               )}
 
+              {/* Web Services from httpx */}
+              {result?.web_services && result.web_services.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Web Services Detectados</h4>
+                  <div className="rounded-lg border border-border/50 overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">URL</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Server</TableHead>
+                          <TableHead className="text-xs">Tecnologias</TableHead>
+                          <TableHead className="text-xs">TLS</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.web_services.map((ws: AttackSurfaceWebService, i: number) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-mono text-xs max-w-[250px] truncate">
+                              <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
+                                {ws.url}
+                              </a>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant="outline" className={
+                                ws.status_code >= 200 && ws.status_code < 300 ? 'border-primary/50 text-primary' :
+                                ws.status_code >= 300 && ws.status_code < 400 ? 'border-warning/50 text-warning' :
+                                'border-destructive/50 text-destructive'
+                              }>
+                                {ws.status_code}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">{ws.server || '—'}</TableCell>
+                            <TableCell className="text-xs">
+                              {ws.technologies?.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {ws.technologies.slice(0, 4).map((t, j) => (
+                                    <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0">
+                                      {t}
+                                    </Badge>
+                                  ))}
+                                  {ws.technologies.length > 4 && (
+                                    <span className="text-muted-foreground text-[10px]">+{ws.technologies.length - 4}</span>
+                                  )}
+                                </div>
+                              ) : '—'}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {ws.tls?.subject_cn ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-help text-primary">🔒 {ws.tls.subject_cn}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <div className="space-y-1 text-xs">
+                                        {ws.tls.issuer && <div><strong>Emissor:</strong> {Array.isArray(ws.tls.issuer) ? ws.tls.issuer.join(', ') : ws.tls.issuer}</div>}
+                                        {ws.tls.version && <div><strong>Versão:</strong> {ws.tls.version}</div>}
+                                        {ws.tls.cipher && <div><strong>Cipher:</strong> {ws.tls.cipher}</div>}
+                                        {ws.tls.not_after && <div><strong>Expira:</strong> {ws.tls.not_after}</div>}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
               {ipCVEs.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium mb-2">CVEs Vinculadas</h4>
@@ -378,7 +474,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                 </div>
               )}
 
-              {(!result?.services || result.services.length === 0) && !result?.error && (
+              {(!result?.services || result.services.length === 0) && (!result?.web_services || result.web_services.length === 0) && !result?.error && (
                 <p className="text-sm text-muted-foreground">Nenhum dado disponível para este IP.</p>
               )}
             </div>
