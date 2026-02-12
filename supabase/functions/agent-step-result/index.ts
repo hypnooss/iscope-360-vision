@@ -183,7 +183,7 @@ serve(async (req: Request) => {
       // Fallback: check attack_surface_tasks for Super Agent tasks
       const { data: asTask, error: asError } = await supabase
         .from('attack_surface_tasks')
-        .select('id, assigned_agent_id, status, snapshot_id, ip')
+        .select('id, assigned_agent_id, status, snapshot_id, ip, result')
         .eq('id', body.task_id)
         .maybeSingle();
 
