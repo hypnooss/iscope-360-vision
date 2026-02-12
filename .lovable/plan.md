@@ -1,83 +1,291 @@
+# Super Agent: Scan Ativo Automatizado de Superficie de Ataque
 
-# Correcao: Dados Duplicados entre Login Firewall e VPN
+## Visao Geral
 
-## Diagnostico
+Criar uma camada de **Super Agents** — agentes de sistema (nao vinculados a workspaces) — que executam scans ativos diarios usando `masscan`, `nmap` e `httpx`. Os resultados sao exibidos automaticamente na pagina do Attack Surface Analyzer sem necessidade de intervencao do usuario.
 
-A investigacao revelou que os dados de autenticacao estao **duplicados**. Ambos os steps do blueprint (`auth_events` e `vpn_events`) retornaram exatamente os mesmos 500 registros do FortiGate. Isso acontece porque a API do FortiGate esta retornando o mesmo buffer de log de memoria para ambas as consultas.
+## Arquitetura
 
-**Evidencia concreta:**
-- `auth_events`: 46 system + 416 vpn + 37 wireless = 500 registros
-- `vpn_events`: 46 system + 416 vpn + 37 wireless = 500 registros (identicos)
-- Resultado: 61 falhas de firewall + 61 falhas de VPN = **mesmos eventos contados duas vezes**
-- Por isso os mesmos usuarios (admin, love, umang.singh, etc.) e IPs aparecem em ambos os insights
-
-## Causa Raiz
-
-1. O endpoint da API do FortiGate `/api/v2/log/memory/event/system?filter=logdesc=~auth` retorna um mix de eventos (incluindo VPN e wireless)
-2. O endpoint `/api/v2/log/memory/event/vpn` tambem retorna o mesmo mix de eventos
-3. O edge function `analyzeAuthentication()` recebe dados identicos nos parametros `authLogs` e `vpnLogs`
-
-## Solucao
-
-### 1. Filtrar por `subtype` no Edge Function (`firewall-analyzer/index.ts`)
-
-Adicionar filtragem por `subtype` no inicio de `analyzeAuthentication()` para separar corretamente os eventos:
+### Fluxo de Execucao
 
 ```text
-// Antes de processar, filtrar por subtype para evitar duplicatas
-const realAuthLogs = safeAuth.filter(l => {
-  const subtype = (l.subtype || '').toLowerCase();
-  const logdesc = (l.logdesc || '').toLowerCase();
-  // Eventos de sistema com contexto de autenticacao
-  return subtype === 'system' || subtype === 'admin' || 
-         logdesc.includes('admin login') || logdesc.includes('authentication');
-});
-
-const realVpnLogs = safeVpn.filter(l => {
-  const subtype = (l.subtype || '').toLowerCase();
-  // Apenas eventos realmente de VPN
-  return subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl';
-});
+00:00 UTC
+   |
+   v
+[CRON pg_cron] --> [Edge Function: run-attack-surface-queue]
+   |
+   v
+Busca todos os workspaces ativos
+   |
+   v
+Para cada workspace:
+   Coleta IPs publicos (DNS + Firewall analyses)
+   Cria 1 registro em attack_surface_snapshots (status=pending)
+   Cria N agent_tasks (1 por IP) com target_type='attack_surface'
+   |
+   v
+[Super Agent(s)] fazem polling normal via heartbeat
+   |
+   v
+Para cada task:
+   1. masscan (descoberta rapida de portas)
+   2. nmap -sV (fingerprint de servicos nas portas encontradas)
+   3. httpx (fingerprint web stack nas portas HTTP/HTTPS)
+   |
+   v
+Resultado enviado via agent-step-result (progressivo)
+   |
+   v
+[Edge Function: attack-surface-process] consolida resultados por snapshot
+   |
+   v
+Snapshot atualizado: status=completed, score calculado
 ```
 
-Em seguida, usar `realAuthLogs` no lugar de `safeAuth` e `realVpnLogs` no lugar de `safeVpn` em todo o resto da funcao.
+### Monitoramento de Carga
 
-### 2. Deduplicacao por ID de log
+- O CRON roda as 00:00 UTC e gera a fila para o dia
+- O sistema monitora: se as 23:00 ainda houver tasks pendentes, gera um alerta no `system_alerts`
+- O alerta recomenda adicionar mais Super Agents para distribuir a carga
+- Cada Super Agent puxa tasks da fila de forma autonoma (balanceamento natural)
 
-Como protecao adicional contra dados identicos vindos de ambos os steps, adicionar deduplicacao baseada no campo `id` ou `eventid` do log:
+## Mudancas no Banco de Dados
+
+### 1. Tabela `agents` — Flag de Sistema
+
+```sql
+ALTER TABLE agents ADD COLUMN is_system_agent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE agents ALTER COLUMN client_id DROP NOT NULL;
+```
+
+O campo `client_id` passa a ser nullable. Super Agents tem `client_id = NULL` e `is_system_agent = true`.
+
+### 2. Tabela `system_alerts` (nova)
+
+```sql
+CREATE TABLE system_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_type TEXT NOT NULL,        -- 'super_agent_overload', 'scan_timeout', etc.
+  severity TEXT NOT NULL DEFAULT 'warning',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  acknowledged BOOLEAN DEFAULT false,
+  acknowledged_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ
+);
+```
+
+### 3. Tabela `attack_surface_tasks` (nova, fila granular)
+
+```sql
+CREATE TABLE attack_surface_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_id UUID NOT NULL REFERENCES attack_surface_snapshots(id),
+  ip TEXT NOT NULL,
+  source TEXT NOT NULL,             -- 'dns' ou 'firewall'
+  label TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending, assigned, running, completed, failed
+  assigned_agent_id UUID REFERENCES agents(id),
+  result JSONB,                     -- ports, services, vulns, os, etc.
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Essa tabela substitui o uso de `agent_tasks` para o scan de superficie, dando mais controle granular sobre a fila IP por IP.
+
+### 4. Atualizar RPC `rpc_get_agent_tasks`
+
+Adicionar um novo bloco UNION ALL para Super Agents que busca tasks da tabela `attack_surface_tasks` em vez de `agent_tasks`, priorizando por status `pending` e distribuindo automaticamente:
+
+```sql
+-- Dentro de rpc_get_agent_tasks, novo bloco:
+-- Super Agent: pegar tasks de attack_surface_tasks
+SELECT ...
+FROM attack_surface_tasks ast
+JOIN attack_surface_snapshots snap ON snap.id = ast.snapshot_id
+WHERE ast.status = 'pending'
+  AND EXISTS (SELECT 1 FROM agents a WHERE a.id = p_agent_id AND a.is_system_agent = true)
+ORDER BY ast.created_at ASC
+LIMIT p_limit
+```
+
+Ao retornar, marca as tasks como `assigned` com o `assigned_agent_id`.
+
+## Novos Executores Python (Agent)
+
+### masscan executor (`python-agent/agent/executors/masscan.py`)
 
 ```text
-// Coletar IDs ja vistos para evitar contar o mesmo evento duas vezes
-const seenIds = new Set<string>();
-const dedup = (logs: any[]) => logs.filter(l => {
-  const logId = l.id || l.eventid || `${l.date}_${l.time}_${l.srcip}_${l.user}`;
-  if (seenIds.has(logId)) return false;
-  seenIds.add(logId);
-  return true;
-});
+Entrada: { ip, port_range (default "1-65535"), rate (default 10000) }
+Comando: masscan {ip} -p{port_range} --rate={rate} -oJ -
+Saida: { ports: [22, 80, 443, ...] }
 ```
 
-### 3. Melhorar as queries do Blueprint (banco de dados)
+### nmap executor (`python-agent/agent/executors/nmap.py`)
 
-Atualizar os paths da API no blueprint "FortiGate - Analyzer" para filtros mais especificos:
+```text
+Entrada: { ip, ports: [22, 80, 443] }
+Comando: nmap -sV -sC -p{ports} {ip} -oX -
+Saida: { services: [{port, protocol, product, version, cpe, scripts}] }
+```
 
-- **auth_events**: `/api/v2/log/memory/event/system?filter=logdesc=~"Admin login"&rows=500`
-  (filtrar especificamente por "Admin login" em vez de apenas "auth")
-- **vpn_events**: `/api/v2/log/memory/event/vpn?filter=subtype==vpn&rows=500`
-  (adicionar filtro de subtype)
+### httpx executor (`python-agent/agent/executors/httpx.py`)
 
-Esta alteracao sera feita via UPDATE no banco de dados.
+```text
+Entrada: { ip, ports: [80, 443, 8080] }
+Comando: echo "{ip}" | httpx -ports {ports} -tech-detect -status-code -title -json
+Saida: { web_services: [{url, status, title, technologies, server, tls}] }
+```
 
-## Arquivos a editar
+### Instalacao de dependencias (`check-deps.sh`)
 
-- **Editar**: `supabase/functions/firewall-analyzer/index.ts` - Adicionar filtragem por subtype e deduplicacao na funcao `analyzeAuthentication()`
-- **Reimplantar**: Edge function `firewall-analyzer`
-- **SQL**: Atualizar filtros do blueprint no banco de dados
+Adicionar verificacao e instalacao de `masscan`, `nmap` e `httpx` quando o agent for do tipo sistema:
 
-## Impacto
+```text
+if is_system_agent:
+  apt install -y masscan nmap
+  install httpx from projectdiscovery releases
+```
 
-Apos a correcao:
-- Os contadores de "Login Firewall" e "Falhas VPN" mostrarao valores reais e distintos
-- Os insights de brute force serao separados corretamente (se houver brute force em ambos, sera por dados diferentes)
-- Os rankings de Top IPs/Paises refletirao origens distintas para cada tipo de evento
-- O usuario precisara **re-executar a analise** para gerar dados corretos
+## Novas Edge Functions
+
+### 1. `run-attack-surface-queue` (CRON diario)
+
+- Busca todos os `clients` ativos
+- Para cada client, extrai IPs publicos (mesma logica atual: DNS analyses + Firewall interfaces)
+- Cria snapshot em `attack_surface_snapshots` com `status=pending`
+- Insere 1 registro por IP em `attack_surface_tasks` com `status=pending`
+- Se nenhum Super Agent estiver online, cria alerta
+
+### 2. `attack-surface-step-result` (recebe resultados do agent)
+
+- Recebe resultado de cada IP (masscan + nmap + httpx combinados)
+- Atualiza `attack_surface_tasks` com o resultado
+- Quando todos os IPs de um snapshot estiverem completos:
+  - Consolida resultados
+  - Calcula score de exposicao
+  - Atualiza snapshot para `status=completed`
+
+### 3. `check-attack-surface-progress` (CRON as 23:00)
+
+- Verifica se existem snapshots com status `pending` ou `running` criados hoje
+- Se sim, calcula percentual de conclusao
+- Se < 80% concluido, cria alerta em `system_alerts`
+
+## Mudancas na UI
+
+### Pagina do Attack Surface Analyzer (refatoracao)
+
+- **Remover** botao "Executar Scan" manual (scan e automatico agora)
+- **Adicionar** indicador de "Ultimo scan" com timestamp e status
+- **Adicionar** barra de progresso quando scan esta em andamento (X de Y IPs processados)
+- **Melhorar layout** com secoes visuais mais ricas:
+  - Mapa de portas por IP (heatmap visual)
+  - Stack tecnologico detectado (httpx results)
+  - Timeline de scans anteriores
+
+### Pagina de Agents
+
+- Adicionar uma pagina de gerenciamento desses Super Agents em Administração > Super Agent (espelhar a pagina Agent).
+- Nao aparecem vinculados a nenhum workspace
+- Mostrar metricas: tasks processadas hoje, fila restante
+
+### Alertas de Sistema
+
+- Banner no topo da aplicacao quando houver alertas nao reconhecidos
+- Apenas visivel para super_admin
+
+## Blueprint do Super Agent
+
+O blueprint para scan de superficie sera registrado na tabela `device_blueprints` com `device_type_id` referenciando um novo tipo `attack_surface`:
+
+```text
+device_types:
+  code: 'attack_surface'
+  name: 'Attack Surface Scanner'
+  vendor: 'iScope'
+  category: 'scanner'
+
+device_blueprints:
+  steps:
+    1. masscan (descoberta de portas)
+    2. nmap -sV (fingerprint nos ports encontrados)
+    3. httpx (fingerprint web)
+```
+
+## CRON Setup (pg_cron)
+
+```sql
+-- Scan diario as 00:00 UTC
+SELECT cron.schedule('attack-surface-daily', '0 0 * * *', $$
+  SELECT net.http_post(
+    url:='https://akbosdbyheezghieiefz.supabase.co/functions/v1/run-attack-surface-queue',
+    headers:='{"Authorization": "Bearer <service_role_key>"}'::jsonb,
+    body:='{}'::jsonb
+  );
+$$);
+
+-- Verificacao de progresso as 23:00 UTC
+SELECT cron.schedule('attack-surface-check', '0 23 * * *', $$
+  SELECT net.http_post(
+    url:='https://akbosdbyheezghieiefz.supabase.co/functions/v1/check-attack-surface-progress',
+    headers:='{"Authorization": "Bearer <service_role_key>"}'::jsonb,
+    body:='{}'::jsonb
+  );
+$$);
+```
+
+## Fases de Implementacao
+
+### Fase 1: Infraestrutura (banco + agent)
+
+- Migracoes de banco (is_system_agent, attack_surface_tasks, system_alerts)
+- Novos executores Python (masscan, nmap, httpx)
+- Atualizacao do check-deps.sh
+- Logica no RPC para Super Agents pegarem tasks da fila
+
+### Fase 2: Edge Functions (orquestracao)
+
+- run-attack-surface-queue (CRON)
+- attack-surface-step-result (recebe resultados)
+- check-attack-surface-progress (CRON de monitoramento)
+
+### Fase 3: UI (apresentacao)
+
+- Refatorar AttackSurfaceAnalyzerPage com novo layout
+- Secao de Super Agents na pagina de Agents
+- Sistema de alertas no topo da aplicacao
+
+## Arquivos a criar/editar
+
+**Novos arquivos:**
+
+- `python-agent/agent/executors/masscan.py`
+- `python-agent/agent/executors/nmap.py`
+- `python-agent/agent/executors/httpx.py`
+- `supabase/functions/run-attack-surface-queue/index.ts`
+- `supabase/functions/attack-surface-step-result/index.ts`
+- `supabase/functions/check-attack-surface-progress/index.ts`
+
+**Arquivos a editar:**
+
+- `python-agent/agent/tasks.py` — registrar novos executores
+- `python-agent/check-deps.sh` — instalar masscan, nmap, httpx
+- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` — redesign completo
+- `src/pages/AgentsPage.tsx` — secao de Super Agents
+- `src/hooks/useAttackSurfaceData.ts` — adaptar para nova estrutura
+- `src/components/alerts/SystemAlertBanner.tsx` — alertas de Super Agent
+
+**Migracoes SQL:**
+
+- ALTER agents (is_system_agent, client_id nullable)
+- CREATE attack_surface_tasks
+- CREATE system_alerts
+- INSERT device_types (attack_surface)
+- INSERT device_blueprints (scan ativo)
+- UPDATE rpc_get_agent_tasks
+- CRON jobs (pg_cron)
