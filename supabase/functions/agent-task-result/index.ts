@@ -3925,6 +3925,163 @@ function processComplianceRules(
 }
 
 // ============================================
+// Attack Surface Task Result Handler
+// ============================================
+
+async function handleAttackSurfaceTaskResult(
+  supabase: ReturnType<typeof createClient>,
+  body: TaskResultRequest,
+  asTask: { id: string; assigned_agent_id: string | null; status: string; snapshot_id: string; ip: string; result: any },
+  corsHeaders: Record<string, string>,
+  agentId: string,
+): Promise<Response> {
+  const dbStatus = body.status === 'completed' ? 'completed' : 'failed';
+
+  // Merge any result data from the final report into existing step results
+  const currentResult = asTask.result || {};
+  const finalResult = body.result ? { ...currentResult, ...(body.result as Record<string, unknown>) } : currentResult;
+
+  // Consolidate step data into the format expected by snapshot consolidation
+  // Extract ports/services/web from step results
+  const masscanData = finalResult.masscan_discovery?.data || finalResult.masscan_discovery || {};
+  const nmapData = finalResult.nmap_fingerprint?.data || finalResult.nmap_fingerprint || {};
+  const httpxData = finalResult.httpx_webstack?.data || finalResult.httpx_webstack || {};
+
+  const consolidatedResult: Record<string, any> = {
+    ports: masscanData.ports || [],
+    services: nmapData.services || [],
+    os: nmapData.os || '',
+    hostnames: nmapData.hostnames || [],
+    web_services: httpxData.web_services || httpxData.results || [],
+    vulns: nmapData.vulns || [],
+    raw_steps: finalResult,
+  };
+
+  const updateData: Record<string, any> = {
+    status: dbStatus,
+    completed_at: new Date().toISOString(),
+    result: consolidatedResult,
+  };
+
+  if (body.error_message) {
+    updateData.result = { ...consolidatedResult, error: body.error_message };
+  }
+
+  await supabase
+    .from('attack_surface_tasks')
+    .update(updateData)
+    .eq('id', body.task_id);
+
+  console.log(`[attack-surface] Task ${body.task_id} (ip: ${asTask.ip}) -> ${dbStatus}`);
+
+  // Check if all tasks for this snapshot are done
+  const { count: pendingCount } = await supabase
+    .from('attack_surface_tasks')
+    .select('id', { count: 'exact', head: true })
+    .eq('snapshot_id', asTask.snapshot_id)
+    .in('status', ['pending', 'assigned', 'running']);
+
+  if ((pendingCount || 0) === 0) {
+    console.log(`[attack-surface] All tasks for snapshot ${asTask.snapshot_id} completed. Consolidating...`);
+
+    // Fetch all completed tasks
+    const { data: allTasks } = await supabase
+      .from('attack_surface_tasks')
+      .select('ip, source, label, status, result')
+      .eq('snapshot_id', asTask.snapshot_id);
+
+    // Consolidate results (same logic as attack-surface-step-result)
+    const results: Record<string, any> = {};
+    let totalPorts = 0;
+    let totalServices = 0;
+    const allVulns = new Set<string>();
+
+    for (const t of (allTasks || [])) {
+      const r = t.result || {};
+      results[t.ip] = {
+        ports: r.ports || [],
+        services: r.services || [],
+        web_services: r.web_services || [],
+        vulns: r.vulns || [],
+        os: r.os || '',
+        hostnames: r.hostnames || [],
+        error: t.status === 'failed' ? (r.error || 'Task failed') : undefined,
+      };
+      totalPorts += (r.ports || []).length;
+      totalServices += (r.services || []).length + (r.web_services || []).length;
+      for (const v of (r.vulns || [])) allVulns.add(v);
+    }
+
+    // Calculate exposure score
+    const totalIPs = Object.keys(results).length;
+    const vulnCount = allVulns.size;
+    let score = 100;
+    if (totalIPs > 0) {
+      const avgPorts = totalPorts / totalIPs;
+      const portPenalty = Math.min(avgPorts * 2, 40);
+      const servicePenalty = Math.min(totalServices * 1.5, 30);
+      const vulnPenalty = Math.min(vulnCount * 5, 30);
+      score = Math.max(0, Math.round(100 - portPenalty - servicePenalty - vulnPenalty));
+    }
+
+    // CVE matching
+    const allCPEs: string[] = [];
+    for (const ip of Object.keys(results)) {
+      for (const svc of (results[ip].services || [])) {
+        if (svc.cpe && Array.isArray(svc.cpe)) allCPEs.push(...svc.cpe);
+      }
+    }
+
+    let cveMatches: any[] = [];
+    if (allCPEs.length > 0) {
+      const products = allCPEs.map((cpe: string) => {
+        const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
+        return (parts[2] || '').replace(/_/g, ' ');
+      }).filter(Boolean);
+      const uniqueProducts = [...new Set(products)];
+      for (const product of uniqueProducts.slice(0, 10)) {
+        const { data: cves } = await supabase
+          .from('cve_cache')
+          .select('cve_id, title, severity, score, advisory_url, products')
+          .ilike('title', `%${product}%`)
+          .order('score', { ascending: false })
+          .limit(5);
+        if (cves) {
+          for (const cve of cves) {
+            if (!cveMatches.find(c => c.cve_id === cve.cve_id)) cveMatches.push(cve);
+          }
+        }
+      }
+    }
+
+    await supabase
+      .from('attack_surface_snapshots')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        results,
+        cve_matches: cveMatches,
+        summary: { total_ips: totalIPs, open_ports: totalPorts, services: totalServices, cves: vulnCount + cveMatches.length },
+        score,
+      })
+      .eq('id', asTask.snapshot_id);
+
+    console.log(`[attack-surface] Snapshot ${asTask.snapshot_id} completed: score=${score}, ips=${totalIPs}, ports=${totalPorts}`);
+  } else {
+    await supabase
+      .from('attack_surface_snapshots')
+      .update({ status: 'running' })
+      .eq('id', asTask.snapshot_id)
+      .eq('status', 'pending');
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, task_id: body.task_id, status: dbStatus, has_more_tasks: false } as TaskResultSuccessResponse),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+// ============================================
 // Main Handler
 // ============================================
 
@@ -4071,7 +4228,26 @@ serve(async (req: Request) => {
       .single();
 
     if (taskError || !task) {
-      console.log('Task not found:', body.task_id);
+      // Fallback: check attack_surface_tasks for Super Agent tasks
+      const { data: asTask, error: asError } = await supabase
+        .from('attack_surface_tasks')
+        .select('id, assigned_agent_id, status, snapshot_id, ip, result')
+        .eq('id', body.task_id)
+        .maybeSingle();
+
+      if (!asError && asTask) {
+        // Verify agent owns this attack surface task
+        if (asTask.assigned_agent_id !== agentId) {
+          return new Response(
+            JSON.stringify({ error: 'Tarefa não pertence a este agent', code: 'FORBIDDEN' } as TaskResultErrorResponse),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return await handleAttackSurfaceTaskResult(supabase, body, asTask, corsHeaders, agentId);
+      }
+
+      console.log('Task not found in agent_tasks or attack_surface_tasks:', body.task_id);
       return new Response(
         JSON.stringify({ error: 'Tarefa não encontrada', code: 'NOT_FOUND' } as TaskResultErrorResponse),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
