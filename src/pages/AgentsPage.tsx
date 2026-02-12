@@ -154,6 +154,7 @@ export default function AgentsPage() {
       let agentsQuery = supabase
         .from("agents")
         .select("*")
+        .eq('is_system_agent', false)
         .order("created_at", { ascending: false });
         
       let clientsQuery = supabase

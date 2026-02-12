@@ -25,6 +25,7 @@ const TemplatesPage = lazy(() => import("./pages/admin/TemplatesPage"));
 const TemplateDetailPage = lazy(() => import("./pages/admin/TemplateDetailPage"));
 const SchedulesPage = lazy(() => import("./pages/admin/SchedulesPage"));
 const CVEsCachePage = lazy(() => import("./pages/admin/CVEsCachePage"));
+const SuperAgentsPage = lazy(() => import("./pages/admin/SuperAgentsPage"));
 
 // Firewall Module Pages - lazy loaded
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
@@ -153,7 +154,8 @@ const App = () => (
                   <Route path="/templates" element={<TemplatesPage />} />
                   <Route path="/templates/:id" element={<TemplateDetailPage />} />
                   <Route path="/schedules" element={<SchedulesPage />} />
-                  <Route path="/cves" element={<CVEsCachePage />} />
+                   <Route path="/cves" element={<CVEsCachePage />} />
+                   <Route path="/super-agents" element={<SuperAgentsPage />} />
 
                   {/* Preview routes (temporary) */}
                   <Route path="/preview/domain-report" element={<DomainReportPreview />} />
