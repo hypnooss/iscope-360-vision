@@ -404,6 +404,96 @@ generate_certificate() {
 # Main Execution
 # ============================================================================
 
+
+# ============================================================================
+# Attack Surface Scanner Tools (Super Agent only)
+# ============================================================================
+
+check_system_agent() {
+    # Check if this agent is a system agent by looking for the flag file
+    [[ -f "$STATE_DIR/is_system_agent.flag" ]]
+}
+
+install_scanner_tools() {
+    if ! check_system_agent; then
+        return 0
+    fi
+
+    log "Super Agent detectado — instalando ferramentas de scan..."
+
+    # masscan
+    if ! command -v masscan >/dev/null 2>&1; then
+        log "Instalando masscan..."
+        case "$OS_ID" in
+            ubuntu|debian)
+                apt-get update -y && apt-get install -y masscan || log_error "Falha ao instalar masscan"
+                ;;
+            rhel|centos|rocky|almalinux|ol)
+                if command -v dnf >/dev/null 2>&1; then
+                    dnf install -y masscan || log_error "Falha ao instalar masscan"
+                else
+                    yum install -y masscan || log_error "Falha ao instalar masscan"
+                fi
+                ;;
+        esac
+    fi
+    if command -v masscan >/dev/null 2>&1; then
+        log "masscan OK: $(masscan --version 2>&1 | head -1)"
+    fi
+
+    # nmap
+    if ! command -v nmap >/dev/null 2>&1; then
+        log "Instalando nmap..."
+        case "$OS_ID" in
+            ubuntu|debian)
+                apt-get install -y nmap || log_error "Falha ao instalar nmap"
+                ;;
+            rhel|centos|rocky|almalinux|ol)
+                if command -v dnf >/dev/null 2>&1; then
+                    dnf install -y nmap || log_error "Falha ao instalar nmap"
+                else
+                    yum install -y nmap || log_error "Falha ao instalar nmap"
+                fi
+                ;;
+        esac
+    fi
+    if command -v nmap >/dev/null 2>&1; then
+        log "nmap OK: $(nmap --version 2>&1 | head -1)"
+    fi
+
+    # httpx (projectdiscovery)
+    if ! command -v httpx >/dev/null 2>&1; then
+        log "Instalando httpx (projectdiscovery)..."
+        local arch
+        arch="$(uname -m)"
+        case "$arch" in
+            x86_64) arch="amd64" ;;
+            aarch64) arch="arm64" ;;
+        esac
+        local httpx_version="1.6.9"
+        local httpx_url="https://github.com/projectdiscovery/httpx/releases/download/v${httpx_version}/httpx_${httpx_version}_linux_${arch}.zip"
+        local tmp_dir="/tmp/httpx_install"
+        mkdir -p "$tmp_dir"
+        if wget -q "$httpx_url" -O "$tmp_dir/httpx.zip" 2>/dev/null || curl -sSL "$httpx_url" -o "$tmp_dir/httpx.zip" 2>/dev/null; then
+            # Install unzip if needed
+            command -v unzip >/dev/null 2>&1 || apt-get install -y unzip 2>/dev/null || dnf install -y unzip 2>/dev/null || true
+            unzip -o "$tmp_dir/httpx.zip" -d "$tmp_dir" 2>/dev/null
+            if [[ -f "$tmp_dir/httpx" ]]; then
+                mv "$tmp_dir/httpx" /usr/local/bin/httpx
+                chmod +x /usr/local/bin/httpx
+            fi
+        else
+            log_error "Falha ao baixar httpx"
+        fi
+        rm -rf "$tmp_dir"
+    fi
+    if command -v httpx >/dev/null 2>&1; then
+        log "httpx OK: $(httpx -version 2>&1 | head -1)"
+    fi
+
+    return 0
+}
+
 main() {
     local errors=0
 
@@ -416,6 +506,11 @@ main() {
             chown "$SERVICE_USER":"$SERVICE_USER" "$user_home"
             log "Diretório home criado: $user_home"
         fi
+    fi
+
+    # Install scanner tools (Super Agent only)
+    if ! install_scanner_tools; then
+        ((errors++)) || true
     fi
 
     # Install PowerShell

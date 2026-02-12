@@ -146,6 +146,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_system_agent: boolean
           jwt_secret: string | null
           last_seen: string | null
           name: string
@@ -166,6 +167,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_system_agent?: boolean
           jwt_secret?: string | null
           last_seen?: string | null
           name: string
@@ -186,6 +188,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_system_agent?: boolean
           jwt_secret?: string | null
           last_seen?: string | null
           name?: string
@@ -444,6 +447,63 @@ export type Database = {
           summary?: Json | null
         }
         Relationships: []
+      }
+      attack_surface_tasks: {
+        Row: {
+          assigned_agent_id: string | null
+          completed_at: string | null
+          created_at: string
+          id: string
+          ip: string
+          label: string | null
+          result: Json | null
+          snapshot_id: string
+          source: string
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          assigned_agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          ip: string
+          label?: string | null
+          result?: Json | null
+          snapshot_id: string
+          source: string
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          assigned_agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          ip?: string
+          label?: string | null
+          result?: Json | null
+          snapshot_id?: string
+          source?: string
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attack_surface_tasks_assigned_agent_id_fkey"
+            columns: ["assigned_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attack_surface_tasks_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "attack_surface_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       blueprint_step_templates: {
         Row: {
@@ -2187,6 +2247,7 @@ export type Database = {
         | "wlc"
         | "server"
         | "other"
+        | "scanner"
       m365_submodule:
         | "entra_id"
         | "sharepoint"
@@ -2363,6 +2424,7 @@ export const Constants = {
         "wlc",
         "server",
         "other",
+        "scanner",
       ],
       m365_submodule: [
         "entra_id",
