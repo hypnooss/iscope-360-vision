@@ -1,138 +1,200 @@
 
-# Melhorias no Analyzer: Metricas Precisas e Separacao de Autenticacao
+# Melhorias no Analyzer Dashboard: Auth Sucesso/Falha, Bandeiras, Mapa de Ataques e Log de Config Changes
 
-## Problemas Identificados
+## Resumo
 
-1. **Alteracoes de Config = 200 falso**: O blueprint coleta ate 200 linhas do FortiGate (`rows=200`) e o analyzer conta `logs.length` como total. Resultado: sempre mostra 200 mesmo que as alteracoes reais sejam menos (o filtro `logdesc=~config` retorna qualquer log de sistema que mencione "config", incluindo leituras/consultas que nao sao alteracoes).
+Quatro melhorias principais no modulo Analyzer:
 
-2. **Falhas VPN misturadas**: A funcao `analyzeAuthentication` junta `auth_events` + `vpn_events` em um unico array e conta tudo como `vpnFailures`. Nao ha distincao entre tentativas de login no painel do firewall vs tentativas de VPN SSL/IPsec.
+1. **Separar autenticacao por sucesso e falha** nos widgets de Top IPs e Top Paises (com abas)
+2. **Bandeiras de paises** usando a lib `flag-icons` (ja instalada) com mapeamento de nome para codigo ISO
+3. **Mapa de ataques** interativo mostrando origens geograficas das conexoes
+4. **Pagina de log de alteracoes de configuracao** com detalhes de usuario, acao, objeto e path
 
-3. **Top Paises e IPs incompletos**: Atualmente os tops vem apenas do trafego negado (`denied_traffic`). Falhas de autenticacao e VPN tambem contem IPs e paises que deveriam alimentar esses rankings.
+---
 
-## Mudancas Propostas
+## Mudancas
 
-### 1. Edge Function `firewall-analyzer/index.ts` - Separar autenticacao
+### 1. Edge Function `firewall-analyzer/index.ts` - Separar sucesso e falha
 
-**Funcao `analyzeAuthentication`:**
-- Separar a analise em dois grupos: falhas de login no firewall (`auth_events`) e falhas de VPN (`vpn_events`)
-- Criar metricas distintas:
-  - `firewallAuthFailures`: total de falhas de login no painel administrativo
-  - `vpnFailures`: total de falhas de VPN (SSL + IPsec)
-- Gerar insights separados para cada tipo:
-  - "Falhas de Login no Firewall" (categoria `authentication`)
-  - "Falhas de VPN" (categoria `authentication`) com indicacao do tipo (SSL/IPsec quando possivel via campo `tunneltype` ou `logdesc`)
-- Extrair top IPs e paises de ambas as fontes de autenticacao
+Atualmente `analyzeAuthentication` coleta apenas falhas. Precisamos tambem coletar sucessos para gerar rankings separados.
 
-**Funcao `analyzeConfigChanges`:**
-- Filtrar logs que sao realmente alteracoes de configuracao (acoes `Add`, `Edit`, `Delete`, `Set`) vs simples consultas ou leituras
-- Contar apenas logs com `action` contendo keywords de modificacao, ignorando reads/queries
-- A metrica `configChanges` refletira o numero real de alteracoes
+- Adicionar `isSuccess` (complemento de `isFailure`)
+- Gerar metricas adicionais:
+  - `topAuthIPsSuccess` / `topAuthIPsFailed`
+  - `topAuthCountriesSuccess` / `topAuthCountriesFailed`
+  - `firewallAuthSuccesses`, `vpnSuccesses`
+- Manter os totais existentes para compatibilidade
+- Salvar `configChangeDetails` nas metricas: array com `{ user, action, cfgpath, cfgobj, cfgattr, msg, date }` para cada alteracao real, permitindo consulta no frontend
 
-**Metricas combinadas de Top IPs / Top Paises:**
-- Criar dois novos arrays nas metricas: `topAuthIPs` e `topAuthCountries`
-- Combinar IPs/paises de auth failures + vpn failures para enriquecer os rankings
+### 2. Tipos `src/types/analyzerInsights.ts` - Novos campos
 
-### 2. Blueprint de coleta (via banco)
+Adicionar ao `AnalyzerMetrics`:
+- `topAuthIPsSuccess`, `topAuthIPsFailed` (arrays de `TopBlockedIP`)
+- `topAuthCountriesSuccess`, `topAuthCountriesFailed` (arrays de `TopCountry`)
+- `firewallAuthSuccesses`, `vpnSuccesses` (numeros)
+- `configChangeDetails` (array de `ConfigChangeDetail`)
 
-- Alterar o step `config_changes` para filtrar apenas acoes de modificacao:
-  - Path atual: `/api/v2/log/memory/event/system?filter=logdesc=~config&rows=200`
-  - Novo path: `/api/v2/log/memory/event/system?filter=logdesc=~"changed"&rows=500`
-  - Ou, alternativamente, manter o filtro atual e aplicar o filtro de acao no processamento (mais seguro, pois depende da versao do FortiOS)
-
-Decisao: manter o filtro atual no blueprint e filtrar no processamento para manter compatibilidade. Aumentar `rows` para 500.
-
-### 3. Tipos TypeScript `src/types/analyzerInsights.ts`
-
-Atualizar `AnalyzerMetrics`:
+Nova interface:
 ```text
-interface AnalyzerMetrics {
-  topBlockedIPs: TopBlockedIP[];
-  topCountries: TopCountry[];
-  vpnFailures: number;
-  firewallAuthFailures: number;    // NOVO
-  topAuthIPs: TopBlockedIP[];       // NOVO - IPs de falhas auth/vpn
-  topAuthCountries: TopCountry[];   // NOVO - Paises de falhas auth/vpn
-  ipsEvents: number;
-  configChanges: number;
-  totalDenied: number;
-  totalEvents: number;
+interface ConfigChangeDetail {
+  user: string;
+  action: string;
+  cfgpath: string;
+  cfgobj: string;
+  cfgattr: string;
+  msg: string;
+  date: string;
+  category: string;
+  severity: string;
 }
 ```
 
-### 4. Dashboard `AnalyzerDashboardPage.tsx`
+### 3. Hook `src/hooks/useAnalyzerData.ts` - Parse novos campos
 
-- Substituir o card "Falhas VPN" unico por dois cards: "Login Firewall" e "Falhas VPN"
-- Adicionar um novo widget "Top IPs - Autenticacao" (ou integrar ao widget existente com abas)
-- Adicionar "Top Paises - Autenticacao" ao widget existente ou como widget separado
-- Manter compatibilidade com snapshots antigos (fallback para `vpnFailures` quando `firewallAuthFailures` nao existir)
+Atualizar `parseSnapshot` com defaults para todos os novos campos.
 
-### 5. Hook `useAnalyzerData.ts`
+### 4. Utilitario `src/lib/countryUtils.ts` - Mapeamento de paises
 
-- Atualizar `parseSnapshot` para incluir os novos campos `firewallAuthFailures`, `topAuthIPs`, `topAuthCountries` com defaults vazios
+Criar mapeamento de nomes de paises (como vem do FortiGate: "Netherlands", "Russian Federation", "Slovenia") para codigos ISO 2 letras (`nl`, `ru`, `si`), cobrindo os ~50 paises mais comuns em logs de firewall.
 
-## Secao Tecnica
+Funcao: `getCountryFlag(countryName: string): string | null` retorna o codigo ISO ou null.
 
-### Logica de separacao de autenticacao no `firewall-analyzer`
+### 5. Dashboard `AnalyzerDashboardPage.tsx` - Refatorar widgets
 
+**Top IPs e Top Paises de Autenticacao:**
+- Adicionar abas (Tabs) "Falhas" / "Sucessos" em cada widget
+- Tab "Falhas" mostra `topAuthIPsFailed` e `topAuthCountriesFailed`
+- Tab "Sucessos" mostra `topAuthIPsSuccess` e `topAuthCountriesSuccess`
+
+**Bandeiras nos widgets de Paises:**
+- Importar `flag-icons/css/flag-icons.min.css`
+- Ao lado do nome do pais, renderizar `<span className="fi fi-{code}" />` usando o utilitario `getCountryFlag`
+- Aplicar tanto nos widgets de Trafego Negado quanto Autenticacao
+
+**Botao "Mapa de Ataques":**
+- Adicionar toggle/botao no header da secao de Top IPs/Paises
+- Ao clicar, exibe um componente de mapa mundial SVG simplificado com pontos/circulos posicionados por coordenadas aproximadas de cada pais
+- Usar um SVG world map inline (sem dependencia externa) com marcadores proporcionais ao volume de eventos
+- O mapa mostrara tanto trafego negado quanto autenticacao com cores distintas
+
+**Card "Alteracoes Config" clicavel:**
+- No Resumo de Eventos, o card "Alteracoes Config" ganha um botao/link "Ver detalhes"
+- Navega para `/scope-firewall/analyzer/config-changes`
+
+### 6. Nova pagina `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+
+Pagina dedicada para consultar alteracoes de configuracao:
+
+- Breadcrumb: Firewall > Analyzer > Alteracoes de Configuracao
+- Seletor de firewall (mesmo padrao)
+- Tabela com colunas: Data/Hora, Usuario, Acao, Categoria, Path, Objeto, Atributo, Mensagem, Severidade
+- Dados vem de `snapshot.metrics.configChangeDetails`
+- Filtros por usuario e por categoria
+- Badge de severidade colorido
+
+### 7. Componente `src/components/firewall/AttackMap.tsx` - Mapa de ataques
+
+Componente SVG world map com:
+- Mapa base mundial em SVG (paths simplificados dos continentes)
+- Circulos/pontos posicionados por coordenadas aproximadas do pais
+- Tamanho proporcional ao volume de eventos
+- Cores: vermelho para trafego negado, laranja para falhas de auth, verde para sucessos
+- Tooltip ao hover mostrando pais + contagem
+- Legenda
+
+### 8. Rota no `App.tsx`
+
+Adicionar:
 ```text
-function analyzeAuthentication(authLogs, vpnLogs):
-  
-  // 1. Processar authLogs (login no firewall admin)
-  firewallFailures = authLogs.filter(log => action has deny/fail)
-  
-  // 2. Processar vpnLogs (VPN SSL/IPsec)  
-  vpnOnlyFailures = vpnLogs.filter(log => action has deny/fail)
-  
-  // 3. Gerar insights separados
-  if firewallFailures >= threshold:
-    insight "Alto Volume de Falhas de Login no Firewall"
-  
-  if vpnOnlyFailures >= threshold:
-    insight "Alto Volume de Falhas de VPN"
-    - detalhar tipo (SSL/IPsec) quando campo tunneltype disponivel
-  
-  // 4. Brute force por usuario (manter, mas indicar origem)
-  - agrupar por fonte (firewall vs vpn)
-  
-  // 5. Extrair top IPs e paises de ambos
-  return {
-    insights,
-    metrics: {
-      firewallAuthFailures: firewallFailures.length,
-      vpnFailures: vpnOnlyFailures.length,
-      topAuthIPs: [...],
-      topAuthCountries: [...]
-    }
-  }
+<Route path="/scope-firewall/analyzer/config-changes" element={<AnalyzerConfigChangesPage />} />
 ```
 
-### Logica de filtragem de config changes
+---
+
+## Secao tecnica
+
+### Separacao de sucesso/falha no edge function
 
 ```text
-function analyzeConfigChanges(logs):
-  // Filtrar apenas acoes de modificacao real
-  const MODIFY_ACTIONS = ['Add', 'Edit', 'Delete', 'Set', 'Move'];
-  const realChanges = logs.filter(log => {
-    const action = log.action || '';
-    return MODIFY_ACTIONS.some(a => action.toLowerCase().includes(a.toLowerCase()));
-  });
+analyzeAuthentication(authLogs, vpnLogs):
+  // Falhas (ja existe)
+  firewallFailures = safeAuth.filter(isFailure)
+  vpnOnlyFailures = safeVpn.filter(isFailure)
   
-  // Usar realChanges.length como configChanges (nao logs.length)
-  return { metrics: { configChanges: realChanges.length } };
+  // Sucessos (novo)
+  isSuccess = (l) => !isFailure(l) && (action includes 'success' || 'allow' || 'accept')
+  firewallSuccesses = safeAuth.filter(isSuccess)
+  vpnSuccesses = safeVpn.filter(isSuccess)
+  
+  // Gerar tops separados para failed e success
+  topAuthIPsFailed = collectAndRank([...firewallFailures, ...vpnOnlyFailures])
+  topAuthIPsSuccess = collectAndRank([...firewallSuccesses, ...vpnSuccesses])
+  topAuthCountriesFailed = collectCountryRank([...firewallFailures, ...vpnOnlyFailures])
+  topAuthCountriesSuccess = collectCountryRank([...firewallSuccesses, ...vpnSuccesses])
 ```
 
-### Atualizacao do blueprint (via SQL update)
+### Config change details no edge function
 
 ```text
-UPDATE device_blueprints SET collection_steps = jsonb_set(...)
-WHERE name = 'FortiGate - Analyzer'
-  -- Alterar config_changes step: rows de 200 para 500
+analyzeConfigChanges(logs):
+  // Alem dos insights, gerar array de detalhes
+  const details = realChanges.map(log => ({
+    user: log.user || log.ui || 'unknown',
+    action: log.action || '',
+    cfgpath: log.cfgpath || '',
+    cfgobj: log.cfgobj || '',
+    cfgattr: log.cfgattr || '',
+    msg: log.msg || log.logdesc || '',
+    date: log.date || log.eventtime || '',
+    category: cfgpath ? categorizeCfgPath(cfgpath).category : 'Outros',
+    severity: cfgpath ? categorizeCfgPath(cfgpath).severity : 'low',
+  }));
+  
+  metrics.configChangeDetails = details.slice(0, 200);
 ```
+
+### Mapeamento de paises (countryUtils.ts)
+
+```text
+const COUNTRY_CODES: Record<string, string> = {
+  'netherlands': 'nl',
+  'russian federation': 'ru',
+  'slovenia': 'si',
+  'united states': 'us',
+  'china': 'cn',
+  'brazil': 'br',
+  'germany': 'de',
+  'france': 'fr',
+  // ... ~50 paises mais comuns
+};
+
+// Coordenadas aproximadas para o mapa
+const COUNTRY_COORDS: Record<string, [number, number]> = {
+  'us': [39, -98],
+  'cn': [35, 104],
+  'ru': [61, 105],
+  'br': [-14, -51],
+  // ...
+};
+```
+
+### Mapa SVG (AttackMap.tsx)
+
+Componente que:
+1. Recebe arrays de topCountries (denied + auth failed + auth success)
+2. Renderiza SVG com world map paths
+3. Posiciona circulos nas coordenadas de cada pais
+4. Circulos com raio proporcional ao log(count)
+5. Cores distintas por tipo de evento
+6. Animacao pulse nos circulos para efeito visual
 
 ### Arquivos a criar/editar
 
-- **Editar**: `supabase/functions/firewall-analyzer/index.ts` (separar auth, filtrar config)
+- **Criar**: `src/lib/countryUtils.ts` (mapeamento nomes -> codigos ISO + coordenadas)
+- **Criar**: `src/components/firewall/AttackMap.tsx` (mapa SVG)
+- **Criar**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx` (pagina de log de config changes)
+- **Editar**: `supabase/functions/firewall-analyzer/index.ts` (separar sucesso/falha, config details)
 - **Editar**: `src/types/analyzerInsights.ts` (novos campos)
 - **Editar**: `src/hooks/useAnalyzerData.ts` (parse novos campos)
-- **Editar**: `src/pages/firewall/AnalyzerDashboardPage.tsx` (novos widgets/cards)
-- **SQL update**: blueprint `FortiGate - Analyzer` (rows 200 -> 500 no step config_changes)
+- **Editar**: `src/pages/firewall/AnalyzerDashboardPage.tsx` (abas, bandeiras, mapa, link config)
+- **Editar**: `src/App.tsx` (nova rota)
