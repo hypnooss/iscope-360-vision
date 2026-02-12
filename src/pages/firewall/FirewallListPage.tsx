@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -6,7 +6,7 @@ import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,13 +14,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, Play, Trash2, Loader2, Building, Pencil, Building2 } from 'lucide-react';
+import { Server, Play, Trash2, Loader2, Building, Pencil, Building2, Search, TrendingUp, AlertTriangle, Shield } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FirewallStatsCards } from '@/components/firewall/FirewallStatsCards';
 import { AddFirewallDialog } from '@/components/firewall/AddFirewallDialog';
 
 
@@ -73,6 +73,41 @@ interface Agent {
 
 type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
 
+const FREQUENCY_LABELS: Record<string, string> = {
+  daily: 'Diário',
+  weekly: 'Semanal',
+  monthly: 'Mensal',
+  manual: 'Manual',
+};
+
+const FREQUENCY_COLORS: Record<string, string> = {
+  daily: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  weekly: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+};
+
+const DAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function getScheduleDescriptionText(schedule: ScheduleInfo | null | undefined) {
+  if (!schedule || schedule.frequency === 'manual') return 'Manual';
+  const hour = schedule.scheduled_hour ?? 0;
+  const timeStr = `${String(hour).padStart(2, '0')}:00`;
+  switch (schedule.frequency) {
+    case 'daily':
+      return `Todos os dias às ${timeStr}`;
+    case 'weekly': {
+      const day = DAY_NAMES[schedule.scheduled_day_of_week ?? 1] || 'Seg';
+      return `${day} às ${timeStr}`;
+    }
+    case 'monthly': {
+      const dom = schedule.scheduled_day_of_month ?? 1;
+      return `Dia ${dom} às ${timeStr}`;
+    }
+    default:
+      return timeStr;
+  }
+}
+
 export default function FirewallListPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
@@ -112,6 +147,8 @@ export default function FirewallListPage() {
     enabled: isSuperRole && !isPreviewMode,
     staleTime: 1000 * 60 * 5,
   });
+
+  const [search, setSearch] = useState('');
 
   // Auto-select first workspace
   useEffect(() => {
@@ -407,57 +444,32 @@ export default function FirewallListPage() {
 
   const getScoreColor = (score: number | null) => {
     if (score === null) return 'bg-muted text-muted-foreground';
-    if (score >= 90) return 'bg-success/10 text-success';
-    if (score >= 75) return 'bg-success/10 text-success';
-    if (score >= 60) return 'bg-warning/10 text-warning';
-    return 'bg-destructive/10 text-destructive';
+    if (score >= 75) return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
+    if (score >= 60) return 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
+    return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
   };
 
-  const getScheduleLabel = (frequency: string) => {
-    switch (frequency) {
-      case 'daily': return 'Diário';
-      case 'weekly': return 'Semanal';
-      case 'monthly': return 'Mensal';
-      default: return 'Manual';
-    }
-  };
+  // Inline stats (same pattern as Schedules)
+  const stats = useMemo(() => {
+    const total = firewalls.length;
+    const withScore = firewalls.filter(f => f.last_score !== null);
+    const avg = withScore.length > 0
+      ? Math.round(withScore.reduce((s, f) => s + (f.last_score || 0), 0) / withScore.length)
+      : 0;
+    const critical = firewalls.filter(f => f.last_score !== null && (f.last_score as number) < 50).length;
+    const failures = firewalls.filter(f => f.last_score !== null && (f.last_score as number) < 30).length;
+    return { total, avg, critical, failures };
+  }, [firewalls]);
 
-  const getDayOfWeekLabel = (day: number) => {
-    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    return days[day] || '—';
-  };
-
-  const getScheduleDetailBadges = (schedule: ScheduleInfo | null | undefined) => {
-    if (!schedule || schedule.frequency === 'manual') return null;
-    const hour = schedule.scheduled_hour ?? null;
-    const badges: React.ReactNode[] = [];
-
-    if (schedule.frequency === 'weekly' && schedule.scheduled_day_of_week != null) {
-      badges.push(
-        <Badge key="dow" variant="outline">
-          {getDayOfWeekLabel(schedule.scheduled_day_of_week)}
-        </Badge>
-      );
-    }
-
-    if (schedule.frequency === 'monthly' && schedule.scheduled_day_of_month != null) {
-      badges.push(
-        <Badge key="dom" variant="outline">
-          Dia {schedule.scheduled_day_of_month}
-        </Badge>
-      );
-    }
-
-    if (hour != null) {
-      badges.push(
-        <Badge key="hour" variant="outline">
-          {hour.toString().padStart(2, '0')}:00
-        </Badge>
-      );
-    }
-
-    return badges.length > 0 ? badges : null;
-  };
+  // Search filter
+  const filtered = useMemo(() => {
+    if (!search) return firewalls;
+    const q = search.toLowerCase();
+    return firewalls.filter(fw =>
+      fw.name.toLowerCase().includes(q) ||
+      fw.clients?.name?.toLowerCase().includes(q)
+    );
+  }, [firewalls, search]);
 
   const canEdit = hasPermission('firewall', 'edit');
 
@@ -500,35 +512,88 @@ export default function FirewallListPage() {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <FirewallStatsCards 
-          workspaceIds={
-            isPreviewMode && previewTarget?.workspaces 
-              ? previewTarget.workspaces.map(w => w.id)
-              : isSuperRole && selectedWorkspaceId
-                ? [selectedWorkspaceId]
-                : undefined
-          } 
-        />
-
-        {/* Firewalls Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="w-5 h-5" />
-              Lista de Firewalls
-            </CardTitle>
-            <CardDescription>{firewalls.length} firewall(s) cadastrado(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        {/* Stats Cards (inline, estilo Agendamentos) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Server className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.total}</p>
+                  <p className="text-xs text-muted-foreground">Firewalls</p>
+                </div>
               </div>
-            ) : firewalls.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${stats.avg >= 75 ? 'bg-emerald-500/10' : stats.avg >= 60 ? 'bg-yellow-500/10' : 'bg-rose-500/10'}`}>
+                  <TrendingUp className={`w-5 h-5 ${stats.avg >= 75 ? 'text-emerald-400' : stats.avg >= 60 ? 'text-yellow-400' : 'text-rose-400'}`} />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : `${stats.avg}%`}</p>
+                  <p className="text-xs text-muted-foreground">Score Médio</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500/10">
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.critical}</p>
+                  <p className="text-xs text-muted-foreground">Alertas Críticos</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-rose-500/10">
+                  <Shield className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.failures}</p>
+                  <p className="text-xs text-muted-foreground">Falhas Críticas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search & Filters */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar ativo..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        {/* Table */}
+        <Card>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="p-6 space-y-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="p-12 text-center text-muted-foreground">
                 <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum firewall cadastrado</p>
+                <p>Nenhum firewall encontrado</p>
                 {canEdit && clients.length === 0 && (
                   <p className="text-sm mt-2">Adicione um cliente primeiro</p>
                 )}
@@ -541,54 +606,61 @@ export default function FirewallListPage() {
                     <TableHead>Workspace</TableHead>
                     <TableHead>Fabricante</TableHead>
                     <TableHead>Agent</TableHead>
-                    <TableHead>Schedule</TableHead>
+                    <TableHead>Frequência</TableHead>
+                    <TableHead>Programação</TableHead>
+                    <TableHead>Último Score</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {firewalls.map((fw) => {
+                  {filtered.map((fw) => {
                     const schedule = Array.isArray(fw.analysis_schedules)
                       ? fw.analysis_schedules[0]
                       : fw.analysis_schedules;
+                    const freq = schedule?.frequency || 'manual';
                     
                     return (
                       <TableRow key={fw.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{fw.name}</p>
-                            {fw.description && (
-                              <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                {fw.description}
-                              </p>
-                            )}
-                          </div>
+                        <TableCell className="font-medium text-foreground">
+                          {fw.name}
                         </TableCell>
-                        <TableCell>{fw.clients?.name || 'N/A'}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {fw.clients?.name || '—'}
+                        </TableCell>
                         <TableCell>
                           {fw.device_type ? (
-                            <Badge variant="secondary">
+                            <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30">
                               {fw.device_type.vendor}
                             </Badge>
                           ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {fw.agent ? (
-                            <Badge variant="outline">
+                            <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30">
                               {fw.agent.name}
                             </Badge>
                           ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Badge variant="outline">
-                              {schedule ? getScheduleLabel(schedule.frequency) : 'Manual'}
+                          <Badge variant="outline" className={FREQUENCY_COLORS[freq] || ''}>
+                            {FREQUENCY_LABELS[freq] || freq}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {getScheduleDescriptionText(schedule as ScheduleInfo)}
+                        </TableCell>
+                        <TableCell>
+                          {fw.last_score !== null && fw.last_score !== undefined ? (
+                            <Badge variant="outline" className={getScoreColor(fw.last_score)}>
+                              {fw.last_score}
                             </Badge>
-                            {getScheduleDetailBadges(schedule as ScheduleInfo)}
-                          </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
