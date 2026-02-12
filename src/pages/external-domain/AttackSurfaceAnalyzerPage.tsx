@@ -521,8 +521,31 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
           </Badge>
         </TableCell>
         <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{sourceIP?.label || '—'}</TableCell>
-        <TableCell className="text-center font-mono">{result?.ports?.length ?? 0}</TableCell>
-        <TableCell className="text-center font-mono">{serviceCount + webCount}</TableCell>
+        <TableCell>
+          {result?.ports?.length ? (
+            <div className="flex flex-wrap gap-1">
+              {result.ports.map((port: number) => (
+                <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
+              ))}
+            </div>
+          ) : <span className="text-muted-foreground font-mono">—</span>}
+        </TableCell>
+        <TableCell>
+          {(() => {
+            const names = [
+              ...(result?.services?.filter((s: AttackSurfaceService) => s.product).map((s: AttackSurfaceService) => s.product) ?? []),
+              ...(result?.web_services?.map((w: any) => w.tech || w.server).filter(Boolean) ?? []),
+            ];
+            const unique = [...new Set(names)];
+            return unique.length ? (
+              <div className="flex flex-wrap gap-1">
+                {unique.map((name) => (
+                  <Badge key={name} variant="outline" className="text-[10px] px-1.5 py-0">{name}</Badge>
+                ))}
+              </div>
+            ) : <span className="text-muted-foreground font-mono">—</span>;
+          })()}
+        </TableCell>
         <TableCell className="text-center">
           {ipCVEs.length > 0 ? (
             <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">{ipCVEs.length}</Badge>
@@ -762,8 +785,7 @@ export default function AttackSurfaceAnalyzerPage() {
                   <p className="text-sm mt-1">O scan automático será executado diariamente às 00:00 UTC.</p>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border/50 overflow-hidden">
-                  <Table>
+                <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>IP</TableHead>
@@ -780,8 +802,7 @@ export default function AttackSurfaceAnalyzerPage() {
                         <IPDetailRow key={sourceIP.ip} ip={sourceIP.ip} snapshot={snapshot!} />
                       ))}
                     </TableBody>
-                  </Table>
-                </div>
+                </Table>
               )}
             </CardContent>
           </Card>
