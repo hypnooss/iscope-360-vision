@@ -5,7 +5,58 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Crypto helpers (same as manage-api-keys) ────────────────────────────────
+
+function fromHex(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return bytes
+}
+
+async function decryptSecret(encryptedData: string): Promise<string> {
+  const encryptionKeyHex = Deno.env.get('M365_ENCRYPTION_KEY')
+  if (!encryptionKeyHex) throw new Error('M365_ENCRYPTION_KEY not configured')
+
+  const [ivHex, ciphertextHex] = encryptedData.split(':')
+  if (!ivHex || !ciphertextHex) return encryptedData
+
+  const iv = fromHex(ivHex)
+  const ciphertext = fromHex(ciphertextHex)
+  const keyBytes = fromHex(encryptionKeyHex)
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+  )
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext)
+  return new TextDecoder().decode(decrypted)
+}
+
+// ── Resolve API key: DB (encrypted) → env fallback ─────────────────────────
+
+async function resolveApiKey(supabase: any, keyName: string): Promise<string | null> {
+  try {
+    const settingsKey = `api_key_${keyName}`
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', settingsKey)
+      .maybeSingle()
+
+    if (data?.value) {
+      const raw = typeof data.value === 'string' ? data.value : JSON.stringify(data.value)
+      const clean = raw.replace(/^"|"$/g, '')
+      return await decryptSecret(clean)
+    }
+  } catch (e) {
+    console.warn(`Failed to read ${keyName} from DB:`, (e as Error).message)
+  }
+
+  return Deno.env.get(keyName) || null
+}
+
+// ── IP helpers ──────────────────────────────────────────────────────────────
 
 function isPrivateIP(ip: string): boolean {
   const parts = ip.split('.').map(Number)
@@ -32,11 +83,9 @@ interface SourceIP {
 function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
   const ips: SourceIP[] = []
   const seen = new Set<string>()
-
   if (!reportData) return ips
 
-  // Path 0: subdomain enumeration format (source: api)
-  // Format: { subdomains: [{ subdomain: "x.example.com", ips: ["1.2.3.4"], is_alive: true }] }
+  // Path 0: subdomain enumeration format
   if (reportData.subdomains && Array.isArray(reportData.subdomains)) {
     for (const sub of reportData.subdomains) {
       if (sub.ips && Array.isArray(sub.ips)) {
@@ -50,7 +99,7 @@ function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
     }
   }
 
-  // Path 1: subdomainSummary (from subdomain-enum edge function)
+  // Path 1: subdomainSummary
   const subSummary = reportData.subdomainSummary
   if (subSummary?.subdomains && Array.isArray(subSummary.subdomains)) {
     for (const sub of subSummary.subdomains) {
@@ -66,25 +115,21 @@ function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
     }
   }
 
-  // Path 2: checks[*].rawData - look for DNS-like data with IPs
+  // Path 2: checks[*].rawData
   if (reportData.checks && Array.isArray(reportData.checks)) {
     for (const check of reportData.checks) {
       const raw = check.rawData
       if (!raw) continue
-
-      // Look for A records or IP fields in raw data
       if (typeof raw === 'object') {
         const searchObj = (obj: any, depth = 0) => {
           if (depth > 5 || !obj) return
           if (Array.isArray(obj)) {
             for (const item of obj) searchObj(item, depth + 1)
           } else if (typeof obj === 'object') {
-            // Check for ip field
             if (obj.ip && typeof obj.ip === 'string' && !seen.has(obj.ip) && !isPrivateIP(obj.ip)) {
               seen.add(obj.ip)
               ips.push({ ip: obj.ip, source: 'dns', label: obj.hostname || obj.name || domainName })
             }
-            // Check for address field
             if (obj.address && typeof obj.address === 'string' && !seen.has(obj.address) && !isPrivateIP(obj.address)) {
               seen.add(obj.address)
               ips.push({ ip: obj.address, source: 'dns', label: obj.hostname || obj.name || domainName })
@@ -110,43 +155,36 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
 
   for (const step of stepResults) {
     if (step.step_id !== 'system_interface') continue
-
     const resultData = step.data
     if (!resultData) continue
-
-    // result_data can be an object with results array or directly an array
-    const interfaces = Array.isArray(resultData) 
-      ? resultData 
+    const interfaces = Array.isArray(resultData)
+      ? resultData
       : (resultData.results || resultData.data || [])
-
     if (!Array.isArray(interfaces)) continue
 
     for (const iface of interfaces) {
-      // Check if this is a WAN interface
       const name = (iface.name || '').toLowerCase()
       const role = (iface.role || '').toLowerCase()
       const type = (iface.type || '').toLowerCase()
-      
       const isWAN = name.includes('wan') || role === 'wan' || type === 'wan'
       if (!isWAN) continue
 
-      // Extract IP from "IP MASK" format
       const ipField = iface.ip || ''
       const ipOnly = ipField.split(' ')[0].trim()
-      
       if (ipOnly && !seen.has(ipOnly) && !isPrivateIP(ipOnly)) {
         seen.add(ipOnly)
         ips.push({ ip: ipOnly, source: 'firewall', label: `${firewallName} - ${iface.name || 'WAN'}` })
       }
     }
   }
-
   return ips
 }
 
-// ── Shodan API ──────────────────────────────────────────────────────────────
+// ── Enrichment result type ──────────────────────────────────────────────────
 
-interface ShodanResult {
+type EnrichmentSource = 'shodan' | 'internetdb' | 'securitytrails' | 'mixed' | 'none'
+
+interface EnrichedIP {
   ip: string
   ports: number[]
   services: Array<{
@@ -160,43 +198,30 @@ interface ShodanResult {
   vulns: string[]
   os: string
   hostnames: string[]
+  tags: string[]
+  enrichment_source: EnrichmentSource
   error?: string
 }
 
-async function queryShodan(ip: string, apiKey: string): Promise<ShodanResult> {
-  const result: ShodanResult = {
-    ip,
-    ports: [],
-    services: [],
-    vulns: [],
-    os: '',
-    hostnames: [],
-  }
+// ── Shodan API (primary) ────────────────────────────────────────────────────
 
+async function queryShodan(ip: string, apiKey: string): Promise<EnrichedIP | null> {
   try {
     const resp = await fetch(`https://api.shodan.io/shodan/host/${ip}?key=${apiKey}`, {
       signal: AbortSignal.timeout(15000),
     })
 
     if (!resp.ok) {
-      if (resp.status === 404) {
-        result.error = 'No data available'
-        return result
-      }
-      result.error = `Shodan API error: ${resp.status}`
-      return result
+      // 403 = plan restriction, 404 = no data → fallback
+      return null
     }
 
     const data = await resp.json()
-
-    result.ports = data.ports || []
-    result.os = data.os || ''
-    result.hostnames = data.hostnames || []
-    result.vulns = data.vulns ? Object.keys(data.vulns) : []
+    const services: EnrichedIP['services'] = []
 
     if (data.data && Array.isArray(data.data)) {
       for (const svc of data.data) {
-        result.services.push({
+        services.push({
           port: svc.port || 0,
           transport: svc.transport || 'tcp',
           product: svc.product || '',
@@ -206,8 +231,175 @@ async function queryShodan(ip: string, apiKey: string): Promise<ShodanResult> {
         })
       }
     }
+
+    return {
+      ip,
+      ports: data.ports || [],
+      services,
+      vulns: data.vulns ? Object.keys(data.vulns) : [],
+      os: data.os || '',
+      hostnames: data.hostnames || [],
+      tags: data.tags || [],
+      enrichment_source: 'shodan',
+    }
   } catch (e) {
-    result.error = `Request failed: ${(e as Error).message}`
+    console.warn(`Shodan API failed for ${ip}: ${(e as Error).message}`)
+    return null
+  }
+}
+
+// ── Shodan InternetDB (free, no auth) ───────────────────────────────────────
+
+async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
+  try {
+    const resp = await fetch(`https://internetdb.shodan.io/${ip}`, {
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!resp.ok) {
+      if (resp.status === 404) return null // No data for this IP
+      return null
+    }
+
+    const data = await resp.json()
+
+    // InternetDB returns: { ip, ports, cpes, hostnames, tags, vulns }
+    const services: EnrichedIP['services'] = []
+    const ports: number[] = data.ports || []
+    const cpes: string[] = data.cpes || []
+
+    // Build basic services from ports + CPEs
+    for (const port of ports) {
+      // Try to match a CPE to this port (best effort)
+      const matchedCpe = cpes.find(c => c.includes(`:${port}`)) || ''
+      services.push({
+        port,
+        transport: 'tcp',
+        product: matchedCpe ? matchedCpe.split(':')[4] || '' : '',
+        version: matchedCpe ? matchedCpe.split(':')[5] || '' : '',
+        banner: '',
+        cpe: matchedCpe ? [matchedCpe] : [],
+      })
+    }
+
+    return {
+      ip,
+      ports,
+      services,
+      vulns: data.vulns || [],
+      os: '',
+      hostnames: data.hostnames || [],
+      tags: data.tags || [],
+      enrichment_source: 'internetdb',
+    }
+  } catch (e) {
+    console.warn(`InternetDB failed for ${ip}: ${(e as Error).message}`)
+    return null
+  }
+}
+
+// ── SecurityTrails (reverse DNS) ────────────────────────────────────────────
+
+interface SecurityTrailsData {
+  hostnames: string[]
+  domains: string[]
+}
+
+async function querySecurityTrails(ip: string, apiKey: string): Promise<SecurityTrailsData | null> {
+  try {
+    // Use the IP neighbors/reverse DNS endpoint
+    const resp = await fetch(`https://api.securitytrails.com/v1/ips/nearby/${ip}`, {
+      headers: { 'APIKEY': apiKey, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!resp.ok) {
+      console.warn(`SecurityTrails API error for ${ip}: ${resp.status}`)
+      return null
+    }
+
+    const data = await resp.json()
+    const hostnames: string[] = []
+    const domains = new Set<string>()
+
+    // Extract blocks with hostnames
+    if (data.blocks && Array.isArray(data.blocks)) {
+      for (const block of data.blocks) {
+        if (block.hostnames && Array.isArray(block.hostnames)) {
+          for (const h of block.hostnames) {
+            if (typeof h === 'string') {
+              hostnames.push(h)
+              // Extract root domain
+              const parts = h.split('.')
+              if (parts.length >= 2) {
+                domains.add(parts.slice(-2).join('.'))
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { hostnames, domains: Array.from(domains) }
+  } catch (e) {
+    console.warn(`SecurityTrails failed for ${ip}: ${(e as Error).message}`)
+    return null
+  }
+}
+
+// ── Enrichment orchestrator (cascade) ───────────────────────────────────────
+
+async function enrichIP(
+  ip: string,
+  shodanApiKey: string | null,
+  securityTrailsApiKey: string | null,
+): Promise<EnrichedIP> {
+  // Start with empty result
+  let result: EnrichedIP = {
+    ip,
+    ports: [],
+    services: [],
+    vulns: [],
+    os: '',
+    hostnames: [],
+    tags: [],
+    enrichment_source: 'none',
+  }
+
+  // Step 1: Try Shodan primary API
+  if (shodanApiKey) {
+    const shodanResult = await queryShodan(ip, shodanApiKey)
+    if (shodanResult) {
+      result = shodanResult
+    }
+  }
+
+  // Step 2: If Shodan failed or no key, try InternetDB
+  if (result.enrichment_source === 'none') {
+    const idbResult = await queryInternetDB(ip)
+    if (idbResult) {
+      result = idbResult
+    }
+  }
+
+  // Step 3: Complement with SecurityTrails
+  if (securityTrailsApiKey) {
+    const stData = await querySecurityTrails(ip, securityTrailsApiKey)
+    if (stData) {
+      // Merge hostnames (deduplicate)
+      const existingHostnames = new Set(result.hostnames)
+      for (const h of stData.hostnames) {
+        if (!existingHostnames.has(h)) {
+          result.hostnames.push(h)
+        }
+      }
+      // Update source
+      if (result.enrichment_source !== 'none') {
+        result.enrichment_source = 'mixed'
+      } else {
+        result.enrichment_source = 'securitytrails'
+      }
+    }
   }
 
   return result
@@ -216,12 +408,11 @@ async function queryShodan(ip: string, apiKey: string): Promise<ShodanResult> {
 // ── CVE Correlation ─────────────────────────────────────────────────────────
 
 async function correlateCVEs(
-  shodanResults: ShodanResult[],
+  enrichedResults: EnrichedIP[],
   supabase: any,
 ): Promise<any[]> {
-  // Collect all CVE IDs from Shodan vulns
   const allVulnIds = new Set<string>()
-  for (const r of shodanResults) {
+  for (const r of enrichedResults) {
     for (const v of r.vulns) {
       allVulnIds.add(v)
     }
@@ -229,11 +420,9 @@ async function correlateCVEs(
 
   if (allVulnIds.size === 0) return []
 
-  // Check which ones exist in cve_cache
   const vulnArray = Array.from(allVulnIds)
   const matches: any[] = []
 
-  // Query in batches of 50
   for (let i = 0; i < vulnArray.length; i += 50) {
     const batch = vulnArray.slice(i, i + 50)
     const { data } = await supabase
@@ -241,18 +430,7 @@ async function correlateCVEs(
       .select('cve_id, title, severity, score, advisory_url, products')
       .in('cve_id', batch)
 
-    if (data) {
-      matches.push(...data)
-    }
-  }
-
-  // Also try to match by product/version from services CPE
-  // This is a best-effort correlation
-  const products = new Set<string>()
-  for (const r of shodanResults) {
-    for (const svc of r.services) {
-      if (svc.product) products.add(svc.product.toLowerCase())
-    }
+    if (data) matches.push(...data)
   }
 
   return matches
@@ -268,8 +446,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const shodanApiKey = Deno.env.get('SHODAN_API_KEY')
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const { client_id } = await req.json()
@@ -280,6 +456,14 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Resolve API keys: DB (encrypted) → env fallback
+    const [shodanApiKey, securityTrailsApiKey] = await Promise.all([
+      resolveApiKey(supabase, 'SHODAN_API_KEY'),
+      resolveApiKey(supabase, 'SECURITYTRAILS_API_KEY'),
+    ])
+
+    console.log(`API keys resolved — Shodan: ${shodanApiKey ? 'yes' : 'no'}, SecurityTrails: ${securityTrailsApiKey ? 'yes' : 'no'}`)
+
     // Create snapshot record
     const { data: snapshot, error: snapError } = await supabase
       .from('attack_surface_snapshots')
@@ -288,7 +472,6 @@ Deno.serve(async (req) => {
       .single()
 
     if (snapError) throw snapError
-
     const snapshotId = snapshot.id
 
     try {
@@ -304,8 +487,6 @@ Deno.serve(async (req) => {
 
       if (domains && domains.length > 0) {
         for (const domain of domains) {
-          // Get latest completed analysis
-          // Fetch both agent and api analyses to get subdomain IPs
           const { data: analyses } = await supabase
             .from('external_domain_analysis_history')
             .select('report_data, source')
@@ -325,7 +506,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // 1b. From firewall analyses (WAN interfaces via task_step_results)
+      // 1b. From firewall analyses (WAN interfaces)
       const { data: firewalls } = await supabase
         .from('firewalls')
         .select('id, name')
@@ -333,7 +514,6 @@ Deno.serve(async (req) => {
 
       if (firewalls && firewalls.length > 0) {
         for (const fw of firewalls) {
-          // Get latest completed task for this firewall
           const { data: tasks } = await supabase
             .from('agent_tasks')
             .select('id')
@@ -364,37 +544,35 @@ Deno.serve(async (req) => {
           if (!map.has(item.ip)) {
             map.set(item.ip, item)
           } else {
-            // Merge sources
             const existing = map.get(item.ip)!
             if (existing.source !== item.source) {
-              existing.source = 'dns' // keep first source, but label both
+              existing.source = 'dns'
               existing.label = `${existing.label} + ${item.label}`
             }
           }
           return map
-        }, new Map<string, SourceIP>())
-        .values()
+        }, new Map<string, SourceIP>()).values(),
       )
 
-      // ── Step 2: Query Shodan ─────────────────────────────────────────
+      console.log(`Collected ${uniqueIPs.length} unique public IPs for enrichment`)
 
-      let shodanResults: ShodanResult[] = []
+      // ── Step 2: Enrich IPs (cascade: Shodan → InternetDB → SecurityTrails) ─
 
-      if (shodanApiKey && uniqueIPs.length > 0) {
-        // Rate limit: 1 req/sec for basic Shodan plan
-        for (let i = 0; i < uniqueIPs.length; i++) {
-          if (i > 0) await new Promise(r => setTimeout(r, 1100))
-          const result = await queryShodan(uniqueIPs[i].ip, shodanApiKey)
-          shodanResults.push(result)
-        }
-      } else if (!shodanApiKey) {
-        // No Shodan key - just store IPs without enrichment
-        console.warn('SHODAN_API_KEY not configured - skipping port scan enrichment')
+      const enrichedResults: EnrichedIP[] = []
+
+      for (let i = 0; i < uniqueIPs.length; i++) {
+        // Rate limit: ~1 req/sec for Shodan, ~2 req/sec for SecurityTrails
+        if (i > 0) await new Promise(r => setTimeout(r, 1100))
+
+        const result = await enrichIP(uniqueIPs[i].ip, shodanApiKey, securityTrailsApiKey)
+        enrichedResults.push(result)
+
+        console.log(`[${i + 1}/${uniqueIPs.length}] ${result.ip}: ${result.enrichment_source} — ${result.ports.length} ports, ${result.vulns.length} vulns`)
       }
 
       // ── Step 3: Correlate CVEs ───────────────────────────────────────
 
-      const cveMatches = await correlateCVEs(shodanResults, supabase)
+      const cveMatches = await correlateCVEs(enrichedResults, supabase)
 
       // ── Step 4: Build results ────────────────────────────────────────
 
@@ -402,25 +580,27 @@ Deno.serve(async (req) => {
       let totalPorts = 0
       let totalServices = 0
 
-      for (const sr of shodanResults) {
-        totalPorts += sr.ports.length
-        totalServices += sr.services.filter(s => s.product).length
-        resultsMap[sr.ip] = {
-          ports: sr.ports,
-          services: sr.services,
-          vulns: sr.vulns,
-          os: sr.os,
-          hostnames: sr.hostnames,
-          error: sr.error,
+      for (const er of enrichedResults) {
+        totalPorts += er.ports.length
+        totalServices += er.services.filter(s => s.product).length
+        resultsMap[er.ip] = {
+          ports: er.ports,
+          services: er.services,
+          vulns: er.vulns,
+          os: er.os,
+          hostnames: er.hostnames,
+          tags: er.tags,
+          enrichment_source: er.enrichment_source,
+          error: er.enrichment_source === 'none' ? 'No enrichment data available' : undefined,
         }
       }
 
-      // Calculate exposure score (0-100, higher = more exposed)
+      // Calculate exposure score (0-100)
       let score = 0
       if (uniqueIPs.length > 0) {
-        const portScore = Math.min(totalPorts * 2, 40) // max 40 pts from ports
-        const cveScore = Math.min(cveMatches.length * 5, 40) // max 40 pts from CVEs
-        const ipScore = Math.min(uniqueIPs.length * 2, 20) // max 20 pts from IP count
+        const portScore = Math.min(totalPorts * 2, 40)
+        const cveScore = Math.min(cveMatches.length * 5, 40)
+        const ipScore = Math.min(uniqueIPs.length * 2, 20)
         score = Math.min(portScore + cveScore + ipScore, 100)
       }
 
@@ -446,12 +626,13 @@ Deno.serve(async (req) => {
         })
         .eq('id', snapshotId)
 
+      console.log(`Scan completed: ${uniqueIPs.length} IPs, ${totalPorts} ports, ${cveMatches.length} CVEs, score=${score}`)
+
       return new Response(
         JSON.stringify({ success: true, snapshot_id: snapshotId, summary }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     } catch (processError) {
-      // Update snapshot as failed
       await supabase
         .from('attack_surface_snapshots')
         .update({
@@ -467,7 +648,7 @@ Deno.serve(async (req) => {
     console.error('Attack surface scan error:', error)
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   }
 })
