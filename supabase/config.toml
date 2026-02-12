@@ -96,3 +96,12 @@ verify_jwt = false
 [functions.attack-surface-scan]
 verify_jwt = false
 
+[functions.run-attack-surface-queue]
+verify_jwt = false
+
+[functions.attack-surface-step-result]
+verify_jwt = false
+
+[functions.check-attack-surface-progress]
+verify_jwt = false
+
