@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Globe,
   Shield,
@@ -19,6 +20,7 @@ import {
   Radar,
   AlertTriangle,
   Network,
+  Building2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -202,9 +204,53 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
 }
 
 export default function AttackSurfaceAnalyzerPage() {
-  const { data: clientId } = useClientId();
-  const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(clientId ?? undefined);
-  const scanMutation = useAttackSurfaceScan(clientId ?? undefined);
+  const { effectiveRole } = useEffectiveAuth();
+  const { data: userClientId } = useClientId();
+  
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  
+  // Workspace list for super roles
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const { data: workspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Auto-select first workspace
+  useEffect(() => {
+    if (isSuperRole && workspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(workspaces[0].id);
+    }
+  }, [isSuperRole, workspaces, selectedWorkspaceId]);
+
+  const selectedClientId = isSuperRole ? selectedWorkspaceId : userClientId;
+
+  // Prereqs check
+  const { data: prereqs } = useQuery({
+    queryKey: ['attack-surface-prereqs', selectedClientId],
+    queryFn: async () => {
+      const [domains, firewalls] = await Promise.all([
+        supabase.from('external_domains').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
+        supabase.from('firewalls').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
+      ]);
+      return { hasDomains: (domains.count ?? 0) > 0, hasFirewalls: (firewalls.count ?? 0) > 0 };
+    },
+    enabled: !!selectedClientId,
+  });
+
+  const canScan = prereqs?.hasDomains && prereqs?.hasFirewalls;
+
+  const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
+  const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
 
   const summary = snapshot?.summary ?? { total_ips: 0, open_ports: 0, services: 0, cves: 0 };
   const ips = snapshot?.source_ips ?? [];
@@ -215,6 +261,21 @@ export default function AttackSurfaceAnalyzerPage() {
     { label: 'Serviços', value: summary.services, icon: Activity, color: 'text-info' },
     { label: 'CVEs', value: summary.cves, icon: Bug, color: 'text-destructive' },
   ];
+
+  const scanButton = (
+    <Button
+      onClick={() => scanMutation.mutate()}
+      disabled={scanMutation.isPending || !selectedClientId || !canScan}
+      className="gap-2"
+    >
+      {scanMutation.isPending ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : (
+        <Radar className="w-4 h-4" />
+      )}
+      Executar Scan
+    </Button>
+  );
 
   return (
     <AppLayout>
@@ -235,18 +296,36 @@ export default function AttackSurfaceAnalyzerPage() {
             </p>
           </div>
 
-          <Button
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending || !clientId}
-            className="gap-2"
-          >
-            {scanMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Radar className="w-4 h-4" />
+          <div className="flex items-center gap-3">
+            {isSuperRole && workspaces && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecione o workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-            Executar Scan
-          </Button>
+
+            {!canScan && selectedClientId ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>{scanButton}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-center">
+                    É necessário ter pelo menos um domínio externo e um firewall cadastrados neste workspace para executar o scan.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              scanButton
+            )}
+          </div>
         </div>
 
         {/* Score + Stats */}
