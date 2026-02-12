@@ -338,20 +338,6 @@ export default function AdministratorsPage() {
     );
   };
 
-  if (authLoading || loading) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (!isSuperAdmin()) {
-    return null;
-  }
-
   const [search, setSearch] = useState("");
 
   const stats = useMemo(() => {
@@ -374,6 +360,20 @@ export default function AdministratorsPage() {
         a.email.toLowerCase().includes(q)
     );
   }, [administrators, search]);
+
+  if (authLoading || loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!isSuperAdmin()) {
+    return null;
+  }
 
   return (
     <AppLayout>
