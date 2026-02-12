@@ -48,8 +48,8 @@ function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
     }
   }
 
-  // subdomainSummary
-  const subSummary = reportData.subdomainSummary
+  // subdomain_summary (snake_case in actual data, camelCase fallback)
+  const subSummary = reportData.subdomain_summary || reportData.subdomainSummary
   if (subSummary?.subdomains && Array.isArray(subSummary.subdomains)) {
     for (const sub of subSummary.subdomains) {
       if (sub.addresses && Array.isArray(sub.addresses)) {
@@ -57,7 +57,7 @@ function extractDomainIPs(reportData: any, domainName: string): SourceIP[] {
           const ip = addr.ip || addr.value
           if (ip && !seen.has(ip) && !isPrivateIP(ip)) {
             seen.add(ip)
-            ips.push({ ip, source: 'dns', label: sub.hostname || domainName })
+            ips.push({ ip, source: 'dns', label: sub.subdomain || sub.hostname || domainName })
           }
         }
       }
