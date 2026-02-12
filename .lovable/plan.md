@@ -1,73 +1,69 @@
 
 
-# Fix: masscan nao encontra portas por falta de permissoes
+# Fix: Propagar resultados entre steps do Attack Surface
 
 ## Problema
 
-O masscan usa raw sockets para enviar pacotes SYN diretamente (e por isso e tao rapido). Quando executado sem root ou sem `CAP_NET_RAW`, ele simplesmente nao consegue enviar pacotes e retorna stdout vazio, sem erro explícito. O executor interpreta isso como "0 portas encontradas" em vez de reportar o erro.
+O pipeline de scan tem 3 steps sequenciais: masscan -> nmap -> httpx. Cada step depende dos resultados do anterior:
 
-O httpx funciona porque usa conexoes TCP normais (nao precisa de raw sockets).
+- **masscan** descobre portas abertas (ex: [22, 34210, 80, 443])
+- **nmap** deveria receber essas portas para fazer fingerprint dos servicos
+- **httpx** deveria receber as portas para probar servicos web
 
-## Correcao - Parte 1: Servidor (manual)
+Porem, o orquestrador (`tasks.py`) so propaga `session_data` entre steps. O `result.data` (que contem `ports`, `services`, etc.) nunca e injetado no contexto. Resultado: nmap diz "No ports to scan" e httpx usa portas hardcoded (80, 443, 8080, 8443).
 
-Executar no servidor do Super Agent:
+## Correcao
 
-```text
-sudo setcap cap_net_raw+ep /usr/local/bin/masscan
-```
+### Arquivo: `python-agent/agent/tasks.py`
 
-Isso permite ao masscan usar raw sockets sem precisar de root. Alternativa: adicionar ao script de instalacao do super-agent.
-
-## Correcao - Parte 2: Executor (codigo)
-
-### Arquivo: `python-agent/agent/executors/masscan.py`
-
-Adicionar verificacao do `returncode` e `stderr` apos executar o masscan. Quando o stdout esta vazio mas o processo retornou erro, reportar como erro em vez de "0 portas".
-
-Alteracoes:
-- Apos `subprocess.run()`, verificar `result.returncode != 0`
-- Se `returncode != 0` e stdout vazio, retornar `error` com conteudo do stderr
-- Adicionar log do stderr para facilitar debug futuro
-- Manter o comportamento atual (retornar ports=[]) apenas quando `returncode == 0` e stdout vazio (scan legítimo sem portas abertas)
+Apos a execucao bem-sucedida de cada step (linha ~217), adicionar propagacao do `result.data` para o contexto:
 
 ```text
-Antes (linha 46-49):
-  raw_output = result.stdout.strip()
-  if not raw_output:
-      self.logger.info(f"[masscan] No open ports found on {ip}")
-      return {'data': {'ip': ip, 'ports': []}}
+Antes (linha 217-218):
+    if result.get('session_data'):
+        context.update(result['session_data'])
 
 Depois:
-  raw_output = result.stdout.strip()
-  stderr_output = result.stderr.strip() if result.stderr else ''
-
-  if stderr_output:
-      self.logger.warning(f"[masscan] stderr: {stderr_output[:500]}")
-
-  if not raw_output:
-      if result.returncode != 0:
-          error_msg = stderr_output or f'masscan exited with code {result.returncode}'
-          self.logger.error(f"[masscan] Failed on {ip}: {error_msg}")
-          return {'error': f'masscan failed: {error_msg}'}
-      self.logger.info(f"[masscan] No open ports found on {ip}")
-      return {'data': {'ip': ip, 'ports': []}}
+    if result.get('session_data'):
+        context.update(result['session_data'])
+    
+    # Propagar dados do step para o contexto dos steps seguintes
+    # Ex: masscan.data.ports -> context.ports -> nmap usa
+    if result.get('data') and isinstance(result['data'], dict):
+        context.update(result['data'])
 ```
 
-## Correcao - Parte 3: Instalador do Super Agent
+Isso faz com que:
+- Apos masscan: `context['ports'] = [22, 34210]`
+- nmap recebe `context.get('ports')` = [22, 34210] e faz fingerprint
+- Apos nmap: `context['services'] = [...]` (lista de servicos com CPEs)
+- httpx recebe `context.get('ports')` com as portas reais
 
-### Arquivo: `supabase/functions/super-agent-install/index.ts`
-
-Adicionar o `setcap` ao script de instalacao para que novos Super Agents ja tenham a permissao correta:
+### Fluxo resultante
 
 ```text
-# Apos instalar masscan:
-setcap cap_net_raw+ep /usr/local/bin/masscan
+masscan(ip) -> ports=[22, 80, 443, 34210]
+     |
+     v  context.ports = [22, 80, 443, 34210]
+nmap(ip, ports) -> services=[{port:22, product:'OpenSSH'}, ...]
+     |
+     v  context.services = [...]
+httpx(ip, ports) -> web_services=[{url:'https://...', tech:[...]}]
 ```
+
+### Impacto no httpx
+
+O executor httpx (linha 28-30 de `httpx_executor.py`) ja filtra as portas recebidas contra `DEFAULT_HTTP_PORTS`:
+
+```python
+ports = [p for p in all_ports if p in self.DEFAULT_HTTP_PORTS] or self.DEFAULT_HTTP_PORTS[:4]
+```
+
+Com a propagacao, ele recebera todas as portas do masscan, filtrara para HTTP (80, 443, 8080, etc.), e probara apenas as que existem de fato. Se nenhuma porta HTTP for encontrada pelo masscan, usara o fallback das 4 primeiras portas default.
 
 ## Resultado esperado
 
-- masscan passa a encontrar portas abertas (80, 443, etc)
-- nmap recebe a lista de portas e faz fingerprint detalhado
-- O executor reporta erro claro quando masscan falha por permissao
-- Novos Super Agents ja terao a permissao configurada automaticamente
-
+- nmap fara fingerprint de todas as portas descobertas pelo masscan
+- httpx probara portas HTTP reais em vez de hardcoded
+- Dados de servico (produto, versao, CPE) aparecerao na UI
+- CVE matching ficara mais preciso com CPEs reais do nmap
