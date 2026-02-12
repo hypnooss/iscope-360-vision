@@ -1,107 +1,44 @@
 
+# Fix: Step results do Attack Surface sendo sobrescritos
 
-# Fix: Exibir dados de web_services na pagina Attack Surface Analyzer
+## Problema raiz
 
-## Problema
+Na Edge Function `agent-step-result`, ao buscar uma task de attack surface para acumular os resultados dos steps, o SELECT nao inclui o campo `result`:
 
-O scan completou com sucesso (score 76, 16 servicos, 13 IPs), porem a interface nao mostra nada porque:
-
-1. **masscan nao esta instalado** no servidor, entao `ports` fica vazio
-2. **nmap nao executou** (depende do masscan), entao `services` fica vazio
-3. **httpx executou com sucesso** e encontrou web services (URLs, TLS, tecnologias), mas a UI ignora o campo `web_services`
-
-Resultado: PortHeatmap retorna null, TechStackSection retorna null, e cada IP mostra "Nenhum dado disponivel".
-
-## Solucao
-
-Atualizar a pagina e os tipos para exibir os dados de `web_services` que o httpx coletou.
-
-### 1. Tipo `AttackSurfaceIPResult` em `useAttackSurfaceData.ts`
-
-Adicionar o campo `web_services` ao tipo:
-
-```
-export interface AttackSurfaceWebService {
-  url: string;
-  status_code: number;
-  title: string;
-  server: string;
-  technologies: string[];
-  content_length: number;
-  tls: {
-    cipher?: string;
-    issuer?: string[];
-    subject_cn?: string;
-    version?: string;
-    not_after?: string;
-  };
-}
-
-export interface AttackSurfaceIPResult {
-  ports: number[];
-  services: AttackSurfaceService[];
-  web_services?: AttackSurfaceWebService[];  // novo
-  vulns: string[];
-  os: string;
-  hostnames: string[];
-  error?: string;
-}
+```text
+.select('id, assigned_agent_id, status, snapshot_id, ip')
+                                                       ^ falta 'result'
 ```
 
-### 2. Pagina `AttackSurfaceAnalyzerPage.tsx`
+Na linha seguinte, `(asTask as any).result` retorna `undefined`, e `currentResult` vira `{}`. Cada step result sobrescreve o anterior em vez de acumular. Apenas o ultimo step executado (httpx_webstack) sobrevive no banco.
 
-**TechStackSection** - Incluir tecnologias do httpx:
-- Alem de `r.services`, iterar `r.web_services` para extrair `technologies[]` e `server`
-- Exibir as tecnologias detectadas (HSTS, CloudFront, Amazon Web Services, etc.)
+## Impacto
 
-**IPDetailRow** - Exibir web services:
-- Coluna "Servicos" deve contar `services.length + web_services.length`
-- Na expansao do detalhe, adicionar secao "Web Services Detectados" mostrando:
-  - URL
-  - Status Code
-  - Tecnologias
-  - TLS (issuer, CN, cipher)
-  - Server header
-- Remover a mensagem "Nenhum dado disponivel" quando houver web_services
+- masscan_discovery: resultado perdido (sobrescrito pelo nmap)
+- nmap_fingerprint: resultado perdido (sobrescrito pelo httpx)
+- httpx_webstack: unico que sobrevive (ultimo a ser reportado)
+- A UI mostra 0 portas e 0 servicos mesmo quando masscan/nmap executaram
 
-**PortHeatmap** - Quando nao ha portas mas ha web services:
-- Extrair portas das URLs do httpx (porta 80 para http, 443 para https, ou porta customizada da URL)
-- Exibir como "Portas Detectadas (Web)" mesmo sem masscan
+## Correcao
 
-### 3. Detalhe das alteracoes por componente
+### Arquivo: `supabase/functions/agent-step-result/index.ts`
 
-**TechStackSection:**
-```
-// Adicionar ao loop existente:
-(r.web_services || []).forEach((ws) => {
-  // Extrair technologies
-  (ws.technologies || []).forEach(tech => {
-    const existing = products.get(tech) || { count: 0, versions: new Set() };
-    existing.count++;
-    products.set(tech, existing);
-  });
-  // Extrair server header
-  if (ws.server) {
-    const existing = products.get(ws.server) || { count: 0, versions: new Set() };
-    existing.count++;
-    products.set(ws.server, existing);
-  }
-});
+Adicionar `result` ao SELECT na linha 186:
+
+```text
+Antes:  .select('id, assigned_agent_id, status, snapshot_id, ip')
+Depois: .select('id, assigned_agent_id, status, snapshot_id, ip, result')
 ```
 
-**IPDetailRow (contagem):**
-```
-// Servicos = nmap services + web services
-const serviceCount = (result?.services?.length ?? 0) + (result?.web_services?.length ?? 0);
-```
+Isso permite que o `currentResult` contenha os resultados dos steps anteriores, e o spread `...currentResult` funcione corretamente para acumular todos os steps.
 
-**IPDetailRow (expansao) - Nova secao Web Services:**
-Tabela com colunas: URL, Status, Server, Tecnologias, TLS
-Exibida quando `result?.web_services?.length > 0`
+## Problema secundario: masscan e permissoes
 
-**IPDetailRow (mensagem vazia):**
-Alterar condicao para: `services.length === 0 && web_services.length === 0 && !error`
+O masscan precisa de raw sockets (root/CAP_NET_RAW) para funcionar. Se o agent roda como usuario `iscope-agent`, o masscan pode falhar silenciosamente (retornando 0 portas sem erro). O executor atual nao verifica o `returncode` nem o `stderr` do subprocess. Isso sera abordado em um proximo passo apos confirmar que a acumulacao funciona.
 
-### Arquivos alterados
-- `src/hooks/useAttackSurfaceData.ts` - Novo tipo `AttackSurfaceWebService`, campo `web_services` em `AttackSurfaceIPResult`
-- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` - TechStackSection, IPDetailRow, PortHeatmap atualizados para usar web_services
+## Resultado esperado
+
+Apos o deploy:
+- Os 3 steps (masscan, nmap, httpx) aparecerao em `raw_steps`
+- Se masscan falhar, o erro ficara visivel em `raw_steps.masscan_discovery.error`
+- A UI mostrara os dados de todos os steps que executaram com sucesso
