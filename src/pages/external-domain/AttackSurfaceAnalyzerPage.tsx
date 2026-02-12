@@ -1,16 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Globe,
-  Shield,
   Server,
   Bug,
   Activity,
@@ -21,6 +19,9 @@ import {
   AlertTriangle,
   Network,
   Building2,
+  Clock,
+  CheckCircle2,
+  Timer,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -28,10 +29,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot,
-  useAttackSurfaceScan,
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
 } from '@/hooks/useAttackSurfaceData';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 function useClientId() {
   const { profile } = useAuth();
@@ -54,6 +56,45 @@ function useClientId() {
   });
 }
 
+/** Progress of the current (or latest) scan for a given client */
+function useAttackSurfaceProgress(clientId?: string) {
+  return useQuery({
+    queryKey: ['attack-surface-progress', clientId],
+    queryFn: async () => {
+      if (!clientId) return null;
+
+      // Get latest snapshot (any status)
+      const { data, error } = await (supabase
+        .from('attack_surface_snapshots' as any)
+        .select('id, status, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false })
+        .limit(1) as any);
+
+      if (error) throw error;
+      const snapshot = (data as any[])?.[0];
+      if (!snapshot) return null;
+
+      if (snapshot.status === 'completed') return { status: 'completed' as const, percent: 100, total: 0, done: 0 };
+
+      // Count tasks
+      const [totalRes, doneRes] = await Promise.all([
+        supabase.from('attack_surface_tasks').select('id', { count: 'exact', head: true }).eq('snapshot_id', snapshot.id),
+        supabase.from('attack_surface_tasks').select('id', { count: 'exact', head: true }).eq('snapshot_id', snapshot.id).eq('status', 'completed'),
+      ]);
+
+      const total = totalRes.count ?? 0;
+      const done = doneRes.count ?? 0;
+      const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+      return { status: snapshot.status as string, percent, total, done };
+    },
+    enabled: !!clientId,
+    refetchInterval: 10000, // poll every 10s when scan is running
+    staleTime: 5000,
+  });
+}
+
 function SeverityBadge({ severity }: { severity: string }) {
   const colors: Record<string, string> = {
     critical: 'bg-destructive/20 text-destructive border-destructive/30',
@@ -68,14 +109,154 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-function ScoreIndicator({ score }: { score: number | null }) {
-  if (score === null || score === undefined) return <span className="text-muted-foreground">—</span>;
-  const color =
-    score >= 70 ? 'text-destructive' : score >= 40 ? 'text-warning' : 'text-primary';
+function ExposureScoreGauge({ score }: { score: number | null }) {
+  if (score === null || score === undefined) {
+    return (
+      <div className="flex flex-col items-center justify-center">
+        <span className="text-3xl font-mono font-bold text-muted-foreground">—</span>
+        <span className="text-xs text-muted-foreground mt-1">Sem dados</span>
+      </div>
+    );
+  }
+
+  const color = score >= 70 ? 'text-destructive' : score >= 40 ? 'text-warning' : 'text-primary';
+  const label = score >= 70 ? 'Alto Risco' : score >= 40 ? 'Risco Moderado' : 'Baixo Risco';
+  const bgRing = score >= 70 ? 'stroke-destructive/20' : score >= 40 ? 'stroke-warning/20' : 'stroke-primary/20';
+  const fgRing = score >= 70 ? 'stroke-destructive' : score >= 40 ? 'stroke-warning' : 'stroke-primary';
+
+  const radius = 45;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+
   return (
-    <span className={`font-mono font-bold text-lg ${color}`}>
-      {score}
-    </span>
+    <div className="flex flex-col items-center justify-center">
+      <div className="relative w-28 h-28">
+        <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="8" className={bgRing} />
+          <circle
+            cx="50" cy="50" r={radius} fill="none" strokeWidth="8"
+            className={fgRing}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`text-2xl font-mono font-bold ${color}`}>{score}</span>
+        </div>
+      </div>
+      <span className={`text-xs mt-2 font-medium ${color}`}>{label}</span>
+    </div>
+  );
+}
+
+function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
+  const portCounts = useMemo(() => {
+    const counts: Record<number, number> = {};
+    Object.values(snapshot.results).forEach((r) => {
+      (r.ports || []).forEach((p: number) => {
+        counts[p] = (counts[p] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([port, count]) => ({ port: Number(port), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+  }, [snapshot.results]);
+
+  if (portCounts.length === 0) return null;
+
+  const maxCount = portCounts[0]?.count ?? 1;
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Server className="w-4 h-4 text-orange-400" />
+          Top Portas Abertas
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-2">
+          {portCounts.map(({ port, count }) => {
+            const intensity = Math.round((count / maxCount) * 100);
+            const bg = intensity >= 75 ? 'bg-destructive/30 border-destructive/50 text-destructive' :
+              intensity >= 50 ? 'bg-orange-500/20 border-orange-500/40 text-orange-400' :
+                intensity >= 25 ? 'bg-warning/20 border-warning/40 text-warning' :
+                  'bg-muted/50 border-border text-muted-foreground';
+            return (
+              <TooltipProvider key={port}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className={`px-2.5 py-1.5 rounded-md border text-xs font-mono cursor-default ${bg}`}>
+                      {port}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Porta {port} — encontrada em {count} IP(s)
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
+  const techStack = useMemo(() => {
+    const products = new Map<string, { count: number; versions: Set<string> }>();
+    Object.values(snapshot.results).forEach((r) => {
+      (r.services || []).forEach((svc: AttackSurfaceService) => {
+        if (svc.product) {
+          const existing = products.get(svc.product) || { count: 0, versions: new Set() };
+          existing.count++;
+          if (svc.version) existing.versions.add(svc.version);
+          products.set(svc.product, existing);
+        }
+      });
+    });
+    return Array.from(products.entries())
+      .map(([name, data]) => ({ name, count: data.count, versions: Array.from(data.versions) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+  }, [snapshot.results]);
+
+  if (techStack.length === 0) return null;
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Activity className="w-4 h-4 text-info" />
+          Stack Tecnológico Detectado
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-2">
+          {techStack.map((tech) => (
+            <TooltipProvider key={tech.name}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="gap-1.5 cursor-default">
+                    {tech.name}
+                    <span className="text-muted-foreground">×{tech.count}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tech.versions.length > 0
+                    ? `Versões: ${tech.versions.join(', ')}`
+                    : 'Versão não identificada'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -206,10 +387,9 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
 export default function AttackSurfaceAnalyzerPage() {
   const { effectiveRole } = useEffectiveAuth();
   const { data: userClientId } = useClientId();
-  
+
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-  
-  // Workspace list for super roles
+
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const { data: workspaces } = useQuery({
     queryKey: ['clients-list'],
@@ -225,7 +405,6 @@ export default function AttackSurfaceAnalyzerPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // Auto-select first workspace
   useEffect(() => {
     if (isSuperRole && workspaces?.length && !selectedWorkspaceId) {
       setSelectedWorkspaceId(workspaces[0].id);
@@ -234,26 +413,12 @@ export default function AttackSurfaceAnalyzerPage() {
 
   const selectedClientId = isSuperRole ? selectedWorkspaceId : userClientId;
 
-  // Prereqs check
-  const { data: prereqs } = useQuery({
-    queryKey: ['attack-surface-prereqs', selectedClientId],
-    queryFn: async () => {
-      const [domains, firewalls] = await Promise.all([
-        supabase.from('external_domains').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
-        supabase.from('firewalls').select('id', { count: 'exact', head: true }).eq('client_id', selectedClientId!),
-      ]);
-      return { hasDomains: (domains.count ?? 0) > 0, hasFirewalls: (firewalls.count ?? 0) > 0 };
-    },
-    enabled: !!selectedClientId,
-  });
-
-  const canScan = prereqs?.hasDomains && prereqs?.hasFirewalls;
-
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
-  const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
+  const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
   const summary = snapshot?.summary ?? { total_ips: 0, open_ports: 0, services: 0, cves: 0 };
   const ips = snapshot?.source_ips ?? [];
+  const isRunning = progress?.status === 'pending' || progress?.status === 'running';
 
   const statCards = [
     { label: 'IPs Públicos', value: summary.total_ips, icon: Network, color: 'text-teal-400' },
@@ -262,153 +427,158 @@ export default function AttackSurfaceAnalyzerPage() {
     { label: 'CVEs', value: summary.cves, icon: Bug, color: 'text-destructive' },
   ];
 
-  const scanButton = (
-    <Button
-      onClick={() => scanMutation.mutate()}
-      disabled={scanMutation.isPending || !selectedClientId || !canScan}
-      className="gap-2"
-    >
-      {scanMutation.isPending ? (
-        <Loader2 className="w-4 h-4 animate-spin" />
-      ) : (
-        <Radar className="w-4 h-4" />
-      )}
-      Executar Scan
-    </Button>
-  );
-
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[
-          { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
-          { label: 'Analyzer' },
-        ]} />
+      <TooltipProvider>
+        <div className="p-6 lg:p-8 space-y-6">
+          <PageBreadcrumb items={[
+            { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
+            { label: 'Analyzer' },
+          ]} />
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Radar className="w-7 h-7 text-teal-400" />
-              Attack Surface Analyzer
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Análise de superfície de ataque — IPs públicos, portas e serviços expostos
-            </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Radar className="w-7 h-7 text-teal-400" />
+                Attack Surface Analyzer
+              </h1>
+              <p className="text-muted-foreground text-sm mt-1">
+                Análise automática de superfície de ataque — executada diariamente pelo Super Agent
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {isSuperRole && workspaces && (
+                <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
+                  <SelectTrigger className="w-[220px]">
+                    <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue placeholder="Selecione o workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((ws) => (
+                      <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {isSuperRole && workspaces && (
-              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
-                <SelectTrigger className="w-[220px]">
-                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                  <SelectValue placeholder="Selecione o workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workspaces.map((ws) => (
-                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {!canScan && selectedClientId ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0}>{scanButton}</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-center">
-                    É necessário ter pelo menos um domínio externo e um firewall cadastrados neste workspace para executar o scan.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
-              scanButton
-            )}
-          </div>
-        </div>
-
-        {/* Score + Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card className="glass-card md:col-span-1 flex flex-col items-center justify-center p-6">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Score de Exposição</span>
-            <ScoreIndicator score={snapshot?.score ?? null} />
-            <span className="text-xs text-muted-foreground mt-1">
-              {snapshot?.score != null
-                ? snapshot.score >= 70 ? 'Alto Risco' : snapshot.score >= 40 ? 'Risco Moderado' : 'Baixo Risco'
-                : 'Sem dados'}
-            </span>
-          </Card>
-
-          {statCards.map((s) => (
-            <Card key={s.label} className="glass-card">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className={`p-2.5 rounded-lg bg-muted/50`}>
-                  <s.icon className={`w-5 h-5 ${s.color}`} />
+          {/* Progress Bar when scan is running */}
+          {isRunning && progress && (
+            <Card className="glass-card border-teal-500/30">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
+                  <span className="text-sm font-medium">Scan em andamento...</span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {progress.done} de {progress.total} IPs processados
+                  </span>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{s.value}</p>
-                  <p className="text-xs text-muted-foreground">{s.label}</p>
-                </div>
+                <Progress value={progress.percent} className="h-2" />
               </CardContent>
             </Card>
-          ))}
+          )}
+
+          {/* Score + Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <Card className="glass-card md:col-span-1 flex flex-col items-center justify-center p-6">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Score de Exposição</span>
+              <ExposureScoreGauge score={snapshot?.score ?? null} />
+            </Card>
+
+            {statCards.map((s) => (
+              <Card key={s.label} className="glass-card">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="p-2.5 rounded-lg bg-muted/50">
+                    <s.icon className={`w-5 h-5 ${s.color}`} />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{s.value}</p>
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Port Heatmap + Tech Stack */}
+          {snapshot && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <PortHeatmap snapshot={snapshot} />
+              <TechStackSection snapshot={snapshot} />
+            </div>
+          )}
+
+          {/* Last Scan Info */}
+          {snapshot?.completed_at && (
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-primary" />
+                <span>Último scan concluído</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                <span>
+                  {formatDistanceToNow(new Date(snapshot.completed_at), { locale: ptBR, addSuffix: true })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Timer className="w-4 h-4" />
+                <span>{new Date(snapshot.completed_at).toLocaleString('pt-BR')}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Main Table */}
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Globe className="w-5 h-5 text-teal-400" />
+                IPs Públicos Descobertos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : ips.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Radar className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">Nenhum dado disponível</p>
+                  <p className="text-sm mt-1">O scan automático será executado diariamente às 00:00 UTC.</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border/50 overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>IP</TableHead>
+                        <TableHead>Origem</TableHead>
+                        <TableHead className="text-center">Portas</TableHead>
+                        <TableHead className="text-center">Serviços</TableHead>
+                        <TableHead className="text-center">CVEs</TableHead>
+                        <TableHead>Referência</TableHead>
+                        <TableHead className="w-8"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ips.map((sourceIP) => (
+                        <IPDetailRow
+                          key={sourceIP.ip}
+                          ip={sourceIP.ip}
+                          snapshot={snapshot!}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
-
-        {/* Main Table */}
-        <Card className="glass-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Globe className="w-5 h-5 text-teal-400" />
-              IPs Públicos Descobertos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : ips.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Radar className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">Nenhum dado disponível</p>
-                <p className="text-sm mt-1">Execute um scan para descobrir IPs públicos e serviços expostos.</p>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border/50 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>IP</TableHead>
-                      <TableHead>Origem</TableHead>
-                      <TableHead className="text-center">Portas</TableHead>
-                      <TableHead className="text-center">Serviços</TableHead>
-                      <TableHead className="text-center">CVEs</TableHead>
-                      <TableHead>Referência</TableHead>
-                      <TableHead className="w-8"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ips.map((sourceIP) => (
-                      <IPDetailRow
-                        key={sourceIP.ip}
-                        ip={sourceIP.ip}
-                        snapshot={snapshot!}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {snapshot?.completed_at && (
-              <p className="text-xs text-muted-foreground mt-3">
-                Último scan: {new Date(snapshot.completed_at).toLocaleString('pt-BR')}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      </TooltipProvider>
     </AppLayout>
   );
 }

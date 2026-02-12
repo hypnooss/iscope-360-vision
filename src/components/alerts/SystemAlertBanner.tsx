@@ -114,10 +114,12 @@ export function SystemAlertBanner() {
 
       // Regra de negócio:
       // - Alertas M365*: apenas super_admin e super_suporte
+      // - Alertas attack_surface_*: apenas super_admin e super_suporte
       // - Demais alertas: qualquer usuário autenticado
       const canSeeM365 = ['super_admin', 'super_suporte'].includes(role || '');
       const roleFiltered = filteredData.filter((alert) => {
         if (alert.alert_type?.startsWith('m365_')) return canSeeM365;
+        if (alert.alert_type?.startsWith('attack_surface_')) return canSeeM365;
         return true;
       });
 

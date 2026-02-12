@@ -212,7 +212,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setActiveModule('scope_cloud');
       setExpandedModules({ scope_cloud: true });
       setAdminMenuOpen(false);
-    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves') {
+    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents') {
       // Admin routes: expand admin menu, close all modules
       setAdminMenuOpen(true);
       setExpandedModules({});
@@ -264,6 +264,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const isActiveRoute = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');
+  const isSuperAdminRole = effectiveRole === 'super_admin';
   const isModuleActive = (moduleCode: string) => location.pathname.includes(moduleCode.replace('_', '-'));
 
   // Build module configs dynamically from effectiveUserModules (respects preview mode)
@@ -450,7 +451,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Helper for admin section
   const AdminButton = () => {
-    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves';
+    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves' || location.pathname === '/super-agents';
     
     if (!sidebarOpen) {
       return (
@@ -480,6 +481,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 { href: '/templates', icon: ClipboardList, label: 'Templates' },
                 { href: '/schedules', icon: Clock, label: 'Agendamentos' },
                 { href: '/cves', icon: Bug, label: 'CVEs' },
+                { href: '/super-agents', icon: Cpu, label: 'Super Agents' },
               ].map((item) => (
                 <Link
                   key={item.href}
@@ -608,6 +610,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Bug className="w-4 h-4" />
             CVEs
+          </Link>
+          <Link
+            to="/super-agents"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/super-agents'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <Cpu className="w-4 h-4" />
+            Super Agents
           </Link>
         </CollapsibleContent>
       </Collapsible>
