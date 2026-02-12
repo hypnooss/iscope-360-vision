@@ -1,46 +1,76 @@
 
 
-# Adicionar botao "Cancelar Scan" ao Attack Surface Analyzer
+# Fix: Steps do Attack Surface falham com "IP address is required"
 
 ## Problema
-Quando um scan esta em andamento (status `pending` ou `running`), nao existe forma de cancela-lo pela interface. O botao "Disparar Scan" fica desabilitado, impedindo iniciar um novo scan.
+
+Os executors `masscan`, `nmap` e `httpx` precisam do IP do alvo para funcionar. Cada executor busca o IP em duas fontes:
+
+```
+ip = params.get('ip') or context.get('ip')
+```
+
+Porem:
+1. O blueprint nao inclui `ip` nos `params` de cada step (os steps sao genericos)
+2. O `context` e construido pelo `_build_context` a partir do `target`, mas essa funcao nunca extrai `target.ip` para o contexto
+
+O `target` enviado pelo RPC para o Super Agent e:
+```
+{"id": snapshot_id, "type": "attack_surface", "ip": "187.85.164.49"}
+```
+
+Mas `_build_context` nao copia `target['ip']` para `context['ip']`.
 
 ## Solucao
 
-### 1. Nova Edge Function: `cancel-attack-surface-scan`
+Corrigir em **dois pontos** para garantir robustez:
 
-Criar `supabase/functions/cancel-attack-surface-scan/index.ts` que:
-- Recebe `client_id` no body
-- Busca o snapshot mais recente com status `pending` ou `running` para esse client
-- Atualiza o snapshot para `status: 'cancelled'`
-- Atualiza todas as `attack_surface_tasks` pendentes/assigned/running desse snapshot para `status: 'cancelled'`
-- Retorna sucesso
+### 1. Python Agent: `_build_context` (arquivo `python-agent/agent/tasks.py`)
 
-### 2. Hook de cancelamento em `useAttackSurfaceData.ts`
+Adicionar `ip` ao contexto, extraindo de `target`:
 
-Adicionar `useAttackSurfaceCancelScan(clientId)` - uma mutation que:
-- Chama a edge function `cancel-attack-surface-scan`
-- Invalida as queries de snapshots e progress
-- Exibe toast de confirmacao
-
-### 3. Botao na pagina `AttackSurfaceAnalyzerPage.tsx`
-
-Quando `isRunning === true`, mostrar um botao "Cancelar" ao lado da barra de progresso (ou substituir o botao "Disparar Scan"). Ao clicar, chama a mutation de cancelamento. Apos cancelar, o botao "Disparar Scan" volta a ficar habilitado.
-
-### Detalhes tecnicos
-
-**Edge Function** (`cancel-attack-surface-scan/index.ts`):
-```text
-1. Receber { client_id } do body
-2. SELECT snapshot com status IN ('pending','running') ORDER BY created_at DESC LIMIT 1
-3. UPDATE attack_surface_snapshots SET status='cancelled', completed_at=NOW()
-4. UPDATE attack_surface_tasks SET status='cancelled' WHERE snapshot_id=X AND status IN ('pending','assigned','running')
-5. Retornar { success: true, cancelled_tasks: count }
+```
+context = {
+    'base_url': base_url,
+    'domain': domain,
+    'ip': target.get('ip'),          # <-- ADICIONAR
+    'api_key': credentials.get('api_key'),
+    ...
+}
 ```
 
-**Hook** - nova funcao exportada `useAttackSurfaceCancelScan`:
-- `useMutation` chamando `supabase.functions.invoke('cancel-attack-surface-scan', { body: { client_id } })`
-- `onSuccess`: invalidar queries `attack-surface-snapshots`, `attack-surface-latest`, `attack-surface-progress`
+Isso resolve o problema para todos os executors que dependem de `context.get('ip')`.
 
-**Pagina** - dentro do card de progresso (linhas 487-500), adicionar botao "Cancelar Scan" com icone `XCircle` e estilo destrutivo/outline. Tambem ajustar o botao "Disparar Scan" para mostrar "Cancelar" quando `isRunning`.
+### 2. SQL RPC: Injetar IP nos params dos steps (opcional, defesa em profundidade)
+
+Na funcao `rpc_get_agent_tasks`, ao construir o blueprint para system agents, injetar o IP de cada task nos params de cada step:
+
+```
+'blueprint', json_build_object('steps', (
+  SELECT COALESCE(
+    (SELECT jsonb_agg(
+      step || jsonb_build_object('params', 
+        COALESCE(step->'params', '{}'::jsonb) || jsonb_build_object('ip', c.ip)
+      )
+    ) FROM jsonb_array_elements(db.collection_steps->'steps') AS step),
+    '[]'::jsonb
+  )
+  ...
+))
+```
+
+Isso garante que cada step ja receba o IP nos seus `params`, mesmo sem depender do contexto.
+
+## Arquivos alterados
+
+1. **`python-agent/agent/tasks.py`** - Adicionar `'ip': target.get('ip')` em `_build_context` (linha 678)
+2. **Migration SQL** - Atualizar `rpc_get_agent_tasks` para injetar IP nos params dos steps do attack surface
+
+## Resultado esperado
+
+Apos a correcao:
+- Cada step recebe o IP via `params.ip` (injetado pelo RPC)
+- O contexto tambem tem `ip` disponivel (fallback via `_build_context`)
+- Os executors masscan/nmap/httpx encontram o IP e executam normalmente
+- O agent no servidor precisa ser atualizado com o novo `tasks.py`
 
