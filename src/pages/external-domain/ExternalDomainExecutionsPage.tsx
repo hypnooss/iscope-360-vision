@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe, Cloud, Terminal } from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe, Cloud, Terminal, Radar } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -64,16 +64,26 @@ interface TaskStepResultRow {
   created_at: string | null;
 }
 
+interface AttackSurfaceSnapshotRow {
+  id: string;
+  client_id: string;
+  status: string;
+  score: number | null;
+  summary: Json | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
 interface UnifiedExecution {
   id: string;
-  source: 'analysis' | 'agent_task';
+  source: 'analysis' | 'agent_task' | 'attack_surface';
   domainId: string;
   agentId: string | null;
-  type: 'api' | 'agent';
+  type: 'api' | 'agent' | 'attack_surface';
   status: string;
   duration: string;
   createdAt: string;
-  original: AnalysisHistory | AgentTask;
+  original: AnalysisHistory | AgentTask | AttackSurfaceSnapshotRow;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -120,6 +130,11 @@ const typeConfig: Record<string, { label: string; color: string; icon: React.Rea
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     icon: <Terminal className="w-3 h-3" />,
   },
+  attack_surface: {
+    label: 'Attack Surface',
+    color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
+    icon: <Radar className="w-3 h-3" />,
+  },
 };
 
 export default function ExternalDomainExecutionsPage() {
@@ -128,6 +143,8 @@ export default function ExternalDomainExecutionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisHistory | null>(null);
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<AttackSurfaceSnapshotRow | null>(null);
+  const [snapshotDetailsOpen, setSnapshotDetailsOpen] = useState(false);
   const [selectedTaskSteps, setSelectedTaskSteps] = useState<TaskStepResultRow[]>([]);
   const [analysisDetailsOpen, setAnalysisDetailsOpen] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
@@ -265,6 +282,40 @@ export default function ExternalDomainExecutionsPage() {
     enabled: domains.length > 0 || !workspaceIds,
   });
 
+  // Query: attack_surface_snapshots
+  const { data: attackSurfaceSnapshots = [], isLoading: isLoadingSnapshots, refetch: refetchSnapshots } = useQuery({
+    queryKey: ['attack-surface-executions', statusFilter, timeFilter, workspaceIds],
+    queryFn: async () => {
+      const startTime = getTimeFilterDate();
+
+      let query = supabase
+        .from('attack_surface_snapshots')
+        .select('id, client_id, status, score, summary, created_at, completed_at')
+        .gte('created_at', startTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (workspaceIds && workspaceIds.length > 0) {
+        query = query.in('client_id', workspaceIds);
+      } else if (workspaceIds && workspaceIds.length === 0) {
+        return [] as AttackSurfaceSnapshotRow[];
+      }
+
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []) as AttackSurfaceSnapshotRow[];
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data as AttackSurfaceSnapshotRow[] | undefined;
+      const hasActive = data?.some(s => s.status === 'pending' || s.status === 'running' || s.status === 'processing');
+      return hasActive ? 10000 : false;
+    },
+  });
+
   const formatDuration = (ms: number | null) => {
     if (!ms) return '-';
     if (ms < 1000) return `${ms}ms`;
@@ -313,10 +364,22 @@ export default function ExternalDomainExecutionsPage() {
       original: task,
     }));
 
-    return [...apiItems, ...taskItems].sort(
+    const snapshotItems: UnifiedExecution[] = attackSurfaceSnapshots.map(snap => ({
+      id: snap.id,
+      source: 'attack_surface' as const,
+      domainId: '',
+      agentId: null,
+      type: 'attack_surface' as const,
+      status: snap.status === 'processing' ? 'running' : snap.status,
+      duration: getDuration({ started_at: snap.created_at, completed_at: snap.completed_at, execution_time_ms: null }),
+      createdAt: snap.created_at,
+      original: snap,
+    }));
+
+    return [...apiItems, ...taskItems, ...snapshotItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [analysisHistory, agentTasks]);
+  }, [analysisHistory, agentTasks, attackSurfaceSnapshots]);
 
   const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending');
 
@@ -329,6 +392,7 @@ export default function ExternalDomainExecutionsPage() {
   }), [unifiedExecutions]);
 
   const getDomainLabel = (domainId: string) => {
+    if (!domainId) return 'Attack Surface Scan';
     const d = domains.find(x => x.id === domainId);
     if (!d) return domainId.slice(0, 8) + '...';
     const domain = (d.domain || '').trim();
@@ -352,7 +416,8 @@ export default function ExternalDomainExecutionsPage() {
       domain?.name?.toLowerCase().includes(s) ||
       domain?.domain?.toLowerCase().includes(s) ||
       agent?.name?.toLowerCase().includes(s) ||
-      (item.type === 'api' && 'edge function'.includes(s))
+      (item.type === 'api' && 'edge function'.includes(s)) ||
+      (item.type === 'attack_surface' && 'attack surface'.includes(s))
     );
   });
 
@@ -395,6 +460,9 @@ export default function ExternalDomainExecutionsPage() {
     if (item.source === 'analysis') {
       setSelectedAnalysis(item.original as AnalysisHistory);
       setAnalysisDetailsOpen(true);
+    } else if (item.source === 'attack_surface') {
+      setSelectedSnapshot(item.original as AttackSurfaceSnapshotRow);
+      setSnapshotDetailsOpen(true);
     } else {
       const task = item.original as AgentTask;
       setSelectedTask(task);
@@ -429,9 +497,10 @@ export default function ExternalDomainExecutionsPage() {
   const handleRefresh = () => {
     refetchAnalysis();
     refetchTasks();
+    refetchSnapshots();
   };
 
-  const isLoading = isLoadingAnalysis || isLoadingTasks;
+  const isLoading = isLoadingAnalysis || isLoadingTasks || isLoadingSnapshots;
 
   return (
     <AppLayout>
@@ -684,6 +753,89 @@ export default function ExternalDomainExecutionsPage() {
                             {JSON.stringify(selectedAnalysis.report_data, null, 2)}
                           </pre>
                         </ScrollArea>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Attack Surface Snapshot Details Dialog */}
+        <Dialog open={snapshotDetailsOpen} onOpenChange={setSnapshotDetailsOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Radar className="w-5 h-5 text-cyan-500" />
+                Detalhes do Attack Surface Scan
+              </DialogTitle>
+            </DialogHeader>
+            {selectedSnapshot && (
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tipo</p>
+                      <Badge variant="outline" className={cn('gap-1', typeConfig.attack_surface.color)}>
+                        {typeConfig.attack_surface.icon}
+                        Attack Surface Scan
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Score</p>
+                      <p className="text-2xl font-bold">{selectedSnapshot.score != null ? `${selectedSnapshot.score}%` : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <Badge className={`${statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.color || statusConfig.pending.color} border`}>
+                        {statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.icon}
+                        <span className="ml-1">{statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.label}</span>
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Criado em</p>
+                      <p className="font-medium">
+                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                      </p>
+                    </div>
+                    {selectedSnapshot.completed_at && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Concluído em</p>
+                        <p className="font-medium">
+                          {format(new Date(selectedSnapshot.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedSnapshot.summary && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Resumo</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {(() => {
+                          const s = selectedSnapshot.summary as Record<string, unknown>;
+                          return (
+                            <>
+                              <div className="bg-muted/50 border rounded-lg p-3 text-center">
+                                <p className="text-xl font-bold">{(s.total_ips as number) ?? 0}</p>
+                                <p className="text-xs text-muted-foreground">IPs</p>
+                              </div>
+                              <div className="bg-muted/50 border rounded-lg p-3 text-center">
+                                <p className="text-xl font-bold">{(s.open_ports as number) ?? 0}</p>
+                                <p className="text-xs text-muted-foreground">Portas</p>
+                              </div>
+                              <div className="bg-muted/50 border rounded-lg p-3 text-center">
+                                <p className="text-xl font-bold">{(s.services as number) ?? 0}</p>
+                                <p className="text-xs text-muted-foreground">Serviços</p>
+                              </div>
+                              <div className="bg-muted/50 border rounded-lg p-3 text-center">
+                                <p className="text-xl font-bold">{(s.cves as number) ?? 0}</p>
+                                <p className="text-xs text-muted-foreground">CVEs</p>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
