@@ -1,24 +1,25 @@
 
-# Fix: Verificacao final do masscan no status de instalacao
+# Adicionar botao "Disparar Scan" no Attack Surface Analyzer (apenas Super Roles)
 
-## Problema
+## Resumo
+Adicionar um botao para disparar manualmente o scan do Attack Surface Analyzer, visivel apenas para usuarios com role `super_admin` ou `super_suporte`.
 
-O masscan compilou e foi instalado corretamente em `/usr/local/bin/masscan`, porem a mensagem final diz "nao encontrado" porque `command -v masscan` nao encontra binarios em `/usr/local/bin/` quando esse diretorio nao esta no PATH do shell root naquele contexto.
+## Alteracoes
 
-O httpx ja tem essa verificacao dupla (linha 826), mas o masscan nao (linha 824).
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-## Correcao
+1. Importar o hook `useAttackSurfaceScan` de `@/hooks/useAttackSurfaceData`
+2. Importar o icone `Play` do lucide-react
+3. Importar o componente `Button` de `@/components/ui/button`
+4. Instanciar o hook: `const scanMutation = useAttackSurfaceScan(selectedClientId)`
+5. Dentro do bloco do header (ao lado do seletor de workspace, linha ~450-464), adicionar um botao condicional:
+   - Visivel apenas quando `isSuperRole` for `true`
+   - Desabilitado quando `isRunning` ou `scanMutation.isPending`
+   - Ao clicar, chama `scanMutation.mutate()`
+   - Texto: "Disparar Scan" com icone Play (ou Loader2 girando quando em execucao)
 
-Arquivo: `supabase/functions/super-agent-install/index.ts`, linha 824.
+### Secao tecnica
 
-De:
-```bash
-command -v masscan >/dev/null 2>&1 && echo "  masscan: $(masscan --version ...)" || echo "  masscan: nao encontrado"
-```
+O hook `useAttackSurfaceScan` ja existe e invoca a edge function `attack-surface-scan`. Ele tambem invalida os caches relevantes e exibe toast de sucesso/erro. Nenhuma alteracao no backend e necessaria.
 
-Para:
-```bash
-(command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]) && echo "  masscan: $(/usr/local/bin/masscan --version ...)" || echo "  masscan: nao encontrado"
-```
-
-Mesma abordagem ja usada para o httpx. Alteracao de uma unica linha.
+O botao ficara posicionado a direita do seletor de workspace, no mesmo flex container, seguindo o padrao visual existente.
