@@ -6,7 +6,9 @@ from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
 from agent.executors.amass import AmassExecutor
 from agent.executors.powershell import PowerShellExecutor
-# SubdomainEnumExecutor removed - subdomain enumeration now runs server-side
+from agent.executors.masscan import MasscanExecutor
+from agent.executors.nmap import NmapExecutor
+from agent.executors.httpx_executor import HttpxExecutor
 
 __all__ = [
     'BaseExecutor',
@@ -16,4 +18,7 @@ __all__ = [
     'DNSQueryExecutor',
     'AmassExecutor',
     'PowerShellExecutor',
+    'MasscanExecutor',
+    'NmapExecutor',
+    'HttpxExecutor',
 ]

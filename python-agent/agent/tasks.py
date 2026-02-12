@@ -14,6 +14,9 @@ from agent.executors.snmp import SNMPExecutor
 from agent.executors.dns_query import DNSQueryExecutor
 from agent.executors.amass import AmassExecutor
 from agent.executors.powershell import PowerShellExecutor
+from agent.executors.masscan import MasscanExecutor
+from agent.executors.nmap import NmapExecutor
+from agent.executors.httpx_executor import HttpxExecutor
 
 
 class TaskExecutor:
@@ -47,6 +50,9 @@ class TaskExecutor:
             'dns_query': DNSQueryExecutor(logger),
             'amass': AmassExecutor(logger),
             'powershell': PowerShellExecutor(logger),
+            'masscan': MasscanExecutor(logger),
+            'nmap': NmapExecutor(logger),
+            'httpx': HttpxExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
