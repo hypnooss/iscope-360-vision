@@ -163,18 +163,17 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
     if (!Array.isArray(interfaces)) continue
 
     for (const iface of interfaces) {
-      const name = (iface.name || '').toLowerCase()
-      const role = (iface.role || '').toLowerCase()
-      const type = (iface.type || '').toLowerCase()
-      const isWAN = name.includes('wan') || role === 'wan' || type === 'wan'
-      if (!isWAN) continue
-
       const ipField = iface.ip || ''
       const ipOnly = ipField.split(' ')[0].trim()
-      if (ipOnly && !seen.has(ipOnly) && !isPrivateIP(ipOnly)) {
-        seen.add(ipOnly)
-        ips.push({ ip: ipOnly, source: 'firewall', label: `${firewallName} - ${iface.name || 'WAN'}` })
-      }
+      if (!ipOnly || ipOnly === '0.0.0.0' || seen.has(ipOnly) || isPrivateIP(ipOnly)) continue
+
+      seen.add(ipOnly)
+      const role = (iface.role || '').toLowerCase()
+      const ifaceName = iface.name || 'unknown'
+      const label = role === 'wan'
+        ? `${firewallName} - ${ifaceName} (WAN)`
+        : `${firewallName} - ${ifaceName}`
+      ips.push({ ip: ipOnly, source: 'firewall', label })
     }
   }
   return ips
