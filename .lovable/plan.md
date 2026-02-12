@@ -1,85 +1,101 @@
 
 
-# Redesign de Dominio Externo > Dominios Externos (estilo Firewalls)
+# Redesign da pagina Usuarios (estilo Firewalls/Agendamentos)
 
 ## Resumo
 
-Aplicar na pagina de Dominios Externos o mesmo layout ja implementado em Firewall > Firewalls: seletor de workspace para super roles, cards compactos inline, barra de busca, tabela com badges coloridos e titulo atualizado.
+Aplicar o mesmo layout das paginas de Firewalls e Dominios Externos: titulo atualizado, seletor de workspace para super roles, cards compactos de estatisticas, barra de busca e tabela com badges coloridos (sem card wrapper com header separado).
 
-## Mudancas
+## Mudancas no arquivo `src/pages/UsersPage.tsx`
 
-### Arquivo: `src/pages/external-domain/ExternalDomainListPage.tsx`
+### 1. Titulo
+- "Usuarios" -> "Gerenciamento de Usuarios"
+- Breadcrumb atualizado para "Gerenciamento de Usuarios"
 
-#### 1. Titulo
-- "Dominios Externos" -> "Gerenciamento de Dominios Externos"
-
-#### 2. Seletor de Workspace (Super Admin / Super Suporte)
+### 2. Seletor de Workspace (Super Admin / Super Suporte)
 Identico ao FirewallListPage:
-- Importar `useEffectiveAuth`, `useQuery`, `Select`, `Building2`
+- Importar `useEffectiveAuth`, `useQuery` do tanstack
 - Estado `selectedWorkspaceId` (inicial `null`)
 - `useQuery` para buscar workspaces da tabela `clients` (staleTime 5min)
 - Auto-selecionar primeiro workspace
-- Renderizar seletor ao lado esquerdo do botao "Adicionar Dominio"
-- Integrar filtro no `fetchData` (preview mode tem prioridade)
+- Renderizar seletor ao lado do botao "Convidar Usuario"
+- Integrar filtro no `fetchData`: quando super role e workspace selecionado, filtrar `user_clients` e `clients` por esse workspace
 
-#### 3. Substituir ExternalDomainStatsCards por cards inline
-Remover componente externo `ExternalDomainStatsCards` e usar cards compactos (p-4) identicos ao Firewall:
-- Globe / Dominios
-- TrendingUp / Score Medio (com cor dinamica)
-- AlertTriangle / Alertas Criticos
-- Shield / Falhas Criticas
+### 3. Cards compactos de estatisticas (inline)
+Substituir o card "Lista de Usuarios" por 4 cards compactos calculados via `useMemo`:
+- **Total de Usuarios** (Users icon)
+- **Workspace Admins** (Shield icon) - contagem de users com role workspace_admin
+- **Com Modulos** (Layers icon) - usuarios com pelo menos 1 modulo atribuido
+- **Sem Workspace** (Building icon) - usuarios sem nenhum client_id
 
-#### 4. Adicionar barra de busca
-- Input com icone `Search` e placeholder "Buscar ativo..."
-- Filtro local por nome do dominio ou nome do workspace
+### 4. Barra de busca
+- Input com icone `Search` e placeholder "Buscar usuario..."
+- Filtro local por nome, email ou workspace name
 
-#### 5. Substituir ExternalDomainTable por tabela inline
-Remover componente externo `ExternalDomainTable` e criar tabela diretamente na pagina com Card + CardContent p-0:
-
-Colunas:
-- **Dominio**: font-medium
-- **Workspace**: text-muted-foreground
-- **Agent**: Badge cyan (ou "—")
-- **Frequencia**: Badge com cores (daily=azul, weekly=roxo, monthly=amber)
-- **Ultimo Score**: Badge com cor por faixa (verde >=75, amarelo >=60, vermelho <60)
-- **Acoes**: Play, Edit, Delete (ghost buttons)
-
-#### 6. Manter funcionalidades existentes
-- `handleAddDomain`, `handleAnalyze`, `openEditPage`, `handleDeleteDomain` permanecem iguais
-- `DeleteExternalDomainDialog` permanece
-- `AddExternalDomainDialog` permanece (agora ao lado do seletor de workspace)
+### 5. Refatorar tabela (flat style)
+Remover `CardHeader` com "Lista de Usuarios". Usar `Card` + `CardContent p-0`:
+- **Usuario**: font-medium + email em text-muted-foreground (manter como esta)
+- **Role**: Badge colorido (manter `getRoleBadge` existente)
+- **Modulos**: Badges secondary (manter logica existente)
+- **Clientes**: Badges secondary (manter logica existente)
+- **Cadastro**: data formatada
+- **Acoes**: botoes ghost (manter como estao)
 
 ### Secao tecnica
 
-**Imports a adicionar**: `useEffectiveAuth`, `useQuery`, `Select/SelectTrigger/SelectContent/SelectItem`, `Building2`, `Search`, `Server`, `Pencil`, `Loader2`, `Play`, `Trash2`, `TrendingUp`, `AlertTriangle`, `Shield`, `Globe`, `Card/CardContent`, `Table/*`, `Badge`, `Input`, `Skeleton`
+**Imports a adicionar**: `useEffectiveAuth`, `useQuery` do @tanstack/react-query, `Search`, `Input`, `Building2`, `TrendingUp`, `AlertTriangle`
 
-**Imports a remover**: `ExternalDomainStatsCards`, `ExternalDomainTable`
-
-**Constantes a adicionar** (identicas ao FirewallListPage):
-```
-FREQUENCY_LABELS, FREQUENCY_COLORS
-getScoreColor(score)
-```
-
-**Estado e queries a adicionar**:
+**Workspace query** (identico ao Firewall):
 ```
 const { effectiveRole } = useEffectiveAuth();
 const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+
+const { data: allWorkspaces } = useQuery({
+  queryKey: ['clients-list'],
+  queryFn: async () => {
+    const { data } = await supabase.from('clients').select('id, name').order('name');
+    return data ?? [];
+  },
+  enabled: isSuperRole && !isPreviewMode,
+  staleTime: 1000 * 60 * 5,
+});
+```
+
+**Auto-selecao**:
+```
+useEffect(() => {
+  if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+    setSelectedWorkspaceId(allWorkspaces[0].id);
+  }
+}, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+```
+
+**Filtro de workspace no fetchData**: Quando `isSuperRole && selectedWorkspaceId`, usar `selectedWorkspaceId` como filtro (mesma logica do preview mode). Adicionar `selectedWorkspaceId` ao array de dependencias do useEffect de fetch.
+
+**Stats**:
+```
+const stats = useMemo(() => ({
+  total: users.length,
+  admins: users.filter(u => u.role === 'workspace_admin').length,
+  withModules: users.filter(u => (u.module_permissions?.filter(p => p.permission !== 'none').length || 0) > 0).length,
+  noWorkspace: users.filter(u => !u.client_ids?.length).length,
+}), [users]);
+```
+
+**Busca**:
+```
 const [search, setSearch] = useState('');
-
-const { data: allWorkspaces } = useQuery({...}); // identico ao Firewall
+const filtered = useMemo(() => {
+  if (!search) return users;
+  const q = search.toLowerCase();
+  return users.filter(u =>
+    u.full_name?.toLowerCase().includes(q) ||
+    u.email.toLowerCase().includes(q) ||
+    getClientNames(u.client_ids).some(n => n.toLowerCase().includes(q))
+  );
+}, [users, search, clients]);
 ```
 
-**Filtro de workspace no fetchData**:
-```
-let workspaceIds = null;
-if (isPreviewMode && previewTarget?.workspaces) {
-  workspaceIds = previewTarget.workspaces.map(w => w.id);
-} else if (isSuperRole && selectedWorkspaceId) {
-  workspaceIds = [selectedWorkspaceId];
-}
-```
-
-**useEffect de re-fetch** deve reagir a `selectedWorkspaceId`.
+**Dialogs e funcoes existentes**: `openEditDialog`, `handleSave`, `handleDeleteUser`, `getRoleBadge`, `toggleClient`, `setModulePermission`, `getClientNames`, `getModuleNames`, `canEditUser`, `canDeleteUser`, `getAssignableClients`, `getAvailableRoles` -- todos permanecem inalterados.
 
