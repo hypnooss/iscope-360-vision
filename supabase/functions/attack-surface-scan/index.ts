@@ -250,35 +250,121 @@ async function queryShodan(ip: string, apiKey: string): Promise<EnrichedIP | nul
 
 // ── Shodan InternetDB (free, no auth) ───────────────────────────────────────
 
+// Well-known port to service mapping
+const KNOWN_PORTS: Record<number, { product: string; transport: string }> = {
+  21: { product: 'FTP', transport: 'tcp' },
+  22: { product: 'OpenSSH', transport: 'tcp' },
+  23: { product: 'Telnet', transport: 'tcp' },
+  25: { product: 'SMTP', transport: 'tcp' },
+  53: { product: 'DNS', transport: 'udp' },
+  80: { product: 'HTTP', transport: 'tcp' },
+  110: { product: 'POP3', transport: 'tcp' },
+  143: { product: 'IMAP', transport: 'tcp' },
+  443: { product: 'HTTPS', transport: 'tcp' },
+  445: { product: 'SMB', transport: 'tcp' },
+  465: { product: 'SMTPS', transport: 'tcp' },
+  587: { product: 'SMTP Submission', transport: 'tcp' },
+  993: { product: 'IMAPS', transport: 'tcp' },
+  995: { product: 'POP3S', transport: 'tcp' },
+  1433: { product: 'MSSQL', transport: 'tcp' },
+  1723: { product: 'PPTP VPN', transport: 'tcp' },
+  2082: { product: 'cPanel', transport: 'tcp' },
+  2083: { product: 'cPanel SSL', transport: 'tcp' },
+  2053: { product: 'Cloudflare DNS', transport: 'tcp' },
+  2086: { product: 'WHM', transport: 'tcp' },
+  2087: { product: 'WHM SSL', transport: 'tcp' },
+  2096: { product: 'Webmail SSL', transport: 'tcp' },
+  3306: { product: 'MySQL', transport: 'tcp' },
+  3389: { product: 'RDP', transport: 'tcp' },
+  5432: { product: 'PostgreSQL', transport: 'tcp' },
+  5900: { product: 'VNC', transport: 'tcp' },
+  8080: { product: 'HTTP Proxy', transport: 'tcp' },
+  8443: { product: 'HTTPS Alt', transport: 'tcp' },
+  8880: { product: 'HTTP Alt', transport: 'tcp' },
+  8888: { product: 'HTTP Alt', transport: 'tcp' },
+  9090: { product: 'Web Admin', transport: 'tcp' },
+  10000: { product: 'Webmin', transport: 'tcp' },
+  10443: { product: 'FortiGate Admin', transport: 'tcp' },
+}
+
+function parseCPE(cpe: string): { vendor: string; product: string; version: string } {
+  // CPE format: cpe:/a:vendor:product:version or cpe:2.3:a:vendor:product:version:...
+  const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':')
+  return {
+    vendor: parts[1] || '',
+    product: (parts[2] || '').replace(/_/g, ' '),
+    version: parts[3] || '',
+  }
+}
+
 async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
   try {
     const resp = await fetch(`https://internetdb.shodan.io/${ip}`, {
       signal: AbortSignal.timeout(10000),
     })
 
-    if (!resp.ok) {
-      if (resp.status === 404) return null // No data for this IP
-      return null
-    }
+    if (!resp.ok) return null
 
     const data = await resp.json()
-
-    // InternetDB returns: { ip, ports, cpes, hostnames, tags, vulns }
-    const services: EnrichedIP['services'] = []
     const ports: number[] = data.ports || []
     const cpes: string[] = data.cpes || []
+    const parsedCpes = cpes.map(parseCPE)
 
-    // Build basic services from ports + CPEs
+    // Detect OS from CPEs (look for 'o' type)
+    let os = ''
+    for (const cpe of cpes) {
+      const normalized = cpe.replace('cpe:2.3:', '').replace('cpe:/', '')
+      if (normalized.startsWith('o:')) {
+        const parsed = parseCPE(cpe)
+        os = `${parsed.vendor} ${parsed.product} ${parsed.version}`.trim()
+        break
+      }
+    }
+
+    // Build services with enriched data
+    const services: EnrichedIP['services'] = []
     for (const port of ports) {
-      // Try to match a CPE to this port (best effort)
-      const matchedCpe = cpes.find(c => c.includes(`:${port}`)) || ''
+      const known = KNOWN_PORTS[port]
+      // Try to find a matching CPE for application-level products
+      let matchedProduct = known?.product || ''
+      let matchedVersion = ''
+      const matchedCpeList: string[] = []
+
+      // Best-effort CPE matching by product name similarity
+      for (let i = 0; i < parsedCpes.length; i++) {
+        const pc = parsedCpes[i]
+        const productLower = pc.product.toLowerCase()
+        // Match web servers to HTTP ports, SSH to 22, etc.
+        const isMatch =
+          (port === 22 && productLower.includes('ssh')) ||
+          (port === 21 && productLower.includes('ftp')) ||
+          ((port === 80 || port === 443 || port === 8080 || port === 8443) &&
+            (productLower.includes('apache') || productLower.includes('nginx') ||
+             productLower.includes('iis') || productLower.includes('http') ||
+             productLower.includes('lighttpd') || productLower.includes('litespeed'))) ||
+          ((port === 25 || port === 465 || port === 587) &&
+            (productLower.includes('smtp') || productLower.includes('postfix') ||
+             productLower.includes('exim') || productLower.includes('sendmail'))) ||
+          (port === 53 && (productLower.includes('dns') || productLower.includes('bind'))) ||
+          (port === 3306 && productLower.includes('mysql')) ||
+          (port === 5432 && productLower.includes('postgres')) ||
+          (port === 3389 && productLower.includes('rdp'))
+
+        if (isMatch) {
+          matchedProduct = pc.product || matchedProduct
+          matchedVersion = pc.version || matchedVersion
+          matchedCpeList.push(cpes[i])
+          break
+        }
+      }
+
       services.push({
         port,
-        transport: 'tcp',
-        product: matchedCpe ? matchedCpe.split(':')[4] || '' : '',
-        version: matchedCpe ? matchedCpe.split(':')[5] || '' : '',
+        transport: known?.transport || 'tcp',
+        product: matchedProduct,
+        version: matchedVersion,
         banner: '',
-        cpe: matchedCpe ? [matchedCpe] : [],
+        cpe: matchedCpeList,
       })
     }
 
@@ -287,7 +373,7 @@ async function queryInternetDB(ip: string): Promise<EnrichedIP | null> {
       ports,
       services,
       vulns: data.vulns || [],
-      os: '',
+      os,
       hostnames: data.hostnames || [],
       tags: data.tags || [],
       enrichment_source: 'internetdb',
