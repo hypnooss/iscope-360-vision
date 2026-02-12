@@ -1,44 +1,48 @@
 
-# Fix: Step results do Attack Surface sendo sobrescritos
 
-## Problema raiz
+# Fix: Queue do Attack Surface nao extrai IPs de Firewall
 
-Na Edge Function `agent-step-result`, ao buscar uma task de attack surface para acumular os resultados dos steps, o SELECT nao inclui o campo `result`:
+## Problema
 
-```text
-.select('id, assigned_agent_id, status, snapshot_id, ip')
-                                                       ^ falta 'result'
-```
+A funcao `run-attack-surface-queue` tenta ler IPs de firewall a partir de `agent_tasks.step_results` (linha 194), mas esse campo esta sempre vazio (`NULL`). Os resultados dos steps sao armazenados na tabela separada `task_step_results`, nao embutidos no `agent_tasks`.
 
-Na linha seguinte, `(asTask as any).result` retorna `undefined`, e `currentResult` vira `{}`. Cada step result sobrescreve o anterior em vez de acumular. Apenas o ultimo step executado (httpx_webstack) sobrevive no banco.
+Resultado: apenas IPs de origem DNS sao coletados. IPs de firewall sao ignorados porque a query retorna `step_results = null`.
 
-## Impacto
+## Evidencia
 
-- masscan_discovery: resultado perdido (sobrescrito pelo nmap)
-- nmap_fingerprint: resultado perdido (sobrescrito pelo httpx)
-- httpx_webstack: unico que sobrevive (ultimo a ser reportado)
-- A UI mostra 0 portas e 0 servicos mesmo quando masscan/nmap executaram
+Query confirmou que **todos** os `agent_tasks` de firewall completados tem `step_results = NULL`, enquanto a tabela `task_step_results` tem 23 registros por task.
 
 ## Correcao
 
-### Arquivo: `supabase/functions/agent-step-result/index.ts`
+### Arquivo: `supabase/functions/run-attack-surface-queue/index.ts`
 
-Adicionar `result` ao SELECT na linha 186:
+Alterar a secao de extracao de IPs de firewall (linhas 191-210) para ler da tabela `task_step_results` em vez de `agent_tasks.step_results`:
 
 ```text
-Antes:  .select('id, assigned_agent_id, status, snapshot_id, ip')
-Depois: .select('id, assigned_agent_id, status, snapshot_id, ip, result')
+Antes (errado):
+  .from('agent_tasks')
+  .select('step_results')        // campo sempre NULL
+  ...
+  extractFirewallIPs(tasks[0].step_results, fw.name)
+
+Depois (correto):
+  .from('agent_tasks')
+  .select('id')                  // so precisa do ID
+  ...
+  // Buscar steps da tabela correta
+  .from('task_step_results')
+  .select('step_id, data')
+  .eq('task_id', tasks[0].id)
+  .eq('step_id', 'system_interface')
+  ...
+  extractFirewallIPs(stepResults, fw.name)
 ```
 
-Isso permite que o `currentResult` contenha os resultados dos steps anteriores, e o spread `...currentResult` funcione corretamente para acumular todos os steps.
+Isso replica a mesma logica que a funcao `attack-surface-scan` ja usa corretamente (linhas 737-741 daquele arquivo).
 
-## Problema secundario: masscan e permissoes
+### Resultado esperado
 
-O masscan precisa de raw sockets (root/CAP_NET_RAW) para funcionar. Se o agent roda como usuario `iscope-agent`, o masscan pode falhar silenciosamente (retornando 0 portas sem erro). O executor atual nao verifica o `returncode` nem o `stderr` do subprocess. Isso sera abordado em um proximo passo apos confirmar que a acumulacao funciona.
+- IPs publicos de interfaces de firewall serao coletados corretamente
+- Tasks serao criadas para todos os IPs (DNS + Firewall)
+- O proximo scan mostrara 6 IPs em vez de apenas 2
 
-## Resultado esperado
-
-Apos o deploy:
-- Os 3 steps (masscan, nmap, httpx) aparecerao em `raw_steps`
-- Se masscan falhar, o erro ficara visivel em `raw_steps.masscan_discovery.error`
-- A UI mostrara os dados de todos os steps que executaram com sucesso
