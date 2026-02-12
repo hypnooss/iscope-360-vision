@@ -1,76 +1,107 @@
 
 
-# Fix: Steps do Attack Surface falham com "IP address is required"
+# Fix: Exibir dados de web_services na pagina Attack Surface Analyzer
 
 ## Problema
 
-Os executors `masscan`, `nmap` e `httpx` precisam do IP do alvo para funcionar. Cada executor busca o IP em duas fontes:
+O scan completou com sucesso (score 76, 16 servicos, 13 IPs), porem a interface nao mostra nada porque:
 
-```
-ip = params.get('ip') or context.get('ip')
-```
+1. **masscan nao esta instalado** no servidor, entao `ports` fica vazio
+2. **nmap nao executou** (depende do masscan), entao `services` fica vazio
+3. **httpx executou com sucesso** e encontrou web services (URLs, TLS, tecnologias), mas a UI ignora o campo `web_services`
 
-Porem:
-1. O blueprint nao inclui `ip` nos `params` de cada step (os steps sao genericos)
-2. O `context` e construido pelo `_build_context` a partir do `target`, mas essa funcao nunca extrai `target.ip` para o contexto
-
-O `target` enviado pelo RPC para o Super Agent e:
-```
-{"id": snapshot_id, "type": "attack_surface", "ip": "187.85.164.49"}
-```
-
-Mas `_build_context` nao copia `target['ip']` para `context['ip']`.
+Resultado: PortHeatmap retorna null, TechStackSection retorna null, e cada IP mostra "Nenhum dado disponivel".
 
 ## Solucao
 
-Corrigir em **dois pontos** para garantir robustez:
+Atualizar a pagina e os tipos para exibir os dados de `web_services` que o httpx coletou.
 
-### 1. Python Agent: `_build_context` (arquivo `python-agent/agent/tasks.py`)
+### 1. Tipo `AttackSurfaceIPResult` em `useAttackSurfaceData.ts`
 
-Adicionar `ip` ao contexto, extraindo de `target`:
+Adicionar o campo `web_services` ao tipo:
 
 ```
-context = {
-    'base_url': base_url,
-    'domain': domain,
-    'ip': target.get('ip'),          # <-- ADICIONAR
-    'api_key': credentials.get('api_key'),
-    ...
+export interface AttackSurfaceWebService {
+  url: string;
+  status_code: number;
+  title: string;
+  server: string;
+  technologies: string[];
+  content_length: number;
+  tls: {
+    cipher?: string;
+    issuer?: string[];
+    subject_cn?: string;
+    version?: string;
+    not_after?: string;
+  };
+}
+
+export interface AttackSurfaceIPResult {
+  ports: number[];
+  services: AttackSurfaceService[];
+  web_services?: AttackSurfaceWebService[];  // novo
+  vulns: string[];
+  os: string;
+  hostnames: string[];
+  error?: string;
 }
 ```
 
-Isso resolve o problema para todos os executors que dependem de `context.get('ip')`.
+### 2. Pagina `AttackSurfaceAnalyzerPage.tsx`
 
-### 2. SQL RPC: Injetar IP nos params dos steps (opcional, defesa em profundidade)
+**TechStackSection** - Incluir tecnologias do httpx:
+- Alem de `r.services`, iterar `r.web_services` para extrair `technologies[]` e `server`
+- Exibir as tecnologias detectadas (HSTS, CloudFront, Amazon Web Services, etc.)
 
-Na funcao `rpc_get_agent_tasks`, ao construir o blueprint para system agents, injetar o IP de cada task nos params de cada step:
+**IPDetailRow** - Exibir web services:
+- Coluna "Servicos" deve contar `services.length + web_services.length`
+- Na expansao do detalhe, adicionar secao "Web Services Detectados" mostrando:
+  - URL
+  - Status Code
+  - Tecnologias
+  - TLS (issuer, CN, cipher)
+  - Server header
+- Remover a mensagem "Nenhum dado disponivel" quando houver web_services
 
+**PortHeatmap** - Quando nao ha portas mas ha web services:
+- Extrair portas das URLs do httpx (porta 80 para http, 443 para https, ou porta customizada da URL)
+- Exibir como "Portas Detectadas (Web)" mesmo sem masscan
+
+### 3. Detalhe das alteracoes por componente
+
+**TechStackSection:**
 ```
-'blueprint', json_build_object('steps', (
-  SELECT COALESCE(
-    (SELECT jsonb_agg(
-      step || jsonb_build_object('params', 
-        COALESCE(step->'params', '{}'::jsonb) || jsonb_build_object('ip', c.ip)
-      )
-    ) FROM jsonb_array_elements(db.collection_steps->'steps') AS step),
-    '[]'::jsonb
-  )
-  ...
-))
+// Adicionar ao loop existente:
+(r.web_services || []).forEach((ws) => {
+  // Extrair technologies
+  (ws.technologies || []).forEach(tech => {
+    const existing = products.get(tech) || { count: 0, versions: new Set() };
+    existing.count++;
+    products.set(tech, existing);
+  });
+  // Extrair server header
+  if (ws.server) {
+    const existing = products.get(ws.server) || { count: 0, versions: new Set() };
+    existing.count++;
+    products.set(ws.server, existing);
+  }
+});
 ```
 
-Isso garante que cada step ja receba o IP nos seus `params`, mesmo sem depender do contexto.
+**IPDetailRow (contagem):**
+```
+// Servicos = nmap services + web services
+const serviceCount = (result?.services?.length ?? 0) + (result?.web_services?.length ?? 0);
+```
 
-## Arquivos alterados
+**IPDetailRow (expansao) - Nova secao Web Services:**
+Tabela com colunas: URL, Status, Server, Tecnologias, TLS
+Exibida quando `result?.web_services?.length > 0`
 
-1. **`python-agent/agent/tasks.py`** - Adicionar `'ip': target.get('ip')` em `_build_context` (linha 678)
-2. **Migration SQL** - Atualizar `rpc_get_agent_tasks` para injetar IP nos params dos steps do attack surface
+**IPDetailRow (mensagem vazia):**
+Alterar condicao para: `services.length === 0 && web_services.length === 0 && !error`
 
-## Resultado esperado
-
-Apos a correcao:
-- Cada step recebe o IP via `params.ip` (injetado pelo RPC)
-- O contexto tambem tem `ip` disponivel (fallback via `_build_context`)
-- Os executors masscan/nmap/httpx encontram o IP e executam normalmente
-- O agent no servidor precisa ser atualizado com o novo `tasks.py`
-
+### Arquivos alterados
+- `src/hooks/useAttackSurfaceData.ts` - Novo tipo `AttackSurfaceWebService`, campo `web_services` em `AttackSurfaceIPResult`
+- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` - TechStackSection, IPDetailRow, PortHeatmap atualizados para usar web_services
