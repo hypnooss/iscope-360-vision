@@ -1,87 +1,39 @@
 
+# Fix: IP Extraction Mismatch in Attack Surface Queue
 
-# Corrigir o botao "Disparar Scan" para usar o modelo baseado em Agent
+## Root Cause
+The edge function `run-attack-surface-queue` cannot find any IPs because of **key name mismatches** between the extraction code and the actual `report_data` structure:
 
-## Problema
-O botao "Disparar Scan" invoca a edge function `attack-surface-scan`, que faz todo o enriquecimento server-side usando APIs (Shodan, Censys, InternetDB). O Super Agent com masscan/nmap/httpx nunca e acionado.
+| Code expects | Actual data |
+|---|---|
+| `reportData.subdomainSummary` | `reportData.subdomain_summary` |
+| `sub.hostname` | `sub.subdomain` |
+| `reportData.subdomains` (top-level array) | Does not exist at top level |
 
-## Solucao
-A edge function `run-attack-surface-queue` ja implementa o modelo correto: coleta IPs, cria um snapshot com status `pending`, e insere tasks individuais na tabela `attack_surface_tasks` para o Super Agent processar. Porem, ela processa **todos os clientes** de uma vez (projetada para cron/fila).
+The `addr.ip` field does match, but the parent paths are wrong so it never reaches that code.
 
-### Plano de alteracoes
+## Fix
 
-**1. Criar endpoint para disparo manual de um unico cliente**
+### File: `supabase/functions/run-attack-surface-queue/index.ts`
 
-Modificar a edge function `run-attack-surface-queue` para aceitar um parametro opcional `client_id` no body. Quando fornecido, processar apenas aquele cliente. Quando nao fornecido, manter o comportamento atual (todos os clientes, para uso via cron).
+1. **Line 52**: Change `reportData.subdomainSummary` to `reportData.subdomain_summary`
+2. **Line 60**: Change `sub.hostname` to `sub.subdomain`
+3. Keep the camelCase fallback as a secondary check (for backward compatibility)
+4. Also check `reportData.dns_summary` as an additional IP source
 
-Arquivo: `supabase/functions/run-attack-surface-queue/index.ts`
-- Ler `client_id` do body da requisicao (se POST com body)
-- Se `client_id` fornecido: processar apenas esse cliente
-- Se nao: manter logica existente (buscar todos os clientes)
+### Technical Details
 
-**2. Alterar o hook `useAttackSurfaceScan` para chamar a funcao correta**
-
-Arquivo: `src/hooks/useAttackSurfaceData.ts`
-- Mudar de `attack-surface-scan` para `run-attack-surface-queue`
-- O body ja envia `{ client_id }`, compativel com a mudanca
-
-### Secao tecnica
-
-A mudanca na edge function e minima (~10 linhas). O trecho principal:
+The `extractDomainIPs` function needs these specific changes:
 
 ```text
-// No inicio do handler, apos criar o supabase client:
-const body = await req.json().catch(() => ({}))
-const targetClientId = body.client_id
+// Line 52 - Fix key name (snake_case, not camelCase)
+const subSummary = reportData.subdomain_summary || reportData.subdomainSummary
 
-// Substituir a query de clients:
-let clientsList
-if (targetClientId) {
-  // Disparo manual: cliente especifico
-  const { data, error } = await supabase
-    .from('clients')
-    .select('id, name')
-    .eq('id', targetClientId)
-    .single()
-  if (error) throw error
-  clientsList = [data]
-} else {
-  // Fila automatica: todos os clientes
-  const { data, error } = await supabase
-    .from('clients')
-    .select('id, name')
-  if (error) throw error
-  clientsList = data || []
-}
+// Line 60 - Fix field name
+ips.push({ ip, source: 'dns', label: sub.subdomain || sub.hostname || domainName })
 ```
 
-No hook do frontend, a unica mudanca e o nome da funcao invocada:
-
-```text
-// De:
-supabase.functions.invoke('attack-surface-scan', ...)
-// Para:
-supabase.functions.invoke('run-attack-surface-queue', ...)
-```
-
-### Fluxo esperado apos a correcao
-
-```text
-Botao "Disparar Scan"
-  -> run-attack-surface-queue (client_id=X)
-    -> Coleta IPs (DNS + Firewall)
-    -> Cria snapshot (status=pending)
-    -> Cria 1 task por IP (status=pending)
-    -> Super Agent busca tasks via heartbeat
-      -> Executa masscan (port discovery)
-      -> Executa nmap (service detection)
-      -> Executa httpx (web tech detection)
-      -> Envia resultado via attack-surface-step-result
-    -> Snapshot consolidado quando todas as tasks completam
-```
-
-### Arquivos alterados
-- `supabase/functions/run-attack-surface-queue/index.ts` (aceitar client_id opcional)
-- `src/hooks/useAttackSurfaceData.ts` (trocar funcao invocada)
-- Deploy da edge function `run-attack-surface-queue`
-
+### Deployment
+- Deploy updated `run-attack-surface-queue` edge function
+- No database or frontend changes needed
+- After deploy, clicking "Disparar Scan" should correctly extract IPs and create tasks for the Super Agent
