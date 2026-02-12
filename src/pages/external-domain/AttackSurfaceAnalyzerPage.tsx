@@ -22,6 +22,7 @@ import {
   Clock,
   CheckCircle2,
   Timer,
+  Play,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -29,9 +30,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot,
+  useAttackSurfaceScan,
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
 } from '@/hooks/useAttackSurfaceData';
+import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -413,6 +416,7 @@ export default function AttackSurfaceAnalyzerPage() {
 
   const selectedClientId = isSuperRole ? selectedWorkspaceId : userClientId;
 
+  const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
@@ -460,6 +464,21 @@ export default function AttackSurfaceAnalyzerPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+
+              {isSuperRole && (
+                <Button
+                  size="sm"
+                  onClick={() => scanMutation.mutate()}
+                  disabled={isRunning || scanMutation.isPending}
+                >
+                  {scanMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  Disparar Scan
+                </Button>
               )}
             </div>
           </div>
