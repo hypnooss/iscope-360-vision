@@ -24,6 +24,11 @@ const MANAGED_KEYS = [
     label: "Shodan",
     description: "Usada para enriquecimento de IPs no Attack Surface Analyzer (portas, serviços, CVEs)",
   },
+  {
+    name: "CENSYS_API_KEY",
+    label: "Censys",
+    description: "Usada para enriquecimento de IPs via Censys Search API (hosts, serviços, certificados TLS)",
+  },
 ];
 
 function fromHex(hex: string): Uint8Array {
