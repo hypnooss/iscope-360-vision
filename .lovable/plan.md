@@ -1,87 +1,85 @@
 
 
-# Redesign da pagina Firewall > Firewalls no estilo de Agendamentos
+# Redesign de Dominio Externo > Dominios Externos (estilo Firewalls)
 
 ## Resumo
 
-Refatorar os cards de estatisticas e a tabela de firewalls para seguir o mesmo layout e estilo visual da pagina Administracao > Agendamentos, incluindo cards compactos, barra de busca com filtros e badges coloridos na tabela.
+Aplicar na pagina de Dominios Externos o mesmo layout ja implementado em Firewall > Firewalls: seletor de workspace para super roles, cards compactos inline, barra de busca, tabela com badges coloridos e titulo atualizado.
 
-## Mudancas detalhadas
+## Mudancas
 
-### Arquivo: `src/pages/firewall/FirewallListPage.tsx`
+### Arquivo: `src/pages/external-domain/ExternalDomainListPage.tsx`
 
-#### 1. Substituir FirewallStatsCards por cards inline (estilo Agendamentos)
+#### 1. Titulo
+- "Dominios Externos" -> "Gerenciamento de Dominios Externos"
 
-Remover o componente `FirewallStatsCards` e criar cards compactos diretamente na pagina, identicos ao layout de Agendamentos:
-- Icone + numero grande + label pequeno
-- Grid de 4 colunas (Firewalls, Score Medio, Alertas Criticos, Falhas Criticas)
-- Calcular as stats localmente a partir dos dados ja carregados em `firewalls[]`
+#### 2. Seletor de Workspace (Super Admin / Super Suporte)
+Identico ao FirewallListPage:
+- Importar `useEffectiveAuth`, `useQuery`, `Select`, `Building2`
+- Estado `selectedWorkspaceId` (inicial `null`)
+- `useQuery` para buscar workspaces da tabela `clients` (staleTime 5min)
+- Auto-selecionar primeiro workspace
+- Renderizar seletor ao lado esquerdo do botao "Adicionar Dominio"
+- Integrar filtro no `fetchData` (preview mode tem prioridade)
 
-#### 2. Adicionar barra de busca + filtros (entre cards e tabela)
+#### 3. Substituir ExternalDomainStatsCards por cards inline
+Remover componente externo `ExternalDomainStatsCards` e usar cards compactos (p-4) identicos ao Firewall:
+- Globe / Dominios
+- TrendingUp / Score Medio (com cor dinamica)
+- AlertTriangle / Alertas Criticos
+- Shield / Falhas Criticas
 
-Identico ao padrao de Agendamentos:
-- Input de busca com icone `Search` e placeholder "Buscar ativo..."
-- Filtros opcionais (apenas para super roles): Fabricante, Frequencia de agendamento
-- Layout: flex row com gap
+#### 4. Adicionar barra de busca
+- Input com icone `Search` e placeholder "Buscar ativo..."
+- Filtro local por nome do dominio ou nome do workspace
 
-#### 3. Refatorar tabela com badges coloridos
+#### 5. Substituir ExternalDomainTable por tabela inline
+Remover componente externo `ExternalDomainTable` e criar tabela diretamente na pagina com Card + CardContent p-0:
 
-Seguir o mesmo estilo visual de badges da tabela de Agendamentos:
-- **Firewall**: nome em font-medium (sem description inline)
-- **Workspace**: texto em text-muted-foreground
-- **Fabricante**: Badge colorido (laranja para Fortinet, etc.)
-- **Agent**: Badge outline colorido
-- **Frequencia**: Badge com cores por tipo (azul=diario, roxo=semanal, amber=mensal) - mesmo mapa de cores do Agendamentos
-- **Programacao**: texto descritivo (ex: "Todos os dias as 02:00")
+Colunas:
+- **Dominio**: font-medium
+- **Workspace**: text-muted-foreground
+- **Agent**: Badge cyan (ou "—")
+- **Frequencia**: Badge com cores (daily=azul, weekly=roxo, monthly=amber)
 - **Ultimo Score**: Badge com cor por faixa (verde >=75, amarelo >=60, vermelho <60)
-- **Acoes**: botoes ghost (play, edit, delete) - mantidos como estao
+- **Acoes**: Play, Edit, Delete (ghost buttons)
 
-#### 4. Remover o card wrapper da tabela
-
-No Agendamentos a tabela fica dentro de um `Card` com `CardContent p-0` (sem header de card separado). Aplicar o mesmo padrao, removendo o `CardHeader` com titulo "Lista de Firewalls".
+#### 6. Manter funcionalidades existentes
+- `handleAddDomain`, `handleAnalyze`, `openEditPage`, `handleDeleteDomain` permanecem iguais
+- `DeleteExternalDomainDialog` permanece
+- `AddExternalDomainDialog` permanece (agora ao lado do seletor de workspace)
 
 ### Secao tecnica
 
-**Imports a adicionar**: `Search`, `Clock` de lucide-react; `useMemo`
+**Imports a adicionar**: `useEffectiveAuth`, `useQuery`, `Select/SelectTrigger/SelectContent/SelectItem`, `Building2`, `Search`, `Server`, `Pencil`, `Loader2`, `Play`, `Trash2`, `TrendingUp`, `AlertTriangle`, `Shield`, `Globe`, `Card/CardContent`, `Table/*`, `Badge`, `Input`, `Skeleton`
 
-**Imports a remover**: `FirewallStatsCards` (componente externo)
+**Imports a remover**: `ExternalDomainStatsCards`, `ExternalDomainTable`
 
-**Calculo de stats inline**:
+**Constantes a adicionar** (identicas ao FirewallListPage):
 ```
-const stats = useMemo(() => {
-  const total = firewalls.length;
-  const withScore = firewalls.filter(f => f.last_score !== null);
-  const avg = withScore.length > 0
-    ? Math.round(withScore.reduce((s, f) => s + (f.last_score || 0), 0) / withScore.length)
-    : 0;
-  const critical = firewalls.filter(f => f.last_score !== null && f.last_score < 50).length;
-  const failures = firewalls.filter(f => f.last_score !== null && f.last_score < 30).length;
-  return { total, avg, critical, failures };
-}, [firewalls]);
+FREQUENCY_LABELS, FREQUENCY_COLORS
+getScoreColor(score)
 ```
 
-**Filtro de busca**:
+**Estado e queries a adicionar**:
 ```
+const { effectiveRole } = useEffectiveAuth();
+const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 const [search, setSearch] = useState('');
-const filtered = useMemo(() => {
-  if (!search) return firewalls;
-  const q = search.toLowerCase();
-  return firewalls.filter(fw =>
-    fw.name.toLowerCase().includes(q) ||
-    fw.clients?.name?.toLowerCase().includes(q)
-  );
-}, [firewalls, search]);
+
+const { data: allWorkspaces } = useQuery({...}); // identico ao Firewall
 ```
 
-**Cores de frequencia** (mesmo mapa do Agendamentos):
+**Filtro de workspace no fetchData**:
 ```
-const FREQUENCY_COLORS = {
-  daily: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  weekly: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-  monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-};
+let workspaceIds = null;
+if (isPreviewMode && previewTarget?.workspaces) {
+  workspaceIds = previewTarget.workspaces.map(w => w.id);
+} else if (isSuperRole && selectedWorkspaceId) {
+  workspaceIds = [selectedWorkspaceId];
+}
 ```
 
-**Colunas da tabela resultante**:
-Firewall | Workspace | Fabricante | Agent | Frequencia | Programacao | Ultimo Score | Acoes
+**useEffect de re-fetch** deve reagir a `selectedWorkspaceId`.
 
