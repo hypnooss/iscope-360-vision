@@ -134,6 +134,30 @@ export function useAttackSurfaceScan(clientId?: string) {
   });
 }
 
+export function useAttackSurfaceCancelScan(clientId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!clientId) throw new Error('client_id is required');
+      const { data, error } = await supabase.functions.invoke('cancel-attack-surface-scan', {
+        body: { client_id: clientId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-snapshots', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-latest', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-progress', clientId] });
+      toast({ title: 'Scan cancelado', description: 'O scan de superfície de ataque foi cancelado com sucesso.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erro ao cancelar scan', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
 /** Check if the Analyzer menu should be visible (both domain and firewall analyses exist) */
 export function useAttackSurfaceAvailability(clientId?: string) {
   return useQuery({

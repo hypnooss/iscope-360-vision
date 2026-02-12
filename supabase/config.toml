@@ -108,3 +108,6 @@ verify_jwt = false
 [functions.super-agent-install]
 verify_jwt = false
 
+[functions.cancel-attack-surface-scan]
+verify_jwt = false
+
