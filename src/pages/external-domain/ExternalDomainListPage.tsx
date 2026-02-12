@@ -124,9 +124,11 @@ export default function ExternalDomainListPage() {
 
   useEffect(() => {
     if (user && hasModuleAccess('scope_external_domain')) {
+      // Super roles must wait for workspace selection before fetching
+      if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
       fetchData();
     }
-  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId]);
+  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId, isSuperRole]);
 
   const fetchData = async () => {
     try {

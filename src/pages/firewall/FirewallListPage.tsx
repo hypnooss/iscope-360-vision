@@ -170,9 +170,10 @@ export default function FirewallListPage() {
 
   useEffect(() => {
     if (user && hasModuleAccess('scope_firewall')) {
+      if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
       fetchData();
     }
-  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId]);
+  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId, isSuperRole]);
 
   const fetchData = async () => {
     try {

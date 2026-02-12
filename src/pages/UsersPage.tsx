@@ -121,9 +121,10 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (user && canAccessPage) {
+      if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
       fetchData();
     }
-  }, [user, canAccessPage, isPreviewMode, previewTarget, selectedWorkspaceId]);
+  }, [user, canAccessPage, isPreviewMode, previewTarget, selectedWorkspaceId, isSuperRole]);
 
   const fetchData = async () => {
     try {
