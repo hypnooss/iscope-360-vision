@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreview } from "@/contexts/PreviewContext";
+import { useEffectiveAuth } from "@/hooks/useEffectiveAuth";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,12 +43,16 @@ import {
   RefreshCw,
   Clock,
   Building,
+  Building2,
   Trash2,
+  Search,
+  Shield,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AgentInstallInstructions } from "@/components/agents/AgentInstallInstructions";
+import { useQuery } from "@tanstack/react-query";
 
 interface Agent {
   id: string;
@@ -70,10 +75,38 @@ interface Client {
 export default function AgentsPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
   const { isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Workspace selector for super roles
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  // Fetch workspaces for super roles
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Auto-select first workspace
+  useEffect(() => {
+    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(allWorkspaces[0].id);
+    }
+  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
 
   // Create agent dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -88,7 +121,6 @@ export default function AgentsPage() {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [instructionsAgent, setInstructionsAgent] = useState<Agent | null>(null);
 
-
   // Revoke dialog
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [agentToRevoke, setAgentToRevoke] = useState<Agent | null>(null);
@@ -98,7 +130,6 @@ export default function AgentsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
-
   const [deleting, setDeleting] = useState(false);
 
   const canAccessPage = isSuperAdmin() || isAdmin();
@@ -114,10 +145,10 @@ export default function AgentsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Get workspace IDs to filter by (use preview workspaces if in preview mode)
+      // Get workspace IDs to filter by
       const workspaceIds = isPreviewMode && previewTarget?.workspaces
         ? previewTarget.workspaces.map(w => w.id)
-        : null;
+        : (isSuperRole && selectedWorkspaceId ? [selectedWorkspaceId] : null);
 
       // Build queries with optional workspace filtering
       let agentsQuery = supabase
@@ -130,7 +161,7 @@ export default function AgentsPage() {
         .select("id, name")
         .order("name");
 
-      // Apply workspace filter if in preview mode
+      // Apply workspace filter
       if (workspaceIds && workspaceIds.length > 0) {
         agentsQuery = agentsQuery.in('client_id', workspaceIds);
         clientsQuery = clientsQuery.in('id', workspaceIds);
@@ -155,10 +186,12 @@ export default function AgentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [isPreviewMode, previewTarget]);
+  }, [isPreviewMode, previewTarget, isSuperRole, selectedWorkspaceId]);
 
   useEffect(() => {
     if (user && canAccessPage) {
+      // Super roles must wait for workspace selection before fetching
+      if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;
       fetchData();
       
       // Polling every 5 seconds to keep data synchronized
@@ -168,7 +201,28 @@ export default function AgentsPage() {
       
       return () => clearInterval(interval);
     }
-  }, [user, canAccessPage, fetchData]);
+  }, [user, canAccessPage, fetchData, isSuperRole, isPreviewMode, selectedWorkspaceId]);
+
+  // Stats
+  const stats = useMemo(() => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return {
+      total: agents.length,
+      online: agents.filter(a => !a.revoked && a.last_seen && new Date(a.last_seen) > fiveMinAgo).length,
+      pending: agents.filter(a => !a.revoked && !a.last_seen).length,
+      revoked: agents.filter(a => a.revoked).length,
+    };
+  }, [agents]);
+
+  // Search filter
+  const filtered = useMemo(() => {
+    if (!search) return agents;
+    const q = search.toLowerCase();
+    return agents.filter(a =>
+      a.name.toLowerCase().includes(q) ||
+      a.client_name?.toLowerCase().includes(q)
+    );
+  }, [agents, search]);
 
   const getAgentStatus = (
     agent: Agent,
@@ -209,11 +263,9 @@ export default function AgentsPage() {
 
     setCreating(true);
     try {
-      // Create activation code (expires in 48h)
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
       const code = generateActivationCode();
 
-      // Create agent with activation code
       const { data: agentData, error: agentError } = await (supabase
         .from("agents" as any)
         .insert({
@@ -262,13 +314,11 @@ export default function AgentsPage() {
     setCodeCopied(false);
   };
 
-
   const handleRevokeAgent = async () => {
     if (!agentToRevoke) return;
 
     setRevoking(true);
     try {
-      // Revoke agent and clear activation code
       const { error: agentError } = await (supabase
         .from("agents" as any)
         .update({
@@ -326,131 +376,207 @@ export default function AgentsPage() {
     }
   };
 
-
   if (authLoading || !canAccessPage) return null;
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Agents' }]} />
+        <PageBreadcrumb items={[{ label: 'Gerenciamento de Agents' }]} />
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Agents</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Agents</h1>
             <p className="text-muted-foreground">Gerencie todos os agents externos do sistema</p>
           </div>
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Novo Agent
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Criar Novo Agent</DialogTitle>
-                <DialogDescription>
-                  {activationCode
-                    ? "Agent criado! Copie o código de ativação abaixo."
-                    : "Preencha as informações para criar um novo agent."}
-                </DialogDescription>
-              </DialogHeader>
+          <div className="flex items-center gap-3">
+            {isSuperRole && !isPreviewMode && allWorkspaces && allWorkspaces.length > 0 && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecione o workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Novo Agent
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Criar Novo Agent</DialogTitle>
+                  <DialogDescription>
+                    {activationCode
+                      ? "Agent criado! Copie o código de ativação abaixo."
+                      : "Preencha as informações para criar um novo agent."}
+                  </DialogDescription>
+                </DialogHeader>
 
-              {!activationCode ? (
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="agent-name">Nome do Agent *</Label>
-                    <Input
-                      id="agent-name"
-                      placeholder="Ex: Firewall Agent - Matriz"
-                      value={newAgentName}
-                      onChange={(e) => setNewAgentName(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="agent-client">Cliente *</Label>
-                    <Select
-                      value={newAgentClientId}
-                      onValueChange={(val) => setNewAgentClientId(val)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um cliente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((client) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label>Código de Ativação</Label>
-                    <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-sm font-mono break-all">{activationCode}</code>
-                        <Button size="icon" variant="ghost" onClick={handleCopyCode}>
-                          {codeCopied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                        </Button>
-                      </div>
+                {!activationCode ? (
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="agent-name">Nome do Agent *</Label>
+                      <Input
+                        id="agent-name"
+                        placeholder="Ex: Firewall Agent - Matriz"
+                        value={newAgentName}
+                        onChange={(e) => setNewAgentName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="agent-client">Cliente *</Label>
+                      <Select
+                        value={newAgentClientId}
+                        onValueChange={(val) => setNewAgentClientId(val)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um cliente" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.map((client) => (
+                            <SelectItem key={client.id} value={client.id}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-
-                  <AgentInstallInstructions activationCode={activationCode} />
-
-                  <div className="flex items-center gap-2 text-sm text-warning">
-                    <Clock className="w-4 h-4" />
-                    <span>
-                      Este código expira em{" "}
-                      {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser
-                    utilizado.
-                  </p>
-                </div>
-              )}
-
-              <DialogFooter>
-                {!activationCode ? (
-                  <>
-                    <Button variant="outline" onClick={handleCloseCreateDialog}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={handleCreateAgent} disabled={creating}>
-                      {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Criar Agent
-                    </Button>
-                  </>
                 ) : (
-                  <Button onClick={handleCloseCreateDialog}>Fechar</Button>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Código de Ativação</Label>
+                      <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 text-sm font-mono break-all">{activationCode}</code>
+                          <Button size="icon" variant="ghost" onClick={handleCopyCode}>
+                            {codeCopied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <AgentInstallInstructions activationCode={activationCode} />
+
+                    <div className="flex items-center gap-2 text-sm text-warning">
+                      <Clock className="w-4 h-4" />
+                      <span>
+                        Este código expira em{" "}
+                        {formatDistanceToNow(new Date(activationExpiresAt!), { locale: ptBR, addSuffix: true })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Use este código durante a instalação do agent. Após a ativação, o código não poderá mais ser
+                      utilizado.
+                    </p>
+                  </div>
                 )}
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+
+                <DialogFooter>
+                  {!activationCode ? (
+                    <>
+                      <Button variant="outline" onClick={handleCloseCreateDialog}>
+                        Cancelar
+                      </Button>
+                      <Button onClick={handleCreateAgent} disabled={creating}>
+                        {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Criar Agent
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={handleCloseCreateDialog}>Fechar</Button>
+                  )}
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Bot className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.total}</p>
+                  <p className="text-xs text-muted-foreground">Total Agents</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <Check className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.online}</p>
+                  <p className="text-xs text-muted-foreground">Online</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500/10">
+                  <Clock className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.pending}</p>
+                  <p className="text-xs text-muted-foreground">Pendentes</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-rose-500/10">
+                  <Ban className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.revoked}</p>
+                  <p className="text-xs text-muted-foreground">Revogados</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar agent..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
 
         {/* Agents Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="w-5 h-5" />
-              Lista de Agents
-            </CardTitle>
-            <CardDescription>{agents.length} agent(s) registrado(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Card>
+          <CardContent className="p-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            ) : agents.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Bot className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>Nenhum agent encontrado</p>
@@ -469,7 +595,7 @@ export default function AgentsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {agents.map((agent) => {
+                  {filtered.map((agent) => {
                     const status = getAgentStatus(agent);
                     const isPendingWithCode =
                       !agent.revoked && !agent.last_seen && !!agent.activation_code;
@@ -679,4 +805,3 @@ export default function AgentsPage() {
     </AppLayout>
   );
 }
-
