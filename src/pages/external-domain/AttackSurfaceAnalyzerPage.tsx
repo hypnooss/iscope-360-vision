@@ -218,7 +218,7 @@ export default function AttackSurfaceAnalyzerPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
           { label: 'Analyzer' },
