@@ -17,9 +17,26 @@ export interface AttackSurfaceService {
   cpe: string[];
 }
 
+export interface AttackSurfaceWebService {
+  url: string;
+  status_code: number;
+  title: string;
+  server: string;
+  technologies: string[];
+  content_length: number;
+  tls: {
+    cipher?: string;
+    issuer?: string | string[];
+    subject_cn?: string;
+    version?: string;
+    not_after?: string;
+  };
+}
+
 export interface AttackSurfaceIPResult {
   ports: number[];
   services: AttackSurfaceService[];
+  web_services?: AttackSurfaceWebService[];
   vulns: string[];
   os: string;
   hostnames: string[];
