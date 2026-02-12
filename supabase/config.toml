@@ -93,3 +93,6 @@ verify_jwt = false
 [functions.firewall-analyzer]
 verify_jwt = false
 
+[functions.attack-surface-scan]
+verify_jwt = false
+

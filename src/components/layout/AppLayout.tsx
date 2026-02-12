@@ -64,6 +64,7 @@ import {
   Wifi,
   ClipboardList,
   Bug,
+  Radar,
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
@@ -126,6 +127,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-teal-500',
     items: [
       { label: 'Domínios Externos', href: '/scope-external-domain/domains', icon: Globe },
+      { label: 'Analyzer', href: '/scope-external-domain/analyzer', icon: Radar },
       { label: 'Execuções', href: '/scope-external-domain/executions', icon: Activity },
       { label: 'Relatórios', href: '/scope-external-domain/reports', icon: FileText },
     ],
