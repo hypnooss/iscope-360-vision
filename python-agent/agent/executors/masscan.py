@@ -44,7 +44,16 @@ class MasscanExecutor(BaseExecutor):
             )
 
             raw_output = result.stdout.strip()
+            stderr_output = result.stderr.strip() if result.stderr else ''
+
+            if stderr_output:
+                self.logger.warning(f"[masscan] stderr: {stderr_output[:500]}")
+
             if not raw_output:
+                if result.returncode != 0:
+                    error_msg = stderr_output or f'masscan exited with code {result.returncode}'
+                    self.logger.error(f"[masscan] Failed on {ip}: {error_msg}")
+                    return {'error': f'masscan failed: {error_msg}'}
                 self.logger.info(f"[masscan] No open ports found on {ip}")
                 return {'data': {'ip': ip, 'ports': []}}
 
