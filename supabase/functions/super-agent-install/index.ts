@@ -821,7 +821,7 @@ main() {
   echo "Ver logs:       journalctl -u \${SERVICE_NAME} -f --no-pager"
   echo ""
   echo "Ferramentas instaladas:"
-  command -v masscan >/dev/null 2>&1 && echo "  masscan: \$(masscan --version 2>&1 | head -1)" || echo "  masscan: não encontrado"
+  (command -v masscan >/dev/null 2>&1 || [[ -x /usr/local/bin/masscan ]]) && echo "  masscan: \$(/usr/local/bin/masscan --version 2>&1 | head -1)" || echo "  masscan: não encontrado"
   command -v nmap >/dev/null 2>&1 && echo "  nmap: \$(nmap --version 2>&1 | head -1)" || echo "  nmap: não encontrado"
   (command -v httpx >/dev/null 2>&1 || [[ -x /usr/local/bin/httpx ]]) && echo "  httpx: instalado" || echo "  httpx: não encontrado"
 }
