@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreview } from "@/contexts/PreviewContext";
+import { useEffectiveAuth } from "@/hooks/useEffectiveAuth";
+import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -32,10 +35,11 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Layers, Trash2, Eye } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Building2, Layers, Trash2, Eye, Search } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 import { PreviewUserDialog } from "@/components/preview/PreviewUserDialog";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
 type ModulePermissionLevel = "none" | "view" | "edit";
@@ -69,6 +73,7 @@ interface Module {
 export default function UsersPage() {
   const { user, loading: authLoading, isSuperAdmin, isAdmin } = useAuth();
   const { canStartPreview, isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -83,7 +88,27 @@ export default function UsersPage() {
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewUser, setPreviewUser] = useState<UserProfile | null>(null);
+  const [search, setSearch] = useState('');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const canAccessPage = isSuperAdmin() || isAdmin();
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data } = await supabase.from('clients').select('id, name').order('name');
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(allWorkspaces[0].id);
+    }
+  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -98,14 +123,17 @@ export default function UsersPage() {
     if (user && canAccessPage) {
       fetchData();
     }
-  }, [user, canAccessPage, isPreviewMode, previewTarget]);
+  }, [user, canAccessPage, isPreviewMode, previewTarget, selectedWorkspaceId]);
 
   const fetchData = async () => {
     try {
-      // Get workspace filter for Preview Mode
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
+      // Get workspace filter
+      let workspaceIds: string[] | null = null;
+      if (isPreviewMode && previewTarget?.workspaces) {
+        workspaceIds = previewTarget.workspaces.map(w => w.id);
+      } else if (isSuperRole && selectedWorkspaceId) {
+        workspaceIds = [selectedWorkspaceId];
+      }
 
       // First, get my client associations if I'm an admin (not super admin)
       let adminClientIds: string[] = [];
@@ -124,7 +152,7 @@ export default function UsersPage() {
 
       // Fetch user-client associations - RLS will filter
       let userClientsQuery = supabase.from("user_clients").select("user_id, client_id");
-      // In Preview Mode, filter by workspace
+      // Filter by workspace
       if (workspaceIds && workspaceIds.length > 0) {
         userClientsQuery = userClientsQuery.in("client_id", workspaceIds);
       }
@@ -133,7 +161,7 @@ export default function UsersPage() {
       // Fetch user-module associations with permissions
       const { data: userModules } = await supabase.from("user_modules").select("user_id, module_id, permission");
 
-      // Fetch clients - filter by workspace in Preview Mode
+      // Fetch clients - filter by workspace
       let clientsQuery = supabase.from("clients").select("id, name").order("name");
       if (workspaceIds && workspaceIds.length > 0) {
         clientsQuery = clientsQuery.in("id", workspaceIds);
@@ -143,7 +171,7 @@ export default function UsersPage() {
       // Fetch available modules
       const { data: modulesData } = await supabase.from("modules").select("id, code, name").eq("is_active", true).order("name");
 
-      // In Preview Mode, get user IDs that belong to the filtered workspaces
+      // Get user IDs that belong to the filtered workspaces
       const userIdsInWorkspace = workspaceIds && workspaceIds.length > 0
         ? new Set((userClients || []).map(uc => uc.user_id))
         : null;
@@ -170,7 +198,7 @@ export default function UsersPage() {
         (u) => u.role !== "super_admin" && u.role !== "super_suporte"
       );
 
-      // In Preview Mode, only show users that belong to the filtered workspaces
+      // Only show users that belong to the filtered workspaces
       if (userIdsInWorkspace) {
         filteredUsers = filteredUsers.filter(u => userIdsInWorkspace.has(u.id));
       }
@@ -388,46 +416,138 @@ export default function UsersPage() {
     return clients.filter((c) => myClientIds.includes(c.id));
   };
 
+  // Stats
+  const stats = useMemo(() => ({
+    total: users.length,
+    admins: users.filter(u => u.role === 'workspace_admin').length,
+    withModules: users.filter(u => (u.module_permissions?.filter(p => p.permission !== 'none').length || 0) > 0).length,
+    noWorkspace: users.filter(u => !u.client_ids?.length).length,
+  }), [users]);
+
+  // Search filter
+  const filteredUsers = useMemo(() => {
+    if (!search) return users;
+    const q = search.toLowerCase();
+    return users.filter(u =>
+      u.full_name?.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      getClientNames(u.client_ids).some(n => n.toLowerCase().includes(q))
+    );
+  }, [users, search, clients]);
+
   if (authLoading || !canAccessPage) return null;
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Usuários' }]} />
+        <PageBreadcrumb items={[{ label: 'Gerenciamento de Usuários' }]} />
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Usuários</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Usuários</h1>
             <p className="text-muted-foreground">
               {isSuperAdmin()
                 ? "Gerencie todos os usuários e permissões do sistema"
                 : "Gerencie usuários dos seus clientes"}
             </p>
           </div>
-          <InviteUserDialog clients={clients} myClientIds={myClientIds} onUserCreated={fetchData} />
+          <div className="flex items-center gap-3">
+            {isSuperRole && !isPreviewMode && allWorkspaces && allWorkspaces.length > 0 && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecionar workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(ws => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <InviteUserDialog clients={clients} myClientIds={myClientIds} onUserCreated={fetchData} />
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        {loading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i} className="p-4"><Skeleton className="h-12 w-full" /></Card>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Users className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{stats.total}</p>
+                  <p className="text-xs text-muted-foreground">Total de Usuários</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-warning/10">
+                  <Shield className="w-5 h-5 text-warning" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{stats.admins}</p>
+                  <p className="text-xs text-muted-foreground">Workspace Admins</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <Layers className="w-5 h-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{stats.withModules}</p>
+                  <p className="text-xs text-muted-foreground">Com Módulos</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-rose-500/10">
+                  <Building className="w-5 h-5 text-rose-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{stats.noWorkspace}</p>
+                  <p className="text-xs text-muted-foreground">Sem Workspace</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar usuário..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
 
         {/* Users Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Lista de Usuários
-            </CardTitle>
-            <CardDescription>
-              {users.length} usuário(s) registrado(s) {!isSuperAdmin() && "nos seus clientes"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Card>
+          <CardContent className="p-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            ) : users.length === 0 ? (
+            ) : filteredUsers.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum usuário encontrado</p>
+                <p>{search ? 'Nenhum usuário encontrado para a busca' : 'Nenhum usuário encontrado'}</p>
               </div>
             ) : (
               <Table>
@@ -442,7 +562,7 @@ export default function UsersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {filteredUsers.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell>
                         <div>
@@ -657,7 +777,6 @@ export default function UsersPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={!!deletingUser} onOpenChange={() => setDeletingUser(null)}>
           <AlertDialogContent>
