@@ -1,99 +1,143 @@
 
-# Redesign da pagina Agents (estilo Firewalls/Dominios Externos/Usuarios)
+# Redesign de 3 paginas de Administracao (padrao flat)
 
 ## Resumo
 
-Aplicar o mesmo layout padrao: titulo atualizado para "Gerenciamento de Agents", seletor de workspace para super roles, cards compactos de estatisticas, barra de busca e tabela flat (sem CardHeader separado).
+Aplicar o layout padrao (stats cards compactos, barra de busca, tabela flat sem CardHeader) nas paginas Administradores, Workspaces e Templates. Sem seletor de workspace.
 
-## Mudancas no arquivo `src/pages/AgentsPage.tsx`
+---
 
-### 1. Titulo
-- "Agents" -> "Gerenciamento de Agents"
-- Breadcrumb atualizado para "Gerenciamento de Agents"
-- Subtitulo mantido
+## 1. Administradores (`src/pages/AdministratorsPage.tsx`)
 
-### 2. Seletor de Workspace (Super Admin / Super Suporte)
-- Importar `useEffectiveAuth` e `useQuery` do tanstack
-- Estado `selectedWorkspaceId` (inicial `null`)
-- `useQuery` para buscar workspaces da tabela `clients` (staleTime 5min)
-- Auto-selecionar primeiro workspace via useEffect
-- Renderizar seletor entre o titulo e o botao "Novo Agent"
-- Integrar filtro no `fetchData`: quando super role e workspace selecionado, filtrar agents por `client_id` e clients por `id`
-- Guarda no useEffect de fetch: super roles aguardam workspace antes de buscar
+### Titulo
+- "Administradores" -> "Gerenciamento de Administradores"
+- Breadcrumb: `Administracao > Gerenciamento de Administradores`
 
-### 3. Cards compactos de estatisticas (inline via useMemo)
-Substituir o CardHeader "Lista de Agents" por 4 cards compactos:
-- **Bot / Total Agents**: `agents.length`
-- **Check / Online**: agents com last_seen nos ultimos 5 min e nao revogados
-- **Clock / Pendentes**: agents sem last_seen e nao revogados
-- **Ban / Revogados**: agents com `revoked === true`
+### Stats cards (4 cards inline via useMemo)
+- **Total**: `administrators.length` (icone Users)
+- **Super Admin**: contagem com role `super_admin` (icone ShieldCheck)
+- **Super Suporte**: contagem com role `super_suporte` (icone HeadsetIcon)
+- **Criados este mes**: administradores criados no mes corrente (icone Calendar)
 
-### 4. Barra de busca
-- Input com icone `Search` e placeholder "Buscar agent..."
-- Filtro local por nome do agent ou nome do workspace (client_name)
+### Barra de busca
+- Input com icone Search, placeholder "Buscar administrador..."
+- Filtro local por nome ou email
 
-### 5. Refatorar tabela (flat style)
-- Remover `CardHeader` com "Lista de Agents"
-- Usar `Card` + `CardContent p-0` (sem glass-card)
-- Manter colunas: Nome, Cliente, Versao, Status, Last Seen, Acoes
-- Badges de status com cores existentes (mantidas)
-- Acoes mantidas identicas
+### Tabela flat
+- Remover `Card className="glass-card"` com `CardHeader` ("Lista de Administradores")
+- Usar `Card` + `CardContent p-0` direto com a tabela
+- Colunas e badges mantidos identicos
 
-### 6. Race condition fix
-- Adicionar guarda no useEffect: `if (isSuperRole && !isPreviewMode && !selectedWorkspaceId) return;`
-- Adicionar `selectedWorkspaceId` e `isSuperRole` nas dependencias do useEffect e do useCallback
+### Imports a adicionar
+- `useMemo`, `Search`, `Users`, `Calendar` do lucide-react
 
-### Secao tecnica
+---
 
-**Imports a adicionar**: `useEffectiveAuth`, `useQuery` do @tanstack/react-query, `Search`, `Building2`, `Shield`, `Skeleton`
+## 2. Workspaces (`src/pages/ClientsPage.tsx`)
 
-**Imports a remover**: nenhum
+### Titulo
+- "Workspaces" -> "Gerenciamento de Workspaces"
+- Breadcrumb: `Administracao > Gerenciamento de Workspaces`
 
-**Workspace query e auto-select** (identico ao Firewall/Dominios/Usuarios):
+### Stats cards (4 cards inline via useMemo)
+- **Total Workspaces**: `clients.length` (icone Building)
+- **Total Escopos**: soma de `scopes_count` (icone Globe)
+- **Total Agents**: soma de `agents_count` (icone Bot)
+- **Sem Escopos**: workspaces com `scopes_count === 0` (icone AlertTriangle)
+
+### Barra de busca
+- Input com icone Search, placeholder "Buscar workspace..."
+- Filtro local por nome ou descricao
+
+### Tabela flat
+- Remover `Card className="glass-card"` com `CardHeader` ("Lista de Workspaces")
+- Usar `Card` + `CardContent p-0`
+- Manter colunas: Nome, Escopos, Agents, Criado em, Acoes
+- Manter dialogs (Create, Edit, Delete, View) inalterados
+
+### Imports a adicionar
+- `useMemo`, `Search`, `AlertTriangle`
+
+---
+
+## 3. Templates (`src/pages/admin/TemplatesPage.tsx`)
+
+### Titulo
+- "Templates" -> "Gerenciamento de Templates"
+- Breadcrumb: `Administracao > Gerenciamento de Templates`
+
+### Stats cards (4 cards inline via useMemo)
+- **Total Templates**: `templates.length` (icone Layers)
+- **Ativos**: templates com `is_active === true` (icone Activity)
+- **Inativos**: templates com `is_active === false` (icone Package)
+- **Categorias**: quantidade de categorias distintas (icone Box)
+
+### Barra de busca
+- Input com icone Search, placeholder "Buscar template..."
+- Filtro local por nome, vendor ou codigo
+
+### Tabela flat
+- A tabela ja usa `rounded-md border bg-card` (quase flat), manter esse estilo
+- Apenas garantir consistencia visual com as outras paginas
+
+### Manter o componente `TemplatePipelineFlow` entre os stats e a tabela
+
+### Imports a adicionar
+- `useMemo`, `Search` do lucide-react, `Input` (ja importado)
+
+---
+
+## Secao tecnica
+
+### Padrao de stats cards (identico em todas as 3 paginas)
+
 ```text
-const { effectiveRole } = useEffectiveAuth();
-const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-const [search, setSearch] = useState('');
-
-const { data: allWorkspaces } = useQuery({
-  queryKey: ['clients-list'],
-  queryFn: ...,
-  enabled: isSuperRole && !isPreviewMode,
-  staleTime: 5min,
-});
+<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <Card>
+    <CardContent className="p-4">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-primary/10">
+          <Icon className="w-5 h-5 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">Label</p>
+          <p className="text-2xl font-bold">Value</p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+  ...
+</div>
 ```
 
-**fetchData atualizado** (useCallback):
+### Padrao de busca (identico em todas as 3 paginas)
+
 ```text
-const workspaceIds = isPreviewMode && previewTarget?.workspaces
-  ? previewTarget.workspaces.map(w => w.id)
-  : (isSuperRole && selectedWorkspaceId ? [selectedWorkspaceId] : null);
+<div className="relative">
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+  <Input
+    placeholder="Buscar..."
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    className="pl-10 max-w-sm"
+  />
+</div>
 ```
 
-**Stats**:
+### Padrao de tabela flat
+
 ```text
-const stats = useMemo(() => {
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-  return {
-    total: agents.length,
-    online: agents.filter(a => !a.revoked && a.last_seen && new Date(a.last_seen) > fiveMinAgo).length,
-    pending: agents.filter(a => !a.revoked && !a.last_seen).length,
-    revoked: agents.filter(a => a.revoked).length,
-  };
-}, [agents]);
+<Card>
+  <CardContent className="p-0">
+    <Table>...</Table>
+  </CardContent>
+</Card>
 ```
 
-**Busca**:
-```text
-const filtered = useMemo(() => {
-  if (!search) return agents;
-  const q = search.toLowerCase();
-  return agents.filter(a =>
-    a.name.toLowerCase().includes(q) ||
-    a.client_name?.toLowerCase().includes(q)
-  );
-}, [agents, search]);
-```
+### Funcoes, dialogs e logica existente
+Todas as funcoes de CRUD, dialogs de create/edit/delete/view e logica de acesso permanecem **inalteradas**. Apenas o layout visual e reorganizado.
 
-**Dialogs e funcoes existentes**: `handleCreateAgent`, `handleRevokeAgent`, `handleDeleteAgent`, `openInstructions`, `getAgentStatus`, `generateActivationCode` -- todos permanecem inalterados.
+### Arquivos a editar
+- `src/pages/AdministratorsPage.tsx`
+- `src/pages/ClientsPage.tsx`
+- `src/pages/admin/TemplatesPage.tsx`
