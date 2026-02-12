@@ -1,14 +1,24 @@
-# Adicionar Seletor de Workspace e atualizar titulos na pagina de Firewalls
 
-## Mudancas
+# Corrigir seletor de Workspace na pagina de Firewalls
 
-### Arquivo: `src/pages/firewall/FirewallListPage.tsx`
+## Problema
 
-#### 1. Atualizar titulo e subtitulo
+O seletor foi implementado no padrao do Dashboard (com "Todos os workspaces" e `useEffect` manual), quando deveria seguir o padrao do **Dominio Externo > Analyzer**.
 
-- Titulo: "Firewalls" -> "Gerenciamento de Firewalls"
-- Subtitulo: "Gerencie seus dispositivos FortiGate" -> "Gerencie e monitore seus firewalls"
+## Diferencas entre os dois padroes
 
-#### 2. Adicionar seletor de workspace (apenas Super Admin / Super Suporte)
+| Aspecto | Analyzer (correto) | Firewall (atual, errado) |
+|---|---|---|
+| Estado inicial | `null` | `'all'` |
+| "Todos os workspaces" | Nao existe | Existe |
+| Fetch de workspaces | `useQuery` com staleTime | `useEffect` manual |
+| Auto-selecao | Primeiro workspace automaticamente | Nenhuma |
 
-Seguindo o mesmo padrao do seletor presente em Dominios Externo > Analyzer:
+## Mudancas no arquivo `src/pages/firewall/FirewallListPage.tsx`
+
+1. Trocar o estado `selectedWorkspaceId` de `string('all')` para `string | null (null)`
+2. Remover o `useEffect` manual que busca workspaces e substituir por `useQuery` identico ao do Analyzer
+3. Remover a opcao "Todos os workspaces" do `SelectContent`
+4. Adicionar `useEffect` para auto-selecionar o primeiro workspace (mesmo padrao do Analyzer)
+5. Ajustar a logica de filtro em `fetchData`: em vez de checar `!== 'all'`, checar se `selectedWorkspaceId` nao e null
+6. Ajustar o `workspaceIds` passado ao `FirewallStatsCards` com a mesma logica
