@@ -50,15 +50,34 @@ export interface TopCountry {
   count: number;
 }
 
+export interface ConfigChangeDetail {
+  user: string;
+  action: string;
+  cfgpath: string;
+  cfgobj: string;
+  cfgattr: string;
+  msg: string;
+  date: string;
+  category: string;
+  severity: string;
+}
+
 export interface AnalyzerMetrics {
   topBlockedIPs: TopBlockedIP[];
   topCountries: TopCountry[];
   vpnFailures: number;
   firewallAuthFailures: number;
+  firewallAuthSuccesses: number;
+  vpnSuccesses: number;
   topAuthIPs: TopBlockedIP[];
   topAuthCountries: TopCountry[];
+  topAuthIPsSuccess: TopBlockedIP[];
+  topAuthIPsFailed: TopBlockedIP[];
+  topAuthCountriesSuccess: TopCountry[];
+  topAuthCountriesFailed: TopCountry[];
   ipsEvents: number;
   configChanges: number;
+  configChangeDetails: ConfigChangeDetail[];
   totalDenied: number;
   totalEvents: number;
 }

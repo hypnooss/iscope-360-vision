@@ -165,7 +165,7 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
   const insights: AnalyzerInsight[] = [];
   const safeAuth = Array.isArray(authLogs) ? authLogs : [];
   const safeVpn = Array.isArray(vpnLogs) ? vpnLogs : [];
-  if (safeAuth.length === 0 && safeVpn.length === 0) return { insights, metrics: { vpnFailures: 0, firewallAuthFailures: 0, topAuthIPs: [], topAuthCountries: [] } };
+  if (safeAuth.length === 0 && safeVpn.length === 0) return { insights, metrics: { vpnFailures: 0, firewallAuthFailures: 0, firewallAuthSuccesses: 0, vpnSuccesses: 0, topAuthIPs: [], topAuthCountries: [], topAuthIPsFailed: [], topAuthIPsSuccess: [], topAuthCountriesFailed: [], topAuthCountriesSuccess: [] } };
 
   const isFailure = (l: any) => {
     const action = (l.action || l.status || '').toLowerCase();
@@ -173,38 +173,49 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
     return action.includes('deny') || action.includes('fail') || logdesc.includes('fail') || logdesc.includes('denied');
   };
 
-  // Separate firewall admin login failures vs VPN failures
+  const isSuccess = (l: any) => {
+    if (isFailure(l)) return false;
+    const action = (l.action || l.status || '').toLowerCase();
+    const logdesc = (l.logdesc || l.msg || '').toLowerCase();
+    return action.includes('success') || action.includes('allow') || action.includes('accept') ||
+           logdesc.includes('success') || logdesc.includes('logged in') || logdesc.includes('tunnel up');
+  };
+
+  // Separate failures and successes
   const firewallFailures = safeAuth.filter(isFailure);
   const vpnOnlyFailures = safeVpn.filter(isFailure);
+  const firewallSuccesses = safeAuth.filter(isSuccess);
+  const vpnSuccesses = safeVpn.filter(isSuccess);
 
-  // Collect IPs and countries from both sources for top auth rankings
-  const authIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
-  const authCountryMap: Record<string, number> = {};
-
-  const collectIPData = (logs: any[]) => {
+  // Helper to collect IP and country rankings from a set of logs
+  const collectRankings = (logs: any[]) => {
+    const ipMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+    const countryMap: Record<string, number> = {};
     for (const log of logs) {
       const ip = log.srcip || log.remip || log.src;
       const country = log.srccountry || log.src_country || undefined;
       if (!ip) continue;
-      if (!authIPMap[ip]) authIPMap[ip] = { count: 0, country, ports: new Set() };
-      authIPMap[ip].count++;
+      if (!ipMap[ip]) ipMap[ip] = { count: 0, country, ports: new Set() };
+      ipMap[ip].count++;
       const port = parseInt(log.dstport || log.dst_port || '0');
-      if (port > 0) authIPMap[ip].ports.add(port);
-      if (country) authCountryMap[country] = (authCountryMap[country] || 0) + 1;
+      if (port > 0) ipMap[ip].ports.add(port);
+      if (country) countryMap[country] = (countryMap[country] || 0) + 1;
     }
+    const topIPs = Object.entries(ipMap)
+      .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+      .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+    const topCountries = Object.entries(countryMap)
+      .sort((a, b) => b[1] - a[1]).slice(0, 15)
+      .map(([country, count]) => ({ country, count }));
+    return { topIPs, topCountries };
   };
-  collectIPData(firewallFailures);
-  collectIPData(vpnOnlyFailures);
 
-  const topAuthIPs = Object.entries(authIPMap)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 20)
-    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
-
-  const topAuthCountries = Object.entries(authCountryMap)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15)
-    .map(([country, count]) => ({ country, count }));
+  const allFailed = [...firewallFailures, ...vpnOnlyFailures];
+  const allSuccess = [...firewallSuccesses, ...vpnSuccesses];
+  const failedRank = collectRankings(allFailed);
+  const successRank = collectRankings(allSuccess);
+  // Combined (backward compat)
+  const combinedRank = collectRankings([...allFailed, ...allSuccess]);
 
   // Group failures by user for brute force detection
   const groupByUser = (logs: any[]) => {
@@ -222,7 +233,7 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
   const fwUserFailures = groupByUser(firewallFailures);
   const vpnUserFailures = groupByUser(vpnOnlyFailures);
 
-  // Brute force per user (both sources)
+  // Brute force per user
   const detectBruteForce = (userMap: Record<string, { count: number; ips: Set<string> }>, source: string) => {
     for (const [user, data] of Object.entries(userMap)) {
       if (data.count >= BRUTE_FORCE_THRESHOLD) {
@@ -262,7 +273,6 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
 
   // High volume VPN failures insight
   if (vpnOnlyFailures.length >= HIGH_VOLUME_AUTH_THRESHOLD) {
-    // Detect VPN type breakdown
     let sslCount = 0, ipsecCount = 0, otherCount = 0;
     for (const log of vpnOnlyFailures) {
       const tunnel = (log.tunneltype || log.logdesc || log.msg || '').toLowerCase();
@@ -271,7 +281,6 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
       else otherCount++;
     }
     const typeBreakdown = [sslCount > 0 ? `SSL: ${sslCount}` : '', ipsecCount > 0 ? `IPsec: ${ipsecCount}` : '', otherCount > 0 ? `Outros: ${otherCount}` : ''].filter(Boolean).join(', ');
-
     const topUsers = Object.entries(vpnUserFailures).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
     const topUsersDesc = topUsers.map(([user, data]) => `${user} (${data.count} falhas)`).join('; ');
     insights.push({
@@ -293,7 +302,6 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
     const user = (log.user || log.username || '').toLowerCase();
     const ui = (log.ui || log.interface || '').toLowerCase();
     const action = (log.action || log.status || '').toLowerCase();
-    
     if ((user.includes('admin') || log.group === 'admin') && (ui.includes('wan') || ui.includes('external')) && action.includes('success')) {
       insights.push({
         id: `admin_wan_${user}`,
@@ -314,8 +322,14 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
     metrics: {
       vpnFailures: vpnOnlyFailures.length,
       firewallAuthFailures: firewallFailures.length,
-      topAuthIPs,
-      topAuthCountries,
+      firewallAuthSuccesses: firewallSuccesses.length,
+      vpnSuccesses: vpnSuccesses.length,
+      topAuthIPs: combinedRank.topIPs,
+      topAuthCountries: combinedRank.topCountries,
+      topAuthIPsFailed: failedRank.topIPs,
+      topAuthIPsSuccess: successRank.topIPs,
+      topAuthCountriesFailed: failedRank.topCountries,
+      topAuthCountriesSuccess: successRank.topCountries,
     },
   };
 }
@@ -499,9 +513,26 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
     });
   }
 
+  // Build configChangeDetails for audit page
+  const configChangeDetails = (realChanges.length > 0 ? realChanges : []).map((log: any) => {
+    const cfgpath = log.cfgpath || '';
+    const cat = cfgpath ? categorizeCfgPath(cfgpath) : { category: 'Outros', severity: 'low' as const };
+    return {
+      user: log.user || log.ui || 'unknown',
+      action: log.action || '',
+      cfgpath,
+      cfgobj: log.cfgobj || '',
+      cfgattr: log.cfgattr || '',
+      msg: log.msg || log.logdesc || '',
+      date: log.date || log.eventtime || '',
+      category: cat.category,
+      severity: cat.severity,
+    };
+  }).slice(0, 200);
+
   return {
     insights,
-    metrics: { configChanges: realCount },
+    metrics: { configChanges: realCount, configChangeDetails },
   };
 }
 
@@ -592,10 +623,17 @@ Deno.serve(async (req) => {
       topCountries: deniedResult.metrics.topCountries || [],
       vpnFailures: authResult.metrics.vpnFailures || 0,
       firewallAuthFailures: authResult.metrics.firewallAuthFailures || 0,
+      firewallAuthSuccesses: authResult.metrics.firewallAuthSuccesses || 0,
+      vpnSuccesses: authResult.metrics.vpnSuccesses || 0,
       topAuthIPs: authResult.metrics.topAuthIPs || [],
       topAuthCountries: authResult.metrics.topAuthCountries || [],
+      topAuthIPsFailed: authResult.metrics.topAuthIPsFailed || [],
+      topAuthIPsSuccess: authResult.metrics.topAuthIPsSuccess || [],
+      topAuthCountriesFailed: authResult.metrics.topAuthCountriesFailed || [],
+      topAuthCountriesSuccess: authResult.metrics.topAuthCountriesSuccess || [],
       ipsEvents: ipsResult.metrics.ipsEvents || 0,
       configChanges: configResult.metrics.configChanges || 0,
+      configChangeDetails: configResult.metrics.configChangeDetails || [],
       totalDenied: deniedResult.metrics.totalDenied || 0,
       totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0),
     };
