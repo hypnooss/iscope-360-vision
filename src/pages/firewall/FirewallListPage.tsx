@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,8 +13,9 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { Server, Play, Trash2, Loader2, Building, Pencil } from 'lucide-react';
+import { Server, Play, Trash2, Loader2, Building, Pencil, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -74,6 +76,7 @@ export default function FirewallListPage() {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const { hasModuleAccess } = useModules();
   const { isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [firewalls, setFirewalls] = useState<Firewall[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -90,6 +93,24 @@ export default function FirewallListPage() {
     description: '',
   });
 
+  // Workspace selector for super roles
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('all');
+  const [allWorkspaces, setAllWorkspaces] = useState<{ id: string; name: string }[]>([]);
+
+  // Fetch workspaces for super roles
+  useEffect(() => {
+    if (isSuperRole && !isPreviewMode) {
+      supabase
+        .from('clients')
+        .select('id, name')
+        .order('name')
+        .then(({ data }) => {
+          if (data) setAllWorkspaces(data);
+        });
+    }
+  }, [isSuperRole, isPreviewMode]);
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/auth');
@@ -105,21 +126,24 @@ export default function FirewallListPage() {
     if (user && hasModuleAccess('scope_firewall')) {
       fetchData();
     }
-  }, [user, isPreviewMode, previewTarget]);
+  }, [user, isPreviewMode, previewTarget, selectedWorkspaceId]);
 
   const fetchData = async () => {
     try {
       // Get workspace IDs to filter by (use preview workspaces if in preview mode)
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
+      let workspaceIds: string[] | null = null;
+      if (isPreviewMode && previewTarget?.workspaces) {
+        workspaceIds = previewTarget.workspaces.map(w => w.id);
+      } else if (isSuperRole && selectedWorkspaceId && selectedWorkspaceId !== 'all') {
+        workspaceIds = [selectedWorkspaceId];
+      }
 
       // Build queries with optional workspace filtering
       let clientsQuery = supabase.from('clients').select('*').order('name');
       let firewallsQuery = supabase.from('firewalls').select('*').order('created_at', { ascending: false });
       let agentsQuery = supabase.from('agents').select('id, name, client_id').eq('revoked', false);
 
-      // Apply workspace filter if in preview mode
+      // Apply workspace filter
       if (workspaceIds && workspaceIds.length > 0) {
         clientsQuery = clientsQuery.in('id', workspaceIds);
         firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
@@ -441,24 +465,41 @@ export default function FirewallListPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Firewalls</h1>
-            <p className="text-muted-foreground">Gerencie seus dispositivos FortiGate</p>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento de Firewalls</h1>
+            <p className="text-muted-foreground">Gerencie e monitore seus firewalls</p>
           </div>
-          {canEdit && (
-            <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            {isSuperRole && !isPreviewMode && allWorkspaces.length > 0 && (
+              <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecione o workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os workspaces</SelectItem>
+                  {allWorkspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {canEdit && (
               <AddFirewallDialog 
                 clients={clients} 
                 onFirewallAdded={handleAddFirewall} 
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Stats Cards */}
         <FirewallStatsCards 
-          workspaceIds={isPreviewMode && previewTarget?.workspaces 
-            ? previewTarget.workspaces.map(w => w.id) 
-            : undefined
+          workspaceIds={
+            isPreviewMode && previewTarget?.workspaces 
+              ? previewTarget.workspaces.map(w => w.id)
+              : isSuperRole && selectedWorkspaceId && selectedWorkspaceId !== 'all'
+                ? [selectedWorkspaceId]
+                : undefined
           } 
         />
 
