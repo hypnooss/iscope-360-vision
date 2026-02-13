@@ -556,13 +556,35 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
         </TableCell>
         <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{sourceIP?.label || '—'}</TableCell>
         <TableCell>
-          {result?.ports?.length ? (
-            <div className="flex flex-wrap gap-1">
-              {result.ports.map((port: number) => (
-                <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
-              ))}
-            </div>
-          ) : <span className="text-muted-foreground font-mono">—</span>}
+          {result?.ports?.length ? (() => {
+            const MAX_PORTS = 6;
+            const ports = result.ports as number[];
+            const hasPOverflow = ports.length > MAX_PORTS;
+            const visiblePorts = hasPOverflow ? ports.slice(0, MAX_PORTS) : ports;
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
+                    {visiblePorts.map((port: number) => (
+                      <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
+                    ))}
+                    {hasPOverflow && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">+{ports.length - MAX_PORTS}</Badge>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                {hasPOverflow && (
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <div className="flex flex-wrap gap-1">
+                      {ports.map((port: number) => (
+                        <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
+                      ))}
+                    </div>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            );
+          })() : <span className="text-muted-foreground font-mono">—</span>}
         </TableCell>
         <TableCell>
           {(() => {
