@@ -380,7 +380,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
                   <TableCell className="text-xs">
                     {row.ws.technologies?.length > 0 ? (() => {
-                      const MAX_VISIBLE = 5;
+                      const MAX_VISIBLE = 3;
                       const hasOverflow = row.ws.technologies.length > MAX_VISIBLE;
                       const visible = hasOverflow ? row.ws.technologies.slice(0, MAX_VISIBLE) : row.ws.technologies;
                       return (
