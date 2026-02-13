@@ -1,224 +1,95 @@
 
 
-# Redesign: Inventario de IPs Publicos - Visualizacao mais compreensivel
+# Redesign: Tabela de Inventario de IPs Publicos - Simplificacao e CVE Summary
 
-## Objetivo
+## Contexto
 
-Reformular a tabela de Inventario de IPs Publicos e seu painel de detalhes expandido para apresentar informacoes tecnicas de forma mais clara e acessivel.
+As tabelas acima (TechStackSection, WebServicesSection, TLSCertificatesSection) ja exibem servicos, tecnologias e certificados. Repetir essas informacoes na tabela de IPs e redundante. O objetivo e simplificar a tabela principal e melhorar a coluna de CVEs.
 
-## Mudancas propostas
+## Mudancas
 
-### 1. Coluna "Servicos" na tabela principal - Mostrar produto + versao
+### 1. Tabela principal - Remover coluna "Servicos"
 
-Atualmente a coluna mostra apenas nomes crus (ex: `nginx`, `nginx/1.28.0`). Sera reformulada para exibir badges com produto e versao lado a lado:
+Remover a coluna "Servicos" do header e do IPDetailRow, ja que essas informacoes ja sao exibidas nas secoes acima. Tambem ajustar o `colSpan` do painel expandido.
 
-- `nginx 1.28.0` (badge com versao visivel)
-- `nginx` sem versao = badge com indicador "?" ou texto mutado "sem versao"
-- `PHP 8.3.27` (extraido das tecnologias httpx)
+### 2. Coluna CVEs - Sumarizacao por criticidade
 
-### 2. Painel expandido - Secao "Servicos Descobertos" reformulada
+Substituir o badge unico com contagem total por badges coloridos por severidade:
 
-Substituir a tabela tecnica atual (Porta/Protocolo/Produto/Versao/CPE) por um layout em cards agrupados por servico:
-
-```text
-+--------------------------------------------------+
-| Porta 80/tcp                                     |
-|   Produto: nginx                                 |
-|   Versao: 1.28.0                                 |
-|   CPE: cpe:/a:igor_sysoev:nginx:1.28.0          |
-+--------------------------------------------------+
-| Porta 443/tcp                                    |
-|   Produto: nginx                                 |
-|   Versao: nao detectada                          |
-|   CPE: cpe:/a:igor_sysoev:nginx                  |
-+--------------------------------------------------+
+```
+1 CRITICAL  2 HIGH  2 MEDIUM
 ```
 
-### 3. Painel expandido - Nova secao "Tecnologias Web"
+Cada badge tera a cor correspondente (vermelho para critical, laranja para high, amarelo para medium, etc). Se nao houver CVEs, exibir "0" como antes.
 
-Quando houver `web_services`, exibir as tecnologias detectadas por URL de forma visual:
+### 3. Painel expandido - Remover secoes redundantes
 
-```text
-Web Services
-  https://drive.taschibra.com.br (200 OK)
-    Servidor: nginx/1.28.0
-    Tecnologias: PHP:8.3.27, HSTS
-    TLS: *.taschibra.com.br (expira em 120 dias)
-```
+Remover as secoes "Servicos Descobertos" e "Web Services" do painel expandido, mantendo apenas:
+- OS e Hostnames (informacao unica ao IP)
+- CVEs Vinculadas (a lista detalhada que o usuario gostou - print 1)
 
-### 4. Painel expandido - Secao "CVEs Vinculadas" com mais contexto
+### 4. CVEs Vinculadas - Melhorias visuais
 
-Adicionar o titulo da CVE e o produto afetado ao lado do badge de severidade, em formato de lista ao inves de badges inline:
-
-```text
-CVEs Vinculadas (5)
-  CRITICAL  CVE-2024-3566  (9.8)  PHP - Argument Injection
-  HIGH      CVE-2025-14177 (7.5)  nginx - HTTP/2 vulnerability
-  ...
-```
-
-Cada item sera clicavel para abrir o advisory no NVD.
-
-### 5. Coluna "Servicos" na tabela principal - Versao visivel
-
-Reformular para mostrar `produto/versao` ao inves de so `produto`:
-
-| Antes | Depois |
-|---|---|
-| `nginx` `nginx/1.28.0` | `nginx 1.28.0` `nginx` (sem versao) |
+A lista de CVEs (que o usuario aprovou no print 1) sera mantida e aprimorada:
+- Manter layout em lista com severity badge, CVE ID, score e titulo
+- Adicionar indicador visual do produto afetado (ex: "php", "nginx") como badge discreto
+- Manter links clicaveis para NVD
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-#### IPDetailRow - Coluna Servicos (linhas ~799-813)
+#### Header da tabela (linhas 1169-1178)
+Remover `<TableHead>Servicos</TableHead>` e ajustar colSpan de 7 para 6.
 
-Refatorar a logica de extracao de nomes de servicos para incluir versao:
+#### IPDetailRow - Coluna Servicos (linhas 823-838)
+Remover todo o bloco da celula de servicos. O `serviceDisplay` useMemo pode ser removido tambem.
+
+#### IPDetailRow - Coluna CVEs (linhas 839-845)
+Substituir badge unico por sumarizacao por severidade:
 
 ```typescript
-// Extrair produto+versao unicos para exibicao
-const serviceDisplay = useMemo(() => {
-  const items: { name: string; version: string | null }[] = [];
-  const seen = new Set<string>();
-  
-  for (const svc of result?.services || []) {
-    if (!svc.product) continue;
-    const key = `${svc.product}:${svc.version || ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push({ name: svc.product, version: svc.version || null });
-  }
-  
-  for (const ws of result?.web_services || []) {
-    for (const tech of ws.technologies || []) {
-      const [name, ver] = tech.split(':');
-      const key = `${name}:${ver || ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({ name: name.trim(), version: ver?.trim() || null });
+<TableCell>
+  {ipCVEs.length > 0 ? (() => {
+    const counts: Record<string, number> = {};
+    for (const cve of ipCVEs) {
+      const sev = (cve.severity || 'medium').toLowerCase();
+      counts[sev] = (counts[sev] || 0) + 1;
     }
-  }
-  
-  return items;
-}, [result]);
+    const order = ['critical', 'high', 'medium', 'low', 'info'];
+    return (
+      <div className="flex flex-wrap gap-1">
+        {order.filter(s => counts[s]).map(s => (
+          <Badge key={s} className={severityColorMap[s]}>
+            {counts[s]} {s.toUpperCase()}
+          </Badge>
+        ))}
+      </div>
+    );
+  })() : (
+    <span className="text-muted-foreground font-mono">0</span>
+  )}
+</TableCell>
 ```
 
-Renderizar como badges com versao visivel:
+#### Painel expandido (linhas 849-1007)
+Remover secoes "Servicos Descobertos" (linhas 874-901) e "Web Services" (linhas 903-967). Manter apenas OS, Hostnames e CVEs Vinculadas.
+
+#### CVE list - Adicionar badge de produto afetado
+Na lista de CVEs, extrair o nome do produto dos `products` do CVE para exibir como contexto:
 
 ```typescript
-{serviceDisplay.map((svc) => (
-  <Badge key={`${svc.name}:${svc.version}`} variant="outline" className={getTechBadgeColor(svc.name)}>
-    {svc.name}
-    {svc.version ? (
-      <span className="ml-1 text-primary font-mono">{svc.version}</span>
-    ) : (
-      <span className="ml-1 text-muted-foreground/50">?</span>
-    )}
-  </Badge>
-))}
-```
-
-#### Painel expandido - Servicos (linhas ~850-879)
-
-Substituir a tabela por cards inline:
-
-```typescript
-{result?.services?.length > 0 && (
-  <div>
-    <h4 className="text-sm font-medium mb-2">Servicos Descobertos</h4>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-      {result.services.map((svc, i) => (
-        <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge variant="outline" className="font-mono">{svc.port}/{svc.transport}</Badge>
-            <span className="font-medium text-sm">{svc.product || 'Desconhecido'}</span>
-            {svc.version && <Badge variant="secondary" className="text-xs">{svc.version}</Badge>}
-            {!svc.version && svc.product && (
-              <span className="text-xs text-muted-foreground italic">versao nao detectada</span>
-            )}
-          </div>
-          {svc.cpe?.length > 0 && (
-            <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
-              {svc.cpe[0]}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-```
-
-#### Painel expandido - Web Services (novo bloco)
-
-Adicionar secao de web services dentro do painel expandido do IP:
-
-```typescript
-{result?.web_services?.length > 0 && (
-  <div>
-    <h4 className="text-sm font-medium mb-2">Web Services</h4>
-    <div className="space-y-2">
-      {result.web_services.map((ws, i) => (
-        <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
-          <div className="flex items-center gap-2 mb-1.5">
-            <a href={ws.url} target="_blank" className="text-info hover:underline text-sm font-mono">
-              {ws.url}
-            </a>
-            <Badge variant="outline" className={statusColorClass}>
-              {ws.status_code}
-            </Badge>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {ws.server && <span>Servidor: <strong>{ws.server}</strong></span>}
-            {ws.technologies?.length > 0 && (
-              <span>Tecnologias: {ws.technologies.map(t => <Badge .../>)}</span>
-            )}
-            {ws.tls?.subject_cn && <span>TLS: {ws.tls.subject_cn}</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-```
-
-#### Painel expandido - CVEs (linhas ~882-900)
-
-Reformular de badges inline para lista com titulo:
-
-```typescript
-{ipCVEs.length > 0 && (
-  <div>
-    <h4 className="text-sm font-medium mb-2">CVEs Vinculadas ({ipCVEs.length})</h4>
-    <div className="rounded-lg border border-border/50 overflow-hidden">
-      {ipCVEs
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .map((cve) => (
-        <div key={cve.cve_id} className="flex items-center gap-3 px-3 py-2 border-b last:border-0">
-          <SeverityBadge severity={cve.severity} />
-          <a href={advisory_url} className="font-mono text-sm hover:text-info">
-            {cve.cve_id}
-          </a>
-          {cve.score && <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>}
-          <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
-          <ExternalLink className="w-3 h-3" />
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+<span className="text-xs text-muted-foreground truncate flex-1">
+  {cve.title || 'vulnerability'}
+</span>
 ```
 
 ### Resultado visual esperado
 
-**Tabela principal**: Coluna Servicos mostra `nginx 1.28.0` e `PHP 8.3.27` com versao visivel. Coluna CVEs mostra contagem com badge colorido.
+**Tabela principal (6 colunas)**:
+| IP | Origem | Referencia | Portas | CVEs | |
+|---|---|---|---|---|---|
+| 187.85.164.49 | DNS | drive.taschibra.com.br | 80 443 | `1 CRITICAL` `2 HIGH` `2 MEDIUM` | > |
 
-**Painel expandido**: 3 secoes visuais claras:
-1. Servicos Descobertos - Cards com porta, produto, versao e CPE
-2. Web Services - URLs com status, servidor, tecnologias e TLS
-3. CVEs Vinculadas - Lista ordenada por severidade com titulo descritivo
-
-### Arquivo modificado
-
-- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (componente `IPDetailRow`)
+**Painel expandido**: Apenas OS/Hostnames + lista de CVEs detalhada (como no print 1).
 
