@@ -1,75 +1,76 @@
 
 
-# Otimizacao do Dashboard: Performance e Dados Confiaveis
+# Fix: Score Atual = Ultimo Score Coletado (nao media)
 
-## Diagnostico
+## Problema
 
-O hook `useDashboardStats` esta transferindo **~750KB de JSON** a cada troca de workspace porque baixa o campo `report_data` completo (relatorios inteiros de conformidade) de TODAS as analises historicas, apenas para contar severidades no client-side.
+O "Score Atual" calcula a **media aritmetica** dos scores mais recentes de todos os ativos do modulo. O sparkline mostra a **media diaria historica**. Isso cria situacoes impossiveis visualmente:
+- Dominio Externo: sparkline vermelho (historico ruim) mas score verde 89 (media atual alta)
+- Microsoft 365: sparkline verde (historico bom) mas score vermelho 56 (media atual baixa)
 
-Alem disso, as queries de historico sao **sequenciais** (firewall -> m365 -> ext domain -> CVE) e nao ha cache entre trocas de workspace.
+## Solucao
 
-## Estrategia
+Mudar a logica: o "Score Atual" sera o **score da analise mais recente** do modulo (ultimo valor coletado), nao a media de todos os ativos.
 
-Ao inves de criar uma tabela nova (que exigiria triggers e edge functions para manter sincronizada), vamos otimizar as queries existentes para reduzir o volume de ~750KB para ~5KB:
+Quando ha multiplos ativos (ex: 3 firewalls), usar o score da analise que tem o `created_at` / `analyzed_at` mais recente entre todos os ativos daquele modulo.
 
 ## Alteracoes
 
-### 1. Separar queries de score history e severidades
+### Arquivo: `src/hooks/useDashboardStats.ts`
 
-**Arquivo**: `src/hooks/useDashboardStats.ts`
+**Firewall (linhas 182-196)**: Em vez de coletar todos os scores e fazer `avgScores(scores)`, identificar o registro com `analyzed_at` mais recente e usar seu score diretamente:
 
-**Score history** (para o sparkline): selecionar apenas `score, created_at` -- sem `report_data`. Limitar a 30 dias.
-
-```text
+```typescript
 // De:
-.select('firewall_id, score, report_data, created_at')
+for (const s of fwSummaries) {
+  scores.push(s.score);
+  // ...
+}
+fwHealth.score = avgScores(scores);
+
 // Para:
-.select('firewall_id, score, created_at')
-.gte('created_at', thirtyDaysAgo)
+let latestScore: number | null = null;
+for (const s of fwSummaries) {
+  if (!latestDate || s.analyzed_at > latestDate) {
+    latestDate = s.analyzed_at;
+    latestScore = s.score;
+  }
+  // severidades continuam somando normalmente
+}
+fwHealth.score = latestScore;
 ```
 
-**Severidades** (contagem de conformidade): query separada que busca apenas o registro MAIS RECENTE por ativo, usando DISTINCT ON via RPC ou limitando com logica client-side mas SEM baixar report_data. Em vez disso, recalcular severidades a partir dos dados que ja existem.
+**M365 (linhas 208-238)**: Mesmo padrao. A query ja vem ordenada por `created_at DESC`, entao o primeiro registro nao-visto e o mais recente por tenant. Se ha multiplos tenants, pegar o score do tenant com analise mais recente:
 
-### 2. Eliminar download de report_data
+```typescript
+// De:
+m365Health.score = avgScores(scores);
 
-Para as severidades, em vez de baixar o JSON completo e walkear categories no browser, vamos usar uma abordagem diferente para cada modulo:
-
-- **Firewall**: Buscar apenas o ultimo registro por firewall. Selecionar `report_data` somente desse unico registro (1 x 44KB em vez de 9 x 44KB = reducao de 90%).
-- **External Domain**: Mesmo padrao - ultimo registro por domain.
-- **M365**: Ja usa `summary` como campo separado -- sem alteracao necessaria.
-
-### 3. Paralelizar TODAS as queries
-
-Atualmente, apos o primeiro `Promise.all` (asset counts), as queries de historico rodam em sequencia. Mover todas para um unico `Promise.all`:
-
-```text
-const [fwHistory, fwScoreHistory, m365History, extHistory, extScoreHistory, cveCache] = 
-  await Promise.all([...]);
+// Para: usar o score do registro mais recente
+// (ja identificado pelo latestDate)
 ```
 
-### 4. Migrar para useQuery com staleTime
+**External Domain (linhas 250-271)**: Mesmo padrao do Firewall via RPC:
 
-Substituir o `useEffect + useState` manual por `useQuery` do TanStack, com `staleTime: 60_000` (1 minuto). Isso significa:
-- Ao trocar workspace, se os dados daquele workspace foram buscados ha menos de 1 minuto, usa o cache instantaneamente
-- O `queryKey` inclui o `selectedWorkspaceId`, entao cada workspace tem seu proprio cache
-- `placeholderData: keepPreviousData` evita flash de skeleton em trocas rapidas
+```typescript
+// De:
+extHealth.score = avgScores(scores);
 
-### 5. Limitar historico a 30 dias
+// Para:
+// Usar o score do registro com analyzed_at mais recente
+```
 
-Adicionar filtro `.gte('created_at', thirtyDaysAgo)` em todas as queries de historico para nao baixar dados antigos desnecessarios.
+**Remover a funcao `avgScores`** (linhas 56-58) pois nao sera mais utilizada.
 
-## Resumo do impacto
+## Resultado esperado
 
-| Metrica | Antes | Depois |
-|---|---|---|
-| Dados transferidos | ~750 KB | ~10 KB |
-| Queries sequenciais | 4 em serie | Todas paralelas |
-| Cache entre workspaces | Nenhum | 1 min staleTime |
-| Tempo estimado | 2-4 segundos | < 500ms |
+- Score Atual refletira exatamente o ultimo valor coletado
+- O sparkline continuara mostrando o historico diario (media por dia)
+- A cor do score e a tendencia do grafico serao consistentes visualmente
 
-## Arquivos alterados
+## Arquivo alterado
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | Reescrita completa: useQuery, queries otimizadas, paralelizacao |
+| `src/hooks/useDashboardStats.ts` | Score = ultimo coletado em vez de media; remover avgScores |
 
