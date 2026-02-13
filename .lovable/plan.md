@@ -1,51 +1,46 @@
 
 
-# Tornar o Nmap mais furtivo e eficaz
+# Corrigir permissao de raw socket para o nmap
 
-## Resumo
+## Problema
 
-Reescrever o executor Nmap para usar uma abordagem stealth-first que imita trafego humano real, com fallback inteligente quando o scan primario nao retorna resultados. O compromisso e com o sucesso na coleta de dados, nao com velocidade.
+O nmap esta rodando sem a permissao `CAP_NET_RAW`, resultando no aviso:
 
-## Mudancas no arquivo `python-agent/agent/executors/nmap.py`
-
-### Scan primario - stealth sem scripts
-
-Substituir o comando atual agressivo por um scan furtivo:
-
-```text
-ANTES                          DEPOIS
------                          ------
--sV -sC                       -sV (sem scripts ruidosos)
--T4 (agressivo)                -T3 (normal, ritmo humano)
---host-timeout 180s            --host-timeout 300s
-(sem evasao)                   --scan-delay 500ms
-                               --max-retries 2
-                               --data-length 24
-                               --version-intensity 5
-timeout geral = 300s           timeout geral = 600s
+```
+You have specified some options that require raw socket access.
+These options will not be honored without the necessary privileges.
 ```
 
-### Fallback com scripts seletivos
+Sem essa permissao, o nmap:
+- Nao consegue fazer SYN scan (cai para connect scan, mais lento e detectavel)
+- Perde capacidade de OS detection
+- Pode falhar em fingerprinting de versao em alguns casos
 
-Se o scan primario retornar zero servicos (bloqueio por firewall/WAF), executar um segundo scan com scripts leves e especificos:
+O instalador do Super Agent ja aplica `setcap cap_net_raw+ep` no masscan, mas esquece de fazer o mesmo para o nmap.
 
-- `banner` - captura banners de FTP, SSH, SMTP
-- `ssl-cert` - detalhes do certificado TLS
-- `http-title` - titulo da pagina web
+## Solucao
 
-Esses 3 scripts sao rapidos e capturam as informacoes mais uteis para identificacao e CVE matching.
+Adicionar o `setcap cap_net_raw+ep` ao binario do nmap no script de instalacao, identico ao que ja e feito para o masscan.
 
-### Diagnostico via stderr
+## Detalhes tecnicos
 
-Sempre logar o stderr do nmap (onde aparecem avisos de timeout, rate-limiting e bloqueios), facilitando troubleshooting futuro.
+### Arquivo: `supabase/functions/super-agent-install/index.ts`
 
-### Parser XML - sem alteracoes
+Apos a linha 252 (apos o bloco de instalacao do nmap), adicionar:
 
-O parser `_parse_nmap_xml` e `_parse_os_info` permanecem identicos. O problema nunca foi o parsing, mas sim a falta de dados no XML causada por timeout e bloqueio.
+```bash
+# Conceder CAP_NET_RAW ao nmap (necessario para SYN scan e OS detection sem root)
+local nmap_path
+nmap_path="$(command -v nmap 2>/dev/null || echo '/usr/bin/nmap')"
+if [[ -x "$nmap_path" ]]; then
+  echo "Configurando CAP_NET_RAW para nmap em $nmap_path..."
+  setcap cap_net_raw+ep "$nmap_path" 2>/dev/null || {
+    echo "Aviso: falha ao configurar CAP_NET_RAW para nmap."
+  }
+fi
+```
 
-## Impacto esperado
+## Observacao
 
-- Hosts que antes retornavam zero servicos passarao a ter produto/versao detectados
-- Com versoes capturadas, o matching de CVEs passara a funcionar para esses IPs
-- O agendamento automatico com balanceamento absorve o tempo extra sem impacto operacional
+Os agentes ja instalados precisarao ser reinstalados (ou atualizado o componente) para que a permissao seja aplicada. Novos agentes ja receberao a correcao automaticamente.
 
