@@ -1,24 +1,27 @@
 
 
-# Reduce visible badges: 2 per row, max 3 visible + overflow
+# Fix: Limit to 2 badges per row
+
+## Problem
+The container `max-w-[320px]` is wide enough to fit 3 badges on one row. We need to constrain it so only 2 badges fit per row.
 
 ## Change
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Single change in the technologies cell: reduce `MAX_VISIBLE` from `5` to `3`.
+Reduce the container max-width from `max-w-[320px]` to `max-w-[220px]` on line 389. This will force the flex-wrap to break after every 2 badges, resulting in:
 
-- This means: show up to 3 badges, and if there are 4+ technologies, show the first 3 plus a `+N` overflow badge as the 4th.
-- With `max-w-[320px]` and badge widths, this naturally results in ~2 badges per row, 2 rows max (3 badges + 1 overflow = 4 items across 2 rows).
-- The tooltip remains unchanged -- hovering still shows all badges.
+- **Row 1**: badge, badge
+- **Row 2**: badge, +N (when 4+ technologies)
 
-```tsx
+```
+// Line 389
 // Before
-const MAX_VISIBLE = 5;
+<div className="flex flex-wrap gap-1 max-w-[320px] cursor-default">
 
 // After
-const MAX_VISIBLE = 3;
+<div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
 ```
 
-No other changes needed.
+No other changes needed. The `MAX_VISIBLE = 3` stays the same since we want 3 visible badges + the overflow badge as the 4th item.
 
