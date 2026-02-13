@@ -1,104 +1,93 @@
 
-
-# Fix: Retry on Transient HTTP Errors (502/503/504)
+# Fix: Use DNS Hostname for httpx (Avoid 301 Redirects)
 
 ## Problem
 
-The agent logs show multiple `502 Bad Gateway` errors from Cloudflare when posting step results to `/agent-step-result`. These are transient infrastructure errors (Supabase Edge Function cold starts, Cloudflare timeouts, or momentary overload).
+When the Attack Surface pipeline scans DNS-sourced targets, all three tools (masscan, nmap, httpx) use the raw IP address. This causes httpx to receive `301 Moved Permanently` responses because web servers (especially shared hosting / cloud load balancers like Microsoft IIS) require the correct `Host` header or SNI to serve the actual content.
 
-Currently, the `APIClient` only retries on `TOKEN_EXPIRED`. For any other error (including 502/503/504), it immediately raises `RuntimeError`, and `_report_step_result` catches it but **silently loses the step data** (line 567: logs a warning and moves on).
-
-This means:
-- The step executed successfully (e.g., httpx found web services)
-- But the result was never saved to the database
-- The task shows as "completed" but with missing step data
+The hostname (e.g., `mail.movecta.com.br`) is already available in the task payload as `label`, but it's never propagated to the httpx executor.
 
 ## Solution
 
-Add automatic retry with exponential backoff for transient HTTP errors (status codes 502, 503, 504, 429) in `APIClient.post()` and `APIClient.get()`.
+Propagate the DNS hostname through the context so httpx uses it as the target (proper Host header + SNI), while masscan and nmap continue using the raw IP (they operate at the network/transport layer).
 
-## Technical Details
+## Changes
 
-### File: `python-agent/agent/api_client.py`
+### 1. `python-agent/agent/tasks.py` - Propagate hostname from payload to context
 
-1. Import `time` module
-2. Add a constant `TRANSIENT_STATUS_CODES = {429, 502, 503, 504}`
-3. Add a `MAX_RETRIES = 3` constant
-4. Modify `get()` and `post()` to wrap the request in a retry loop:
-   - On transient status codes, wait with exponential backoff (2s, 4s, 8s) and retry
-   - On the last retry, fall through to the existing error handling
-   - Log each retry attempt
-   - The TOKEN_EXPIRED retry logic remains unchanged (applied after all transient retries are exhausted)
-
-```text
-Retry flow:
-  POST /agent-step-result
-    -> 502 Bad Gateway
-    -> wait 2s, retry #1
-    -> 502 Bad Gateway  
-    -> wait 4s, retry #2
-    -> 200 OK (success)
-```
-
-The retry applies to ALL API calls (step results, task results, heartbeat, task fetch), providing resilience across the board.
-
-### No changes needed to `tasks.py`
-
-Since the retry happens inside `APIClient`, the `_report_step_result` method and all other callers benefit automatically without any code changes.
-
-### Implementation
+In the `execute()` method, after building the initial context, inject `hostname` from the task payload when the source is DNS:
 
 ```python
-import time
-import requests
-
-class APIClient:
-    TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
-    MAX_RETRIES = 3
-    
-    # ... existing __init__, set_auth_manager, _headers, _extract_error ...
-
-    def get(self, path):
-        self.logger.info(f"GET {path}")
-        
-        for attempt in range(self.MAX_RETRIES + 1):
-            response = requests.get(
-                f"{self.base_url}{path}",
-                headers=self._headers(),
-                timeout=10
-            )
-            
-            if response.status_code in self.TRANSIENT_STATUS_CODES and attempt < self.MAX_RETRIES:
-                wait = 2 ** (attempt + 1)  # 2, 4, 8 seconds
-                self.logger.warning(f"GET {path} -> {response.status_code}, retry {attempt+1}/{self.MAX_RETRIES} in {wait}s")
-                time.sleep(wait)
-                continue
-            break
-
-        if not response.ok:
-            error_msg = self._extract_error(response)
-            # existing TOKEN_EXPIRED logic...
-            ...
-
-    def post(self, path, json=None, use_refresh_token=False):
-        # Same pattern: wrap the request in a retry loop for transient errors
-        ...
-        for attempt in range(self.MAX_RETRIES + 1):
-            response = requests.post(...)
-            if response.status_code in self.TRANSIENT_STATUS_CODES and attempt < self.MAX_RETRIES:
-                wait = 2 ** (attempt + 1)
-                self.logger.warning(f"POST {path} -> {response.status_code}, retry {attempt+1}/{self.MAX_RETRIES} in {wait}s")
-                time.sleep(wait)
-                continue
-            break
-        
-        # Then existing error handling (TOKEN_EXPIRED, etc.)
+# After line 75: context = self._build_context(target)
+if payload.get('source') == 'dns' and payload.get('label'):
+    context['hostname'] = payload['label']
 ```
+
+This ensures the hostname is available in the shared context for all executors, but only httpx will use it.
+
+### 2. `python-agent/agent/executors/httpx_executor.py` - Use hostname when available
+
+Modify the `run()` method to prefer `hostname` over `ip` as the target for httpx:
+
+```python
+def run(self, step, context):
+    params = step.get('params', {})
+    ip = params.get('ip') or context.get('ip')
+    hostname = params.get('hostname') or context.get('hostname')
+    
+    # Use hostname for httpx when available (proper Host/SNI headers)
+    target = hostname if hostname else ip
+    
+    if not target:
+        return {'error': 'IP or hostname is required'}
+    
+    # ... ports logic stays the same ...
+    
+    cmd = [
+        'httpx',
+        '-u', target,    # <-- hostname instead of IP
+        '-ports', port_str,
+        ...
+    ]
+```
+
+The returned data will still include the original `ip` for reference:
+
+```python
+return {
+    'data': {
+        'ip': ip,
+        'hostname': hostname or '',
+        'web_services': web_services,
+    }
+}
+```
+
+### 3. No changes to masscan or nmap
+
+- **masscan**: Sends raw SYN packets -- must use IP address
+- **nmap**: Service fingerprinting at transport level -- IP is correct
+
+### 4. No database or Edge Function changes needed
+
+The `label` field already exists in `attack_surface_tasks` and is already passed to the agent via the RPC's `payload` object. No schema changes required.
+
+## Expected Result
+
+Before (current):
+```
+httpx -u 52.98.163.56 -ports 80  -->  301 (redirect, no useful data)
+```
+
+After (fix):
+```
+httpx -u mail.movecta.com.br -ports 80  -->  200 (actual content, title, technologies)
+```
+
+For firewall-sourced IPs (where `label` is something like "FW01 - port1"), the hostname won't be set and httpx will continue using the IP as before -- this is correct because firewall WAN IPs typically host direct services without virtual hosting.
 
 ## Risk Assessment
 
-- **Low risk**: Only adds wait-and-retry for well-known transient errors
-- **No behavior change** for non-transient errors (401, 403, 404, 500 still fail immediately)
-- **Bounded retries**: Max 3 retries with max ~14s total wait, won't stall the agent
-- **429 included**: Handles rate limiting from Supabase/Cloudflare gracefully
-
+- **Low risk**: Only affects httpx targeting, masscan/nmap unchanged
+- **Backwards compatible**: Falls back to IP when no hostname available
+- **No data model changes**: Uses existing `label` field from payload
