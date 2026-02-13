@@ -566,40 +566,67 @@ function matchCVEsToIP(
 
   const vulnSet = new Set(result.vulns || []);
 
-  // 1. Products from nmap CPEs
-  const products = new Set<string>();
+  // 1. Extract product+version pairs from nmap CPEs
+  const productVersions = new Map<string, string | null>();
+  const productNames = new Set<string>(); // For snapshot matching (no version filter)
+
   for (const svc of result.services || []) {
     if (svc.cpe && Array.isArray(svc.cpe)) {
       for (const cpe of svc.cpe) {
         const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
         const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
-        if (product) products.add(product);
+        const version = parts[3] && parts[3] !== '*' && parts[3] !== ''
+          ? parts[3] : null;
+        if (product) {
+          productNames.add(product);
+          const existing = productVersions.get(product);
+          if (!existing && version) productVersions.set(product, version);
+          else if (!existing) productVersions.set(product, null);
+        }
       }
     }
     if (svc.product) {
-      products.add(svc.product.toLowerCase());
+      const p = svc.product.toLowerCase();
+      productNames.add(p);
+      if (!productVersions.has(p)) {
+        productVersions.set(p, svc.version || null);
+      }
     }
   }
 
-  // 2. Products from httpx technologies (e.g. "PHP:8.3.27" -> "php")
+  // 2. Products from httpx technologies (e.g. "PHP:8.3.27" -> product "php", version "8.3.27")
   for (const ws of result.web_services || []) {
     for (const tech of ws.technologies || []) {
-      const techName = tech.split(':')[0].trim().toLowerCase();
-      if (techName) products.add(techName);
+      const [name, ver] = tech.split(':');
+      const techName = name.trim().toLowerCase();
+      const techVer = ver?.trim() || null;
+      if (techName) {
+        productNames.add(techName);
+        const existing = productVersions.get(techName);
+        if (!existing && techVer) productVersions.set(techName, techVer);
+        else if (!existing) productVersions.set(techName, null);
+      }
     }
     if (ws.server) {
-      products.add(ws.server.toLowerCase().split('/')[0].trim());
+      const [name, ver] = ws.server.toLowerCase().split('/');
+      const p = name.trim();
+      if (p) {
+        productNames.add(p);
+        if (!productVersions.has(p)) {
+          productVersions.set(p, ver?.trim() || null);
+        }
+      }
     }
   }
 
-  // Match from snapshot cve_matches
+  // Match from snapshot cve_matches — use product names only (no version filter)
   const matched = new Map<string, AttackSurfaceCVE>();
-  if (cveMatches.length > 0 && (vulnSet.size > 0 || products.size > 0)) {
+  if (cveMatches.length > 0 && (vulnSet.size > 0 || productNames.size > 0)) {
     for (const c of cveMatches) {
       if (vulnSet.has(c.cve_id)) { matched.set(c.cve_id, c); continue; }
       const titleLower = (c.title || '').toLowerCase();
       const cveProducts = (c.products || []).map((p: string) => p.toLowerCase());
-      for (const product of products) {
+      for (const product of productNames) {
         if (titleLower.includes(product) || cveProducts.some((cp: string) => cp.includes(product))) {
           matched.set(c.cve_id, c);
           break;
@@ -608,24 +635,46 @@ function matchCVEsToIP(
     }
   }
 
-  // 3. Match from cached CVEs by product
-  if (cachedCVEs && products.size > 0) {
+  // 3. Match from cached CVEs — apply version filter
+  if (cachedCVEs && productVersions.size > 0) {
     for (const cached of cachedCVEs) {
       if (matched.has(cached.cve_id)) continue;
-      const cachedProducts = (cached.products || []).map((p: string) => p.toLowerCase());
-      const titleLower = (cached.title || '').toLowerCase();
-      for (const product of products) {
-        if (cachedProducts.some((cp: string) => cp.includes(product)) || titleLower.includes(product)) {
-          matched.set(cached.cve_id, {
-            cve_id: cached.cve_id,
-            title: cached.title || '',
-            severity: cached.severity || 'medium',
-            score: cached.score,
-            advisory_url: cached.advisory_url || '',
-            products: cached.products || [],
-          });
+      const cachedProducts = cached.products || [];
+      // products format: [vendor, product, version] e.g. ["f5", "nginx", "*"]
+      const cachedProduct = (typeof cachedProducts[1] === 'string' ? cachedProducts[1] : '').toLowerCase();
+      const cachedVersion = typeof cachedProducts[2] === 'string' ? cachedProducts[2] : '*';
+
+      if (!cachedProduct) continue;
+
+      let didMatch = false;
+      for (const [product, detectedVersion] of productVersions) {
+        if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
+
+        // If we didn't detect a version, don't link cached CVEs (uncertainty)
+        if (!detectedVersion) continue;
+
+        // If CVE has wildcard version, link it (generic)
+        if (cachedVersion === '*') {
+          didMatch = true;
           break;
         }
+
+        // If CVE has specific version, only link if it matches
+        if (cachedVersion === detectedVersion) {
+          didMatch = true;
+          break;
+        }
+      }
+
+      if (didMatch) {
+        matched.set(cached.cve_id, {
+          cve_id: cached.cve_id,
+          title: cached.title || '',
+          severity: cached.severity || 'medium',
+          score: cached.score,
+          advisory_url: cached.advisory_url || '',
+          products: cached.products || [],
+        });
       }
     }
   }
