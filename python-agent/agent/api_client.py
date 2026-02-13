@@ -1,7 +1,11 @@
+import time
 import requests
 
 
 class APIClient:
+    TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
+    MAX_RETRIES = 3
+
     def __init__(self, base_url, state, logger):
         self.base_url = base_url.rstrip("/")
         self.state = state
@@ -37,11 +41,20 @@ class APIClient:
 
     def get(self, path):
         self.logger.info(f"GET {path}")
-        response = requests.get(
-            f"{self.base_url}{path}",
-            headers=self._headers(),
-            timeout=10
-        )
+
+        for attempt in range(self.MAX_RETRIES + 1):
+            response = requests.get(
+                f"{self.base_url}{path}",
+                headers=self._headers(),
+                timeout=10
+            )
+
+            if response.status_code in self.TRANSIENT_STATUS_CODES and attempt < self.MAX_RETRIES:
+                wait = 2 ** (attempt + 1)
+                self.logger.warning(f"GET {path} -> {response.status_code}, retry {attempt+1}/{self.MAX_RETRIES} in {wait}s")
+                time.sleep(wait)
+                continue
+            break
 
         if not response.ok:
             error_msg = self._extract_error(response)
@@ -71,12 +84,20 @@ class APIClient:
 
         self.logger.info(f"POST {path}")
 
-        response = requests.post(
-            f"{self.base_url}{path}",
-            json=json,
-            headers=headers,
-            timeout=60
-        )
+        for attempt in range(self.MAX_RETRIES + 1):
+            response = requests.post(
+                f"{self.base_url}{path}",
+                json=json,
+                headers=headers,
+                timeout=60
+            )
+
+            if response.status_code in self.TRANSIENT_STATUS_CODES and attempt < self.MAX_RETRIES:
+                wait = 2 ** (attempt + 1)
+                self.logger.warning(f"POST {path} -> {response.status_code}, retry {attempt+1}/{self.MAX_RETRIES} in {wait}s")
+                time.sleep(wait)
+                continue
+            break
 
         if not response.ok:
             error_msg = self._extract_error(response)
