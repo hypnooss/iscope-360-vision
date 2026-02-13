@@ -1,59 +1,97 @@
 
-# Ajustes na Pagina de Fontes de CVE
 
-## 1. Botao de Voltar
+# Fix: Extrair tecnologias do httpx para sincronizacao de CVEs
 
-Adicionar um botao com icone `ArrowLeft` antes do titulo "Fontes de CVE", seguindo o mesmo padrao da pagina de Editar Firewall. O botao navega de volta para `/cves`.
+## Problema
 
-## 2. Cor de fundo nos cards de fonte
+A funcao `syncNistNvdWebSource` so le CPEs de `services[].cpe` (detectados pelo Nmap). Porem, a maioria das tecnologias web sao detectadas pelo httpx e armazenadas em campos diferentes:
 
-Os cards de cada fonte (`SourceCard`) atualmente usam apenas `border rounded-lg`. Vou adicionar a classe `glass-card` e uma cor de fundo sutil baseada no modulo, similar ao estilo dos StatCards -- usando as cores do modulo (laranja para Firewall, azul para M365, verde para Dominio Externo).
+- **Nginx**: Aparece em `web_services[].server` e `web_services[].technologies`, mas com `cpe: []` no Nmap
+- **History**: Aparece apenas em `web_services[].technologies` como `"History:4.7.2"` -- sem CPE algum
 
-## 3. Nova fonte: history (Dominio Externo)
+## Solucao
 
-Inserir uma nova entrada na tabela `cve_sources` para a biblioteca `history` (v4.7.2), usada pelo React Router. Como e uma biblioteca JavaScript/npm, sera configurada com `source_type = 'nist_nvd_web'` e `product_filter = 'history'`.
+Expandir a extracao de produtos na funcao `syncNistNvdWebSource` para tambem ler `web_services[].technologies` e `web_services[].server`, gerando CPEs sinteticos quando necessario.
 
-## Detalhes Tecnicos
+### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
 
-### Arquivo: `src/pages/admin/CVESourcesPage.tsx`
+**Logica atualizada de extracao** -- alem de `services[].cpe`, tambem iterar sobre `web_services`:
 
-**Botao de voltar** - Adicionar import de `ArrowLeft` e `useNavigate`, e inserir o botao antes do titulo:
-
-```typescript
-import { useNavigate } from 'react-router-dom';
-// No componente:
-const navigate = useNavigate();
-// No JSX, antes do titulo:
-<Button variant="ghost" size="icon" onClick={() => navigate('/cves')}>
-  <ArrowLeft className="w-5 h-5" />
-</Button>
+```
+Para cada IP nos resultados:
+  1. (existente) Ler services[].cpe
+  2. (novo) Ler web_services[].technologies
+     - Parsear formato "Nome:Versao" (ex: "History:4.7.2")
+     - Gerar CPE sintetico: cpe:2.3:a:*:{nome}:{versao}:*:*:*:*:*:*:*
+  3. (novo) Ler web_services[].server
+     - Se "nginx", gerar CPE: cpe:2.3:a:f5:nginx:{versao_se_disponivel}:*:*:*:*:*:*:*
 ```
 
-**Cor de fundo nos cards** - Adicionar mapa de cores de fundo por modulo e aplicar no SourceCard:
+**Mapeamento de vendors conhecidos** para gerar CPEs corretos:
+
+| Tecnologia | Vendor NVD | Produto NVD |
+|---|---|---|
+| Nginx | f5 | nginx |
+| History | browsenpm | history |
+| React | facebook | react |
+| LazySizes | afarkas | lazysizes |
+
+Para tecnologias desconhecidas, usar vendor `*` e buscar pelo nome do produto.
+
+**Mudanca na query ao NVD**: Para CPEs sinteticos sem versao, usar `keywordSearch` em vez de `cpeName` para ampliar a busca.
+
+### Detalhes tecnicos
+
+A funcao de extracao de CPEs sera refatorada para:
 
 ```typescript
-const MODULE_BG: Record<string, string> = {
-  firewall: 'bg-orange-500/5 border-orange-500/20',
-  m365: 'bg-blue-500/5 border-blue-500/20',
-  external_domain: 'bg-emerald-500/5 border-emerald-500/20',
+// Extrair CPEs do Nmap (existente)
+for (const svc of (result as any).services || []) {
+  for (const cpe of svc.cpe || []) { ... }
+}
+
+// NOVO: Extrair tecnologias do httpx
+for (const ws of (result as any).web_services || []) {
+  // Do campo technologies
+  for (const tech of ws.technologies || []) {
+    const [name, version] = tech.split(':');
+    const normalizedName = name.toLowerCase().replace(/\s+/g, '_');
+    if (productFilter && !normalizedName.includes(productFilter)) continue;
+    
+    // Gerar CPE sintetico
+    const vendor = KNOWN_VENDORS[normalizedName] || '*';
+    const ver = version || '*';
+    const syntheticCpe = `cpe:2.3:a:${vendor}:${normalizedName}:${ver}:*:*:*:*:*:*:*`;
+    cpeSet.add(syntheticCpe);
+  }
+  
+  // Do campo server (nginx, apache, etc.)
+  if (ws.server) {
+    const serverName = ws.server.toLowerCase();
+    if (!productFilter || serverName.includes(productFilter)) {
+      const vendor = KNOWN_VENDORS[serverName] || '*';
+      const syntheticCpe = `cpe:2.3:a:${vendor}:${serverName}:*:*:*:*:*:*:*:*`;
+      cpeSet.add(syntheticCpe);
+    }
+  }
+}
+```
+
+Mapa de vendors conhecidos:
+
+```typescript
+const KNOWN_VENDORS: Record<string, string> = {
+  nginx: 'f5',
+  apache: 'apache',
+  openssh: 'openbsd',
+  history: 'browserstate',
+  react: 'facebook',
 };
-
-// No SourceCard div:
-<div className={cn("border rounded-lg p-4 space-y-3", MODULE_BG[source.module_code] || '')}>
-```
-
-### Migracao SQL
-
-Inserir nova fonte para a biblioteca `history`:
-
-```sql
-INSERT INTO cve_sources (module_code, source_type, source_label, config, is_active)
-VALUES ('external_domain', 'nist_nvd_web', 'History', '{"product_filter": "history"}', true);
 ```
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/admin/CVESourcesPage.tsx` | Botao voltar + cor de fundo nos cards |
-| Migracao SQL | Nova fonte "History" |
+| `supabase/functions/refresh-cve-cache/index.ts` | Expandir extracao para incluir web_services |
+
