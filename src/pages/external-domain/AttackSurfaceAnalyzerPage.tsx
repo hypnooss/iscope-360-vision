@@ -124,6 +124,12 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
+const HTTP_STATUS_DESCRIPTIONS: Record<number, string> = {
+  200: 'OK', 201: 'Created', 204: 'No Content',
+  301: 'Moved Permanently', 302: 'Found (Redirect)', 304: 'Not Modified', 307: 'Temporary Redirect', 308: 'Permanent Redirect',
+  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed', 408: 'Request Timeout', 429: 'Too Many Requests',
+  500: 'Internal Server Error', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
 
 /* ──────────────────────────── Port Heatmap ──────────────────────────── */
 
@@ -369,13 +375,22 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                     </TooltipProvider>
                   </TableCell>
                   <TableCell className="text-center">
-                    <Badge variant="outline" className={
-                      row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
-                      row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
-                      'border-destructive/50 text-destructive'
-                    }>
-                      {row.ws.status_code}
-                    </Badge>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className={cn("cursor-help",
+                            row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
+                            row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
+                            'border-destructive/50 text-destructive'
+                          )}>
+                            {row.ws.status_code}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </TableCell>
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
                   <TableCell className="text-xs">
@@ -386,12 +401,12 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                       return (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
+            <div className="flex flex-wrap gap-1 max-w-[180px] cursor-default">
                               {visible.map((t, j) => (
                                 <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
                               ))}
                               {hasOverflow && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">
                                   +{row.ws.technologies.length - MAX_VISIBLE}
                                 </Badge>
                               )}
