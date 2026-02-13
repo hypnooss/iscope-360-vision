@@ -40,6 +40,20 @@ import {
 } from '@/hooks/useAttackSurfaceData';
 import { Button } from '@/components/ui/button';
 import { differenceInDays, parseISO } from 'date-fns';
+import { cn } from '@/lib/utils';
+
+function getTechBadgeColor(tech: string): string {
+  const t = tech.toLowerCase();
+  if (['hsts', 'csp', 'x-frame-options', 'x-xss-protection'].some(k => t.includes(k)))
+    return 'bg-teal-500/15 text-teal-400 border-teal-500/30';
+  if (['nginx', 'apache', 'iis', 'litespeed', 'caddy'].some(k => t.includes(k)))
+    return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+  if (['php', 'python', 'node', 'java', 'ruby', 'asp.net', '.net'].some(k => t.includes(k)))
+    return 'bg-purple-500/15 text-purple-400 border-purple-500/30';
+  if (['wordpress', 'nextcloud', 'drupal', 'joomla', 'react', 'angular', 'vue', 'django', 'laravel'].some(k => t.includes(k)))
+    return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+  return '';
+}
 
 /* ──────────────────────────── hooks ──────────────────────────── */
 
@@ -330,7 +344,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                 <TableHead className="text-xs">IP</TableHead>
                 <TableHead className="text-xs text-center">Status</TableHead>
                 <TableHead className="text-xs">Servidor</TableHead>
-                <TableHead className="text-xs">Título</TableHead>
+                
                 <TableHead className="text-xs">Tecnologias</TableHead>
                 <TableHead className="text-xs">TLS</TableHead>
               </TableRow>
@@ -364,18 +378,12 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]">{row.ws.title || '—'}</TableCell>
                   <TableCell className="text-xs">
                     {row.ws.technologies?.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-1 max-w-[180px]">
-                        {row.ws.technologies.slice(0, 4).map((t, j) => (
-                          <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-[85px]">{t}</Badge>
+                      <div className="flex flex-wrap gap-1">
+                        {row.ws.technologies.map((t, j) => (
+                          <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
                         ))}
-                        {row.ws.technologies.length > 4 && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                            +{row.ws.technologies.length - 4}
-                          </Badge>
-                        )}
                       </div>
                     ) : '—'}
                   </TableCell>
