@@ -1,53 +1,69 @@
 
 
-# Fix: Web Services Table - Row Height and Technology Tags Layout
+# Fix: Remove "Titulo" Column and Color-code Technology Badges
 
 ## Problem
-The "Tecnologias" column with many tags (e.g., HSTS, Nextcloud, Nginx, PHP:8.3.27) causes the URL column to be squeezed. When there are few tags, it looks fine; with many, the layout breaks.
+1. The "Titulo" column takes up space but provides little value -- removing it frees room for technologies.
+2. Technology badges lost their visual identity after the grid change -- they need distinct colors per technology type.
 
 ## Changes
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**1. Increase minimum row height**
-- Add `min-h-[48px]` to each `TableRow` to ensure consistent vertical spacing.
+**1. Remove the "Titulo" column entirely**
+- Remove `<TableHead>Titulo</TableHead>` (line 333)
+- Remove the corresponding `<TableCell>` for title (line 367)
 
-**2. Limit Technologies column to 2 tags per line with max-width**
-- Set a `max-w-[180px]` on the Technologies `TableCell`.
-- Change the flex container from `flex-wrap` to a grid layout with `grid grid-cols-2 gap-1`, ensuring exactly 2 tags per row.
-- If more than 4 technologies exist, show the first 4 and display a "+N" badge for the rest (overflow indicator).
+**2. Restore technology badges with color coding**
+- Remove the `grid-cols-2` constraint and `max-w-[180px]` limit -- with the Titulo column gone, there's plenty of space
+- Return to `flex flex-wrap gap-1` layout for natural flow
+- Add a color-mapping function that assigns distinct colors to common technology categories:
+  - **Security/headers** (HSTS, CSP, X-Frame-Options): teal/cyan badges
+  - **Web servers** (Nginx, Apache, IIS, LiteSpeed): blue badges
+  - **Languages/runtimes** (PHP, Python, Node.js, Java): purple badges
+  - **CMS/Frameworks** (WordPress, Nextcloud, React, Django): amber/orange badges
+  - **Default/other**: neutral outline badges
+- Show all technologies (remove the `.slice(0, 4)` limit) since there's now enough horizontal space
+- Keep `truncate max-w-[120px]` on individual badges to handle very long names
 
-**3. Give URL column more breathing room**
-- Increase URL column `max-w` from `220px` to `260px`.
-
-### Implementation Detail
-
-Technologies cell changes from:
-```jsx
-<div className="flex flex-wrap gap-1">
-  {row.ws.technologies.map((t, j) => (
-    <Badge key={j} ...>{t}</Badge>
-  ))}
-</div>
+**3. Color mapping helper function**
+```typescript
+function getTechBadgeColor(tech: string): string {
+  const t = tech.toLowerCase();
+  // Security headers
+  if (['hsts', 'csp', 'x-frame-options', 'x-xss-protection'].some(k => t.includes(k)))
+    return 'bg-teal-500/15 text-teal-400 border-teal-500/30';
+  // Web servers
+  if (['nginx', 'apache', 'iis', 'litespeed', 'caddy'].some(k => t.includes(k)))
+    return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+  // Languages/runtimes
+  if (['php', 'python', 'node', 'java', 'ruby', 'asp.net', '.net'].some(k => t.includes(k)))
+    return 'bg-purple-500/15 text-purple-400 border-purple-500/30';
+  // CMS/Frameworks
+  if (['wordpress', 'nextcloud', 'drupal', 'joomla', 'react', 'angular', 'vue', 'django', 'laravel'].some(k => t.includes(k)))
+    return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+  // Default
+  return '';
+}
 ```
 
-To:
+**4. Updated technologies cell**
 ```jsx
-<div className="grid grid-cols-2 gap-1 max-w-[180px]">
-  {row.ws.technologies.slice(0, 4).map((t, j) => (
-    <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-[85px]">{t}</Badge>
-  ))}
-  {row.ws.technologies.length > 4 && (
-    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-      +{row.ws.technologies.length - 4}
-    </Badge>
-  )}
-</div>
+<TableCell className="text-xs">
+  {row.ws.technologies?.length > 0 ? (
+    <div className="flex flex-wrap gap-1">
+      {row.ws.technologies.map((t, j) => (
+        <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>
+          {t}
+        </Badge>
+      ))}
+    </div>
+  ) : '---'}
+</TableCell>
 ```
 
-This ensures:
-- Exactly 2 tags per row, keeping column width predictable
-- Long technology names are truncated
-- Overflow is indicated with a "+N" count
-- URL column gets consistent space regardless of tech count
+## Result
+- More horizontal space for URL and Technologies columns
+- Each technology badge is color-coded by category, improving readability
+- All technologies are visible without overflow truncation
 
