@@ -1,92 +1,126 @@
 
 
-# Exibir CVEs do cache no Inventario de IPs + Ajustes esteticos
+# Fix: Matching de CVEs deve considerar versao detectada
 
-## 1. Exibir CVEs na coluna do Inventario de IPs
+## Problema
 
-### Problema
-A funcao `matchCVEsToIP` usa apenas `snapshot.cve_matches` (populado no momento do scan). Porem, o cache de CVEs (`cve_cache`) ja possui dados ricos (OpenSSH, PHP, Apache, etc.) que nao estao sendo exibidos.
+A funcao `matchCVEsToIP` faz match apenas por **nome do produto** (ex: "nginx"), ignorando a versao. Isso causa:
 
-### Solucao
-Buscar CVEs do `cve_cache` com `module_code = 'external_domain'` e fazer o match por IP baseado em:
-- CPEs do Nmap (`services[].cpe` -> extrair produto)
-- Tecnologias do httpx (`web_services[].technologies` -> parsear "Nome:Versao")
-- Servidor do httpx (`web_services[].server`)
+- IP com nginx **sem versao detectada** (porta 443, CPE `cpe:/a:igor_sysoev:nginx`) recebe **todos** os 20 CVEs de nginx do cache
+- IP com nginx **1.28.0** (porta 80) recebe 41 CVEs — incluindo CVEs de versoes que nao se aplicam
+
+## Solucao
+
+Mudar a logica para extrair **pares produto+versao** do IP, e aplicar regras de match:
+
+| Cenario | Regra |
+|---|---|
+| IP tem produto COM versao (ex: nginx 1.28.0) | Match CVEs do cache cuja versao seja igual OU wildcard (`*`) |
+| IP tem produto SEM versao (ex: nginx sem versao) | NAO fazer match com CVEs do cache (incerteza) |
+| CVEs do snapshot (`cve_matches`) | Manter logica existente (match por vulnSet + produto) |
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-- Adicionar um `useQuery` para buscar `cve_cache` onde `module_code = 'external_domain'`
-- Expandir `matchCVEsToIP` para tambem receber os CVEs do cache e fazer match por:
-  - Produto do CPE do Nmap (ja existente)
-  - Produto do campo `products` do `cve_cache` vs tecnologias/servidor do httpx
-- Combinar CVEs do snapshot + CVEs do cache (deduplicar por `cve_id`)
+#### 1. Extrair pares produto+versao (ao inves de apenas produto)
 
-Logica de match expandida:
+Substituir o `Set<string> products` por um `Map<string, string | null>` onde key = produto e value = versao ou null:
 
-```
-Para cada IP:
-  1. Coletar produtos de services[].cpe (existente)
-  2. Coletar tecnologias de web_services[].technologies (novo)
-     - Parsear "PHP:8.3.27" -> produto "php", versao "8.3.27"
-  3. Coletar web_services[].server (novo)
-     - "nginx" -> produto "nginx"
-  4. Buscar no cve_cache: CVEs cujo campo 'products' 
-     contenha algum dos produtos detectados
-  5. Para match com versao: verificar se a versao do CVE
-     corresponde a versao detectada
-```
-
-## 2. Ajustes esteticos
-
-### Problema
-- Web Services e Certificados TLS usam `CardContent className="p-0"` (tabela encosta na borda)
-- Inventario de IPs usa `CardContent` padrao (tabela tem padding)
-- Titulos dos cards tem tamanhos diferentes (`text-sm` vs `text-lg`)
-
-### Solucao
-Padronizar todos os 3 cards:
-- **CardContent**: Usar padding padrao em todos (remover `p-0` de Web Services e TLS)
-- **CardTitle**: Usar `text-lg` em todos (igual ao Inventario de IPs)
-- **Icones**: Manter `w-5 h-5` em todos (igual ao Inventario de IPs)
-
-| Card | CardContent atual | CardTitle atual | Padronizado |
-|---|---|---|---|
-| Web Services | `p-0` | `text-sm font-medium`, icone `w-4 h-4` | padding padrao, `text-lg`, icone `w-5 h-5` |
-| Certificados TLS | `p-0` | `text-sm font-medium`, icone `w-4 h-4` | padding padrao, `text-lg`, icone `w-5 h-5` |
-| Inventario IPs | padding padrao | `text-lg`, icone `w-5 h-5` | (ja correto) |
-
-### Detalhes tecnicos
-
-#### Arquivo modificado: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-**Mudancas no WebServicesSection (linha ~344)**:
-- `CardContent className="p-0"` -> `CardContent`
-- `CardTitle className="text-sm font-medium ..."` -> `CardTitle className="text-lg ..."`
-- Icone `w-4 h-4` -> `w-5 h-5`
-
-**Mudancas no TLSCertificatesSection (linha ~495)**:
-- `CardContent className="p-0"` -> `CardContent`
-- `CardTitle className="text-sm font-medium ..."` -> `CardTitle className="text-lg ..."`
-- Icone `w-4 h-4` -> `w-5 h-5`
-
-**Mudancas no CVEAlertSection (linha ~282)**:
-- `CardTitle className="text-sm font-medium ..."` -> `CardTitle className="text-lg ..."`
-- Icone `w-4 h-4` -> `w-5 h-5`
-
-**Nova query para CVE cache**:
 ```typescript
-const { data: cachedCVEs } = useQuery({
-  queryKey: ['cve-cache', 'external_domain'],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from('cve_cache')
-      .select('cve_id, title, severity, score, advisory_url, products')
-      .eq('module_code', 'external_domain');
-    if (error) throw error;
-    return data || [];
-  },
-  staleTime: 1000 * 60 * 5,
-});
+// Antes: Set<string> products (so nome)
+// Depois: Map<string, string | null> productVersions
+
+const productVersions = new Map<string, string | null>();
+
+// Nmap CPEs: ex "cpe:2.3:a:igor_sysoev:nginx:1.28.0:..."
+for (const svc of result.services || []) {
+  if (svc.cpe && Array.isArray(svc.cpe)) {
+    for (const cpe of svc.cpe) {
+      const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
+      const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
+      const version = parts[3] && parts[3] !== '*' && parts[3] !== '' 
+        ? parts[3] : null;
+      if (product) {
+        // Se ja tem versao registrada, nao sobrescrever com null
+        const existing = productVersions.get(product);
+        if (!existing && version) productVersions.set(product, version);
+        else if (!existing) productVersions.set(product, null);
+      }
+    }
+  }
+  if (svc.product) {
+    const p = svc.product.toLowerCase();
+    if (!productVersions.has(p)) {
+      productVersions.set(p, svc.version || null);
+    }
+  }
+}
+
+// httpx technologies: ex "PHP:8.3.27"
+for (const ws of result.web_services || []) {
+  for (const tech of ws.technologies || []) {
+    const [name, ver] = tech.split(':');
+    const techName = name.trim().toLowerCase();
+    const techVer = ver?.trim() || null;
+    if (techName) {
+      const existing = productVersions.get(techName);
+      if (!existing && techVer) productVersions.set(techName, techVer);
+      else if (!existing) productVersions.set(techName, null);
+    }
+  }
+  if (ws.server) {
+    const [name, ver] = ws.server.toLowerCase().split('/');
+    const p = name.trim();
+    if (p && !productVersions.has(p)) {
+      productVersions.set(p, ver?.trim() || null);
+    }
+  }
+}
 ```
 
-**Match expandido**: A funcao `matchCVEsToIP` recebera um parametro adicional `cachedCVEs` e fara match por produtos detectados no IP (nmap CPEs + httpx technologies + httpx server) contra o campo `products` dos CVEs do cache.
+#### 2. Match de snapshot `cve_matches` — manter igual (usa `products` como Set de nomes)
+
+Para o match com `cve_matches` do snapshot, continuar usando apenas nomes de produto (sem filtro de versao), pois esses CVEs ja foram correlacionados durante o scan.
+
+#### 3. Match de `cachedCVEs` — aplicar filtro de versao
+
+```typescript
+if (cachedCVEs && productVersions.size > 0) {
+  for (const cached of cachedCVEs) {
+    if (matched.has(cached.cve_id)) continue;
+    const cachedProducts = cached.products || [];
+    // products format: [vendor, product, version]
+    // ex: ["f5", "nginx", "*"] ou ["php", "php", "8.3.27"]
+    const cachedProduct = (cachedProducts[1] || '').toLowerCase();
+    const cachedVersion = cachedProducts[2] || '*';
+
+    for (const [product, detectedVersion] of productVersions) {
+      if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
+      
+      // Se nao detectamos versao, nao vincular CVEs do cache
+      if (!detectedVersion) continue;
+      
+      // Se CVE tem versao wildcard, vincular (generico)
+      if (cachedVersion === '*') {
+        matched.set(cached.cve_id, { ... });
+        break;
+      }
+      
+      // Se CVE tem versao especifica, so vincular se bater
+      if (cachedVersion === detectedVersion) {
+        matched.set(cached.cve_id, { ... });
+        break;
+      }
+    }
+  }
+}
+```
+
+### Resultado esperado
+
+| IP | Produto detectado | CVEs antes | CVEs depois |
+|---|---|---|---|
+| 13.225.107.78 | nginx (sem versao) | 20 | 0 (do cache) |
+| 187.85.164.49 | nginx 1.28.0 + nginx (sem versao na 443) | 41 | ~20 wildcard + CVEs especificas para 1.28.0 |
+
