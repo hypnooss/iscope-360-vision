@@ -1,93 +1,53 @@
 
-# Fix: Use DNS Hostname for httpx (Avoid 301 Redirects)
+
+# Fix: Web Services Table - Row Height and Technology Tags Layout
 
 ## Problem
-
-When the Attack Surface pipeline scans DNS-sourced targets, all three tools (masscan, nmap, httpx) use the raw IP address. This causes httpx to receive `301 Moved Permanently` responses because web servers (especially shared hosting / cloud load balancers like Microsoft IIS) require the correct `Host` header or SNI to serve the actual content.
-
-The hostname (e.g., `mail.movecta.com.br`) is already available in the task payload as `label`, but it's never propagated to the httpx executor.
-
-## Solution
-
-Propagate the DNS hostname through the context so httpx uses it as the target (proper Host header + SNI), while masscan and nmap continue using the raw IP (they operate at the network/transport layer).
+The "Tecnologias" column with many tags (e.g., HSTS, Nextcloud, Nginx, PHP:8.3.27) causes the URL column to be squeezed. When there are few tags, it looks fine; with many, the layout breaks.
 
 ## Changes
 
-### 1. `python-agent/agent/tasks.py` - Propagate hostname from payload to context
+### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-In the `execute()` method, after building the initial context, inject `hostname` from the task payload when the source is DNS:
+**1. Increase minimum row height**
+- Add `min-h-[48px]` to each `TableRow` to ensure consistent vertical spacing.
 
-```python
-# After line 75: context = self._build_context(target)
-if payload.get('source') == 'dns' and payload.get('label'):
-    context['hostname'] = payload['label']
+**2. Limit Technologies column to 2 tags per line with max-width**
+- Set a `max-w-[180px]` on the Technologies `TableCell`.
+- Change the flex container from `flex-wrap` to a grid layout with `grid grid-cols-2 gap-1`, ensuring exactly 2 tags per row.
+- If more than 4 technologies exist, show the first 4 and display a "+N" badge for the rest (overflow indicator).
+
+**3. Give URL column more breathing room**
+- Increase URL column `max-w` from `220px` to `260px`.
+
+### Implementation Detail
+
+Technologies cell changes from:
+```jsx
+<div className="flex flex-wrap gap-1">
+  {row.ws.technologies.map((t, j) => (
+    <Badge key={j} ...>{t}</Badge>
+  ))}
+</div>
 ```
 
-This ensures the hostname is available in the shared context for all executors, but only httpx will use it.
-
-### 2. `python-agent/agent/executors/httpx_executor.py` - Use hostname when available
-
-Modify the `run()` method to prefer `hostname` over `ip` as the target for httpx:
-
-```python
-def run(self, step, context):
-    params = step.get('params', {})
-    ip = params.get('ip') or context.get('ip')
-    hostname = params.get('hostname') or context.get('hostname')
-    
-    # Use hostname for httpx when available (proper Host/SNI headers)
-    target = hostname if hostname else ip
-    
-    if not target:
-        return {'error': 'IP or hostname is required'}
-    
-    # ... ports logic stays the same ...
-    
-    cmd = [
-        'httpx',
-        '-u', target,    # <-- hostname instead of IP
-        '-ports', port_str,
-        ...
-    ]
+To:
+```jsx
+<div className="grid grid-cols-2 gap-1 max-w-[180px]">
+  {row.ws.technologies.slice(0, 4).map((t, j) => (
+    <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-[85px]">{t}</Badge>
+  ))}
+  {row.ws.technologies.length > 4 && (
+    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+      +{row.ws.technologies.length - 4}
+    </Badge>
+  )}
+</div>
 ```
 
-The returned data will still include the original `ip` for reference:
+This ensures:
+- Exactly 2 tags per row, keeping column width predictable
+- Long technology names are truncated
+- Overflow is indicated with a "+N" count
+- URL column gets consistent space regardless of tech count
 
-```python
-return {
-    'data': {
-        'ip': ip,
-        'hostname': hostname or '',
-        'web_services': web_services,
-    }
-}
-```
-
-### 3. No changes to masscan or nmap
-
-- **masscan**: Sends raw SYN packets -- must use IP address
-- **nmap**: Service fingerprinting at transport level -- IP is correct
-
-### 4. No database or Edge Function changes needed
-
-The `label` field already exists in `attack_surface_tasks` and is already passed to the agent via the RPC's `payload` object. No schema changes required.
-
-## Expected Result
-
-Before (current):
-```
-httpx -u 52.98.163.56 -ports 80  -->  301 (redirect, no useful data)
-```
-
-After (fix):
-```
-httpx -u mail.movecta.com.br -ports 80  -->  200 (actual content, title, technologies)
-```
-
-For firewall-sourced IPs (where `label` is something like "FW01 - port1"), the hostname won't be set and httpx will continue using the IP as before -- this is correct because firewall WAN IPs typically host direct services without virtual hosting.
-
-## Risk Assessment
-
-- **Low risk**: Only affects httpx targeting, masscan/nmap unchanged
-- **Backwards compatible**: Falls back to IP when no hostname available
-- **No data model changes**: Uses existing `label` field from payload
