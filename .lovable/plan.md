@@ -1,22 +1,47 @@
 
 
-# Restaurar secao "Web Services" no painel expandido do IP
+# Melhorar visual do painel expandido do IP
 
-## O que sera feito
+## Problema
 
-Restaurar a secao "Web Services" no painel expandido da tabela de Inventario de IPs Publicos, exatamente como estava antes da remocao. Esta secao exibe URLs descobertas, status HTTP, servidor, tecnologias detectadas e informacoes de TLS.
+O conteudo expandido (OS, Hostnames, Web Services, CVEs) aparece "solto" dentro da tabela, sem hierarquia visual clara que associe essas informacoes ao IP da linha. Falta recuo e diferenciacao de fundo.
+
+## Solucao
+
+Aplicar as seguintes melhorias visuais ao container do painel expandido:
+
+### 1. Recuo a esquerda com borda indicativa
+
+Adicionar um `ml-6` (margem esquerda) ao container principal e uma borda esquerda colorida (`border-l-2 border-primary/50`) que funcione como indicador visual de subordinacao ao IP.
+
+### 2. Background diferenciado
+
+Trocar o `bg-muted/30` atual por um fundo mais escuro e distinto, como `bg-background/80`, criando contraste com a linha da tabela.
+
+### 3. Container com card visual
+
+Envolver todo o conteudo expandido em um card com `rounded-lg` e padding interno, dando a impressao de que e um bloco de detalhes pertencente ao IP.
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Inserir o bloco de Web Services entre a secao de Hostnames (linha 851) e a secao de CVEs (linha 853), dentro do painel expandido do `IPDetailRow`.
+**Linha 831** - Alterar o container `div` do painel expandido:
 
-O bloco renderiza:
-- URL com link externo e badge de status HTTP (colorido por faixa: verde 2xx, amarelo 3xx, vermelho 4xx/5xx)
-- Servidor (ex: `nginx/1.28.0`)
-- Tecnologias como badges coloridos por categoria (HSTS, Nextcloud, Nginx, PHP:8.3.27)
-- Informacao de TLS: Common Name do certificado e dias ate expiracao
+De:
+```
+<div className="bg-muted/30 border-t border-border/50 p-4 space-y-4">
+```
 
-A coloracao das tecnologias reutilizara a funcao `getTechBadgeColor` ja existente no arquivo. O calculo de dias para expiracao do certificado TLS usara `tls.not_after` comparado com a data atual.
+Para:
+```
+<div className="mx-4 my-3 rounded-lg border border-border/50 bg-card/60 p-4 space-y-4 border-l-2 border-l-primary/40">
+```
+
+Isso aplica:
+- `mx-4 my-3`: margem horizontal e vertical para separar do container da tabela
+- `rounded-lg`: bordas arredondadas para parecer um card
+- `bg-card/60`: fundo do card com leve transparencia, diferenciando do fundo da tabela
+- `border-l-2 border-l-primary/40`: borda esquerda colorida (teal) como indicador visual de que o conteudo pertence ao IP
+- Remove `border-t` pois o card ja tera sua propria borda
 
