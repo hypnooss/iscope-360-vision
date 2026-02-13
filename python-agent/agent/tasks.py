@@ -74,6 +74,10 @@ class TaskExecutor:
         
         context = self._build_context(target)
         
+        # Propagate DNS hostname to context for httpx (proper Host/SNI headers)
+        if payload.get('source') == 'dns' and payload.get('label'):
+            context['hostname'] = payload['label']
+        
         # Handle credential-based auth for M365 RBAC setup
         if payload.get('auth_mode') == 'credential':
             self.logger.info("Using credential-based authentication for this task")
