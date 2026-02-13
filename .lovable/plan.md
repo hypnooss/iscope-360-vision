@@ -1,23 +1,39 @@
 
 
-# Fix: Status tooltip position in Web Services table
+# Fix: Status tooltip positioning (copy Technology column pattern)
 
 ## Problem
-The HTTP status code tooltip appears far from the badge (top-left corner of the page) instead of next to the status value. This happens because the default tooltip position (`top`) misbehaves in scrollable table contexts.
+The Status column tooltip still renders in the wrong position. The Technology column tooltip works correctly because it uses a bare `<Tooltip>` without a local `<TooltipProvider>` wrapper, while the Status column wraps itself in its own `<TooltipProvider>`, causing positioning issues.
 
 ## Fix
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Add `side="bottom"` to the `TooltipContent` on line 389 so the tooltip renders directly below the status badge:
+Remove the `<TooltipProvider>` wrapper from the Status tooltip (lines 378 and 393), keeping just the `<Tooltip>` component like the Technology column does.
 
 ```tsx
-// Before (line 389)
-<TooltipContent>
+// Before (lines 377-394)
+<TableCell className="text-center">
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge ...>{row.ws.status_code}</Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">...</TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+</TableCell>
 
 // After
-<TooltipContent side="bottom">
+<TableCell className="text-center">
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Badge ...>{row.ws.status_code}</Badge>
+    </TooltipTrigger>
+    <TooltipContent side="bottom">...</TooltipContent>
+  </Tooltip>
+</TableCell>
 ```
 
-Single-line change, no other modifications needed.
+Single structural change: remove the two `TooltipProvider` lines (378 and 393). No other modifications needed.
 
