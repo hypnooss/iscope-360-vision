@@ -1,62 +1,81 @@
 
 
-# Fix: Sparkline mostrando cor errada vs Score Atual
+# Fix: Sparkline M365 mostrando cor errada (verde) com score vermelho (56)
 
 ## Causa raiz
 
-O dominio `taschibra.com.br` tem multiplas analises por dia. Exemplo do dia 13/02:
-- Score 27 (analise parcial/intermediaria)
-- Score 89 (resultado final)
+A query de historico M365 usa `order('created_at', { ascending: false })` (DESC), mas a funcao `aggregateScoreHistory` assume dados em ordem ASC. Quando faz `dayMap.set(day, r.score)`, o ultimo valor iterado ganha -- em ordem DESC, isso e o registro **mais antigo** do dia, nao o mais recente.
 
-A funcao `aggregateScoreHistory` faz a **media**: `(27+89)/2 = 58`, que e pintado de vermelho/amarelo. Enquanto o Score Atual mostra corretamente 89 (o ultimo valor).
+Resultado: o sparkline exibe scores antigos/parciais (possivelmente altos, verde) enquanto o Score Atual exibe corretamente o valor mais recente (56, vermelho).
+
+Os outros modulos (Firewall e External Domain) nao tem este problema porque suas queries ja usam `ascending: true`.
 
 ## Solucao
 
-### 1. `aggregateScoreHistory` - usar ultimo score do dia (nao media)
+Alterar a query M365 na linha 139 de `ascending: false` para `ascending: true`, alinhando com os outros modulos.
 
-**Arquivo**: `src/hooks/useDashboardStats.ts`
+O loop de "primeiro por tenant" (linhas 213-215 com `seen`) precisa ser ajustado: como agora os dados virao em ordem ASC, o primeiro registro visto sera o mais antigo. Entao a logica de `latestDate`/`latestScore` ja funciona corretamente (pega o maior `created_at`), mas o `seen` precisa ser removido ou invertido para que o ultimo registro por tenant (o mais recente) defina severidades e score.
 
-Mudar a logica de agregacao: em vez de coletar todos os scores do dia e calcular a media, usar o **ultimo score registrado** naquele dia (que representa o resultado final da analise).
+**Abordagem**: remover o filtro `seen` do loop principal e deixar a logica de `latestDate` determinar o score. Para severidades, continuar usando apenas a analise mais recente por tenant -- inverter a logica para guardar a ultima ocorrencia de cada tenant.
 
-```typescript
-// De: media de todos os scores do dia
-dayMap.get(day)!.push(r.score);
-// score: Math.round(scores.reduce(...) / scores.length)
+## Alteracao
 
-// Para: ultimo score do dia (substituir se mais recente)
-dayMap.set(day, r.score);  // como os dados vem ordenados por created_at ASC, o ultimo sobrescreve
-```
+### Arquivo: `src/hooks/useDashboardStats.ts`
 
-### 2. Sparkline - cor uniforme baseada no score atual
+1. **Linha 139**: Mudar `ascending: false` para `ascending: true`
 
-**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
-
-Mudar o gradiente de cores: em vez de colorir cada ponto individualmente (criando trechos vermelhos e verdes na mesma linha), usar uma **cor unica** baseada no ultimo ponto de dado (que coincide com o Score Atual).
-
-Isso garante que se o Score Atual e verde (89), toda a linha do sparkline sera verde. A **forma** do grafico ainda mostra a evolucao, mas a cor representa o estado atual.
+2. **Linhas 206-238**: Ajustar o loop M365 para funcionar com dados ASC:
 
 ```typescript
-// De: gradiente por ponto
-return sortedData.map((point, i) => ({
-  offset: `${(i / lastIndex) * 100}%`,
-  color: getColorForScore(point.score),
-}));
+if (tenantIds.length > 0) {
+  const m365History = (m365HistoryRes.data || []) as any[];
+  let latestDate: string | null = null;
+  let latestScore: number | null = null;
+  let totalActiveUsers = 0;
 
-// Para: cor unica do ultimo ponto
-const lastColor = getColorForScore(sortedData[sortedData.length - 1].score);
-// usar lastColor para stroke e fill
+  // Com dados ASC, o ultimo registro por tenant e o mais recente
+  // Usar Map para que o ultimo sobrescreva
+  const tenantLatest = new Map<string, any>();
+  for (const h of m365History) {
+    tenantLatest.set(h.tenant_record_id, h); // ultimo (mais recente) ganha
+  }
+
+  for (const [, h] of tenantLatest) {
+    if (!latestDate || (h.created_at && h.created_at > latestDate)) {
+      latestDate = h.created_at;
+      if (h.score != null) latestScore = h.score;
+    }
+    const summary = h.summary as any;
+    if (summary) {
+      m365Health.severities.critical += summary.critical || 0;
+      m365Health.severities.high += summary.high || 0;
+      m365Health.severities.medium += summary.medium || 0;
+      m365Health.severities.low += summary.low || 0;
+    }
+    const envMetrics = h.environment_metrics as any;
+    if (envMetrics?.activeUsers != null) {
+      totalActiveUsers += envMetrics.activeUsers;
+    }
+  }
+
+  m365Health.score = latestScore;
+  m365Health.lastAnalysisDate = latestDate;
+  m365Health.scoreHistory = aggregateScoreHistory(
+    m365History.map((h: any) => ({ score: h.score, created_at: h.created_at }))
+  );
+  m365Health.activeUsers = totalActiveUsers > 0 ? totalActiveUsers : null;
+}
 ```
 
 ## Resultado esperado
 
-- Sparkline do Dominio Externo: linha VERDE (score atual 89) mostrando a evolucao correta (sem scores intermediarios de 27/30)
-- Sparkline do Microsoft 365: linha com cor correspondente ao score atual
-- Consistencia visual total entre cor do grafico e cor do Score Atual
+- Sparkline M365 mostrara os scores finais de cada dia (nao os parciais antigos)
+- A cor do sparkline sera consistente com o Score Atual
+- Firewall e Dominio Externo continuam funcionando normalmente (ja usavam ASC)
 
-## Arquivos alterados
+## Arquivo alterado
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | aggregateScoreHistory usa ultimo score do dia |
-| `src/components/dashboard/ScoreSparkline.tsx` | Cor uniforme baseada no score atual |
+| `src/hooks/useDashboardStats.ts` | Query M365 ASC + loop com Map para ultimo por tenant |
 
