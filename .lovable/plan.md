@@ -1,175 +1,224 @@
 
 
-# Fix: Salvar versoes afetadas reais no campo `products` do CVE cache
+# Redesign: Inventario de IPs Publicos - Visualizacao mais compreensivel
 
-## Problema
+## Objetivo
 
-Na edge function `refresh-cve-cache`, ao sincronizar CVEs via NVD para web services (funcao `syncNistNvdWebSource`), o campo `products` e salvo com a versao do CPE de **busca**, nao com a versao **afetada** do CVE:
+Reformular a tabela de Inventario de IPs Publicos e seu painel de detalhes expandido para apresentar informacoes tecnicas de forma mais clara e acessivel.
 
-```typescript
-// Linha 314 - usa cpeVersion que vem do CPE de busca
-const productLabel = `${cpeVendor} ${cpeProduct}${cpeVersion ? ' ' + cpeVersion : ''}`.trim();
+## Mudancas propostas
+
+### 1. Coluna "Servicos" na tabela principal - Mostrar produto + versao
+
+Atualmente a coluna mostra apenas nomes crus (ex: `nginx`, `nginx/1.28.0`). Sera reformulada para exibir badges com produto e versao lado a lado:
+
+- `nginx 1.28.0` (badge com versao visivel)
+- `nginx` sem versao = badge com indicador "?" ou texto mutado "sem versao"
+- `PHP 8.3.27` (extraido das tecnologias httpx)
+
+### 2. Painel expandido - Secao "Servicos Descobertos" reformulada
+
+Substituir a tabela tecnica atual (Porta/Protocolo/Produto/Versao/CPE) por um layout em cards agrupados por servico:
+
+```text
++--------------------------------------------------+
+| Porta 80/tcp                                     |
+|   Produto: nginx                                 |
+|   Versao: 1.28.0                                 |
+|   CPE: cpe:/a:igor_sysoev:nginx:1.28.0          |
++--------------------------------------------------+
+| Porta 443/tcp                                    |
+|   Produto: nginx                                 |
+|   Versao: nao detectada                          |
+|   CPE: cpe:/a:igor_sysoev:nginx                  |
++--------------------------------------------------+
 ```
 
-Quando o CPE de busca tem versao `*` (ex: servidor "nginx" sem versao no header), **todos** os CVEs retornados sao salvos com `"f5 nginx *"`. No frontend, `*` faz match com qualquer IP que tenha nginx com versao detectada, gerando falsos positivos massivos.
+### 3. Painel expandido - Nova secao "Tecnologias Web"
 
-## Solucao
+Quando houver `web_services`, exibir as tecnologias detectadas por URL de forma visual:
 
-Extrair as versoes afetadas do campo `configurations` que o NVD retorna em cada CVE. Cada CVE tem CPE matches com versoes especificas ou ranges. Salvar no `products` a informacao real de versao afetada.
+```text
+Web Services
+  https://drive.taschibra.com.br (200 OK)
+    Servidor: nginx/1.28.0
+    Tecnologias: PHP:8.3.27, HSTS
+    TLS: *.taschibra.com.br (expira em 120 dias)
+```
+
+### 4. Painel expandido - Secao "CVEs Vinculadas" com mais contexto
+
+Adicionar o titulo da CVE e o produto afetado ao lado do badge de severidade, em formato de lista ao inves de badges inline:
+
+```text
+CVEs Vinculadas (5)
+  CRITICAL  CVE-2024-3566  (9.8)  PHP - Argument Injection
+  HIGH      CVE-2025-14177 (7.5)  nginx - HTTP/2 vulnerability
+  ...
+```
+
+Cada item sera clicavel para abrir o advisory no NVD.
+
+### 5. Coluna "Servicos" na tabela principal - Versao visivel
+
+Reformular para mostrar `produto/versao` ao inves de so `produto`:
+
+| Antes | Depois |
+|---|---|
+| `nginx` `nginx/1.28.0` | `nginx 1.28.0` `nginx` (sem versao) |
 
 ## Detalhes tecnicos
 
-### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-#### 1. Nova funcao helper: `extractAffectedProducts`
+#### IPDetailRow - Coluna Servicos (linhas ~799-813)
 
-Extrair do campo `configurations` de cada CVE os produtos afetados com versoes especificas:
+Refatorar a logica de extracao de nomes de servicos para incluir versao:
 
 ```typescript
-function extractAffectedProducts(
-  cveData: any, 
-  searchProduct: string
-): string[] {
-  const results: string[] = [];
-  const configs = cveData.configurations || [];
+// Extrair produto+versao unicos para exibicao
+const serviceDisplay = useMemo(() => {
+  const items: { name: string; version: string | null }[] = [];
+  const seen = new Set<string>();
   
-  for (const config of configs) {
-    for (const node of config.nodes || []) {
-      for (const match of node.cpeMatch || []) {
-        if (!match.vulnerable) continue;
-        
-        // Parse CPE: cpe:2.3:a:vendor:product:version:...
-        const parts = (match.criteria || '').split(':');
-        if (parts.length < 6) continue;
-        
-        const vendor = (parts[3] || '').replace(/_/g, ' ');
-        const product = (parts[4] || '').replace(/_/g, ' ');
-        const version = parts[5] || '*';
-        
-        // Filtrar apenas o produto que estamos buscando
-        if (!product.includes(searchProduct) && 
-            !searchProduct.includes(product)) continue;
-        
-        // Se tem range de versoes, criar label com range
-        if (match.versionEndExcluding || match.versionEndIncluding) {
-          const end = match.versionEndExcluding 
-            ? `< ${match.versionEndExcluding}` 
-            : `<= ${match.versionEndIncluding}`;
-          const start = match.versionStartIncluding 
-            ? `>= ${match.versionStartIncluding}` 
-            : '';
-          results.push(`${vendor} ${product} ${start} ${end}`.replace(/\s+/g, ' ').trim());
-        } else if (version !== '*') {
-          // Versao exata
-          results.push(`${vendor} ${product} ${version}`);
-        } else {
-          // Wildcard - todas as versoes afetadas
-          results.push(`${vendor} ${product} *`);
-        }
-      }
+  for (const svc of result?.services || []) {
+    if (!svc.product) continue;
+    const key = `${svc.product}:${svc.version || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ name: svc.product, version: svc.version || null });
+  }
+  
+  for (const ws of result?.web_services || []) {
+    for (const tech of ws.technologies || []) {
+      const [name, ver] = tech.split(':');
+      const key = `${name}:${ver || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ name: name.trim(), version: ver?.trim() || null });
     }
   }
   
-  return results.length > 0 ? results : [`${searchProduct} *`];
-}
+  return items;
+}, [result]);
 ```
 
-#### 2. Alterar o salvamento na funcao `syncNistNvdWebSource`
-
-Na iteracao dos CVEs retornados (linha ~316-366), substituir a logica de `productLabel`:
+Renderizar como badges com versao visivel:
 
 ```typescript
-// ANTES (linha 314):
-const productLabel = `${cpeVendor} ${cpeProduct}${cpeVersion ? ' ' + cpeVersion : ''}`.trim();
-// ... products: [productLabel]
-
-// DEPOIS:
-const affectedProducts = extractAffectedProducts(cveData, cpeProduct);
-// ... products: affectedProducts
+{serviceDisplay.map((svc) => (
+  <Badge key={`${svc.name}:${svc.version}`} variant="outline" className={getTechBadgeColor(svc.name)}>
+    {svc.name}
+    {svc.version ? (
+      <span className="ml-1 text-primary font-mono">{svc.version}</span>
+    ) : (
+      <span className="ml-1 text-muted-foreground/50">?</span>
+    )}
+  </Badge>
+))}
 ```
 
-#### 3. Atualizar o matching no frontend
+#### Painel expandido - Servicos (linhas ~850-879)
 
-Com as versoes corretas salvas, o frontend precisa iterar sobre **todos os elementos** do array `products` (nao apenas `products[0]`), pois agora pode haver multiplos:
+Substituir a tabela por cards inline:
 
 ```typescript
-// Em matchCVEsToIP, iterar cached.products
-for (const productEntry of cached.products) {
-  const productStr = typeof productEntry === 'string' ? productEntry : '';
-  const parts = productStr.split(' ').filter(Boolean);
-  if (parts.length < 2) continue;
-  
-  // Extrair produto e versao
-  // Checar se tem range (>=, <, <=)
-  const hasRange = parts.some(p => 
-    p.startsWith('>=') || p.startsWith('<') || p.startsWith('<='));
-  
-  if (hasRange) {
-    // Parsing de range para match de versao
-    // ...
-  } else {
-    // Match exato ou wildcard (logica atual)
-    const cachedVersion = parts.length >= 3 ? parts[parts.length - 1] : '*';
-    const cachedProduct = (parts.length >= 3
-      ? parts.slice(1, -1).join(' ')
-      : parts[1]
-    ).toLowerCase();
-    // ... match logic
-  }
-}
+{result?.services?.length > 0 && (
+  <div>
+    <h4 className="text-sm font-medium mb-2">Servicos Descobertos</h4>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+      {result.services.map((svc, i) => (
+        <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
+          <div className="flex items-center gap-2 mb-1">
+            <Badge variant="outline" className="font-mono">{svc.port}/{svc.transport}</Badge>
+            <span className="font-medium text-sm">{svc.product || 'Desconhecido'}</span>
+            {svc.version && <Badge variant="secondary" className="text-xs">{svc.version}</Badge>}
+            {!svc.version && svc.product && (
+              <span className="text-xs text-muted-foreground italic">versao nao detectada</span>
+            )}
+          </div>
+          {svc.cpe?.length > 0 && (
+            <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
+              {svc.cpe[0]}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 ```
 
-#### 4. Funcao de comparacao de versoes
+#### Painel expandido - Web Services (novo bloco)
 
-Para suportar ranges (ex: `>= 1.25.0 < 1.27.3`), adicionar uma funcao simples de comparacao de versoes semver:
+Adicionar secao de web services dentro do painel expandido do IP:
 
 ```typescript
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const va = pa[i] || 0;
-    const vb = pb[i] || 0;
-    if (va !== vb) return va - vb;
-  }
-  return 0;
-}
-
-function isVersionInRange(
-  version: string, 
-  range: { gte?: string; lt?: string; lte?: string }
-): boolean {
-  if (range.gte && compareVersions(version, range.gte) < 0) return false;
-  if (range.lt && compareVersions(version, range.lt) >= 0) return false;
-  if (range.lte && compareVersions(version, range.lte) > 0) return false;
-  return true;
-}
+{result?.web_services?.length > 0 && (
+  <div>
+    <h4 className="text-sm font-medium mb-2">Web Services</h4>
+    <div className="space-y-2">
+      {result.web_services.map((ws, i) => (
+        <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
+          <div className="flex items-center gap-2 mb-1.5">
+            <a href={ws.url} target="_blank" className="text-info hover:underline text-sm font-mono">
+              {ws.url}
+            </a>
+            <Badge variant="outline" className={statusColorClass}>
+              {ws.status_code}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {ws.server && <span>Servidor: <strong>{ws.server}</strong></span>}
+            {ws.technologies?.length > 0 && (
+              <span>Tecnologias: {ws.technologies.map(t => <Badge .../>)}</span>
+            )}
+            {ws.tls?.subject_cn && <span>TLS: {ws.tls.subject_cn}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 ```
 
-### Resultado esperado
+#### Painel expandido - CVEs (linhas ~882-900)
 
-Exemplo de como o cache ficara apos a correcao:
+Reformular de badges inline para lista com titulo:
 
-| CVE | products (antes) | products (depois) |
-|---|---|---|
-| CVE-2024-7347 | `["f5 nginx *"]` | `["f5 nginx >= 1.25.5 < 1.27.1"]` |
-| CVE-2024-3566 | `["php php 8.3.27"]` | `["php php *"]` (todas versoes afetadas) |
-| CVE-2023-44487 | `["f5 nginx *"]` | `["f5 nginx >= 1.9.5 < 1.25.3"]` |
+```typescript
+{ipCVEs.length > 0 && (
+  <div>
+    <h4 className="text-sm font-medium mb-2">CVEs Vinculadas ({ipCVEs.length})</h4>
+    <div className="rounded-lg border border-border/50 overflow-hidden">
+      {ipCVEs
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .map((cve) => (
+        <div key={cve.cve_id} className="flex items-center gap-3 px-3 py-2 border-b last:border-0">
+          <SeverityBadge severity={cve.severity} />
+          <a href={advisory_url} className="font-mono text-sm hover:text-info">
+            {cve.cve_id}
+          </a>
+          {cve.score && <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>}
+          <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
+          <ExternalLink className="w-3 h-3" />
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+```
 
-Matching no frontend:
+### Resultado visual esperado
 
-| IP | Produto detectado | CVE-2024-7347 (nginx >= 1.25.5 < 1.27.1) | CVE-2023-44487 (nginx >= 1.9.5 < 1.25.3) |
-|---|---|---|---|
-| 187.85.164.49 (nginx 1.28.0) | nginx 1.28.0 | Nao (1.28.0 >= 1.27.1) | Nao (1.28.0 >= 1.25.3) |
-| IP com nginx 1.26.0 | nginx 1.26.0 | Sim (1.25.5 <= 1.26.0 < 1.27.1) | Nao (1.26.0 >= 1.25.3) |
-| IP com nginx 1.20.0 | nginx 1.20.0 | Nao (1.20.0 < 1.25.5) | Sim (1.9.5 <= 1.20.0 < 1.25.3) |
+**Tabela principal**: Coluna Servicos mostra `nginx 1.28.0` e `PHP 8.3.27` com versao visivel. Coluna CVEs mostra contagem com badge colorido.
 
-### Arquivos modificados
+**Painel expandido**: 3 secoes visuais claras:
+1. Servicos Descobertos - Cards com porta, produto, versao e CPE
+2. Web Services - URLs com status, servidor, tecnologias e TLS
+3. CVEs Vinculadas - Lista ordenada por severidade com titulo descritivo
 
-1. `supabase/functions/refresh-cve-cache/index.ts` - Extrair versoes afetadas reais do NVD
-2. `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` - Suportar ranges de versao no matching
+### Arquivo modificado
 
-### Apos deploy
-
-Sera necessario re-sincronizar as fontes de CVE do modulo `external_domain` para que o cache seja atualizado com as versoes corretas. Isso pode ser feito pela pagina Administracao > CVEs > Gerenciar Fontes.
+- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (componente `IPDetailRow`)
 
