@@ -557,6 +557,27 @@ interface CachedCVERecord {
   products: string[] | null;
 }
 
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const va = pa[i] || 0;
+    const vb = pb[i] || 0;
+    if (va !== vb) return va - vb;
+  }
+  return 0;
+}
+
+function isVersionInRange(
+  version: string,
+  range: { gte?: string; lt?: string; lte?: string }
+): boolean {
+  if (range.gte && compareVersions(version, range.gte) < 0) return false;
+  if (range.lt && compareVersions(version, range.lt) >= 0) return false;
+  if (range.lte && compareVersions(version, range.lte) > 0) return false;
+  return true;
+}
+
 function matchCVEsToIP(
   result: { services?: AttackSurfaceService[]; web_services?: AttackSurfaceWebService[]; vulns?: string[] } | undefined,
   cveMatches: AttackSurfaceCVE[],
@@ -635,39 +656,76 @@ function matchCVEsToIP(
     }
   }
 
-  // 3. Match from cached CVEs — apply version filter
+  // 3. Match from cached CVEs — apply version filter with range support
   if (cachedCVEs && productVersions.size > 0) {
     for (const cached of cachedCVEs) {
       if (matched.has(cached.cve_id)) continue;
       const cachedProducts = cached.products || [];
-      // products is a single string in array: ["vendor product version"]
-      const productStr = typeof cachedProducts[0] === 'string' ? cachedProducts[0] : '';
-      const parts = productStr.split(' ').filter(Boolean);
-      if (parts.length < 2) continue;
-      // Last token = version, first = vendor, middle = product
-      const cachedVersion = parts.length >= 3 ? parts[parts.length - 1] : '*';
-      const cachedProduct = (parts.length >= 3
-        ? parts.slice(1, -1).join(' ')
-        : parts[1]
-      ).toLowerCase();
 
       let didMatch = false;
-      for (const [product, detectedVersion] of productVersions) {
-        if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
 
-        // If we didn't detect a version, don't link cached CVEs (uncertainty)
-        if (!detectedVersion) continue;
+      // Iterate ALL product entries (there can be multiple after fix)
+      for (const productEntry of cachedProducts) {
+        if (didMatch) break;
+        const productStr = typeof productEntry === 'string' ? productEntry : '';
+        const tokens = productStr.split(' ').filter(Boolean);
+        if (tokens.length < 2) continue;
 
-        // If CVE has wildcard version, link it (generic)
-        if (cachedVersion === '*') {
-          didMatch = true;
-          break;
-        }
+        // Check if this entry has version ranges (>=, <, <=)
+        const hasRange = tokens.some(t => t === '>=' || t === '<' || t === '<=');
 
-        // If CVE has specific version, only link if it matches
-        if (cachedVersion === detectedVersion) {
-          didMatch = true;
-          break;
+        if (hasRange) {
+          // Parse range format: "vendor product >= startVer < endVer"
+          // or "vendor product < endVer"
+          const rangeInfo: { product: string; gte?: string; lt?: string; lte?: string } = { product: '' };
+          const nonRangeTokens: string[] = [];
+          for (let i = 0; i < tokens.length; i++) {
+            if (tokens[i] === '>=' && tokens[i + 1]) {
+              rangeInfo.gte = tokens[++i];
+            } else if (tokens[i] === '<' && tokens[i + 1]) {
+              rangeInfo.lt = tokens[++i];
+            } else if (tokens[i] === '<=' && tokens[i + 1]) {
+              rangeInfo.lte = tokens[++i];
+            } else {
+              nonRangeTokens.push(tokens[i]);
+            }
+          }
+          // nonRangeTokens = [vendor, product...]
+          rangeInfo.product = nonRangeTokens.length >= 2
+            ? nonRangeTokens.slice(1).join(' ').toLowerCase()
+            : (nonRangeTokens[0] || '').toLowerCase();
+
+          for (const [product, detectedVersion] of productVersions) {
+            if (!rangeInfo.product.includes(product) && !product.includes(rangeInfo.product)) continue;
+            if (!detectedVersion) continue;
+
+            if (isVersionInRange(detectedVersion, rangeInfo)) {
+              didMatch = true;
+              break;
+            }
+          }
+        } else {
+          // Simple format: "vendor product version" or "vendor product"
+          const cachedVersion = tokens.length >= 3 ? tokens[tokens.length - 1] : '*';
+          const cachedProduct = (tokens.length >= 3
+            ? tokens.slice(1, -1).join(' ')
+            : tokens[1]
+          ).toLowerCase();
+
+          for (const [product, detectedVersion] of productVersions) {
+            if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
+            if (!detectedVersion) continue;
+
+            if (cachedVersion === '*') {
+              didMatch = true;
+              break;
+            }
+
+            if (cachedVersion === detectedVersion) {
+              didMatch = true;
+              break;
+            }
+          }
         }
       }
 
