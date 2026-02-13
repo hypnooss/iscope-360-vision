@@ -6,6 +6,11 @@ class APIClient:
         self.base_url = base_url.rstrip("/")
         self.state = state
         self.logger = logger
+        self._auth_manager = None  # Set after construction to avoid circular dependency
+
+    def set_auth_manager(self, auth_manager):
+        """Set auth manager for automatic token refresh on TOKEN_EXPIRED."""
+        self._auth_manager = auth_manager
 
     def _headers(self):
         headers = {"Content-Type": "application/json"}
@@ -40,6 +45,17 @@ class APIClient:
 
         if not response.ok:
             error_msg = self._extract_error(response)
+            if error_msg == "TOKEN_EXPIRED" and self._auth_manager:
+                self.logger.info(f"Token expirado em GET {path}, renovando e retentando...")
+                self._auth_manager.refresh_tokens()
+                response = requests.get(
+                    f"{self.base_url}{path}",
+                    headers=self._headers(),
+                    timeout=10
+                )
+                if response.ok:
+                    return response.json()
+                error_msg = self._extract_error(response)
             self.logger.error(f"GET {path} -> {error_msg}")
             raise RuntimeError(error_msg)
 
@@ -64,6 +80,18 @@ class APIClient:
 
         if not response.ok:
             error_msg = self._extract_error(response)
+            if error_msg == "TOKEN_EXPIRED" and self._auth_manager and not use_refresh_token:
+                self.logger.info(f"Token expirado em POST {path}, renovando e retentando...")
+                self._auth_manager.refresh_tokens()
+                response = requests.post(
+                    f"{self.base_url}{path}",
+                    json=json,
+                    headers=self._headers(),
+                    timeout=60
+                )
+                if response.ok:
+                    return response.json()
+                error_msg = self._extract_error(response)
             self.logger.error(f"POST {path} -> {error_msg}")
             raise RuntimeError(error_msg)
 

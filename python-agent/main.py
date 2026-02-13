@@ -55,6 +55,7 @@ class AgentApp:
 
         self.api = APIClient(API_BASE_URL, self.state, logger)
         self.auth = AuthManager(self.state, self.api, logger)
+        self.api.set_auth_manager(self.auth)  # Enable auto-retry on TOKEN_EXPIRED
         self.heartbeat = AgentHeartbeat(self.api, self.state, logger)
         self.task_executor = TaskExecutor(self.api, self.state, logger)
         self.updater = AutoUpdater(logger)
