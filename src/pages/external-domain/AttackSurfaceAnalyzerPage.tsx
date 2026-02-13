@@ -279,8 +279,8 @@ function CVEAlertSection({ cves }: { cves: AttackSurfaceCVE[] }) {
   return (
     <Card className="border-destructive/40 bg-destructive/5">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
-          <ShieldAlert className="w-4 h-4" />
+        <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+          <ShieldAlert className="w-5 h-5" />
           Vulnerabilidades Detectadas ({cves.length})
         </CardTitle>
       </CardHeader>
@@ -336,12 +336,12 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   return (
     <Card className="glass-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Globe className="w-4 h-4 text-teal-400" />
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Globe className="w-5 h-5 text-teal-400" />
           Web Services Descobertos ({rows.length})
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent>
         <div className="overflow-auto">
           <Table>
             <TableHeader>
@@ -487,12 +487,12 @@ function TLSCertificatesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot 
   return (
     <Card className="glass-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Shield className="w-4 h-4 text-primary" />
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Shield className="w-5 h-5 text-primary" />
           Certificados TLS ({certs.length})
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent>
         <div className="overflow-auto">
           <Table>
             <TableHeader>
@@ -548,14 +548,25 @@ function TLSCertificatesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot 
 
 /* ──────────────── CVE-to-IP matching (CPE + vulns) ──────────────── */
 
+interface CachedCVERecord {
+  cve_id: string;
+  title: string | null;
+  severity: string | null;
+  score: number | null;
+  advisory_url: string | null;
+  products: string[] | null;
+}
+
 function matchCVEsToIP(
-  result: { services?: AttackSurfaceService[]; vulns?: string[] } | undefined,
-  cveMatches: AttackSurfaceCVE[]
+  result: { services?: AttackSurfaceService[]; web_services?: AttackSurfaceWebService[]; vulns?: string[] } | undefined,
+  cveMatches: AttackSurfaceCVE[],
+  cachedCVEs?: CachedCVERecord[]
 ): AttackSurfaceCVE[] {
-  if (!result || cveMatches.length === 0) return [];
+  if (!result) return [];
 
   const vulnSet = new Set(result.vulns || []);
 
+  // 1. Products from nmap CPEs
   const products = new Set<string>();
   for (const svc of result.services || []) {
     if (svc.cpe && Array.isArray(svc.cpe)) {
@@ -565,29 +576,70 @@ function matchCVEsToIP(
         if (product) products.add(product);
       }
     }
+    if (svc.product) {
+      products.add(svc.product.toLowerCase());
+    }
   }
 
-  if (vulnSet.size === 0 && products.size === 0) return [];
-
-  return cveMatches.filter((c) => {
-    if (vulnSet.has(c.cve_id)) return true;
-    const titleLower = (c.title || '').toLowerCase();
-    const cveProducts = (c.products || []).map((p: string) => p.toLowerCase());
-    for (const product of products) {
-      if (titleLower.includes(product)) return true;
-      if (cveProducts.some((cp: string) => cp.includes(product))) return true;
+  // 2. Products from httpx technologies (e.g. "PHP:8.3.27" -> "php")
+  for (const ws of result.web_services || []) {
+    for (const tech of ws.technologies || []) {
+      const techName = tech.split(':')[0].trim().toLowerCase();
+      if (techName) products.add(techName);
     }
-    return false;
-  });
+    if (ws.server) {
+      products.add(ws.server.toLowerCase().split('/')[0].trim());
+    }
+  }
+
+  // Match from snapshot cve_matches
+  const matched = new Map<string, AttackSurfaceCVE>();
+  if (cveMatches.length > 0 && (vulnSet.size > 0 || products.size > 0)) {
+    for (const c of cveMatches) {
+      if (vulnSet.has(c.cve_id)) { matched.set(c.cve_id, c); continue; }
+      const titleLower = (c.title || '').toLowerCase();
+      const cveProducts = (c.products || []).map((p: string) => p.toLowerCase());
+      for (const product of products) {
+        if (titleLower.includes(product) || cveProducts.some((cp: string) => cp.includes(product))) {
+          matched.set(c.cve_id, c);
+          break;
+        }
+      }
+    }
+  }
+
+  // 3. Match from cached CVEs by product
+  if (cachedCVEs && products.size > 0) {
+    for (const cached of cachedCVEs) {
+      if (matched.has(cached.cve_id)) continue;
+      const cachedProducts = (cached.products || []).map((p: string) => p.toLowerCase());
+      const titleLower = (cached.title || '').toLowerCase();
+      for (const product of products) {
+        if (cachedProducts.some((cp: string) => cp.includes(product)) || titleLower.includes(product)) {
+          matched.set(cached.cve_id, {
+            cve_id: cached.cve_id,
+            title: cached.title || '',
+            severity: cached.severity || 'medium',
+            score: cached.score,
+            advisory_url: cached.advisory_url || '',
+            products: cached.products || [],
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  return Array.from(matched.values());
 }
 
 /* ──────────────────────────── IP Detail Row ──────────────────────────── */
 
-function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnapshot }) {
+function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: AttackSurfaceSnapshot; cachedCVEs?: CachedCVERecord[] }) {
   const [open, setOpen] = useState(false);
   const sourceIP = snapshot.source_ips.find((s) => s.ip === ip);
   const result = snapshot.results[ip];
-  const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches);
+  const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches, cachedCVEs);
   const serviceCount = (result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0);
   const webCount = result?.web_services?.length ?? 0;
 
@@ -780,6 +832,22 @@ export default function AttackSurfaceAnalyzerPage() {
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
+  const { data: cachedCVEs } = useQuery({
+    queryKey: ['cve-cache', 'external_domain'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cve_cache')
+        .select('cve_id, title, severity, score, advisory_url, products')
+        .eq('module_code', 'external_domain');
+      if (error) throw error;
+      return (data || []).map((row: any) => ({
+        ...row,
+        products: Array.isArray(row.products) ? row.products : [],
+      })) as CachedCVERecord[];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
   const summary = snapshot?.summary ?? { total_ips: 0, open_ports: 0, services: 0, cves: 0 };
   const ips = snapshot?.source_ips ?? [];
   const isRunning = progress?.status === 'pending' || progress?.status === 'running';
@@ -901,7 +969,7 @@ export default function AttackSurfaceAnalyzerPage() {
                     </TableHeader>
                     <TableBody>
                       {ips.map((sourceIP) => (
-                        <IPDetailRow key={sourceIP.ip} ip={sourceIP.ip} snapshot={snapshot!} />
+                        <IPDetailRow key={sourceIP.ip} ip={sourceIP.ip} snapshot={snapshot!} cachedCVEs={cachedCVEs} />
                       ))}
                     </TableBody>
                 </Table>
