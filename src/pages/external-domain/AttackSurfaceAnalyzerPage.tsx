@@ -386,7 +386,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                             {row.ws.status_code}
                           </Badge>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent side="bottom">
                           {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
                         </TooltipContent>
                       </Tooltip>
