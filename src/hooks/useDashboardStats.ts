@@ -136,7 +136,7 @@ async function fetchDashboardStats(
           .in('tenant_record_id', tenantIds)
           .eq('status', 'completed')
           .gte('created_at', thirtyDaysAgo)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
 
     // External domain score history (lightweight)
@@ -208,11 +208,14 @@ async function fetchDashboardStats(
     let latestDate: string | null = null;
     let latestScore: number | null = null;
     let totalActiveUsers = 0;
-    const seen = new Set<string>();
 
+    // Com dados ASC, o ultimo registro por tenant e o mais recente
+    const tenantLatest = new Map<string, any>();
     for (const h of m365History) {
-      if (seen.has(h.tenant_record_id)) continue;
-      seen.add(h.tenant_record_id);
+      tenantLatest.set(h.tenant_record_id, h);
+    }
+
+    for (const [, h] of tenantLatest) {
       if (!latestDate || (h.created_at && h.created_at > latestDate)) {
         latestDate = h.created_at;
         if (h.score != null) latestScore = h.score;
