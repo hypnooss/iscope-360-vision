@@ -1,61 +1,22 @@
 
-
-# Corrigir permissoes do nmap via AmbientCapabilities no systemd
+# Corrigir comando de instalacao na pagina de detalhes do Agent
 
 ## Problema
 
-O `setcap cap_net_raw+ep` no binario do nmap nao e suficiente. Quando o servico roda como usuario `iscope`, o kernel ignora file capabilities para usuarios nao-root (a menos que o processo tenha a capability no seu "ambient set"). O resultado e que o nmap recusa executar SYN scan com "requires root privileges".
+Na pagina `AgentDetailPage`, o componente `AgentInstallInstructions` e renderizado **sem** a prop `isSuperAgent`, independentemente do tipo do agente. Isso faz com que Super Agents (que tem `client_id = null`) exibam o comando de instalacao errado (`agent-install` em vez de `super-agent-install`).
+
+Quando o usuario reinstalou o Super Agent usando o comando errado, o instalador comum foi executado -- ele nao instala masscan, nmap nem httpx, e por isso os executors ficaram ausentes, causando os erros "Executor desconhecido".
 
 ## Solucao
 
-Adicionar `AmbientCapabilities=CAP_NET_RAW` ao unit file do systemd gerado pelo instalador do Super Agent. Isso faz com que o processo do agente (e seus subprocessos como nmap e masscan) herdem a capability `CAP_NET_RAW` automaticamente, sem precisar de root.
+Passar `isSuperAgent={!agent.client_id}` no componente `AgentInstallInstructions` dentro de `AgentDetailPage.tsx`.
 
-## Detalhes tecnicos
+## Alteracao
 
-### Arquivo: `supabase/functions/super-agent-install/index.ts`
-
-Na funcao `write_systemd_service()` (linha ~780), adicionar `AmbientCapabilities=CAP_NET_RAW` na secao `[Service]`, antes do fechamento do primeiro bloco heredoc:
-
-```
-[Service]
-Type=simple
-EnvironmentFile=${CONFIG_DIR}/agent.env
-WorkingDirectory=${INSTALL_DIR}
-ExecStartPre=-/bin/bash ${INSTALL_DIR}/check-deps.sh
-ExecStart=${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/main.py
-Restart=always
-RestartSec=5
-AmbientCapabilities=CAP_NET_RAW    # <-- ADICIONAR
-```
-
-### Arquivo: `python-agent/check-deps.sh`
-
-Adicionar `setcap cap_net_raw+ep` ao nmap na funcao `install_scanner_tools()` (apos a instalacao do nmap, similar ao que ja fazemos no instalador), para que agentes existentes recebam a correcao via auto-update:
-
-```bash
-if command -v nmap >/dev/null 2>&1; then
-    log "nmap OK: $(nmap --version 2>&1 | head -1)"
-    # Garantir CAP_NET_RAW no binario
-    setcap cap_net_raw+ep "$(command -v nmap)" 2>/dev/null || true
-fi
-```
-
-### Validacao apos aplicar
-
-No servidor, executar:
-
-```bash
-systemctl daemon-reload
-systemctl restart iscope-agent
-su - iscope -s /bin/bash -c "nmap -sS -p 443 8.8.8.8"
-```
-
-O scan SYN deve funcionar sem o aviso de "raw socket access".
-
-## Resumo das alteracoes
-
-| Arquivo | Alteracao |
+| Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/super-agent-install/index.ts` | Adicionar `AmbientCapabilities=CAP_NET_RAW` ao unit file do systemd |
-| `python-agent/check-deps.sh` | Adicionar `setcap cap_net_raw+ep` ao nmap na funcao de scanner tools |
+| `src/pages/AgentDetailPage.tsx` (linha 648) | Alterar de `<AgentInstallInstructions activationCode={agent.activation_code} />` para `<AgentInstallInstructions activationCode={agent.activation_code} isSuperAgent={!agent.client_id} />` |
 
+## Apos aplicar
+
+O Super Agent OCI-01 precisara ser reinstalado com o comando correto (`super-agent-install`) para que os executors masscan, nmap e httpx sejam instalados.
