@@ -161,7 +161,7 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
   };
 }
 
-function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
   const rawAuth = Array.isArray(authLogs) ? authLogs : [];
   const rawVpn = Array.isArray(vpnLogs) ? vpnLogs : [];
@@ -219,7 +219,7 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[]): { insights: Ana
     const countryMap: Record<string, number> = {};
     for (const log of logs) {
       const ip = log.srcip || log.remip || log.src;
-      const country = log.srccountry || log.src_country || undefined;
+      const country = log.srccountry || log.src_country || (ip ? ipCountryMap[ip] : undefined) || undefined;
       if (!ip) continue;
       if (!ipMap[ip]) ipMap[ip] = { count: 0, country, ports: new Set() };
       ipMap[ip].count++;
@@ -563,6 +563,104 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
 }
 
 // ============================================
+// Web Filter & App Control Analysis
+// ============================================
+
+function analyzeWebFilter(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { webFilterBlocked: 0, topWebFilterCategories: [], topWebFilterUsers: [] } };
+
+  const catMap: Record<string, number> = {};
+  const userMap: Record<string, { count: number; ip?: string }> = {};
+
+  for (const log of logs) {
+    const category = log.catdesc || log.cat || log.category || 'Uncategorized';
+    catMap[category] = (catMap[category] || 0) + 1;
+
+    const user = log.user || log.srcuser || '';
+    const ip = log.srcip || log.src || '';
+    const key = user || ip || 'unknown';
+    if (!userMap[key]) userMap[key] = { count: 0, ip: user ? ip : undefined };
+    userMap[key].count++;
+  }
+
+  const topWebFilterCategories = Object.entries(catMap)
+    .sort((a, b) => b[1] - a[1]).slice(0, 20)
+    .map(([category, count]) => ({ category, count }));
+
+  const topWebFilterUsers = Object.entries(userMap)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([user, data]) => ({ user, ip: data.ip, count: data.count }));
+
+  // High-risk categories insight
+  const highRiskKeywords = ['malware', 'phishing', 'botnet', 'command-and-control', 'malicious', 'spam', 'ransomware'];
+  for (const [cat, count] of Object.entries(catMap)) {
+    if (highRiskKeywords.some(k => cat.toLowerCase().includes(k)) && count >= 1) {
+      insights.push({
+        id: `webfilter_highrisk_${cat.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`,
+        category: 'dns_security',
+        name: `Web Filter: Categoria de Alto Risco`,
+        description: `${count} bloqueio(s) na categoria "${cat}"`,
+        severity: count >= 20 ? 'critical' : count >= 5 ? 'high' : 'medium',
+        count,
+        recommendation: 'Investigue os hosts internos que tentaram acessar estas categorias.',
+      });
+    }
+  }
+
+  return { insights, metrics: { webFilterBlocked: logs.length, topWebFilterCategories, topWebFilterUsers } };
+}
+
+function analyzeAppControl(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { appControlBlocked: 0, topAppControlApps: [], topAppControlUsers: [] } };
+
+  const appMap: Record<string, { count: number; category?: string }> = {};
+  const userMap: Record<string, { count: number; ip?: string }> = {};
+
+  for (const log of logs) {
+    const app = log.app || log.appname || log.appcat || 'Unknown';
+    const appcat = log.appcat || log.appcategory || undefined;
+    if (!appMap[app]) appMap[app] = { count: 0, category: appcat };
+    appMap[app].count++;
+
+    const user = log.user || log.srcuser || '';
+    const ip = log.srcip || log.src || '';
+    const key = user || ip || 'unknown';
+    if (!userMap[key]) userMap[key] = { count: 0, ip: user ? ip : undefined };
+    userMap[key].count++;
+  }
+
+  const topAppControlApps = Object.entries(appMap)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([app, data]) => ({ app: app, category: data.category, count: data.count }));
+
+  const topAppControlUsers = Object.entries(userMap)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([user, data]) => ({ user, ip: data.ip, count: data.count }));
+
+  // High-risk app categories
+  const highRiskApps = ['p2p', 'proxy', 'remote.access', 'tor', 'vpn.tunnel', 'botnet'];
+  for (const [app, data] of Object.entries(appMap)) {
+    const appLower = app.toLowerCase();
+    const catLower = (data.category || '').toLowerCase();
+    if (highRiskApps.some(k => appLower.includes(k) || catLower.includes(k)) && data.count >= 1) {
+      insights.push({
+        id: `appctrl_highrisk_${app.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`,
+        category: 'traffic_behavior',
+        name: `App Control: Aplicação de Alto Risco`,
+        description: `${data.count} bloqueio(s) da aplicação "${app}"`,
+        severity: data.count >= 20 ? 'critical' : data.count >= 5 ? 'high' : 'medium',
+        count: data.count,
+        recommendation: 'Verifique se o uso desta aplicação é autorizado na política de segurança.',
+      });
+    }
+  }
+
+  return { insights, metrics: { appControlBlocked: logs.length, topAppControlApps, topAppControlUsers } };
+}
+
+// ============================================
 // Score Calculation
 // ============================================
 
@@ -615,15 +713,32 @@ Deno.serve(async (req) => {
     const vpnData = raw_data.vpn_events?.data || raw_data.vpn_events || [];
     const ipsData = raw_data.ips_events?.data || raw_data.ips_events || [];
     const configData = raw_data.config_changes?.data || raw_data.config_changes || [];
+    const webfilterData = raw_data.webfilter_blocked?.data || raw_data.webfilter_blocked || [];
+    const appctrlData = raw_data.appctrl_blocked?.data || raw_data.appctrl_blocked || [];
+
+    const deniedLogs = Array.isArray(deniedData) ? deniedData : deniedData?.results || [];
 
     // Run analysis modules
-    const deniedResult = analyzeDeniedTraffic(Array.isArray(deniedData) ? deniedData : deniedData?.results || []);
+    const deniedResult = analyzeDeniedTraffic(deniedLogs);
+
+    // Build IP->Country map from denied traffic for auth enrichment
+    const ipCountryMap: Record<string, string> = {};
+    for (const log of deniedLogs) {
+      const ip = log.srcip || log.src || log.source;
+      const country = log.srccountry || log.src_country;
+      if (ip && country) ipCountryMap[ip] = country;
+    }
+    console.log(`[firewall-analyzer] Built ipCountryMap with ${Object.keys(ipCountryMap).length} entries`);
+
     const authResult = analyzeAuthentication(
       Array.isArray(authData) ? authData : authData?.results || [],
       Array.isArray(vpnData) ? vpnData : vpnData?.results || [],
+      ipCountryMap,
     );
     const ipsResult = analyzeIPS(Array.isArray(ipsData) ? ipsData : ipsData?.results || []);
     const configResult = analyzeConfigChanges(Array.isArray(configData) ? configData : configData?.results || []);
+    const webfilterResult = analyzeWebFilter(Array.isArray(webfilterData) ? webfilterData : webfilterData?.results || []);
+    const appctrlResult = analyzeAppControl(Array.isArray(appctrlData) ? appctrlData : appctrlData?.results || []);
 
     // Combine all insights
     const allInsights = [
@@ -631,6 +746,8 @@ Deno.serve(async (req) => {
       ...authResult.insights,
       ...ipsResult.insights,
       ...configResult.insights,
+      ...webfilterResult.insights,
+      ...appctrlResult.insights,
     ];
 
     // Deduplicate by id
@@ -661,7 +778,13 @@ Deno.serve(async (req) => {
       configChanges: configResult.metrics.configChanges || 0,
       configChangeDetails: configResult.metrics.configChangeDetails || [],
       totalDenied: deniedResult.metrics.totalDenied || 0,
-      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0),
+      topWebFilterCategories: webfilterResult.metrics.topWebFilterCategories || [],
+      topWebFilterUsers: webfilterResult.metrics.topWebFilterUsers || [],
+      topAppControlApps: appctrlResult.metrics.topAppControlApps || [],
+      topAppControlUsers: appctrlResult.metrics.topAppControlUsers || [],
+      webFilterBlocked: webfilterResult.metrics.webFilterBlocked || 0,
+      appControlBlocked: appctrlResult.metrics.appControlBlocked || 0,
+      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0) + (webfilterResult.metrics.webFilterBlocked || 0) + (appctrlResult.metrics.appControlBlocked || 0),
     };
 
     const score = calculateScore(uniqueInsights);

@@ -50,6 +50,17 @@ export interface TopCountry {
   count: number;
 }
 
+export interface TopCategory {
+  category: string;
+  count: number;
+}
+
+export interface TopUserIP {
+  user: string;
+  ip?: string;
+  count: number;
+}
+
 export interface ConfigChangeDetail {
   user: string;
   action: string;
@@ -80,6 +91,12 @@ export interface AnalyzerMetrics {
   configChangeDetails: ConfigChangeDetail[];
   totalDenied: number;
   totalEvents: number;
+  topWebFilterCategories: TopCategory[];
+  topWebFilterUsers: TopUserIP[];
+  topAppControlApps: TopCategory[];
+  topAppControlUsers: TopUserIP[];
+  webFilterBlocked: number;
+  appControlBlocked: number;
 }
 
 export interface AnalyzerSnapshot {
