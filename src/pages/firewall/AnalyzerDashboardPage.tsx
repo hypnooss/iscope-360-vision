@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,13 +20,14 @@ import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, Map, ExternalLink,
-  Filter, AppWindow,
+  Filter, AppWindow, Building2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useQuery } from '@tanstack/react-query';
 import 'flag-icons/css/flag-icons.min.css';
 import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP } from '@/types/analyzerInsights';
 
-interface FirewallOption { id: string; name: string; }
+interface FirewallOption { id: string; name: string; client_id: string; }
 
 // Reusable country name + flag renderer
 function CountryName({ country }: { country: string }) {
@@ -139,24 +142,61 @@ function RankingListWidget({ items, labelKey }: { items: { [key: string]: any; c
 export default function AnalyzerDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [firewalls, setFirewalls] = useState<FirewallOption[]>([]);
   const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
   const [showMap, setShowMap] = useState(false);
 
-  useEffect(() => {
-    if (!authLoading && !user) { navigate('/auth'); return; }
-    if (!authLoading && user && !hasModuleAccess('scope_firewall')) { navigate('/modules'); }
-  }, [user, authLoading, navigate, hasModuleAccess]);
+  // Workspace selector for super roles
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Auto-select first workspace
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('firewalls').select('id, name').order('name');
-      if (data && data.length > 0) { setFirewalls(data); setSelectedFirewall(data[0].id); }
-    })();
-  }, []);
+    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(allWorkspaces[0].id);
+    }
+  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+
+  // Fetch firewalls filtered by workspace
+  const { data: firewalls = [] } = useQuery({
+    queryKey: ['analyzer-firewalls', selectedWorkspaceId, isSuperRole],
+    queryFn: async () => {
+      let query = supabase.from('firewalls').select('id, name, client_id').order('name');
+      if (isSuperRole && selectedWorkspaceId) {
+        query = query.eq('client_id', selectedWorkspaceId);
+      }
+      const { data } = await query;
+      return (data ?? []) as FirewallOption[];
+    },
+    enabled: isSuperRole ? !!selectedWorkspaceId : true,
+  });
+
+  // Auto-select first firewall when list changes
+  useEffect(() => {
+    if (firewalls.length > 0 && !firewalls.find(f => f.id === selectedFirewall)) {
+      setSelectedFirewall(firewalls[0].id);
+    } else if (firewalls.length === 0) {
+      setSelectedFirewall('');
+    }
+  }, [firewalls]);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
@@ -199,6 +239,11 @@ export default function AnalyzerDashboardPage() {
   const authCountriesFailed = m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? [];
   const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
 
+  useEffect(() => {
+    if (!authLoading && !user) { navigate('/auth'); return; }
+    if (!authLoading && user && !hasModuleAccess('scope_firewall')) { navigate('/modules'); }
+  }, [user, authLoading, navigate, hasModuleAccess]);
+
   if (authLoading) return null;
 
   return (
@@ -212,6 +257,17 @@ export default function AnalyzerDashboardPage() {
             <p className="text-muted-foreground">Inteligência de segurança baseada em logs</p>
           </div>
           <div className="flex items-center gap-3">
+            {isSuperRole && !isPreviewMode && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewall(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
               <SelectTrigger className="w-[200px]"><SelectValue placeholder="Selecionar firewall" /></SelectTrigger>
               <SelectContent>

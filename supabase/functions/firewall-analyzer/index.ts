@@ -728,7 +728,16 @@ Deno.serve(async (req) => {
       const country = log.srccountry || log.src_country;
       if (ip && country) ipCountryMap[ip] = country;
     }
-    console.log(`[firewall-analyzer] Built ipCountryMap with ${Object.keys(ipCountryMap).length} entries`);
+
+    // Enrich from auth and VPN logs (they often have srccountry for external IPs)
+    const authLogs = Array.isArray(authData) ? authData : authData?.results || [];
+    const vpnLogs = Array.isArray(vpnData) ? vpnData : vpnData?.results || [];
+    for (const log of [...authLogs, ...vpnLogs]) {
+      const ip = log.srcip || log.remip || log.src;
+      const country = log.srccountry || log.src_country;
+      if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
+    }
+    console.log(`[firewall-analyzer] Built ipCountryMap with ${Object.keys(ipCountryMap).length} entries (incl. auth/vpn)`);
 
     const authResult = analyzeAuthentication(
       Array.isArray(authData) ? authData : authData?.results || [],
