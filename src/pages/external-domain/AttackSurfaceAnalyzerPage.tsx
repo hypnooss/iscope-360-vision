@@ -379,13 +379,34 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                   </TableCell>
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
                   <TableCell className="text-xs">
-                    {row.ws.technologies?.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {row.ws.technologies.map((t, j) => (
-                          <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
-                        ))}
-                      </div>
-                    ) : '—'}
+                    {row.ws.technologies?.length > 0 ? (() => {
+                      const MAX_VISIBLE = 5;
+                      const hasOverflow = row.ws.technologies.length > MAX_VISIBLE;
+                      const visible = hasOverflow ? row.ws.technologies.slice(0, MAX_VISIBLE) : row.ws.technologies;
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex flex-wrap gap-1 max-w-[320px] cursor-default">
+                              {visible.map((t, j) => (
+                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
+                              ))}
+                              {hasOverflow && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                                  +{row.ws.technologies.length - MAX_VISIBLE}
+                                </Badge>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-sm">
+                            <div className="flex flex-wrap gap-1">
+                              {row.ws.technologies.map((t, j) => (
+                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })() : '—'}
                   </TableCell>
                   <TableCell className="text-xs">
                     {row.ws.tls?.subject_cn ? (
