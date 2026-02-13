@@ -850,6 +850,65 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
                 </div>
               )}
 
+              {/* Web Services */}
+              {result?.web_services && result.web_services.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    Web Services ({result.web_services.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {result.web_services.map((ws, idx) => {
+                      const statusColor = ws.status_code >= 200 && ws.status_code < 300
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : ws.status_code >= 300 && ws.status_code < 400
+                          ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                          : 'bg-destructive/20 text-destructive border-destructive/30';
+
+                      const tlsDaysLeft = ws.tls?.not_after
+                        ? Math.ceil((new Date(ws.tls.not_after).getTime() - Date.now()) / (1000 * 3600 * 24))
+                        : null;
+
+                      return (
+                        <div key={idx} className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]">
+                              {ws.url}
+                            </a>
+                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>
+                              {ws.status_code}
+                            </Badge>
+                            {ws.server && (
+                              <span className="text-xs text-muted-foreground">• {ws.server}</span>
+                            )}
+                          </div>
+
+                          {ws.technologies && ws.technologies.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {ws.technologies.map((t, j) => (
+                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          {ws.tls?.subject_cn && (
+                            <div className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Lock className="w-3 h-3" />
+                              <span>CN: {ws.tls.subject_cn}</span>
+                              {tlsDaysLeft != null && (
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", tlsDaysLeft < 30 ? 'bg-destructive/20 text-destructive border-destructive/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30')}>
+                                  {tlsDaysLeft}d
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* CVEs - List with titles */}
               {ipCVEs.length > 0 && (
                 <div>
