@@ -1,39 +1,65 @@
 
-
-# Fix: Status tooltip positioning (copy Technology column pattern)
+# Populate CVE column in "Inventário de IPs Públicos"
 
 ## Problem
-The Status column tooltip still renders in the wrong position. The Technology column tooltip works correctly because it uses a bare `<Tooltip>` without a local `<TooltipProvider>` wrapper, while the Status column wraps itself in its own `<TooltipProvider>`, causing positioning issues.
 
-## Fix
+The CVE column always shows "0" because the current matching logic (`result?.vulns?.includes(c.cve_id)`) depends on the `vulns` array per IP, which is rarely populated by nmap. Meanwhile, the backend matches CVEs globally by extracting CPE product names from services and searching the `cve_cache` -- but this association is never stored per-IP.
+
+## Solution
+
+Replace the CVE matching logic in `IPDetailRow` to replicate the backend approach: extract CPE product names from each IP's services, then filter `snapshot.cve_matches` where the CVE's `products` array or title contains any of those product names. Also keep the existing `vulns` fallback.
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Remove the `<TooltipProvider>` wrapper from the Status tooltip (lines 378 and 393), keeping just the `<Tooltip>` component like the Technology column does.
+**1. Add a helper function** (near top, after existing helpers):
 
-```tsx
-// Before (lines 377-394)
-<TableCell className="text-center">
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge ...>{row.ws.status_code}</Badge>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">...</TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-</TableCell>
+```typescript
+function matchCVEsToIP(
+  result: AttackSurfaceIPResult | undefined,
+  cveMatches: AttackSurfaceCVE[]
+): AttackSurfaceCVE[] {
+  if (!result || cveMatches.length === 0) return [];
 
-// After
-<TableCell className="text-center">
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Badge ...>{row.ws.status_code}</Badge>
-    </TooltipTrigger>
-    <TooltipContent side="bottom">...</TooltipContent>
-  </Tooltip>
-</TableCell>
+  // Collect CVE IDs from vulns (nmap vulners output)
+  const vulnSet = new Set(result.vulns || []);
+
+  // Extract product names from service CPEs (same logic as backend)
+  const products = new Set<string>();
+  for (const svc of result.services || []) {
+    if (svc.cpe && Array.isArray(svc.cpe)) {
+      for (const cpe of svc.cpe) {
+        const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
+        const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
+        if (product) products.add(product);
+      }
+    }
+  }
+
+  if (vulnSet.size === 0 && products.size === 0) return [];
+
+  return cveMatches.filter((c) => {
+    // Match by direct vuln ID
+    if (vulnSet.has(c.cve_id)) return true;
+    // Match by product name in CVE products array or title
+    const titleLower = (c.title || '').toLowerCase();
+    const cveProducts = (c.products || []).map(p => p.toLowerCase());
+    for (const product of products) {
+      if (titleLower.includes(product)) return true;
+      if (cveProducts.some(cp => cp.includes(product))) return true;
+    }
+    return false;
+  });
+}
 ```
 
-Single structural change: remove the two `TooltipProvider` lines (378 and 393). No other modifications needed.
+**2. Update line 555** in `IPDetailRow`:
 
+```tsx
+// Before
+const ipCVEs = snapshot.cve_matches.filter((c) => result?.vulns?.includes(c.cve_id));
+
+// After
+const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches);
+```
+
+No other changes needed -- the existing rendering logic (lines 616-621) already displays the count correctly.
