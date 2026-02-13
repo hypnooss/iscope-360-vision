@@ -19,9 +19,13 @@ class HttpxExecutor(BaseExecutor):
     def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         params = step.get('params', {})
         ip = params.get('ip') or context.get('ip')
+        hostname = params.get('hostname') or context.get('hostname')
 
-        if not ip:
-            return {'error': 'IP address is required'}
+        # Use hostname for httpx when available (proper Host/SNI headers)
+        target = hostname if hostname else ip
+
+        if not target:
+            return {'error': 'IP or hostname is required'}
 
         # Use ports from params, context (previous step), or defaults
         ports = params.get('ports', [])
@@ -33,11 +37,11 @@ class HttpxExecutor(BaseExecutor):
         port_str = ','.join(str(p) for p in ports)
         timeout = params.get('timeout', 60)
 
-        self.logger.info(f"[httpx] Probing {ip} ports={port_str}")
+        self.logger.info(f"[httpx] Probing {target} ports={port_str}" + (f" (ip={ip})" if hostname else ""))
 
         cmd = [
             'httpx',
-            '-u', ip,
+            '-u', target,
             '-ports', port_str,
             '-tech-detect',
             '-status-code',
@@ -61,11 +65,12 @@ class HttpxExecutor(BaseExecutor):
             )
 
             web_services = self._parse_output(result.stdout)
-            self.logger.info(f"[httpx] Found {len(web_services)} web services on {ip}")
+            self.logger.info(f"[httpx] Found {len(web_services)} web services on {target}")
 
             return {
                 'data': {
                     'ip': ip,
+                    'hostname': hostname or '',
                     'web_services': web_services,
                 }
             }
