@@ -63,9 +63,6 @@ function aggregateScoreHistory(
   return points.slice(-30);
 }
 
-function avgScores(scores: number[]): number | null {
-  return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-}
 
 // ─── Fetcher ──────────────────────────────────────────────────────────────────
 
@@ -180,19 +177,21 @@ async function fetchDashboardStats(
 
     // Severities + score from RPC (DISTINCT ON server-side)
     const fwSummaries = (fwSummaryRes.data || []) as any[];
-    const scores: number[] = [];
     let latestDate: string | null = null;
+    let latestScore: number | null = null;
 
     for (const s of fwSummaries) {
-      scores.push(s.score);
-      if (!latestDate || s.analyzed_at > latestDate) latestDate = s.analyzed_at;
+      if (!latestDate || s.analyzed_at > latestDate) {
+        latestDate = s.analyzed_at;
+        latestScore = s.score;
+      }
       fwHealth.severities.critical += s.critical || 0;
       fwHealth.severities.high += s.high || 0;
       fwHealth.severities.medium += s.medium || 0;
       fwHealth.severities.low += s.low || 0;
     }
 
-    fwHealth.score = avgScores(scores);
+    fwHealth.score = latestScore;
     fwHealth.lastAnalysisDate = latestDate;
   }
 
@@ -207,16 +206,18 @@ async function fetchDashboardStats(
 
   if (tenantIds.length > 0) {
     const m365History = (m365HistoryRes.data || []) as any[];
-    const scores: number[] = [];
     let latestDate: string | null = null;
+    let latestScore: number | null = null;
     let totalActiveUsers = 0;
     const seen = new Set<string>();
 
     for (const h of m365History) {
       if (seen.has(h.tenant_record_id)) continue;
       seen.add(h.tenant_record_id);
-      if (h.score != null) scores.push(h.score);
-      if (!latestDate || (h.created_at && h.created_at > latestDate)) latestDate = h.created_at;
+      if (!latestDate || (h.created_at && h.created_at > latestDate)) {
+        latestDate = h.created_at;
+        if (h.score != null) latestScore = h.score;
+      }
       const summary = h.summary as any;
       if (summary) {
         m365Health.severities.critical += summary.critical || 0;
@@ -230,7 +231,7 @@ async function fetchDashboardStats(
       }
     }
 
-    m365Health.score = avgScores(scores);
+    m365Health.score = latestScore;
     m365Health.lastAnalysisDate = latestDate;
     m365Health.scoreHistory = aggregateScoreHistory(
       m365History.map((h: any) => ({ score: h.score, created_at: h.created_at }))
@@ -255,19 +256,21 @@ async function fetchDashboardStats(
 
     // Severities + score from RPC
     const extSummaries = (extSummaryRes.data || []) as any[];
-    const scores: number[] = [];
     let latestDate: string | null = null;
+    let latestScore: number | null = null;
 
     for (const s of extSummaries) {
-      if (s.score != null) scores.push(s.score);
-      if (!latestDate || s.analyzed_at > latestDate) latestDate = s.analyzed_at;
+      if (!latestDate || s.analyzed_at > latestDate) {
+        latestDate = s.analyzed_at;
+        if (s.score != null) latestScore = s.score;
+      }
       extHealth.severities.critical += s.critical || 0;
       extHealth.severities.high += s.high || 0;
       extHealth.severities.medium += s.medium || 0;
       extHealth.severities.low += s.low || 0;
     }
 
-    extHealth.score = avgScores(scores);
+    extHealth.score = latestScore;
     extHealth.lastAnalysisDate = latestDate;
   }
 
