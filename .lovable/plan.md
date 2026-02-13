@@ -1,126 +1,57 @@
 
+# Fix: Parsing do campo `products` do CVE cache
 
-# Fix: Matching de CVEs deve considerar versao detectada
+## Problema raiz
 
-## Problema
+O campo `products` no `cve_cache` armazena os dados como **um unico string separado por espacos dentro de um array**:
+- `["f5 nginx *"]` (vendor=f5, product=nginx, version=*)
+- `["php php 8.3.27"]` (vendor=php, product=php, version=8.3.27)
+- `["apache http server 2.4.37"]` (vendor=apache, product=http server, version=2.4.37)
 
-A funcao `matchCVEsToIP` faz match apenas por **nome do produto** (ex: "nginx"), ignorando a versao. Isso causa:
-
-- IP com nginx **sem versao detectada** (porta 443, CPE `cpe:/a:igor_sysoev:nginx`) recebe **todos** os 20 CVEs de nginx do cache
-- IP com nginx **1.28.0** (porta 80) recebe 41 CVEs — incluindo CVEs de versoes que nao se aplicam
+O codigo atual assume que sao 3 elementos separados no array (`products[0]=vendor`, `products[1]=product`, `products[2]=version`), mas na verdade `products[0]` e o string completo e `products[1]` e `undefined`. Isso faz `cachedProduct = ""`, e o `if (!cachedProduct) continue` **pula todos os CVEs**.
 
 ## Solucao
 
-Mudar a logica para extrair **pares produto+versao** do IP, e aplicar regras de match:
-
-| Cenario | Regra |
-|---|---|
-| IP tem produto COM versao (ex: nginx 1.28.0) | Match CVEs do cache cuja versao seja igual OU wildcard (`*`) |
-| IP tem produto SEM versao (ex: nginx sem versao) | NAO fazer match com CVEs do cache (incerteza) |
-| CVEs do snapshot (`cve_matches`) | Manter logica existente (match por vulnSet + produto) |
+Corrigir o parsing em `matchCVEsToIP` para extrair vendor, product e version do string em `products[0]`.
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-#### 1. Extrair pares produto+versao (ao inves de apenas produto)
-
-Substituir o `Set<string> products` por um `Map<string, string | null>` onde key = produto e value = versao ou null:
+Substituir o bloco de parsing (linhas 642-647):
 
 ```typescript
-// Antes: Set<string> products (so nome)
-// Depois: Map<string, string | null> productVersions
+// ANTES (incorreto):
+const cachedProducts = cached.products || [];
+const cachedProduct = (typeof cachedProducts[1] === 'string' ? cachedProducts[1] : '').toLowerCase();
+const cachedVersion = typeof cachedProducts[2] === 'string' ? cachedProducts[2] : '*';
 
-const productVersions = new Map<string, string | null>();
-
-// Nmap CPEs: ex "cpe:2.3:a:igor_sysoev:nginx:1.28.0:..."
-for (const svc of result.services || []) {
-  if (svc.cpe && Array.isArray(svc.cpe)) {
-    for (const cpe of svc.cpe) {
-      const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
-      const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
-      const version = parts[3] && parts[3] !== '*' && parts[3] !== '' 
-        ? parts[3] : null;
-      if (product) {
-        // Se ja tem versao registrada, nao sobrescrever com null
-        const existing = productVersions.get(product);
-        if (!existing && version) productVersions.set(product, version);
-        else if (!existing) productVersions.set(product, null);
-      }
-    }
-  }
-  if (svc.product) {
-    const p = svc.product.toLowerCase();
-    if (!productVersions.has(p)) {
-      productVersions.set(p, svc.version || null);
-    }
-  }
-}
-
-// httpx technologies: ex "PHP:8.3.27"
-for (const ws of result.web_services || []) {
-  for (const tech of ws.technologies || []) {
-    const [name, ver] = tech.split(':');
-    const techName = name.trim().toLowerCase();
-    const techVer = ver?.trim() || null;
-    if (techName) {
-      const existing = productVersions.get(techName);
-      if (!existing && techVer) productVersions.set(techName, techVer);
-      else if (!existing) productVersions.set(techName, null);
-    }
-  }
-  if (ws.server) {
-    const [name, ver] = ws.server.toLowerCase().split('/');
-    const p = name.trim();
-    if (p && !productVersions.has(p)) {
-      productVersions.set(p, ver?.trim() || null);
-    }
-  }
-}
+// DEPOIS (correto):
+const cachedProducts = cached.products || [];
+const productStr = typeof cachedProducts[0] === 'string' ? cachedProducts[0] : '';
+const parts = productStr.split(' ').filter(Boolean);
+if (parts.length < 2) continue;
+// Format: "vendor product version" ou "vendor product1 product2 version"
+// Ultimo token = version, primeiro = vendor, meio = product
+const cachedVersion = parts.length >= 3 ? parts[parts.length - 1] : '*';
+const cachedProduct = (parts.length >= 3
+  ? parts.slice(1, -1).join(' ')
+  : parts[1]
+).toLowerCase();
 ```
 
-#### 2. Match de snapshot `cve_matches` — manter igual (usa `products` como Set de nomes)
+Exemplos de parsing:
 
-Para o match com `cve_matches` do snapshot, continuar usando apenas nomes de produto (sem filtro de versao), pois esses CVEs ja foram correlacionados durante o scan.
-
-#### 3. Match de `cachedCVEs` — aplicar filtro de versao
-
-```typescript
-if (cachedCVEs && productVersions.size > 0) {
-  for (const cached of cachedCVEs) {
-    if (matched.has(cached.cve_id)) continue;
-    const cachedProducts = cached.products || [];
-    // products format: [vendor, product, version]
-    // ex: ["f5", "nginx", "*"] ou ["php", "php", "8.3.27"]
-    const cachedProduct = (cachedProducts[1] || '').toLowerCase();
-    const cachedVersion = cachedProducts[2] || '*';
-
-    for (const [product, detectedVersion] of productVersions) {
-      if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
-      
-      // Se nao detectamos versao, nao vincular CVEs do cache
-      if (!detectedVersion) continue;
-      
-      // Se CVE tem versao wildcard, vincular (generico)
-      if (cachedVersion === '*') {
-        matched.set(cached.cve_id, { ... });
-        break;
-      }
-      
-      // Se CVE tem versao especifica, so vincular se bater
-      if (cachedVersion === detectedVersion) {
-        matched.set(cached.cve_id, { ... });
-        break;
-      }
-    }
-  }
-}
-```
+| products[0] | vendor | cachedProduct | cachedVersion |
+|---|---|---|---|
+| `"f5 nginx *"` | f5 | nginx | * |
+| `"php php 8.3.27"` | php | php | 8.3.27 |
+| `"apache http server 2.4.37"` | apache | http server | 2.4.37 |
+| `"openbsd openssh 9.6p1"` | openbsd | openssh | 9.6p1 |
 
 ### Resultado esperado
 
 | IP | Produto detectado | CVEs antes | CVEs depois |
 |---|---|---|---|
-| 13.225.107.78 | nginx (sem versao) | 20 | 0 (do cache) |
-| 187.85.164.49 | nginx 1.28.0 + nginx (sem versao na 443) | 41 | ~20 wildcard + CVEs especificas para 1.28.0 |
-
+| 187.85.164.49 (nginx 1.28.0 + PHP 8.3.27) | nginx, php | 0 | CVEs nginx wildcard + CVE-2024-3566 (PHP 8.3.27) |
+| IPs sem versao detectada | nginx (sem versao) | 0 | 0 (correto - sem versao = sem match) |
