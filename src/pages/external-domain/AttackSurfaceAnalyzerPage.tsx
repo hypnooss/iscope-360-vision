@@ -546,13 +546,48 @@ function TLSCertificatesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot 
   );
 }
 
+/* ──────────────── CVE-to-IP matching (CPE + vulns) ──────────────── */
+
+function matchCVEsToIP(
+  result: { services?: AttackSurfaceService[]; vulns?: string[] } | undefined,
+  cveMatches: AttackSurfaceCVE[]
+): AttackSurfaceCVE[] {
+  if (!result || cveMatches.length === 0) return [];
+
+  const vulnSet = new Set(result.vulns || []);
+
+  const products = new Set<string>();
+  for (const svc of result.services || []) {
+    if (svc.cpe && Array.isArray(svc.cpe)) {
+      for (const cpe of svc.cpe) {
+        const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
+        const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
+        if (product) products.add(product);
+      }
+    }
+  }
+
+  if (vulnSet.size === 0 && products.size === 0) return [];
+
+  return cveMatches.filter((c) => {
+    if (vulnSet.has(c.cve_id)) return true;
+    const titleLower = (c.title || '').toLowerCase();
+    const cveProducts = (c.products || []).map((p: string) => p.toLowerCase());
+    for (const product of products) {
+      if (titleLower.includes(product)) return true;
+      if (cveProducts.some((cp: string) => cp.includes(product))) return true;
+    }
+    return false;
+  });
+}
+
 /* ──────────────────────────── IP Detail Row ──────────────────────────── */
 
 function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnapshot }) {
   const [open, setOpen] = useState(false);
   const sourceIP = snapshot.source_ips.find((s) => s.ip === ip);
   const result = snapshot.results[ip];
-  const ipCVEs = snapshot.cve_matches.filter((c) => result?.vulns?.includes(c.cve_id));
+  const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches);
   const serviceCount = (result?.services?.filter((s: AttackSurfaceService) => s.product).length ?? 0);
   const webCount = result?.web_services?.length ?? 0;
 
