@@ -386,7 +386,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                       return (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <div className="flex flex-wrap gap-1 max-w-[320px] cursor-default">
+                            <div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
                               {visible.map((t, j) => (
                                 <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
                               ))}
