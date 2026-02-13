@@ -52,7 +52,7 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
   return (
     <div className="w-full h-[56px]">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={sortedData} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
+        <AreaChart data={sortedData} margin={{ top: 2, right: 16, bottom: 0, left: 16 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
               {gradientStops.map((stop, i) => (
