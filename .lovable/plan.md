@@ -1,124 +1,59 @@
 
+# Ajustes na Pagina de Fontes de CVE
 
-# Separar Fontes de CVE por Produto e Migrar para Pagina Dedicada
+## 1. Botao de Voltar
 
-## Contexto
+Adicionar um botao com icone `ArrowLeft` antes do titulo "Fontes de CVE", seguindo o mesmo padrao da pagina de Editar Firewall. O botao navega de volta para `/cves`.
 
-Atualmente existem apenas 3 fontes monoliticas no `cve_sources`:
-- "NIST NVD - Firewalls" (sincroniza FortiGate + SonicWall juntos)
-- "NIST NVD - Servicos Web" (sincroniza todos os CPEs juntos: Nginx, Apache, OpenSSH, etc.)
-- "Microsoft Security Response Center" (M365)
+## 2. Cor de fundo nos cards de fonte
 
-O usuario quer granularidade por produto e uma pagina dedicada (em vez de modal) para comportar mais fontes.
+Os cards de cada fonte (`SourceCard`) atualmente usam apenas `border rounded-lg`. Vou adicionar a classe `glass-card` e uma cor de fundo sutil baseada no modulo, similar ao estilo dos StatCards -- usando as cores do modulo (laranja para Firewall, azul para M365, verde para Dominio Externo).
 
-## Solucao
+## 3. Nova fonte: history (Dominio Externo)
 
-### 1. Reestruturar dados em `cve_sources`
-
-Substituir as 3 fontes por fontes granulares por produto. Cada fonte tera um campo `config` com filtros especificos:
-
-| source_label | module_code | source_type | config |
-|---|---|---|---|
-| FortiGate | firewall | nist_nvd | `{"vendor": "fortinet"}` |
-| SonicWall | firewall | nist_nvd | `{"vendor": "sonicwall"}` |
-| Microsoft 365 | m365 | msrc | `{"months": 3}` |
-| Nginx | external_domain | nist_nvd_web | `{"product_filter": "nginx"}` |
-| Apache HTTP Server | external_domain | nist_nvd_web | `{"product_filter": "http_server"}` |
-| OpenSSH | external_domain | nist_nvd_web | `{"product_filter": "openssh"}` |
-
-**Migracao SQL:**
-- Deletar as 3 fontes existentes
-- Inserir as novas fontes granulares
-- CVEs existentes no `cve_cache` permanecem (serao re-associados na proxima sync)
-
-### 2. Atualizar Edge Function `refresh-cve-cache`
-
-**`syncNistNvdSource`** - Filtrar por vendor do config:
-- Ler `source.config.vendor` e so processar firewalls daquele vendor
-- Se `vendor = 'fortinet'`, so buscar firewalls com `device_type` Fortinet
-- Se `vendor = 'sonicwall'`, so buscar firewalls com `device_type` SonicWall
-
-**`syncNistNvdWebSource`** - Filtrar por produto do config:
-- Ler `source.config.product_filter`
-- Ao iterar CPEs dos snapshots, so incluir CPEs cujo campo `product` no CPE contenha o filtro
-- Ex: `product_filter: "nginx"` so processa CPEs como `cpe:/a:igor_sysoev:nginx:1.28.0`
-
-### 3. Criar pagina dedicada `/cves/sources`
-
-Nova pagina `src/pages/admin/CVESourcesPage.tsx` com layout flat (seguindo padrao de management pages):
-
-**Layout:**
-- Breadcrumb: Administracao > CVEs > Fontes
-- Titulo: "Fontes de CVE"
-- Subtitulo: "Gerencie as fontes de sincronizacao de vulnerabilidades"
-- Botao "Sincronizar Todas" no header
-- Cards de estatisticas: Total Fontes, Ativas, Ultimo Sync, Erros
-- Lista de fontes agrupadas por modulo (Firewall, M365, Dominio Externo)
-- Cada fonte exibe: nome do produto, status, ultima sync, contagem de CVEs, toggle ativar/desativar, botao sincronizar
-
-### 4. Atualizar `CVEsCachePage`
-
-- Remover botao "Configurar Fontes" e o `CVESourcesConfigDialog`
-- Adicionar botao "Gerenciar Fontes" que navega para `/cves/sources`
-- Manter o restante da pagina igual
-
-### 5. Atualizar rotas
-
-- Adicionar rota `/cves/sources` no `App.tsx`
-- Lazy load da nova pagina
+Inserir uma nova entrada na tabela `cve_sources` para a biblioteca `history` (v4.7.2), usada pelo React Router. Como e uma biblioteca JavaScript/npm, sera configurada com `source_type = 'nist_nvd_web'` e `product_filter = 'history'`.
 
 ## Detalhes Tecnicos
 
+### Arquivo: `src/pages/admin/CVESourcesPage.tsx`
+
+**Botao de voltar** - Adicionar import de `ArrowLeft` e `useNavigate`, e inserir o botao antes do titulo:
+
+```typescript
+import { useNavigate } from 'react-router-dom';
+// No componente:
+const navigate = useNavigate();
+// No JSX, antes do titulo:
+<Button variant="ghost" size="icon" onClick={() => navigate('/cves')}>
+  <ArrowLeft className="w-5 h-5" />
+</Button>
+```
+
+**Cor de fundo nos cards** - Adicionar mapa de cores de fundo por modulo e aplicar no SourceCard:
+
+```typescript
+const MODULE_BG: Record<string, string> = {
+  firewall: 'bg-orange-500/5 border-orange-500/20',
+  m365: 'bg-blue-500/5 border-blue-500/20',
+  external_domain: 'bg-emerald-500/5 border-emerald-500/20',
+};
+
+// No SourceCard div:
+<div className={cn("border rounded-lg p-4 space-y-3", MODULE_BG[source.module_code] || '')}>
+```
+
 ### Migracao SQL
 
+Inserir nova fonte para a biblioteca `history`:
+
 ```sql
--- Deletar fontes antigas
-DELETE FROM cve_sources;
-
--- Inserir fontes granulares por produto
-INSERT INTO cve_sources (module_code, source_type, source_label, config, is_active) VALUES
-  ('firewall', 'nist_nvd', 'FortiGate', '{"vendor": "fortinet", "months": 6}', true),
-  ('firewall', 'nist_nvd', 'SonicWall', '{"vendor": "sonicwall", "months": 6}', true),
-  ('m365', 'msrc', 'Microsoft 365', '{"months": 3}', true),
-  ('external_domain', 'nist_nvd_web', 'Nginx', '{"product_filter": "nginx"}', true),
-  ('external_domain', 'nist_nvd_web', 'Apache HTTP Server', '{"product_filter": "http_server"}', true),
-  ('external_domain', 'nist_nvd_web', 'OpenSSH', '{"product_filter": "openssh"}', true);
-```
-
-### Filtro por vendor no syncNistNvdSource
-
-```typescript
-const vendorFilter = (source.config as any)?.vendor;
-// Filtrar firewalls pelo device_type do vendor
-for (const h of histories) {
-  const fw = firewalls.find(f => f.id === h.firewall_id);
-  const vendor = fw?.device_type_id ? deviceTypeMap.get(fw.device_type_id) : 'fortinet';
-  if (vendorFilter && vendor !== vendorFilter) continue;
-  // ... processar normalmente
-}
-```
-
-### Filtro por produto no syncNistNvdWebSource
-
-```typescript
-const productFilter = (source.config as any)?.product_filter?.toLowerCase();
-// Ao coletar CPEs, filtrar pelo produto
-for (const cpe of svc.cpe || []) {
-  const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
-  const product = (parts[2] || '').toLowerCase();
-  if (productFilter && !product.includes(productFilter)) continue;
-  cpeSet.add(cpe);
-}
+INSERT INTO cve_sources (module_code, source_type, source_label, config, is_active)
+VALUES ('external_domain', 'nist_nvd_web', 'History', '{"product_filter": "history"}', true);
 ```
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| Migracao SQL | Recriar fontes por produto |
-| `supabase/functions/refresh-cve-cache/index.ts` | Adicionar filtros por vendor/produto |
-| `src/pages/admin/CVESourcesPage.tsx` | Nova pagina dedicada (substituindo dialog) |
-| `src/pages/admin/CVEsCachePage.tsx` | Trocar botao para navegar a /cves/sources |
-| `src/components/admin/CVESourcesConfigDialog.tsx` | Remover (nao mais necessario) |
-| `src/App.tsx` | Adicionar rota /cves/sources |
-
+| `src/pages/admin/CVESourcesPage.tsx` | Botao voltar + cor de fundo nos cards |
+| Migracao SQL | Nova fonte "History" |
