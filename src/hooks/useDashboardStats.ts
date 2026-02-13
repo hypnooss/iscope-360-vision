@@ -48,16 +48,15 @@ export interface DashboardStats {
 function aggregateScoreHistory(
   rows: { score: number | null; created_at: string | null }[],
 ): ScoreHistoryPoint[] {
-  const dayMap = new Map<string, number[]>();
+  const dayMap = new Map<string, number>();
   for (const r of rows) {
     if (r.score == null || !r.created_at) continue;
     const day = r.created_at.slice(0, 10);
-    if (!dayMap.has(day)) dayMap.set(day, []);
-    dayMap.get(day)!.push(r.score);
+    dayMap.set(day, r.score); // last value wins (data sorted ASC)
   }
   const points: ScoreHistoryPoint[] = [];
-  for (const [date, scores] of dayMap) {
-    points.push({ date, score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) });
+  for (const [date, score] of dayMap) {
+    points.push({ date, score });
   }
   points.sort((a, b) => a.date.localeCompare(b.date));
   return points.slice(-30);

@@ -19,16 +19,11 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
     [data]
   );
 
-  const gradientId = useMemo(() => `sparkStroke-${Math.random().toString(36).slice(2, 8)}`, []);
   const fillGradientId = useMemo(() => `sparkFill-${Math.random().toString(36).slice(2, 8)}`, []);
 
-  const gradientStops = useMemo(() => {
-    if (sortedData.length < 2) return [];
-    const lastIndex = sortedData.length - 1;
-    return sortedData.map((point, i) => ({
-      offset: `${(i / lastIndex) * 100}%`,
-      color: getColorForScore(point.score),
-    }));
+  const lineColor = useMemo(() => {
+    if (sortedData.length < 2) return 'hsl(175, 80%, 45%)';
+    return getColorForScore(sortedData[sortedData.length - 1].score);
   }, [sortedData]);
 
   const ticks = useMemo(() => {
@@ -54,14 +49,9 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={sortedData} margin={{ top: 2, right: 16, bottom: 0, left: 16 }}>
           <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-              {gradientStops.map((stop, i) => (
-                <stop key={i} offset={stop.offset} stopColor={stop.color} />
-              ))}
-            </linearGradient>
             <linearGradient id={fillGradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={gradientStops[gradientStops.length - 1]?.color || 'hsl(175, 80%, 45%)'} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={gradientStops[gradientStops.length - 1]?.color || 'hsl(175, 80%, 45%)'} stopOpacity={0} />
+              <stop offset="0%" stopColor={lineColor} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
             </linearGradient>
           </defs>
           <YAxis domain={[0, 100]} hide />
@@ -77,7 +67,7 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
           <Area
             type="monotone"
             dataKey="score"
-            stroke={`url(#${gradientId})`}
+            stroke={lineColor}
             strokeWidth={2}
             fill={`url(#${fillGradientId})`}
             isAnimationActive={false}
