@@ -1,67 +1,70 @@
 
 
-# Fix: Steps UTM 404 e IPS 500 - Suporte a Steps Opcionais
+# Analyzer: Workspace Selector + Fix Paises Autenticacao
 
-## Diagnostico
+## 1. Workspace Selector para Super Admins
 
-Os paths `/api/v2/log/memory/utm/webfilter` e `/api/v2/log/memory/utm/app-ctrl` estao corretos na especificacao da API FortiGate. O 404 ocorre porque algumas versoes do FortiOS retornam 404 quando o buffer de memoria para aquele subtipo esta vazio (sem logs recentes), em vez de retornar um array vazio. Isso e comportamento normal do FortiGate.
+Adicionar o mesmo padrao de seletor de workspace usado na FirewallListPage ao AnalyzerDashboardPage. O fluxo sera:
 
-O erro 500 no `ips_events` e causado pelo operador `<=` no filtro (`severity<=2`) que nao e suportado em queries de log de memoria em certas versoes.
+1. Super Admin seleciona o **Workspace** primeiro
+2. O seletor de **Firewall** filtra apenas firewalls daquele workspace
+3. Dados bloqueados ate workspace estar selecionado
 
-O problema principal e que o agent Python nao trata steps `optional: true` para executors que nao sejam PowerShell. Quando um step HTTP retorna erro (404/500), ele e marcado como `failed` e contamina o status geral da task para `partial`, mesmo que o step seja opcional.
+**Arquivo**: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-## Alteracoes
+Alteracoes:
+- Importar `useEffectiveAuth`, `usePreview`, `useQuery`, `Building2`
+- Adicionar estado `selectedWorkspaceId` e query de workspaces (mesmo padrao da FirewallListPage)
+- Auto-selecionar primeiro workspace
+- Filtrar a query de firewalls por `client_id` do workspace selecionado
+- Renderizar o seletor de workspace ANTES do seletor de firewall no header
 
-### 1. Migration SQL - Atualizar blueprint
-
-Atualizar os 3 steps problematicos no blueprint do Analyzer:
-
-- **`ips_events`**: Remover filtro `severity<=2` do path (usar `/api/v2/log/memory/ips?rows=500`) e adicionar `"optional": true`
-- **`webfilter_blocked`**: Adicionar `"optional": true` na config
-- **`appctrl_blocked`**: Adicionar `"optional": true` na config
-
-### 2. Agent Python - Suporte a `optional` em steps HTTP
-
-**Arquivo**: `python-agent/agent/tasks.py`
-
-Na secao de execucao de steps individuais (nao-PowerShell), entre as linhas 269-284, adicionar verificacao do campo `optional` na config do step:
-
-```python
-# Antes (linha 269):
-step_status = 'failed' if result.get('error') else 'success'
-
-# Depois:
-is_optional = step.get('config', {}).get('optional', False)
-if result.get('error') and is_optional:
-    step_status = 'not_applicable'
-    step_error = f"[optional] {result.get('error')}"
-elif result.get('error'):
-    step_status = 'failed'
-else:
-    step_status = 'success'
+Layout do header:
+```
+[Workspace: ACME Corp v] [Firewall: AAX-FW v] [Executar Analise]
 ```
 
-Quando um step opcional falha, ele e reportado como `not_applicable` em vez de `failed`, o que:
-- Nao incrementa `steps_failed`
-- Nao contamina o status final da task
-- Permite que o `firewall-analyzer` processe normalmente os dados disponiveis
+---
 
-### 3. Edge function - Tratar dados ausentes
+## 2. Fix Paises - Autenticacao
+
+**Diagnostico real**: O ipCountryMap construido a partir do trafego negado nao funciona para este firewall porque:
+- O trafego negado e todo interno (10.x.x.x) mapeado como "Reserved"
+- Os IPs de autenticacao sao externos e nao aparecem no trafego negado
+
+**Solucao**: Enriquecer o ipCountryMap tambem com os proprios logs de autenticacao que **tem** `srccountry` (alguns logs do mesmo batch podem ter o campo). Alem disso, adicionar um segundo passo: percorrer os logs de VPN que frequentemente contem `srccountry` e usar como fonte adicional.
 
 **Arquivo**: `supabase/functions/firewall-analyzer/index.ts`
 
-No fluxo principal, verificar se os dados de webfilter/appctrl existem antes de chamar as funcoes de analise. Se nao existirem (step opcional retornou `not_applicable`), preencher as metricas com arrays vazios e contadores zero. Isso ja deve estar implementado com os defaults, mas garantir que nao ha crash quando os dados sao `undefined`.
+No bloco principal (linhas 724-731), apos construir o ipCountryMap do trafego negado, tambem iterar sobre:
+- `authData` (logs de autenticacao)
+- `vpnData` (logs de VPN)
+
+Extrair `srccountry`/`src_country` de qualquer log que tenha o campo e adicionar ao mapa. Isso garante que mesmo quando o trafego negado nao ajuda, os proprios logs de auth/VPN contribuem quando disponiveis.
+
+```typescript
+// Enrich from auth and VPN logs too
+for (const log of [...authLogs, ...vpnLogs]) {
+  const ip = log.srcip || log.remip || log.src;
+  const country = log.srccountry || log.src_country;
+  if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
+}
+```
+
+**Nota**: Se o FortiGate em questao (BR-PMP-FW-001) realmente nao retorna `srccountry` em NENHUM tipo de log (nem auth, nem VPN, nem denied), entao a unica solucao seria integrar um servico de geolocalizacao de IP externo (ex: ip-api.com, MaxMind), o que pode ser considerado em uma iteracao futura.
+
+---
+
+## Arquivos alterados
+
+| Arquivo | Alteracao |
+|---|---|
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Workspace selector + filtro de firewalls por workspace |
+| `supabase/functions/firewall-analyzer/index.ts` | Enriquecer ipCountryMap com logs de auth/VPN |
 
 ## Sequencia
 
-1. Migration SQL para corrigir o blueprint (optional flags + fix IPS path)
-2. Atualizar `python-agent/agent/tasks.py` para respeitar `optional: true`
-3. Verificar edge function para robustez com dados ausentes
-4. Deploy da edge function (se necessario)
-
-## Impacto
-
-- Steps UTM que retornem 404 serao tratados como "nao aplicavel" sem afetar o status da analise
-- O IPS deixa de dar 500 com a remocao do filtro problematico
-- A analise completa normalmente e exibe os dados de webfilter/appctrl quando disponiveis
+1. Atualizar AnalyzerDashboardPage com workspace selector
+2. Atualizar edge function para enriquecer ipCountryMap
+3. Deploy da edge function
 
