@@ -35,17 +35,22 @@ class NmapExecutor(BaseExecutor):
             ports = ports[:100]
 
         port_str = ','.join(str(p) for p in ports)
-        timeout = params.get('timeout', 300)
+        timeout = params.get('timeout', 600)
 
-        self.logger.info(f"[nmap] Scanning {ip} ports={port_str[:80]}...")
+        self.logger.info(f"[nmap] Stealth scanning {ip} ports={port_str[:80]}...")
 
+        # Primary scan: stealth, no scripts, human-like timing
         cmd = [
-            'nmap', '-sV', '-sC',
+            'nmap', '-sV',
+            '--version-intensity', '5',
             f'-p{port_str}',
             ip,
             '-oX', '-',
-            '--host-timeout', '180s',
-            '-T4',
+            '-T3',
+            '--host-timeout', '300s',
+            '--scan-delay', '500ms',
+            '--max-retries', '2',
+            '--data-length', '24',
         ]
 
         try:
@@ -56,8 +61,44 @@ class NmapExecutor(BaseExecutor):
                 timeout=timeout,
             )
 
+            if result.stderr and result.stderr.strip():
+                self.logger.warning(f"[nmap] stderr: {result.stderr[:500]}")
+
             services = self._parse_nmap_xml(result.stdout)
             os_info = self._parse_os_info(result.stdout)
+
+            # Fallback: if zero services found, retry with targeted lightweight scripts
+            if not services and ports:
+                self.logger.warning(
+                    f"[nmap] Zero services on {ip} with {len(ports)} ports. "
+                    f"Retrying with targeted scripts (banner,ssl-cert,http-title)..."
+                )
+                cmd_fallback = [
+                    'nmap', '-sV',
+                    '--version-intensity', '7',
+                    '--script=banner,ssl-cert,http-title',
+                    f'-p{port_str}',
+                    ip,
+                    '-oX', '-',
+                    '-T3',
+                    '--host-timeout', '180s',
+                    '--max-retries', '1',
+                    '--data-length', '24',
+                ]
+                result2 = subprocess.run(
+                    cmd_fallback,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                if result2.stderr and result2.stderr.strip():
+                    self.logger.warning(f"[nmap-fallback] stderr: {result2.stderr[:500]}")
+
+                services = self._parse_nmap_xml(result2.stdout)
+                if not os_info:
+                    os_info = self._parse_os_info(result2.stdout)
+
+                self.logger.info(f"[nmap-fallback] Found {len(services)} services on {ip}")
 
             self.logger.info(f"[nmap] Found {len(services)} services on {ip}")
 
