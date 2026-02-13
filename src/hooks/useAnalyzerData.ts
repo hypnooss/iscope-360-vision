@@ -37,6 +37,12 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       configChangeDetails: (metrics.configChangeDetails as AnalyzerMetrics['configChangeDetails']) ?? [],
       totalDenied: (metrics.totalDenied as number) ?? 0,
       totalEvents: (metrics.totalEvents as number) ?? 0,
+      topWebFilterCategories: (metrics.topWebFilterCategories as AnalyzerMetrics['topWebFilterCategories']) ?? [],
+      topWebFilterUsers: (metrics.topWebFilterUsers as AnalyzerMetrics['topWebFilterUsers']) ?? [],
+      topAppControlApps: (metrics.topAppControlApps as AnalyzerMetrics['topAppControlApps']) ?? [],
+      topAppControlUsers: (metrics.topAppControlUsers as AnalyzerMetrics['topAppControlUsers']) ?? [],
+      webFilterBlocked: (metrics.webFilterBlocked as number) ?? 0,
+      appControlBlocked: (metrics.appControlBlocked as number) ?? 0,
     },
     created_at: row.created_at as string,
   };

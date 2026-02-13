@@ -18,10 +18,11 @@ import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, Map, ExternalLink,
+  Filter, AppWindow,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import 'flag-icons/css/flag-icons.min.css';
-import type { TopBlockedIP, TopCountry } from '@/types/analyzerInsights';
+import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP } from '@/types/analyzerInsights';
 
 interface FirewallOption { id: string; name: string; }
 
@@ -96,6 +97,37 @@ function CountryListWidget({ countries }: { countries: TopCountry[] }) {
             <div
               className="h-full bg-primary/50 rounded-full transition-all"
               style={{ width: `${(c.count / maxCount) * 100}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Reusable category/app ranking widget
+function RankingListWidget({ items, labelKey }: { items: { [key: string]: any; count: number }[]; labelKey: string }) {
+  if (!items?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
+  const maxCount = Math.max(...items.map(i => i.count), 1);
+  return (
+    <div className="space-y-1">
+      {items.slice(0, 10).map((item, i) => (
+        <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+          <div className="flex items-center gap-3">
+            <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+              {i + 1}
+            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-foreground truncate block">{item[labelKey]}</span>
+              {item.ip && <span className="text-[10px] text-muted-foreground font-mono">{item.ip}</span>}
+              {item.category && labelKey !== 'category' && <span className="text-[10px] text-muted-foreground ml-1">({item.category})</span>}
+            </div>
+            <Badge variant="secondary" className="font-mono text-xs shrink-0">{item.count}</Badge>
+          </div>
+          <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary/50 rounded-full transition-all"
+              style={{ width: `${(item.count / maxCount) * 100}%` }}
             />
           </div>
         </div>
@@ -349,6 +381,8 @@ export default function AnalyzerDashboardPage() {
                     icon: Server,
                     onClick: () => navigate('/scope-firewall/analyzer/config-changes'),
                   },
+                  { label: 'Web Filter', value: m?.webFilterBlocked ?? 0, icon: Filter },
+                  { label: 'App Control', value: m?.appControlBlocked ?? 0, icon: AppWindow },
                 ].map(s => (
                   <div
                     key={s.label}
@@ -367,6 +401,58 @@ export default function AnalyzerDashboardPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Top Web Filter Categories */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Filter className="w-4 h-4 text-primary" />
+                Top Categorias Web Bloqueadas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="categories">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="categories">Categorias</TabsTrigger>
+                    <TabsTrigger value="users">Usuários/IPs</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="categories">
+                    <RankingListWidget items={m?.topWebFilterCategories ?? []} labelKey="category" />
+                  </TabsContent>
+                  <TabsContent value="users">
+                    <RankingListWidget items={m?.topWebFilterUsers ?? []} labelKey="user" />
+                  </TabsContent>
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top App Control */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AppWindow className="w-4 h-4 text-primary" />
+                Top Aplicações Bloqueadas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="apps">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="apps">Aplicações</TabsTrigger>
+                    <TabsTrigger value="users">Usuários/IPs</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="apps">
+                    <RankingListWidget items={(m?.topAppControlApps ?? []).map(a => ({ ...a, category: a.category }))} labelKey="app" />
+                  </TabsContent>
+                  <TabsContent value="users">
+                    <RankingListWidget items={m?.topAppControlUsers ?? []} labelKey="user" />
+                  </TabsContent>
+                </Tabs>
+              )}
             </CardContent>
           </Card>
 
