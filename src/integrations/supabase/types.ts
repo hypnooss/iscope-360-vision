@@ -2179,6 +2179,30 @@ export type Database = {
       }
       cleanup_old_step_results: { Args: never; Returns: number }
       cleanup_stuck_tasks: { Args: never; Returns: undefined }
+      get_ext_domain_dashboard_summary: {
+        Args: { p_domain_ids: string[] }
+        Returns: {
+          analyzed_at: string
+          critical: number
+          domain_id: string
+          high: number
+          low: number
+          medium: number
+          score: number
+        }[]
+      }
+      get_fw_dashboard_summary: {
+        Args: { p_firewall_ids: string[] }
+        Returns: {
+          analyzed_at: string
+          critical: number
+          firewall_id: string
+          high: number
+          low: number
+          medium: number
+          score: number
+        }[]
+      }
       get_module_permission: {
         Args: { _module_name: string; _user_id: string }
         Returns: Database["public"]["Enums"]["module_permission"]
