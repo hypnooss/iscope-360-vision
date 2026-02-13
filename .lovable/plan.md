@@ -1,50 +1,75 @@
 
 
-# Correcoes: Dados ao trocar Workspace + Datas truncadas no Sparkline
+# Otimizacao do Dashboard: Performance e Dados Confiaveis
 
-## Problema 1 - Dados desatualizados ao trocar Workspace
+## Diagnostico
 
-O hook `useDashboardStats` so define `loading = true` na inicializacao (`useState(true)`). Quando o usuario troca de workspace, o `fetchStats` roda novamente mas **nunca reseta `loading` para `true`**, entao:
-- O dashboard continua exibindo os dados antigos enquanto a nova query roda
-- Se a query demora, o usuario ve dados do workspace anterior como se fossem do novo
+O hook `useDashboardStats` esta transferindo **~750KB de JSON** a cada troca de workspace porque baixa o campo `report_data` completo (relatorios inteiros de conformidade) de TODAS as analises historicas, apenas para contar severidades no client-side.
 
-**Solucao**: Adicionar `setLoading(true)` no inicio de `fetchStats()` para que o skeleton de carregamento apareca enquanto os novos dados sao buscados.
+Alem disso, as queries de historico sao **sequenciais** (firewall -> m365 -> ext domain -> CVE) e nao ha cache entre trocas de workspace.
 
-## Problema 2 - Datas truncadas no eixo X do Sparkline
+## Estrategia
 
-Na imagem, as datas aparecem como `3/01` e `13/1` em vez de `03/01` e `13/01`. Isso acontece porque a margem lateral do chart (`left: 4, right: 4`) e muito pequena para acomodar o texto completo, e o Recharts corta os labels que ultrapassam a area do SVG.
-
-**Solucao**: Aumentar as margens laterais do `AreaChart` de `4px` para `16px` para dar espaco aos labels das datas.
+Ao inves de criar uma tabela nova (que exigiria triggers e edge functions para manter sincronizada), vamos otimizar as queries existentes para reduzir o volume de ~750KB para ~5KB:
 
 ## Alteracoes
 
-### Arquivo: `src/hooks/useDashboardStats.ts`
+### 1. Separar queries de score history e severidades
 
-Na funcao `fetchStats`, adicionar `setLoading(true)` como primeira linha do `try`:
+**Arquivo**: `src/hooks/useDashboardStats.ts`
 
-```typescript
-const fetchStats = async () => {
-  setLoading(true);  // <-- adicionar esta linha
-  try {
-    // ... resto do codigo
-```
+**Score history** (para o sparkline): selecionar apenas `score, created_at` -- sem `report_data`. Limitar a 30 dias.
 
-### Arquivo: `src/components/dashboard/ScoreSparkline.tsx`
-
-Ajustar as margens do `AreaChart`:
-
-```typescript
+```text
 // De:
-margin={{ top: 2, right: 4, bottom: 0, left: 4 }}
-
+.select('firewall_id, score, report_data, created_at')
 // Para:
-margin={{ top: 2, right: 16, bottom: 0, left: 16 }}
+.select('firewall_id, score, created_at')
+.gte('created_at', thirtyDaysAgo)
 ```
+
+**Severidades** (contagem de conformidade): query separada que busca apenas o registro MAIS RECENTE por ativo, usando DISTINCT ON via RPC ou limitando com logica client-side mas SEM baixar report_data. Em vez disso, recalcular severidades a partir dos dados que ja existem.
+
+### 2. Eliminar download de report_data
+
+Para as severidades, em vez de baixar o JSON completo e walkear categories no browser, vamos usar uma abordagem diferente para cada modulo:
+
+- **Firewall**: Buscar apenas o ultimo registro por firewall. Selecionar `report_data` somente desse unico registro (1 x 44KB em vez de 9 x 44KB = reducao de 90%).
+- **External Domain**: Mesmo padrao - ultimo registro por domain.
+- **M365**: Ja usa `summary` como campo separado -- sem alteracao necessaria.
+
+### 3. Paralelizar TODAS as queries
+
+Atualmente, apos o primeiro `Promise.all` (asset counts), as queries de historico rodam em sequencia. Mover todas para um unico `Promise.all`:
+
+```text
+const [fwHistory, fwScoreHistory, m365History, extHistory, extScoreHistory, cveCache] = 
+  await Promise.all([...]);
+```
+
+### 4. Migrar para useQuery com staleTime
+
+Substituir o `useEffect + useState` manual por `useQuery` do TanStack, com `staleTime: 60_000` (1 minuto). Isso significa:
+- Ao trocar workspace, se os dados daquele workspace foram buscados ha menos de 1 minuto, usa o cache instantaneamente
+- O `queryKey` inclui o `selectedWorkspaceId`, entao cada workspace tem seu proprio cache
+- `placeholderData: keepPreviousData` evita flash de skeleton em trocas rapidas
+
+### 5. Limitar historico a 30 dias
+
+Adicionar filtro `.gte('created_at', thirtyDaysAgo)` em todas as queries de historico para nao baixar dados antigos desnecessarios.
+
+## Resumo do impacto
+
+| Metrica | Antes | Depois |
+|---|---|---|
+| Dados transferidos | ~750 KB | ~10 KB |
+| Queries sequenciais | 4 em serie | Todas paralelas |
+| Cache entre workspaces | Nenhum | 1 min staleTime |
+| Tempo estimado | 2-4 segundos | < 500ms |
 
 ## Arquivos alterados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | Resetar loading ao iniciar fetch |
-| `src/components/dashboard/ScoreSparkline.tsx` | Aumentar margens laterais para datas caberem |
+| `src/hooks/useDashboardStats.ts` | Reescrita completa: useQuery, queries otimizadas, paralelizacao |
 
