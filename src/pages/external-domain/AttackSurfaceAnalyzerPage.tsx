@@ -375,8 +375,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                     </TooltipProvider>
                   </TableCell>
                   <TableCell className="text-center">
-                    <TooltipProvider>
-                      <Tooltip>
+                    <Tooltip>
                         <TooltipTrigger asChild>
                           <Badge variant="outline" className={cn("cursor-help",
                             row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
@@ -389,8 +388,7 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                         <TooltipContent side="bottom">
                           {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
                         </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    </Tooltip>
                   </TableCell>
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
                   <TableCell className="text-xs">
