@@ -777,6 +777,7 @@ ExecStartPre=-/bin/bash \${INSTALL_DIR}/check-deps.sh
 ExecStart=\${INSTALL_DIR}/venv/bin/python \${INSTALL_DIR}/main.py
 Restart=always
 RestartSec=5
+AmbientCapabilities=CAP_NET_RAW
 EOF
 
   if id "$SERVICE_USER" >/dev/null 2>&1; then

@@ -459,6 +459,8 @@ install_scanner_tools() {
     fi
     if command -v nmap >/dev/null 2>&1; then
         log "nmap OK: $(nmap --version 2>&1 | head -1)"
+        # Ensure CAP_NET_RAW on nmap binary for SYN scans without root
+        setcap cap_net_raw+ep "$(command -v nmap)" 2>/dev/null || true
     fi
 
     # httpx (projectdiscovery)
