@@ -1,46 +1,61 @@
 
 
-# Corrigir permissao de raw socket para o nmap
+# Corrigir permissoes do nmap via AmbientCapabilities no systemd
 
 ## Problema
 
-O nmap esta rodando sem a permissao `CAP_NET_RAW`, resultando no aviso:
-
-```
-You have specified some options that require raw socket access.
-These options will not be honored without the necessary privileges.
-```
-
-Sem essa permissao, o nmap:
-- Nao consegue fazer SYN scan (cai para connect scan, mais lento e detectavel)
-- Perde capacidade de OS detection
-- Pode falhar em fingerprinting de versao em alguns casos
-
-O instalador do Super Agent ja aplica `setcap cap_net_raw+ep` no masscan, mas esquece de fazer o mesmo para o nmap.
+O `setcap cap_net_raw+ep` no binario do nmap nao e suficiente. Quando o servico roda como usuario `iscope`, o kernel ignora file capabilities para usuarios nao-root (a menos que o processo tenha a capability no seu "ambient set"). O resultado e que o nmap recusa executar SYN scan com "requires root privileges".
 
 ## Solucao
 
-Adicionar o `setcap cap_net_raw+ep` ao binario do nmap no script de instalacao, identico ao que ja e feito para o masscan.
+Adicionar `AmbientCapabilities=CAP_NET_RAW` ao unit file do systemd gerado pelo instalador do Super Agent. Isso faz com que o processo do agente (e seus subprocessos como nmap e masscan) herdem a capability `CAP_NET_RAW` automaticamente, sem precisar de root.
 
 ## Detalhes tecnicos
 
 ### Arquivo: `supabase/functions/super-agent-install/index.ts`
 
-Apos a linha 252 (apos o bloco de instalacao do nmap), adicionar:
+Na funcao `write_systemd_service()` (linha ~780), adicionar `AmbientCapabilities=CAP_NET_RAW` na secao `[Service]`, antes do fechamento do primeiro bloco heredoc:
+
+```
+[Service]
+Type=simple
+EnvironmentFile=${CONFIG_DIR}/agent.env
+WorkingDirectory=${INSTALL_DIR}
+ExecStartPre=-/bin/bash ${INSTALL_DIR}/check-deps.sh
+ExecStart=${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/main.py
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_RAW    # <-- ADICIONAR
+```
+
+### Arquivo: `python-agent/check-deps.sh`
+
+Adicionar `setcap cap_net_raw+ep` ao nmap na funcao `install_scanner_tools()` (apos a instalacao do nmap, similar ao que ja fazemos no instalador), para que agentes existentes recebam a correcao via auto-update:
 
 ```bash
-# Conceder CAP_NET_RAW ao nmap (necessario para SYN scan e OS detection sem root)
-local nmap_path
-nmap_path="$(command -v nmap 2>/dev/null || echo '/usr/bin/nmap')"
-if [[ -x "$nmap_path" ]]; then
-  echo "Configurando CAP_NET_RAW para nmap em $nmap_path..."
-  setcap cap_net_raw+ep "$nmap_path" 2>/dev/null || {
-    echo "Aviso: falha ao configurar CAP_NET_RAW para nmap."
-  }
+if command -v nmap >/dev/null 2>&1; then
+    log "nmap OK: $(nmap --version 2>&1 | head -1)"
+    # Garantir CAP_NET_RAW no binario
+    setcap cap_net_raw+ep "$(command -v nmap)" 2>/dev/null || true
 fi
 ```
 
-## Observacao
+### Validacao apos aplicar
 
-Os agentes ja instalados precisarao ser reinstalados (ou atualizado o componente) para que a permissao seja aplicada. Novos agentes ja receberao a correcao automaticamente.
+No servidor, executar:
+
+```bash
+systemctl daemon-reload
+systemctl restart iscope-agent
+su - iscope -s /bin/bash -c "nmap -sS -p 443 8.8.8.8"
+```
+
+O scan SYN deve funcionar sem o aviso de "raw socket access".
+
+## Resumo das alteracoes
+
+| Arquivo | Alteracao |
+|---|---|
+| `supabase/functions/super-agent-install/index.ts` | Adicionar `AmbientCapabilities=CAP_NET_RAW` ao unit file do systemd |
+| `python-agent/check-deps.sh` | Adicionar `setcap cap_net_raw+ep` ao nmap na funcao de scanner tools |
 
