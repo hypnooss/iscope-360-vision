@@ -21,11 +21,13 @@ interface Props {
 const MODULE_LABELS: Record<string, string> = {
   firewall: 'Firewall',
   m365: 'Microsoft 365',
+  external_domain: 'Domínio Externo',
 };
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   nist_nvd: 'NIST NVD',
   msrc: 'MSRC',
+  nist_nvd_web: 'NIST NVD (Web)',
 };
 
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; className: string }> = {

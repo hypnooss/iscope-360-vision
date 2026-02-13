@@ -620,6 +620,9 @@ async function correlateCVEs(
   enrichedResults: EnrichedIP[],
   supabase: any,
 ): Promise<any[]> {
+  const matchMap = new Map<string, any>()
+
+  // 1. Match by direct vuln IDs (existing logic)
   const allVulnIds = new Set<string>()
   for (const r of enrichedResults) {
     for (const v of r.vulns) {
@@ -627,22 +630,57 @@ async function correlateCVEs(
     }
   }
 
-  if (allVulnIds.size === 0) return []
+  if (allVulnIds.size > 0) {
+    const vulnArray = Array.from(allVulnIds)
+    for (let i = 0; i < vulnArray.length; i += 50) {
+      const batch = vulnArray.slice(i, i + 50)
+      const { data } = await supabase
+        .from('cve_cache')
+        .select('cve_id, title, severity, score, advisory_url, products')
+        .in('cve_id', batch)
 
-  const vulnArray = Array.from(allVulnIds)
-  const matches: any[] = []
-
-  for (let i = 0; i < vulnArray.length; i += 50) {
-    const batch = vulnArray.slice(i, i + 50)
-    const { data } = await supabase
-      .from('cve_cache')
-      .select('cve_id, title, severity, score, advisory_url, products')
-      .in('cve_id', batch)
-
-    if (data) matches.push(...data)
+      if (data) {
+        for (const d of data) matchMap.set(d.cve_id, d)
+      }
+    }
   }
 
-  return matches
+  // 2. Match by CPE product names from local cache
+  const productNames = new Set<string>()
+  for (const r of enrichedResults) {
+    for (const svc of r.services) {
+      for (const cpe of svc.cpe || []) {
+        const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':')
+        const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase()
+        if (product && product.length > 2) productNames.add(product)
+      }
+    }
+  }
+
+  if (productNames.size > 0) {
+    // Query CVEs from external_domain module in local cache
+    const { data: webCves } = await supabase
+      .from('cve_cache')
+      .select('cve_id, title, severity, score, advisory_url, products')
+      .eq('module_code', 'external_domain')
+      .limit(1000)
+
+    if (webCves) {
+      for (const cve of webCves) {
+        if (matchMap.has(cve.cve_id)) continue
+        const titleLower = (cve.title || '').toLowerCase()
+        const cveProducts = (cve.products || []).map((p: any) => String(p).toLowerCase())
+        for (const product of productNames) {
+          if (titleLower.includes(product) || cveProducts.some((cp: string) => cp.includes(product))) {
+            matchMap.set(cve.cve_id, cve)
+            break
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(matchMap.values())
 }
 
 // ── Main Handler ────────────────────────────────────────────────────────────

@@ -30,11 +30,13 @@ const SEVERITY_COLORS: Record<string, string> = {
 const MODULE_COLORS: Record<string, string> = {
   firewall: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
   m365: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  external_domain: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
 };
 
 const MODULE_LABELS: Record<string, string> = {
   firewall: 'Firewall',
   m365: 'M365',
+  external_domain: 'Domínio Externo',
 };
 
 function CVECard({ cve }: { cve: CachedCVE }) {
@@ -239,6 +241,7 @@ export default function CVEsCachePage() {
               <SelectItem value="all">Todos os módulos</SelectItem>
               <SelectItem value="firewall">Firewall</SelectItem>
               <SelectItem value="m365">Microsoft 365</SelectItem>
+              <SelectItem value="external_domain">Domínio Externo</SelectItem>
             </SelectContent>
           </Select>
         </div>
