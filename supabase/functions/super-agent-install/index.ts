@@ -252,6 +252,16 @@ install_scanner_tools() {
     fi
   fi
 
+  # Conceder CAP_NET_RAW ao nmap (necessario para SYN scan e OS detection sem root)
+  local nmap_path
+  nmap_path="\$(command -v nmap 2>/dev/null || echo '/usr/bin/nmap')"
+  if [[ -x "\$nmap_path" ]]; then
+    echo "Configurando CAP_NET_RAW para nmap em \$nmap_path..."
+    setcap cap_net_raw+ep "\$nmap_path" 2>/dev/null || {
+      echo "Aviso: falha ao configurar CAP_NET_RAW para nmap."
+    }
+  fi
+
   # --- httpx (projectdiscovery) ---
   if command -v httpx >/dev/null 2>&1 || [[ -x /usr/local/bin/httpx ]]; then
     echo "httpx já instalado"
