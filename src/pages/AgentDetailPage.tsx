@@ -645,7 +645,7 @@ export default function AgentDetailPage() {
                         Expira {formatDistanceToNow(new Date(agent.activation_code_expires_at), { locale: ptBR, addSuffix: true })}
                       </p>
                     )}
-                    <AgentInstallInstructions activationCode={agent.activation_code} />
+                    <AgentInstallInstructions activationCode={agent.activation_code} isSuperAgent={!agent.client_id} />
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">
