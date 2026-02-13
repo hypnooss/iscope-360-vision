@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { StatCard } from '@/components/StatCard';
@@ -13,7 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   RefreshCw, CheckCircle2, XCircle, Clock, Database,
-  Shield, AlertTriangle, Activity, Layers,
+  Shield, AlertTriangle, Activity, Layers, ArrowLeft,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -29,6 +30,12 @@ const MODULE_COLORS: Record<string, string> = {
   firewall: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
   m365: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   external_domain: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+};
+
+const MODULE_BG: Record<string, string> = {
+  firewall: 'bg-orange-500/5 border-orange-500/20',
+  m365: 'bg-blue-500/5 border-blue-500/20',
+  external_domain: 'bg-emerald-500/5 border-emerald-500/20',
 };
 
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; className: string }> = {
@@ -48,7 +55,7 @@ function SourceCard({ source, onToggle, onSync, isSyncing }: {
   const StatusIcon = statusConfig.icon;
 
   return (
-    <div className="border rounded-lg p-4 space-y-3">
+    <div className={cn("border rounded-lg p-4 space-y-3 transition-colors", MODULE_BG[source.module_code] || '')}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -100,6 +107,7 @@ function SourceCard({ source, onToggle, onSync, isSyncing }: {
 export default function CVESourcesPage() {
   const { data: sources, isLoading } = useCVESources();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
 
@@ -184,9 +192,14 @@ export default function CVESourcesPage() {
         ]} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Fontes de CVE</h1>
-            <p className="text-muted-foreground">Gerencie as fontes de sincronização de vulnerabilidades por produto</p>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/cves')} className="shrink-0">
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Fontes de CVE</h1>
+              <p className="text-muted-foreground">Gerencie as fontes de sincronização de vulnerabilidades por produto</p>
+            </div>
           </div>
           <Button onClick={handleSyncAll} disabled={syncingAll} variant="outline" size="sm">
             <RefreshCw className={cn('w-4 h-4 mr-2', syncingAll && 'animate-spin')} />
