@@ -1,83 +1,78 @@
 
 
-# Fix: Extrair tecnologias do httpx para sincronizacao de CVEs
+# Fix: Sincronizacao de CVEs para tecnologias web + novas fontes
 
-## Problema
+## Problema identificado
 
-A funcao `syncNistNvdWebSource` so le CPEs de `services[].cpe` (detectados pelo Nmap). Porem, a maioria das tecnologias web sao detectadas pelo httpx e armazenadas em campos diferentes:
+Os logs revelam o bug:
 
-- **Nginx**: Aparece em `web_services[].server` e `web_services[].technologies`, mas com `cpe: []` no Nmap
-- **History**: Aparece apenas em `web_services[].technologies` como `"History:4.7.2"` -- sem CPE algum
+```
+[Nginx] NVD API returned 404 for CPE cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*
+```
+
+A API do NVD **nao aceita wildcards** (`*`) no parametro `cpeName`. O codigo atual so usa `keywordSearch` quando o vendor e `*`, mas para Nginx o vendor e `f5` (conhecido), entao tenta `cpeName` com versao `*` e recebe 404.
+
+O mesmo problema afeta History: como tem vendor `browserstate`, tambem cai no caminho `cpeName` com wildcard.
 
 ## Solucao
 
-Expandir a extracao de produtos na funcao `syncNistNvdWebSource` para tambem ler `web_services[].technologies` e `web_services[].server`, gerando CPEs sinteticos quando necessario.
+### 1. Corrigir logica de busca NVD
 
-### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
-
-**Logica atualizada de extracao** -- alem de `services[].cpe`, tambem iterar sobre `web_services`:
+Mudar a condicao: usar `keywordSearch` sempre que a **versao** for `*` (independente do vendor), e usar `cpeName` apenas para CPEs com versao especifica.
 
 ```
-Para cada IP nos resultados:
-  1. (existente) Ler services[].cpe
-  2. (novo) Ler web_services[].technologies
-     - Parsear formato "Nome:Versao" (ex: "History:4.7.2")
-     - Gerar CPE sintetico: cpe:2.3:a:*:{nome}:{versao}:*:*:*:*:*:*:*
-  3. (novo) Ler web_services[].server
-     - Se "nginx", gerar CPE: cpe:2.3:a:f5:nginx:{versao_se_disponivel}:*:*:*:*:*:*:*
+Logica atual (bugada):
+  - vendor = '*' → keywordSearch
+  - vendor != '*' → cpeName (mas versao pode ser *, causando 404)
+
+Logica corrigida:
+  - versao = '*' → keywordSearch com "{vendor} {product}" ou apenas "{product}"
+  - versao especifica → cpeName (busca exata, funciona corretamente)
 ```
 
-**Mapeamento de vendors conhecidos** para gerar CPEs corretos:
+### 2. Adicionar 4 novas fontes de CVE
 
-| Tecnologia | Vendor NVD | Produto NVD |
-|---|---|---|
-| Nginx | f5 | nginx |
-| History | browsenpm | history |
-| React | facebook | react |
-| LazySizes | afarkas | lazysizes |
+Baseado na analise dos snapshots, as seguintes tecnologias foram detectadas em clientes reais e nao possuem fontes configuradas:
 
-Para tecnologias desconhecidas, usar vendor `*` e buscar pelo nome do produto.
-
-**Mudanca na query ao NVD**: Para CPEs sinteticos sem versao, usar `keywordSearch` em vez de `cpeName` para ampliar a busca.
+| Fonte | module_code | product_filter | Justificativa |
+|---|---|---|---|
+| PHP | external_domain | php | Detectado em multiplos clientes (7.4.30, 8.3.27, 8.3.15, etc.) |
+| OpenSSL | external_domain | openssl | Detectado em multiplos clientes (1.1.1k) - critico para seguranca |
+| jQuery | external_domain | jquery | Detectado em multiplos clientes - historico de XSS |
+| Node.js | external_domain | node.js | Detectado em 1 cliente - runtime critico |
 
 ### Detalhes tecnicos
 
-A funcao de extracao de CPEs sera refatorada para:
+#### Correcao no `refresh-cve-cache/index.ts`
+
+Substituir o bloco de decisao `cpeName` vs `keywordSearch` (linhas ~275-286):
 
 ```typescript
-// Extrair CPEs do Nmap (existente)
-for (const svc of (result as any).services || []) {
-  for (const cpe of svc.cpe || []) { ... }
-}
+// ANTES (bugado):
+const isSyntheticWildcard = cpe23.startsWith('cpe:2.3:a:*:');
+if (isSyntheticWildcard) { ... keywordSearch ... }
+else { ... cpeName ... }
 
-// NOVO: Extrair tecnologias do httpx
-for (const ws of (result as any).web_services || []) {
-  // Do campo technologies
-  for (const tech of ws.technologies || []) {
-    const [name, version] = tech.split(':');
-    const normalizedName = name.toLowerCase().replace(/\s+/g, '_');
-    if (productFilter && !normalizedName.includes(productFilter)) continue;
-    
-    // Gerar CPE sintetico
-    const vendor = KNOWN_VENDORS[normalizedName] || '*';
-    const ver = version || '*';
-    const syntheticCpe = `cpe:2.3:a:${vendor}:${normalizedName}:${ver}:*:*:*:*:*:*:*`;
-    cpeSet.add(syntheticCpe);
-  }
-  
-  // Do campo server (nginx, apache, etc.)
-  if (ws.server) {
-    const serverName = ws.server.toLowerCase();
-    if (!productFilter || serverName.includes(productFilter)) {
-      const vendor = KNOWN_VENDORS[serverName] || '*';
-      const syntheticCpe = `cpe:2.3:a:${vendor}:${serverName}:*:*:*:*:*:*:*:*`;
-      cpeSet.add(syntheticCpe);
-    }
-  }
+// DEPOIS (corrigido):
+const cpeParts = cpe23.split(':');
+const cpeVendorPart = cpeParts[3] || '*';
+const cpeProductPart = cpeParts[4] || '';
+const cpeVersionPart = cpeParts[5] || '*';
+
+if (cpeVersionPart === '*') {
+  // Versao wildcard: NVD nao aceita cpeName com *, usar keywordSearch
+  const keyword = cpeVendorPart !== '*' 
+    ? `${cpeProductPart}` 
+    : cpeProductPart;
+  nvdUrl.searchParams.set('keywordSearch', keyword);
+  nvdUrl.searchParams.set('keywordExactMatch', '');
+} else {
+  // Versao especifica: cpeName funciona
+  nvdUrl.searchParams.set('cpeName', cpe23);
 }
 ```
 
-Mapa de vendors conhecidos:
+#### Mapa de vendors: adicionar novas entradas
 
 ```typescript
 const KNOWN_VENDORS: Record<string, string> = {
@@ -86,12 +81,30 @@ const KNOWN_VENDORS: Record<string, string> = {
   openssh: 'openbsd',
   history: 'browserstate',
   react: 'facebook',
+  lazysizes: 'afarkas',
+  jquery: 'jquery',
+  php: 'php',
+  openssl: 'openssl',
+  'node.js': 'nodejs',
+  express: 'expressjs',
+  nextcloud: 'nextcloud',
 };
+```
+
+#### Migracao SQL: inserir novas fontes
+
+```sql
+INSERT INTO cve_sources (module_code, source_type, source_label, config, is_active) VALUES
+  ('external_domain', 'nist_nvd_web', 'PHP', '{"product_filter": "php"}', true),
+  ('external_domain', 'nist_nvd_web', 'OpenSSL', '{"product_filter": "openssl"}', true),
+  ('external_domain', 'nist_nvd_web', 'jQuery', '{"product_filter": "jquery"}', true),
+  ('external_domain', 'nist_nvd_web', 'Node.js', '{"product_filter": "node.js"}', true);
 ```
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/refresh-cve-cache/index.ts` | Expandir extracao para incluir web_services |
+| `supabase/functions/refresh-cve-cache/index.ts` | Corrigir logica cpeName vs keywordSearch; atualizar KNOWN_VENDORS |
+| Migracao SQL | Inserir 4 novas fontes (PHP, OpenSSL, jQuery, Node.js) |
 
