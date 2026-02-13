@@ -130,6 +130,7 @@ export function useDashboardStats(selectedWorkspaceId?: string | null) {
   }, [user, isPreviewMode, previewTarget, selectedWorkspaceId]);
 
   const fetchStats = async () => {
+    setLoading(true);
     try {
       // ── 1. Asset counts (parallel) ──────────────────────────────────
       let fwQuery = supabase.from('firewalls').select('id, client_id', { count: 'exact' });
