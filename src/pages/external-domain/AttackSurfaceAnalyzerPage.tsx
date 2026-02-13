@@ -828,7 +828,7 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
       {open && (
         <tr>
           <td colSpan={6} className="p-0">
-            <div className="bg-muted/30 border-t border-border/50 p-4 space-y-4">
+            <div className="mx-4 my-3 rounded-lg border border-border/50 bg-card/60 p-4 space-y-4 border-l-2 border-l-primary/40">
               {result?.error && (
                 <div className="text-sm text-muted-foreground flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-warning" />
