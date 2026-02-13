@@ -337,8 +337,8 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-mono text-xs max-w-[220px] truncate">
+                <TableRow key={i} className="min-h-[48px]">
+                  <TableCell className="font-mono text-xs max-w-[260px] truncate">
                     <a href={row.ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline flex items-center gap-1">
                       {row.ws.url}
                       <ExternalLink className="w-3 h-3 shrink-0" />
@@ -367,10 +367,15 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                   <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]">{row.ws.title || '—'}</TableCell>
                   <TableCell className="text-xs">
                     {row.ws.technologies?.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {row.ws.technologies.map((t, j) => (
-                          <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0">{t}</Badge>
+                      <div className="grid grid-cols-2 gap-1 max-w-[180px]">
+                        {row.ws.technologies.slice(0, 4).map((t, j) => (
+                          <Badge key={j} variant="outline" className="text-[10px] px-1.5 py-0 truncate max-w-[85px]">{t}</Badge>
                         ))}
+                        {row.ws.technologies.length > 4 && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                            +{row.ws.technologies.length - 4}
+                          </Badge>
+                        )}
                       </div>
                     ) : '—'}
                   </TableCell>
