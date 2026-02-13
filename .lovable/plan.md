@@ -1,27 +1,27 @@
 
 
-# Fix: Limit to 2 badges per row
+# Differentiate the overflow badge from port badges
 
 ## Problem
-The container `max-w-[320px]` is wide enough to fit 3 badges on one row. We need to constrain it so only 2 badges fit per row.
+The `+381` overflow badge looks identical to port number badges, making it appear as if `+381` is a port.
 
 ## Change
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Reduce the container max-width from `max-w-[320px]` to `max-w-[220px]` on line 389. This will force the flex-wrap to break after every 2 badges, resulting in:
+Update the overflow badge styling to be visually distinct. Change it from `variant="secondary"` to a dashed-border outline style with muted text color and no monospace font, so it clearly reads as a "more" indicator rather than a port number.
 
-- **Row 1**: badge, badge
-- **Row 2**: badge, +N (when 4+ technologies)
-
-```
-// Line 389
+```tsx
 // Before
-<div className="flex flex-wrap gap-1 max-w-[320px] cursor-default">
+<Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">+{ports.length - MAX_PORTS}</Badge>
 
 // After
-<div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
+<Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{ports.length - MAX_PORTS}</Badge>
 ```
 
-No other changes needed. The `MAX_VISIBLE = 3` stays the same since we want 3 visible badges + the overflow badge as the 4th item.
+Key differences:
+- Removes `font-mono` so it doesn't look like a port number
+- Uses `border-dashed` to visually distinguish from the solid-border port badges
+- Uses `text-muted-foreground` for a softer, secondary appearance
 
+No other changes needed.
