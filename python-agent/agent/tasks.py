@@ -266,9 +266,18 @@ class TaskExecutor:
                                 'step_results': step_results
                             }
                     
-                    step_status = 'failed' if result.get('error') else 'success'
                     step_data = result.get('data') if result.get('data') is not None else None
                     step_error = result.get('error') if result.get('error') else None
+                    
+                    # Support optional steps - failures become not_applicable
+                    is_optional = step.get('config', {}).get('optional', False)
+                    if result.get('error') and is_optional:
+                        step_status = 'not_applicable'
+                        step_error = f"[optional] {result.get('error')}"
+                    elif result.get('error'):
+                        step_status = 'failed'
+                    else:
+                        step_status = 'success'
                     
                     step_results.append({
                         'step_id': step_id,
@@ -279,6 +288,8 @@ class TaskExecutor:
                     
                     if step_status == 'success':
                         steps_completed += 1
+                    elif step_status == 'not_applicable':
+                        pass  # Don't count optional failures
                     else:
                         steps_failed += 1
                         errors.append(f"{step_id}: {step_error}")
