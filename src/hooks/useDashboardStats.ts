@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { MODULE_DASHBOARD_CONFIG } from '@/config/moduleDashboardConfig';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -335,7 +335,7 @@ export function useDashboardStats(selectedWorkspaceId?: string | null) {
     queryFn: () => fetchDashboardStats(selectedWorkspaceId, workspaceIds),
     enabled: !!user,
     staleTime: 60_000,
-    placeholderData: keepPreviousData,
+    placeholderData: (prev) => prev,
   });
 
   return { stats, loading };
