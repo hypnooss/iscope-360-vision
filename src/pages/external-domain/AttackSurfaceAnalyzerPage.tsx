@@ -375,20 +375,18 @@ function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
                     </TooltipProvider>
                   </TableCell>
                   <TableCell className="text-center">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge variant="outline" className={cn("cursor-help",
-                            row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
-                            row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
-                            'border-destructive/50 text-destructive'
-                          )}>
-                            {row.ws.status_code}
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
-                        </TooltipContent>
-                    </Tooltip>
+                    <div className="relative inline-flex justify-center group">
+                      <Badge variant="outline" className={cn("cursor-help",
+                        row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
+                        row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
+                        'border-destructive/50 text-destructive'
+                      )}>
+                        {row.ws.status_code}
+                      </Badge>
+                      <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 hidden group-hover:block rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md whitespace-nowrap">
+                        {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
                   <TableCell className="text-xs">
