@@ -222,10 +222,32 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ========================================================
+    // CVE Cache Refresh
+    // ========================================================
+    let cveRefreshSuccess = false;
+    try {
+      console.log('[run-scheduled-analyses] Triggering CVE cache refresh...');
+      const cveRefreshUrl = `${supabaseUrl}/functions/v1/refresh-cve-cache`;
+      const cveRes = await fetch(cveRefreshUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const cveResult = await cveRes.json();
+      cveRefreshSuccess = !!cveResult.success;
+      console.log(`[run-scheduled-analyses] CVE refresh: ${cveRefreshSuccess ? 'success' : 'failed'}`);
+    } catch (err) {
+      console.error('[run-scheduled-analyses] CVE refresh error:', err);
+    }
+
     const totalTriggered = triggered + domainTriggered + analyzerTriggered;
     const totalErrors = errors + domainErrors + analyzerErrors;
 
-    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Errors: ${totalErrors}`);
+    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
 
     return new Response(
       JSON.stringify({
@@ -234,6 +256,8 @@ Deno.serve(async (req) => {
         errors: totalErrors,
         firewalls: { triggered, errors, total: dueSchedules.length },
         domains: { triggered: domainTriggered, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
+        analyzers: { triggered: analyzerTriggered, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
+        cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
