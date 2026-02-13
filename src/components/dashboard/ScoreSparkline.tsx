@@ -14,29 +14,34 @@ function getColorForScore(score: number): string {
 }
 
 export function ScoreSparkline({ data }: ScoreSparklineProps) {
+  const sortedData = useMemo(() =>
+    [...data].sort((a, b) => a.date.localeCompare(b.date)),
+    [data]
+  );
+
   const gradientId = useMemo(() => `sparkStroke-${Math.random().toString(36).slice(2, 8)}`, []);
   const fillGradientId = useMemo(() => `sparkFill-${Math.random().toString(36).slice(2, 8)}`, []);
 
   const gradientStops = useMemo(() => {
-    if (data.length < 2) return [];
-    const lastIndex = data.length - 1;
-    return data.map((point, i) => ({
+    if (sortedData.length < 2) return [];
+    const lastIndex = sortedData.length - 1;
+    return sortedData.map((point, i) => ({
       offset: `${(i / lastIndex) * 100}%`,
       color: getColorForScore(point.score),
     }));
-  }, [data]);
+  }, [sortedData]);
 
   const ticks = useMemo(() => {
-    if (data.length < 2) return [];
-    return [data[0].date, data[data.length - 1].date];
-  }, [data]);
+    if (sortedData.length < 2) return [];
+    return [sortedData[0].date, sortedData[sortedData.length - 1].date];
+  }, [sortedData]);
 
   const formatTick = (date: string) => {
     const [, m, d] = date.split('-');
     return `${d}/${m}`;
   };
 
-  if (data.length < 2) {
+  if (sortedData.length < 2) {
     return (
       <div className="w-full h-[56px] flex items-center justify-center">
         <span className="text-[10px] text-muted-foreground">Sem histórico</span>
@@ -47,7 +52,7 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
   return (
     <div className="w-full h-[56px]">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
+        <AreaChart data={sortedData} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
               {gradientStops.map((stop, i) => (
