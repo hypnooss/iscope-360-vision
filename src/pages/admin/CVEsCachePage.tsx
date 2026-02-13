@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCVECache, useCVESources, CachedCVE } from '@/hooks/useCVECache';
-import { CVESourcesConfigDialog } from '@/components/admin/CVESourcesConfigDialog';
+import { useNavigate } from 'react-router-dom';
 import {
   Bug, Search, AlertTriangle, ShieldAlert, Shield, RefreshCw,
   ChevronDown, ChevronRight, ExternalLink, Info, Settings, Database,
@@ -136,7 +136,7 @@ export default function CVEsCachePage() {
   const [search, setSearch] = useState('');
   const [filterModule, setFilterModule] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [sourcesDialogOpen, setSourcesDialogOpen] = useState(false);
+  const navigate = useNavigate();
 
   const { data: cves, isLoading, refetch } = useCVECache();
   const { data: sources } = useCVESources();
@@ -197,9 +197,9 @@ export default function CVEsCachePage() {
             <p className="text-muted-foreground">Central de vulnerabilidades da plataforma</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => setSourcesDialogOpen(true)} variant="outline" size="sm">
+            <Button onClick={() => navigate('/cves/sources')} variant="outline" size="sm">
               <Settings className="w-4 h-4 mr-2" />
-              Configurar Fontes
+              Gerenciar Fontes
             </Button>
             <Button onClick={() => refetch()} variant="outline" size="sm">
               <RefreshCw className={cn("w-4 h-4 mr-2", "animate-spin")} />
@@ -277,7 +277,6 @@ export default function CVEsCachePage() {
         )}
       </div>
 
-      <CVESourcesConfigDialog open={sourcesDialogOpen} onOpenChange={setSourcesDialogOpen} />
     </AppLayout>
   );
 }
