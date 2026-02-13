@@ -1,48 +1,24 @@
 
 
-# Limit Technology Badges: 3 per row, max 2 rows, with hover tooltip
+# Reduce visible badges: 2 per row, max 3 visible + overflow
 
-## What changes
+## Change
 
 ### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**Technologies cell logic:**
-- Display badges in a `flex flex-wrap` container with a fixed max height to enforce **3 badges per row, max 2 rows** (6 visible badges max).
-- If there are **6 or more** technologies, show only the first **5** badges plus a `+N` overflow badge as the 6th.
-- Wrap the entire technologies container in a **Tooltip** (from `@/components/ui/tooltip`) that shows **all** technology names on hover, so no information is lost.
+Single change in the technologies cell: reduce `MAX_VISIBLE` from `5` to `3`.
 
-**Implementation detail:**
+- This means: show up to 3 badges, and if there are 4+ technologies, show the first 3 plus a `+N` overflow badge as the 4th.
+- With `max-w-[320px]` and badge widths, this naturally results in ~2 badges per row, 2 rows max (3 badges + 1 overflow = 4 items across 2 rows).
+- The tooltip remains unchanged -- hovering still shows all badges.
 
 ```tsx
+// Before
 const MAX_VISIBLE = 5;
-const hasOverflow = row.ws.technologies.length > MAX_VISIBLE;
-const visible = hasOverflow ? row.ws.technologies.slice(0, MAX_VISIBLE) : row.ws.technologies;
 
-<Tooltip>
-  <TooltipTrigger asChild>
-    <div className="flex flex-wrap gap-1 max-w-[320px] cursor-default">
-      {visible.map((t, j) => (
-        <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
-      ))}
-      {hasOverflow && (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-          +{row.ws.technologies.length - MAX_VISIBLE}
-        </Badge>
-      )}
-    </div>
-  </TooltipTrigger>
-  <TooltipContent side="top" className="max-w-sm">
-    <div className="flex flex-wrap gap-1">
-      {row.ws.technologies.map((t, j) => (
-        <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
-      ))}
-    </div>
-  </TooltipContent>
-</Tooltip>
+// After
+const MAX_VISIBLE = 3;
 ```
 
-**Imports to add:**
-- `Tooltip, TooltipTrigger, TooltipContent` from `@/components/ui/tooltip`
-
-The tooltip only appears when there are technologies present. No tooltip is needed for the `---` empty state.
+No other changes needed.
 
