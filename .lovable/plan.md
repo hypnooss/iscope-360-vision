@@ -1,70 +1,34 @@
 
 
-# Analyzer: Workspace Selector + Fix Paises Autenticacao
+# Dashboard: Subtitulo + Datas no Sparkline
 
-## 1. Workspace Selector para Super Admins
+## Alteracao 1 - Subtitulo
 
-Adicionar o mesmo padrao de seletor de workspace usado na FirewallListPage ao AnalyzerDashboardPage. O fluxo sera:
+**Arquivo**: `src/pages/GeneralDashboardPage.tsx` (linha 402)
 
-1. Super Admin seleciona o **Workspace** primeiro
-2. O seletor de **Firewall** filtra apenas firewalls daquele workspace
-3. Dados bloqueados ate workspace estar selecionado
+Trocar "Postura de Seguranca por Modulo" por "Postura de Compliance por Modulo".
 
-**Arquivo**: `src/pages/firewall/AnalyzerDashboardPage.tsx`
+## Alteracao 2 - Datas no eixo X do Sparkline
 
-Alteracoes:
-- Importar `useEffectiveAuth`, `usePreview`, `useQuery`, `Building2`
-- Adicionar estado `selectedWorkspaceId` e query de workspaces (mesmo padrao da FirewallListPage)
-- Auto-selecionar primeiro workspace
-- Filtrar a query de firewalls por `client_id` do workspace selecionado
-- Renderizar o seletor de workspace ANTES do seletor de firewall no header
+**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
 
-Layout do header:
-```
-[Workspace: ACME Corp v] [Firewall: AAX-FW v] [Executar Analise]
-```
+Atualmente o XAxis esta oculto (`hide`). Vamos mostrar apenas a primeira e a ultima data do dataset como labels no eixo X, formatadas como `DD/MM` (ex: `14/01` e `13/02`).
 
----
+Implementacao:
+- Aumentar a altura do sparkline de 40px para 56px para acomodar os labels
+- Remover `hide` do XAxis e configurar:
+  - `ticks={[data[0].date, data[data.length-1].date]}` para mostrar apenas inicio e fim
+  - `tickFormatter` que converte `YYYY-MM-DD` para `DD/MM`
+  - `tick={{ fontSize: 9, fill: muted color }}` 
+  - `tickLine={false}`, `axisLine={false}`
+- Ajustar margin bottom do chart para dar espaco ao label
 
-## 2. Fix Paises - Autenticacao
-
-**Diagnostico real**: O ipCountryMap construido a partir do trafego negado nao funciona para este firewall porque:
-- O trafego negado e todo interno (10.x.x.x) mapeado como "Reserved"
-- Os IPs de autenticacao sao externos e nao aparecem no trafego negado
-
-**Solucao**: Enriquecer o ipCountryMap tambem com os proprios logs de autenticacao que **tem** `srccountry` (alguns logs do mesmo batch podem ter o campo). Alem disso, adicionar um segundo passo: percorrer os logs de VPN que frequentemente contem `srccountry` e usar como fonte adicional.
-
-**Arquivo**: `supabase/functions/firewall-analyzer/index.ts`
-
-No bloco principal (linhas 724-731), apos construir o ipCountryMap do trafego negado, tambem iterar sobre:
-- `authData` (logs de autenticacao)
-- `vpnData` (logs de VPN)
-
-Extrair `srccountry`/`src_country` de qualquer log que tenha o campo e adicionar ao mapa. Isso garante que mesmo quando o trafego negado nao ajuda, os proprios logs de auth/VPN contribuem quando disponiveis.
-
-```typescript
-// Enrich from auth and VPN logs too
-for (const log of [...authLogs, ...vpnLogs]) {
-  const ip = log.srcip || log.remip || log.src;
-  const country = log.srccountry || log.src_country;
-  if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
-}
-```
-
-**Nota**: Se o FortiGate em questao (BR-PMP-FW-001) realmente nao retorna `srccountry` em NENHUM tipo de log (nem auth, nem VPN, nem denied), entao a unica solucao seria integrar um servico de geolocalizacao de IP externo (ex: ip-api.com, MaxMind), o que pode ser considerado em uma iteracao futura.
-
----
+Isso vai deixar claro o periodo que o grafico cobre (ex: `14/01 ─────── 13/02`) e explicar por que a ultima posicao do grafico pode ter cor diferente do "Score Atual" -- o grafico mostra a **media do dia**, enquanto o Score Atual e a media em tempo real de todos os ativos.
 
 ## Arquivos alterados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Workspace selector + filtro de firewalls por workspace |
-| `supabase/functions/firewall-analyzer/index.ts` | Enriquecer ipCountryMap com logs de auth/VPN |
-
-## Sequencia
-
-1. Atualizar AnalyzerDashboardPage com workspace selector
-2. Atualizar edge function para enriquecer ipCountryMap
-3. Deploy da edge function
+| `src/pages/GeneralDashboardPage.tsx` | Subtitulo |
+| `src/components/dashboard/ScoreSparkline.tsx` | Mostrar datas inicio/fim no eixo X |
 
