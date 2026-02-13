@@ -753,32 +753,6 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
   const result = snapshot.results[ip];
   const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches, cachedCVEs);
 
-  // Extract unique product+version pairs for the Services column
-  const serviceDisplay = useMemo(() => {
-    const items: { name: string; version: string | null }[] = [];
-    const seen = new Set<string>();
-
-    for (const svc of result?.services || []) {
-      if (!svc.product) continue;
-      const key = `${svc.product}:${svc.version || ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({ name: svc.product, version: svc.version || null });
-    }
-
-    for (const ws of result?.web_services || []) {
-      for (const tech of ws.technologies || []) {
-        const [name, ver] = tech.split(':');
-        const key = `${name}:${ver || ''}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push({ name: name.trim(), version: ver?.trim() || null });
-      }
-    }
-
-    return items;
-  }, [result]);
-
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => setOpen(!open)}>
@@ -821,25 +795,30 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
           })() : <span className="text-muted-foreground font-mono">—</span>}
         </TableCell>
         <TableCell>
-          {serviceDisplay.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {serviceDisplay.map((svc) => (
-                <Badge key={`${svc.name}:${svc.version}`} variant="outline" className={cn("text-[10px] px-1.5 py-0 gap-1", getTechBadgeColor(svc.name))}>
-                  {svc.name}
-                  {svc.version ? (
-                    <span className="font-mono text-primary">{svc.version}</span>
-                  ) : (
-                    <span className="text-muted-foreground/50">?</span>
-                  )}
-                </Badge>
-              ))}
-            </div>
-          ) : <span className="text-muted-foreground font-mono">—</span>}
-        </TableCell>
-        <TableCell className="text-center">
-          {ipCVEs.length > 0 ? (
-            <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">{ipCVEs.length}</Badge>
-          ) : (
+          {ipCVEs.length > 0 ? (() => {
+            const counts: Record<string, number> = {};
+            for (const cve of ipCVEs) {
+              const sev = (cve.severity || 'medium').toLowerCase();
+              counts[sev] = (counts[sev] || 0) + 1;
+            }
+            const sevColors: Record<string, string> = {
+              critical: 'bg-destructive/20 text-destructive border-destructive/30',
+              high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+              medium: 'bg-warning/20 text-warning border-warning/30',
+              low: 'bg-info/20 text-info border-info/30',
+              info: 'bg-muted text-muted-foreground border-border',
+            };
+            const order = ['critical', 'high', 'medium', 'low', 'info'];
+            return (
+              <div className="flex flex-wrap gap-1">
+                {order.filter(s => counts[s]).map(s => (
+                  <Badge key={s} variant="outline" className={cn("text-[10px] px-1.5 py-0", sevColors[s])}>
+                    {counts[s]} {s.toUpperCase()}
+                  </Badge>
+                ))}
+              </div>
+            );
+          })() : (
             <span className="text-muted-foreground font-mono">0</span>
           )}
         </TableCell>
@@ -848,7 +827,7 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
 
       {open && (
         <tr>
-          <td colSpan={7} className="p-0">
+          <td colSpan={6} className="p-0">
             <div className="bg-muted/30 border-t border-border/50 p-4 space-y-4">
               {result?.error && (
                 <div className="text-sm text-muted-foreground flex items-center gap-2">
@@ -868,102 +847,6 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
                 <div className="text-sm">
                   <span className="text-muted-foreground">Hostnames: </span>
                   <span className="font-mono text-xs">{result.hostnames.join(', ')}</span>
-                </div>
-              )}
-
-              {/* Discovered Services - Cards */}
-              {result?.services?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Server className="w-4 h-4 text-muted-foreground" />
-                    Serviços Descobertos ({result.services.length})
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {result.services.map((svc: AttackSurfaceService, i: number) => (
-                      <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="font-mono text-xs">{svc.port}/{svc.transport}</Badge>
-                          <span className="font-medium text-sm">{svc.product || 'Desconhecido'}</span>
-                          {svc.version && <Badge variant="secondary" className="text-xs">{svc.version}</Badge>}
-                          {!svc.version && svc.product && (
-                            <span className="text-xs text-muted-foreground italic">versão não detectada</span>
-                          )}
-                        </div>
-                        {svc.cpe?.length > 0 && (
-                          <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
-                            {svc.cpe[0]}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Web Services */}
-              {result?.web_services?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-muted-foreground" />
-                    Web Services ({result.web_services.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {result.web_services.map((ws: AttackSurfaceWebService, i: number) => {
-                      const statusColor = ws.status_code >= 200 && ws.status_code < 300
-                        ? 'border-primary/50 text-primary'
-                        : ws.status_code >= 300 && ws.status_code < 400
-                          ? 'border-warning/50 text-warning'
-                          : 'border-destructive/50 text-destructive';
-
-                      let tlsExpiry: string | null = null;
-                      if (ws.tls?.not_after) {
-                        try {
-                          const days = differenceInDays(parseISO(ws.tls.not_after), new Date());
-                          tlsExpiry = days < 0 ? 'expirado' : `expira em ${days}d`;
-                        } catch { /* ignore */ }
-                      }
-
-                      return (
-                        <div key={i} className="rounded-lg border border-border/50 p-3 bg-background/50">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline text-sm font-mono flex items-center gap-1">
-                              {ws.url}
-                              <ExternalLink className="w-3 h-3 shrink-0" />
-                            </a>
-                            <Badge variant="outline" className={cn("text-xs", statusColor)}>
-                              {ws.status_code}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            {ws.server && (
-                              <span>Servidor: <strong className="text-foreground">{ws.server}</strong></span>
-                            )}
-                            {ws.technologies?.length > 0 && (
-                              <span className="flex items-center gap-1">
-                                Tecnologias:
-                                {ws.technologies.map((t, j) => (
-                                  <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>
-                                    {t}
-                                  </Badge>
-                                ))}
-                              </span>
-                            )}
-                            {ws.tls?.subject_cn && (
-                              <span className="flex items-center gap-1">
-                                <Lock className="w-3 h-3 text-primary" />
-                                {ws.tls.subject_cn}
-                                {tlsExpiry && (
-                                  <span className={cn("text-[10px]", tlsExpiry === 'expirado' ? 'text-destructive' : '')}>
-                                    ({tlsExpiry})
-                                  </span>
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               )}
 
@@ -998,8 +881,8 @@ function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: Attac
                 </div>
               )}
 
-              {(!result?.services || result.services.length === 0) && (!result?.web_services || result.web_services.length === 0) && !result?.error && (
-                <p className="text-sm text-muted-foreground">Nenhum serviço identificado neste IP.</p>
+              {ipCVEs.length === 0 && !result?.error && (
+                <p className="text-sm text-muted-foreground">Nenhuma CVE vinculada a este IP.</p>
               )}
             </div>
           </td>
@@ -1172,7 +1055,6 @@ export default function AttackSurfaceAnalyzerPage() {
                         <TableHead>Origem</TableHead>
                         <TableHead>Referência</TableHead>
                         <TableHead className="text-center">Portas</TableHead>
-                        <TableHead className="text-center">Serviços</TableHead>
                         <TableHead className="text-center">CVEs</TableHead>
                         <TableHead className="w-8"></TableHead>
                       </TableRow>
