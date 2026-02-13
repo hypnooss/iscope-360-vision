@@ -399,7 +399,7 @@ export default function GeneralDashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Postura de Segurança por Módulo</p>
+            <p className="text-muted-foreground">Postura de Compliance por Módulo</p>
           </div>
           {isSuperRole && workspaces.length > 0 && (
             <Select

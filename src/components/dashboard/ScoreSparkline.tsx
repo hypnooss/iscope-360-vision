@@ -26,18 +26,28 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
     }));
   }, [data]);
 
+  const ticks = useMemo(() => {
+    if (data.length < 2) return [];
+    return [data[0].date, data[data.length - 1].date];
+  }, [data]);
+
+  const formatTick = (date: string) => {
+    const [, m, d] = date.split('-');
+    return `${d}/${m}`;
+  };
+
   if (data.length < 2) {
     return (
-      <div className="w-full h-[40px] flex items-center justify-center">
+      <div className="w-full h-[56px] flex items-center justify-center">
         <span className="text-[10px] text-muted-foreground">Sem histórico</span>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-[40px]">
+    <div className="w-full h-[56px]">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
+        <AreaChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
               {gradientStops.map((stop, i) => (
@@ -50,7 +60,15 @@ export function ScoreSparkline({ data }: ScoreSparklineProps) {
             </linearGradient>
           </defs>
           <YAxis domain={[0, 100]} hide />
-          <XAxis dataKey="date" hide />
+          <XAxis
+            dataKey="date"
+            ticks={ticks}
+            tickFormatter={formatTick}
+            tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+            tickLine={false}
+            axisLine={false}
+            interval={0}
+          />
           <Area
             type="monotone"
             dataKey="score"
