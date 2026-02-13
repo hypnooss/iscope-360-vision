@@ -569,7 +569,7 @@ function IPDetailRow({ ip, snapshot }: { ip: string; snapshot: AttackSurfaceSnap
                       <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
                     ))}
                     {hasPOverflow && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">+{ports.length - MAX_PORTS}</Badge>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{ports.length - MAX_PORTS}</Badge>
                     )}
                   </div>
                 </TooltipTrigger>
