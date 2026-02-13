@@ -1,42 +1,50 @@
 
 
-# Correcao: Ordem das Datas no Sparkline
+# Correcoes: Dados ao trocar Workspace + Datas truncadas no Sparkline
 
-## Problema
+## Problema 1 - Dados desatualizados ao trocar Workspace
 
-O eixo X do sparkline esta mostrando a data mais recente do lado esquerdo e a mais antiga do lado direito. Isso causa confusao visual, especialmente porque o "Score Atual" fica posicionado a direita do grafico.
+O hook `useDashboardStats` so define `loading = true` na inicializacao (`useState(true)`). Quando o usuario troca de workspace, o `fetchStats` roda novamente mas **nunca reseta `loading` para `true`**, entao:
+- O dashboard continua exibindo os dados antigos enquanto a nova query roda
+- Se a query demora, o usuario ve dados do workspace anterior como se fossem do novo
 
-## Solucao
+**Solucao**: Adicionar `setLoading(true)` no inicio de `fetchStats()` para que o skeleton de carregamento apareca enquanto os novos dados sao buscados.
 
-Garantir que os dados sejam ordenados de forma ascendente (mais antigo -> mais recente) dentro do proprio componente `ScoreSparkline`, independente da ordem em que chegam do hook. Assim:
+## Problema 2 - Datas truncadas no eixo X do Sparkline
 
-- **Lado esquerdo** do grafico = data mais antiga (inicio do periodo)
-- **Lado direito** do grafico = data mais recente (ultima coleta), visualmente proximo ao "Score Atual"
+Na imagem, as datas aparecem como `3/01` e `13/1` em vez de `03/01` e `13/01`. Isso acontece porque a margem lateral do chart (`left: 4, right: 4`) e muito pequena para acomodar o texto completo, e o Recharts corta os labels que ultrapassam a area do SVG.
 
-## Alteracao
+**Solucao**: Aumentar as margens laterais do `AreaChart` de `4px` para `16px` para dar espaco aos labels das datas.
 
-**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
+## Alteracoes
 
-1. Ordenar os dados de forma ascendente por data no inicio do componente (garantia contra dados que venham em ordem diferente)
-2. Manter os ticks como `[primeiro, ultimo]` do array ja ordenado, o que agora sera `[mais_antigo, mais_recente]`
+### Arquivo: `src/hooks/useDashboardStats.ts`
 
-Isso e uma alteracao de ~3 linhas: adicionar um `useMemo` que faz `.sort()` ascendente nos dados antes de usa-los no chart e nos ticks.
+Na funcao `fetchStats`, adicionar `setLoading(true)` como primeira linha do `try`:
 
-## Detalhe tecnico
-
-```
-sortedData = useMemo(() =>
-  [...data].sort((a, b) => a.date.localeCompare(b.date)),
-  [data]
-);
+```typescript
+const fetchStats = async () => {
+  setLoading(true);  // <-- adicionar esta linha
+  try {
+    // ... resto do codigo
 ```
 
-Depois, substituir todas as referencias a `data` por `sortedData` no componente (gradientStops, ticks, e o prop `data` do AreaChart).
+### Arquivo: `src/components/dashboard/ScoreSparkline.tsx`
 
-## Resultado visual
+Ajustar as margens do `AreaChart`:
 
+```typescript
+// De:
+margin={{ top: 2, right: 4, bottom: 0, left: 4 }}
+
+// Para:
+margin={{ top: 2, right: 16, bottom: 0, left: 16 }}
 ```
-  14/01 ─────────────── 13/02   Score Atual
-  (30 dias atras)      (ultima)    85/100
-```
+
+## Arquivos alterados
+
+| Arquivo | Alteracao |
+|---|---|
+| `src/hooks/useDashboardStats.ts` | Resetar loading ao iniciar fetch |
+| `src/components/dashboard/ScoreSparkline.tsx` | Aumentar margens laterais para datas caberem |
 
