@@ -1,47 +1,51 @@
 
 
-# Melhorar visual do painel expandido do IP
+# Tornar o Nmap mais furtivo e eficaz
 
-## Problema
+## Resumo
 
-O conteudo expandido (OS, Hostnames, Web Services, CVEs) aparece "solto" dentro da tabela, sem hierarquia visual clara que associe essas informacoes ao IP da linha. Falta recuo e diferenciacao de fundo.
+Reescrever o executor Nmap para usar uma abordagem stealth-first que imita trafego humano real, com fallback inteligente quando o scan primario nao retorna resultados. O compromisso e com o sucesso na coleta de dados, nao com velocidade.
 
-## Solucao
+## Mudancas no arquivo `python-agent/agent/executors/nmap.py`
 
-Aplicar as seguintes melhorias visuais ao container do painel expandido:
+### Scan primario - stealth sem scripts
 
-### 1. Recuo a esquerda com borda indicativa
+Substituir o comando atual agressivo por um scan furtivo:
 
-Adicionar um `ml-6` (margem esquerda) ao container principal e uma borda esquerda colorida (`border-l-2 border-primary/50`) que funcione como indicador visual de subordinacao ao IP.
-
-### 2. Background diferenciado
-
-Trocar o `bg-muted/30` atual por um fundo mais escuro e distinto, como `bg-background/80`, criando contraste com a linha da tabela.
-
-### 3. Container com card visual
-
-Envolver todo o conteudo expandido em um card com `rounded-lg` e padding interno, dando a impressao de que e um bloco de detalhes pertencente ao IP.
-
-## Detalhes tecnicos
-
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-**Linha 831** - Alterar o container `div` do painel expandido:
-
-De:
-```
-<div className="bg-muted/30 border-t border-border/50 p-4 space-y-4">
+```text
+ANTES                          DEPOIS
+-----                          ------
+-sV -sC                       -sV (sem scripts ruidosos)
+-T4 (agressivo)                -T3 (normal, ritmo humano)
+--host-timeout 180s            --host-timeout 300s
+(sem evasao)                   --scan-delay 500ms
+                               --max-retries 2
+                               --data-length 24
+                               --version-intensity 5
+timeout geral = 300s           timeout geral = 600s
 ```
 
-Para:
-```
-<div className="mx-4 my-3 rounded-lg border border-border/50 bg-card/60 p-4 space-y-4 border-l-2 border-l-primary/40">
-```
+### Fallback com scripts seletivos
 
-Isso aplica:
-- `mx-4 my-3`: margem horizontal e vertical para separar do container da tabela
-- `rounded-lg`: bordas arredondadas para parecer um card
-- `bg-card/60`: fundo do card com leve transparencia, diferenciando do fundo da tabela
-- `border-l-2 border-l-primary/40`: borda esquerda colorida (teal) como indicador visual de que o conteudo pertence ao IP
-- Remove `border-t` pois o card ja tera sua propria borda
+Se o scan primario retornar zero servicos (bloqueio por firewall/WAF), executar um segundo scan com scripts leves e especificos:
+
+- `banner` - captura banners de FTP, SSH, SMTP
+- `ssl-cert` - detalhes do certificado TLS
+- `http-title` - titulo da pagina web
+
+Esses 3 scripts sao rapidos e capturam as informacoes mais uteis para identificacao e CVE matching.
+
+### Diagnostico via stderr
+
+Sempre logar o stderr do nmap (onde aparecem avisos de timeout, rate-limiting e bloqueios), facilitando troubleshooting futuro.
+
+### Parser XML - sem alteracoes
+
+O parser `_parse_nmap_xml` e `_parse_os_info` permanecem identicos. O problema nunca foi o parsing, mas sim a falta de dados no XML causada por timeout e bloqueio.
+
+## Impacto esperado
+
+- Hosts que antes retornavam zero servicos passarao a ter produto/versao detectados
+- Com versoes capturadas, o matching de CVEs passara a funcionar para esses IPs
+- O agendamento automatico com balanceamento absorve o tempo extra sem impacto operacional
 
