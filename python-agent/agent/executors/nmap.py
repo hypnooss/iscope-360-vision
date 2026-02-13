@@ -41,7 +41,7 @@ class NmapExecutor(BaseExecutor):
 
         # Primary scan: stealth, no scripts, human-like timing
         cmd = [
-            'nmap', '-sV',
+            'sudo', 'nmap', '-sS', '-sV',
             '--version-intensity', '5',
             f'-p{port_str}',
             ip,
@@ -74,7 +74,7 @@ class NmapExecutor(BaseExecutor):
                     f"Retrying with targeted scripts (banner,ssl-cert,http-title)..."
                 )
                 cmd_fallback = [
-                    'nmap', '-sV',
+                    'sudo', 'nmap', '-sS', '-sV',
                     '--version-intensity', '7',
                     '--script=banner,ssl-cert,http-title',
                     f'-p{port_str}',
