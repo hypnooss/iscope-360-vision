@@ -797,7 +797,10 @@ EOF
 setup_sudoers() {
   local sudoers_file="/etc/sudoers.d/iscope-agent"
   echo "Configurando permissão sudoers para restart do serviço..."
-  echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME" > "$sudoers_file"
+  cat > "$sudoers_file" << SUDOERS
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/nmap
+SUDOERS
   chmod 440 "$sudoers_file"
   echo "Sudoers configurado: $sudoers_file"
 }
