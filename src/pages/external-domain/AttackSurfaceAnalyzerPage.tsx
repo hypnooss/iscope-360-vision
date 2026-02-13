@@ -260,56 +260,6 @@ function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
   );
 }
 
-/* ──────────────────────────── CVE Alert Banner ──────────────────────────── */
-
-function CVEAlertSection({ cves }: { cves: AttackSurfaceCVE[] }) {
-  const grouped = useMemo(() => {
-    if (!cves || cves.length === 0) return [];
-    const order = ['critical', 'high', 'medium', 'low'];
-    const sorted = [...cves].sort((a, b) => {
-      const ai = order.indexOf(a.severity?.toLowerCase());
-      const bi = order.indexOf(b.severity?.toLowerCase());
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-    });
-    return sorted;
-  }, [cves]);
-
-  if (grouped.length === 0) return null;
-
-  return (
-    <Card className="border-destructive/40 bg-destructive/5">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2 text-destructive">
-          <ShieldAlert className="w-5 h-5" />
-          Vulnerabilidades Detectadas ({cves.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {grouped.map((cve) => (
-            <div key={cve.cve_id} className="flex items-center gap-3 py-1.5 border-b border-border/30 last:border-0">
-              <SeverityBadge severity={cve.severity} />
-              <a
-                href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-sm text-foreground hover:text-info transition-colors flex items-center gap-1.5"
-              >
-                {cve.cve_id}
-                <ExternalLink className="w-3 h-3" />
-              </a>
-              {cve.score !== null && (
-                <span className="text-xs font-mono text-muted-foreground">CVSS {cve.score}</span>
-              )}
-              <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 /* ──────────────────────────── Web Services Section ──────────────────────────── */
 
 interface WebServiceRow {
@@ -1069,9 +1019,6 @@ export default function AttackSurfaceAnalyzerPage() {
               </CardContent>
             </Card>
           )}
-
-          {/* ── CVE Alert Banner ── */}
-          {snapshot && <CVEAlertSection cves={snapshot.cve_matches} />}
 
           {/* ── 3. Port Heatmap + Tech Stack ── */}
           {snapshot && (
