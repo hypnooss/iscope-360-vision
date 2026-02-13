@@ -1,76 +1,62 @@
 
 
-# Fix: Score Atual = Ultimo Score Coletado (nao media)
+# Fix: Sparkline mostrando cor errada vs Score Atual
 
-## Problema
+## Causa raiz
 
-O "Score Atual" calcula a **media aritmetica** dos scores mais recentes de todos os ativos do modulo. O sparkline mostra a **media diaria historica**. Isso cria situacoes impossiveis visualmente:
-- Dominio Externo: sparkline vermelho (historico ruim) mas score verde 89 (media atual alta)
-- Microsoft 365: sparkline verde (historico bom) mas score vermelho 56 (media atual baixa)
+O dominio `taschibra.com.br` tem multiplas analises por dia. Exemplo do dia 13/02:
+- Score 27 (analise parcial/intermediaria)
+- Score 89 (resultado final)
+
+A funcao `aggregateScoreHistory` faz a **media**: `(27+89)/2 = 58`, que e pintado de vermelho/amarelo. Enquanto o Score Atual mostra corretamente 89 (o ultimo valor).
 
 ## Solucao
 
-Mudar a logica: o "Score Atual" sera o **score da analise mais recente** do modulo (ultimo valor coletado), nao a media de todos os ativos.
+### 1. `aggregateScoreHistory` - usar ultimo score do dia (nao media)
 
-Quando ha multiplos ativos (ex: 3 firewalls), usar o score da analise que tem o `created_at` / `analyzed_at` mais recente entre todos os ativos daquele modulo.
+**Arquivo**: `src/hooks/useDashboardStats.ts`
 
-## Alteracoes
-
-### Arquivo: `src/hooks/useDashboardStats.ts`
-
-**Firewall (linhas 182-196)**: Em vez de coletar todos os scores e fazer `avgScores(scores)`, identificar o registro com `analyzed_at` mais recente e usar seu score diretamente:
+Mudar a logica de agregacao: em vez de coletar todos os scores do dia e calcular a media, usar o **ultimo score registrado** naquele dia (que representa o resultado final da analise).
 
 ```typescript
-// De:
-for (const s of fwSummaries) {
-  scores.push(s.score);
-  // ...
-}
-fwHealth.score = avgScores(scores);
+// De: media de todos os scores do dia
+dayMap.get(day)!.push(r.score);
+// score: Math.round(scores.reduce(...) / scores.length)
 
-// Para:
-let latestScore: number | null = null;
-for (const s of fwSummaries) {
-  if (!latestDate || s.analyzed_at > latestDate) {
-    latestDate = s.analyzed_at;
-    latestScore = s.score;
-  }
-  // severidades continuam somando normalmente
-}
-fwHealth.score = latestScore;
+// Para: ultimo score do dia (substituir se mais recente)
+dayMap.set(day, r.score);  // como os dados vem ordenados por created_at ASC, o ultimo sobrescreve
 ```
 
-**M365 (linhas 208-238)**: Mesmo padrao. A query ja vem ordenada por `created_at DESC`, entao o primeiro registro nao-visto e o mais recente por tenant. Se ha multiplos tenants, pegar o score do tenant com analise mais recente:
+### 2. Sparkline - cor uniforme baseada no score atual
+
+**Arquivo**: `src/components/dashboard/ScoreSparkline.tsx`
+
+Mudar o gradiente de cores: em vez de colorir cada ponto individualmente (criando trechos vermelhos e verdes na mesma linha), usar uma **cor unica** baseada no ultimo ponto de dado (que coincide com o Score Atual).
+
+Isso garante que se o Score Atual e verde (89), toda a linha do sparkline sera verde. A **forma** do grafico ainda mostra a evolucao, mas a cor representa o estado atual.
 
 ```typescript
-// De:
-m365Health.score = avgScores(scores);
+// De: gradiente por ponto
+return sortedData.map((point, i) => ({
+  offset: `${(i / lastIndex) * 100}%`,
+  color: getColorForScore(point.score),
+}));
 
-// Para: usar o score do registro mais recente
-// (ja identificado pelo latestDate)
+// Para: cor unica do ultimo ponto
+const lastColor = getColorForScore(sortedData[sortedData.length - 1].score);
+// usar lastColor para stroke e fill
 ```
-
-**External Domain (linhas 250-271)**: Mesmo padrao do Firewall via RPC:
-
-```typescript
-// De:
-extHealth.score = avgScores(scores);
-
-// Para:
-// Usar o score do registro com analyzed_at mais recente
-```
-
-**Remover a funcao `avgScores`** (linhas 56-58) pois nao sera mais utilizada.
 
 ## Resultado esperado
 
-- Score Atual refletira exatamente o ultimo valor coletado
-- O sparkline continuara mostrando o historico diario (media por dia)
-- A cor do score e a tendencia do grafico serao consistentes visualmente
+- Sparkline do Dominio Externo: linha VERDE (score atual 89) mostrando a evolucao correta (sem scores intermediarios de 27/30)
+- Sparkline do Microsoft 365: linha com cor correspondente ao score atual
+- Consistencia visual total entre cor do grafico e cor do Score Atual
 
-## Arquivo alterado
+## Arquivos alterados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useDashboardStats.ts` | Score = ultimo coletado em vez de media; remover avgScores |
+| `src/hooks/useDashboardStats.ts` | aggregateScoreHistory usa ultimo score do dia |
+| `src/components/dashboard/ScoreSparkline.tsx` | Cor uniforme baseada no score atual |
 
