@@ -640,11 +640,16 @@ function matchCVEsToIP(
     for (const cached of cachedCVEs) {
       if (matched.has(cached.cve_id)) continue;
       const cachedProducts = cached.products || [];
-      // products format: [vendor, product, version] e.g. ["f5", "nginx", "*"]
-      const cachedProduct = (typeof cachedProducts[1] === 'string' ? cachedProducts[1] : '').toLowerCase();
-      const cachedVersion = typeof cachedProducts[2] === 'string' ? cachedProducts[2] : '*';
-
-      if (!cachedProduct) continue;
+      // products is a single string in array: ["vendor product version"]
+      const productStr = typeof cachedProducts[0] === 'string' ? cachedProducts[0] : '';
+      const parts = productStr.split(' ').filter(Boolean);
+      if (parts.length < 2) continue;
+      // Last token = version, first = vendor, middle = product
+      const cachedVersion = parts.length >= 3 ? parts[parts.length - 1] : '*';
+      const cachedProduct = (parts.length >= 3
+        ? parts.slice(1, -1).join(' ')
+        : parts[1]
+      ).toLowerCase();
 
       let didMatch = false;
       for (const [product, detectedVersion] of productVersions) {
