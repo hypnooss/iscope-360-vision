@@ -1,27 +1,62 @@
 
+# Three changes in the Web Services table
 
-# Differentiate the overflow badge from port badges
+## 1. Overflow badge styling (Technologies column)
 
-## Problem
-The `+381` overflow badge looks identical to port number badges, making it appear as if `+381` is a port.
+Add `border-dashed` to the existing `+N` overflow badge (line 394) to match the style used in the Ports column.
 
-## Change
+```tsx
+// Before (line 394)
+<Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
 
-### File: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+// After
+<Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">
+```
 
-Update the overflow badge styling to be visually distinct. Change it from `variant="secondary"` to a dashed-border outline style with muted text color and no monospace font, so it clearly reads as a "more" indicator rather than a port number.
+## 2. Reduce Technologies column width
+
+Reduce the container from `max-w-[220px]` to `max-w-[180px]` (line 389) to shrink the column and give more space to adjacent columns.
 
 ```tsx
 // Before
-<Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">+{ports.length - MAX_PORTS}</Badge>
+<div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
 
 // After
-<Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{ports.length - MAX_PORTS}</Badge>
+<div className="flex flex-wrap gap-1 max-w-[180px] cursor-default">
 ```
 
-Key differences:
-- Removes `font-mono` so it doesn't look like a port number
-- Uses `border-dashed` to visually distinguish from the solid-border port badges
-- Uses `text-muted-foreground` for a softer, secondary appearance
+## 3. HTTP Status Code tooltip
 
-No other changes needed.
+Wrap the Status badge (lines 371-378) in a Tooltip that shows a human-readable description of the HTTP code on hover. A lookup map will be added with common codes:
+
+- 200: OK
+- 301: Moved Permanently
+- 302: Found (Redirect)
+- 400: Bad Request
+- 401: Unauthorized
+- 403: Forbidden
+- 404: Not Found
+- 500: Internal Server Error
+- 502: Bad Gateway
+- 503: Service Unavailable
+- etc.
+
+```tsx
+const HTTP_STATUS_DESCRIPTIONS: Record<number, string> = {
+  200: 'OK', 301: 'Moved Permanently', 302: 'Found (Redirect)',
+  304: 'Not Modified', 400: 'Bad Request', 401: 'Unauthorized',
+  403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed',
+  500: 'Internal Server Error', 502: 'Bad Gateway',
+  503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
+```
+
+The Status cell will be wrapped in a Tooltip showing the description (or "HTTP {code}" as fallback if the code is not in the map).
+
+### Technical details
+
+All changes are in `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`:
+- Add `HTTP_STATUS_DESCRIPTIONS` constant near the top of the Web Services section
+- Lines 371-378: wrap the Badge in a Tooltip with the description
+- Line 389: change `max-w-[220px]` to `max-w-[180px]`
+- Line 394: add `border-dashed` class
