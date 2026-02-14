@@ -718,6 +718,130 @@ function analyzeAppControl(logs: any[]): { insights: AnalyzerInsight[]; metrics:
 }
 
 // ============================================
+// Anomaly Analysis (DoS/DDoS, protocol anomalies, scans)
+// ============================================
+
+function analyzeAnomalies(logs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { anomalyEvents: 0, anomalyDropped: 0, topAnomalySources: [], topAnomalyTypes: [] } };
+
+  const ipMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+  const attackMap: Record<string, number> = {};
+  let droppedCount = 0;
+
+  for (const log of logs) {
+    const srcip = log.srcip || log.src || '';
+    const attack = log.attack || log.attackname || log.msg || 'unknown';
+    const action = (log.action || '').toLowerCase();
+    const dstport = parseInt(log.dstport || '0');
+    const country = log.srccountry || log.src_country || (srcip ? ipCountryMap[srcip] : undefined) || undefined;
+
+    if (action === 'drop' || action === 'dropped' || action === 'blocked') droppedCount++;
+
+    attackMap[attack] = (attackMap[attack] || 0) + 1;
+
+    if (srcip) {
+      if (!ipMap[srcip]) ipMap[srcip] = { count: 0, country, ports: new Set() };
+      ipMap[srcip].count++;
+      if (dstport > 0) ipMap[srcip].ports.add(dstport);
+    }
+  }
+
+  const topAnomalySources: TopBlockedIP[] = Object.entries(ipMap)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+
+  const topAnomalyTypes = Object.entries(attackMap)
+    .sort((a, b) => b[1] - a[1]).slice(0, 20)
+    .map(([category, count]) => ({ category, count }));
+
+  // Detect floods (critical)
+  const floodKeywords = ['flood', 'syn_flood', 'udp_flood', 'icmp_flood', 'tcp_flood'];
+  for (const [attack, count] of Object.entries(attackMap)) {
+    const lower = attack.toLowerCase();
+    if (floodKeywords.some(k => lower.includes(k))) {
+      insights.push({
+        id: `anomaly_flood_${attack.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`,
+        category: 'anomaly',
+        name: `Flood Detectado: ${attack}`,
+        description: `${count} evento(s) de ${attack} detectado(s)`,
+        severity: count >= 50 ? 'critical' : count >= 10 ? 'high' : 'medium',
+        count,
+        recommendation: 'Verifique os limiares de DoS no sensor de anomalia e considere ajustar as políticas de proteção.',
+      });
+    }
+  }
+
+  // Detect scans (high)
+  const scanKeywords = ['scan', 'portscan', 'port_scan', 'sweep'];
+  for (const [attack, count] of Object.entries(attackMap)) {
+    const lower = attack.toLowerCase();
+    if (scanKeywords.some(k => lower.includes(k))) {
+      insights.push({
+        id: `anomaly_scan_${attack.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`,
+        category: 'anomaly',
+        name: `Scan Detectado: ${attack}`,
+        description: `${count} evento(s) de varredura detectado(s)`,
+        severity: count >= 20 ? 'high' : 'medium',
+        count,
+        recommendation: 'Investigue a origem da varredura. Pode indicar reconhecimento pré-ataque.',
+      });
+    }
+  }
+
+  // Detect excessive sessions per IP (medium)
+  const sessionKeywords = ['session', 'limit', 'rate'];
+  for (const [attack, count] of Object.entries(attackMap)) {
+    const lower = attack.toLowerCase();
+    if (sessionKeywords.some(k => lower.includes(k)) && count >= 5) {
+      insights.push({
+        id: `anomaly_session_${attack.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`,
+        category: 'anomaly',
+        name: `Limite de Sessões: ${attack}`,
+        description: `${count} evento(s) de limite de sessão excedido`,
+        severity: 'medium',
+        count,
+        recommendation: 'Revise os limites de sessão por IP e verifique se há aplicações legítimas sendo impactadas.',
+      });
+    }
+  }
+
+  // High-volume anomaly IPs
+  for (const [ip, data] of Object.entries(ipMap)) {
+    if (data.count >= 20) {
+      insights.push({
+        id: `anomaly_highvol_${ip}`,
+        category: 'anomaly',
+        name: 'IP com Alto Volume de Anomalias',
+        description: `IP ${ip} gerou ${data.count} eventos de anomalia`,
+        severity: data.count >= 100 ? 'critical' : data.count >= 50 ? 'high' : 'medium',
+        sourceIPs: [ip],
+        count: data.count,
+        recommendation: 'Considere bloquear este IP e investigar possível ataque em andamento.',
+      });
+    }
+  }
+
+  // General anomaly volume insight
+  if (logs.length >= 10) {
+    insights.push({
+      id: 'anomaly_volume_total',
+      category: 'anomaly',
+      name: 'Volume de Anomalias Detectadas',
+      description: `${logs.length} anomalia(s) detectada(s), ${droppedCount} bloqueada(s) (${Math.round(droppedCount / logs.length * 100)}%)`,
+      severity: logs.length >= 200 ? 'high' : logs.length >= 50 ? 'medium' : 'low',
+      count: logs.length,
+      details: `Tipos distintos: ${Object.keys(attackMap).length}. Top: ${topAnomalyTypes.slice(0, 3).map(t => `${t.category} (${t.count})`).join(', ')}`,
+    });
+  }
+
+  return {
+    insights,
+    metrics: { anomalyEvents: logs.length, anomalyDropped: droppedCount, topAnomalySources, topAnomalyTypes },
+  };
+}
+
+// ============================================
 // Score Calculation
 // ============================================
 
@@ -772,6 +896,7 @@ Deno.serve(async (req) => {
     const configData = raw_data.config_changes?.data || raw_data.config_changes || [];
     const webfilterData = raw_data.webfilter_blocked?.data || raw_data.webfilter_blocked || [];
     const appctrlData = raw_data.appctrl_blocked?.data || raw_data.appctrl_blocked || [];
+    const anomalyData = raw_data.anomaly_events?.data || raw_data.anomaly_events || [];
 
     const deniedLogs = Array.isArray(deniedData) ? deniedData : deniedData?.results || [];
 
@@ -820,6 +945,7 @@ Deno.serve(async (req) => {
     const configResult = analyzeConfigChanges(Array.isArray(configData) ? configData : configData?.results || []);
     const webfilterResult = analyzeWebFilter(Array.isArray(webfilterData) ? webfilterData : webfilterData?.results || []);
     const appctrlResult = analyzeAppControl(Array.isArray(appctrlData) ? appctrlData : appctrlData?.results || []);
+    const anomalyResult = analyzeAnomalies(Array.isArray(anomalyData) ? anomalyData : anomalyData?.results || [], ipCountryMap);
 
     // Combine all insights
     const allInsights = [
@@ -829,6 +955,7 @@ Deno.serve(async (req) => {
       ...configResult.insights,
       ...webfilterResult.insights,
       ...appctrlResult.insights,
+      ...anomalyResult.insights,
     ];
 
     // Deduplicate by id
@@ -865,7 +992,11 @@ Deno.serve(async (req) => {
       topAppControlUsers: appctrlResult.metrics.topAppControlUsers || [],
       webFilterBlocked: webfilterResult.metrics.webFilterBlocked || 0,
       appControlBlocked: appctrlResult.metrics.appControlBlocked || 0,
-      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0) + (webfilterResult.metrics.webFilterBlocked || 0) + (appctrlResult.metrics.appControlBlocked || 0),
+      anomalyEvents: anomalyResult.metrics.anomalyEvents || 0,
+      anomalyDropped: anomalyResult.metrics.anomalyDropped || 0,
+      topAnomalySources: anomalyResult.metrics.topAnomalySources || [],
+      topAnomalyTypes: anomalyResult.metrics.topAnomalyTypes || [],
+      totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0) + (webfilterResult.metrics.webFilterBlocked || 0) + (appctrlResult.metrics.appControlBlocked || 0) + (anomalyResult.metrics.anomalyEvents || 0),
     };
 
     const score = calculateScore(uniqueInsights);

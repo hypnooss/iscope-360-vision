@@ -26,6 +26,7 @@ const categoryLabels: Record<AnalyzerCategory, string> = {
   persistent_sessions: 'Sessões Persistentes',
   geolocation: 'Geolocalização',
   ioc_correlation: 'IoC Correlation',
+  anomaly: 'Anomalias de Rede',
 };
 
 const severityOrder: AnalyzerSeverity[] = ['critical', 'high', 'medium', 'low', 'info'];

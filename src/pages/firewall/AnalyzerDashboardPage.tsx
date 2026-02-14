@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, Map, ExternalLink,
-  Filter, AppWindow, Building2,
+  Filter, AppWindow, Building2, Zap,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
@@ -439,6 +439,7 @@ export default function AnalyzerDashboardPage() {
                   },
                   { label: 'Web Filter', value: m?.webFilterBlocked ?? 0, icon: Filter },
                   { label: 'App Control', value: m?.appControlBlocked ?? 0, icon: AppWindow },
+                  { label: 'Anomalias', value: m?.anomalyEvents ?? 0, icon: Zap },
                 ].map(s => (
                   <div
                     key={s.label}
@@ -506,6 +507,32 @@ export default function AnalyzerDashboardPage() {
                   </TabsContent>
                   <TabsContent value="users">
                     <RankingListWidget items={m?.topAppControlUsers ?? []} labelKey="user" />
+                  </TabsContent>
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Anomalies */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Zap className="w-4 h-4 text-primary" />
+                Anomalias de Rede
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="types">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="types">Tipos</TabsTrigger>
+                    <TabsTrigger value="sources">IPs Origem</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="types">
+                    <RankingListWidget items={m?.topAnomalyTypes ?? []} labelKey="category" />
+                  </TabsContent>
+                  <TabsContent value="sources">
+                    <IPListWidget ips={m?.topAnomalySources ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
