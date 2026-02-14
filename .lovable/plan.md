@@ -1,60 +1,28 @@
 
-# Agendamento Diario do Attack Surface Analyzer
 
-## Contexto
+# Fix: Compatibilidade Python no nmap_discovery.py
 
-Atualmente o Attack Surface Analyzer so pode ser disparado manualmente. Vamos criar uma tabela de agendamento dedicada e integra-la ao scheduler existente (`run-scheduled-analyses`), seguindo o mesmo padrao das tabelas `analysis_schedules`, `external_domain_schedules` e `analyzer_schedules`.
+## Problema
 
-## Horario
+O arquivo `nmap_discovery.py` usa a sintaxe `List[int] | None` (linha 61) que so funciona a partir do Python 3.10. O servidor do agent provavelmente roda Python 3.9 ou anterior, causando crash imediato no import.
 
-- 12:00 UTC-3 = **15:00 UTC** (scheduled_hour = 15)
+## Correcao
 
-## Workspaces
+Substituir `List[int] | None` por `Optional[List[int]]` (importando `Optional` de `typing`).
 
-| Workspace | client_id |
-|---|---|
-| PRECISIO | 62842720-92b9-42c9-ae91-16cdaad9284d |
-| TASCHIBRA | c5e3878a-0395-4952-b055-277893f66e95 |
-| NEXTA | 57fabbc4-6bf8-442e-9948-240a7e44cc2d |
-| MOVECTA | 80e94e71-1cc4-402c-b718-e021f5e81cb2 |
-| BRINQUEDOS ESTRELA | 145988e9-14b5-49ca-b1e6-c9184cba86f0 |
-| IE MADEIRA | 794942aa-05c3-49d5-bd57-4563081c76a2 |
+### Arquivo: `python-agent/agent/executors/nmap_discovery.py`
 
-## Mudancas
-
-### 1. Nova tabela: `attack_surface_schedules`
-
-Seguindo o padrao das demais tabelas de agendamento:
-
-```text
-Colunas:
-  id              uuid (PK, default gen_random_uuid())
-  client_id       uuid (NOT NULL, FK -> clients)
-  frequency       schedule_frequency (NOT NULL, default 'daily')
-  scheduled_hour  integer (default 15)
-  scheduled_day_of_week   integer (default 1)
-  scheduled_day_of_month  integer (default 1)
-  is_active       boolean (default true)
-  next_run_at     timestamptz
-  created_by      uuid
-  created_at      timestamptz (default now())
-  updated_at      timestamptz (default now())
+Linha 10 - adicionar `Optional` ao import:
+```python
+from typing import Dict, Any, List, Optional
 ```
 
-RLS: Super admins podem gerenciar tudo. Workspace admins podem ver/gerenciar agendamentos dos seus workspaces via `has_client_access`.
+Linha 61 - corrigir type hint:
+```python
+def _run_scan(
+    self, ip: str, port_spec: str, max_rate: int, timeout: int, use_top_ports: bool = False
+) -> Optional[List[int]]:
+```
 
-### 2. Inserir os 6 agendamentos
+Apenas essas duas mudancas resolvem o crash. Nenhum outro arquivo precisa ser alterado.
 
-Inserir registros para cada workspace com `frequency = 'daily'`, `scheduled_hour = 15`, `is_active = true` e `next_run_at` calculado para a proxima ocorrencia.
-
-### 3. Atualizar `run-scheduled-analyses` Edge Function
-
-Adicionar um novo bloco (seguindo o padrao existente de firewalls/domains/analyzers) que:
-
-1. Busca agendamentos vencidos em `attack_surface_schedules`
-2. Para cada agendamento, chama `run-attack-surface-queue` passando `{ client_id }`
-3. Calcula o proximo `next_run_at` e atualiza o registro
-
-### 4. Nenhuma mudanca na UI
-
-A pagina de Schedules (`/schedules`) ja consolida agendamentos. Futuramente pode-se adicionar o tipo "Attack Surface" ao painel unificado, mas isso nao e necessario agora — os agendamentos serao executados automaticamente pelo CRON existente.
