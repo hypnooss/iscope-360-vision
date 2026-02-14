@@ -215,15 +215,44 @@ export default function AnalyzerDashboardPage() {
     try { return new URL(firewallUrl.fortigate_url).hostname; } catch { return null; }
   })();
 
+  const isPrivateIP = (ip: string) =>
+    /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
+
   const { data: firewallGeo } = useQuery({
-    queryKey: ['firewall-geo', firewallHostname],
+    queryKey: ['firewall-geo', firewallHostname, snapshot?.metrics?.topAuthIPsSuccess],
     queryFn: async () => {
-      const res = await fetch(`https://ipwho.is/${firewallHostname}`);
-      const json = await res.json();
-      if (!json.success) return null;
-      return { lat: json.latitude as number, lng: json.longitude as number };
+      // Try hostname first (works for public IPs and DNS)
+      if (firewallHostname && !isPrivateIP(firewallHostname)) {
+        const res = await fetch(`https://ipwho.is/${firewallHostname}`);
+        const json = await res.json();
+        if (json.success) {
+          return { lat: json.latitude as number, lng: json.longitude as number };
+        }
+      }
+
+      // Fallback: use first successful auth IP (likely same region as firewall)
+      const fallbackIP = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
+      if (fallbackIP && !isPrivateIP(fallbackIP)) {
+        const res = await fetch(`https://ipwho.is/${fallbackIP}`);
+        const json = await res.json();
+        if (json.success) {
+          return { lat: json.latitude as number, lng: json.longitude as number };
+        }
+      }
+
+      // Second fallback: use first failed auth IP
+      const fallbackIP2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
+      if (fallbackIP2 && !isPrivateIP(fallbackIP2)) {
+        const res = await fetch(`https://ipwho.is/${fallbackIP2}`);
+        const json = await res.json();
+        if (json.success) {
+          return { lat: json.latitude as number, lng: json.longitude as number };
+        }
+      }
+
+      return null;
     },
-    enabled: !!firewallHostname,
+    enabled: !!firewallHostname || !!snapshot?.metrics?.topAuthIPsSuccess?.length,
     staleTime: 1000 * 60 * 30,
   });
 
