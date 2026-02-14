@@ -1,20 +1,25 @@
 
-# Ajuste: Recuo interno dos topicos e espacamento entre blocos
+# Fix: Vulnerabilidades - borda desalinhada pelo recuo
 
-## Alteracoes
+## Problema
 
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+O `pl-6` foi aplicado diretamente no `div` que possui a borda (`rounded-lg border border-border/50`), fazendo com que toda a caixa (incluindo a borda) seja empurrada para a direita, mas o conteudo interno nao ganha recuo adicional. Visualmente a borda fica "atras" do titulo.
 
-### 1. Aumentar espacamento entre topicos
-Linha 543: Trocar `space-y-5` por `space-y-8` no container expandido, aumentando a distancia vertical entre o fim de um bloco (ex: Portas Abertas) e o inicio do proximo (ex: Servicos e Tecnologias).
+## Solucao
 
-### 2. Adicionar recuo ao conteudo de cada topico
-Em cada bloco (Portas Abertas, Servicos, Certificados TLS, Vulnerabilidades), o conteudo abaixo do titulo `h4` recebera um `pl-6` (24px) para criar separacao visual entre o titulo do topico e seus dados.
+Envolver o container com borda em um `div` separado com `pl-6`, e remover o `pl-6` do container da borda.
 
-Isso afeta 4 blocos:
-- **Portas Abertas** (linha ~551): o `div` com os badges de porta
-- **Servicos e Tecnologias** (linha ~566): o `div` com os cards de servico
-- **Certificados TLS** (linha ~613): o `div` com os cards de certificado
-- **Vulnerabilidades**: o `div` com a lista de CVEs
+**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linha 656)
 
-Nenhuma borda ou fundo adicional sera incluido, apenas o recuo com `pl-6`.
+**De:**
+```tsx
+<div className="pl-6 rounded-lg border border-border/50 overflow-hidden">
+```
+
+**Para:**
+```tsx
+<div className="pl-6">
+  <div className="rounded-lg border border-border/50 overflow-hidden">
+```
+
+E fechar o `div` extra apos o fechamento do container da borda (apos linha 676).
