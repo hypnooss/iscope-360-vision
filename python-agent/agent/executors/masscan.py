@@ -22,7 +22,7 @@ class MasscanExecutor(BaseExecutor):
             return {'error': 'IP address is required'}
 
         port_range = params.get('port_range', '1-65535')
-        rate = params.get('rate', 3000)
+        rate = params.get('rate', 1000)
         timeout = params.get('timeout', 180)
 
         self.logger.info(f"[masscan] Scanning {ip} ports={port_range} rate={rate}")
@@ -97,9 +97,45 @@ class MasscanExecutor(BaseExecutor):
                 }
             }
 
-        except subprocess.TimeoutExpired:
-            return {'error': f'masscan timeout after {timeout}s on {ip}'}
+        except subprocess.TimeoutExpired as e:
+            # Timeout is NOT an error for masscan - try to read partial output
+            partial_output = ''
+            if hasattr(e, 'stdout') and e.stdout:
+                partial_output = e.stdout.strip() if isinstance(e.stdout, str) else e.stdout.decode('utf-8', errors='ignore').strip()
+            if partial_output:
+                ports = self._parse_masscan_output(partial_output)
+                self.logger.info(f"[masscan] Timeout on {ip} but found {len(ports)} ports (partial)")
+                return {'data': {'ip': ip, 'ports': ports}}
+            self.logger.info(f"[masscan] Timeout on {ip}, no ports found")
+            return {'data': {'ip': ip, 'ports': []}}
         except FileNotFoundError:
             return {'error': 'masscan not installed. Run: apt install -y masscan'}
         except Exception as e:
             return {'error': f'masscan error: {str(e)}'}
+
+    def _parse_masscan_output(self, raw_output: str):
+        """Parse masscan JSON output, handling malformed JSON."""
+        cleaned = re.sub(r',\s*\]', ']', raw_output)
+        if not cleaned.startswith('['):
+            cleaned = f'[{cleaned}]'
+        cleaned = re.sub(r',\s*$', '', cleaned)
+        if not cleaned.endswith(']'):
+            cleaned += ']'
+
+        try:
+            entries = json.loads(cleaned)
+        except json.JSONDecodeError:
+            entries = []
+            for line in raw_output.split('\n'):
+                line = line.strip().rstrip(',')
+                if line.startswith('{'):
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+        return sorted(set(
+            entry['ports'][0]['port']
+            for entry in entries
+            if isinstance(entry, dict) and 'ports' in entry
+        ))

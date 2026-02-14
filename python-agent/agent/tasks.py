@@ -39,6 +39,10 @@ class TaskExecutor:
         'errno 113',  # No route to host
     ]
 
+    # Scanning executors excluded from fail-fast connectivity checks
+    # Timeout is expected behavior for these tools (filtered ports, slow targets)
+    SCAN_EXECUTORS = {'masscan', 'nmap', 'httpx'}
+
     MAX_PARALLEL_TASKS = 4
 
     def __init__(self, api, state, logger):
@@ -230,9 +234,10 @@ class TaskExecutor:
                         context.update(result['data'])
                     
                     # Check for connectivity errors on first step (fail-fast)
+                    # Scanning executors are excluded - timeout is normal for them
                     if i == 0 and result.get('error'):
                         error_msg = result.get('error', '')
-                        if self._is_connectivity_error(error_msg):
+                        if executor_type not in self.SCAN_EXECUTORS and self._is_connectivity_error(error_msg):
                             self.logger.error(
                                 f"Falha de conectividade no primeiro step. "
                                 f"Abortando {len(steps) - 1} steps restantes."
@@ -317,7 +322,7 @@ class TaskExecutor:
                     if self._use_progressive:
                         self._report_step_result(task_id, step_id, 'failed', None, error_msg, step_duration)
                     
-                    if i == 0 and self._is_connectivity_error(error_msg):
+                    if i == 0 and executor_type not in self.SCAN_EXECUTORS and self._is_connectivity_error(error_msg):
                         self.logger.error(
                             f"Falha de conectividade no primeiro step (exceção). "
                             f"Abortando {len(steps) - 1} steps restantes."
