@@ -653,26 +653,28 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
                 <ShieldAlert className="w-4 h-4 text-destructive" />
                 Vulnerabilidades ({asset.cves.length})
               </h4>
-              <div className="pl-6 rounded-lg border border-border/50 overflow-hidden">
-                {[...asset.cves]
-                  .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-                  .map((cve) => (
-                    <a
-                      key={cve.cve_id}
-                      href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
-                    >
-                      <SeverityBadge severity={cve.severity} />
-                      <span className="font-mono text-sm">{cve.cve_id}</span>
-                      {cve.score != null && (
-                        <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
-                      )}
-                      <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
-                    </a>
-                  ))}
+              <div className="pl-6">
+                <div className="rounded-lg border border-border/50 overflow-hidden">
+                  {[...asset.cves]
+                    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                    .map((cve) => (
+                      <a
+                        key={cve.cve_id}
+                        href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
+                      >
+                        <SeverityBadge severity={cve.severity} />
+                        <span className="font-mono text-sm">{cve.cve_id}</span>
+                        {cve.score != null && (
+                          <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
+                        )}
+                        <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
+                      </a>
+                    ))}
+                </div>
               </div>
             </div>
           ) : (
