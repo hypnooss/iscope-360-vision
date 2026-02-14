@@ -504,9 +504,11 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
 
             {/* Row 2: ports + techs */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <span>{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/10 text-orange-400 border-orange-500/30">{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</Badge>
               <span className="text-border">•</span>
-              <span>{asset.services.length + asset.webServices.length} serviço{(asset.services.length + asset.webServices.length) !== 1 ? 's' : ''}</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/30">{asset.services.length + asset.webServices.length} serviço{(asset.services.length + asset.webServices.length) !== 1 ? 's' : ''}</Badge>
+              <span className="text-border">•</span>
+              <CertStatusBadge asset={asset} />
               {visibleTechs.length > 0 && (
                 <>
                   <span className="text-border">•</span>
@@ -522,14 +524,13 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
               )}
             </div>
 
-            {/* Row 3: CVE summary + cert status */}
+            {/* Row 3: CVE summary */}
             <div className="flex items-center gap-3 flex-wrap">
               {asset.cves.length > 0 ? (
                 <CVESummaryBadges cves={asset.cves} />
               ) : (
                 <span className="text-xs text-muted-foreground">0 CVEs</span>
               )}
-              <CertStatusBadge asset={asset} />
             </div>
           </div>
           <div className="shrink-0 mt-1">
