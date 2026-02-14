@@ -1,33 +1,59 @@
 
 
-# Ajuste de tamanho dos badges e separadores nos CVEs
+# Ajustes visuais nos Asset Cards
 
-## Problema
+## 3 alteracoes no arquivo `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Os badges de portas, servicos e tecnologias usam `py-0` que os torna menores que o badge de certificado. Os CVE badges tambem usam `py-0`. O badge de certificado nao tem `py-0`, por isso e maior.
+### 1. Severidades em formato capitalizado e portugues
 
-## Correcoes
+Na funcao `CVESummaryBadges` (linha 443), trocar `s.toUpperCase()` por labels em portugues com inicial maiuscula.
 
-### 1. Igualar tamanho dos badges (remover `py-0`)
+Mapeamento:
+- critical -> "Critical" (manter ingles pois e termo tecnico de CVE) ou capitalizar: `s.charAt(0).toUpperCase() + s.slice(1)`
 
-Remover `py-0` dos seguintes badges para que fiquem do mesmo tamanho que o CertStatusBadge:
+Resultado: `2 Critical` em vez de `2 CRITICAL`, `9 High` em vez de `9 HIGH`, etc.
 
-- Portas badge (linha 507): `px-1.5 py-0` -> `px-1.5`
-- Servicos badge (linha 509): `px-1.5 py-0` -> `px-1.5`
-- Tech badges (linha 517): `px-1.5 py-0` -> `px-1.5`
-- Overflow tech badge (linha 520): `px-1.5 py-0` -> `px-1.5`
-- CVE badges no CVESummaryBadges (linha 440): `px-1.5 py-0` -> `px-1.5`
+### 2. Prefixo "Certificado" no CertStatusBadge
 
-### 2. Adicionar separador `•` entre CVE badges
+Na funcao `CertStatusBadge` (linhas 451-477), adicionar a palavra "Certificado" antes de cada label:
 
-No componente `CVESummaryBadges`, trocar o `gap-1` por `gap-2` e inserir `<span className="text-border">•</span>` entre cada badge de severidade.
+- Linha 452: "Sem TLS" -> badge com "Sem Certificado" (ver item 3)
+- Linha 459: "Expirado ha Xd" -> "Certificado Expirado ha Xd"
+- Linha 469: "Expira em Xd" -> "Certificado Expira em Xd"
+- Linha 475: "Valido" -> "Certificado Valido"
 
-### Resultado visual
+### 3. Converter textos planos em badges
+
+**"Sem TLS" (linha 452)**: Trocar o `<span>` por um `<Badge variant="outline">` com estilo neutro (muted), incluindo icone de cadeado.
+
+```tsx
+// De:
+<span className="text-xs text-muted-foreground">Sem TLS</span>
+// Para:
+<Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+  <Lock className="w-3 h-3 mr-1" /> Sem Certificado
+</Badge>
+```
+
+**"0 CVEs" (linha 535)**: Trocar o `<span>` por um `<Badge variant="outline">` com estilo neutro.
+
+```tsx
+// De:
+<span className="text-xs text-muted-foreground">0 CVEs</span>
+// Para:
+<Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
+  0 CVEs
+</Badge>
+```
+
+## Resultado visual esperado
 
 ```
-Row 2: [11 portas]  •  [16 servicos]  •  [Expira em 30d]  •  [Pure-FTPd] ...
-Row 3: [2 CRITICAL]  •  [9 HIGH]  •  [14 MEDIUM]  •  [1 LOW]
-```
+Row 2: [11 portas] . [16 servicos] . [Certificado Expira em 30d] . [nginx] ...
+Row 3: [2 Critical] . [9 High] . [14 Medium] . [1 Low]
 
-Todos os badges com o mesmo padding vertical, tamanho uniforme.
+Sem certificado:
+Row 2: [0 portas] . [0 servicos] . [Sem Certificado] . [HSTS]
+Row 3: [0 CVEs]
+```
 
