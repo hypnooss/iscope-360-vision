@@ -32,16 +32,16 @@ class NmapDiscoveryExecutor(BaseExecutor):
         if is_cdn:
             # CDN/Edge IPs: avoid full range, use top-ports with lower rate
             port_range = '--top-ports 1000'
-            max_rate = 300  # Fixed: CDN rate must be low to avoid blocking
-            timeout = params.get('timeout', 300)
+            max_rate = 150  # Fixed: CDN rate must be very low to avoid blocking
+            timeout = params.get('timeout', 420)
             self.logger.info(
                 f"[nmap_discovery] CDN detected ({cdn_provider}), "
                 f"using top-1000 strategy on {ip} max_rate={max_rate}"
             )
         else:
             port_range = params.get('port_range', '1-65535')
-            max_rate = params.get('max_rate', 500)
-            timeout = params.get('timeout', 420)
+            max_rate = params.get('max_rate', 300)
+            timeout = params.get('timeout', 720)
             self.logger.info(f"[nmap_discovery] Stealth SYN scan on {ip} ports={port_range} max_rate={max_rate}")
 
         use_top_ports = is_cdn  # CDN uses --top-ports flag
@@ -82,10 +82,10 @@ class NmapDiscoveryExecutor(BaseExecutor):
             '-Pn',              # Skip host discovery (we know the IP is alive)
             '--open',           # Only show open ports
             '-T2',              # Polite timing - adaptive, avoids IPS thresholds
-            '--max-retries', '2',
+            '--max-retries', '1',    # Fewer retransmissions = less noise
+            '--scan-delay', '200ms', # Space between probes to evade burst detection
             '--data-length', '24',   # Pad packets to look less like a scanner
             '--host-timeout', '600s',
-            '--min-rate', '100',
             '--max-rate', str(max_rate),
             '-oX', '-',         # XML output to stdout
         ]
