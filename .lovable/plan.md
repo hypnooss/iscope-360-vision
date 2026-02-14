@@ -1,71 +1,43 @@
 
 
-# Fix: ASN Classifier sem dependencia do binario `whois`
+# Fix: max_rate ignorando estrategia CDN no nmap_discovery
 
 ## Problema
 
-O binario `whois` nao esta instalado no servidor do Super Agent. O fallback atual (`FileNotFoundError`) resulta em `is_cdn=False` para todos os IPs, anulando toda a logica cloud-aware.
+O blueprint "Active Attack Surface Scan" define `max_rate: 500` nos params do step `nmap_discovery`. O codigo atual usa `params.get('max_rate', 300)`, que so aplica o default 300 se o param **nao existir**. Como o blueprint envia 500 explicitamente, CDN IPs estao sendo escaneados com rate 500 em vez de 300.
+
+Log evidenciando:
+```
+CDN detected (cloudflare), using top-1000 strategy on 104.26.14.188 max_rate=500
+```
 
 ## Solucao
 
-Substituir `subprocess.run(['whois', ...])` por uma consulta direta ao protocolo WHOIS via **socket TCP na porta 43**. Isso usa apenas a stdlib do Python (`socket`), sem dependencias externas e sem necessidade de instalar pacotes no sistema operacional.
+Alterar a logica no `nmap_discovery.py` para que, quando `is_cdn=True`, o `max_rate` seja fixado em 300 independente do que venha nos params do blueprint. Os params do blueprint so devem controlar o `max_rate` para IPs nao-CDN.
 
-O protocolo WHOIS e extremamente simples:
-1. Conectar no servidor WHOIS (ex: `whois.arin.net`) na porta 43
-2. Enviar o IP seguido de `\r\n`
-3. Ler toda a resposta (texto puro)
-4. Fechar a conexao
+## Mudanca no Codigo
 
-## Detalhes da Implementacao
+### Arquivo: `python-agent/agent/executors/nmap_discovery.py`
 
-### Arquivo: `python-agent/agent/executors/asn_classifier.py`
+Alterar as linhas 32-40 (bloco CDN) de:
 
-**Substituir** o metodo `_whois_lookup` que usa `subprocess.run(['whois', ip])` por `_whois_socket_lookup` que faz a consulta via socket direto.
-
-Logica do novo metodo:
-
-```text
-1. Abrir socket TCP para whois.arin.net:43 (ARIN cobre todos os IPs, redireciona para RIR correto)
-2. Enviar "n {ip}\r\n" (prefixo "n " para forcar lookup de rede no ARIN)
-3. Ler resposta completa (max 64KB)
-4. Se a resposta indicar outro RIR (ex: "ReferralServer: whois.ripe.net"), seguir o referral
-5. Aplicar a mesma extracao de campos e matching de provider que ja existe
+```python
+if is_cdn:
+    port_range = '--top-ports 1000'
+    max_rate = params.get('max_rate', 300)
+    timeout = params.get('timeout', 300)
 ```
 
-Fallback para servidores WHOIS por regiao:
-- ARIN (Americas): `whois.arin.net` - servidor primario
-- RIPE (Europa/Oriente Medio): `whois.ripe.net`
-- APNIC (Asia-Pacifico): `whois.apnic.net`
+Para:
 
-**Mudancas especificas no codigo:**
+```python
+if is_cdn:
+    port_range = '--top-ports 1000'
+    max_rate = 300  # Fixed: CDN rate must be low to avoid blocking
+    timeout = params.get('timeout', 300)
+```
 
-1. Remover `import subprocess`
-2. Adicionar `import socket`
-3. Substituir `_whois_lookup` por nova implementacao com socket
-4. Adicionar metodo auxiliar `_query_whois_server(server, query, timeout)` para a conexao TCP
-5. Adicionar logica de referral (seguir redirecionamento para RIR correto)
-6. Manter `_extract_field`, `_match_provider` **inalterados** - o formato da resposta e identico ao do binario `whois`
+Isso garante que CDN IPs sempre usem taxa reduzida, sem depender dos params do blueprint.
 
-### Nenhum outro arquivo alterado
-
-- `requirements.txt`: sem mudancas (socket e stdlib)
-- `nmap_discovery.py`: sem mudancas
-- `httpx_executor.py`: sem mudancas
-- `tasks.py` / `__init__.py`: sem mudancas
-
-## Vantagens da abordagem socket vs alternativas
-
-| Abordagem | Pro | Contra |
-|---|---|---|
-| **Socket TCP (escolhida)** | Zero dependencias, funciona em qualquer servidor, rapido (~1-3s) | Precisa tratar referrals manualmente |
-| Instalar binario `whois` | Simples | Requer `apt-get install whois` no servidor, nao portavel |
-| API RDAP (HTTP) | JSON estruturado | Rate limiting agressivo, requer `requests`, mais lento |
-| `ipwhois` (pip) | API Python limpa | Nova dependencia, aumenta superficie |
-
-## Tratamento de erros
-
-- Socket timeout: retorna `(None, None, None)` -> fallback para scan normal
-- Conexao recusada: tenta proximo servidor na lista
-- Resposta vazia: fallback para scan normal
-- Qualquer excecao: log warning + fallback gracioso (comportamento identico ao atual)
+Nenhum outro arquivo precisa ser alterado.
 
