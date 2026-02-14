@@ -51,6 +51,10 @@ class HttpxExecutor(BaseExecutor):
 
         self.logger.info(f"[httpx] Probing {target} ports={port_str}" + (f" (ip={ip})" if hostname else ""))
 
+        # Cloud-aware: add realistic browser headers for CDN targets
+        is_cdn = context.get('is_cdn', False)
+        cdn_provider = context.get('provider', 'unknown')
+
         cmd = [
             'httpx',
             '-u', target,
@@ -66,6 +70,16 @@ class HttpxExecutor(BaseExecutor):
             '-timeout', '10',
             '-retries', '1',
         ]
+
+        if is_cdn:
+            self.logger.info(f"[httpx] CDN mode ({cdn_provider}): injecting browser headers")
+            cmd.extend([
+                '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                '-H', 'Accept-Language: en-US,en;q=0.9',
+                '-H', 'Upgrade-Insecure-Requests: 1',
+                '-H', 'Connection: keep-alive',
+            ])
 
         try:
             result = subprocess.run(
