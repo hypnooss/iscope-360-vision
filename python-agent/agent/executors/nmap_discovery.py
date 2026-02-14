@@ -19,6 +19,12 @@ class NmapDiscoveryExecutor(BaseExecutor):
     # Max ports before triggering false-positive re-scan
     FALSE_POSITIVE_THRESHOLD = 500
 
+    # Standard web ports returned immediately for CDN/Edge IPs (no scan needed)
+    CDN_WEB_PORTS = [
+        80, 443, 8080, 8443, 8000, 8888,
+        2052, 2053, 2082, 2083, 2086, 2087, 2095, 2096,
+    ]
+
     def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         params = step.get('params', {})
         ip = params.get('ip') or context.get('ip')
@@ -31,30 +37,31 @@ class NmapDiscoveryExecutor(BaseExecutor):
         cdn_provider = context.get('provider', 'unknown')
 
         if is_cdn:
-            # CDN/Edge IPs: avoid full range, use top-ports with lower rate
-            port_range = '--top-ports 1000'
-            max_rate = 150  # Fixed: CDN rate must be very low to avoid blocking
-            timeout = params.get('timeout', 420)
+            # CDN/Edge IPs: skip discovery entirely, return fixed web ports
             self.logger.info(
                 f"[nmap_discovery] CDN detected ({cdn_provider}), "
-                f"using top-1000 strategy on {ip} max_rate={max_rate}"
+                f"skipping discovery - using {len(self.CDN_WEB_PORTS)} standard web ports for {ip}"
             )
+            return {
+                'data': {
+                    'ip': ip,
+                    'ports': self.CDN_WEB_PORTS,
+                }
+            }
         else:
             port_range = params.get('port_range', '1-65535')
             max_rate = params.get('max_rate', 300)
             timeout = params.get('timeout', 720)
             self.logger.info(f"[nmap_discovery] TCP connect scan on {ip} ports={port_range} max_rate={max_rate}")
 
-        use_top_ports = is_cdn  # CDN uses --top-ports flag
-        ports = self._run_scan(ip, port_range, max_rate, timeout, use_top_ports=use_top_ports)
+        ports = self._run_scan(ip, port_range, max_rate, timeout)
 
         if ports is None:
             # _run_scan returned None = error already logged
             return {'data': {'ip': ip, 'ports': []}}
 
-        # False-positive protection: cloud/CDN targets respond on everything
-        # Skip if already using top-ports (CDN mode)
-        if not is_cdn and len(ports) > self.FALSE_POSITIVE_THRESHOLD:
+        # False-positive protection: too many open ports = likely ghost ports
+        if len(ports) > self.FALSE_POSITIVE_THRESHOLD:
             self.logger.warning(
                 f"[nmap_discovery] {len(ports)} ports found on {ip} - "
                 f"likely false positives. Re-scanning with --top-ports 1000"
