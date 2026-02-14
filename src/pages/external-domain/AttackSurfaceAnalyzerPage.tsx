@@ -290,6 +290,49 @@ function matchCVEsToIP(
   return Array.from(matched.values());
 }
 
+/* ──────────────── CVE-to-Service matching ──────────────── */
+
+function matchCVEsToService(serviceName: string, cves: AttackSurfaceCVE[]): AttackSurfaceCVE[] {
+  if (!serviceName) return [];
+  const name = serviceName.toLowerCase();
+  return cves
+    .filter(cve =>
+      (cve.products || []).some(p => p.toLowerCase().includes(name)) ||
+      (cve.title || '').toLowerCase().includes(name)
+    )
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+}
+
+function getOrphanCVEs(
+  services: AttackSurfaceService[],
+  webServices: AttackSurfaceWebService[],
+  cves: AttackSurfaceCVE[]
+): AttackSurfaceCVE[] {
+  const serviceNames = new Set<string>();
+  for (const svc of services) {
+    if (svc.product) serviceNames.add(svc.product.toLowerCase());
+  }
+  for (const ws of webServices) {
+    if (ws.server) {
+      const [name] = ws.server.toLowerCase().split('/');
+      serviceNames.add(name.trim());
+    }
+    for (const t of ws.technologies || []) {
+      const [name] = t.split(':');
+      serviceNames.add(name.trim().toLowerCase());
+    }
+  }
+  return cves.filter(cve => {
+    for (const name of serviceNames) {
+      if ((cve.products || []).some(p => p.toLowerCase().includes(name)) ||
+          (cve.title || '').toLowerCase().includes(name)) {
+        return false;
+      }
+    }
+    return true;
+  }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+}
+
 /* ──────────────────────────── ExposedAsset model ──────────────────────────── */
 
 interface TLSCertInfo {
@@ -481,6 +524,155 @@ function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
   );
 }
 
+/* ──────────────── ServiceRow (expandable with inline CVEs) ──────────────── */
+
+function CVEInlineBadge({ cve }: { cve: AttackSurfaceCVE }) {
+  const sev = (cve.severity || 'medium').toLowerCase();
+  return (
+    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-mono", sevColors[sev] || '')}>
+      {cve.cve_id} ({cve.score ?? '—'})
+    </Badge>
+  );
+}
+
+function CVEExpandedList({ cves }: { cves: AttackSurfaceCVE[] }) {
+  if (cves.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-border/50 overflow-hidden">
+      {cves.map((cve) => (
+        <a
+          key={cve.cve_id}
+          href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
+        >
+          <SeverityBadge severity={cve.severity} />
+          <span className="font-mono text-sm">{cve.cve_id}</span>
+          {cve.score != null && (
+            <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
+          )}
+          <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
+          <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function NmapServiceRow({ svc, cves }: { svc: AttackSurfaceService; cves: AttackSurfaceCVE[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const top2 = cves.slice(0, 2);
+  const hasMore = cves.length > 2;
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 flex-wrap text-sm",
+          cves.length > 0 && "cursor-pointer hover:bg-muted/40 transition-colors"
+        )}
+        onClick={() => cves.length > 0 && setExpanded(!expanded)}
+      >
+        {cves.length > 0 && (
+          expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        )}
+        <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
+        <span className="font-medium">{svc.product}</span>
+        {svc.version && <span className="text-muted-foreground text-xs">{svc.version}</span>}
+        {svc.banner && <span className="text-muted-foreground text-xs truncate max-w-[300px]">{svc.banner}</span>}
+        {!expanded && top2.length > 0 && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            {top2.map(cve => <CVEInlineBadge key={cve.cve_id} cve={cve} />)}
+            {hasMore && <span className="text-[10px] text-muted-foreground">+{cves.length - 2}</span>}
+          </div>
+        )}
+      </div>
+      {expanded && <div className="pl-6"><CVEExpandedList cves={cves} /></div>}
+    </div>
+  );
+}
+
+function WebServiceRow({ ws, cves }: { ws: AttackSurfaceWebService; cves: AttackSurfaceCVE[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const top2 = cves.slice(0, 2);
+  const hasMore = cves.length > 2;
+
+  const statusColor = ws.status_code >= 200 && ws.status_code < 300
+    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+    : ws.status_code >= 300 && ws.status_code < 400
+      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+      : 'bg-destructive/20 text-destructive border-destructive/30';
+
+  // Collect all service names for CVE matching
+  const serviceNames: string[] = [];
+  if (ws.server) { const [name] = ws.server.toLowerCase().split('/'); serviceNames.push(name.trim()); }
+  for (const t of ws.technologies || []) { const [name] = t.split(':'); serviceNames.push(name.trim().toLowerCase()); }
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2",
+          cves.length > 0 && "cursor-pointer hover:bg-muted/40 transition-colors"
+        )}
+        onClick={() => cves.length > 0 && setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {cves.length > 0 && (
+            expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          )}
+          <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]" onClick={e => e.stopPropagation()}>
+            {ws.url}
+          </a>
+          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>{ws.status_code}</Badge>
+          {ws.server && <span className="text-xs text-muted-foreground">• {ws.server}</span>}
+          {!expanded && top2.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              {top2.map(cve => <CVEInlineBadge key={cve.cve_id} cve={cve} />)}
+              {hasMore && <span className="text-[10px] text-muted-foreground">+{cves.length - 2}</span>}
+            </div>
+          )}
+        </div>
+        {ws.technologies && ws.technologies.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {ws.technologies.map((t, j) => (
+              <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+            ))}
+          </div>
+        )}
+      </div>
+      {expanded && <div className="pl-6"><CVEExpandedList cves={cves} /></div>}
+    </div>
+  );
+}
+
+function OrphanCVEsBlock({ cves }: { cves: AttackSurfaceCVE[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (cves.length === 0) return null;
+  const top2 = cves.slice(0, 2);
+
+  return (
+    <div>
+      <div
+        className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+        <ShieldAlert className="w-4 h-4 text-warning" />
+        <span className="font-medium">Outras Vulnerabilidades ({cves.length})</span>
+        {!expanded && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            {top2.map(cve => <CVEInlineBadge key={cve.cve_id} cve={cve} />)}
+            {cves.length > 2 && <span className="text-[10px] text-muted-foreground">+{cves.length - 2}</span>}
+          </div>
+        )}
+      </div>
+      {expanded && <div className="pl-6"><CVEExpandedList cves={cves} /></div>}
+    </div>
+  );
+}
+
 function AssetCard({ asset }: { asset: ExposedAsset }) {
   const [open, setOpen] = useState(false);
   const rc = riskColors[asset.riskLevel];
@@ -564,52 +756,38 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
             </div>
           )}
 
-          {/* Block 2: Services & Technologies */}
-          {(asset.services.length > 0 || asset.webServices.length > 0) && (
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                <Globe className="w-4 h-4 text-primary" />
-                Serviços & Tecnologias
-              </h4>
-               <div className="pl-6 space-y-2">
-                 {/* Nmap services */}
-                {asset.services.filter(s => s.product).map((svc, i) => (
-                  <div key={`svc-${i}`} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 flex-wrap text-sm">
-                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
-                    <span className="font-medium">{svc.product}</span>
-                    {svc.version && <span className="text-muted-foreground text-xs">{svc.version}</span>}
-                    {svc.banner && <span className="text-muted-foreground text-xs truncate max-w-[300px]">{svc.banner}</span>}
-                  </div>
-                ))}
-                {/* Web services */}
-                {asset.webServices.map((ws, i) => {
-                  const statusColor = ws.status_code >= 200 && ws.status_code < 300
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                    : ws.status_code >= 300 && ws.status_code < 400
-                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                      : 'bg-destructive/20 text-destructive border-destructive/30';
-                  return (
-                    <div key={`ws-${i}`} className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]">
-                          {ws.url}
-                        </a>
-                        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>{ws.status_code}</Badge>
-                        {ws.server && <span className="text-xs text-muted-foreground">• {ws.server}</span>}
-                      </div>
-                      {ws.technologies && ws.technologies.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {ws.technologies.map((t, j) => (
-                            <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+          {/* Block 2: Services & Technologies (with inline CVEs) */}
+          {(asset.services.length > 0 || asset.webServices.length > 0) && (() => {
+            const orphans = getOrphanCVEs(asset.services, asset.webServices, asset.cves);
+            return (
+              <div>
+                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-primary" />
+                  Serviços & Tecnologias
+                </h4>
+                <div className="pl-6 space-y-2">
+                  {asset.services.filter(s => s.product).map((svc, i) => (
+                    <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
+                  ))}
+                  {asset.webServices.map((ws, i) => {
+                    // Collect all CVEs matching any technology in this web service
+                    const names: string[] = [];
+                    if (ws.server) { const [n] = ws.server.toLowerCase().split('/'); names.push(n.trim()); }
+                    for (const t of ws.technologies || []) { const [n] = t.split(':'); names.push(n.trim().toLowerCase()); }
+                    const wsCves = new Map<string, AttackSurfaceCVE>();
+                    for (const name of names) {
+                      for (const cve of matchCVEsToService(name, asset.cves)) {
+                        wsCves.set(cve.cve_id, cve);
+                      }
+                    }
+                    const sortedCves = Array.from(wsCves.values()).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+                    return <WebServiceRow key={`ws-${i}`} ws={ws} cves={sortedCves} />;
+                  })}
+                  <OrphanCVEsBlock cves={orphans} />
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Block 3: TLS Certificates */}
           {asset.tlsCerts.length > 0 && (
@@ -654,40 +832,7 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
             </div>
           )}
 
-          {/* Block 4: Vulnerabilities */}
-          {asset.cves.length > 0 ? (
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-destructive" />
-                Vulnerabilidades ({asset.cves.length})
-              </h4>
-              <div className="pl-6">
-                <div className="rounded-lg border border-border/50 overflow-hidden">
-                  {[...asset.cves]
-                    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-                    .map((cve) => (
-                      <a
-                        key={cve.cve_id}
-                        href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
-                      >
-                        <SeverityBadge severity={cve.severity} />
-                        <span className="font-mono text-sm">{cve.cve_id}</span>
-                        {cve.score != null && (
-                          <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
-                        )}
-                        <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
-                        <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      </a>
-                    ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma CVE vinculada a este ativo.</p>
-          )}
+          {/* CVEs are now shown inline within Services & Technologies */}
         </div>
       )}
     </Card>
