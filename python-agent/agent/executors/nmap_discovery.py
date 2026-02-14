@@ -190,8 +190,8 @@ class NmapDiscoveryExecutor(BaseExecutor):
             '--initial-rtt-timeout', '150ms',
             '--max-rtt-timeout', '400ms',
             '--host-timeout', '{}s'.format(host_timeout),
-            '-oX', '-',
-        ]
+        '-oX', '-',
+    ])
 
         if use_min_rate:
             cmd.extend(['--min-rate', '800', '--max-rate', '1500'])
