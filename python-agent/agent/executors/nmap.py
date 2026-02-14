@@ -37,11 +37,11 @@ class NmapExecutor(BaseExecutor):
         port_str = ','.join(str(p) for p in ports)
         timeout = params.get('timeout', 600)
 
-        self.logger.info(f"[nmap] Stealth scanning {ip} ports={port_str[:80]}...")
+        self.logger.info(f"[nmap] TCP connect scanning {ip} ports={port_str[:80]}...")
 
         # Primary scan: full collection with scripts and high intensity
         cmd = [
-            'sudo', 'nmap', '-sS', '-sV',
+            'nmap', '-sT', '-sV',
             '--version-intensity', '7',
             '--script=banner,ssl-cert,http-title',
             f'-p{port_str}',
@@ -51,7 +51,6 @@ class NmapExecutor(BaseExecutor):
             '--host-timeout', '300s',
             '--scan-delay', '500ms',
             '--max-retries', '2',
-            '--data-length', '24',
         ]
         try:
             result = subprocess.run(
@@ -78,7 +77,7 @@ class NmapExecutor(BaseExecutor):
                     f"Retrying with lighter scan..."
                 )
                 cmd_fallback = [
-                    'sudo', 'nmap', '-sS', '-sV',
+                    'nmap', '-sT', '-sV',
                     '--version-intensity', '5',
                     '--script=banner',
                     f'-p{port_str}',
@@ -87,7 +86,6 @@ class NmapExecutor(BaseExecutor):
                     '-T3',
                     '--host-timeout', '180s',
                     '--max-retries', '1',
-                    '--data-length', '24',
                 ]
                 result2 = subprocess.run(
                     cmd_fallback,
