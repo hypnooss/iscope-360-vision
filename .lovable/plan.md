@@ -1,47 +1,55 @@
 
 
-# Fix: nmap_discovery nao encontra portas em hosts com IPS (FortiGate)
+# Fix: Trocar SYN scan (-sS) por TCP connect scan (-sT) no nmap_discovery
 
-## Diagnostico
+## Diagnostico confirmado pelos testes manuais
 
-O scan mais recente de `187.32.89.65` mostra:
-- `nmap_discovery` rodou por **420s** e encontrou **0 portas**
-- Nem mesmo portas 80 e 443 (que o httpx confirma abertas com titulo "FortiGate")
-- Portas 444 e 40443 nunca foram descobertas
+Os testes no console do Agent provaram definitivamente:
 
-O IPS do FortiGate esta detectando o scan e bloqueando o IP de origem. A causa raiz e a configuracao atual do nmap:
+| Teste | Resultado |
+|---|---|
+| `nc -zv` (TCP connect) | 443, 444, 40443 **conectam** em 0.02s |
+| `nmap -sT` (TCP connect scan) | 80, 443, 444, 40443 **encontrados** em 0.22s |
+| `nmap -sS` com todos os parametros stealth | **0 portas** - IPS bloqueia |
 
-```text
---min-rate 100   <-- FORCA 100 pacotes/segundo, ANULA o -T2
---max-rate 500   <-- permite ate 500 pps
-(sem --scan-delay entre probes)
-```
+O problema nao e rate, timing ou delay. O IPS do FortiGate detecta a **assinatura do SYN scan** (half-open TCP handshake) independente da velocidade. O `-sS` envia SYN, recebe SYN-ACK, mas envia RST em vez de completar o handshake - essa sequencia anomala e exatamente o que o IPS procura.
 
-O `-T2` ("polite") deveria adaptar o ritmo ao ambiente, mas o `--min-rate 100` impoe um piso de 100 SYN/s que o IPS identifica instantaneamente como scan. Apos detecao, o FortiGate dropa silenciosamente TODOS os pacotes subsequentes do nosso IP - por isso ate 80/443 desaparecem.
-
-Nota: o executor de fingerprinting (`nmap.py`) ja usa `--scan-delay 500ms` e NAO usa `--min-rate` - por isso nao sofre o mesmo problema. A discovery precisa seguir a mesma filosofia.
+O `-sT` faz o handshake completo (SYN -> SYN-ACK -> ACK) que e indistinguivel de trafego legitimo.
 
 ## Solucao
 
-Reconfigurar o `_run_scan` no `nmap_discovery.py` para evasao real de IPS:
+Trocar `-sS` por `-sT` no `nmap_discovery.py`. Isso tambem elimina a necessidade de `sudo` (TCP connect nao requer raw sockets), mas vamos manter `sudo` por consistencia com o ambiente.
 
-### Mudancas no comando nmap
+### Vantagens do `-sT` para discovery
+
+- Passa por qualquer IPS sem deteccao (handshake completo = trafego normal)
+- Mais confiavel em ambientes corporativos com firewalls stateful
+- Nao precisa de raw sockets (funciona sem sudo/capabilities)
+- O teste manual provou: 0.22s para encontrar 4 portas
+
+### Trade-offs
+
+- Ligeiramente mais lento que `-sS` em redes sem IPS (handshake completo vs half-open)
+- Deixa log de conexao no alvo (TCP session established) - aceitavel para discovery de superficie de ataque
+
+### Parametros ajustados
+
+Com `-sT`, varios parametros de evasao de SYN scan se tornam desnecessarios, mas nao causam problema mante-los. A mudanca sera minima:
 
 | Parametro | Antes | Depois | Motivo |
 |---|---|---|---|
-| `--min-rate` | 100 | **removido** | Deixar o -T2 controlar o ritmo adaptativamente |
-| `--max-rate` | 500 (param) | 300 (non-CDN) / 150 (CDN) | Teto mais conservador |
-| `--scan-delay` | nao existia | `200ms` | Espacamento entre probes evita deteccao de burst |
-| `--max-retries` | 2 | 1 | Menos retransmissoes = menos ruido |
-| `-T2` | sim | mantido | Timing polite com adaptacao |
-| `--data-length` | 24 | mantido | Padding de pacotes |
+| `-sS` | SYN stealth | **`-sT`** (TCP connect) | Passa pelo IPS |
+| `--scan-delay 200ms` | mantido | mantido | Ainda util para nao sobrecarregar |
+| `--data-length 24` | mantido | **removido** | So se aplica a raw packets (SYN), ignorado pelo -sT |
+| `--max-retries 1` | mantido | mantido | Reduz ruido |
+| `-T2` | mantido | mantido | Timing conservador |
+| `sudo` | necessario para -sS | **removido** | -sT nao requer raw sockets |
 
 Comando resultante (non-CDN):
 ```text
-sudo nmap -sS -Pn --open -T2
+nmap -sT -Pn --open -T2
   --max-retries 1
   --scan-delay 200ms
-  --data-length 24
   --host-timeout 600s
   --max-rate 300
   -p 1-65535
@@ -51,10 +59,9 @@ sudo nmap -sS -Pn --open -T2
 
 Comando resultante (CDN):
 ```text
-sudo nmap -sS -Pn --open -T2
+nmap -sT -Pn --open -T2
   --max-retries 1
   --scan-delay 200ms
-  --data-length 24
   --host-timeout 600s
   --max-rate 150
   --top-ports 1000
@@ -62,45 +69,16 @@ sudo nmap -sS -Pn --open -T2
   <ip>
 ```
 
-### Ajuste de timeout
+## Mudancas
 
-Sem `--min-rate`, o scan full (65535 portas) sera mais lento. O timeout do blueprint precisa acomodar:
+### Arquivo: `python-agent/agent/executors/nmap_discovery.py`
 
-- 65535 portas / ~200 probes por segundo (rate efetivo com delay) = ~328 segundos teorico
-- Com retransmissoes e adaptacao: ~600-700 segundos pratico
-- Timeout do executor: manter `--host-timeout 600s`
-- Timeout do subprocess: aumentar de 420s para **720s** (12 minutos)
-- Timeout do blueprint step: atualizar de 420 para **750** via SQL
+1. Linha 16: Atualizar docstring de "SYN stealth scan" para "TCP connect scan"
+2. Linha 45: Atualizar log message de "Stealth SYN scan" para "TCP connect scan"
+3. Linha 80: Remover `'sudo'` do comando (nao precisa mais de raw sockets)
+4. Linha 81: Trocar `'-sS'` por `'-sT'`
+5. Linha 87: Remover `'--data-length', '24'` (so funciona com raw packets)
+6. Linhas 1-2: Atualizar comentario do modulo
 
-### Impacto no tempo de scan
-
-- Antes: 420s (7 min) e 0 portas encontradas (IPS bloqueou)
-- Depois: ~600s (10 min) com portas reais encontradas
-- Trocar 3 minutos a mais por resultados reais e um tradeoff obvio
-
-## Arquivo e mudancas
-
-### 1. `python-agent/agent/executors/nmap_discovery.py`
-
-No metodo `_run_scan`, alterar a construcao do comando:
-
-- Remover `'--min-rate', '100'` completamente
-- Adicionar `'--scan-delay', '200ms'`
-- Alterar `'--max-retries'` de `'2'` para `'1'`
-- Manter todo o resto identico
-
-No metodo `run`, ajustar os defaults:
-- non-CDN: `max_rate` default de 500 para 300, `timeout` default de 420 para 720
-- CDN: `max_rate` fixo de 300 para 150, `timeout` default de 300 para 420
-
-### 2. Blueprint (SQL) - Atualizar timeout do step
-
-Atualizar o timeout do step `masscan_discovery` de 420 para 750 no blueprint "Active Attack Surface Scan" para acomodar o scan mais lento.
-
-## Resumo
-
-| Arquivo | Acao |
-|---|---|
-| `python-agent/agent/executors/nmap_discovery.py` | Remover min-rate, adicionar scan-delay, ajustar rates e timeouts |
-| Blueprint (SQL) | Timeout do step de discovery: 420 -> 750 |
+Nenhuma outra mudanca necessaria. O parsing XML, timeouts e toda a logica de fallback permanecem identicos.
 
