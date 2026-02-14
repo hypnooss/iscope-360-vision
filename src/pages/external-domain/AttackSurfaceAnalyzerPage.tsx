@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -435,11 +435,14 @@ function CVESummaryBadges({ cves }: { cves: AttackSurfaceCVE[] }) {
   }
   const order = ['critical', 'high', 'medium', 'low'];
   return (
-    <div className="flex flex-wrap gap-1">
-      {order.filter(s => counts[s]).map(s => (
-        <Badge key={s} variant="outline" className={cn("text-[10px] px-1.5 py-0", sevColors[s])}>
-          {counts[s]} {s.toUpperCase()}
-        </Badge>
+    <div className="flex flex-wrap items-center gap-2">
+      {order.filter(s => counts[s]).map((s, idx, arr) => (
+        <React.Fragment key={s}>
+          {idx > 0 && <span className="text-border">•</span>}
+          <Badge variant="outline" className={cn("text-[10px] px-1.5", sevColors[s])}>
+            {counts[s]} {s.toUpperCase()}
+          </Badge>
+        </React.Fragment>
       ))}
     </div>
   );
@@ -504,9 +507,9 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
 
             {/* Row 2: ports + techs */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/10 text-orange-400 border-orange-500/30">{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 bg-orange-500/10 text-orange-400 border-orange-500/30">{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</Badge>
               <span className="text-border">•</span>
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/30">{asset.services.length + asset.webServices.length} serviço{(asset.services.length + asset.webServices.length) !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 bg-blue-500/10 text-blue-400 border-blue-500/30">{asset.services.length + asset.webServices.length} serviço{(asset.services.length + asset.webServices.length) !== 1 ? 's' : ''}</Badge>
               <span className="text-border">•</span>
               <CertStatusBadge asset={asset} />
               {visibleTechs.length > 0 && (
@@ -514,10 +517,10 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
                   <span className="text-border">•</span>
                   <div className="flex flex-wrap gap-1">
                     {visibleTechs.map((t, i) => (
-                      <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+                      <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5", getTechBadgeColor(t))}>{t}</Badge>
                     ))}
                     {overflowTechs > 0 && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
+                      <Badge variant="outline" className="text-[10px] px-1.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
                     )}
                   </div>
                 </>
