@@ -6,6 +6,7 @@ Implements progressive streaming: sends each step result immediately after execu
 
 import time
 from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from agent.executors.http_request import HTTPRequestExecutor
 from agent.executors.http_session import HTTPSessionExecutor
@@ -37,6 +38,8 @@ class TaskExecutor:
         'errno 111',  # Connection refused
         'errno 113',  # No route to host
     ]
+
+    MAX_PARALLEL_TASKS = 4
 
     def __init__(self, api, state, logger):
         self.api = api
@@ -750,25 +753,44 @@ class TaskExecutor:
         # In legacy mode, we would include result here
         return self.api.post('/agent-task-result', json=payload)
 
+    def _execute_and_report(self, task: Dict[str, Any]) -> bool:
+        """Execute a single task and report its result. Returns True on success."""
+        task_id = task.get('id')
+        try:
+            result = self.execute(task)
+            self.report_result(task_id, result)
+            return True
+        except Exception as e:
+            self.logger.error(f"Tarefa {task_id}: erro - {str(e)}")
+            return False
+
     def process_all(self) -> int:
         response = self.fetch_pending_tasks()
         if not response or not response.get('success'):
             return 0
-        
+
         tasks = response.get('tasks', [])
         if not tasks:
             return 0
-        
-        self.logger.info(f"Processando {len(tasks)} tarefas")
+
+        self.logger.info(f"Processando {len(tasks)} tarefas (max_parallel={self.MAX_PARALLEL_TASKS})")
+
+        if len(tasks) == 1:
+            return 1 if self._execute_and_report(tasks[0]) else 0
+
         processed = 0
-        
-        for task in tasks:
-            task_id = task.get('id')
-            try:
-                result = self.execute(task)
-                self.report_result(task_id, result)
-                processed += 1
-            except Exception as e:
-                self.logger.error(f"Tarefa {task_id}: erro - {str(e)}")
-        
+        with ThreadPoolExecutor(max_workers=self.MAX_PARALLEL_TASKS) as pool:
+            futures = {
+                pool.submit(self._execute_and_report, task): task.get('id')
+                for task in tasks
+            }
+            for future in as_completed(futures):
+                task_id = futures[future]
+                try:
+                    if future.result():
+                        processed += 1
+                except Exception as e:
+                    self.logger.error(f"Tarefa {task_id}: erro nao capturado - {e}")
+
+        self.logger.info(f"Lote finalizado: {processed}/{len(tasks)} tarefas concluidas")
         return processed
