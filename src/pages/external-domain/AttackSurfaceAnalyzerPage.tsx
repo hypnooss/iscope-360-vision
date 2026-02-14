@@ -453,7 +453,7 @@ function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
     );
     return (
       <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
-        Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
+        <Lock className="w-3 h-3 mr-1" /> Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
       </Badge>
     );
   }
@@ -463,7 +463,7 @@ function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
     );
     return (
       <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
-        Expira em {worst.daysRemaining}d
+        <Lock className="w-3 h-3 mr-1" /> Expira em {worst.daysRemaining}d
       </Badge>
     );
   }
