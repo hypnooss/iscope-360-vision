@@ -440,7 +440,7 @@ function CVESummaryBadges({ cves }: { cves: AttackSurfaceCVE[] }) {
         <React.Fragment key={s}>
           {idx > 0 && <span className="text-border">•</span>}
           <Badge variant="outline" className={cn("text-[10px] px-1.5", sevColors[s])}>
-            {counts[s]} {s.toUpperCase()}
+            {counts[s]} {s.charAt(0).toUpperCase() + s.slice(1)}
           </Badge>
         </React.Fragment>
       ))}
@@ -449,14 +449,18 @@ function CVESummaryBadges({ cves }: { cves: AttackSurfaceCVE[] }) {
 }
 
 function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
-  if (asset.tlsCerts.length === 0) return <span className="text-xs text-muted-foreground">Sem TLS</span>;
+  if (asset.tlsCerts.length === 0) return (
+    <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+      <Lock className="w-3 h-3 mr-1" /> Sem Certificado
+    </Badge>
+  );
   if (asset.expiredCerts > 0) {
     const worst = asset.tlsCerts.reduce((a, b) =>
       (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b
     );
     return (
       <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
-        <Lock className="w-3 h-3 mr-1" /> Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
+        <Lock className="w-3 h-3 mr-1" /> Certificado Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
       </Badge>
     );
   }
@@ -466,13 +470,13 @@ function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
     );
     return (
       <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
-        <Lock className="w-3 h-3 mr-1" /> Expira em {worst.daysRemaining}d
+        <Lock className="w-3 h-3 mr-1" /> Certificado Expira em {worst.daysRemaining}d
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
-      <Lock className="w-3 h-3 mr-1" /> Válido
+      <Lock className="w-3 h-3 mr-1" /> Certificado Válido
     </Badge>
   );
 }
@@ -532,7 +536,7 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
               {asset.cves.length > 0 ? (
                 <CVESummaryBadges cves={asset.cves} />
               ) : (
-                <span className="text-xs text-muted-foreground">0 CVEs</span>
+                <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">0 CVEs</Badge>
               )}
             </div>
           </div>
