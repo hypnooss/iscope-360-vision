@@ -1,20 +1,20 @@
 
+# Ajuste: Recuo interno dos topicos e espacamento entre blocos
 
-# Ajuste: Recuo do conteudo expandido do card de ativo
+## Alteracoes
 
-## Alteracao
+**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linha 543)
+### 1. Aumentar espacamento entre topicos
+Linha 543: Trocar `space-y-5` por `space-y-8` no container expandido, aumentando a distancia vertical entre o fim de um bloco (ex: Portas Abertas) e o inicio do proximo (ex: Servicos e Tecnologias).
 
-Aumentar o padding esquerdo do container expandido. Atualmente usa `p-4` (16px uniforme). Trocar para `pl-10` (~40px a esquerda) mantendo o restante com `pr-4 py-4`, criando o recuo visual desejado sem bordas adicionais.
+### 2. Adicionar recuo ao conteudo de cada topico
+Em cada bloco (Portas Abertas, Servicos, Certificados TLS, Vulnerabilidades), o conteudo abaixo do titulo `h4` recebera um `pl-6` (24px) para criar separacao visual entre o titulo do topico e seus dados.
 
-**De:**
-```
-<div className="border-t border-border/50 p-4 space-y-5 bg-muted/10">
-```
+Isso afeta 4 blocos:
+- **Portas Abertas** (linha ~551): o `div` com os badges de porta
+- **Servicos e Tecnologias** (linha ~566): o `div` com os cards de servico
+- **Certificados TLS** (linha ~613): o `div` com os cards de certificado
+- **Vulnerabilidades**: o `div` com a lista de CVEs
 
-**Para:**
-```
-<div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-5 bg-muted/10">
-```
-
+Nenhuma borda ou fundo adicional sera incluido, apenas o recuo com `pl-6`.
