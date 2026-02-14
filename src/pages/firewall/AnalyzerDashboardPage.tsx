@@ -19,8 +19,8 @@ import { AttackMap } from '@/components/firewall/AttackMap';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
-  Globe, Wifi, Eye, Server, Lock, KeyRound, Map, ExternalLink,
-  Filter, AppWindow, Building2, Zap,
+  Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
+  Filter, AppWindow, Building2, Zap, Clock,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
@@ -148,7 +148,6 @@ export default function AnalyzerDashboardPage() {
   const { toast } = useToast();
   const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
-  const [showMap, setShowMap] = useState(false);
 
   // Workspace selector for super roles
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -199,6 +198,34 @@ export default function AnalyzerDashboardPage() {
   }, [firewalls]);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
+
+  // Fetch firewall URL for geolocation
+  const { data: firewallUrl } = useQuery({
+    queryKey: ['firewall-url', selectedFirewall],
+    queryFn: async () => {
+      const { data } = await supabase.from('firewalls').select('fortigate_url, name').eq('id', selectedFirewall).single();
+      return data;
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const firewallHostname = (() => {
+    if (!firewallUrl?.fortigate_url) return null;
+    try { return new URL(firewallUrl.fortigate_url).hostname; } catch { return null; }
+  })();
+
+  const { data: firewallGeo } = useQuery({
+    queryKey: ['firewall-geo', firewallHostname],
+    queryFn: async () => {
+      const res = await fetch(`http://ip-api.com/json/${firewallHostname}?fields=status,lat,lon`);
+      const json = await res.json();
+      if (json.status !== 'success') return null;
+      return { lat: json.lat as number, lng: json.lon as number };
+    },
+    enabled: !!firewallHostname,
+    staleTime: 1000 * 60 * 30,
+  });
 
   const handleTrigger = async () => {
     if (!selectedFirewall) return;
@@ -281,23 +308,30 @@ export default function AnalyzerDashboardPage() {
           </div>
         </div>
 
-        {/* Score */}
+        {/* Last analysis info */}
         {snapshot && (
-          <div className="mb-6 flex items-center gap-4">
-            <div className="text-sm text-muted-foreground">Score de Risco</div>
-            <div className={cn('text-3xl font-bold', (snapshot.score ?? 100) >= 75 ? 'text-success' : (snapshot.score ?? 100) >= 50 ? 'text-warning' : 'text-destructive')}>
-              {snapshot.score ?? '—'}
-            </div>
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              {snapshot.period_start
-                ? `${new Date(snapshot.period_start).toLocaleDateString('pt-BR')} - ${new Date(snapshot.period_end!).toLocaleDateString('pt-BR')}`
-                : new Date(snapshot.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          <div className="mb-6 flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última análise:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(snapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {snapshot.period_start && snapshot.period_end && (
+              <>
+                <span className="text-sm text-muted-foreground">Período:</span>
+                <Badge variant="outline" className="text-xs">
+                  {new Date(snapshot.period_start).toLocaleDateString('pt-BR')} — {new Date(snapshot.period_end).toLocaleDateString('pt-BR')}
+                </Badge>
+              </>
+            )}
+            <Badge variant={snapshot.status === 'completed' ? 'default' : 'secondary'} className="text-xs">
+              {snapshot.status === 'completed' ? 'Concluída' : snapshot.status === 'processing' ? 'Em andamento' : snapshot.status}
             </Badge>
           </div>
         )}
 
         {/* Severity Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {isLoading
             ? Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
             : severityCards.map(c => (
@@ -313,22 +347,68 @@ export default function AnalyzerDashboardPage() {
               ))}
         </div>
 
-        {/* Attack Map Toggle */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">Visão Geográfica</h2>
-          <Button variant={showMap ? 'default' : 'outline'} size="sm" onClick={() => setShowMap(!showMap)}>
-            <Map className="w-4 h-4 mr-2" />
-            {showMap ? 'Ocultar Mapa' : 'Mapa de Ataques'}
-          </Button>
-        </div>
-
-        {showMap && snapshot && (
+        {/* Resumo de Eventos - Full width, above map */}
+        {snapshot && (
           <Card className="glass-card mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wifi className="w-4 h-4 text-primary" />
+                Resumo de Eventos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Tráfego Negado', value: m?.totalDenied ?? 0, icon: Shield },
+                  { label: 'Login Firewall', value: m?.firewallAuthFailures ?? 0, icon: Lock },
+                  { label: 'Falhas VPN', value: m?.vpnFailures ?? 0, icon: Wifi },
+                  { label: 'Eventos IPS', value: m?.ipsEvents ?? 0, icon: AlertTriangle },
+                  {
+                    label: 'Alterações Config',
+                    value: m?.configChanges ?? 0,
+                    icon: Server,
+                    onClick: () => navigate('/scope-firewall/analyzer/config-changes'),
+                  },
+                  { label: 'Web Filter', value: m?.webFilterBlocked ?? 0, icon: Filter },
+                  { label: 'App Control', value: m?.appControlBlocked ?? 0, icon: AppWindow },
+                  { label: 'Anomalias', value: m?.anomalyEvents ?? 0, icon: Zap },
+                ].map(s => (
+                  <div
+                    key={s.label}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-lg bg-secondary/30',
+                      'onClick' in s && s.onClick && 'cursor-pointer hover:bg-secondary/50 transition-colors'
+                    )}
+                    onClick={'onClick' in s ? s.onClick : undefined}
+                  >
+                    <s.icon className="w-5 h-5 text-muted-foreground" />
+                    <div className="flex-1">
+                      <div className="text-lg font-bold text-foreground">{s.value}</div>
+                      <div className="text-xs text-muted-foreground">{s.label}</div>
+                    </div>
+                    {'onClick' in s && s.onClick && <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Attack Map - Always visible */}
+        {snapshot && (
+          <Card className="glass-card mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="w-4 h-4 text-primary" />
+                Mapa de Ataques
+              </CardTitle>
+            </CardHeader>
             <CardContent className="p-4">
               <AttackMap
                 deniedCountries={m?.topCountries ?? []}
                 authFailedCountries={authCountriesFailed}
                 authSuccessCountries={authCountriesSuccess}
+                firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
               />
             </CardContent>
           </Card>
@@ -416,50 +496,6 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Quick Stats */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Wifi className="w-4 h-4 text-primary" />
-                Resumo de Eventos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {[
-                  { label: 'Tráfego Negado', value: m?.totalDenied ?? 0, icon: Shield },
-                  { label: 'Login Firewall', value: m?.firewallAuthFailures ?? 0, icon: Lock },
-                  { label: 'Falhas VPN', value: m?.vpnFailures ?? 0, icon: Wifi },
-                  { label: 'Eventos IPS', value: m?.ipsEvents ?? 0, icon: AlertTriangle },
-                  {
-                    label: 'Alterações Config',
-                    value: m?.configChanges ?? 0,
-                    icon: Server,
-                    onClick: () => navigate('/scope-firewall/analyzer/config-changes'),
-                  },
-                  { label: 'Web Filter', value: m?.webFilterBlocked ?? 0, icon: Filter },
-                  { label: 'App Control', value: m?.appControlBlocked ?? 0, icon: AppWindow },
-                  { label: 'Anomalias', value: m?.anomalyEvents ?? 0, icon: Zap },
-                ].map(s => (
-                  <div
-                    key={s.label}
-                    className={cn(
-                      'flex items-center gap-3 p-3 rounded-lg bg-secondary/30',
-                      'onClick' in s && s.onClick && 'cursor-pointer hover:bg-secondary/50 transition-colors'
-                    )}
-                    onClick={'onClick' in s ? s.onClick : undefined}
-                  >
-                    <s.icon className="w-5 h-5 text-muted-foreground" />
-                    <div className="flex-1">
-                      <div className="text-lg font-bold text-foreground">{s.value}</div>
-                      <div className="text-xs text-muted-foreground">{s.label}</div>
-                    </div>
-                    {'onClick' in s && s.onClick && <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Top Web Filter Categories */}
           <Card className="glass-card">
