@@ -22,8 +22,8 @@ class MasscanExecutor(BaseExecutor):
             return {'error': 'IP address is required'}
 
         port_range = params.get('port_range', '1-65535')
-        rate = params.get('rate', 10000)
-        timeout = params.get('timeout', 120)
+        rate = params.get('rate', 3000)
+        timeout = params.get('timeout', 180)
 
         self.logger.info(f"[masscan] Scanning {ip} ports={port_range} rate={rate}")
 
@@ -31,8 +31,9 @@ class MasscanExecutor(BaseExecutor):
             'masscan', ip,
             f'-p{port_range}',
             f'--rate={rate}',
+            '--retries', '2',
             '-oJ', '-',
-            '--wait', '3',
+            '--wait', '5',
         ]
 
         try:
