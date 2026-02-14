@@ -1,167 +1,71 @@
 
 
-# Cloud-Aware Port Discovery - Arquitetura Hibrida
+# Fix: ASN Classifier sem dependencia do binario `whois`
 
 ## Problema
 
-IPs de CDN/Cloud (Cloudflare, Azure, Akamai, Fastly) bloqueiam SYN scans silenciosamente, resultando em 0 portas encontradas. Esses provedores exigem TLS handshake valido com SNI correto e headers HTTP realistas.
+O binario `whois` nao esta instalado no servidor do Super Agent. O fallback atual (`FileNotFoundError`) resulta em `is_cdn=False` para todos os IPs, anulando toda a logica cloud-aware.
 
-## Arquitetura Proposta
+## Solucao
 
-O pipeline atual tem 3 steps sequenciais: `nmap_discovery` -> `nmap` (fingerprint) -> `httpx`. A proposta adiciona uma **Fase 0 de classificacao** e bifurca a estrategia.
+Substituir `subprocess.run(['whois', ...])` por uma consulta direta ao protocolo WHOIS via **socket TCP na porta 43**. Isso usa apenas a stdlib do Python (`socket`), sem dependencias externas e sem necessidade de instalar pacotes no sistema operacional.
 
-```text
-                    +-------------------+
-                    |  ASN Classifier   |  (nova Fase 0)
-                    |  (IP -> provider) |
-                    +--------+----------+
-                             |
-                +------------+------------+
-                |                         |
-          NAO-CDN / Infra             CDN / Cloud Edge
-                |                         |
-     +----------+----------+    +---------+---------+
-     | nmap_discovery       |    | nmap_discovery    |
-     | SYN full (1-65535)   |    | --top-ports 1000  |
-     | -T2, max_rate=500    |    | -T2, max_rate=300 |
-     +----------+----------+    +---------+---------+
-                |                         |
-     +----------+----------+    +---------+---------+
-     | nmap (fingerprint)   |    | nmap (fingerprint)|
-     | version + scripts    |    | version + scripts |
-     +----------+----------+    +---------+---------+
-                |                         |
-     +----------+----------+    +---------+---------+
-     | httpx (web probe)    |    | httpx (web probe) |
-     |                      |    | + browser headers |
-     +----------+----------+    | + SNI correto      |
-                |               +---------+---------+
-                |                         |
-                +------------+------------+
-                             |
-                    +--------+----------+
-                    |  Resultado Final  |
-                    |  (normalizado)    |
-                    +-------------------+
-```
+O protocolo WHOIS e extremamente simples:
+1. Conectar no servidor WHOIS (ex: `whois.arin.net`) na porta 43
+2. Enviar o IP seguido de `\r\n`
+3. Ler toda a resposta (texto puro)
+4. Fechar a conexao
 
-## Detalhes de Implementacao
+## Detalhes da Implementacao
 
-### 1. Novo Executor: `asn_classifier.py`
+### Arquivo: `python-agent/agent/executors/asn_classifier.py`
 
-Novo arquivo: `python-agent/agent/executors/asn_classifier.py`
+**Substituir** o metodo `_whois_lookup` que usa `subprocess.run(['whois', ip])` por `_whois_socket_lookup` que faz a consulta via socket direto.
 
-Responsabilidade: Identificar o provedor/ASN de um IP **antes** do port scan.
-
-Abordagem (sem dependencia externa):
-- Usar o comando `whois` do sistema (ja disponivel no servidor) para lookup do IP
-- Extrair campos `OrgName`, `org-name`, `descr`, `netname` do output
-- Matching por keywords contra uma lista de provedores conhecidos:
+Logica do novo metodo:
 
 ```text
-CDN_PROVIDERS = {
-    'cloudflare': ['cloudflare'],
-    'akamai': ['akamai'],
-    'fastly': ['fastly'],
-    'aws_cloudfront': ['amazon', 'cloudfront', 'aws'],
-    'azure_cdn': ['microsoft', 'azure'],
-    'google_cloud': ['google'],
-    'incapsula': ['incapsula', 'imperva'],
-    'sucuri': ['sucuri'],
-    'stackpath': ['stackpath', 'highwinds'],
-    'cloudfront': ['cloudfront'],
-}
+1. Abrir socket TCP para whois.arin.net:43 (ARIN cobre todos os IPs, redireciona para RIR correto)
+2. Enviar "n {ip}\r\n" (prefixo "n " para forcar lookup de rede no ARIN)
+3. Ler resposta completa (max 64KB)
+4. Se a resposta indicar outro RIR (ex: "ReferralServer: whois.ripe.net"), seguir o referral
+5. Aplicar a mesma extracao de campos e matching de provider que ja existe
 ```
 
-Output do executor:
-```python
-{
-    'data': {
-        'ip': '104.26.7.202',
-        'is_cdn': True,
-        'provider': 'cloudflare',
-        'asn': 'AS13335',
-        'org': 'Cloudflare, Inc.',
-    }
-}
-```
+Fallback para servidores WHOIS por regiao:
+- ARIN (Americas): `whois.arin.net` - servidor primario
+- RIPE (Europa/Oriente Medio): `whois.ripe.net`
+- APNIC (Asia-Pacifico): `whois.apnic.net`
 
-Esse resultado e propagado no contexto para os steps seguintes usarem.
+**Mudancas especificas no codigo:**
 
-Dependencias: **Nenhuma nova**. Usa `subprocess` + `whois` (binario do sistema).
+1. Remover `import subprocess`
+2. Adicionar `import socket`
+3. Substituir `_whois_lookup` por nova implementacao com socket
+4. Adicionar metodo auxiliar `_query_whois_server(server, query, timeout)` para a conexao TCP
+5. Adicionar logica de referral (seguir redirecionamento para RIR correto)
+6. Manter `_extract_field`, `_match_provider` **inalterados** - o formato da resposta e identico ao do binario `whois`
 
-### 2. Modificar `nmap_discovery.py` - Cloud-Aware
+### Nenhum outro arquivo alterado
 
-Alterar o executor existente para ler `context.get('is_cdn')` e ajustar automaticamente:
+- `requirements.txt`: sem mudancas (socket e stdlib)
+- `nmap_discovery.py`: sem mudancas
+- `httpx_executor.py`: sem mudancas
+- `tasks.py` / `__init__.py`: sem mudancas
 
-- **Se `is_cdn == True`:**
-  - Usar `--top-ports 1000` em vez de `1-65535`
-  - Reduzir `max_rate` para 300
-  - Manter todos os parametros stealth
-  - Log explicativo: `[nmap_discovery] CDN detected (cloudflare), using top-1000 strategy`
+## Vantagens da abordagem socket vs alternativas
 
-- **Se `is_cdn == False` (ou ausente):**
-  - Comportamento atual: full range 1-65535, max_rate 500
+| Abordagem | Pro | Contra |
+|---|---|---|
+| **Socket TCP (escolhida)** | Zero dependencias, funciona em qualquer servidor, rapido (~1-3s) | Precisa tratar referrals manualmente |
+| Instalar binario `whois` | Simples | Requer `apt-get install whois` no servidor, nao portavel |
+| API RDAP (HTTP) | JSON estruturado | Rate limiting agressivo, requer `requests`, mais lento |
+| `ipwhois` (pip) | API Python limpa | Nova dependencia, aumenta superficie |
 
-Mudanca minima: ~15 linhas no metodo `run()`.
+## Tratamento de erros
 
-### 3. Modificar `httpx_executor.py` - Browser Simulation
-
-Alterar para adicionar headers realistas quando o contexto indica CDN:
-
-- **Se `context.get('is_cdn')`:**
-  - Adicionar ao comando httpx: `-H 'User-Agent: Mozilla/5.0 ...'` com UA de Chrome moderno
-  - Adicionar: `-H 'Accept: text/html,...'`
-  - Adicionar: `-H 'Accept-Language: en-US,en;q=0.9'`
-  - Adicionar: `-H 'Upgrade-Insecure-Requests: 1'`
-  - Garantir que o hostname (ja implementado) e usado como target para SNI correto
-
-- **Se nao-CDN:** comportamento atual (sem headers extras)
-
-Mudanca minima: ~20 linhas no metodo `run()`.
-
-### 4. Registrar novo executor em `tasks.py` e `__init__.py`
-
-- `__init__.py`: Adicionar import de `AsnClassifierExecutor`
-- `tasks.py`: Adicionar `'asn_classifier': AsnClassifierExecutor(logger)` no dict `_executors`
-- Adicionar `'asn_classifier'` ao set `SCAN_EXECUTORS` (nao deve acionar fail-fast)
-
-### 5. Atualizar Blueprint no banco
-
-O blueprint do Attack Surface precisa incluir o step de ASN como **Step 0** antes do nmap_discovery. Isso e feito via SQL na tabela de blueprints (nao requer mudanca de codigo):
-
-```text
-Step 0: asn_classifier  (params: {ip})     -> context: {is_cdn, provider, asn}
-Step 1: nmap_discovery   (params: {ip})     -> context: {ports}
-Step 2: nmap             (params: {ip})     -> context: {services}
-Step 3: httpx            (params: {ip})     -> context: {web_services}
-```
-
-### 6. `requirements.txt` - Sem alteracoes
-
-Nenhuma biblioteca nova necessaria. Tudo e resolvido com `subprocess` + `whois`.
-
-## Resumo dos Arquivos
-
-| Arquivo | Acao |
-|---|---|
-| `python-agent/agent/executors/asn_classifier.py` | **Criar** - novo executor ASN lookup |
-| `python-agent/agent/executors/nmap_discovery.py` | **Editar** - ajustar estrategia baseada em `is_cdn` |
-| `python-agent/agent/executors/httpx_executor.py` | **Editar** - adicionar browser headers para CDN |
-| `python-agent/agent/executors/__init__.py` | **Editar** - registrar novo executor |
-| `python-agent/agent/tasks.py` | **Editar** - registrar executor + SCAN_EXECUTORS |
-| Blueprint (banco) | **SQL** - adicionar step 0 asn_classifier |
-
-## Mitigacao de False Negatives
-
-1. **ASN fallback**: Se `whois` falhar (timeout/indisponivel), assume `is_cdn = False` e prossegue com scan normal
-2. **Protecao ghost ports**: Ja existente no nmap_discovery (threshold 500)
-3. **httpx como validador**: Mesmo que nmap retorne 0 portas, o httpx com hostname ja proba portas padrao (80, 443, 8080, 8443) com SNI correto - isso funciona mesmo em CDNs que bloqueiam SYN
-4. **Browser headers**: Evitam fingerprint de scanner em WAFs como Cloudflare
-
-## Impacto na Performance
-
-- ASN lookup via whois: ~1-3 segundos por IP (paralelo com outros IPs)
-- CDN scan (top-1000): ~2-4 minutos vs ~10 minutos do full-range
-- Sem impacto em IPs nao-CDN (comportamento identico ao atual)
+- Socket timeout: retorna `(None, None, None)` -> fallback para scan normal
+- Conexao recusada: tenta proximo servidor na lista
+- Resposta vazia: fallback para scan normal
+- Qualquer excecao: log warning + fallback gracioso (comportamento identico ao atual)
 
