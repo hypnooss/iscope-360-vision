@@ -1,43 +1,106 @@
 
 
-# Fix: max_rate ignorando estrategia CDN no nmap_discovery
+# Fix: nmap_discovery nao encontra portas em hosts com IPS (FortiGate)
 
-## Problema
+## Diagnostico
 
-O blueprint "Active Attack Surface Scan" define `max_rate: 500` nos params do step `nmap_discovery`. O codigo atual usa `params.get('max_rate', 300)`, que so aplica o default 300 se o param **nao existir**. Como o blueprint envia 500 explicitamente, CDN IPs estao sendo escaneados com rate 500 em vez de 300.
+O scan mais recente de `187.32.89.65` mostra:
+- `nmap_discovery` rodou por **420s** e encontrou **0 portas**
+- Nem mesmo portas 80 e 443 (que o httpx confirma abertas com titulo "FortiGate")
+- Portas 444 e 40443 nunca foram descobertas
 
-Log evidenciando:
+O IPS do FortiGate esta detectando o scan e bloqueando o IP de origem. A causa raiz e a configuracao atual do nmap:
+
+```text
+--min-rate 100   <-- FORCA 100 pacotes/segundo, ANULA o -T2
+--max-rate 500   <-- permite ate 500 pps
+(sem --scan-delay entre probes)
 ```
-CDN detected (cloudflare), using top-1000 strategy on 104.26.14.188 max_rate=500
-```
+
+O `-T2` ("polite") deveria adaptar o ritmo ao ambiente, mas o `--min-rate 100` impoe um piso de 100 SYN/s que o IPS identifica instantaneamente como scan. Apos detecao, o FortiGate dropa silenciosamente TODOS os pacotes subsequentes do nosso IP - por isso ate 80/443 desaparecem.
+
+Nota: o executor de fingerprinting (`nmap.py`) ja usa `--scan-delay 500ms` e NAO usa `--min-rate` - por isso nao sofre o mesmo problema. A discovery precisa seguir a mesma filosofia.
 
 ## Solucao
 
-Alterar a logica no `nmap_discovery.py` para que, quando `is_cdn=True`, o `max_rate` seja fixado em 300 independente do que venha nos params do blueprint. Os params do blueprint so devem controlar o `max_rate` para IPs nao-CDN.
+Reconfigurar o `_run_scan` no `nmap_discovery.py` para evasao real de IPS:
 
-## Mudanca no Codigo
+### Mudancas no comando nmap
 
-### Arquivo: `python-agent/agent/executors/nmap_discovery.py`
+| Parametro | Antes | Depois | Motivo |
+|---|---|---|---|
+| `--min-rate` | 100 | **removido** | Deixar o -T2 controlar o ritmo adaptativamente |
+| `--max-rate` | 500 (param) | 300 (non-CDN) / 150 (CDN) | Teto mais conservador |
+| `--scan-delay` | nao existia | `200ms` | Espacamento entre probes evita deteccao de burst |
+| `--max-retries` | 2 | 1 | Menos retransmissoes = menos ruido |
+| `-T2` | sim | mantido | Timing polite com adaptacao |
+| `--data-length` | 24 | mantido | Padding de pacotes |
 
-Alterar as linhas 32-40 (bloco CDN) de:
-
-```python
-if is_cdn:
-    port_range = '--top-ports 1000'
-    max_rate = params.get('max_rate', 300)
-    timeout = params.get('timeout', 300)
+Comando resultante (non-CDN):
+```text
+sudo nmap -sS -Pn --open -T2
+  --max-retries 1
+  --scan-delay 200ms
+  --data-length 24
+  --host-timeout 600s
+  --max-rate 300
+  -p 1-65535
+  -oX -
+  <ip>
 ```
 
-Para:
-
-```python
-if is_cdn:
-    port_range = '--top-ports 1000'
-    max_rate = 300  # Fixed: CDN rate must be low to avoid blocking
-    timeout = params.get('timeout', 300)
+Comando resultante (CDN):
+```text
+sudo nmap -sS -Pn --open -T2
+  --max-retries 1
+  --scan-delay 200ms
+  --data-length 24
+  --host-timeout 600s
+  --max-rate 150
+  --top-ports 1000
+  -oX -
+  <ip>
 ```
 
-Isso garante que CDN IPs sempre usem taxa reduzida, sem depender dos params do blueprint.
+### Ajuste de timeout
 
-Nenhum outro arquivo precisa ser alterado.
+Sem `--min-rate`, o scan full (65535 portas) sera mais lento. O timeout do blueprint precisa acomodar:
+
+- 65535 portas / ~200 probes por segundo (rate efetivo com delay) = ~328 segundos teorico
+- Com retransmissoes e adaptacao: ~600-700 segundos pratico
+- Timeout do executor: manter `--host-timeout 600s`
+- Timeout do subprocess: aumentar de 420s para **720s** (12 minutos)
+- Timeout do blueprint step: atualizar de 420 para **750** via SQL
+
+### Impacto no tempo de scan
+
+- Antes: 420s (7 min) e 0 portas encontradas (IPS bloqueou)
+- Depois: ~600s (10 min) com portas reais encontradas
+- Trocar 3 minutos a mais por resultados reais e um tradeoff obvio
+
+## Arquivo e mudancas
+
+### 1. `python-agent/agent/executors/nmap_discovery.py`
+
+No metodo `_run_scan`, alterar a construcao do comando:
+
+- Remover `'--min-rate', '100'` completamente
+- Adicionar `'--scan-delay', '200ms'`
+- Alterar `'--max-retries'` de `'2'` para `'1'`
+- Manter todo o resto identico
+
+No metodo `run`, ajustar os defaults:
+- non-CDN: `max_rate` default de 500 para 300, `timeout` default de 420 para 720
+- CDN: `max_rate` fixo de 300 para 150, `timeout` default de 300 para 420
+
+### 2. Blueprint (SQL) - Atualizar timeout do step
+
+Atualizar o timeout do step `masscan_discovery` de 420 para 750 no blueprint "Active Attack Surface Scan" para acomodar o scan mais lento.
+
+## Resumo
+
+| Arquivo | Acao |
+|---|---|
+| `python-agent/agent/executors/nmap_discovery.py` | Remover min-rate, adicionar scan-delay, ajustar rates e timeouts |
+| Blueprint (SQL) | Timeout do step de discovery: 420 -> 750 |
 
