@@ -1,84 +1,34 @@
 
 
-# Fix: Trocar SYN scan (-sS) por TCP connect scan (-sT) no nmap_discovery
+# Fix: Trocar -sS por -sT no executor de fingerprinting (nmap.py)
 
-## Diagnostico confirmado pelos testes manuais
+## Problema
 
-Os testes no console do Agent provaram definitivamente:
+O executor de fingerprinting (`nmap.py`) usa `-sS` (SYN stealth) combinado com `-sV` (version detection). Agora que o discovery vai encontrar portas corretamente com `-sT`, o fingerprinting vai receber essas portas e tentar escanea-las com `-sS` -- e o IPS do FortiGate vai bloquear da mesma forma.
 
-| Teste | Resultado |
-|---|---|
-| `nc -zv` (TCP connect) | 443, 444, 40443 **conectam** em 0.02s |
-| `nmap -sT` (TCP connect scan) | 80, 443, 444, 40443 **encontrados** em 0.22s |
-| `nmap -sS` com todos os parametros stealth | **0 portas** - IPS bloqueia |
-
-O problema nao e rate, timing ou delay. O IPS do FortiGate detecta a **assinatura do SYN scan** (half-open TCP handshake) independente da velocidade. O `-sS` envia SYN, recebe SYN-ACK, mas envia RST em vez de completar o handshake - essa sequencia anomala e exatamente o que o IPS procura.
-
-O `-sT` faz o handshake completo (SYN -> SYN-ACK -> ACK) que e indistinguivel de trafego legitimo.
+Ate agora isso nao foi visivel porque o discovery falhava antes, e o fingerprinting recebia 0 portas.
 
 ## Solucao
 
-Trocar `-sS` por `-sT` no `nmap_discovery.py`. Isso tambem elimina a necessidade de `sudo` (TCP connect nao requer raw sockets), mas vamos manter `sudo` por consistencia com o ambiente.
+Aplicar a mesma correcao do discovery: trocar `-sS` por `-sT` no `nmap.py`.
 
-### Vantagens do `-sT` para discovery
+O `-sV` (version detection) funciona normalmente com `-sT` -- ele faz probes de aplicacao apos a conexao TCP estabelecida, independente do tipo de scan.
 
-- Passa por qualquer IPS sem deteccao (handshake completo = trafego normal)
-- Mais confiavel em ambientes corporativos com firewalls stateful
-- Nao precisa de raw sockets (funciona sem sudo/capabilities)
-- O teste manual provou: 0.22s para encontrar 4 portas
+### Mudancas no arquivo `python-agent/agent/executors/nmap.py`
 
-### Trade-offs
+**Scan primario (linha 43-54):**
+- Trocar `'sudo', 'nmap', '-sS', '-sV'` por `'nmap', '-sT', '-sV'`
+- Remover `'--data-length', '24'` (incompativel com -sT)
 
-- Ligeiramente mais lento que `-sS` em redes sem IPS (handshake completo vs half-open)
-- Deixa log de conexao no alvo (TCP session established) - aceitavel para discovery de superficie de ataque
+**Scan fallback (linha ~73-84):**
+- Trocar `'sudo', 'nmap', '-sS', '-sV'` por `'nmap', '-sT', '-sV'`
+- Remover `'--data-length', '24'`
 
-### Parametros ajustados
+Todos os outros parametros (`-sV`, `--version-intensity`, `--script`, `--scan-delay`, `--host-timeout`, `-T3`) permanecem identicos e funcionam com `-sT`.
 
-Com `-sT`, varios parametros de evasao de SYN scan se tornam desnecessarios, mas nao causam problema mante-los. A mudanca sera minima:
+## Resumo
 
-| Parametro | Antes | Depois | Motivo |
-|---|---|---|---|
-| `-sS` | SYN stealth | **`-sT`** (TCP connect) | Passa pelo IPS |
-| `--scan-delay 200ms` | mantido | mantido | Ainda util para nao sobrecarregar |
-| `--data-length 24` | mantido | **removido** | So se aplica a raw packets (SYN), ignorado pelo -sT |
-| `--max-retries 1` | mantido | mantido | Reduz ruido |
-| `-T2` | mantido | mantido | Timing conservador |
-| `sudo` | necessario para -sS | **removido** | -sT nao requer raw sockets |
-
-Comando resultante (non-CDN):
-```text
-nmap -sT -Pn --open -T2
-  --max-retries 1
-  --scan-delay 200ms
-  --host-timeout 600s
-  --max-rate 300
-  -p 1-65535
-  -oX -
-  <ip>
-```
-
-Comando resultante (CDN):
-```text
-nmap -sT -Pn --open -T2
-  --max-retries 1
-  --scan-delay 200ms
-  --host-timeout 600s
-  --max-rate 150
-  --top-ports 1000
-  -oX -
-  <ip>
-```
-
-## Mudancas
-
-### Arquivo: `python-agent/agent/executors/nmap_discovery.py`
-
-1. Linha 16: Atualizar docstring de "SYN stealth scan" para "TCP connect scan"
-2. Linha 45: Atualizar log message de "Stealth SYN scan" para "TCP connect scan"
-3. Linha 80: Remover `'sudo'` do comando (nao precisa mais de raw sockets)
-4. Linha 81: Trocar `'-sS'` por `'-sT'`
-5. Linha 87: Remover `'--data-length', '24'` (so funciona com raw packets)
-6. Linhas 1-2: Atualizar comentario do modulo
-
-Nenhuma outra mudanca necessaria. O parsing XML, timeouts e toda a logica de fallback permanecem identicos.
+| Arquivo | Acao |
+|---|---|
+| `python-agent/agent/executors/nmap.py` | Trocar -sS por -sT, remover sudo e --data-length 24 (scan primario e fallback) |
 
