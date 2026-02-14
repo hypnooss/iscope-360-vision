@@ -1,37 +1,33 @@
 
 
-# Ajuste visual do Asset Card: portas, servicos e certificado
+# Ajuste de tamanho dos badges e separadores nos CVEs
 
-## O que muda
+## Problema
 
-### 1. Portas e Servicos como badges (Row 2)
+Os badges de portas, servicos e tecnologias usam `py-0` que os torna menores que o badge de certificado. Os CVE badges tambem usam `py-0`. O badge de certificado nao tem `py-0`, por isso e maior.
 
-Atualmente as quantidades de portas e servicos sao exibidas como `<span>` com texto puro. Vamos converter para `<Badge>` com estilo consistente com os demais badges do card.
+## Correcoes
 
-- **Portas**: Badge com icone `Server` e cor laranja (mesmo padrao do bloco expandido)
-- **Servicos**: Badge com icone `Globe` e cor azul
+### 1. Igualar tamanho dos badges (remover `py-0`)
 
-### 2. Mover CertStatusBadge para Row 2
+Remover `py-0` dos seguintes badges para que fiquem do mesmo tamanho que o CertStatusBadge:
 
-O badge de status do certificado TLS sera movido da Row 3 (linha dos CVEs) para a Row 2, apos a contagem de servicos, separado pelo ponto (`•`) ja utilizado como separador visual.
+- Portas badge (linha 507): `px-1.5 py-0` -> `px-1.5`
+- Servicos badge (linha 509): `px-1.5 py-0` -> `px-1.5`
+- Tech badges (linha 517): `px-1.5 py-0` -> `px-1.5`
+- Overflow tech badge (linha 520): `px-1.5 py-0` -> `px-1.5`
+- CVE badges no CVESummaryBadges (linha 440): `px-1.5 py-0` -> `px-1.5`
 
-### Layout resultante
+### 2. Adicionar separador `•` entre CVE badges
 
-```text
-Row 1: [hostname]  [IP]                    [RISK LEVEL]
-Row 2: [11 portas]  •  [16 servicos]  •  [Expira em 30d]  •  [Pure-FTPd] [OpenSSH/7.4] ...
-Row 3: [2 CRITICAL] [9 HIGH] [14 MEDIUM] [1 LOW]
+No componente `CVESummaryBadges`, trocar o `gap-1` por `gap-2` e inserir `<span className="text-border">•</span>` entre cada badge de severidade.
+
+### Resultado visual
+
+```
+Row 2: [11 portas]  •  [16 servicos]  •  [Expira em 30d]  •  [Pure-FTPd] ...
+Row 3: [2 CRITICAL]  •  [9 HIGH]  •  [14 MEDIUM]  •  [1 LOW]
 ```
 
-## Detalhes tecnicos
-
-Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-**Row 2 (linhas 506-523)**: Substituir os `<span>` de portas e servicos por `<Badge variant="outline">` com classes de cor. Inserir `<CertStatusBadge>` apos servicos com separador `•`.
-
-**Row 3 (linhas 526-533)**: Remover a chamada `<CertStatusBadge asset={asset} />` desta linha, deixando apenas os CVE badges.
-
-Cores propostas para os badges:
-- Portas: `bg-orange-500/10 text-orange-400 border-orange-500/30` (consistente com o icone de Server usado no bloco expandido)
-- Servicos: `bg-blue-500/10 text-blue-400 border-blue-500/30`
+Todos os badges com o mesmo padding vertical, tamanho uniforme.
 
