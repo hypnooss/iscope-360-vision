@@ -1,45 +1,34 @@
 
 
-# Fix: Adicionar `sudo` ao nmap_discovery para `-sS`
+# Fix: Erro de sintaxe no nmap_discovery.py
 
 ## Problema
 
-O agente nao tem `CAP_NET_RAW` herdada pelo nmap (binario dinamicamente linkado ignora capabilities), entao todo `-sS` falha com "permission denied" e faz fallback para `-sT`. Isso acontece em **cada fase, para cada IP** -- duplicando execucoes desnecessariamente.
+O agent esta crashando na inicializacao (exit code 1) porque `nmap_discovery.py` tem um erro de sintaxe na linha 194: o metodo `cmd.extend([...])` fecha a lista com `]` mas nao fecha o parentese do `.extend(`.
 
-## Solucao
-
-Adicionar `sudo` ao comando quando o scan_type for `-sS`, conforme a arquitetura documentada (sudoers com `NOPASSWD` para nmap).
-
-## Mudanca no arquivo
-
-**`python-agent/agent/executors/nmap_discovery.py`** - metodo `_build_cmd()`:
-
-Quando `scan_type == '-sS'`, prefixar o comando com `sudo`:
-
-```text
-Antes:  ['nmap', '-sS', '-Pn', ...]
-Depois: ['sudo', 'nmap', '-sS', '-Pn', ...]
+```python
+# Linha 194 - QUEBRADO
+    '-oX', '-',
+]           # falta o )
 ```
 
-Para `-sT` (fallback ou direto), manter sem `sudo`:
+## Correcao
 
-```text
-['nmap', '-sT', '-Pn', ...]
+Linha 194 de `python-agent/agent/executors/nmap_discovery.py`:
+
+```python
+# Linha 194 - CORRIGIDO
+    '-oX', '-',
+])          # fecha lista E fecha extend()
 ```
 
-## Pre-requisito no servidor
+## Causa raiz
 
-Confirmar que o sudoers do Super Agent tem:
-
-```text
-precisio-agent ALL=(root) NOPASSWD: /usr/bin/nmap
-```
-
-Se nao tiver, o fallback para `-sT` continua funcionando como hoje (sem regressao).
+Quando o `sudo` foi adicionado, o comando mudou de atribuicao direta (`cmd = [...]`) para `cmd.extend([...])`, mas o fechamento da lista nao foi atualizado para incluir o parentese.
 
 ## Impacto
 
-- Elimina as tentativas duplicadas (nao precisa mais falhar e retry)
-- Habilita SYN stealth scan (mais rapido, menos detectavel)
-- Zero risco: se `sudo` falhar, o fallback `-sT` continua igual
+- Agent volta a iniciar normalmente
+- Correcao de 1 caractere (adicionar `)`)
+- Nenhum outro arquivo afetado
 
