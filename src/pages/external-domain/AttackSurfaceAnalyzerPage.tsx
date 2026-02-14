@@ -540,15 +540,15 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
 
       {/* Expanded detail */}
       {open && (
-        <div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-5 bg-muted/10">
-          {/* Block 1: Ports */}
-          {asset.ports.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                <Server className="w-4 h-4 text-orange-400" />
-                Portas Abertas ({asset.ports.length})
-              </h4>
-              <div className="flex flex-wrap gap-1.5">
+         <div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-8 bg-muted/10">
+           {/* Block 1: Ports */}
+           {asset.ports.length > 0 && (
+             <div>
+               <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                 <Server className="w-4 h-4 text-orange-400" />
+                 Portas Abertas ({asset.ports.length})
+               </h4>
+               <div className="pl-6 flex flex-wrap gap-1.5">
                 {asset.ports.map(port => (
                   <Badge key={port} variant="outline" className="font-mono text-xs px-2 py-0.5">{port}</Badge>
                 ))}
@@ -563,8 +563,8 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
                 <Globe className="w-4 h-4 text-primary" />
                 Serviços & Tecnologias
               </h4>
-              <div className="space-y-2">
-                {/* Nmap services */}
+               <div className="pl-6 space-y-2">
+                 {/* Nmap services */}
                 {asset.services.filter(s => s.product).map((svc, i) => (
                   <div key={`svc-${i}`} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 flex-wrap text-sm">
                     <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
@@ -610,8 +610,8 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
                 <Shield className="w-4 h-4 text-primary" />
                 Certificados TLS ({asset.tlsCerts.length})
               </h4>
-              <div className="space-y-2">
-                {asset.tlsCerts.map((cert, i) => {
+               <div className="pl-6 space-y-2">
+                 {asset.tlsCerts.map((cert, i) => {
                   const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
                   const isExpiring = cert.daysRemaining !== null && cert.daysRemaining >= 0 && cert.daysRemaining <= 30;
                   return (
@@ -653,7 +653,7 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
                 <ShieldAlert className="w-4 h-4 text-destructive" />
                 Vulnerabilidades ({asset.cves.length})
               </h4>
-              <div className="rounded-lg border border-border/50 overflow-hidden">
+              <div className="pl-6 rounded-lg border border-border/50 overflow-hidden">
                 {[...asset.cves]
                   .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
                   .map((cve) => (
