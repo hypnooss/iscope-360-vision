@@ -32,7 +32,7 @@ class NmapDiscoveryExecutor(BaseExecutor):
         if is_cdn:
             # CDN/Edge IPs: avoid full range, use top-ports with lower rate
             port_range = '--top-ports 1000'
-            max_rate = params.get('max_rate', 300)
+            max_rate = 300  # Fixed: CDN rate must be low to avoid blocking
             timeout = params.get('timeout', 300)
             self.logger.info(
                 f"[nmap_discovery] CDN detected ({cdn_provider}), "
