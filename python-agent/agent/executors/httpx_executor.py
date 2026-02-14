@@ -76,7 +76,14 @@ class HttpxExecutor(BaseExecutor):
             }
 
         except subprocess.TimeoutExpired:
-            return {'error': f'httpx timeout after {timeout}s on {ip}'}
+            self.logger.info(f"[httpx] Timeout on {target}, returning empty results")
+            return {
+                'data': {
+                    'ip': ip,
+                    'hostname': hostname or '',
+                    'web_services': [],
+                }
+            }
         except FileNotFoundError:
             return {'error': 'httpx not installed. Install from https://github.com/projectdiscovery/httpx'}
         except Exception as e:
