@@ -223,6 +223,58 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
+    // Attack Surface Schedules
+    // ========================================================
+    const { data: dueAttackSurfaceSchedules, error: attackSurfaceFetchError } = await supabase
+      .from('attack_surface_schedules')
+      .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .eq('is_active', true)
+      .not('frequency', 'eq', 'manual')
+      .lte('next_run_at', new Date().toISOString());
+
+    if (attackSurfaceFetchError) {
+      console.error('[run-scheduled-analyses] Error fetching attack surface schedules:', attackSurfaceFetchError);
+    }
+
+    let attackSurfaceTriggered = 0;
+    let attackSurfaceErrors = 0;
+
+    if (dueAttackSurfaceSchedules && dueAttackSurfaceSchedules.length > 0) {
+      console.log(`[run-scheduled-analyses] Found ${dueAttackSurfaceSchedules.length} attack surface schedule(s) due.`);
+
+      for (const schedule of dueAttackSurfaceSchedules) {
+        try {
+          const triggerUrl = `${supabaseUrl}/functions/v1/run-attack-surface-queue`;
+          const response = await fetch(triggerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({ client_id: schedule.client_id }),
+          });
+          const result = await response.json();
+          if (result.success || response.status === 409) {
+            console.log(`[run-scheduled-analyses] Triggered attack surface for client ${schedule.client_id}: ${result.message || 'success'}`);
+            attackSurfaceTriggered++;
+          } else {
+            console.error(`[run-scheduled-analyses] Failed to trigger attack surface for client ${schedule.client_id}:`, result.error);
+            attackSurfaceErrors++;
+          }
+
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1
+          );
+          await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+          console.log(`[run-scheduled-analyses] Updated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
+        } catch (err) {
+          console.error(`[run-scheduled-analyses] Attack surface schedule error:`, err);
+          attackSurfaceErrors++;
+        }
+      }
+    } else {
+      console.log('[run-scheduled-analyses] No attack surface schedules due.');
+    }
+
+    // ========================================================
     // CVE Cache Refresh
     // ========================================================
     let cveRefreshSuccess = false;
@@ -244,10 +296,10 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] CVE refresh error:', err);
     }
 
-    const totalTriggered = triggered + domainTriggered + analyzerTriggered;
-    const totalErrors = errors + domainErrors + analyzerErrors;
+    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered;
+    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors;
 
-    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
+    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, AttackSurface: ${attackSurfaceTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
 
     return new Response(
       JSON.stringify({
@@ -257,6 +309,7 @@ Deno.serve(async (req) => {
         firewalls: { triggered, errors, total: dueSchedules.length },
         domains: { triggered: domainTriggered, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
         analyzers: { triggered: analyzerTriggered, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
+        attack_surface: { triggered: attackSurfaceTriggered, errors: attackSurfaceErrors, total: dueAttackSurfaceSchedules?.length ?? 0 },
         cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
