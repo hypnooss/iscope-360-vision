@@ -1,75 +1,167 @@
 
-# Estrategia: CVE Cache Independente de Versao Detectada
 
-## Problema Atual (Deadlock)
+# Cloud-Aware Port Discovery - Arquitetura Hibrida
 
-O ciclo atual e circular: precisa de uma analise para detectar a versao, para sincronizar CVEs, para apresentar dados. Na primeira vez que um software aparece, nao ha CVEs no cache.
+## Problema
 
-## Nova Estrategia
+IPs de CDN/Cloud (Cloudflare, Azure, Akamai, Fastly) bloqueiam SYN scans silenciosamente, resultando em 0 portas encontradas. Esses provedores exigem TLS handshake valido com SNI correto e headers HTTP realistas.
 
-Sincronizar **todas as CVEs** de cada produto monitorado, independente de versao detectada. O matching de versao acontece apenas no **frontend** (que ja faz isso via semver).
+## Arquitetura Proposta
 
-## Volume de Dados Estimado
+O pipeline atual tem 3 steps sequenciais: `nmap_discovery` -> `nmap` (fingerprint) -> `httpx`. A proposta adiciona uma **Fase 0 de classificacao** e bifurca a estrategia.
 
-| Produto | CVEs estimadas | Tamanho |
-|---|---|---|
-| FortiOS | ~1.000 | ~5 MB |
-| SonicOS | ~200 | ~1 MB |
-| Nginx | ~350 | ~1.7 MB |
-| OpenSSH | ~300 | ~1.5 MB |
-| OpenSSL | ~450 | ~2.2 MB |
-| PHP | ~1.800 | ~9 MB |
-| Apache HTTP | ~600 | ~3 MB |
-| Node.js | ~250 | ~1.2 MB |
-| jQuery | ~40 | ~0.2 MB |
-| Exim | ~65 | ~0.3 MB |
-| M365 (MSRC) | ~150 | ~0.7 MB |
-| **Total** | **~5.200** | **~26 MB** |
+```text
+                    +-------------------+
+                    |  ASN Classifier   |  (nova Fase 0)
+                    |  (IP -> provider) |
+                    +--------+----------+
+                             |
+                +------------+------------+
+                |                         |
+          NAO-CDN / Infra             CDN / Cloud Edge
+                |                         |
+     +----------+----------+    +---------+---------+
+     | nmap_discovery       |    | nmap_discovery    |
+     | SYN full (1-65535)   |    | --top-ports 1000  |
+     | -T2, max_rate=500    |    | -T2, max_rate=300 |
+     +----------+----------+    +---------+---------+
+                |                         |
+     +----------+----------+    +---------+---------+
+     | nmap (fingerprint)   |    | nmap (fingerprint)|
+     | version + scripts    |    | version + scripts |
+     +----------+----------+    +---------+---------+
+                |                         |
+     +----------+----------+    +---------+---------+
+     | httpx (web probe)    |    | httpx (web probe) |
+     |                      |    | + browser headers |
+     +----------+----------+    | + SNI correto      |
+                |               +---------+---------+
+                |                         |
+                +------------+------------+
+                             |
+                    +--------+----------+
+                    |  Resultado Final  |
+                    |  (normalizado)    |
+                    +-------------------+
+```
 
-Isso e perfeitamente viavel. Hoje temos 329 CVEs / 1.8 MB.
+## Detalhes de Implementacao
 
-## Mudancas Tecnicas
+### 1. Novo Executor: `asn_classifier.py`
 
-### 1. Edge Function `refresh-cve-cache/index.ts`
+Novo arquivo: `python-agent/agent/executors/asn_classifier.py`
 
-**`syncNistNvdSource` (Firewall - FortiOS/SonicOS):**
-- Remover a dependencia de `analysis_history` e `firewalls` para extrair versoes
-- Passar a buscar CVEs diretamente via `keywordSearch` para o produto (ex: "FortiOS", "SonicOS")
-- Usar paginacao do NVD (`startIndex` + `resultsPerPage`) para capturar todas as CVEs
-- Manter o filtro por `months` da config como opcional (se configurado, adicionar `pubStartDate`/`pubEndDate`)
-- Se `months` nao estiver na config, sincronizar tudo
+Responsabilidade: Identificar o provedor/ASN de um IP **antes** do port scan.
 
-**`syncNistNvdWebSource` (Dominio Externo - Nginx, PHP, etc.):**
-- Remover a dependencia de `attack_surface_snapshots` para extrair CPEs
-- Para cada source ativa, buscar diretamente via `keywordSearch` pelo `product_filter` (ex: "nginx", "php")
-- Usar paginacao para capturar todas as CVEs do produto
-- Continuar extraindo `products` com version ranges reais do campo `configurations` do NVD (funcao `extractAffectedProducts` ja existe)
+Abordagem (sem dependencia externa):
+- Usar o comando `whois` do sistema (ja disponivel no servidor) para lookup do IP
+- Extrair campos `OrgName`, `org-name`, `descr`, `netname` do output
+- Matching por keywords contra uma lista de provedores conhecidos:
 
-**`syncMsrcSource` (M365):**
-- Sem mudancas - ja e independente de ativos detectados
+```text
+CDN_PROVIDERS = {
+    'cloudflare': ['cloudflare'],
+    'akamai': ['akamai'],
+    'fastly': ['fastly'],
+    'aws_cloudfront': ['amazon', 'cloudfront', 'aws'],
+    'azure_cdn': ['microsoft', 'azure'],
+    'google_cloud': ['google'],
+    'incapsula': ['incapsula', 'imperva'],
+    'sucuri': ['sucuri'],
+    'stackpath': ['stackpath', 'highwinds'],
+    'cloudfront': ['cloudfront'],
+}
+```
 
-### 2. Tabela `cve_sources` - Ajuste de Config
+Output do executor:
+```python
+{
+    'data': {
+        'ip': '104.26.7.202',
+        'is_cdn': True,
+        'provider': 'cloudflare',
+        'asn': 'AS13335',
+        'org': 'Cloudflare, Inc.',
+    }
+}
+```
 
-Atualizar as configs das fontes existentes para refletir a nova estrategia:
+Esse resultado e propagado no contexto para os steps seguintes usarem.
 
-- Fontes de firewall: remover limitacao de `months: 6`, ou aumentar para `months: 24` (compromisso entre cobertura e volume)
-- Fontes web: nenhum campo novo necessario, o `product_filter` ja serve como chave de busca
+Dependencias: **Nenhuma nova**. Usa `subprocess` + `whois` (binario do sistema).
 
-### 3. Logica de Paginacao NVD
+### 2. Modificar `nmap_discovery.py` - Cloud-Aware
 
-Adicionar funcao auxiliar `fetchAllNvdPages` que:
-1. Faz a primeira request com `startIndex=0` e `resultsPerPage=100` (maximo permitido)
-2. Le `totalResults` da resposta
-3. Itera com `startIndex` incrementando de 100 ate cobrir tudo
-4. Respeita rate limit (6.5s entre requests)
-5. Retorna array consolidado de todas as vulnerabilidades
+Alterar o executor existente para ler `context.get('is_cdn')` e ajustar automaticamente:
 
-### 4. Nenhuma mudanca no Frontend
+- **Se `is_cdn == True`:**
+  - Usar `--top-ports 1000` em vez de `1-65535`
+  - Reduzir `max_rate` para 300
+  - Manter todos os parametros stealth
+  - Log explicativo: `[nmap_discovery] CDN detected (cloudflare), using top-1000 strategy`
 
-O frontend ja faz matching semver correto entre versao detectada e ranges do campo `products`. Com mais CVEs no cache, o matching funcionara imediatamente na primeira deteccao de qualquer versao.
+- **Se `is_cdn == False` (ou ausente):**
+  - Comportamento atual: full range 1-65535, max_rate 500
 
-### 5. Tempo de Sync Estimado
+Mudanca minima: ~15 linhas no metodo `run()`.
 
-- ~12 produtos x ~5-15 paginas cada = ~60-180 requests
-- Rate limit: 6.5s/request = **~6-20 minutos** total
-- Executado diariamente pelo CRON, tempo aceitavel
+### 3. Modificar `httpx_executor.py` - Browser Simulation
+
+Alterar para adicionar headers realistas quando o contexto indica CDN:
+
+- **Se `context.get('is_cdn')`:**
+  - Adicionar ao comando httpx: `-H 'User-Agent: Mozilla/5.0 ...'` com UA de Chrome moderno
+  - Adicionar: `-H 'Accept: text/html,...'`
+  - Adicionar: `-H 'Accept-Language: en-US,en;q=0.9'`
+  - Adicionar: `-H 'Upgrade-Insecure-Requests: 1'`
+  - Garantir que o hostname (ja implementado) e usado como target para SNI correto
+
+- **Se nao-CDN:** comportamento atual (sem headers extras)
+
+Mudanca minima: ~20 linhas no metodo `run()`.
+
+### 4. Registrar novo executor em `tasks.py` e `__init__.py`
+
+- `__init__.py`: Adicionar import de `AsnClassifierExecutor`
+- `tasks.py`: Adicionar `'asn_classifier': AsnClassifierExecutor(logger)` no dict `_executors`
+- Adicionar `'asn_classifier'` ao set `SCAN_EXECUTORS` (nao deve acionar fail-fast)
+
+### 5. Atualizar Blueprint no banco
+
+O blueprint do Attack Surface precisa incluir o step de ASN como **Step 0** antes do nmap_discovery. Isso e feito via SQL na tabela de blueprints (nao requer mudanca de codigo):
+
+```text
+Step 0: asn_classifier  (params: {ip})     -> context: {is_cdn, provider, asn}
+Step 1: nmap_discovery   (params: {ip})     -> context: {ports}
+Step 2: nmap             (params: {ip})     -> context: {services}
+Step 3: httpx            (params: {ip})     -> context: {web_services}
+```
+
+### 6. `requirements.txt` - Sem alteracoes
+
+Nenhuma biblioteca nova necessaria. Tudo e resolvido com `subprocess` + `whois`.
+
+## Resumo dos Arquivos
+
+| Arquivo | Acao |
+|---|---|
+| `python-agent/agent/executors/asn_classifier.py` | **Criar** - novo executor ASN lookup |
+| `python-agent/agent/executors/nmap_discovery.py` | **Editar** - ajustar estrategia baseada em `is_cdn` |
+| `python-agent/agent/executors/httpx_executor.py` | **Editar** - adicionar browser headers para CDN |
+| `python-agent/agent/executors/__init__.py` | **Editar** - registrar novo executor |
+| `python-agent/agent/tasks.py` | **Editar** - registrar executor + SCAN_EXECUTORS |
+| Blueprint (banco) | **SQL** - adicionar step 0 asn_classifier |
+
+## Mitigacao de False Negatives
+
+1. **ASN fallback**: Se `whois` falhar (timeout/indisponivel), assume `is_cdn = False` e prossegue com scan normal
+2. **Protecao ghost ports**: Ja existente no nmap_discovery (threshold 500)
+3. **httpx como validador**: Mesmo que nmap retorne 0 portas, o httpx com hostname ja proba portas padrao (80, 443, 8080, 8443) com SNI correto - isso funciona mesmo em CDNs que bloqueiam SYN
+4. **Browser headers**: Evitam fingerprint de scanner em WAFs como Cloudflare
+
+## Impacto na Performance
+
+- ASN lookup via whois: ~1-3 segundos por IP (paralelo com outros IPs)
+- CDN scan (top-1000): ~2-4 minutos vs ~10 minutos do full-range
+- Sem impacto em IPs nao-CDN (comportamento identico ao atual)
+
