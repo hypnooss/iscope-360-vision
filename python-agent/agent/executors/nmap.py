@@ -39,18 +39,17 @@ class NmapExecutor(BaseExecutor):
 
         self.logger.info(f"[nmap] TCP connect scanning {ip} ports={port_str[:80]}...")
 
-        # Primary scan: full collection with scripts and high intensity
+        # Primary scan: optimized for speed (ports already confirmed open)
         cmd = [
             'nmap', '-sT', '-sV',
-            '--version-intensity', '7',
-            '--script=banner,ssl-cert,http-title',
+            '--version-intensity', '5',
+            '--script=banner,ssl-cert',
             f'-p{port_str}',
             ip,
             '-oX', '-',
-            '-T3',
-            '--host-timeout', '300s',
-            '--scan-delay', '500ms',
-            '--max-retries', '2',
+            '-T4',
+            '--host-timeout', '120s',
+            '--max-retries', '1',
         ]
         try:
             result = subprocess.run(
@@ -78,13 +77,13 @@ class NmapExecutor(BaseExecutor):
                 )
                 cmd_fallback = [
                     'nmap', '-sT', '-sV',
-                    '--version-intensity', '5',
+                    '--version-intensity', '3',
                     '--script=banner',
                     f'-p{port_str}',
                     ip,
                     '-oX', '-',
-                    '-T3',
-                    '--host-timeout', '180s',
+                    '-T4',
+                    '--host-timeout', '60s',
                     '--max-retries', '1',
                 ]
                 result2 = subprocess.run(
