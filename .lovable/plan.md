@@ -1,74 +1,86 @@
 
 
-# Fix: GeoIP Fallback para FortiOS 7.2 (e anteriores)
+# Adicionar Visibilidade de Anomalias ao Firewall Analyzer
 
-## Problema
+## O que sao Anomalias no FortiOS
 
-O FortiOS 7.2 nao retorna o campo `srccountry` nos logs de autenticacao/VPN, mesmo com o parametro `extra=country_id`. O FortiOS 7.4 retorna esse campo nativamente, por isso o BAU-FW funciona e o BR-PMP-FW-001 nao.
+O FortiOS registra eventos de anomalia quando o motor de deteccao identifica comportamentos anormais de rede, incluindo:
 
-O fallback atual (cruzar IPs com dados de trafego negado) falha porque o trafego negado do BR-PMP e todo interno (10.x.x.x / "Reserved").
+- **DoS/DDoS**: Floods (SYN, UDP, ICMP), sessoes excessivas por IP
+- **Anomalias de Protocolo**: Pacotes malformados, fragmentacao suspeita
+- **Rate-based**: Limites de sessao excedidos por politica
+- **Scan Detection**: Varreduras de rede detectadas pelo sensor de anomalia
 
-## Solucao
+Os logs de anomalia contem campos como `attack`, `srcip`, `dstip`, `count`, `severity`, `action` (pass/drop), `policyid` e `service`.
 
-Adicionar resolucao GeoIP via API gratuita (`ip-api.com/batch`) na Edge Function `firewall-analyzer` como fallback final para IPs externos sem pais.
+## Alteracoes Necessarias
 
-## Alteracao Unica
+### 1. Blueprint - Novo Step de Coleta
 
-**Arquivo:** `supabase/functions/firewall-analyzer/index.ts`
+Adicionar um novo step `anomaly_events` ao blueprint "FortiGate - Analyzer":
 
-### 1. Nova funcao `resolveGeoIP`
+| Campo | Valor |
+|---|---|
+| id | `anomaly_events` |
+| path | `/api/v2/log/memory/anomaly?rows=500&extra=country_id` |
+| optional | `true` (nem todo FortiGate tem anomaly habilitado) |
 
-Funcao auxiliar que:
-- Recebe lista de IPs sem pais
-- Filtra IPs privados (10.x, 172.16-31.x, 192.168.x, 127.x)
-- Faz batch POST para `http://ip-api.com/batch` (gratuito, sem API key, ate 100 IPs)
-- Retorna mapa IP -> nome do pais
-- Timeout de 5s, fallback silencioso em caso de erro
+### 2. Edge Function - Novo Modulo `analyzeAnomalies`
 
-### 2. Integracao no fluxo principal (linhas ~739-741)
+Novo modulo de analise em `supabase/functions/firewall-analyzer/index.ts`:
 
-Apos construir o `ipCountryMap` a partir dos logs, antes de chamar `analyzeAuthentication`:
+- Agrupa anomalias por tipo de ataque (`attack` field)
+- Gera ranking de **Top IPs de Origem** de anomalias
+- Gera ranking de **Top Tipos de Anomalia** por contagem
+- Detecta padroes criticos:
+  - Floods (SYN/UDP/ICMP flood) -> severity critical
+  - Scan detection -> severity high
+  - Sessoes excessivas por IP -> severity medium
+- Calcula metricas: `anomalyEvents`, `anomalyDropped`, `topAnomalySources`, `topAnomalyTypes`
 
-```text
-ipCountryMap construido (denied + auth/vpn logs)
-         |
-         v
-Coletar IPs unicos de auth/vpn SEM pais no mapa
-         |
-         v
-Filtrar IPs privados (RFC1918)
-         |
-         v
-Batch GeoIP lookup (ip-api.com) - max 100 IPs
-         |
-         v
-Adicionar resultados ao ipCountryMap
-         |
-         v
-analyzeAuthentication(..., ipCountryMap)
-```
+### 3. Tipos TypeScript - Novas Metricas
 
-## Detalhes da API ip-api.com
+Atualizar `src/types/analyzerInsights.ts`:
 
-- Endpoint: `POST http://ip-api.com/batch`
-- Body: array de objetos `[{"query": "62.60.131.x", "fields": "query,country"}]`
-- Limite: 100 IPs por request, 45 requests/minuto
-- Sem necessidade de API key
-- Resposta: `[{"query": "62.60.131.x", "country": "Portugal"}]`
+- Novo valor em `AnalyzerCategory`: `'anomaly'`
+- Novas propriedades em `AnalyzerMetrics`:
+  - `anomalyEvents: number` - total de eventos de anomalia
+  - `anomalyDropped: number` - total de anomalias com action=drop
+  - `topAnomalySources: TopBlockedIP[]` - top IPs geradores de anomalias
+  - `topAnomalyTypes: TopCategory[]` - top tipos de anomalia
 
-## Protecoes
+### 4. Hook de Dados
 
-- Timeout de 5 segundos na chamada HTTP
-- Limite de 100 IPs por batch
-- Filtragem de IPs privados (nao consultar IPs internos)
-- Fallback silencioso: se a API falhar, o processamento continua normalmente sem dados de pais (mesmo comportamento atual)
-- Log de quantidade de IPs resolvidos para debug
+Atualizar `src/hooks/useAnalyzerData.ts` para parsear as novas metricas com defaults seguros.
+
+### 5. Dashboard - Novo Widget
+
+Adicionar um card "Anomalias" no `AnalyzerDashboardPage.tsx`:
+
+- Contador principal: total de anomalias detectadas vs bloqueadas
+- Lista de **Top Tipos de Anomalia** com barras de progresso
+- Lista de **Top IPs Origem** de anomalias com bandeiras
+- Insights de anomalia aparecem automaticamente na pagina de Insights (ja existente)
+
+### 6. Insights Page
+
+O `AnalyzerInsightsPage.tsx` ja suporta qualquer categoria dinamicamente - basta adicionar o label `'anomaly'` no mapa `categoryLabels`.
+
+## Resumo de Arquivos
+
+| Arquivo | Alteracao |
+|---|---|
+| Migration SQL (blueprint) | Adicionar step `anomaly_events` |
+| `supabase/functions/firewall-analyzer/index.ts` | Novo modulo `analyzeAnomalies`, integracao no fluxo principal |
+| `src/types/analyzerInsights.ts` | Nova categoria + novas metricas |
+| `src/hooks/useAnalyzerData.ts` | Parse das novas metricas |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Novo widget de anomalias |
+| `src/pages/firewall/AnalyzerInsightsPage.tsx` | Novo label de categoria |
 
 ## Resultado Esperado
 
-- BR-PMP-FW-001 (e qualquer outro FortiOS 7.2 ou anterior) tera paises resolvidos automaticamente
-- "Top Paises - Autenticacao" exibira dados de geolocalizacao corretamente
-- Mapa de Ataques tera coordenadas para eventos de autenticacao
-- Sem impacto no BAU-FW (ja tem paises nativos, GeoIP nao sera chamado)
-- Latencia adicional: ~200ms apenas quando necessario
+- Novo card "Anomalias" no dashboard do Analyzer com contadores e rankings
+- Insights de anomalia (floods, scans, sessoes excessivas) na pagina de drill-down
+- Dados coletados automaticamente na proxima execucao do Analyzer
+- Sem impacto em firewalls que nao tenham anomaly habilitado (step marcado como `optional`)
 
