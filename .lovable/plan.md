@@ -1,50 +1,34 @@
 
-# Fix: Analyzer de Firewall - Paths de API Incorretos e Enriquecimento de Dados
 
-## Problemas Identificados
+# Fix: Paises nao aparecem no Analyzer de Autenticacao
 
-### 1. Paths UTM incorretos (HTTP 404 em TODAS as execucoes)
-Os logs das ultimas 3 tarefas confirmam:
-```
-webfilter_blocked: HTTP 404: Not Found
-appctrl_blocked: HTTP 404: Not Found
-```
+## Causa Raiz
 
-**Causa**: O blueprint usa `/api/v2/log/memory/utm/webfilter` e `/api/v2/log/memory/utm/app-ctrl`, mas a API do FortiOS (tanto 7.2 quanto 7.4) **nao possui** o segmento `/utm/`. Os endpoints corretos sao:
-- `/api/v2/log/memory/webfilter` (tipo UTM e diretamente sob `/memory/`)
-- `/api/v2/log/memory/app-ctrl`
+Os endpoints de coleta de autenticacao e VPN no blueprint nao incluem o parametro `extra=country_id`, que e suportado pela API FortiOS tanto em 7.2 quanto em 7.4 para endpoints `/memory/event/{subtype}`.
 
-### 2. IPS intermitente (HTTP 500 em algumas versoes)
-O endpoint `/api/v2/log/memory/ips` retorna 500 em certos FortiGates (ja conhecido e marcado como `optional: true`). Sem alteracao necessaria.
-
-### 3. Enriquecimento de pais ausente no trafego negado
-A API suporta o parametro `extra=country_id` (presente em ambas versoes 7.2 e 7.4) que adiciona o campo `srccountry` diretamente nos logs de trafego. Atualmente o blueprint nao usa esse parametro, resultando em dados de geolocalizacao incompletos no Mapa de Ataques.
+Sem esse parametro, os logs de autenticacao chegam sem o campo `srccountry`. O mecanismo de fallback (`ipCountryMap`) tenta cruzar IPs com dados do trafego negado, mas neste caso o trafego negado e todo interno (10.x.x.x = "Reserved"), entao nao ha correspondencia para os IPs externos de autenticacao (62.60.x.x, 85.239.x.x).
 
 ## Solucao
 
-### Correcao no Blueprint (banco de dados)
+Adicionar `&extra=country_id` aos steps `auth_events` e `vpn_events` no blueprint do Analyzer. A API do FortiOS confirma suporte a esse parametro em `/memory/event/{subtype}` (documentacao linhas 946-952).
 
-Atualizar os `collection_steps` do blueprint "FortiGate - Analyzer" com os paths corretos:
+## Detalhes Tecnicos
 
-| Step | Path Atual (ERRADO) | Path Correto |
+### Alteracao no Blueprint (SQL)
+
+| Step | Path Atual | Path Corrigido |
 |---|---|---|
-| `webfilter_blocked` | `/api/v2/log/memory/utm/webfilter?filter=action==blocked&rows=500` | `/api/v2/log/memory/webfilter?filter=action==blocked&rows=500` |
-| `appctrl_blocked` | `/api/v2/log/memory/utm/app-ctrl?filter=action==block&rows=500` | `/api/v2/log/memory/app-ctrl?filter=action==block&rows=500` |
-| `denied_traffic` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500&extra=country_id` |
+| `auth_events` (index 1) | `/api/v2/log/memory/event/system?filter=subtype==system&rows=500` | `/api/v2/log/memory/event/system?filter=subtype==system&rows=500&extra=country_id` |
+| `vpn_events` (index 2) | `/api/v2/log/memory/event/vpn?filter=subtype==vpn&rows=500` | `/api/v2/log/memory/event/vpn?filter=subtype==vpn&rows=500&extra=country_id` |
 
-Os steps `denied_traffic` e UTM tambem recebem ajustes para melhorar a qualidade dos dados de geolocalizacao.
+Execucao via `UPDATE` com `jsonb_set` no registro do blueprint `9e33ae45-053c-4ea2-9723-c9e0cf01549c`.
 
-### Execucao
+### Sem alteracao em codigo
 
-Um `UPDATE` no registro do blueprint no banco de dados para corrigir o JSON dos `collection_steps`. Nao ha alteracao em codigo frontend ou edge functions -- o processamento ja esta preparado para receber os dados de webfilter e app-ctrl.
-
-### Apos a correcao
-
-Os agents precisarao buscar novas tarefas (o blueprint e lido pelo RPC `rpc_get_agent_tasks` no momento da distribuicao). Na proxima execucao de analise, os steps de Web Filter e App Control retornarao dados reais em vez de 404.
+A Edge Function `firewall-analyzer` ja le `srccountry` dos logs (linha 222: `log.srccountry || log.src_country`). Quando o campo existir nos dados coletados, os rankings de paises serao populados automaticamente.
 
 ## Resultado esperado
 
-- Web Filter e App Control preenchidos no dashboard (Top Categorias, Top Usuarios)
-- Mapa de Ataques com dados de geolocalizacao mais ricos (campo `srccountry` vindo direto da API)
-- Tasks de Analyzer deixarao de falhar com 404
-- Score de risco mais preciso (inclui insights de UTM como malware, botnets, P2P)
+- "Top Paises - Autenticacao" exibira os paises de origem dos IPs de login (ex: pais de 62.60.131.x e 85.239.146.x)
+- Mapa de Ataques tera dados de geolocalizacao para eventos de autenticacao
+- Nenhum impacto nos demais steps do blueprint
