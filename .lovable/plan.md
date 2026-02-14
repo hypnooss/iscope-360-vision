@@ -1,72 +1,45 @@
 
-# Otimizacao do nmap.py (Fingerprint) - Alinhamento com a Estrategia de 3 Fases
 
-## Contexto
+# Fix: Adicionar `sudo` ao nmap_discovery para `-sS`
 
-O `nmap_discovery.py` ja foi ajustado com RTT otimizado e 2 fases. Porem, o `nmap.py` (fingerprint) ainda usa parametros lentos que contradizem a estrategia. Os testes manuais confirmaram que a estrategia funciona: discovery em 7s + full range em 87s + fingerprint em 24s.
+## Problema
 
-## Problema atual no nmap.py
+O agente nao tem `CAP_NET_RAW` herdada pelo nmap (binario dinamicamente linkado ignora capabilities), entao todo `-sS` falha com "permission denied" e faz fallback para `-sT`. Isso acontece em **cada fase, para cada IP** -- duplicando execucoes desnecessariamente.
 
-```text
-Parametro atual         | Problema
--T3                     | Timing conservador desnecessario (portas ja confirmadas open)
---scan-delay 500ms      | Atraso artificial entre probes
---host-timeout 300s     | 5 minutos para fingerprint em poucas portas
---max-retries 2         | Insiste em portas que ja sabemos estar abertas
---version-intensity 7   | Pesado demais como tentativa primaria
-```
+## Solucao
 
-## Mudancas propostas no `python-agent/agent/executors/nmap.py`
+Adicionar `sudo` ao comando quando o scan_type for `-sS`, conforme a arquitetura documentada (sudoers com `NOPASSWD` para nmap).
 
-### 1. Scan primario mais rapido
+## Mudanca no arquivo
 
-Ajustar o comando principal:
+**`python-agent/agent/executors/nmap_discovery.py`** - metodo `_build_cmd()`:
+
+Quando `scan_type == '-sS'`, prefixar o comando com `sudo`:
 
 ```text
-Antes:  nmap -sT -sV --version-intensity 7 --script=banner,ssl-cert,http-title -T3 --host-timeout 300s --scan-delay 500ms --max-retries 2
-Depois: nmap -sT -sV --version-intensity 5 --script=banner,ssl-cert -T4 --host-timeout 120s --max-retries 1
+Antes:  ['nmap', '-sS', '-Pn', ...]
+Depois: ['sudo', 'nmap', '-sS', '-Pn', ...]
 ```
 
-Mudancas especificas:
-- `-T4` em vez de `-T3` (portas ja confirmadas abertas, nao precisa ser conservador)
-- Remover `--scan-delay 500ms` (atraso desnecessario)
-- `--host-timeout 120s` em vez de `300s` (fingerprint em poucas portas nao precisa de 5 min)
-- `--max-retries 1` em vez de `2`
-- `--version-intensity 5` em vez de `7` (mais rapido, ainda eficaz)
-- Remover `http-title` dos scripts (httpx ja faz isso melhor e mais rapido)
-
-### 2. Fallback mais leve
-
-Ajustar o fallback (quando o scan primario nao encontra fingerprints):
+Para `-sT` (fallback ou direto), manter sem `sudo`:
 
 ```text
-Antes:  nmap -sT -sV --version-intensity 5 --script=banner -T3 --host-timeout 180s --max-retries 1
-Depois: nmap -sT -sV --version-intensity 3 --script=banner -T4 --host-timeout 60s --max-retries 1
+['nmap', '-sT', '-Pn', ...]
 ```
 
-- `--version-intensity 3` (mais leve, captura pelo menos banners)
-- `--host-timeout 60s` em vez de `180s`
-- `-T4` consistente
+## Pre-requisito no servidor
 
-### 3. Limite de portas
+Confirmar que o sudoers do Super Agent tem:
 
-Manter o limite de 100 portas (ja existente e adequado para fingerprint).
+```text
+precisio-agent ALL=(root) NOPASSWD: /usr/bin/nmap
+```
 
-## Impacto esperado
+Se nao tiver, o fallback para `-sT` continua funcionando como hoje (sem regressao).
 
-| Cenario | Antes | Depois |
-|---|---|---|
-| Fingerprint em 5 portas | ~60-120s | ~15-30s |
-| Fingerprint em 20 portas | ~120-300s | ~30-60s |
-| Fallback (sem fingerprint) | ~180s extra | ~60s extra |
+## Impacto
 
-## Arquivos afetados
+- Elimina as tentativas duplicadas (nao precisa mais falhar e retry)
+- Habilita SYN stealth scan (mais rapido, menos detectavel)
+- Zero risco: se `sudo` falhar, o fallback `-sT` continua igual
 
-- `python-agent/agent/executors/nmap.py` - unico arquivo modificado
-
-## Sem impacto em
-
-- `nmap_discovery.py` (ja ajustado)
-- `httpx_executor.py` (recebe portas do contexto, sem mudanca)
-- `tasks.py` (formato de retorno identico)
-- Blueprints (step IDs mantidos)
