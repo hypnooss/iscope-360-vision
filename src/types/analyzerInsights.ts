@@ -12,7 +12,8 @@ export type AnalyzerCategory =
   | 'lateral_movement'
   | 'persistent_sessions'
   | 'geolocation'
-  | 'ioc_correlation';
+  | 'ioc_correlation'
+  | 'anomaly';
 
 export interface AnalyzerInsight {
   id: string;
@@ -97,6 +98,10 @@ export interface AnalyzerMetrics {
   topAppControlUsers: TopUserIP[];
   webFilterBlocked: number;
   appControlBlocked: number;
+  anomalyEvents: number;
+  anomalyDropped: number;
+  topAnomalySources: TopBlockedIP[];
+  topAnomalyTypes: TopCategory[];
 }
 
 export interface AnalyzerSnapshot {

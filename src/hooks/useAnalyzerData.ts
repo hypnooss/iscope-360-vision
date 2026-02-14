@@ -43,6 +43,10 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topAppControlUsers: (metrics.topAppControlUsers as AnalyzerMetrics['topAppControlUsers']) ?? [],
       webFilterBlocked: (metrics.webFilterBlocked as number) ?? 0,
       appControlBlocked: (metrics.appControlBlocked as number) ?? 0,
+      anomalyEvents: (metrics.anomalyEvents as number) ?? 0,
+      anomalyDropped: (metrics.anomalyDropped as number) ?? 0,
+      topAnomalySources: (metrics.topAnomalySources as AnalyzerMetrics['topAnomalySources']) ?? [],
+      topAnomalyTypes: (metrics.topAnomalyTypes as AnalyzerMetrics['topAnomalyTypes']) ?? [],
     },
     created_at: row.created_at as string,
   };
