@@ -34,6 +34,18 @@ class HttpxExecutor(BaseExecutor):
             # Probe all discovered ports - web servers can run on any port
             ports = all_ports if all_ports else self.DEFAULT_HTTP_PORTS[:4]
 
+        # Protection against "Argument list too long" - cap at 200 ports
+        MAX_PORTS = 200
+        if len(ports) > MAX_PORTS:
+            self.logger.warning(
+                f"[httpx] {len(ports)} ports exceeds limit of {MAX_PORTS}. "
+                f"Using top web ports + discovered ports subset."
+            )
+            # Prioritize common web ports, then fill with discovered ones
+            priority_ports = set(self.DEFAULT_HTTP_PORTS)
+            remaining = [p for p in ports if p not in priority_ports]
+            ports = sorted(priority_ports | set(remaining[:MAX_PORTS - len(priority_ports)]))
+
         port_str = ','.join(str(p) for p in ports)
         timeout = params.get('timeout', 60)
 

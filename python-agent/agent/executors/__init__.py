@@ -8,6 +8,7 @@ from agent.executors.amass import AmassExecutor
 from agent.executors.powershell import PowerShellExecutor
 from agent.executors.masscan import MasscanExecutor
 from agent.executors.nmap import NmapExecutor
+from agent.executors.nmap_discovery import NmapDiscoveryExecutor
 from agent.executors.httpx_executor import HttpxExecutor
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     'PowerShellExecutor',
     'MasscanExecutor',
     'NmapExecutor',
+    'NmapDiscoveryExecutor',
     'HttpxExecutor',
 ]
