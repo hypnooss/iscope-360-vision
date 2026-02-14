@@ -195,6 +195,7 @@ Deno.serve(async (req) => {
           .select('id')
           .eq('target_id', fw.id)
           .eq('target_type', 'firewall')
+          .eq('task_type', 'fortigate_compliance')
           .eq('status', 'completed')
           .order('completed_at', { ascending: false })
           .limit(1)
