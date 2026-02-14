@@ -7,7 +7,7 @@ Returns the same format as masscan: {data: {ip, ports}}
 
 import subprocess
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from agent.executors.base import BaseExecutor
 
@@ -58,7 +58,7 @@ class NmapDiscoveryExecutor(BaseExecutor):
 
     def _run_scan(
         self, ip: str, port_spec: str, max_rate: int, timeout: int, use_top_ports: bool = False
-    ) -> List[int] | None:
+    ) -> Optional[List[int]]:
         """Run nmap and return sorted list of open ports, or None on error."""
 
         cmd = [
