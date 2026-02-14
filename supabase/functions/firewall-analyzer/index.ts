@@ -40,6 +40,63 @@ const HIGH_VOLUME_CONFIG_THRESHOLD = 50;
 const HIGH_VOLUME_BLOCKED_THRESHOLD = 50; // lowered from 100
 
 // ============================================
+// GeoIP Resolution (fallback for FortiOS 7.2 and earlier)
+// ============================================
+
+function isPrivateIP(ip: string): boolean {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return true; // not valid IPv4, skip
+  if (parts[0] === 10) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 127) return true;
+  if (parts[0] === 0) return true;
+  return false;
+}
+
+async function resolveGeoIP(ips: string[]): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  // Filter out private IPs
+  const publicIPs = ips.filter(ip => !isPrivateIP(ip));
+  if (publicIPs.length === 0) return result;
+
+  // Limit to 100 IPs per batch (ip-api.com limit)
+  const batch = publicIPs.slice(0, 100);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch('http://ip-api.com/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(batch.map(ip => ({ query: ip, fields: 'query,country,status' }))),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.warn(`[resolveGeoIP] API returned ${response.status}`);
+      return result;
+    }
+
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      for (const entry of data) {
+        if (entry.status === 'success' && entry.query && entry.country) {
+          result[entry.query] = entry.country;
+        }
+      }
+    }
+    console.log(`[resolveGeoIP] Resolved ${Object.keys(result).length}/${batch.length} IPs`);
+  } catch (err) {
+    console.warn(`[resolveGeoIP] Fallback failed (silent):`, err instanceof Error ? err.message : err);
+  }
+
+  return result;
+}
+
+// ============================================
 // Config change categories
 // ============================================
 
@@ -735,9 +792,24 @@ Deno.serve(async (req) => {
     for (const log of [...authLogs, ...vpnLogs]) {
       const ip = log.srcip || log.remip || log.src;
       const country = log.srccountry || log.src_country;
-      if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
+    if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
     }
     console.log(`[firewall-analyzer] Built ipCountryMap with ${Object.keys(ipCountryMap).length} entries (incl. auth/vpn)`);
+
+    // GeoIP fallback: resolve countries for auth/vpn IPs missing from ipCountryMap
+    const authIPsWithoutCountry = new Set<string>();
+    for (const log of [...authLogs, ...vpnLogs]) {
+      const ip = log.srcip || log.remip || log.src;
+      if (ip && !ipCountryMap[ip]) authIPsWithoutCountry.add(ip);
+    }
+    if (authIPsWithoutCountry.size > 0) {
+      console.log(`[firewall-analyzer] ${authIPsWithoutCountry.size} auth/vpn IPs without country, resolving via GeoIP...`);
+      const geoResults = await resolveGeoIP([...authIPsWithoutCountry]);
+      for (const [ip, country] of Object.entries(geoResults)) {
+        ipCountryMap[ip] = country;
+      }
+      console.log(`[firewall-analyzer] ipCountryMap now has ${Object.keys(ipCountryMap).length} entries (after GeoIP)`);
+    }
 
     const authResult = analyzeAuthentication(
       Array.isArray(authData) ? authData : authData?.results || [],
