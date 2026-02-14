@@ -1,101 +1,72 @@
 
+# Otimizacao do nmap.py (Fingerprint) - Alinhamento com a Estrategia de 3 Fases
 
-# Estrategia de Discovery em 2 Fases com RTT Otimizado
+## Contexto
 
-## Resumo
+O `nmap_discovery.py` ja foi ajustado com RTT otimizado e 2 fases. Porem, o `nmap.py` (fingerprint) ainda usa parametros lentos que contradizem a estrategia. Os testes manuais confirmaram que a estrategia funciona: discovery em 7s + full range em 87s + fingerprint em 24s.
 
-Adaptar o `nmap_discovery.py` para usar a estrategia de 2 fases proposta, com os ajustes criticos de RTT que resolvem o problema real: o nmap espera tempo demais por portas com silent drop.
-
-## Diagnostico do problema real
-
-O problema nao e o tipo de scan (`-sT` vs `-sS`). O problema e que o nmap usa timeouts padrao (RTT) de **ate 10 segundos por porta** em ambientes com silent drop. Isso significa:
-
-- 65.535 portas x ate 10s cada = impossivel terminar em 600s
-- Mesmo com `--max-rate 300`, o nmap fica travado esperando respostas que nunca chegam
-
-Os parametros `--initial-rtt-timeout`, `--max-rtt-timeout` e `--defeat-rst-ratelimit` sao a chave.
-
-## Arquitetura proposta (dentro do nmap_discovery.py)
+## Problema atual no nmap.py
 
 ```text
-CDN detectado?
-  SIM -> Retorna 14 portas fixas (ja implementado)
-  NAO -> Fase 1: Baseline rapido (top-ports 2000, ~30s)
-           -> Analisa resultado
-           -> Fase 2: Full range otimizado (1-65535 com RTT agressivo, ~2-4 min)
-           -> Merge das duas fases
-           -> Retorna portas unicas
+Parametro atual         | Problema
+-T3                     | Timing conservador desnecessario (portas ja confirmadas open)
+--scan-delay 500ms      | Atraso artificial entre probes
+--host-timeout 300s     | 5 minutos para fingerprint em poucas portas
+--max-retries 2         | Insiste em portas que ja sabemos estar abertas
+--version-intensity 7   | Pesado demais como tentativa primaria
 ```
 
-### Fase 1 - Baseline rapido (~30s)
+## Mudancas propostas no `python-agent/agent/executors/nmap.py`
 
-Objetivo: descobrir as portas mais comuns rapidamente e calibrar o comportamento do alvo.
+### 1. Scan primario mais rapido
+
+Ajustar o comando principal:
 
 ```text
-nmap -sS -Pn --open --top-ports 2000 -T4
-     --max-retries 1
-     --initial-rtt-timeout 150ms
-     --max-rtt-timeout 400ms
-     --host-timeout 60s
-     -oX -
+Antes:  nmap -sT -sV --version-intensity 7 --script=banner,ssl-cert,http-title -T3 --host-timeout 300s --scan-delay 500ms --max-retries 2
+Depois: nmap -sT -sV --version-intensity 5 --script=banner,ssl-cert -T4 --host-timeout 120s --max-retries 1
 ```
 
-Nota sobre `-sS`: O Super Agent roda como root (necessario para masscan, que ja existia), portanto `-sS` e viavel. Mantemos `-sT` como fallback caso `-sS` falhe (permissao negada).
+Mudancas especificas:
+- `-T4` em vez de `-T3` (portas ja confirmadas abertas, nao precisa ser conservador)
+- Remover `--scan-delay 500ms` (atraso desnecessario)
+- `--host-timeout 120s` em vez de `300s` (fingerprint em poucas portas nao precisa de 5 min)
+- `--max-retries 1` em vez de `2`
+- `--version-intensity 5` em vez de `7` (mais rapido, ainda eficaz)
+- Remover `http-title` dos scripts (httpx ja faz isso melhor e mais rapido)
 
-### Fase 2 - Full range otimizado (~2-4 min)
+### 2. Fallback mais leve
 
-So roda se a Fase 1 encontrou pelo menos 1 porta (confirma que o host responde). Se a Fase 1 encontrou 0 portas, pula direto -- o httpx fara o fallback com suas portas default.
+Ajustar o fallback (quando o scan primario nao encontra fingerprints):
 
 ```text
-nmap -sS -Pn --open -p- -T4
-     --max-retries 1
-     --initial-rtt-timeout 150ms
-     --max-rtt-timeout 400ms
-     --min-rate 800
-     --max-rate 1500
-     --defeat-rst-ratelimit
-     --host-timeout 300s
-     -oX -
+Antes:  nmap -sT -sV --version-intensity 5 --script=banner -T3 --host-timeout 180s --max-retries 1
+Depois: nmap -sT -sV --version-intensity 3 --script=banner -T4 --host-timeout 60s --max-retries 1
 ```
 
-Parametros criticos explicados:
+- `--version-intensity 3` (mais leve, captura pelo menos banners)
+- `--host-timeout 60s` em vez de `180s`
+- `-T4` consistente
 
-| Parametro | Valor | Por que |
-|---|---|---|
-| `--initial-rtt-timeout` | 150ms | Nao esperar 1s+ por cada porta silenciosa |
-| `--max-rtt-timeout` | 400ms | Teto maximo de espera por resposta |
-| `--max-retries` | 1 | Nao insistir em portas filtradas |
-| `--min-rate` | 800 | Garantir throughput minimo |
-| `--max-rate` | 1500 | Evitar saturar o link |
-| `--defeat-rst-ratelimit` | - | Evitar classificacao incorreta de portas |
-| `-T4` | - | Timing agressivo (mas controlado pelos RTT acima) |
+### 3. Limite de portas
 
-### Fallback: `-sS` para `-sT`
+Manter o limite de 100 portas (ja existente e adequado para fingerprint).
 
-Se o `-sS` falhar com erro de permissao (improvavel, mas seguro), o sistema re-executa com `-sT` e os mesmos parametros de RTT.
-
-## Mudancas no arquivo `python-agent/agent/executors/nmap_discovery.py`
-
-1. Reescrever o metodo `run()` para implementar as 2 fases
-2. Renomear `_run_scan()` e adicionar metodo `_run_phase()` que aceita parametros de fase
-3. Remover a logica de false-positive (`FALSE_POSITIVE_THRESHOLD`) -- a estrategia de 2 fases com RTT controlado elimina ghost ports
-4. Manter o CDN skip intacto (ja funciona)
-5. Manter `_parse_xml()` intacto (ja funciona)
-6. Usar `-sS` como default, fallback para `-sT` se subprocess retornar erro de permissao
-
-### Compatibilidade
-
-- Python 3.9: sem mudancas de syntax (sem `|` em type hints)
-- `tasks.py`: sem mudancas (contexto propagado igual, formato de retorno identico)
-- `nmap.py` (fingerprint): sem mudancas (recebe portas do contexto)
-- `httpx_executor.py`: sem mudancas (recebe portas do contexto)
-- Blueprint: sem mudancas (step ID `masscan_discovery` mantido)
-
-### Tempo estimado por IP
+## Impacto esperado
 
 | Cenario | Antes | Depois |
 |---|---|---|
-| CDN | 0s (skip) | 0s (skip) |
-| Host responsivo | 600s (timeout, 0 portas) | ~2-4 min (portas reais) |
-| Host silent drop total | 600s (timeout, 0 portas) | ~30s (fase 1 rapida, pula fase 2) |
+| Fingerprint em 5 portas | ~60-120s | ~15-30s |
+| Fingerprint em 20 portas | ~120-300s | ~30-60s |
+| Fallback (sem fingerprint) | ~180s extra | ~60s extra |
 
+## Arquivos afetados
+
+- `python-agent/agent/executors/nmap.py` - unico arquivo modificado
+
+## Sem impacto em
+
+- `nmap_discovery.py` (ja ajustado)
+- `httpx_executor.py` (recebe portas do contexto, sem mudanca)
+- `tasks.py` (formato de retorno identico)
+- Blueprints (step IDs mantidos)
