@@ -1,86 +1,37 @@
 
 
-# Fix: Masscan timeout tratado como falha de conectividade
+# Ajuste visual do Asset Card: portas, servicos e certificado
 
-## O que esta acontecendo
+## O que muda
 
-O rate=3000 por instancia nao e agressivo sozinho, mas com 4 scans paralelos (MAX_PARALLEL_TASKS=4), o total chega a 12.000 pps na mesma interface. Isso causa congestionamento e todos os scans estouram o timeout de 180s.
+### 1. Portas e Servicos como badges (Row 2)
 
-Alem disso, quando o masscan retorna "timeout", o tasks.py interpreta como falha de conectividade e aborta os steps nmap e httpx -- mesmo que o alvo esteja acessivel e simplesmente nao tenha portas abertas.
+Atualmente as quantidades de portas e servicos sao exibidas como `<span>` com texto puro. Vamos converter para `<Badge>` com estilo consistente com os demais badges do card.
 
-## Correcoes (3 alteracoes)
+- **Portas**: Badge com icone `Server` e cor laranja (mesmo padrao do bloco expandido)
+- **Servicos**: Badge com icone `Globe` e cor azul
 
-### 1. Reduzir rate para 1000 no blueprint
+### 2. Mover CertStatusBadge para Row 2
 
-Com 4 instancias paralelas, 1000 x 4 = 4.000 pps total, bem dentro do seguro.
+O badge de status do certificado TLS sera movido da Row 3 (linha dos CVEs) para a Row 2, apos a contagem de servicos, separado pelo ponto (`•`) ja utilizado como separador visual.
 
-```sql
--- Nova migration SQL
-UPDATE public.device_blueprints
-SET collection_steps = jsonb_set(
-  jsonb_set(
-    collection_steps,
-    '{steps,0,params}',
-    '{"port_range": "1-65535", "rate": 1000}'::jsonb
-  ),
-  '{steps,0,timeout}',
-  '300'::jsonb
-),
-updated_at = now()
-WHERE name = 'Active Attack Surface Scan';
+### Layout resultante
+
+```text
+Row 1: [hostname]  [IP]                    [RISK LEVEL]
+Row 2: [11 portas]  •  [16 servicos]  •  [Expira em 30d]  •  [Pure-FTPd] [OpenSSH/7.4] ...
+Row 3: [2 CRITICAL] [9 HIGH] [14 MEDIUM] [1 LOW]
 ```
 
-A 1000 pps, 65535 portas levam ~66s. Com retries e wait, ~140s. Dentro dos 300s mesmo com contencao.
+## Detalhes tecnicos
 
-### 2. Masscan executor: tratar timeout como resultado, nao erro
+Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-No `masscan.py`, mudar o tratamento de `subprocess.TimeoutExpired` para retornar portas vazias em vez de um erro. Isso evita que o fail-fast seja acionado.
+**Row 2 (linhas 506-523)**: Substituir os `<span>` de portas e servicos por `<Badge variant="outline">` com classes de cor. Inserir `<CertStatusBadge>` apos servicos com separador `•`.
 
-```python
-# Antes:
-except subprocess.TimeoutExpired:
-    return {'error': f'masscan timeout after {timeout}s on {ip}'}
+**Row 3 (linhas 526-533)**: Remover a chamada `<CertStatusBadge asset={asset} />` desta linha, deixando apenas os CVE badges.
 
-# Depois:
-except subprocess.TimeoutExpired as e:
-    partial = (e.stdout or '').strip() if e.stdout else ''
-    if partial:
-        ports = self._parse_output(partial)
-        self.logger.info(f"[masscan] Timeout on {ip}, partial: {len(ports)} ports")
-        return {'data': {'ip': ip, 'ports': ports}}
-    self.logger.info(f"[masscan] Timeout on {ip}, no ports found")
-    return {'data': {'ip': ip, 'ports': []}}
-```
-
-Tambem atualizar o default do rate no executor de 3000 para 1000 para consistencia.
-
-### 3. Tasks.py: excluir scanners do fail-fast de conectividade
-
-Adicionar uma lista de executores de scanning que nao devem acionar o mecanismo de fail-fast, pois "timeout" e comportamento normal para eles.
-
-```python
-SCAN_EXECUTORS = {'masscan', 'nmap', 'httpx'}
-
-# Na verificacao (linha ~233):
-if i == 0 and result.get('error'):
-    executor_type = step.get('type', '')
-    if executor_type not in SCAN_EXECUTORS and self._is_connectivity_error(error_msg):
-        # fail-fast logic (mantida para SSH, HTTP, SNMP, etc.)
-```
-
-## Resumo das alteracoes
-
-| Arquivo | O que muda |
-|---------|-----------|
-| Migration SQL | rate: 3000 -> 1000, timeout: 180 -> 300 |
-| `masscan.py` | Timeout retorna resultado vazio em vez de erro; default rate -> 1000 |
-| `tasks.py` | Scanners (masscan/nmap/httpx) excluidos do fail-fast por conectividade |
-
-## Por que essas 3 juntas
-
-- So reduzir o rate: ainda vai dar fail-fast em scans sem portas abertas
-- So corrigir o fail-fast: scans vao demorar demais com contencao de 12k pps
-- So tratar timeout: sem reduzir rate, timeout parcial pode perder portas
-
-As tres correcoes juntas resolvem o ciclo completo.
+Cores propostas para os badges:
+- Portas: `bg-orange-500/10 text-orange-400 border-orange-500/30` (consistente com o icone de Server usado no bloco expandido)
+- Servicos: `bg-blue-500/10 text-blue-400 border-blue-500/30`
 
