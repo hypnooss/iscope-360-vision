@@ -406,6 +406,56 @@ export type Database = {
           },
         ]
       }
+      attack_surface_schedules: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id: string
+          is_active: boolean | null
+          next_run_at: string | null
+          scheduled_day_of_month: number | null
+          scheduled_day_of_week: number | null
+          scheduled_hour: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean | null
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean | null
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attack_surface_schedules_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attack_surface_snapshots: {
         Row: {
           client_id: string
