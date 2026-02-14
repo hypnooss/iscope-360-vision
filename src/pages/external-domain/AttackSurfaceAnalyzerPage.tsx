@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import {
   Globe,
   Server,
-  Activity,
   ChevronDown,
   ChevronRight,
   Loader2,
@@ -24,6 +23,8 @@ import {
   Lock,
   ExternalLink,
   ShieldAlert,
+  Search,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -42,6 +43,8 @@ import { Button } from '@/components/ui/button';
 import { differenceInDays, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 
+/* ──────────────────────────── helpers ──────────────────────────── */
+
 function getTechBadgeColor(tech: string): string {
   const t = tech.toLowerCase();
   if (['hsts', 'csp', 'x-frame-options', 'x-xss-protection'].some(k => t.includes(k)))
@@ -53,6 +56,20 @@ function getTechBadgeColor(tech: string): string {
   if (['wordpress', 'nextcloud', 'drupal', 'joomla', 'react', 'angular', 'vue', 'django', 'laravel'].some(k => t.includes(k)))
     return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
   return '';
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const colors: Record<string, string> = {
+    critical: 'bg-destructive/20 text-destructive border-destructive/30',
+    high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    medium: 'bg-warning/20 text-warning border-warning/30',
+    low: 'bg-info/20 text-info border-info/30',
+  };
+  return (
+    <Badge variant="outline" className={colors[severity?.toLowerCase()] || 'bg-muted text-muted-foreground'}>
+      {severity || 'N/A'}
+    </Badge>
+  );
 }
 
 /* ──────────────────────────── hooks ──────────────────────────── */
@@ -108,394 +125,6 @@ function useAttackSurfaceProgress(clientId?: string) {
   });
 }
 
-/* ──────────────────────────── small components ──────────────────────────── */
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const colors: Record<string, string> = {
-    critical: 'bg-destructive/20 text-destructive border-destructive/30',
-    high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    medium: 'bg-warning/20 text-warning border-warning/30',
-    low: 'bg-info/20 text-info border-info/30',
-  };
-  return (
-    <Badge variant="outline" className={colors[severity?.toLowerCase()] || 'bg-muted text-muted-foreground'}>
-      {severity || 'N/A'}
-    </Badge>
-  );
-}
-
-const HTTP_STATUS_DESCRIPTIONS: Record<number, string> = {
-  200: 'OK', 201: 'Created', 204: 'No Content',
-  301: 'Moved Permanently', 302: 'Found (Redirect)', 304: 'Not Modified', 307: 'Temporary Redirect', 308: 'Permanent Redirect',
-  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed', 408: 'Request Timeout', 429: 'Too Many Requests',
-  500: 'Internal Server Error', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout',
-};
-
-/* ──────────────────────────── Port Heatmap ──────────────────────────── */
-
-function PortHeatmap({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
-  const portCounts = useMemo(() => {
-    const counts: Record<number, number> = {};
-    Object.values(snapshot.results).forEach((r) => {
-      (r.ports || []).forEach((p: number) => {
-        counts[p] = (counts[p] || 0) + 1;
-      });
-      (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
-        try {
-          const url = new URL(ws.url);
-          const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
-          counts[port] = (counts[port] || 0) + 1;
-        } catch { /* ignore */ }
-      });
-    });
-    return Object.entries(counts)
-      .map(([port, count]) => ({ port: Number(port), count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
-  }, [snapshot.results]);
-
-  if (portCounts.length === 0) return null;
-  const maxCount = portCounts[0]?.count ?? 1;
-
-  return (
-    <Card className="glass-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Server className="w-4 h-4 text-orange-400" />
-          Top Portas Abertas
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          {portCounts.map(({ port, count }) => {
-            const intensity = Math.round((count / maxCount) * 100);
-            const bg = intensity >= 75 ? 'bg-destructive/30 border-destructive/50 text-destructive' :
-              intensity >= 50 ? 'bg-orange-500/20 border-orange-500/40 text-orange-400' :
-                intensity >= 25 ? 'bg-warning/20 border-warning/40 text-warning' :
-                  'bg-muted/50 border-border text-muted-foreground';
-            return (
-              <TooltipProvider key={port}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className={`px-2.5 py-1.5 rounded-md border text-xs font-mono cursor-default ${bg}`}>
-                      {port}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>Porta {port} — encontrada em {count} IP(s)</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ──────────────────────────── Tech Stack ──────────────────────────── */
-
-function TechStackSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
-  const techStack = useMemo(() => {
-    const products = new Map<string, { count: number; versions: Set<string> }>();
-    Object.values(snapshot.results).forEach((r) => {
-      (r.services || []).forEach((svc: AttackSurfaceService) => {
-        if (svc.product) {
-          const existing = products.get(svc.product) || { count: 0, versions: new Set() };
-          existing.count++;
-          if (svc.version) existing.versions.add(svc.version);
-          products.set(svc.product, existing);
-        }
-      });
-      (r.web_services || []).forEach((ws: AttackSurfaceWebService) => {
-        (ws.technologies || []).forEach((tech) => {
-          const existing = products.get(tech) || { count: 0, versions: new Set<string>() };
-          existing.count++;
-          products.set(tech, existing);
-        });
-        if (ws.server) {
-          const existing = products.get(ws.server) || { count: 0, versions: new Set<string>() };
-          existing.count++;
-          products.set(ws.server, existing);
-        }
-      });
-    });
-    return Array.from(products.entries())
-      .map(([name, data]) => ({ name, count: data.count, versions: Array.from(data.versions) }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 15);
-  }, [snapshot.results]);
-
-  if (techStack.length === 0) return null;
-
-  return (
-    <Card className="glass-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Activity className="w-4 h-4 text-info" />
-          Stack Tecnológico Detectado
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          {techStack.map((tech) => (
-            <TooltipProvider key={tech.name}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="gap-1.5 cursor-default">
-                    {tech.name}
-                    <span className="text-muted-foreground">×{tech.count}</span>
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {tech.versions.length > 0
-                    ? `Versões: ${tech.versions.join(', ')}`
-                    : 'Versão não identificada'}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ──────────────────────────── Web Services Section ──────────────────────────── */
-
-interface WebServiceRow {
-  ip: string;
-  label: string;
-  ws: AttackSurfaceWebService;
-}
-
-function WebServicesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
-  const rows = useMemo(() => {
-    const result: WebServiceRow[] = [];
-    snapshot.source_ips.forEach((src) => {
-      const ipResult = snapshot.results[src.ip];
-      if (!ipResult?.web_services) return;
-      ipResult.web_services.forEach((ws) => {
-        result.push({ ip: src.ip, label: src.label, ws });
-      });
-    });
-    return result;
-  }, [snapshot]);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <Card className="glass-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Globe className="w-5 h-5 text-teal-400" />
-          Web Services Descobertos ({rows.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">URL</TableHead>
-                <TableHead className="text-xs">IP</TableHead>
-                <TableHead className="text-xs text-center">Status</TableHead>
-                <TableHead className="text-xs">Servidor</TableHead>
-                
-                <TableHead className="text-xs">Tecnologias</TableHead>
-                <TableHead className="text-xs">TLS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row, i) => (
-                <TableRow key={i} className="min-h-[48px]">
-                  <TableCell className="font-mono text-xs max-w-[260px] truncate">
-                    <a href={row.ws.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline flex items-center gap-1">
-                      {row.ws.url}
-                      <ExternalLink className="w-3 h-3 shrink-0" />
-                    </a>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="font-mono cursor-help">{row.ip}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>{row.label}</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="relative inline-flex justify-center group">
-                      <Badge variant="outline" className={cn("cursor-help",
-                        row.ws.status_code >= 200 && row.ws.status_code < 300 ? 'border-primary/50 text-primary' :
-                        row.ws.status_code >= 300 && row.ws.status_code < 400 ? 'border-warning/50 text-warning' :
-                        'border-destructive/50 text-destructive'
-                      )}>
-                        {row.ws.status_code}
-                      </Badge>
-                      <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 hidden group-hover:block rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md whitespace-nowrap">
-                        {HTTP_STATUS_DESCRIPTIONS[row.ws.status_code] || `HTTP ${row.ws.status_code}`}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs">{row.ws.server || '—'}</TableCell>
-                  <TableCell className="text-xs">
-                    {row.ws.technologies?.length > 0 ? (() => {
-                      const MAX_VISIBLE = 3;
-                      const hasOverflow = row.ws.technologies.length > MAX_VISIBLE;
-                      const visible = hasOverflow ? row.ws.technologies.slice(0, MAX_VISIBLE) : row.ws.technologies;
-                      return (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-            <div className="flex flex-wrap gap-1 max-w-[180px] cursor-default">
-                              {visible.map((t, j) => (
-                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0 truncate max-w-[120px]", getTechBadgeColor(t))}>{t}</Badge>
-                              ))}
-                              {hasOverflow && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">
-                                  +{row.ws.technologies.length - MAX_VISIBLE}
-                                </Badge>
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-sm">
-                            <div className="flex flex-wrap gap-1">
-                              {row.ws.technologies.map((t, j) => (
-                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })() : '—'}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {row.ws.tls?.subject_cn ? (
-                      <span className="flex items-center gap-1 text-primary">
-                        <Lock className="w-3 h-3" />
-                        {row.ws.tls.subject_cn}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ──────────────────────────── TLS Certificates Section ──────────────────────────── */
-
-interface TLSCertInfo {
-  subject_cn: string;
-  issuer: string;
-  not_after: string | null;
-  ip: string;
-  url: string;
-  daysRemaining: number | null;
-}
-
-function TLSCertificatesSection({ snapshot }: { snapshot: AttackSurfaceSnapshot }) {
-  const certs = useMemo(() => {
-    const seen = new Map<string, TLSCertInfo>();
-    snapshot.source_ips.forEach((src) => {
-      const ipResult = snapshot.results[src.ip];
-      if (!ipResult?.web_services) return;
-      ipResult.web_services.forEach((ws) => {
-        if (!ws.tls?.subject_cn) return;
-        const key = `${ws.tls.subject_cn}__${ws.tls.not_after ?? ''}`;
-        if (seen.has(key)) return;
-        const issuer = ws.tls.issuer
-          ? (Array.isArray(ws.tls.issuer) ? ws.tls.issuer.join(', ') : ws.tls.issuer)
-          : '—';
-        let daysRemaining: number | null = null;
-        if (ws.tls.not_after) {
-          try {
-            daysRemaining = differenceInDays(parseISO(ws.tls.not_after), new Date());
-          } catch { /* ignore */ }
-        }
-        seen.set(key, {
-          subject_cn: ws.tls.subject_cn,
-          issuer,
-          not_after: ws.tls.not_after ?? null,
-          ip: src.ip,
-          url: ws.url,
-          daysRemaining,
-        });
-      });
-    });
-    return Array.from(seen.values()).sort((a, b) => (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999));
-  }, [snapshot]);
-
-  if (certs.length === 0) return null;
-
-  return (
-    <Card className="glass-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Shield className="w-5 h-5 text-primary" />
-          Certificados TLS ({certs.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Common Name</TableHead>
-                <TableHead className="text-xs">Emissor</TableHead>
-                <TableHead className="text-xs">IP</TableHead>
-                <TableHead className="text-xs">Expira em</TableHead>
-                <TableHead className="text-xs text-center">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {certs.map((cert, i) => {
-                const isExpiringSoon = cert.daysRemaining !== null && cert.daysRemaining <= 30;
-                const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
-                return (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs font-medium">{cert.subject_cn}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{cert.issuer}</TableCell>
-                    <TableCell className="text-xs font-mono">{cert.ip}</TableCell>
-                    <TableCell className="text-xs">
-                      {cert.not_after
-                        ? new Date(cert.not_after).toLocaleDateString('pt-BR')
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {isExpired ? (
-                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
-                          Expirado
-                        </Badge>
-                      ) : isExpiringSoon ? (
-                        <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
-                          {cert.daysRemaining}d restantes
-                        </Badge>
-                      ) : cert.daysRemaining !== null ? (
-                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
-                          {cert.daysRemaining}d restantes
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 /* ──────────────── CVE-to-IP matching (CPE + vulns) ──────────────── */
 
 interface CachedCVERecord {
@@ -536,18 +165,15 @@ function matchCVEsToIP(
   if (!result) return [];
 
   const vulnSet = new Set(result.vulns || []);
-
-  // 1. Extract product+version pairs from nmap CPEs
   const productVersions = new Map<string, string | null>();
-  const productNames = new Set<string>(); // For snapshot matching (no version filter)
+  const productNames = new Set<string>();
 
   for (const svc of result.services || []) {
     if (svc.cpe && Array.isArray(svc.cpe)) {
       for (const cpe of svc.cpe) {
         const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
         const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase();
-        const version = parts[3] && parts[3] !== '*' && parts[3] !== ''
-          ? parts[3] : null;
+        const version = parts[3] && parts[3] !== '*' && parts[3] !== '' ? parts[3] : null;
         if (product) {
           productNames.add(product);
           const existing = productVersions.get(product);
@@ -565,7 +191,6 @@ function matchCVEsToIP(
     }
   }
 
-  // 2. Products from httpx technologies (e.g. "PHP:8.3.27" -> product "php", version "8.3.27")
   for (const ws of result.web_services || []) {
     for (const tech of ws.technologies || []) {
       const [name, ver] = tech.split(':');
@@ -590,7 +215,6 @@ function matchCVEsToIP(
     }
   }
 
-  // Match from snapshot cve_matches — use product names only (no version filter)
   const matched = new Map<string, AttackSurfaceCVE>();
   if (cveMatches.length > 0 && (vulnSet.size > 0 || productNames.size > 0)) {
     for (const c of cveMatches) {
@@ -606,41 +230,29 @@ function matchCVEsToIP(
     }
   }
 
-  // 3. Match from cached CVEs — apply version filter with range support
   if (cachedCVEs && productVersions.size > 0) {
     for (const cached of cachedCVEs) {
       if (matched.has(cached.cve_id)) continue;
       const cachedProducts = cached.products || [];
-
       let didMatch = false;
 
-      // Iterate ALL product entries (there can be multiple after fix)
       for (const productEntry of cachedProducts) {
         if (didMatch) break;
         const productStr = typeof productEntry === 'string' ? productEntry : '';
         const tokens = productStr.split(' ').filter(Boolean);
         if (tokens.length < 2) continue;
 
-        // Check if this entry has version ranges (>=, <, <=)
         const hasRange = tokens.some(t => t === '>=' || t === '<' || t === '<=');
 
         if (hasRange) {
-          // Parse range format: "vendor product >= startVer < endVer"
-          // or "vendor product < endVer"
           const rangeInfo: { product: string; gte?: string; lt?: string; lte?: string } = { product: '' };
           const nonRangeTokens: string[] = [];
           for (let i = 0; i < tokens.length; i++) {
-            if (tokens[i] === '>=' && tokens[i + 1]) {
-              rangeInfo.gte = tokens[++i];
-            } else if (tokens[i] === '<' && tokens[i + 1]) {
-              rangeInfo.lt = tokens[++i];
-            } else if (tokens[i] === '<=' && tokens[i + 1]) {
-              rangeInfo.lte = tokens[++i];
-            } else {
-              nonRangeTokens.push(tokens[i]);
-            }
+            if (tokens[i] === '>=' && tokens[i + 1]) { rangeInfo.gte = tokens[++i]; }
+            else if (tokens[i] === '<' && tokens[i + 1]) { rangeInfo.lt = tokens[++i]; }
+            else if (tokens[i] === '<=' && tokens[i + 1]) { rangeInfo.lte = tokens[++i]; }
+            else { nonRangeTokens.push(tokens[i]); }
           }
-          // nonRangeTokens = [vendor, product...]
           rangeInfo.product = nonRangeTokens.length >= 2
             ? nonRangeTokens.slice(1).join(' ').toLowerCase()
             : (nonRangeTokens[0] || '').toLowerCase();
@@ -648,33 +260,16 @@ function matchCVEsToIP(
           for (const [product, detectedVersion] of productVersions) {
             if (!rangeInfo.product.includes(product) && !product.includes(rangeInfo.product)) continue;
             if (!detectedVersion) continue;
-
-            if (isVersionInRange(detectedVersion, rangeInfo)) {
-              didMatch = true;
-              break;
-            }
+            if (isVersionInRange(detectedVersion, rangeInfo)) { didMatch = true; break; }
           }
         } else {
-          // Simple format: "vendor product version" or "vendor product"
           const cachedVersion = tokens.length >= 3 ? tokens[tokens.length - 1] : '*';
-          const cachedProduct = (tokens.length >= 3
-            ? tokens.slice(1, -1).join(' ')
-            : tokens[1]
-          ).toLowerCase();
+          const cachedProduct = (tokens.length >= 3 ? tokens.slice(1, -1).join(' ') : tokens[1]).toLowerCase();
 
           for (const [product, detectedVersion] of productVersions) {
             if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue;
             if (!detectedVersion) continue;
-
-            if (cachedVersion === '*') {
-              didMatch = true;
-              break;
-            }
-
-            if (cachedVersion === detectedVersion) {
-              didMatch = true;
-              break;
-            }
+            if (cachedVersion === '*' || cachedVersion === detectedVersion) { didMatch = true; break; }
           }
         }
       }
@@ -695,213 +290,403 @@ function matchCVEsToIP(
   return Array.from(matched.values());
 }
 
-/* ──────────────────────────── IP Detail Row ──────────────────────────── */
+/* ──────────────────────────── ExposedAsset model ──────────────────────────── */
 
-function IPDetailRow({ ip, snapshot, cachedCVEs }: { ip: string; snapshot: AttackSurfaceSnapshot; cachedCVEs?: CachedCVERecord[] }) {
+interface TLSCertInfo {
+  subject_cn: string;
+  issuer: string;
+  not_after: string | null;
+  daysRemaining: number | null;
+}
+
+interface ExposedAsset {
+  hostname: string;
+  ip: string;
+  ports: number[];
+  services: AttackSurfaceService[];
+  webServices: AttackSurfaceWebService[];
+  tlsCerts: TLSCertInfo[];
+  cves: AttackSurfaceCVE[];
+  riskScore: number;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  expiredCerts: number;
+  expiringSoonCerts: number;
+  allTechs: string[];
+}
+
+function buildAssets(
+  snapshot: AttackSurfaceSnapshot,
+  cachedCVEs?: CachedCVERecord[]
+): ExposedAsset[] {
+  const assets: ExposedAsset[] = [];
+
+  for (const ip of Object.keys(snapshot.results)) {
+    const result = snapshot.results[ip];
+    const sourceIP = snapshot.source_ips.find(s => s.ip === ip);
+    const hostname = sourceIP?.label || result.hostnames?.[0] || ip;
+
+    // TLS certs deduplication
+    const certMap = new Map<string, TLSCertInfo>();
+    for (const ws of result.web_services || []) {
+      if (!ws.tls?.subject_cn) continue;
+      const key = `${ws.tls.subject_cn}__${ws.tls.not_after ?? ''}`;
+      if (certMap.has(key)) continue;
+      const issuer = ws.tls.issuer
+        ? (Array.isArray(ws.tls.issuer) ? ws.tls.issuer.join(', ') : ws.tls.issuer)
+        : '—';
+      let daysRemaining: number | null = null;
+      if (ws.tls.not_after) {
+        try { daysRemaining = differenceInDays(parseISO(ws.tls.not_after), new Date()); } catch { /* ignore */ }
+      }
+      certMap.set(key, { subject_cn: ws.tls.subject_cn, issuer, not_after: ws.tls.not_after ?? null, daysRemaining });
+    }
+
+    const tlsCerts = Array.from(certMap.values());
+    const expiredCerts = tlsCerts.filter(c => c.daysRemaining !== null && c.daysRemaining < 0).length;
+    const expiringSoonCerts = tlsCerts.filter(c => c.daysRemaining !== null && c.daysRemaining >= 0 && c.daysRemaining <= 30).length;
+
+    const cves = matchCVEsToIP(result, snapshot.cve_matches, cachedCVEs);
+
+    // All technologies
+    const techSet = new Set<string>();
+    for (const svc of result.services || []) {
+      if (svc.product) techSet.add(svc.version ? `${svc.product}/${svc.version}` : svc.product);
+    }
+    for (const ws of result.web_services || []) {
+      if (ws.server) techSet.add(ws.server);
+      for (const t of ws.technologies || []) techSet.add(t);
+    }
+
+    // Risk score calculation
+    let riskScore = 0;
+    for (const cve of cves) {
+      const sev = (cve.severity || 'medium').toLowerCase();
+      if (sev === 'critical') riskScore += 10;
+      else if (sev === 'high') riskScore += 7;
+      else if (sev === 'medium') riskScore += 4;
+      else riskScore += 1;
+    }
+    riskScore += expiredCerts * 5;
+    riskScore += expiringSoonCerts * 2;
+
+    const riskLevel: ExposedAsset['riskLevel'] =
+      riskScore >= 30 ? 'CRITICAL' :
+      riskScore >= 15 ? 'HIGH' :
+      riskScore >= 5 ? 'MEDIUM' : 'LOW';
+
+    assets.push({
+      hostname,
+      ip,
+      ports: result.ports || [],
+      services: result.services || [],
+      webServices: result.web_services || [],
+      tlsCerts,
+      cves,
+      riskScore,
+      riskLevel,
+      expiredCerts,
+      expiringSoonCerts,
+      allTechs: Array.from(techSet),
+    });
+  }
+
+  return assets.sort((a, b) => b.riskScore - a.riskScore);
+}
+
+/* ──────────────────────────── Stat Card ──────────────────────────── */
+
+function StatCard({ icon: Icon, label, value, iconClass }: { icon: React.ElementType; label: string; value: number | string; iconClass?: string }) {
+  return (
+    <Card className="glass-card">
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={cn("p-2 rounded-lg bg-muted/50", iconClass)}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div>
+          <p className="text-2xl font-bold">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────── Asset Card ──────────────────────────── */
+
+const riskColors: Record<string, { badge: string; icon: string }> = {
+  CRITICAL: { badge: 'bg-destructive/20 text-destructive border-destructive/30', icon: 'text-destructive' },
+  HIGH: { badge: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: 'text-orange-400' },
+  MEDIUM: { badge: 'bg-warning/20 text-warning border-warning/30', icon: 'text-warning' },
+  LOW: { badge: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: 'text-teal-400' },
+};
+
+const sevColors: Record<string, string> = {
+  critical: 'bg-destructive/20 text-destructive border-destructive/30',
+  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  medium: 'bg-warning/20 text-warning border-warning/30',
+  low: 'bg-info/20 text-info border-info/30',
+};
+
+function CVESummaryBadges({ cves }: { cves: AttackSurfaceCVE[] }) {
+  const counts: Record<string, number> = {};
+  for (const cve of cves) {
+    const sev = (cve.severity || 'medium').toLowerCase();
+    counts[sev] = (counts[sev] || 0) + 1;
+  }
+  const order = ['critical', 'high', 'medium', 'low'];
+  return (
+    <div className="flex flex-wrap gap-1">
+      {order.filter(s => counts[s]).map(s => (
+        <Badge key={s} variant="outline" className={cn("text-[10px] px-1.5 py-0", sevColors[s])}>
+          {counts[s]} {s.toUpperCase()}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function CertStatusBadge({ asset }: { asset: ExposedAsset }) {
+  if (asset.tlsCerts.length === 0) return <span className="text-xs text-muted-foreground">Sem TLS</span>;
+  if (asset.expiredCerts > 0) {
+    const worst = asset.tlsCerts.reduce((a, b) =>
+      (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b
+    );
+    return (
+      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
+        Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
+      </Badge>
+    );
+  }
+  if (asset.expiringSoonCerts > 0) {
+    const worst = asset.tlsCerts.reduce((a, b) =>
+      (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b
+    );
+    return (
+      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+        Expira em {worst.daysRemaining}d
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+      <Lock className="w-3 h-3 mr-1" /> Válido
+    </Badge>
+  );
+}
+
+function AssetCard({ asset }: { asset: ExposedAsset }) {
   const [open, setOpen] = useState(false);
-  const sourceIP = snapshot.source_ips.find((s) => s.ip === ip);
-  const result = snapshot.results[ip];
-  const ipCVEs = matchCVEsToIP(result, snapshot.cve_matches, cachedCVEs);
+  const rc = riskColors[asset.riskLevel];
+  const MAX_TECHS = 4;
+  const visibleTechs = asset.allTechs.slice(0, MAX_TECHS);
+  const overflowTechs = asset.allTechs.length - MAX_TECHS;
 
   return (
-    <>
-      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => setOpen(!open)}>
-        <TableCell className="font-mono font-medium">{ip}</TableCell>
-        <TableCell>
-          <Badge variant="outline" className={sourceIP?.source === 'dns' ? 'border-teal-500/50 text-teal-400' : 'border-orange-500/50 text-orange-400'}>
-            {sourceIP?.source === 'dns' ? 'DNS' : 'Firewall'}
-          </Badge>
-        </TableCell>
-        <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{sourceIP?.label || '—'}</TableCell>
-        <TableCell>
-          {result?.ports?.length ? (() => {
-            const MAX_PORTS = 6;
-            const ports = result.ports as number[];
-            const hasPOverflow = ports.length > MAX_PORTS;
-            const visiblePorts = hasPOverflow ? ports.slice(0, MAX_PORTS) : ports;
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex flex-wrap gap-1 max-w-[220px] cursor-default">
-                    {visiblePorts.map((port: number) => (
-                      <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
+    <Card className="glass-card transition-all">
+      {/* Summary row */}
+      <div
+        className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="flex items-start gap-3">
+          <Globe className={cn("w-5 h-5 mt-0.5 shrink-0", rc.icon)} />
+          <div className="flex-1 min-w-0 space-y-2">
+            {/* Row 1: hostname + IP + risk badge */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-base font-semibold truncate">{asset.hostname}</span>
+              {asset.hostname !== asset.ip && (
+                <span className="text-sm text-muted-foreground font-mono">{asset.ip}</span>
+              )}
+              <Badge variant="outline" className={cn("text-[10px] ml-auto shrink-0", rc.badge)}>
+                {asset.riskLevel}
+              </Badge>
+            </div>
+
+            {/* Row 2: ports + techs */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              <span>{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</span>
+              <span className="text-border">•</span>
+              <span>{asset.services.length + asset.webServices.length} serviço{(asset.services.length + asset.webServices.length) !== 1 ? 's' : ''}</span>
+              {visibleTechs.length > 0 && (
+                <>
+                  <span className="text-border">•</span>
+                  <div className="flex flex-wrap gap-1">
+                    {visibleTechs.map((t, i) => (
+                      <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
                     ))}
-                    {hasPOverflow && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{ports.length - MAX_PORTS}</Badge>
+                    {overflowTechs > 0 && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
                     )}
                   </div>
-                </TooltipTrigger>
-                {hasPOverflow && (
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    <div className="flex flex-wrap gap-1">
-                      {ports.map((port: number) => (
-                        <Badge key={port} variant="outline" className="font-mono text-[10px] px-1.5 py-0">{port}</Badge>
-                      ))}
-                    </div>
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            );
-          })() : <span className="text-muted-foreground font-mono">—</span>}
-        </TableCell>
-        <TableCell>
-          {ipCVEs.length > 0 ? (() => {
-            const counts: Record<string, number> = {};
-            for (const cve of ipCVEs) {
-              const sev = (cve.severity || 'medium').toLowerCase();
-              counts[sev] = (counts[sev] || 0) + 1;
-            }
-            const sevColors: Record<string, string> = {
-              critical: 'bg-destructive/20 text-destructive border-destructive/30',
-              high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-              medium: 'bg-warning/20 text-warning border-warning/30',
-              low: 'bg-info/20 text-info border-info/30',
-              info: 'bg-muted text-muted-foreground border-border',
-            };
-            const order = ['critical', 'high', 'medium', 'low', 'info'];
-            return (
-              <div className="flex flex-wrap gap-1">
-                {order.filter(s => counts[s]).map(s => (
-                  <Badge key={s} variant="outline" className={cn("text-[10px] px-1.5 py-0", sevColors[s])}>
-                    {counts[s]} {s.toUpperCase()}
-                  </Badge>
-                ))}
-              </div>
-            );
-          })() : (
-            <span className="text-muted-foreground font-mono">0</span>
-          )}
-        </TableCell>
-        <TableCell>{open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</TableCell>
-      </TableRow>
-
-      {open && (
-        <tr>
-          <td colSpan={6} className="p-0">
-            <div className="mx-4 my-3 rounded-lg border border-border/50 bg-card/60 p-4 space-y-4 border-l-2 border-l-primary/40">
-              {result?.error && (
-                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-warning" />
-                  {result.error}
-                </div>
-              )}
-
-              {result?.os && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">OS: </span>
-                  <span className="font-medium">{result.os}</span>
-                </div>
-              )}
-
-              {result?.hostnames?.length > 0 && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Hostnames: </span>
-                  <span className="font-mono text-xs">{result.hostnames.join(', ')}</span>
-                </div>
-              )}
-
-              {/* Web Services */}
-              {result?.web_services && result.web_services.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-primary" />
-                    Web Services ({result.web_services.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {result.web_services.map((ws, idx) => {
-                      const statusColor = ws.status_code >= 200 && ws.status_code < 300
-                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                        : ws.status_code >= 300 && ws.status_code < 400
-                          ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                          : 'bg-destructive/20 text-destructive border-destructive/30';
-
-                      const tlsDaysLeft = ws.tls?.not_after
-                        ? Math.ceil((new Date(ws.tls.not_after).getTime() - Date.now()) / (1000 * 3600 * 24))
-                        : null;
-
-                      return (
-                        <div key={idx} className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]">
-                              {ws.url}
-                            </a>
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>
-                              {ws.status_code}
-                            </Badge>
-                            {ws.server && (
-                              <span className="text-xs text-muted-foreground">• {ws.server}</span>
-                            )}
-                          </div>
-
-                          {ws.technologies && ws.technologies.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {ws.technologies.map((t, j) => (
-                                <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
-                              ))}
-                            </div>
-                          )}
-
-                          {ws.tls?.subject_cn && (
-                            <div className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Lock className="w-3 h-3" />
-                              <span>CN: {ws.tls.subject_cn}</span>
-                              {tlsDaysLeft != null && (
-                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", tlsDaysLeft < 30 ? 'bg-destructive/20 text-destructive border-destructive/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30')}>
-                                  {tlsDaysLeft}d
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* CVEs - List with titles */}
-              {ipCVEs.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-destructive" />
-                    CVEs Vinculadas ({ipCVEs.length})
-                  </h4>
-                  <div className="rounded-lg border border-border/50 overflow-hidden">
-                    {[...ipCVEs]
-                      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-                      .map((cve) => (
-                      <a
-                        key={cve.cve_id}
-                        href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
-                      >
-                        <SeverityBadge severity={cve.severity} />
-                        <span className="font-mono text-sm text-foreground">{cve.cve_id}</span>
-                        {cve.score != null && (
-                          <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
-                        )}
-                        <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
-                        <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {ipCVEs.length === 0 && !result?.error && (
-                <p className="text-sm text-muted-foreground">Nenhuma CVE vinculada a este IP.</p>
+                </>
               )}
             </div>
-          </td>
-        </tr>
+
+            {/* Row 3: CVE summary + cert status */}
+            <div className="flex items-center gap-3 flex-wrap">
+              {asset.cves.length > 0 ? (
+                <CVESummaryBadges cves={asset.cves} />
+              ) : (
+                <span className="text-xs text-muted-foreground">0 CVEs</span>
+              )}
+              <CertStatusBadge asset={asset} />
+            </div>
+          </div>
+          <div className="shrink-0 mt-1">
+            {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded detail */}
+      {open && (
+        <div className="border-t border-border/50 p-4 space-y-5 bg-muted/10">
+          {/* Block 1: Ports */}
+          {asset.ports.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <Server className="w-4 h-4 text-orange-400" />
+                Portas Abertas ({asset.ports.length})
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {asset.ports.map(port => (
+                  <Badge key={port} variant="outline" className="font-mono text-xs px-2 py-0.5">{port}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Block 2: Services & Technologies */}
+          {(asset.services.length > 0 || asset.webServices.length > 0) && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-primary" />
+                Serviços & Tecnologias
+              </h4>
+              <div className="space-y-2">
+                {/* Nmap services */}
+                {asset.services.filter(s => s.product).map((svc, i) => (
+                  <div key={`svc-${i}`} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 flex-wrap text-sm">
+                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
+                    <span className="font-medium">{svc.product}</span>
+                    {svc.version && <span className="text-muted-foreground text-xs">{svc.version}</span>}
+                    {svc.banner && <span className="text-muted-foreground text-xs truncate max-w-[300px]">{svc.banner}</span>}
+                  </div>
+                ))}
+                {/* Web services */}
+                {asset.webServices.map((ws, i) => {
+                  const statusColor = ws.status_code >= 200 && ws.status_code < 300
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : ws.status_code >= 300 && ws.status_code < 400
+                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                      : 'bg-destructive/20 text-destructive border-destructive/30';
+                  return (
+                    <div key={`ws-${i}`} className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]">
+                          {ws.url}
+                        </a>
+                        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>{ws.status_code}</Badge>
+                        {ws.server && <span className="text-xs text-muted-foreground">• {ws.server}</span>}
+                      </div>
+                      {ws.technologies && ws.technologies.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {ws.technologies.map((t, j) => (
+                            <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Block 3: TLS Certificates */}
+          {asset.tlsCerts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" />
+                Certificados TLS ({asset.tlsCerts.length})
+              </h4>
+              <div className="space-y-2">
+                {asset.tlsCerts.map((cert, i) => {
+                  const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
+                  const isExpiring = cert.daysRemaining !== null && cert.daysRemaining >= 0 && cert.daysRemaining <= 30;
+                  return (
+                    <div key={i} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-4 flex-wrap text-sm">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="font-mono font-medium">{cert.subject_cn}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Emissor: {cert.issuer}</span>
+                      {cert.not_after && (
+                        <span className="text-xs text-muted-foreground">
+                          Expira: {new Date(cert.not_after).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                      {isExpired ? (
+                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
+                          Expirado há {Math.abs(cert.daysRemaining!)}d
+                        </Badge>
+                      ) : isExpiring ? (
+                        <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+                          Expira em {cert.daysRemaining}d
+                        </Badge>
+                      ) : cert.daysRemaining !== null ? (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+                          {cert.daysRemaining}d restantes
+                        </Badge>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Block 4: Vulnerabilities */}
+          {asset.cves.length > 0 ? (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-destructive" />
+                Vulnerabilidades ({asset.cves.length})
+              </h4>
+              <div className="rounded-lg border border-border/50 overflow-hidden">
+                {[...asset.cves]
+                  .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                  .map((cve) => (
+                    <a
+                      key={cve.cve_id}
+                      href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 px-3 py-2 border-b border-border/30 last:border-0 hover:bg-muted/50 transition-colors"
+                    >
+                      <SeverityBadge severity={cve.severity} />
+                      <span className="font-mono text-sm">{cve.cve_id}</span>
+                      {cve.score != null && (
+                        <span className="text-xs font-mono text-muted-foreground">({cve.score})</span>
+                      )}
+                      <span className="text-xs text-muted-foreground truncate flex-1">{cve.title}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    </a>
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma CVE vinculada a este ativo.</p>
+          )}
+        </div>
       )}
-    </>
+    </Card>
   );
 }
 
 /* ──────────────────────────── Page ──────────────────────────── */
+
+type SortMode = 'risk' | 'cves' | 'ports' | 'alpha';
 
 export default function AttackSurfaceAnalyzerPage() {
   const { effectiveRole } = useEffectiveAuth();
@@ -950,10 +735,50 @@ export default function AttackSurfaceAnalyzerPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const summary = snapshot?.summary ?? { total_ips: 0, open_ports: 0, services: 0, cves: 0 };
-  const ips = snapshot?.source_ips ?? [];
   const isRunning = progress?.status === 'pending' || progress?.status === 'running';
 
+  // Build asset-centric data
+  const assets = useMemo(() => {
+    if (!snapshot) return [];
+    return buildAssets(snapshot, cachedCVEs);
+  }, [snapshot, cachedCVEs]);
+
+  // Search & Sort
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('risk');
+
+  const filteredAssets = useMemo(() => {
+    let list = assets;
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter(a =>
+        a.hostname.toLowerCase().includes(q) ||
+        a.ip.includes(q) ||
+        a.allTechs.some(t => t.toLowerCase().includes(q))
+      );
+    }
+    const sorted = [...list];
+    switch (sortMode) {
+      case 'risk': return sorted.sort((a, b) => b.riskScore - a.riskScore);
+      case 'cves': return sorted.sort((a, b) => b.cves.length - a.cves.length);
+      case 'ports': return sorted.sort((a, b) => b.ports.length - a.ports.length);
+      case 'alpha': return sorted.sort((a, b) => a.hostname.localeCompare(b.hostname));
+      default: return sorted;
+    }
+  }, [assets, searchTerm, sortMode]);
+
+  // Executive stats
+  const stats = useMemo(() => {
+    let totalServices = 0;
+    let criticalCVEs = 0;
+    let expiredCerts = 0;
+    for (const a of assets) {
+      totalServices += a.services.length + a.webServices.length;
+      criticalCVEs += a.cves.filter(c => (c.severity || '').toLowerCase() === 'critical').length;
+      expiredCerts += a.expiredCerts;
+    }
+    return { totalAssets: assets.length, totalServices, criticalCVEs, expiredCerts };
+  }, [assets]);
 
   return (
     <AppLayout>
@@ -972,7 +797,7 @@ export default function AttackSurfaceAnalyzerPage() {
                 Attack Surface Analyzer
               </h1>
               <p className="text-muted-foreground text-sm mt-1">
-                Análise automática de superfície de ataque — executada diariamente pelo Super Agent
+                Visão consolidada de ativos expostos — organizada por risco
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -1020,60 +845,68 @@ export default function AttackSurfaceAnalyzerPage() {
             </Card>
           )}
 
-          {/* ── 3. Port Heatmap + Tech Stack ── */}
+          {/* Executive Stats */}
           {snapshot && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <PortHeatmap snapshot={snapshot} />
-              <TechStackSection snapshot={snapshot} />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard icon={Globe} label="Ativos Expostos" value={stats.totalAssets} iconClass="text-teal-400" />
+              <StatCard icon={Server} label="Serviços Detectados" value={stats.totalServices} iconClass="text-blue-400" />
+              <StatCard icon={ShieldAlert} label="CVEs Críticas" value={stats.criticalCVEs} iconClass="text-destructive" />
+              <StatCard icon={AlertTriangle} label="Certificados Expirados" value={stats.expiredCerts} iconClass="text-warning" />
             </div>
           )}
 
-          {/* ── 4. Web Services ── */}
-          {snapshot && <WebServicesSection snapshot={snapshot} />}
+          {/* Search + Sort */}
+          {snapshot && assets.length > 0 && (
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por hostname, IP ou tecnologia..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={sortMode} onValueChange={v => setSortMode(v as SortMode)}>
+                <SelectTrigger className="w-[180px]">
+                  <ArrowUpDown className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="risk">Maior Risco</SelectItem>
+                  <SelectItem value="cves">Mais CVEs</SelectItem>
+                  <SelectItem value="ports">Mais Portas</SelectItem>
+                  <SelectItem value="alpha">Alfabético</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          {/* ── 5. TLS Certificates ── */}
-          {snapshot && <TLSCertificatesSection snapshot={snapshot} />}
-
-          {/* ── 6. IP Inventory Table ── */}
-          <Card className="glass-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Globe className="w-5 h-5 text-teal-400" />
-                Inventário de IPs Públicos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : ips.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
+          {/* Asset List */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !snapshot || assets.length === 0 ? (
+            <Card className="glass-card">
+              <CardContent className="py-16">
+                <div className="text-center text-muted-foreground">
                   <Radar className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="font-medium">Nenhum dado disponível</p>
                   <p className="text-sm mt-1">O scan automático será executado diariamente às 00:00 UTC.</p>
                 </div>
-              ) : (
-                <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>IP</TableHead>
-                        <TableHead>Origem</TableHead>
-                        <TableHead>Referência</TableHead>
-                        <TableHead className="text-center">Portas</TableHead>
-                        <TableHead className="text-center">CVEs</TableHead>
-                        <TableHead className="w-8"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ips.map((sourceIP) => (
-                        <IPDetailRow key={sourceIP.ip} ip={sourceIP.ip} snapshot={snapshot!} cachedCVEs={cachedCVEs} />
-                      ))}
-                    </TableBody>
-                </Table>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {filteredAssets.map(asset => (
+                <AssetCard key={asset.ip} asset={asset} />
+              ))}
+              {filteredAssets.length === 0 && searchTerm && (
+                <p className="text-center text-muted-foreground py-8">Nenhum ativo encontrado para "{searchTerm}"</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          )}
 
           {/* Last scan timestamp */}
           {snapshot?.completed_at && (
