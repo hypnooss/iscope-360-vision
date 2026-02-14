@@ -218,10 +218,10 @@ export default function AnalyzerDashboardPage() {
   const { data: firewallGeo } = useQuery({
     queryKey: ['firewall-geo', firewallHostname],
     queryFn: async () => {
-      const res = await fetch(`http://ip-api.com/json/${firewallHostname}?fields=status,lat,lon`);
+      const res = await fetch(`https://ipwho.is/${firewallHostname}`);
       const json = await res.json();
-      if (json.status !== 'success') return null;
-      return { lat: json.lat as number, lng: json.lon as number };
+      if (!json.success) return null;
+      return { lat: json.latitude as number, lng: json.longitude as number };
     },
     enabled: !!firewallHostname,
     staleTime: 1000 * 60 * 30,
