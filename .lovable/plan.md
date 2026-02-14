@@ -1,25 +1,47 @@
 
-# Fix: Vulnerabilidades - borda desalinhada pelo recuo
+# Fix: Extração de IPs de Firewall no Attack Surface Queue
 
-## Problema
+## Problema Identificado
 
-O `pl-6` foi aplicado diretamente no `div` que possui a borda (`rounded-lg border border-border/50`), fazendo com que toda a caixa (incluindo a borda) seja empurrada para a direita, mas o conteudo interno nao ganha recuo adicional. Visualmente a borda fica "atras" do titulo.
+A edge function `run-attack-surface-queue` busca a **última tarefa completada** de cada firewall para extrair IPs públicos do step `system_interface`, mas **não filtra por `task_type`**.
 
-## Solucao
+- O step `system_interface` só existe em tarefas do tipo `fortigate_compliance`
+- Tarefas do tipo `firewall_analyzer` contêm apenas steps de logs (denied_traffic, auth_events, etc.)
+- Como tarefas de analyzer são executadas com mais frequência, elas frequentemente são as mais recentes, "escondendo" a compliance que tem os dados de interface
 
-Envolver o container com borda em um `div` separado com `pl-6`, e remover o `pl-6` do container da borda.
+### Dados concretos do workspace PRECISIO:
+- **BAU-FW**: última task era `firewall_analyzer` (sem `system_interface`) -- a compliance existia mas ficou "atrás"
+- **BR-PMP-FW-001**: nunca teve `fortigate_compliance`, apenas `firewall_analyzer`
 
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linha 656)
+## Correção
 
-**De:**
-```tsx
-<div className="pl-6 rounded-lg border border-border/50 overflow-hidden">
+**Arquivo:** `supabase/functions/run-attack-surface-queue/index.ts`
+
+Adicionar filtro `.eq('task_type', 'fortigate_compliance')` na query que busca a última tarefa completada por firewall (linha 196), garantindo que apenas tarefas que contêm o step `system_interface` sejam consideradas.
+
+### De:
+```typescript
+const { data: tasks } = await supabase
+  .from('agent_tasks')
+  .select('id')
+  .eq('target_id', fw.id)
+  .eq('target_type', 'firewall')
+  .eq('status', 'completed')
+  .order('completed_at', { ascending: false })
+  .limit(1)
 ```
 
-**Para:**
-```tsx
-<div className="pl-6">
-  <div className="rounded-lg border border-border/50 overflow-hidden">
+### Para:
+```typescript
+const { data: tasks } = await supabase
+  .from('agent_tasks')
+  .select('id')
+  .eq('target_id', fw.id)
+  .eq('target_type', 'firewall')
+  .eq('task_type', 'fortigate_compliance')
+  .eq('status', 'completed')
+  .order('completed_at', { ascending: false })
+  .limit(1)
 ```
 
-E fechar o `div` extra apos o fechamento do container da borda (apos linha 676).
+Apenas 1 linha adicionada. Nenhuma outra alteracao necessaria.
