@@ -1,59 +1,77 @@
 
 
-# Ajustes visuais nos Asset Cards
+# Integrar Vulnerabilidades ao bloco de Servicos e Tecnologias
 
-## 3 alteracoes no arquivo `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+## Resumo
 
-### 1. Severidades em formato capitalizado e portugues
+Eliminar o bloco separado "Vulnerabilidades" e exibir as CVEs diretamente dentro de cada linha de servico no bloco "Servicos e Tecnologias". Cada servico se torna condensavel/expansivel: no estado condensado mostra as 2 CVEs de maior score; no expandido mostra todas.
 
-Na funcao `CVESummaryBadges` (linha 443), trocar `s.toUpperCase()` por labels em portugues com inicial maiuscula.
+## Como funciona a correlacao
 
-Mapeamento:
-- critical -> "Critical" (manter ingles pois e termo tecnico de CVE) ou capitalizar: `s.charAt(0).toUpperCase() + s.slice(1)`
+Cada CVE possui um campo `products: string[]`. Cada servico tem `product` (Nmap) ou `technologies`/`server` (web). A funcao `matchCVEsToIP` ja faz esse match por produto. Vamos reutilizar essa logica para distribuir CVEs por servico.
 
-Resultado: `2 Critical` em vez de `2 CRITICAL`, `9 High` em vez de `9 HIGH`, etc.
+## Mudancas
 
-### 2. Prefixo "Certificado" no CertStatusBadge
+### 1. Funcao auxiliar: distribuir CVEs por servico
 
-Na funcao `CertStatusBadge` (linhas 451-477), adicionar a palavra "Certificado" antes de cada label:
+Criar `matchCVEsToService(serviceName: string, cves: AttackSurfaceCVE[]): AttackSurfaceCVE[]` que filtra as CVEs cujo `products` ou `title` contenham o nome do servico. CVEs que nao correspondem a nenhum servico especifico serao agrupadas num bloco "Outras vulnerabilidades" no final da secao.
 
-- Linha 452: "Sem TLS" -> badge com "Sem Certificado" (ver item 3)
-- Linha 459: "Expirado ha Xd" -> "Certificado Expirado ha Xd"
-- Linha 469: "Expira em Xd" -> "Certificado Expira em Xd"
-- Linha 475: "Valido" -> "Certificado Valido"
+### 2. Cada linha de servico vira condensavel/expansivel
 
-### 3. Converter textos planos em badges
+- Estado condensado (padrao): linha atual do servico + as 2 CVEs com maior `score`, exibidas como badges inline (ex: `CVE-2024-1234 (9.8)`)
+- Estado expandido (clique): lista completa de CVEs daquele servico no mesmo formato de lista atual (link, severity badge, score, titulo)
+- Um pequeno icone ChevronRight/ChevronDown no inicio da linha indica o estado
 
-**"Sem TLS" (linha 452)**: Trocar o `<span>` por um `<Badge variant="outline">` com estilo neutro (muted), incluindo icone de cadeado.
+### 3. Bloco "Vulnerabilidades" removido
 
-```tsx
-// De:
-<span className="text-xs text-muted-foreground">Sem TLS</span>
-// Para:
-<Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
-  <Lock className="w-3 h-3 mr-1" /> Sem Certificado
-</Badge>
+O bloco 4 (linhas 657-690) sera eliminado. Todo o conteudo de CVEs passa a viver dentro do bloco 2 ("Servicos e Tecnologias").
+
+### 4. CVEs orfas
+
+CVEs que nao correspondem a nenhum servico especifico serao listadas num sub-bloco "Outras Vulnerabilidades" ao final da secao de servicos, usando o mesmo layout expandivel.
+
+### Layout visual esperado
+
+```text
+Servicos e Tecnologias
+  [443/tcp]  nginx  1.18.0  "banner..."   [CVE-2024-1234 (9.8)] [CVE-2024-5678 (8.1)]  >
+     (expandido)
+     CVE-2024-1234  Critical  (9.8)  "NGINX HTTP/3 QUIC..."     [link]
+     CVE-2024-5678  High      (8.1)  "NGINX mp4 module..."      [link]
+     CVE-2024-9999  Medium    (6.5)  "NGINX resolver..."        [link]
+
+  [80/tcp]   Apache  2.4.41                [CVE-2023-1111 (7.5)]                         >
+
+  https://example.com  [200]  • nginx    PHP  WordPress  HSTS
+     (sem CVEs associadas -- nenhum indicador extra)
+
+  Outras Vulnerabilidades (2)
+     CVE-2024-0000  High  (7.0)  "Generic vuln..."   [link]
+     CVE-2024-0001  Low   (3.2)  "Info leak..."      [link]
 ```
 
-**"0 CVEs" (linha 535)**: Trocar o `<span>` por um `<Badge variant="outline">` com estilo neutro.
+## Detalhes tecnicos
 
-```tsx
-// De:
-<span className="text-xs text-muted-foreground">0 CVEs</span>
-// Para:
-<Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
-  0 CVEs
-</Badge>
-```
+Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-## Resultado visual esperado
+**Nova funcao** `matchCVEsToService`:
+- Recebe o nome do produto/servico e a lista de CVEs do asset
+- Filtra por `cve.products.some(p => p.toLowerCase().includes(name))` ou `cve.title.toLowerCase().includes(name)`
+- Retorna array ordenado por score decrescente
 
-```
-Row 2: [11 portas] . [16 servicos] . [Certificado Expira em 30d] . [nginx] ...
-Row 3: [2 Critical] . [9 High] . [14 Medium] . [1 Low]
+**Componente `ServiceRow`** (novo):
+- Props: servico (Nmap ou Web), CVEs correspondentes
+- Estado local `expanded: boolean` (default false)
+- Condensado: linha atual + ate 2 CVE badges (maior score)
+- Expandido: lista completa de CVEs abaixo da linha
 
-Sem certificado:
-Row 2: [0 portas] . [0 servicos] . [Sem Certificado] . [HSTS]
-Row 3: [0 CVEs]
-```
+**Bloco 2 atualizado**:
+- Itera servicos Nmap e Web como hoje
+- Para cada um, renderiza `<ServiceRow>` em vez do `<div>` atual
+- Ao final, se houver CVEs orfas, renderiza bloco "Outras Vulnerabilidades" expansivel
 
+**Bloco 4 removido**: linhas 657-690 eliminadas por completo
+
+**Bloco "Portas Abertas"**: permanece inalterado (bloco 1)
+
+**Bloco "Certificados TLS"**: permanece inalterado (bloco 3)
