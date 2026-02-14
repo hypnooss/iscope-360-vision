@@ -19,6 +19,7 @@ from agent.executors.masscan import MasscanExecutor
 from agent.executors.nmap import NmapExecutor
 from agent.executors.nmap_discovery import NmapDiscoveryExecutor
 from agent.executors.httpx_executor import HttpxExecutor
+from agent.executors.asn_classifier import AsnClassifierExecutor
 
 
 class TaskExecutor:
@@ -42,7 +43,7 @@ class TaskExecutor:
 
     # Scanning executors excluded from fail-fast connectivity checks
     # Timeout is expected behavior for these tools (filtered ports, slow targets)
-    SCAN_EXECUTORS = {'masscan', 'nmap', 'nmap_discovery', 'httpx'}
+    SCAN_EXECUTORS = {'masscan', 'nmap', 'nmap_discovery', 'httpx', 'asn_classifier'}
 
     MAX_PARALLEL_TASKS = 4
 
@@ -62,6 +63,7 @@ class TaskExecutor:
             'nmap': NmapExecutor(logger),
             'nmap_discovery': NmapDiscoveryExecutor(logger),
             'httpx': HttpxExecutor(logger),
+            'asn_classifier': AsnClassifierExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True

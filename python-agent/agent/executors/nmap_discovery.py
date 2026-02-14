@@ -25,20 +25,35 @@ class NmapDiscoveryExecutor(BaseExecutor):
         if not ip:
             return {'error': 'IP address is required'}
 
-        port_range = params.get('port_range', '1-65535')
-        max_rate = params.get('max_rate', 500)
-        timeout = params.get('timeout', 420)
+        # Cloud-aware: adapt strategy based on ASN classifier result
+        is_cdn = context.get('is_cdn', False)
+        cdn_provider = context.get('provider', 'unknown')
 
-        self.logger.info(f"[nmap_discovery] Stealth SYN scan on {ip} ports={port_range} max_rate={max_rate}")
+        if is_cdn:
+            # CDN/Edge IPs: avoid full range, use top-ports with lower rate
+            port_range = '--top-ports 1000'
+            max_rate = params.get('max_rate', 300)
+            timeout = params.get('timeout', 300)
+            self.logger.info(
+                f"[nmap_discovery] CDN detected ({cdn_provider}), "
+                f"using top-1000 strategy on {ip} max_rate={max_rate}"
+            )
+        else:
+            port_range = params.get('port_range', '1-65535')
+            max_rate = params.get('max_rate', 500)
+            timeout = params.get('timeout', 420)
+            self.logger.info(f"[nmap_discovery] Stealth SYN scan on {ip} ports={port_range} max_rate={max_rate}")
 
-        ports = self._run_scan(ip, port_range, max_rate, timeout)
+        use_top_ports = is_cdn  # CDN uses --top-ports flag
+        ports = self._run_scan(ip, port_range, max_rate, timeout, use_top_ports=use_top_ports)
 
         if ports is None:
             # _run_scan returned None = error already logged
             return {'data': {'ip': ip, 'ports': []}}
 
         # False-positive protection: cloud/CDN targets respond on everything
-        if len(ports) > self.FALSE_POSITIVE_THRESHOLD:
+        # Skip if already using top-ports (CDN mode)
+        if not is_cdn and len(ports) > self.FALSE_POSITIVE_THRESHOLD:
             self.logger.warning(
                 f"[nmap_discovery] {len(ports)} ports found on {ip} - "
                 f"likely false positives. Re-scanning with --top-ports 1000"

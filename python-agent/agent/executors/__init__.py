@@ -10,6 +10,7 @@ from agent.executors.masscan import MasscanExecutor
 from agent.executors.nmap import NmapExecutor
 from agent.executors.nmap_discovery import NmapDiscoveryExecutor
 from agent.executors.httpx_executor import HttpxExecutor
+from agent.executors.asn_classifier import AsnClassifierExecutor
 
 __all__ = [
     'BaseExecutor',
@@ -23,4 +24,5 @@ __all__ = [
     'NmapExecutor',
     'NmapDiscoveryExecutor',
     'HttpxExecutor',
+    'AsnClassifierExecutor',
 ]
