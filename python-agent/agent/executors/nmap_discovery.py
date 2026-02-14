@@ -67,10 +67,9 @@ class NmapDiscoveryExecutor(BaseExecutor):
             '-Pn',              # Skip host discovery (we know the IP is alive)
             '--open',           # Only show open ports
             '-T2',              # Polite timing - adaptive, avoids IPS thresholds
-            '--scan-delay', '200ms',
             '--max-retries', '2',
             '--data-length', '24',   # Pad packets to look less like a scanner
-            '--host-timeout', '300s',
+            '--host-timeout', '600s',
             '--min-rate', '100',
             '--max-rate', str(max_rate),
             '-oX', '-',         # XML output to stdout
