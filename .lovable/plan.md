@@ -1,79 +1,50 @@
 
+# Fix: Analyzer de Firewall - Paths de API Incorretos e Enriquecimento de Dados
 
-# Fix: Badges de Conformidade do Firewall nao aparecem no Dashboard
+## Problemas Identificados
 
-## Problema
-
-O card Firewall mostra "Nenhum alerta" mesmo tendo **2 High** e **3 Medium** fora de conformidade. Isso acontece porque a funcao RPC `get_fw_dashboard_summary` busca severidades no caminho `report_data->'summary'->>'critical'`, mas esse campo **nao existe** no JSON do firewall.
-
-A estrutura real do `report_data` e:
-```text
-report_data
-  -> categories (objeto com chaves por nome de categoria)
-       -> [array de checks]
-            -> status: "fail" | "pass" | "unknown"
-            -> severity: "critical" | "high" | "medium" | "low"
+### 1. Paths UTM incorretos (HTTP 404 em TODAS as execucoes)
+Os logs das ultimas 3 tarefas confirmam:
+```
+webfilter_blocked: HTTP 404: Not Found
+appctrl_blocked: HTTP 404: Not Found
 ```
 
-Os modulos M365 e Dominio Externo nao tem este problema porque usam colunas dedicadas (`summary`) em vez de extrair do JSON.
+**Causa**: O blueprint usa `/api/v2/log/memory/utm/webfilter` e `/api/v2/log/memory/utm/app-ctrl`, mas a API do FortiOS (tanto 7.2 quanto 7.4) **nao possui** o segmento `/utm/`. Os endpoints corretos sao:
+- `/api/v2/log/memory/webfilter` (tipo UTM e diretamente sob `/memory/`)
+- `/api/v2/log/memory/app-ctrl`
+
+### 2. IPS intermitente (HTTP 500 em algumas versoes)
+O endpoint `/api/v2/log/memory/ips` retorna 500 em certos FortiGates (ja conhecido e marcado como `optional: true`). Sem alteracao necessaria.
+
+### 3. Enriquecimento de pais ausente no trafego negado
+A API suporta o parametro `extra=country_id` (presente em ambas versoes 7.2 e 7.4) que adiciona o campo `srccountry` diretamente nos logs de trafego. Atualmente o blueprint nao usa esse parametro, resultando em dados de geolocalizacao incompletos no Mapa de Ataques.
 
 ## Solucao
 
-Reescrever a funcao RPC `get_fw_dashboard_summary` para contar severidades a partir da estrutura real do `report_data`, filtrando apenas checks com `status = 'fail'`.
+### Correcao no Blueprint (banco de dados)
 
-## Detalhes Tecnicos
+Atualizar os `collection_steps` do blueprint "FortiGate - Analyzer" com os paths corretos:
 
-### Alteracao na RPC (SQL)
+| Step | Path Atual (ERRADO) | Path Correto |
+|---|---|---|
+| `webfilter_blocked` | `/api/v2/log/memory/utm/webfilter?filter=action==blocked&rows=500` | `/api/v2/log/memory/webfilter?filter=action==blocked&rows=500` |
+| `appctrl_blocked` | `/api/v2/log/memory/utm/app-ctrl?filter=action==block&rows=500` | `/api/v2/log/memory/app-ctrl?filter=action==block&rows=500` |
+| `denied_traffic` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500` | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500&extra=country_id` |
 
-A funcao atual:
-```sql
-SELECT DISTINCT ON (ah.firewall_id)
-  ah.firewall_id, ah.score,
-  COALESCE((ah.report_data->'summary'->>'critical')::integer, 0),  -- sempre 0
-  ...
-```
+Os steps `denied_traffic` e UTM tambem recebem ajustes para melhorar a qualidade dos dados de geolocalizacao.
 
-Nova versao -- usa lateral join para iterar categorias e checks:
-```sql
-CREATE OR REPLACE FUNCTION get_fw_dashboard_summary(p_firewall_ids uuid[])
-RETURNS TABLE(
-  firewall_id uuid, score integer,
-  critical integer, high integer, medium integer, low integer,
-  analyzed_at timestamptz
-) AS $$
-  SELECT
-    sub.firewall_id,
-    sub.score,
-    COALESCE(SUM(CASE WHEN c.chk->>'status'='fail' AND c.chk->>'severity'='critical' THEN 1 ELSE 0 END), 0)::integer,
-    COALESCE(SUM(CASE WHEN c.chk->>'status'='fail' AND c.chk->>'severity'='high' THEN 1 ELSE 0 END), 0)::integer,
-    COALESCE(SUM(CASE WHEN c.chk->>'status'='fail' AND c.chk->>'severity'='medium' THEN 1 ELSE 0 END), 0)::integer,
-    COALESCE(SUM(CASE WHEN c.chk->>'status'='fail' AND c.chk->>'severity'='low' THEN 1 ELSE 0 END), 0)::integer,
-    sub.created_at
-  FROM (
-    SELECT DISTINCT ON (ah.firewall_id)
-      ah.firewall_id, ah.score, ah.report_data, ah.created_at
-    FROM analysis_history ah
-    WHERE ah.firewall_id = ANY(p_firewall_ids)
-    ORDER BY ah.firewall_id, ah.created_at DESC
-  ) sub
-  LEFT JOIN LATERAL (
-    SELECT jsonb_array_elements(cat_value) AS chk
-    FROM jsonb_each(sub.report_data->'categories') AS cats(cat_key, cat_value)
-  ) c ON true
-  GROUP BY sub.firewall_id, sub.score, sub.created_at;
-$$ LANGUAGE sql STABLE;
-```
+### Execucao
 
-### Arquivo alterado no codigo
+Um `UPDATE` no registro do blueprint no banco de dados para corrigir o JSON dos `collection_steps`. Nao ha alteracao em codigo frontend ou edge functions -- o processamento ja esta preparado para receber os dados de webfilter e app-ctrl.
 
-Nenhuma alteracao no frontend -- o hook `useDashboardStats.ts` ja le corretamente os campos `critical`, `high`, `medium`, `low` retornados pela RPC. O problema e exclusivamente na funcao SQL.
+### Apos a correcao
 
-| Onde | Alteracao |
-|---|---|
-| Migration SQL (nova) | Reescrever `get_fw_dashboard_summary` para contar checks com `status='fail'` por severidade |
+Os agents precisarao buscar novas tarefas (o blueprint e lido pelo RPC `rpc_get_agent_tasks` no momento da distribuicao). Na proxima execucao de analise, os steps de Web Filter e App Control retornarao dados reais em vez de 404.
 
 ## Resultado esperado
 
-- Card Firewall exibira badges coloridas: **2 Alto**, **3 Medio** (valores reais da ultima analise)
-- Comportamento dos cards M365 e Dominio Externo permanece inalterado
-
+- Web Filter e App Control preenchidos no dashboard (Top Categorias, Top Usuarios)
+- Mapa de Ataques com dados de geolocalizacao mais ricos (campo `srccountry` vindo direto da API)
+- Tasks de Analyzer deixarao de falhar com 404
+- Score de risco mais preciso (inclui insights de UTM como malware, botnets, P2P)
