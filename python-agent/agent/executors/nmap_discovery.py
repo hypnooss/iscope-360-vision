@@ -177,7 +177,10 @@ class NmapDiscoveryExecutor(BaseExecutor):
         ip: str,
     ) -> List[str]:
         """Build nmap command with RTT-optimized parameters."""
-        cmd = [
+        cmd = []
+        if scan_type == '-sS':
+            cmd.append('sudo')
+        cmd.extend([
             'nmap',
             scan_type,
             '-Pn',
