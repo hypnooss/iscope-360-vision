@@ -540,7 +540,7 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
 
       {/* Expanded detail */}
       {open && (
-         <div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-8 bg-muted/10">
+         <div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-12 bg-muted/10">
            {/* Block 1: Ports */}
            {asset.ports.length > 0 && (
              <div>
