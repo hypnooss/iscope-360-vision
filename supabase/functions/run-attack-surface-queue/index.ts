@@ -21,6 +21,39 @@ function isPrivateIP(ip: string): boolean {
   return false
 }
 
+function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0
+}
+
+function intToIp(n: number): string {
+  return `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`
+}
+
+function expandSubnet(ipField: string): string[] {
+  const parts = ipField.trim().split(/\s+/)
+  const ip = parts[0]
+  if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return []
+  if (parts.length < 2 || !parts[1] || !/^\d+\.\d+\.\d+\.\d+$/.test(parts[1])) return [ip]
+
+  const mask = parts[1]
+  const ipInt = ipToInt(ip)
+  const maskInt = ipToInt(mask)
+  const network = (ipInt & maskInt) >>> 0
+  const broadcast = (network | (~maskInt >>> 0)) >>> 0
+  const size = broadcast - network + 1
+
+  // Safety: skip expansion for ranges > 256 hosts (/24 or larger)
+  if (size > 256) return [ip]
+  // /31 and /32 have no usable host range in traditional sense
+  if (size <= 2) return [ip]
+
+  const result: string[] = []
+  for (let i = network + 1; i < broadcast; i++) {
+    result.push(intToIp(i))
+  }
+  return result
+}
+
 interface SourceIP {
   ip: string
   source: 'dns' | 'firewall'
@@ -104,11 +137,13 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
 
     for (const iface of interfaces) {
       const ipField = iface.ip || ''
-      const ipOnly = ipField.split(' ')[0].trim()
-      if (!ipOnly || ipOnly === '0.0.0.0' || seen.has(ipOnly) || isPrivateIP(ipOnly)) continue
-      seen.add(ipOnly)
+      const expandedIPs = expandSubnet(ipField)
       const ifaceName = iface.name || 'unknown'
-      ips.push({ ip: ipOnly, source: 'firewall', label: `${firewallName} - ${ifaceName}` })
+      for (const expandedIP of expandedIPs) {
+        if (expandedIP === '0.0.0.0' || seen.has(expandedIP) || isPrivateIP(expandedIP)) continue
+        seen.add(expandedIP)
+        ips.push({ ip: expandedIP, source: 'firewall', label: `${firewallName} - ${ifaceName}` })
+      }
     }
   }
   return ips
