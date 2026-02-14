@@ -8,6 +8,7 @@ interface AttackMapProps {
   deniedCountries: TopCountry[];
   authFailedCountries: TopCountry[];
   authSuccessCountries: TopCountry[];
+  firewallLocation?: { lat: number; lng: number; label: string };
 }
 
 // Equirectangular projection for 1000x500 viewBox
@@ -17,8 +18,14 @@ function project(lat: number, lng: number): [number, number] {
   return [x, y];
 }
 
-export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCountries }: AttackMapProps) {
+export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCountries, firewallLocation }: AttackMapProps) {
   const [hoveredPoint, setHoveredPoint] = useState<string | null>(null);
+
+  const firewallPoint = useMemo(() => {
+    if (!firewallLocation) return null;
+    const [x, y] = project(firewallLocation.lat, firewallLocation.lng);
+    return { x, y, label: firewallLocation.label };
+  }, [firewallLocation]);
 
   const points = useMemo(() => {
     const result: { x: number; y: number; r: number; color: string; label: string; count: number; type: string }[] = [];
@@ -69,6 +76,21 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
           <line x1={0} y1={250} x2={1000} y2={250} stroke="hsl(var(--border))" strokeWidth="0.5" opacity="0.1" strokeDasharray="8 4" />
           <line x1={500} y1={0} x2={500} y2={500} stroke="hsl(var(--border))" strokeWidth="0.5" opacity="0.1" strokeDasharray="8 4" />
 
+          {/* Connection lines from attack points to firewall */}
+          {firewallPoint && points.map((p, i) => (
+            <line
+              key={`conn-${i}`}
+              x1={p.x} y1={p.y}
+              x2={firewallPoint.x} y2={firewallPoint.y}
+              stroke={p.color}
+              strokeWidth="1"
+              opacity="0.15"
+              strokeDasharray="6 4"
+            >
+              <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.5s" repeatCount="indefinite" />
+            </line>
+          ))}
+
           {/* Attack points with pulse */}
           {points.map((p, i) => (
             <Tooltip key={i}>
@@ -107,11 +129,43 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
               </TooltipContent>
             </Tooltip>
           ))}
+
+          {/* Firewall point */}
+          {firewallPoint && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <g className="cursor-pointer">
+                  {/* Outer pulse */}
+                  <circle cx={firewallPoint.x} cy={firewallPoint.y} r={16} fill="#06b6d4" opacity="0.1">
+                    <animate attributeName="r" values="14;22;14" dur="3s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.1;0.03;0.1" dur="3s" repeatCount="indefinite" />
+                  </circle>
+                  {/* Shield body */}
+                  <circle cx={firewallPoint.x} cy={firewallPoint.y} r={10} fill="#06b6d4" opacity="0.7" />
+                  <circle cx={firewallPoint.x} cy={firewallPoint.y} r={5} fill="#06b6d4" opacity="0.95" />
+                  {/* Shield icon (simplified path) */}
+                  <text x={firewallPoint.x} y={firewallPoint.y + 3.5} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">🛡</text>
+                  {/* Permanent label */}
+                  <rect
+                    x={firewallPoint.x - 35} y={firewallPoint.y - 24} width={70} height={16} rx={4}
+                    fill="#06b6d4" fillOpacity="0.85"
+                  />
+                  <text x={firewallPoint.x} y={firewallPoint.y - 13} textAnchor="middle" fill="white" fontSize="9" fontWeight="600">
+                    Firewall
+                  </text>
+                </g>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-semibold">{firewallPoint.label}</p>
+                <p className="text-xs">Localização do Firewall</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </svg>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 justify-center text-xs text-muted-foreground">
+      <div className="flex items-center gap-4 mt-3 justify-center text-xs text-muted-foreground flex-wrap">
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-full bg-red-500 inline-block" />
           Tráfego Negado
@@ -124,6 +178,12 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
           <span className="w-3 h-3 rounded-full bg-green-500 inline-block" />
           Sucesso Auth
         </div>
+        {firewallPoint && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#06b6d4' }} />
+            Firewall
+          </div>
+        )}
       </div>
     </div>
   );
