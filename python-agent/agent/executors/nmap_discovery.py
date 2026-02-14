@@ -1,6 +1,7 @@
 """
-Nmap Discovery Executor - Stealth port discovery using nmap SYN scan.
+Nmap Discovery Executor - TCP connect port discovery using nmap.
 Replaces masscan for attack surface scanning due to IPS evasion issues.
+Uses -sT (full TCP handshake) to bypass IPS that block SYN scans.
 
 Returns the same format as masscan: {data: {ip, ports}}
 """
@@ -13,7 +14,7 @@ from agent.executors.base import BaseExecutor
 
 
 class NmapDiscoveryExecutor(BaseExecutor):
-    """Execute nmap SYN stealth scan for port discovery."""
+    """Execute nmap TCP connect scan for port discovery."""
 
     # Max ports before triggering false-positive re-scan
     FALSE_POSITIVE_THRESHOLD = 500
@@ -42,7 +43,7 @@ class NmapDiscoveryExecutor(BaseExecutor):
             port_range = params.get('port_range', '1-65535')
             max_rate = params.get('max_rate', 300)
             timeout = params.get('timeout', 720)
-            self.logger.info(f"[nmap_discovery] Stealth SYN scan on {ip} ports={port_range} max_rate={max_rate}")
+            self.logger.info(f"[nmap_discovery] TCP connect scan on {ip} ports={port_range} max_rate={max_rate}")
 
         use_top_ports = is_cdn  # CDN uses --top-ports flag
         ports = self._run_scan(ip, port_range, max_rate, timeout, use_top_ports=use_top_ports)
@@ -77,14 +78,13 @@ class NmapDiscoveryExecutor(BaseExecutor):
         """Run nmap and return sorted list of open ports, or None on error."""
 
         cmd = [
-            'sudo', 'nmap',
-            '-sS',              # SYN stealth scan
+            'nmap',
+            '-sT',              # TCP connect scan - full handshake, bypasses IPS
             '-Pn',              # Skip host discovery (we know the IP is alive)
             '--open',           # Only show open ports
             '-T2',              # Polite timing - adaptive, avoids IPS thresholds
             '--max-retries', '1',    # Fewer retransmissions = less noise
-            '--scan-delay', '200ms', # Space between probes to evade burst detection
-            '--data-length', '24',   # Pad packets to look less like a scanner
+            '--scan-delay', '200ms', # Space between probes to avoid overload
             '--host-timeout', '600s',
             '--max-rate', str(max_rate),
             '-oX', '-',         # XML output to stdout
