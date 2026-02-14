@@ -39,10 +39,11 @@ class NmapExecutor(BaseExecutor):
 
         self.logger.info(f"[nmap] Stealth scanning {ip} ports={port_str[:80]}...")
 
-        # Primary scan: stealth, no scripts, human-like timing
+        # Primary scan: full collection with scripts and high intensity
         cmd = [
             'sudo', 'nmap', '-sS', '-sV',
-            '--version-intensity', '5',
+            '--version-intensity', '7',
+            '--script=banner,ssl-cert,http-title',
             f'-p{port_str}',
             ip,
             '-oX', '-',
@@ -52,7 +53,6 @@ class NmapExecutor(BaseExecutor):
             '--max-retries', '2',
             '--data-length', '24',
         ]
-
         try:
             result = subprocess.run(
                 cmd,
@@ -67,16 +67,20 @@ class NmapExecutor(BaseExecutor):
             services = self._parse_nmap_xml(result.stdout)
             os_info = self._parse_os_info(result.stdout)
 
-            # Fallback: if zero services found, retry with targeted lightweight scripts
-            if not services and ports:
+            # Fallback: if no service was actually fingerprinted, retry lighter
+            has_fingerprint = any(
+                s.get('product') or s.get('cpe')
+                for s in services
+            )
+            if not has_fingerprint and ports:
                 self.logger.warning(
-                    f"[nmap] Zero services on {ip} with {len(ports)} ports. "
-                    f"Retrying with targeted scripts (banner,ssl-cert,http-title)..."
+                    f"[nmap] No fingerprints on {ip} with {len(services)} open ports. "
+                    f"Retrying with lighter scan..."
                 )
                 cmd_fallback = [
                     'sudo', 'nmap', '-sS', '-sV',
-                    '--version-intensity', '7',
-                    '--script=banner,ssl-cert,http-title',
+                    '--version-intensity', '5',
+                    '--script=banner',
                     f'-p{port_str}',
                     ip,
                     '-oX', '-',
