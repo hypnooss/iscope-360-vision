@@ -17,6 +17,7 @@ from agent.executors.amass import AmassExecutor
 from agent.executors.powershell import PowerShellExecutor
 from agent.executors.masscan import MasscanExecutor
 from agent.executors.nmap import NmapExecutor
+from agent.executors.nmap_discovery import NmapDiscoveryExecutor
 from agent.executors.httpx_executor import HttpxExecutor
 
 
@@ -41,7 +42,7 @@ class TaskExecutor:
 
     # Scanning executors excluded from fail-fast connectivity checks
     # Timeout is expected behavior for these tools (filtered ports, slow targets)
-    SCAN_EXECUTORS = {'masscan', 'nmap', 'httpx'}
+    SCAN_EXECUTORS = {'masscan', 'nmap', 'nmap_discovery', 'httpx'}
 
     MAX_PARALLEL_TASKS = 4
 
@@ -59,6 +60,7 @@ class TaskExecutor:
             'powershell': PowerShellExecutor(logger),
             'masscan': MasscanExecutor(logger),
             'nmap': NmapExecutor(logger),
+            'nmap_discovery': NmapDiscoveryExecutor(logger),
             'httpx': HttpxExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
