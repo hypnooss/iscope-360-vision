@@ -1,7 +1,12 @@
 """
-Nmap Discovery Executor - TCP connect port discovery using nmap.
-Replaces masscan for attack surface scanning due to IPS evasion issues.
-Uses -sT (full TCP handshake) to bypass IPS that block SYN scans.
+Nmap Discovery Executor - 2-Phase TCP port discovery using nmap.
+
+Phase 1: Rapid baseline scan (top-ports 2000, ~30s) to confirm host responsiveness.
+Phase 2: Full range optimized scan (1-65535 with aggressive RTT, ~2-4 min).
+
+Uses -sS (SYN stealth) by default with automatic fallback to -sT (TCP connect)
+if permission is denied. Critical RTT parameters prevent excessive timeouts
+in silent-drop environments.
 
 Returns the same format as masscan: {data: {ip, ports}}
 """
@@ -14,10 +19,7 @@ from agent.executors.base import BaseExecutor
 
 
 class NmapDiscoveryExecutor(BaseExecutor):
-    """Execute nmap TCP connect scan for port discovery."""
-
-    # Max ports before triggering false-positive re-scan
-    FALSE_POSITIVE_THRESHOLD = 500
+    """Execute nmap 2-phase port discovery with RTT optimization."""
 
     # Standard web ports returned immediately for CDN/Edge IPs (no scan needed)
     CDN_WEB_PORTS = [
@@ -37,7 +39,6 @@ class NmapDiscoveryExecutor(BaseExecutor):
         cdn_provider = context.get('provider', 'unknown')
 
         if is_cdn:
-            # CDN/Edge IPs: skip discovery entirely, return fixed web ports
             self.logger.info(
                 f"[nmap_discovery] CDN detected ({cdn_provider}), "
                 f"skipping discovery - using {len(self.CDN_WEB_PORTS)} standard web ports for {ip}"
@@ -48,63 +49,170 @@ class NmapDiscoveryExecutor(BaseExecutor):
                     'ports': self.CDN_WEB_PORTS,
                 }
             }
-        else:
-            port_range = params.get('port_range', '1-65535')
-            max_rate = params.get('max_rate', 300)
-            timeout = params.get('timeout', 720)
-            self.logger.info(f"[nmap_discovery] TCP connect scan on {ip} ports={port_range} max_rate={max_rate}")
 
-        ports = self._run_scan(ip, port_range, max_rate, timeout)
+        # --- Phase 1: Rapid baseline (top-ports 2000, ~30s) ---
+        self.logger.info(f"[nmap_discovery] Phase 1: baseline scan on {ip} (top-ports 2000)")
+        phase1_ports = self._run_phase(
+            ip=ip,
+            scan_type='-sS',
+            port_spec=None,
+            top_ports=2000,
+            host_timeout=60,
+            use_min_rate=False,
+            use_defeat_rst=False,
+            process_timeout=90,
+        )
 
-        if ports is None:
-            # _run_scan returned None = error already logged
+        if phase1_ports is None:
+            # None = error (not timeout). Return empty.
             return {'data': {'ip': ip, 'ports': []}}
 
-        # False-positive protection: too many open ports = likely ghost ports
-        if len(ports) > self.FALSE_POSITIVE_THRESHOLD:
-            self.logger.warning(
-                f"[nmap_discovery] {len(ports)} ports found on {ip} - "
-                f"likely false positives. Re-scanning with --top-ports 1000"
-            )
-            ports = self._run_scan(ip, '--top-ports 1000', max_rate, timeout, use_top_ports=True)
-            if ports is None:
-                return {'data': {'ip': ip, 'ports': []}}
+        self.logger.info(
+            f"[nmap_discovery] Phase 1 result: {len(phase1_ports)} open ports on {ip}"
+            f"{': ' + str(phase1_ports[:20]) if phase1_ports else ''}"
+        )
 
-        self.logger.info(f"[nmap_discovery] Found {len(ports)} open ports on {ip}: {ports[:20]}{'...' if len(ports) > 20 else ''}")
+        # If Phase 1 found 0 ports, host is unresponsive — skip Phase 2
+        if not phase1_ports:
+            self.logger.info(
+                f"[nmap_discovery] Phase 1 found 0 ports on {ip}, "
+                f"skipping Phase 2 — httpx will use default ports"
+            )
+            return {'data': {'ip': ip, 'ports': []}}
+
+        # --- Phase 2: Full range optimized (1-65535, ~2-4 min) ---
+        self.logger.info(f"[nmap_discovery] Phase 2: full range scan on {ip} (1-65535)")
+        phase2_ports = self._run_phase(
+            ip=ip,
+            scan_type='-sS',
+            port_spec='1-65535',
+            top_ports=None,
+            host_timeout=300,
+            use_min_rate=True,
+            use_defeat_rst=True,
+            process_timeout=360,
+        )
+
+        if phase2_ports is None:
+            # Phase 2 failed — return Phase 1 results (still valuable)
+            self.logger.warning(
+                f"[nmap_discovery] Phase 2 failed on {ip}, "
+                f"returning Phase 1 results ({len(phase1_ports)} ports)"
+            )
+            return {'data': {'ip': ip, 'ports': phase1_ports}}
+
+        # Merge both phases (union of unique ports)
+        all_ports = sorted(set(phase1_ports + phase2_ports))
+
+        self.logger.info(
+            f"[nmap_discovery] Final: {len(all_ports)} unique ports on {ip} "
+            f"(P1={len(phase1_ports)}, P2={len(phase2_ports)}): "
+            f"{all_ports[:20]}{'...' if len(all_ports) > 20 else ''}"
+        )
 
         return {
             'data': {
                 'ip': ip,
-                'ports': ports,
+                'ports': all_ports,
             }
         }
 
-    def _run_scan(
-        self, ip: str, port_spec: str, max_rate: int, timeout: int, use_top_ports: bool = False
+    def _run_phase(
+        self,
+        ip: str,
+        scan_type: str,
+        port_spec: Optional[str],
+        top_ports: Optional[int],
+        host_timeout: int,
+        use_min_rate: bool,
+        use_defeat_rst: bool,
+        process_timeout: int,
     ) -> Optional[List[int]]:
-        """Run nmap and return sorted list of open ports, or None on error."""
+        """
+        Run a single nmap phase. Returns sorted list of open ports,
+        empty list on timeout, or None on hard error.
 
+        Uses -sS by default, falls back to -sT on permission error.
+        """
+        cmd = self._build_cmd(
+            scan_type=scan_type,
+            port_spec=port_spec,
+            top_ports=top_ports,
+            host_timeout=host_timeout,
+            use_min_rate=use_min_rate,
+            use_defeat_rst=use_defeat_rst,
+            ip=ip,
+        )
+
+        result = self._exec_nmap(cmd, process_timeout, ip)
+
+        # Fallback: -sS -> -sT on permission error
+        if result == 'PERMISSION_ERROR' and scan_type == '-sS':
+            self.logger.warning(
+                f"[nmap_discovery] -sS permission denied on {ip}, falling back to -sT"
+            )
+            cmd = self._build_cmd(
+                scan_type='-sT',
+                port_spec=port_spec,
+                top_ports=top_ports,
+                host_timeout=host_timeout,
+                use_min_rate=use_min_rate,
+                use_defeat_rst=use_defeat_rst,
+                ip=ip,
+            )
+            result = self._exec_nmap(cmd, process_timeout, ip)
+
+        if result == 'PERMISSION_ERROR':
+            return None
+        return result
+
+    def _build_cmd(
+        self,
+        scan_type: str,
+        port_spec: Optional[str],
+        top_ports: Optional[int],
+        host_timeout: int,
+        use_min_rate: bool,
+        use_defeat_rst: bool,
+        ip: str,
+    ) -> List[str]:
+        """Build nmap command with RTT-optimized parameters."""
         cmd = [
             'nmap',
-            '-sT',              # TCP connect scan - full handshake, bypasses IPS
-            '-Pn',              # Skip host discovery (we know the IP is alive)
-            '--open',           # Only show open ports
-            '-T2',              # Polite timing - adaptive, avoids IPS thresholds
-            '--max-retries', '1',    # Fewer retransmissions = less noise
-            '--scan-delay', '200ms', # Space between probes to avoid overload
-            '--host-timeout', '600s',
-            '--max-rate', str(max_rate),
-            '-oX', '-',         # XML output to stdout
+            scan_type,
+            '-Pn',
+            '--open',
+            '-T4',
+            '--max-retries', '1',
+            '--initial-rtt-timeout', '150ms',
+            '--max-rtt-timeout', '400ms',
+            '--host-timeout', '{}s'.format(host_timeout),
+            '-oX', '-',
         ]
 
-        if use_top_ports:
-            cmd.append('--top-ports')
-            cmd.append('1000')
-        else:
+        if use_min_rate:
+            cmd.extend(['--min-rate', '800', '--max-rate', '1500'])
+
+        if use_defeat_rst:
+            cmd.append('--defeat-rst-ratelimit')
+
+        if top_ports is not None:
+            cmd.extend(['--top-ports', str(top_ports)])
+        elif port_spec is not None:
             cmd.extend(['-p', port_spec])
 
         cmd.append(ip)
+        return cmd
 
+    def _exec_nmap(
+        self, cmd: List[str], timeout: int, ip: str
+    ) -> Any:
+        """
+        Execute nmap command. Returns:
+        - List[int]: sorted open ports (success or partial from timeout)
+        - 'PERMISSION_ERROR': needs fallback to -sT
+        - None: hard error
+        """
         try:
             result = subprocess.run(
                 cmd,
@@ -114,28 +222,47 @@ class NmapDiscoveryExecutor(BaseExecutor):
             )
 
             stderr = result.stderr.strip() if result.stderr else ''
+
+            # Detect permission error for -sS fallback
+            if stderr and any(
+                phrase in stderr.lower()
+                for phrase in [
+                    'requires root',
+                    'permission denied',
+                    'operation not permitted',
+                    'you requested a scan type which requires root',
+                ]
+            ):
+                return 'PERMISSION_ERROR'
+
             if stderr:
-                # Filter out common nmap info messages
                 real_errors = [
                     line for line in stderr.split('\n')
                     if not any(skip in line.lower() for skip in [
                         'starting nmap', 'nmap done', 'mass_dns',
-                        'stats:', 'service detection', 'warning:'
+                        'stats:', 'service detection', 'warning:',
+                        'raw packets', 'completed',
                     ])
                 ]
                 if real_errors:
-                    self.logger.warning(f"[nmap_discovery] stderr: {'; '.join(real_errors[:3])}")
+                    self.logger.warning(
+                        f"[nmap_discovery] stderr: {'; '.join(real_errors[:3])}"
+                    )
 
             return self._parse_xml(result.stdout)
 
         except subprocess.TimeoutExpired as e:
-            # Timeout: try to salvage partial output
             partial = ''
             if hasattr(e, 'stdout') and e.stdout:
-                partial = e.stdout if isinstance(e.stdout, str) else e.stdout.decode('utf-8', errors='ignore')
+                partial = (
+                    e.stdout if isinstance(e.stdout, str)
+                    else e.stdout.decode('utf-8', errors='ignore')
+                )
             if partial:
                 ports = self._parse_xml(partial)
-                self.logger.info(f"[nmap_discovery] Timeout on {ip}, salvaged {len(ports)} ports")
+                self.logger.info(
+                    f"[nmap_discovery] Timeout on {ip}, salvaged {len(ports)} ports"
+                )
                 return ports
             self.logger.info(f"[nmap_discovery] Timeout on {ip}, no partial results")
             return []
@@ -159,7 +286,6 @@ class NmapDiscoveryExecutor(BaseExecutor):
                     except (ValueError, TypeError):
                         continue
         except ET.ParseError:
-            # Try to extract ports from partial/malformed XML
             import re
             for match in re.finditer(r'portid="(\d+)".*?state="open"', xml_output):
                 try:
