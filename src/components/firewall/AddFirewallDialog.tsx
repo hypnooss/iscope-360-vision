@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getDeviceUrlError } from '@/lib/urlValidation';
+import { resolveGeoFromUrl } from '@/lib/geolocation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,8 +17,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Server } from 'lucide-react';
+import { Plus, Server, MapPin, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface Client {
   id: string;
@@ -52,6 +54,8 @@ interface AddFirewallDialogProps {
     schedule: ScheduleFrequency;
     device_type_id: string;
     agent_id: string;
+    geo_latitude?: number | null;
+    geo_longitude?: number | null;
   }) => Promise<void>;
 }
 
@@ -64,6 +68,7 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
   const [deviceTypes, setDeviceTypes] = useState<DeviceType[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -76,6 +81,8 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     schedule: 'manual' as ScheduleFrequency,
     device_type_id: '',
     agent_id: '',
+    geo_latitude: '',
+    geo_longitude: '',
   });
 
   // Determine if selected device uses session auth
@@ -143,7 +150,30 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
       schedule: 'manual',
       device_type_id: '',
       agent_id: '',
+      geo_latitude: '',
+      geo_longitude: '',
     });
+  };
+
+  const handleFetchLocation = async () => {
+    if (!formData.fortigate_url) {
+      toast.error('Preencha a URL do dispositivo primeiro');
+      return;
+    }
+    setGeoLoading(true);
+    try {
+      const geo = await resolveGeoFromUrl(formData.fortigate_url);
+      if (geo) {
+        setFormData(prev => ({ ...prev, geo_latitude: String(geo.lat), geo_longitude: String(geo.lng) }));
+        toast.success('Localização encontrada');
+      } else {
+        toast.error('Não foi possível determinar a localização');
+      }
+    } catch {
+      toast.error('Erro ao buscar localização');
+    } finally {
+      setGeoLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -151,10 +181,11 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     try {
       await onFirewallAdded({
         ...formData,
-        // Only include auth fields relevant to the device type
         api_key: usesSessionAuth ? '' : formData.api_key,
         auth_username: usesSessionAuth ? formData.auth_username : undefined,
         auth_password: usesSessionAuth ? formData.auth_password : undefined,
+        geo_latitude: formData.geo_latitude ? parseFloat(formData.geo_latitude) : null,
+        geo_longitude: formData.geo_longitude ? parseFloat(formData.geo_longitude) : null,
       });
       setOpen(false);
       resetForm();
@@ -289,6 +320,42 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
               />
               {urlError && (
                 <p className="text-sm text-destructive">{urlError}</p>
+              )}
+            </div>
+
+            {/* Geolocation */}
+            <div className="space-y-2">
+              <Label>Localização (opcional)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  step="any"
+                  value={formData.geo_latitude}
+                  onChange={(e) => setFormData({ ...formData, geo_latitude: e.target.value })}
+                  placeholder="Latitude"
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  step="any"
+                  value={formData.geo_longitude}
+                  onChange={(e) => setFormData({ ...formData, geo_longitude: e.target.value })}
+                  placeholder="Longitude"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleFetchLocation}
+                  disabled={geoLoading || !formData.fortigate_url}
+                  title="Buscar localização a partir da URL"
+                >
+                  {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                </Button>
+              </div>
+              {formData.geo_latitude && formData.geo_longitude && (
+                <p className="text-xs text-muted-foreground">📍 {formData.geo_latitude}, {formData.geo_longitude}</p>
               )}
             </div>
 

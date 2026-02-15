@@ -205,8 +205,8 @@ export default function AnalyzerDashboardPage() {
   const { data: firewallUrl } = useQuery({
     queryKey: ['firewall-url', selectedFirewall],
     queryFn: async () => {
-      const { data } = await supabase.from('firewalls').select('fortigate_url, name').eq('id', selectedFirewall).single();
-      return data;
+      const { data } = await supabase.from('firewalls').select('fortigate_url, name, geo_latitude, geo_longitude').eq('id', selectedFirewall).single();
+      return data as any;
     },
     enabled: !!selectedFirewall,
     staleTime: 1000 * 60 * 30,
@@ -273,11 +273,20 @@ export default function AnalyzerDashboardPage() {
       snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
     ],
     queryFn: async () => {
+      // Priority 0: stored coordinates from firewall record
+      if (firewallUrl?.geo_latitude && firewallUrl?.geo_longitude) {
+        console.log('[firewall-geo] using stored coords:', firewallUrl.geo_latitude, firewallUrl.geo_longitude);
+        return { lat: firewallUrl.geo_latitude as number, lng: firewallUrl.geo_longitude as number };
+      }
+
       const tryGeolocate = async (target: string) => {
-        const res = await fetch(`https://ipapi.co/${target}/json/`);
-        const json = await res.json();
-        if (!json.error) return { lat: json.latitude as number, lng: json.longitude as number };
-        return null;
+        try {
+          const res = await fetch(`https://ipapi.co/${target}/json/`);
+          if (!res.ok) return null;
+          const json = await res.json();
+          if (json.error || !json.latitude || !json.longitude) return null;
+          return { lat: json.latitude as number, lng: json.longitude as number };
+        } catch { return null; }
       };
 
       // 1. Try hostname directly (works if it's a public IP)
@@ -321,8 +330,8 @@ export default function AnalyzerDashboardPage() {
       console.log('[firewall-geo] all attempts failed');
       return null;
     },
-    enabled: !!selectedFirewall && !!snapshot,
-    staleTime: 1000 * 60 * 5,
+    enabled: !!selectedFirewall && (!!firewallUrl || !!snapshot),
+    staleTime: 1000 * 60 * 30,
   });
 
   const handleTrigger = async () => {

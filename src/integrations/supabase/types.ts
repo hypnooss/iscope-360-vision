@@ -1160,6 +1160,8 @@ export type Database = {
           description: string | null
           device_type_id: string | null
           fortigate_url: string
+          geo_latitude: number | null
+          geo_longitude: number | null
           id: string
           last_analysis_at: string | null
           last_score: number | null
@@ -1178,6 +1180,8 @@ export type Database = {
           description?: string | null
           device_type_id?: string | null
           fortigate_url: string
+          geo_latitude?: number | null
+          geo_longitude?: number | null
           id?: string
           last_analysis_at?: string | null
           last_score?: number | null
@@ -1196,6 +1200,8 @@ export type Database = {
           description?: string | null
           device_type_id?: string | null
           fortigate_url?: string
+          geo_latitude?: number | null
+          geo_longitude?: number | null
           id?: string
           last_analysis_at?: string | null
           last_score?: number | null
