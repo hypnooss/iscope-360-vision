@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+const PAGE_SIZE = 20;
+
 const SEVERITY_COLORS: Record<string, string> = {
   CRITICAL: 'bg-destructive text-destructive-foreground',
   HIGH: 'bg-orange-600 text-white',
@@ -136,10 +138,16 @@ export default function CVEsCachePage() {
   const [search, setSearch] = useState('');
   const [filterModule, setFilterModule] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
+  const [page, setPage] = useState(1);
   const navigate = useNavigate();
 
   const { data: cves, isLoading, refetch } = useCVECache();
   const { data: sources } = useCVESources();
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterModule, severityFilter]);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -171,9 +179,17 @@ export default function CVEsCachePage() {
           !(cve.description || '').toLowerCase().includes(q)
         ) return false;
       }
-      return true;
+    return true;
     });
   }, [cves, filterModule, severityFilter, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const displayed = useMemo(() => {
+    return filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  }, [filtered, page]);
+
+  const rangeStart = filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, filtered.length);
 
   // Determine last sync time from sources
   const lastSync = useMemo(() => {
@@ -265,14 +281,38 @@ export default function CVEsCachePage() {
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Mostrando {filtered.length} de {cves?.length ?? 0} CVEs
+              Mostrando {rangeStart}-{rangeEnd} de {filtered.length} CVEs
+              {filtered.length !== (cves?.length ?? 0) && ` (total: ${cves?.length ?? 0})`}
               {lastSync && (
                 <> · Última sincronização {formatDistanceToNow(lastSync, { addSuffix: true, locale: ptBR })}</>
               )}
             </p>
-            {filtered.map((cve) => (
+            {displayed.map((cve) => (
               <CVECard key={cve.id} cve={cve} />
             ))}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-4 pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => p - 1)}
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Página {page} de {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
