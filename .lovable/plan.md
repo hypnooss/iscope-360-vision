@@ -1,47 +1,64 @@
 
-# Fix: CORS bloqueando geolocalização do Firewall
+# Fix: Firewall ainda nao aparece no Mapa de Ataques
 
-## Causa raiz definitiva
+## Diagnostico
 
-A API `ipwho.is` retorna **403 - "CORS is not supported on the Free plan"** para todas as chamadas feitas do navegador. Isso significa que nenhuma tentativa de geolocalização funciona -- nem o hostname, nem os IPs de fallback. A resolução DNS via `dns.google` funciona corretamente (retornou o IP 200.170.138.44 para BR-PMP-FW-001), mas a chamada subsequente ao ipwho.is falha por CORS.
+A chamada `ipapi.co/200.170.138.44/json/` retornou dados validos (lat: -16.8428, lng: -49.2468) no log de rede. Isso indica que a geolocalizacao ESTA funcionando no backend, mas o dado nao esta chegando ao componente `AttackMap`. 
 
-## Solução
+Duas causas provaveis:
 
-Usar a API `https://ipapi.co/{ip}/json/` que suporta CORS gratuitamente e aceita chamadas HTTPS do navegador. Esta API retorna `latitude` e `longitude` no JSON de resposta.
+1. **Cache do React Query**: A versao anterior do codigo (com `ipwho.is`) cacheou `null` com `staleTime` de 30 minutos. Mesmo apos trocar para `ipapi.co`, se o `queryKey` for identico, o React Query serve o resultado cacheado `null` sem re-executar a `queryFn`. O request que aparece no log pode ser de uma selecao diferente de firewall.
 
-Alternativa considerada: criar uma Edge Function proxy -- descartada por ser overengineering para uma chamada simples.
+2. **Problema sutil na condicao `enabled`**: A query depende de `!!snapshot`, mas quando o usuario troca de firewall, o `snapshot` anterior pode ser invalidado momentaneamente (ficando `undefined`), desabilitando a query geo. Quando o novo snapshot carrega, a query geo pode nao re-executar se o cache antigo (do firewall anterior) ainda estiver valido.
 
-## Mudanças
+## Solucao
+
+Tres correcoes no arquivo `src/pages/firewall/AnalyzerDashboardPage.tsx`:
+
+### 1. Adicionar `selectedFirewall` ao queryKey
+
+Garantir que trocar de firewall sempre invalida o cache de geolocalizacao:
+
+```typescript
+queryKey: [
+  'firewall-geo-v2',  // mudanca de nome para invalidar cache antigo
+  selectedFirewall,    // NOVO - invalida ao trocar firewall
+  firewallHostname,
+  snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
+  snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
+],
+```
+
+### 2. Reduzir staleTime para 5 minutos
+
+O staleTime de 30 minutos e excessivo para dados de geolocalizacao que mudam com a selecao de firewall:
+
+```typescript
+staleTime: 1000 * 60 * 5,  // 5 min em vez de 30 min
+```
+
+### 3. Adicionar log de debug temporario
+
+Para confirmar se a funcao esta executando e qual resultado retorna:
+
+```typescript
+console.log('[firewall-geo] result:', result);
+```
+
+Isso sera removido apos confirmar o funcionamento.
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-Substituir todas as chamadas a `ipwho.is` por `ipapi.co`:
+Modificar a query `firewall-geo` (linhas 223-275):
 
-**Antes:**
-```typescript
-const res = await fetch(`https://ipwho.is/${target}`);
-const json = await res.json();
-if (json.success) return { lat: json.latitude, lng: json.longitude };
-```
+- Renomear queryKey de `'firewall-geo'` para `'firewall-geo-v2'` para invalidar qualquer cache residual do ipwho.is
+- Adicionar `selectedFirewall` como primeiro elemento variavel do queryKey
+- Reduzir `staleTime` de 30 min para 5 min
+- Adicionar `console.log` para debug do resultado final antes de retornar
 
-**Depois:**
-```typescript
-const res = await fetch(`https://ipapi.co/${target}/json/`);
-const json = await res.json();
-if (!json.error) return { lat: json.latitude, lng: json.longitude };
-```
-
-A API `ipapi.co` retorna os mesmos campos `latitude`/`longitude`, mas usa `json.error` (booleano) para indicar falha em vez de `json.success`.
-
-Tambem corrigir o caso do DNS resolver para um CNAME intermediario: o `dns.google` retornou dois records (CNAME + A). O codigo atual pega `Answer[0].data` que pode ser o CNAME em vez do IP. Precisa filtrar para pegar apenas o record tipo A (type=1).
-
-**Correção DNS:**
-```typescript
-const resolvedIP = dnsJson?.Answer?.find((a: any) => a.type === 1)?.data;
-```
-
-### Resumo das alterações
-
-1. Trocar `ipwho.is` por `ipapi.co` (suporta CORS + HTTPS)
-2. Ajustar verificação de sucesso (`!json.error` em vez de `json.success`)
-3. Filtrar record DNS tipo A (type=1) para evitar pegar CNAME
+Essas mudancas garantem que:
+- Cache antigo (ipwho.is que retornava null) e completamente ignorado
+- Trocar de firewall sempre dispara nova geolocalizacao
+- O resultado e visivel no console para debug
