@@ -1,109 +1,46 @@
 
 
-# Fix: Geolocalizar Firewall usando IP publico da interface WAN
+# Fix: Posicao do BAU-FW e Animacao de Ataque
 
-## Problema
+## Problema 1: BAU-FW posicionado na Europa (Romania)
 
-O firewall BAU-FW esta cadastrado com IP interno (172.16.10.2), e a logica atual nao consegue geolocaliza-lo. Porem, o proprio firewall tem interfaces WAN com IPs publicos reais (187.32.89.65, 191.209.18.93) armazenados na tabela `task_step_results` (step `system_interface`).
+A query `firewall-wan-ip` busca a tarefa completada mais recente **sem filtrar por tipo**. A tarefa mais recente do BAU-FW e do tipo `firewall_analyzer`, que nao possui o step `system_interface` (apenas tarefas `fortigate_compliance` tem esse step). Resultado: a query retorna `null`, cai no fallback 4 (IP de falha de auth) e geolocalizou para Romania (44.43, 26.10) -- onde fica o atacante, nao o firewall.
 
-## Solucao
+### Correcao
 
-Adicionar um novo passo de fallback **antes** dos fallbacks de auth IP: consultar a tabela `task_step_results` para extrair o primeiro IP publico de uma interface com `role: "wan"`.
-
-Tambem corrigir a condicao `enabled` que atualmente exige `!!firewallHostname`, o que bloqueia a execucao quando o hostname e privado. A query deve rodar mesmo quando o hostname e privado (para usar os fallbacks).
-
-## Detalhes tecnicos
-
-### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
-
-#### 1. Nova query para buscar IP publico WAN do firewall
-
-Adicionar uma query separada (antes da query `firewall-geo-v2`) que busca o IP WAN:
+No arquivo `src/pages/firewall/AnalyzerDashboardPage.tsx`, adicionar filtro `task_type = 'fortigate_compliance'` na query `firewall-wan-ip`:
 
 ```typescript
-const { data: firewallWanIP } = useQuery({
-  queryKey: ['firewall-wan-ip', selectedFirewall],
-  queryFn: async () => {
-    // Get most recent completed task for this firewall
-    const { data: tasks } = await supabase
-      .from('agent_tasks')
-      .select('id')
-      .eq('target_id', selectedFirewall)
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .limit(1);
-    
-    if (!tasks?.length) return null;
-
-    const { data: stepResult } = await supabase
-      .from('task_step_results')
-      .select('data')
-      .eq('task_id', tasks[0].id)
-      .eq('step_id', 'system_interface')
-      .limit(1)
-      .single();
-
-    if (!stepResult?.data?.results) return null;
-
-    // Find first WAN interface with a public IP
-    for (const iface of stepResult.data.results) {
-      if (iface.role === 'wan' && iface.ip && iface.status === 'up') {
-        const ipOnly = iface.ip.split(' ')[0]; // "187.32.89.65 255.255.255.240" -> "187.32.89.65"
-        if (ipOnly && !isPrivateIP(ipOnly) && ipOnly !== '0.0.0.0') {
-          return ipOnly;
-        }
-      }
-    }
-    return null;
-  },
-  enabled: !!selectedFirewall,
-  staleTime: 1000 * 60 * 30,
-});
+const { data: tasks } = await supabase
+  .from('agent_tasks')
+  .select('id')
+  .eq('target_id', selectedFirewall)
+  .eq('task_type', 'fortigate_compliance')  // NOVO - filtrar tipo correto
+  .eq('status', 'completed')
+  .order('completed_at', { ascending: false })
+  .limit(1);
 ```
 
-#### 2. Integrar WAN IP na cadeia de fallback da query `firewall-geo-v2`
+Isso garante que o step `system_interface` exista na tarefa encontrada, extraindo o IP WAN correto (187.32.89.65) e geolocalizando para Bauru/SP.
 
-Adicionar `firewallWanIP` ao `queryKey` e como fallback prioritario (novo passo 2, antes dos auth IPs):
+## Problema 2: Animacao de ataque quase invisivel
 
-```typescript
-queryKey: [
-  'firewall-geo-v2',
-  selectedFirewall,
-  firewallHostname,
-  firewallWanIP,  // NOVO
-  snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
-  snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
-],
-```
+As linhas de conexao entre pontos de ataque e o firewall tem `opacity="0.15"` e `strokeWidth="1"`, o que torna a animacao praticamente invisivel no mapa escuro.
 
-Novo fallback entre o passo 1 (hostname/DNS) e o passo 2 atual (auth IPs):
+### Correcao
 
-```typescript
-// 2. Fallback: WAN interface public IP from firewall config
-if (firewallWanIP) {
-  const result = await tryGeolocate(firewallWanIP);
-  if (result) { console.log('[firewall-geo] wan-ip result:', result); return result; }
-}
-```
+No arquivo `src/components/firewall/AttackMap.tsx`, aumentar visibilidade das linhas animadas:
 
-#### 3. Corrigir condicao `enabled`
+- `opacity`: de `0.15` para `0.45`
+- `strokeWidth`: de `1` para `1.5`
+- Animacao de dash-offset: manter, funciona corretamente
 
-Mudar de:
-```typescript
-enabled: !!firewallHostname && !!snapshot,
-```
+Essas mudancas tornam as linhas tracejadas animadas visiveis sem poluir o mapa.
 
-Para:
-```typescript
-enabled: !!selectedFirewall && !!snapshot,
-```
+## Resumo das alteracoes
 
-Isso permite que a query rode mesmo quando o hostname e um IP privado (caso do BAU-FW), usando os fallbacks (WAN IP, auth IPs).
-
-### Cadeia de fallback final
-
-1. Hostname publico direto (IP ou DNS resolvido)
-2. **IP publico da interface WAN** (novo)
-3. Primeiro IP de auth bem-sucedida
-4. Primeiro IP de auth com falha
+| Arquivo | Mudanca |
+|---------|---------|
+| `AnalyzerDashboardPage.tsx` | Adicionar `.eq('task_type', 'fortigate_compliance')` na query WAN IP |
+| `AttackMap.tsx` | Aumentar `opacity` e `strokeWidth` das linhas de conexao |
 
