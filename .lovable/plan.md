@@ -1,25 +1,49 @@
 
+# Ordenacao Multi-Criterio dos Cards do Attack Surface Analyzer
 
-# Cores Personalizadas nos Icones do TimelineSection
+## Objetivo
 
-## Mudanca
+Alterar a ordenacao padrao ("Maior Risco") para usar tres criterios em cascata:
 
-Atualizar o componente `TimelineSection` para aceitar uma prop `iconBorderColor` que controla a cor da borda e fundo do icone. Atualizar as chamadas:
+1. **Severidade maxima das CVEs** -- cards com CVEs CRITICAL vem primeiro, depois HIGH, MEDIUM, LOW
+2. **Quantidade de servicos** -- em caso de empate no criterio anterior, quem tem mais servicos vem primeiro
+3. **Quantidade de portas** -- em caso de empate nos dois criterios anteriores, quem tem mais portas vem primeiro
 
-- **Portas Abertas**: icone laranja/ambar, borda laranja (`border-orange-400/40 bg-orange-400/10`)
-- **Servicos & Tecnologias**: icone azul, borda azul (`border-blue-400/40 bg-blue-400/10`, `text-blue-400`)
-- **Certificados TLS**: sem mudanca (mantém primary)
+Resultado: cards com risco LOW, 0 servicos e 0 portas aparecem por ultimo.
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-1. Adicionar prop `iconBorderClass` ao `TimelineSection` (default: `"border-primary/40 bg-primary/10"`)
+#### 1. Criar funcao auxiliar `maxCVESeverityRank`
 
-2. No componente, substituir as classes fixas `border-primary/40 bg-primary/10` pelo valor da prop
+Retorna um valor numerico para a severidade mais alta encontrada nas CVEs de um asset:
+- CRITICAL = 4, HIGH = 3, MEDIUM = 2, LOW = 1, sem CVEs = 0
 
-3. Atualizar chamadas:
-   - Portas Abertas: `iconColor="text-orange-400"` + `iconBorderClass="border-orange-400/40 bg-orange-400/10"`
-   - Servicos: `iconColor="text-blue-400"` + `iconBorderClass="border-blue-400/40 bg-blue-400/10"`
-   - Certificados TLS: sem alteracao (usa default primary)
+#### 2. Atualizar o sort do modo `risk`
 
+Substituir o sort simples `b.riskScore - a.riskScore` por um sort multi-criterio:
+
+```typescript
+case 'risk':
+  return sorted.sort((a, b) => {
+    // 1. Severidade maxima das CVEs
+    const sevDiff = maxCVESeverityRank(b) - maxCVESeverityRank(a);
+    if (sevDiff !== 0) return sevDiff;
+    // 2. Quantidade de servicos
+    const svcDiff = (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
+    if (svcDiff !== 0) return svcDiff;
+    // 3. Quantidade de portas
+    return b.ports.length - a.ports.length;
+  });
+```
+
+#### 3. Atualizar tambem o sort padrao em `buildAssets`
+
+A funcao `buildAssets` (linha 436) que faz o sort inicial tambem sera atualizada para usar a mesma logica multi-criterio, garantindo consistencia mesmo antes de qualquer interacao do usuario com o seletor de ordenacao.
+
+### Resumo
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `AttackSurfaceAnalyzerPage.tsx` | Adicionar `maxCVESeverityRank`, atualizar sort em `filteredAssets` (modo risk) e em `buildAssets` |
