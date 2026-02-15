@@ -1,64 +1,109 @@
 
-# Fix: Firewall ainda nao aparece no Mapa de Ataques
 
-## Diagnostico
+# Fix: Geolocalizar Firewall usando IP publico da interface WAN
 
-A chamada `ipapi.co/200.170.138.44/json/` retornou dados validos (lat: -16.8428, lng: -49.2468) no log de rede. Isso indica que a geolocalizacao ESTA funcionando no backend, mas o dado nao esta chegando ao componente `AttackMap`. 
+## Problema
 
-Duas causas provaveis:
-
-1. **Cache do React Query**: A versao anterior do codigo (com `ipwho.is`) cacheou `null` com `staleTime` de 30 minutos. Mesmo apos trocar para `ipapi.co`, se o `queryKey` for identico, o React Query serve o resultado cacheado `null` sem re-executar a `queryFn`. O request que aparece no log pode ser de uma selecao diferente de firewall.
-
-2. **Problema sutil na condicao `enabled`**: A query depende de `!!snapshot`, mas quando o usuario troca de firewall, o `snapshot` anterior pode ser invalidado momentaneamente (ficando `undefined`), desabilitando a query geo. Quando o novo snapshot carrega, a query geo pode nao re-executar se o cache antigo (do firewall anterior) ainda estiver valido.
+O firewall BAU-FW esta cadastrado com IP interno (172.16.10.2), e a logica atual nao consegue geolocaliza-lo. Porem, o proprio firewall tem interfaces WAN com IPs publicos reais (187.32.89.65, 191.209.18.93) armazenados na tabela `task_step_results` (step `system_interface`).
 
 ## Solucao
 
-Tres correcoes no arquivo `src/pages/firewall/AnalyzerDashboardPage.tsx`:
+Adicionar um novo passo de fallback **antes** dos fallbacks de auth IP: consultar a tabela `task_step_results` para extrair o primeiro IP publico de uma interface com `role: "wan"`.
 
-### 1. Adicionar `selectedFirewall` ao queryKey
-
-Garantir que trocar de firewall sempre invalida o cache de geolocalizacao:
-
-```typescript
-queryKey: [
-  'firewall-geo-v2',  // mudanca de nome para invalidar cache antigo
-  selectedFirewall,    // NOVO - invalida ao trocar firewall
-  firewallHostname,
-  snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
-  snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
-],
-```
-
-### 2. Reduzir staleTime para 5 minutos
-
-O staleTime de 30 minutos e excessivo para dados de geolocalizacao que mudam com a selecao de firewall:
-
-```typescript
-staleTime: 1000 * 60 * 5,  // 5 min em vez de 30 min
-```
-
-### 3. Adicionar log de debug temporario
-
-Para confirmar se a funcao esta executando e qual resultado retorna:
-
-```typescript
-console.log('[firewall-geo] result:', result);
-```
-
-Isso sera removido apos confirmar o funcionamento.
+Tambem corrigir a condicao `enabled` que atualmente exige `!!firewallHostname`, o que bloqueia a execucao quando o hostname e privado. A query deve rodar mesmo quando o hostname e privado (para usar os fallbacks).
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-Modificar a query `firewall-geo` (linhas 223-275):
+#### 1. Nova query para buscar IP publico WAN do firewall
 
-- Renomear queryKey de `'firewall-geo'` para `'firewall-geo-v2'` para invalidar qualquer cache residual do ipwho.is
-- Adicionar `selectedFirewall` como primeiro elemento variavel do queryKey
-- Reduzir `staleTime` de 30 min para 5 min
-- Adicionar `console.log` para debug do resultado final antes de retornar
+Adicionar uma query separada (antes da query `firewall-geo-v2`) que busca o IP WAN:
 
-Essas mudancas garantem que:
-- Cache antigo (ipwho.is que retornava null) e completamente ignorado
-- Trocar de firewall sempre dispara nova geolocalizacao
-- O resultado e visivel no console para debug
+```typescript
+const { data: firewallWanIP } = useQuery({
+  queryKey: ['firewall-wan-ip', selectedFirewall],
+  queryFn: async () => {
+    // Get most recent completed task for this firewall
+    const { data: tasks } = await supabase
+      .from('agent_tasks')
+      .select('id')
+      .eq('target_id', selectedFirewall)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1);
+    
+    if (!tasks?.length) return null;
+
+    const { data: stepResult } = await supabase
+      .from('task_step_results')
+      .select('data')
+      .eq('task_id', tasks[0].id)
+      .eq('step_id', 'system_interface')
+      .limit(1)
+      .single();
+
+    if (!stepResult?.data?.results) return null;
+
+    // Find first WAN interface with a public IP
+    for (const iface of stepResult.data.results) {
+      if (iface.role === 'wan' && iface.ip && iface.status === 'up') {
+        const ipOnly = iface.ip.split(' ')[0]; // "187.32.89.65 255.255.255.240" -> "187.32.89.65"
+        if (ipOnly && !isPrivateIP(ipOnly) && ipOnly !== '0.0.0.0') {
+          return ipOnly;
+        }
+      }
+    }
+    return null;
+  },
+  enabled: !!selectedFirewall,
+  staleTime: 1000 * 60 * 30,
+});
+```
+
+#### 2. Integrar WAN IP na cadeia de fallback da query `firewall-geo-v2`
+
+Adicionar `firewallWanIP` ao `queryKey` e como fallback prioritario (novo passo 2, antes dos auth IPs):
+
+```typescript
+queryKey: [
+  'firewall-geo-v2',
+  selectedFirewall,
+  firewallHostname,
+  firewallWanIP,  // NOVO
+  snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
+  snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
+],
+```
+
+Novo fallback entre o passo 1 (hostname/DNS) e o passo 2 atual (auth IPs):
+
+```typescript
+// 2. Fallback: WAN interface public IP from firewall config
+if (firewallWanIP) {
+  const result = await tryGeolocate(firewallWanIP);
+  if (result) { console.log('[firewall-geo] wan-ip result:', result); return result; }
+}
+```
+
+#### 3. Corrigir condicao `enabled`
+
+Mudar de:
+```typescript
+enabled: !!firewallHostname && !!snapshot,
+```
+
+Para:
+```typescript
+enabled: !!selectedFirewall && !!snapshot,
+```
+
+Isso permite que a query rode mesmo quando o hostname e um IP privado (caso do BAU-FW), usando os fallbacks (WAN IP, auth IPs).
+
+### Cadeia de fallback final
+
+1. Hostname publico direto (IP ou DNS resolvido)
+2. **IP publico da interface WAN** (novo)
+3. Primeiro IP de auth bem-sucedida
+4. Primeiro IP de auth com falha
+
