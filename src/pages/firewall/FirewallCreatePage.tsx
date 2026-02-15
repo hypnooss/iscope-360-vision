@@ -13,9 +13,10 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Plus, Loader2, Settings, Clock } from 'lucide-react';
+import { ArrowLeft, Plus, Loader2, Settings, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeviceUrlError } from '@/lib/urlValidation';
+import { resolveGeoFromUrl } from '@/lib/geolocation';
 
 interface Client {
   id: string;
@@ -98,6 +99,7 @@ export default function FirewallCreatePage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -113,6 +115,8 @@ export default function FirewallCreatePage() {
     scheduled_hour: 2,
     scheduled_day_of_week: 1,
     scheduled_day_of_month: 1,
+    geo_latitude: '',
+    geo_longitude: '',
   });
 
   const selectedDeviceType = useMemo(() => {
@@ -207,7 +211,9 @@ export default function FirewallCreatePage() {
           device_type_id: formData.device_type_id || null,
           agent_id: formData.agent_id || null,
           created_by: user?.id,
-        })
+          geo_latitude: formData.geo_latitude ? parseFloat(formData.geo_latitude) : null,
+          geo_longitude: formData.geo_longitude ? parseFloat(formData.geo_longitude) : null,
+        } as any)
         .select()
         .single();
 
@@ -361,6 +367,56 @@ export default function FirewallCreatePage() {
                 className={urlError ? 'border-destructive' : ''}
               />
               {urlError && <p className="text-sm text-destructive">{urlError}</p>}
+            </div>
+
+            {/* Geolocation */}
+            <div className="space-y-2">
+              <Label>Localização (opcional)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  step="any"
+                  value={formData.geo_latitude}
+                  onChange={(e) => setFormData({ ...formData, geo_latitude: e.target.value })}
+                  placeholder="Latitude"
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  step="any"
+                  value={formData.geo_longitude}
+                  onChange={(e) => setFormData({ ...formData, geo_longitude: e.target.value })}
+                  placeholder="Longitude"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
+                    setGeoLoading(true);
+                    try {
+                      const geo = await resolveGeoFromUrl(formData.fortigate_url);
+                      if (geo) {
+                        setFormData(prev => ({ ...prev, geo_latitude: String(geo.lat), geo_longitude: String(geo.lng) }));
+                        toast.success('Localização encontrada');
+                      } else {
+                        toast.error('Não foi possível determinar a localização');
+                      }
+                    } catch { toast.error('Erro ao buscar localização'); }
+                    finally { setGeoLoading(false); }
+                  }}
+                  disabled={geoLoading || !formData.fortigate_url}
+                  className="gap-1"
+                >
+                  {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                  Buscar
+                </Button>
+              </div>
+              {formData.geo_latitude && formData.geo_longitude && (
+                <p className="text-xs text-muted-foreground">📍 {formData.geo_latitude}, {formData.geo_longitude}</p>
+              )}
             </div>
 
             {/* Auth */}
