@@ -1,73 +1,44 @@
 
-# Cancelar Syncs, Resincronizar Todas as Fontes e Exibir CVEs nos Agendamentos
 
-## 1. Resetar sincronizacoes travadas (SQL)
+# Adicionar Coluna "Proxima Execucao" na Tabela de CVEs
 
-Executar UPDATE para resetar as 2 fontes presas em "syncing" (History e PHP):
+## Contexto
 
-```text
-UPDATE cve_sources 
-SET last_sync_status = 'error', 
-    last_sync_error = 'Cancelado manualmente pelo administrador'
-WHERE last_sync_status = 'syncing';
-```
+A secao "Sincronizacao de CVEs" na pagina de Agendamentos nao exibe quando sera a proxima execucao. Diferente dos outros agendamentos (Firewalls, Dominios, etc.), as fontes de CVE nao possuem o campo `next_run_at` no banco de dados.
 
-## 2. Disparar sincronizacao de todas as fontes
+## Plano
 
-Invocar a Edge Function `refresh-cve-cache` para cada fonte individualmente, iterando pelos 12 `source_id`s. Como a funcao agora processa 1 fonte por vez com limite de 500 CVEs, cada chamada sera rapida e segura.
-
-## 3. Adicionar secao de CVE Sources na pagina de Agendamentos
-
-### Arquivo: `src/pages/admin/SchedulesPage.tsx`
-
-Adicionar uma nova secao no final da pagina (antes da tabela de agendamentos ou como uma tab/secao separada) que exibe o status das fontes de CVE:
-
-- Buscar dados da tabela `cve_sources` via query
-- Exibir uma tabela/lista compacta com:
-  - Nome da fonte (`source_label`)
-  - Modulo (badge colorido: Firewall/M365/Dominio Externo)
-  - Status do ultimo sync (icone + label)
-  - Data do ultimo sync (tempo relativo)
-  - Quantidade de CVEs no cache
-  - Indicador de sync parcial (quando `last_sync_error` contem "parcial")
-- A secao tera titulo "Sincronizacao de CVEs" com icone Database
-- Manter o mesmo estilo visual da pagina (badges, cores por modulo)
-
-### Estrutura visual
+### 1. Migracao SQL: Adicionar coluna `next_run_at` em `cve_sources`
 
 ```text
-+--------------------------------------------------+
-| Agendamentos                                      |
-|                                                    |
-| [Cards de stats existentes]                        |
-| [Filtros existentes]                               |
-| [Tabela de agendamentos existente]                |
-|                                                    |
-| ── Sincronizacao de CVEs ──────────────────────── |
-|                                                    |
-| Fonte          | Modulo   | Status   | Sync    | CVEs |
-| FortiGate      | Firewall | Erro     | 1h atras| 0    |
-| SonicWall      | Firewall | OK       | 12h     | 0    |
-| Nginx          | Dom.Ext  | OK       | 30min   | 267  |
-| Node.js        | Dom.Ext  | OK       | 30min   | 518  |
-| ...            |          |          |         |      |
-+--------------------------------------------------+
+ALTER TABLE cve_sources 
+ADD COLUMN next_run_at timestamptz;
 ```
 
-### Hook reutilizado
+### 2. Edge Function `refresh-cve-cache`: Computar `next_run_at` apos cada sync
 
-Importar `useCVESources` de `@/hooks/useCVECache` (ja existente) para buscar os dados, evitando duplicacao.
+No update final de cada fonte (linha ~586), adicionar o calculo de `next_run_at`. Como o cron de `run-scheduled-analyses` roda a cada hora, o proximo sync sera em ~1 hora:
 
-### Componentes reutilizados
+```text
+next_run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+```
 
-- Badges de modulo com mesmas cores do `CVESourcesPage` (laranja/azul/esmeralda)
-- Icones de status (CheckCircle2, XCircle, RefreshCw, Clock)
-- `formatDistanceToNow` com locale ptBR
+Isso sera adicionado tanto no path de sucesso quanto no de erro, garantindo que a coluna sempre reflita a proxima tentativa.
 
-## Resumo
+### 3. UI: Adicionar coluna na tabela de CVEs
 
-| Acao | Tipo |
-|------|------|
-| Reset fontes "syncing" | SQL (insert tool) |
-| Disparar sync de todas as fontes | Chamada a Edge Function |
-| Adicionar secao CVE Sources no SchedulesPage | Codigo (SchedulesPage.tsx) |
+No arquivo `src/pages/admin/SchedulesPage.tsx`, adicionar:
+
+- Nova `TableHead` "Proxima Execucao" entre "Ultimo Sync" e "CVEs"
+- Nova `TableCell` usando a mesma funcao `renderNextRun` ja existente na pagina, mantendo consistencia visual com as outras tabelas de agendamento
+
+### Detalhes Tecnicos
+
+| Local | Mudanca |
+|-------|---------|
+| Migracao SQL | Adicionar coluna `next_run_at` em `cve_sources` |
+| `refresh-cve-cache/index.ts` (L586-591) | Incluir `next_run_at` no update de sucesso |
+| `refresh-cve-cache/index.ts` (L596-599) | Incluir `next_run_at` no update de erro |
+| `SchedulesPage.tsx` (L627-631) | Adicionar header "Proxima Execucao" |
+| `SchedulesPage.tsx` (L661-665) | Adicionar celula com `renderNextRun(source.next_run_at)` |
+
