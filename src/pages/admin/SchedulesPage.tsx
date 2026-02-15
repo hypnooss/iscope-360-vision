@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes } from 'date-fns';
@@ -21,7 +21,7 @@ interface UnifiedSchedule {
   id: string;
   targetId: string;
   targetName: string;
-  targetType: 'firewall' | 'external_domain';
+  targetType: 'firewall' | 'external_domain' | 'attack_surface';
   frequency: string;
   isActive: boolean;
   nextRunAt: string | null;
@@ -156,18 +156,45 @@ export default function SchedulesPage() {
     },
   });
 
-  const isLoading = loadingFw || loadingDom;
+  // ── Fetch attack surface schedules ──
+  const { data: attackSurfaceSchedules, isLoading: loadingAs, refetch: refetchAs } = useQuery({
+    queryKey: ['admin-schedules-as'],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attack_surface_schedules')
+        .select('id, client_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, clients(id, name)')
+        .order('next_run_at', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id,
+        targetId: s.client_id,
+        targetName: s.clients?.name || '—',
+        targetType: 'attack_surface',
+        frequency: s.frequency,
+        isActive: s.is_active ?? true,
+        nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour,
+        scheduledDayOfWeek: s.scheduled_day_of_week,
+        scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.client_id,
+        clientName: s.clients?.name || '—',
+        lastScore: null,
+      }));
+    },
+  });
+
+  const isLoading = loadingFw || loadingDom || loadingAs;
 
   const schedules = useMemo(() => {
-    const all = [...(firewallSchedules || []), ...(domainSchedules || [])];
-    // Sort by next_run_at ascending, nulls last
+    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || [])];
     return all.sort((a, b) => {
       if (!a.nextRunAt && !b.nextRunAt) return 0;
       if (!a.nextRunAt) return 1;
       if (!b.nextRunAt) return -1;
       return new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime();
     });
-  }, [firewallSchedules, domainSchedules]);
+  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules]);
 
   // ── Fetch latest task per target ──
   const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
@@ -290,12 +317,20 @@ export default function SchedulesPage() {
     );
   };
 
-  const renderTypeBadge = (type: 'firewall' | 'external_domain') => {
+  const renderTypeBadge = (type: 'firewall' | 'external_domain' | 'attack_surface') => {
     if (type === 'firewall') {
       return (
         <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
           <Shield className="w-3 h-3" />
           Firewall
+        </Badge>
+      );
+    }
+    if (type === 'attack_surface') {
+      return (
+        <Badge variant="outline" className="bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+          <Crosshair className="w-3 h-3" />
+          Attack Surface
         </Badge>
       );
     }
@@ -310,6 +345,7 @@ export default function SchedulesPage() {
   const handleRefresh = () => {
     refetchFw();
     refetchDom();
+    refetchAs();
   };
 
   return (
@@ -421,6 +457,7 @@ export default function SchedulesPage() {
               <SelectItem value="all">Todos os tipos</SelectItem>
               <SelectItem value="firewall">Firewall</SelectItem>
               <SelectItem value="external_domain">Domínio Externo</SelectItem>
+              <SelectItem value="attack_surface">Attack Surface</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
