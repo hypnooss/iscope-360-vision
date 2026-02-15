@@ -1,105 +1,47 @@
 
-# Fix: Geolocalização do Firewall no Mapa de Ataques
+# Fix: CORS bloqueando geolocalização do Firewall
 
-## Causas Raiz Identificadas
+## Causa raiz definitiva
 
-1. **ipwho.is nao aceita hostnames DNS**: A chamada `ipwho.is/br-pmp-fw-001.gdmseeds.com` retorna `success: false` com mensagem "Invalid IP address". Apenas IPs sao aceitos.
+A API `ipwho.is` retorna **403 - "CORS is not supported on the Free plan"** para todas as chamadas feitas do navegador. Isso significa que nenhuma tentativa de geolocalização funciona -- nem o hostname, nem os IPs de fallback. A resolução DNS via `dns.google` funciona corretamente (retornou o IP 200.170.138.44 para BR-PMP-FW-001), mas a chamada subsequente ao ipwho.is falha por CORS.
 
-2. **Dependencias incorretas no queryKey**: A query so rastreia `topAuthIPsSuccess` (que esta sempre vazio `[]`), mas o fallback real depende de `topAuthIPsFailed`. A query executa antes do snapshot carregar, retorna null, e quando o snapshot carrega, o queryKey muda de `undefined` para `[]` mas o resultado cacheado de null com staleTime de 30 minutos impede nova execucao efetiva.
+## Solução
 
-3. **Ambos firewalls afetados**: BAU-FW tem IP privado (172.16.10.2) e BR-PMP-FW-001 tem DNS que ipwho.is nao resolve. Em ambos os casos, `topAuthIPsSuccess` esta vazio, entao a unica chance e o fallback `topAuthIPsFailed`.
+Usar a API `https://ipapi.co/{ip}/json/` que suporta CORS gratuitamente e aceita chamadas HTTPS do navegador. Esta API retorna `latitude` e `longitude` no JSON de resposta.
 
-## Solucao
+Alternativa considerada: criar uma Edge Function proxy -- descartada por ser overengineering para uma chamada simples.
 
-Reescrever a logica de geolocalizacao com tres correcoes:
-
-### 1. Resolver DNS para IP antes de chamar ipwho.is
-
-Para hostnames DNS (como `br-pmp-fw-001.gdmseeds.com`), usar a API `dns.google/resolve` para obter o IP primeiro, e entao chamar ipwho.is com o IP resolvido.
-
-### 2. Condicionar a query ao snapshot estar carregado
-
-Mudar `enabled` para so executar quando o snapshot ja estiver disponivel (ou quando o hostname for publico e nao-DNS). Isso garante que os fallbacks tenham dados.
-
-### 3. Incluir topAuthIPsFailed no queryKey
-
-Rastrear tambem `topAuthIPsFailed` no queryKey para garantir re-execucao quando esses dados ficarem disponiveis.
-
-## Detalhes tecnicos
+## Mudanças
 
 ### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-Substituir o bloco da query `firewall-geo` (linhas 221-257) por:
+Substituir todas as chamadas a `ipwho.is` por `ipapi.co`:
 
+**Antes:**
 ```typescript
-// Helper: check if string looks like an IP (vs DNS hostname)
-const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
-
-const { data: firewallGeo } = useQuery({
-  queryKey: [
-    'firewall-geo',
-    firewallHostname,
-    snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
-    snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
-  ],
-  queryFn: async () => {
-    const tryGeolocate = async (target: string) => {
-      const res = await fetch(`https://ipwho.is/${target}`);
-      const json = await res.json();
-      if (json.success) return { lat: json.latitude as number, lng: json.longitude as number };
-      return null;
-    };
-
-    // 1. Try hostname directly (works if it's a public IP)
-    if (firewallHostname && !isPrivateIP(firewallHostname)) {
-      if (looksLikeIP(firewallHostname)) {
-        const result = await tryGeolocate(firewallHostname);
-        if (result) return result;
-      } else {
-        // DNS hostname: resolve to IP first via dns.google
-        try {
-          const dnsRes = await fetch(
-            `https://dns.google/resolve?name=${firewallHostname}&type=A`
-          );
-          const dnsJson = await dnsRes.json();
-          const resolvedIP = dnsJson?.Answer?.[0]?.data;
-          if (resolvedIP) {
-            const result = await tryGeolocate(resolvedIP);
-            if (result) return result;
-          }
-        } catch { /* DNS resolution failed, try fallbacks */ }
-      }
-    }
-
-    // 2. Fallback: first successful auth IP
-    const fb1 = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
-    if (fb1 && !isPrivateIP(fb1)) {
-      const result = await tryGeolocate(fb1);
-      if (result) return result;
-    }
-
-    // 3. Fallback: first failed auth IP
-    const fb2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
-    if (fb2 && !isPrivateIP(fb2)) {
-      const result = await tryGeolocate(fb2);
-      if (result) return result;
-    }
-
-    return null;
-  },
-  enabled: !!firewallHostname && !!snapshot,
-  staleTime: 1000 * 60 * 30,
-});
+const res = await fetch(`https://ipwho.is/${target}`);
+const json = await res.json();
+if (json.success) return { lat: json.latitude, lng: json.longitude };
 ```
 
-### Mudancas chave
+**Depois:**
+```typescript
+const res = await fetch(`https://ipapi.co/${target}/json/`);
+const json = await res.json();
+if (!json.error) return { lat: json.latitude, lng: json.longitude };
+```
 
-1. **`looksLikeIP`**: Distingue IPs de hostnames DNS para evitar chamada invalida ao ipwho.is
-2. **`dns.google/resolve`**: API publica do Google DNS, suporta HTTPS, sem rate limit agressivo, resolve hostnames para IPs
-3. **`enabled: !!firewallHostname && !!snapshot`**: Garante que a query so roda quando o snapshot ja carregou, evitando cache de null
-4. **queryKey inclui `topAuthIPsFailed`**: Garante re-execucao quando esses dados mudam
-5. **`tryGeolocate` helper**: Elimina duplicacao de codigo
+A API `ipapi.co` retorna os mesmos campos `latitude`/`longitude`, mas usa `json.error` (booleano) para indicar falha em vez de `json.success`.
 
-### Arquivos modificados
+Tambem corrigir o caso do DNS resolver para um CNAME intermediario: o `dns.google` retornou dois records (CNAME + A). O codigo atual pega `Answer[0].data` que pode ser o CNAME em vez do IP. Precisa filtrar para pegar apenas o record tipo A (type=1).
 
-1. `src/pages/firewall/AnalyzerDashboardPage.tsx` - reescrever bloco de geolocalizacao (linhas 218-257)
+**Correção DNS:**
+```typescript
+const resolvedIP = dnsJson?.Answer?.find((a: any) => a.type === 1)?.data;
+```
+
+### Resumo das alterações
+
+1. Trocar `ipwho.is` por `ipapi.co` (suporta CORS + HTTPS)
+2. Ajustar verificação de sucesso (`!json.error` em vez de `json.success`)
+3. Filtrar record DNS tipo A (type=1) para evitar pegar CNAME
