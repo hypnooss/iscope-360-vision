@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Clock, Search, CheckCircle, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, CheckCircle2, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useCVESources } from '@/hooks/useCVECache';
 
 // ── Unified type ──
 
@@ -565,7 +566,113 @@ export default function SchedulesPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* CVE Sources Sync Section */}
+        <CVESourcesSection />
       </div>
     </AppLayout>
+  );
+}
+
+// ── CVE Sources constants ──
+
+const CVE_MODULE_LABELS: Record<string, string> = {
+  firewall: 'Firewall',
+  m365: 'Microsoft 365',
+  external_domain: 'Dom. Externo',
+};
+
+const CVE_MODULE_COLORS: Record<string, string> = {
+  firewall: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  m365: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  external_domain: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+};
+
+const CVE_STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; className: string }> = {
+  success: { icon: CheckCircle2, label: 'OK', className: 'text-emerald-400' },
+  error: { icon: XCircle, label: 'Erro', className: 'text-rose-400' },
+  syncing: { icon: RefreshCw, label: 'Sincronizando', className: 'text-blue-400 animate-spin' },
+  pending: { icon: Clock, label: 'Pendente', className: 'text-muted-foreground' },
+};
+
+function CVESourcesSection() {
+  const { data: sources, isLoading } = useCVESources();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Database className="w-5 h-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold text-foreground">Sincronização de CVEs</h2>
+        </div>
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!sources || sources.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Database className="w-5 h-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold text-foreground">Sincronização de CVEs</h2>
+        <span className="text-sm text-muted-foreground">({sources.length} fontes)</span>
+      </div>
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fonte</TableHead>
+                <TableHead>Módulo</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Último Sync</TableHead>
+                <TableHead className="text-right">CVEs</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sources.map(source => {
+                const statusCfg = CVE_STATUS_CONFIG[source.last_sync_status || 'pending'] || CVE_STATUS_CONFIG.pending;
+                const StatusIcon = statusCfg.icon;
+                const isPartial = source.last_sync_error?.toLowerCase().includes('parcial');
+
+                return (
+                  <TableRow key={source.id}>
+                    <TableCell className="font-medium text-foreground">
+                      {source.source_label}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn('text-xs', CVE_MODULE_COLORS[source.module_code] || '')}>
+                        {CVE_MODULE_LABELS[source.module_code] || source.module_code}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <StatusIcon className={cn('w-4 h-4', statusCfg.className)} />
+                        <span className="text-sm text-muted-foreground">{statusCfg.label}</span>
+                        {isPartial && (
+                          <Badge variant="outline" className="text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30 px-1.5 py-0">
+                            parcial
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {source.last_sync_at
+                        ? formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-foreground">
+                      {source.last_sync_count || 0}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
