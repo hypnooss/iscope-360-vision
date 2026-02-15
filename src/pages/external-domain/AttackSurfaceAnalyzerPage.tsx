@@ -673,6 +673,44 @@ function OrphanCVEsBlock({ cves }: { cves: AttackSurfaceCVE[] }) {
   );
 }
 
+function TimelineSection({ 
+  icon: Icon, 
+  iconColor, 
+  title, 
+  isLast, 
+  children 
+}: { 
+  icon: React.ElementType; 
+  iconColor: string; 
+  title: string; 
+  isLast?: boolean; 
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative flex gap-4">
+      {/* Vertical line + dot */}
+      <div className="flex flex-col items-center">
+        <div className={cn(
+          "w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10",
+          "flex items-center justify-center shrink-0 z-10"
+        )}>
+          <Icon className={cn("w-4 h-4", iconColor)} />
+        </div>
+        {!isLast && (
+          <div className="w-0.5 flex-1 bg-primary/20 min-h-[16px]" />
+        )}
+      </div>
+      {/* Content card */}
+      <div className="flex-1 pb-6">
+        <h4 className="text-sm font-medium mb-3">{title}</h4>
+        <div className="rounded-xl border border-border/60 bg-card/30 p-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AssetCard({ asset }: { asset: ExposedAsset }) {
   const [open, setOpen] = useState(false);
   const rc = riskColors[asset.riskLevel];
@@ -739,102 +777,106 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
       </div>
 
       {/* Expanded detail */}
-      {open && (
-         <div className="border-t border-border/50 py-4 pr-4 pl-10 space-y-12 bg-muted/10">
+      {open && (() => {
+        const hasPorts = asset.ports.length > 0;
+        const hasServices = asset.services.length > 0 || asset.webServices.length > 0;
+        const hasCerts = asset.tlsCerts.length > 0;
+        const orphans = hasServices ? getOrphanCVEs(asset.services, asset.webServices, asset.cves) : [];
+
+        return (
+         <div className="border-t border-border/50 py-6 pr-4 pl-10 bg-muted/10">
            {/* Block 1: Ports */}
-           {asset.ports.length > 0 && (
-             <div>
-               <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                 <Server className="w-4 h-4 text-orange-400" />
-                 Portas Abertas ({asset.ports.length})
-               </h4>
-               <div className="pl-6 flex flex-wrap gap-1.5">
-                {asset.ports.map(port => (
-                  <Badge key={port} variant="outline" className="font-mono text-xs px-2 py-0.5">{port}</Badge>
-                ))}
-              </div>
-            </div>
-          )}
+           {hasPorts && (
+             <TimelineSection
+               icon={Server}
+               iconColor="text-orange-400"
+               title={`Portas Abertas (${asset.ports.length})`}
+               isLast={!hasServices && !hasCerts}
+             >
+               <div className="flex flex-wrap gap-1.5">
+                 {asset.ports.map(port => (
+                   <Badge key={port} variant="outline" className="font-mono text-xs px-2 py-0.5">{port}</Badge>
+                 ))}
+               </div>
+             </TimelineSection>
+           )}
 
-          {/* Block 2: Services & Technologies (with inline CVEs) */}
-          {(asset.services.length > 0 || asset.webServices.length > 0) && (() => {
-            const orphans = getOrphanCVEs(asset.services, asset.webServices, asset.cves);
-            return (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-primary" />
-                  Serviços & Tecnologias
-                </h4>
-                <div className="pl-6 space-y-2">
-                  {asset.services.filter(s => s.product).map((svc, i) => (
-                    <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
-                  ))}
-                  {asset.webServices.map((ws, i) => {
-                    // Collect all CVEs matching any technology in this web service
-                    const names: string[] = [];
-                    if (ws.server) { const [n] = ws.server.toLowerCase().split('/'); names.push(n.trim()); }
-                    for (const t of ws.technologies || []) { const [n] = t.split(':'); names.push(n.trim().toLowerCase()); }
-                    const wsCves = new Map<string, AttackSurfaceCVE>();
-                    for (const name of names) {
-                      for (const cve of matchCVEsToService(name, asset.cves)) {
-                        wsCves.set(cve.cve_id, cve);
-                      }
-                    }
-                    const sortedCves = Array.from(wsCves.values()).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-                    return <WebServiceRow key={`ws-${i}`} ws={ws} cves={sortedCves} />;
-                  })}
-                  <OrphanCVEsBlock cves={orphans} />
-                </div>
-              </div>
-            );
-          })()}
+           {/* Block 2: Services & Technologies (with inline CVEs) */}
+           {hasServices && (
+             <TimelineSection
+               icon={Globe}
+               iconColor="text-primary"
+               title="Serviços & Tecnologias"
+               isLast={!hasCerts}
+             >
+               <div className="space-y-2">
+                 {asset.services.filter(s => s.product).map((svc, i) => (
+                   <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
+                 ))}
+                 {asset.webServices.map((ws, i) => {
+                   const names: string[] = [];
+                   if (ws.server) { const [n] = ws.server.toLowerCase().split('/'); names.push(n.trim()); }
+                   for (const t of ws.technologies || []) { const [n] = t.split(':'); names.push(n.trim().toLowerCase()); }
+                   const wsCves = new Map<string, AttackSurfaceCVE>();
+                   for (const name of names) {
+                     for (const cve of matchCVEsToService(name, asset.cves)) {
+                       wsCves.set(cve.cve_id, cve);
+                     }
+                   }
+                   const sortedCves = Array.from(wsCves.values()).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+                   return <WebServiceRow key={`ws-${i}`} ws={ws} cves={sortedCves} />;
+                 })}
+                 <OrphanCVEsBlock cves={orphans} />
+               </div>
+             </TimelineSection>
+           )}
 
-          {/* Block 3: TLS Certificates */}
-          {asset.tlsCerts.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-primary" />
-                Certificados TLS ({asset.tlsCerts.length})
-              </h4>
-               <div className="pl-6 space-y-2">
+           {/* Block 3: TLS Certificates */}
+           {hasCerts && (
+             <TimelineSection
+               icon={Shield}
+               iconColor="text-primary"
+               title={`Certificados TLS (${asset.tlsCerts.length})`}
+               isLast={true}
+             >
+               <div className="space-y-2">
                  {asset.tlsCerts.map((cert, i) => {
-                  const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
-                  const isExpiring = cert.daysRemaining !== null && cert.daysRemaining >= 0 && cert.daysRemaining <= 30;
-                  return (
-                    <div key={i} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-4 flex-wrap text-sm">
-                      <div className="flex items-center gap-2">
-                        <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="font-mono font-medium">{cert.subject_cn}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">Emissor: {cert.issuer}</span>
-                      {cert.not_after && (
-                        <span className="text-xs text-muted-foreground">
-                          Expira: {new Date(cert.not_after).toLocaleDateString('pt-BR')}
-                        </span>
-                      )}
-                      {isExpired ? (
-                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
-                          Expirado há {Math.abs(cert.daysRemaining!)}d
-                        </Badge>
-                      ) : isExpiring ? (
-                        <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
-                          Expira em {cert.daysRemaining}d
-                        </Badge>
-                      ) : cert.daysRemaining !== null ? (
-                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
-                          {cert.daysRemaining}d restantes
-                        </Badge>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* CVEs are now shown inline within Services & Technologies */}
-        </div>
-      )}
+                   const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
+                   const isExpiring = cert.daysRemaining !== null && cert.daysRemaining >= 0 && cert.daysRemaining <= 30;
+                   return (
+                     <div key={i} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-4 flex-wrap text-sm">
+                       <div className="flex items-center gap-2">
+                         <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                         <span className="font-mono font-medium">{cert.subject_cn}</span>
+                       </div>
+                       <span className="text-xs text-muted-foreground">Emissor: {cert.issuer}</span>
+                       {cert.not_after && (
+                         <span className="text-xs text-muted-foreground">
+                           Expira: {new Date(cert.not_after).toLocaleDateString('pt-BR')}
+                         </span>
+                       )}
+                       {isExpired ? (
+                         <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
+                           Expirado há {Math.abs(cert.daysRemaining!)}d
+                         </Badge>
+                       ) : isExpiring ? (
+                         <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+                           Expira em {cert.daysRemaining}d
+                         </Badge>
+                       ) : cert.daysRemaining !== null ? (
+                         <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+                           {cert.daysRemaining}d restantes
+                         </Badge>
+                       ) : null}
+                     </div>
+                   );
+                 })}
+               </div>
+             </TimelineSection>
+           )}
+         </div>
+        );
+      })()}
     </Card>
   );
 }
