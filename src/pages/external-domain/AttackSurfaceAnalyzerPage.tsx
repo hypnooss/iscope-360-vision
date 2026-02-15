@@ -357,6 +357,16 @@ interface ExposedAsset {
   allTechs: string[];
 }
 
+function maxCVESeverityRank(asset: ExposedAsset): number {
+  let max = 0;
+  for (const cve of asset.cves) {
+    const sev = (cve.severity || 'medium').toLowerCase();
+    const rank = sev === 'critical' ? 4 : sev === 'high' ? 3 : sev === 'medium' ? 2 : 1;
+    if (rank > max) max = rank;
+  }
+  return max;
+}
+
 function buildAssets(
   snapshot: AttackSurfaceSnapshot,
   cachedCVEs?: CachedCVERecord[]
@@ -433,7 +443,13 @@ function buildAssets(
     });
   }
 
-  return assets.sort((a, b) => b.riskScore - a.riskScore);
+  return assets.sort((a, b) => {
+    const sevDiff = maxCVESeverityRank(b) - maxCVESeverityRank(a);
+    if (sevDiff !== 0) return sevDiff;
+    const svcDiff = (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
+    if (svcDiff !== 0) return svcDiff;
+    return b.ports.length - a.ports.length;
+  });
 }
 
 /* ──────────────────────────── Stat Card ──────────────────────────── */
@@ -962,7 +978,13 @@ export default function AttackSurfaceAnalyzerPage() {
     }
     const sorted = [...list];
     switch (sortMode) {
-      case 'risk': return sorted.sort((a, b) => b.riskScore - a.riskScore);
+      case 'risk': return sorted.sort((a, b) => {
+        const sevDiff = maxCVESeverityRank(b) - maxCVESeverityRank(a);
+        if (sevDiff !== 0) return sevDiff;
+        const svcDiff = (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
+        if (svcDiff !== 0) return svcDiff;
+        return b.ports.length - a.ports.length;
+      });
       case 'cves': return sorted.sort((a, b) => b.cves.length - a.cves.length);
       case 'ports': return sorted.sort((a, b) => b.ports.length - a.ports.length);
       case 'alpha': return sorted.sort((a, b) => a.hostname.localeCompare(b.hostname));
