@@ -222,7 +222,8 @@ export default function AnalyzerDashboardPage() {
 
   const { data: firewallGeo } = useQuery({
     queryKey: [
-      'firewall-geo',
+      'firewall-geo-v2',
+      selectedFirewall,
       firewallHostname,
       snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
       snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
@@ -239,16 +240,15 @@ export default function AnalyzerDashboardPage() {
       if (firewallHostname && !isPrivateIP(firewallHostname)) {
         if (looksLikeIP(firewallHostname)) {
           const result = await tryGeolocate(firewallHostname);
-          if (result) return result;
+          if (result) { console.log('[firewall-geo] result:', result); return result; }
         } else {
-          // DNS hostname: resolve to IP first via dns.google
           try {
             const dnsRes = await fetch(`https://dns.google/resolve?name=${firewallHostname}&type=A`);
             const dnsJson = await dnsRes.json();
             const resolvedIP = dnsJson?.Answer?.find((a: any) => a.type === 1)?.data;
             if (resolvedIP) {
               const result = await tryGeolocate(resolvedIP);
-              if (result) return result;
+              if (result) { console.log('[firewall-geo] result:', result); return result; }
             }
           } catch { /* DNS resolution failed, try fallbacks */ }
         }
@@ -258,20 +258,21 @@ export default function AnalyzerDashboardPage() {
       const fb1 = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
       if (fb1 && !isPrivateIP(fb1)) {
         const result = await tryGeolocate(fb1);
-        if (result) return result;
+        if (result) { console.log('[firewall-geo] fallback1 result:', result); return result; }
       }
 
       // 3. Fallback: first failed auth IP
       const fb2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
       if (fb2 && !isPrivateIP(fb2)) {
         const result = await tryGeolocate(fb2);
-        if (result) return result;
+        if (result) { console.log('[firewall-geo] fallback2 result:', result); return result; }
       }
 
+      console.log('[firewall-geo] all attempts failed');
       return null;
     },
     enabled: !!firewallHostname && !!snapshot,
-    staleTime: 1000 * 60 * 30,
+    staleTime: 1000 * 60 * 5,
   });
 
   const handleTrigger = async () => {
