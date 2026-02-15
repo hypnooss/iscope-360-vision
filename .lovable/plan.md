@@ -1,119 +1,66 @@
 
 
-# Geolocalizacao no Cadastro do Firewall
+# Fix: Alinhamento do Mapa de Ataques
 
-## Resumo
+## Problema
 
-Adicionar campos `geo_latitude` e `geo_longitude` na tabela `firewalls` e nos formularios de cadastro/edicao. Um botao "Buscar Localizacao" ao lado dos campos resolve automaticamente as coordenadas a partir da URL do firewall (usando as mesmas tecnicas de DNS + ipapi.co ja existentes). No Analyzer Dashboard, o sistema usa as coordenadas cadastradas diretamente, eliminando a cadeia complexa de fallbacks.
+Os firewalls BAU-FW e BR-PMP-FW-001 tem coordenadas corretas no banco:
+- BAU-FW: lat=-22.32, lng=-49.06 (Bauru, SP)
+- BR-PMP-FW-001: lat=-18.73, lng=-46.67 (Patos de Minas, MG)
 
-## 1. Migracao de Banco de Dados
+A projecao matematica tambem esta correta, gerando pontos dentro do viewBox 1000x500. O problema e o **desalinhamento entre a imagem de fundo (CSS) e o SVG overlay**.
 
-Adicionar duas colunas na tabela `firewalls`:
+### Causa raiz
 
-```sql
-ALTER TABLE public.firewalls
-  ADD COLUMN geo_latitude double precision,
-  ADD COLUMN geo_longitude double precision;
-```
-
-Colunas nullable -- preenchimento opcional mas recomendado.
-
-## 2. Formularios de Cadastro e Edicao
-
-### Arquivos afetados:
-- `src/pages/firewall/FirewallCreatePage.tsx`
-- `src/pages/firewall/FirewallEditPage.tsx`
-- `src/components/firewall/AddFirewallDialog.tsx` (dialog rapido na lista)
-
-### Mudancas em cada formulario:
-
-Adicionar ao `formData`:
-- `geo_latitude: '' (string para input)`
-- `geo_longitude: '' (string para input)`
-
-Adicionar nova secao "Localizacao" no formulario, abaixo da URL:
+O SVG usa `preserveAspectRatio="xMidYMid meet"` que mantem proporcao 2:1 e centraliza dentro do container. A imagem de fundo usa `backgroundSize: cover` que preenche todo o container e corta o excedente. Quando o container nao tem proporcao exata 2:1 (especialmente em fullscreen), o mapa de fundo e os pontos do SVG ficam desalinhados.
 
 ```text
+Container (ex: 1920x900, nao e 2:1)
 +------------------------------------------+
-| Localizacao (opcional)                   |
-| [Latitude____] [Longitude___] [Buscar]   |
-|  Buscando...  ou  Localizacao encontrada |
+|  Imagem de fundo: cover (preenche tudo)  |
+|  +------------------------------------+  |
+|  | SVG: meet (mantem 2:1, centraliza) |  |
+|  |  * pontos aqui nao batem com mapa  |  |
+|  +------------------------------------+  |
 +------------------------------------------+
 ```
 
-- Dois inputs numericos lado a lado (latitude e longitude)
-- Botao "Buscar Localizacao" (icone MapPin) que:
-  1. Extrai o hostname da URL do firewall
-  2. Se for IP publico, consulta ipapi.co diretamente
-  3. Se for hostname, resolve DNS via dns.google e depois consulta ipapi.co
-  4. Preenche os campos automaticamente
-  5. Mostra feedback: loading spinner, sucesso ou erro
-- Campos editaveis manualmente (usuario pode corrigir)
+## Solucao
 
-### Logica do botao "Buscar Localizacao"
+Mover a imagem do mapa para dentro do SVG como um elemento `<image>`, eliminando o uso de CSS background. Assim, mapa e pontos compartilham o mesmo sistema de coordenadas e ficam sempre alinhados.
 
-Reutiliza a mesma estrategia ja implementada no AnalyzerDashboardPage:
+## Detalhes tecnicos
 
-```typescript
-const handleFetchLocation = async () => {
-  setGeoLoading(true);
-  try {
-    const url = new URL(formData.fortigate_url);
-    const hostname = url.hostname;
-    
-    // Se for IP publico, consulta direto
-    if (looksLikeIP(hostname) && !isPrivateIP(hostname)) {
-      const geo = await tryGeolocate(hostname);
-      if (geo) { setFormData({...formData, geo_latitude: geo.lat, geo_longitude: geo.lng}); return; }
-    }
-    
-    // Resolve DNS
-    const dnsRes = await fetch(`https://dns.google/resolve?name=${hostname}&type=A`);
-    const dnsJson = await dnsRes.json();
-    const ip = dnsJson?.Answer?.find(a => a.type === 1)?.data;
-    if (ip) {
-      const geo = await tryGeolocate(ip);
-      if (geo) { setFormData({...formData, geo_latitude: geo.lat, geo_longitude: geo.lng}); return; }
-    }
-    
-    toast.error('Nao foi possivel determinar a localizacao');
-  } catch {
-    toast.error('Erro ao buscar localizacao');
-  } finally {
-    setGeoLoading(false);
-  }
-};
+### Arquivo: `src/components/firewall/AttackMap.tsx`
+
+1. **Remover** o `backgroundImage` do style do container div
+2. **Adicionar** um `<image>` SVG como primeiro filho do `<svg>`:
+   ```
+   <image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
+   ```
+3. Manter o `preserveAspectRatio="xMidYMid meet"` no elemento `<svg>` para que tudo escale junto
+4. Ajustar o container div para nao ter background-image, apenas background-color preto (fullscreen) ou transparente (inline)
+
+### Mudanca especifica
+
+No container div, remover:
+```
+backgroundImage: `url(${worldMapDark})`,
+backgroundSize: 'cover',
+backgroundPosition: 'center',
+backgroundRepeat: 'no-repeat',
 ```
 
-### Salvar no banco
-
-Incluir `geo_latitude` e `geo_longitude` no INSERT (create) e UPDATE (edit) do firewall. Converter string para `parseFloat` ou `null` se vazio.
-
-## 3. Analyzer Dashboard -- Usar coordenadas cadastradas
-
-### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
-
-Simplificar a logica de geolocalizacao:
-
-1. Buscar `geo_latitude` e `geo_longitude` do firewall selecionado (ja vem na query de firewalls)
-2. Se ambos existirem, usar diretamente -- pular toda a cadeia de fallbacks
-3. Se nao existirem, manter os fallbacks atuais como backup
-
-```typescript
-// Prioridade 0: coordenadas cadastradas
-if (firewall?.geo_latitude && firewall?.geo_longitude) {
-  return { lat: firewall.geo_latitude, lng: firewall.geo_longitude };
-}
-// ... fallbacks existentes (DNS, WAN IP, auth IPs)
+No SVG, adicionar antes dos filtros:
+```
+<image href={worldMapDark} x="0" y="0" width="1000" height="500" />
 ```
 
-## 4. Resumo de arquivos
+Definir `preserveAspectRatio="xMidYMid meet"` no SVG para ambos os modos (inline e fullscreen), garantindo alinhamento consistente.
 
-| Arquivo | Acao |
-|---------|------|
-| Migracao SQL | Adicionar `geo_latitude` e `geo_longitude` na tabela `firewalls` |
-| `FirewallCreatePage.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
-| `FirewallEditPage.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
-| `AddFirewallDialog.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
-| `AnalyzerDashboardPage.tsx` | Usar coordenadas cadastradas como prioridade, fallbacks como backup |
+### Resumo de arquivos
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `AttackMap.tsx` | Mover imagem de fundo para dentro do SVG como `<image>`, remover CSS background |
 
