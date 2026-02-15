@@ -1,28 +1,34 @@
 
-# Corrigir Sync Parcial: Continuar Buscando CVEs Historicas
 
-## Problema
+# Substituir Offset Numerico por Cursor de Data nas Syncs de CVE
 
-Apos a sync inicial trazer 500 CVEs, o sistema seta `last_sync_at = NOW`. Na proxima execucao, a sync diferencial busca apenas CVEs modificadas apos esse timestamp, encontrando 0. As CVEs historicas restantes nunca sao importadas.
+## Problema Atual
 
-## Solucao: Paginacao Progressiva com Offset
+O sistema usa `sync_offset` (numero) para paginar a API NVD. Porem a API nao garante ordenacao estavel entre chamadas, entao o offset numerico pode resultar em CVEs duplicadas e CVEs perdidas.
 
-Salvar o progresso da paginacao no campo `config` da fonte. Enquanto houver CVEs pendentes, o sistema continua de onde parou em vez de mudar para sync diferencial.
+## Solucao: Cursor Baseado em Data
 
-### Logica
+Em vez de salvar um offset numerico, o sistema salvara a data da CVE mais recente sincronizada (`sync_cursor_date`). Na proxima execucao, usara essa data como filtro `pubStartDate` para buscar apenas CVEs publicadas a partir dali.
+
+### Logica Nova
 
 ```text
-1. Sync full (last_sync_at = NULL):
-   - Busca ate 500 CVEs a partir de startIndex = config.sync_offset || 0
-   - Se buscou 500 (parcial): salva offset no config, NAO seta last_sync_at
-   - Se buscou < 500 (completo): limpa offset, seta last_sync_at = NOW
+1. Sync inicial (last_sync_at = NULL, sem sync_cursor_date):
+   - Busca CVEs sem filtro de data (startIndex=0)
+   - Limite de 500 CVEs por execucao
+   - Ao final: pega a published_date da CVE mais recente do lote
+   - Se buscou 500 (parcial): salva sync_cursor_date no config, NAO seta last_sync_at
+   - Se buscou < 500 (completo): limpa sync_cursor_date, seta last_sync_at = NOW
 
-2. Sync diferencial (last_sync_at != NULL):
+2. Sync continuacao (sync_cursor_date existe):
+   - Busca CVEs com pubStartDate = sync_cursor_date (startIndex=0)
+   - Limite de 500 CVEs por execucao
+   - Ao final: pega a published_date da CVE mais recente do lote
+   - Se buscou 500 (parcial): atualiza sync_cursor_date
+   - Se buscou < 500 (completo): limpa sync_cursor_date, seta last_sync_at = NOW
+
+3. Sync diferencial (last_sync_at != NULL, sem sync_cursor_date):
    - Comportamento atual (busca por lastModStartDate) -- sem mudanca
-
-3. Sync manual via botao "Sincronizar":
-   - Se offset existe: continua sync full de onde parou
-   - Se nao: faz sync diferencial normal
 ```
 
 ### Fluxo Visual
@@ -30,68 +36,85 @@ Salvar o progresso da paginacao no campo `config` da fonte. Enquanto houver CVEs
 ```text
   Clique "Sincronizar"
          |
-   last_sync_at = NULL?
-    /           \
-  SIM            NAO
-   |              |
-  Full Sync     config.sync_offset > 0?
-  offset=0       /          \
-   |           SIM           NAO
-   |            |             |
-   |        Full Sync     Diferencial
-   |        offset=N      (lastModDate)
-   |            |             |
-   Buscou 500?  Buscou 500?   Fim
-   /    \       /    \
- SIM    NAO   SIM    NAO
-  |      |     |      |
- Salva  Seta  Salva  Limpa offset
- offset sync  offset  Seta last_sync_at
-       _at
+   sync_cursor_date existe?
+    /              \
+  NAO               SIM
+   |                 |
+  last_sync_at?     Continuacao
+  /       \         pubStartDate=cursor
+NULL      SET       limit 500
+ |         |            |
+Full     Diferencial   Buscou 500?
+limit500 lastModDate   /       \
+ |         |         SIM      NAO
+Buscou    Fim         |        |
+ 500?              Atualiza   Limpa cursor
+/    \             cursor     Seta last_sync_at
+SIM  NAO
+|     |
+Salva Seta
+cursor last_sync_at
 ```
 
-## Alteracoes
+## Vantagens sobre Offset Numerico
 
-### 1. Edge Function `refresh-cve-cache/index.ts`
+- Nao depende de ordenacao estavel da API
+- O upsert por `cve_id` ja garante que duplicatas sejam ignoradas (idempotente)
+- Se a mesma CVE aparecer novamente, e apenas um update sem custo
+- Progresso real: cada execucao avanca no tempo, impossivel ficar preso
 
-**a) `fetchAllNvdPages`** -- Aceitar parametro `startIndex` inicial:
+## Alteracoes no Codigo
 
-- Adicionar `startIndex?: number` nas options
-- Iniciar paginacao a partir desse offset em vez de 0
-- Retornar tambem o `totalResults` da API para saber se ha mais paginas
+### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
 
-**b) `syncNistNvdSource` e `syncNistNvdWebSource`**:
+**a) `fetchAllNvdPages`:**
 
-- Ler `sync_offset` do `source.config`
-- Se `last_sync_at` e NULL OU `sync_offset > 0`: fazer full sync a partir do offset
-- Passar offset para `fetchAllNvdPages`
-- Retornar flag indicando se a sync foi parcial e o novo offset
+- Remover parametro `startIndex`
+- Adicionar parametro `pubStartDate?: string` para filtrar por data de publicacao
+- Quando `pubStartDate` e fornecido, setar os parametros `pubStartDate` e `pubEndDate` (now) na URL da API NVD
+- Manter `startIndex=0` fixo (sem offset numerico)
+- Manter `maxResults` para limitar a 500
 
-**c) Handler principal (apos sync)**:
+**b) `syncNistNvdSource`:**
 
-- Se sync parcial: salvar `sync_offset` no config, NAO atualizar `last_sync_at`
-- Se sync completa: limpar `sync_offset` do config, atualizar `last_sync_at = NOW`
-- Manter status como `success` em ambos os casos, mas com mensagem diferente no `last_sync_error`
+- Ler `sync_cursor_date` do `source.config` em vez de `sync_offset`
+- Se `last_sync_at` e NULL OU `sync_cursor_date` existe: fazer full/continuacao sync
+  - Se `sync_cursor_date` existe: passar como `pubStartDate`
+  - Se nao: sem filtro de data (primeira vez)
+- Apos buscar CVEs: encontrar a `published_date` mais recente do lote
+- Se buscou >= 500: setar `isPartial = true` e `newCursorDate = max published_date`
+- Se buscou < 500: sync completa
 
-### 2. Sem alteracao no banco de dados
+**c) `syncNistNvdWebSource`:**
 
-O campo `config` (JSONB) ja existe e pode armazenar `sync_offset` sem migracao.
+- Mesma logica do item (b) acima
 
-### 3. Sem alteracao no frontend
+**d) Handler principal (linhas 578-602):**
 
-O botao "Sincronizar" ja funciona corretamente. O usuario vera o contador de CVEs aumentando a cada clique ate completar a sync.
+- Se `isPartial`: salvar `sync_cursor_date` no config (em vez de `sync_offset`)
+- Se completo: limpar `sync_cursor_date` do config (em vez de `sync_offset`)
+- Remover qualquer referencia a `sync_offset`
+
+### Sem alteracao no banco de dados
+
+O campo `config` (JSONB) ja suporta `sync_cursor_date` sem migracao.
+
+### Sem alteracao no frontend
+
+O comportamento visivel e identico: o usuario clica "Sincronizar" e ve o contador crescer ate completar.
 
 ## Resultado Esperado
 
-| Acao | Antes | Depois |
-|---|---|---|
-| 1o clique Sincronizar | 537 CVEs, sync "completa" | 500 CVEs, offset salvo |
-| 2o clique Sincronizar | 0 novas (diferencial) | +500 CVEs (continua) |
-| 3o clique Sincronizar | 0 novas | +restante, sync completa |
-| Cliques seguintes | 0 novas | Diferencial normal |
+| Acao | Comportamento |
+|---|---|
+| 1a sync | Busca 500 CVEs mais antigas, salva cursor = data da mais recente |
+| 2a sync | Busca 500 CVEs a partir do cursor, avanca cursor |
+| 3a sync | Busca restante (< 500), limpa cursor, seta last_sync_at |
+| Syncs seguintes | Diferencial por lastModStartDate (captura updates) |
 
-## Arquivos Modificados
+## Arquivo Modificado
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/refresh-cve-cache/index.ts` | Adicionar logica de offset progressivo em 3 pontos |
+| `supabase/functions/refresh-cve-cache/index.ts` | Substituir logica de offset numerico por cursor de data em 4 pontos |
+
