@@ -83,8 +83,8 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
               x1={p.x} y1={p.y}
               x2={firewallPoint.x} y2={firewallPoint.y}
               stroke={p.color}
-              strokeWidth="1"
-              opacity="0.15"
+              strokeWidth="1.5"
+              opacity="0.45"
               strokeDasharray="6 4"
             >
               <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.5s" repeatCount="indefinite" />
