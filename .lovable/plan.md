@@ -1,48 +1,35 @@
 
 
-# Paginacao e Busca Global na Pagina de CVEs
+# Preencher `next_run_at` para Todas as Fontes de CVE
+
+## Situacao Atual
+
+Ja existem 2 cron jobs ativos que garantem a sincronizacao automatica de CVEs:
+
+1. `run-scheduled-analyses` (a cada 15 min) -- chama `refresh-cve-cache` internamente
+2. `refresh-cve-cache-daily` (diario as 06:00 UTC) -- chamada direta
+
+Cada invocacao processa 1 fonte (a mais antiga), portanto com ~96 chamadas/dia todas as 12 fontes sao sincronizadas varias vezes ao dia.
 
 ## Problema
 
-A pagina `/cves` renderiza todas as CVEs filtradas de uma vez (potencialmente 1000+ cards), causando lentidao. Alem disso, a busca deve pesquisar em todas as CVEs, nao apenas nas exibidas na pagina atual.
+As fontes mostram "--" na coluna "Proxima Execucao" porque foram sincronizadas antes da coluna `next_run_at` ser criada. O valor esta NULL.
 
 ## Solucao
 
-Adicionar paginacao de 20 itens por pagina, mantendo a busca e filtros operando sobre o dataset completo.
+Executar um UPDATE simples para preencher `next_run_at` para todas as fontes que estao com valor NULL, distribuindo as proximas execucoes ao longo da proxima hora:
 
-### Arquivo: `src/pages/admin/CVEsCachePage.tsx`
-
-### 1. Novo estado de paginacao
-
-Adicionar estado `page` (comecando em 1) e constante `PAGE_SIZE = 20`. Resetar para pagina 1 sempre que `search`, `filterModule` ou `severityFilter` mudarem.
-
-### 2. Separar `filtered` de `displayed`
-
-- `filtered` continua operando sobre TODAS as CVEs (busca + filtros de modulo/severidade) -- sem mudanca
-- Novo `displayed = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)` -- apenas os 20 da pagina atual
-- Renderizar apenas `displayed` no map de CVECards
-
-### 3. Controles de paginacao
-
-Adicionar barra de paginacao abaixo da lista com:
-- Botoes "Anterior" / "Proxima" (desabilitados nos limites)
-- Indicador "Pagina X de Y"
-- Total filtrado: "Mostrando 1-20 de 347 CVEs"
-
-### 4. Texto informativo atualizado
-
-Atualizar o texto "Mostrando X de Y" para refletir o range da pagina:
-```
-Mostrando 1-20 de 347 CVEs (total: 1023)
+```text
+UPDATE cve_sources
+SET next_run_at = NOW() + (ROW_NUMBER() OVER (ORDER BY id) * INTERVAL '5 minutes')
+WHERE next_run_at IS NULL;
 ```
 
-## Resumo
+Isso ira preencher a coluna para todas as fontes existentes. A partir dai, a Edge Function `refresh-cve-cache` ja atualiza automaticamente o `next_run_at` a cada sync (sucesso ou erro), inclusive para fontes futuras.
 
-| Local | Mudanca |
-|-------|---------|
-| Estado `page` + `PAGE_SIZE` | Novo estado e constante |
-| `useMemo` para `displayed` | Slice paginado do `filtered` |
-| Reset de pagina | `useEffect` ao mudar filtros/busca |
-| Controles de paginacao | Botoes Anterior/Proxima + indicador |
-| Texto "Mostrando" | Range paginado + total |
+## Resultado Esperado
+
+Todas as 12 fontes passarao a exibir o timestamp da proxima execucao na coluna "Proxima Execucao", eliminando os "--" do painel.
+
+Nenhuma mudanca de codigo e necessaria -- apenas o UPDATE no banco.
 
