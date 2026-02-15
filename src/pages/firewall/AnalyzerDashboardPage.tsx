@@ -218,41 +218,59 @@ export default function AnalyzerDashboardPage() {
   const isPrivateIP = (ip: string) =>
     /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
 
+  const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
+
   const { data: firewallGeo } = useQuery({
-    queryKey: ['firewall-geo', firewallHostname, snapshot?.metrics?.topAuthIPsSuccess],
+    queryKey: [
+      'firewall-geo',
+      firewallHostname,
+      snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
+      snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
+    ],
     queryFn: async () => {
-      // Try hostname first (works for public IPs and DNS)
+      const tryGeolocate = async (target: string) => {
+        const res = await fetch(`https://ipwho.is/${target}`);
+        const json = await res.json();
+        if (json.success) return { lat: json.latitude as number, lng: json.longitude as number };
+        return null;
+      };
+
+      // 1. Try hostname directly (works if it's a public IP)
       if (firewallHostname && !isPrivateIP(firewallHostname)) {
-        const res = await fetch(`https://ipwho.is/${firewallHostname}`);
-        const json = await res.json();
-        if (json.success) {
-          return { lat: json.latitude as number, lng: json.longitude as number };
+        if (looksLikeIP(firewallHostname)) {
+          const result = await tryGeolocate(firewallHostname);
+          if (result) return result;
+        } else {
+          // DNS hostname: resolve to IP first via dns.google
+          try {
+            const dnsRes = await fetch(`https://dns.google/resolve?name=${firewallHostname}&type=A`);
+            const dnsJson = await dnsRes.json();
+            const resolvedIP = dnsJson?.Answer?.[0]?.data;
+            if (resolvedIP) {
+              const result = await tryGeolocate(resolvedIP);
+              if (result) return result;
+            }
+          } catch { /* DNS resolution failed, try fallbacks */ }
         }
       }
 
-      // Fallback: use first successful auth IP (likely same region as firewall)
-      const fallbackIP = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
-      if (fallbackIP && !isPrivateIP(fallbackIP)) {
-        const res = await fetch(`https://ipwho.is/${fallbackIP}`);
-        const json = await res.json();
-        if (json.success) {
-          return { lat: json.latitude as number, lng: json.longitude as number };
-        }
+      // 2. Fallback: first successful auth IP
+      const fb1 = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
+      if (fb1 && !isPrivateIP(fb1)) {
+        const result = await tryGeolocate(fb1);
+        if (result) return result;
       }
 
-      // Second fallback: use first failed auth IP
-      const fallbackIP2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
-      if (fallbackIP2 && !isPrivateIP(fallbackIP2)) {
-        const res = await fetch(`https://ipwho.is/${fallbackIP2}`);
-        const json = await res.json();
-        if (json.success) {
-          return { lat: json.latitude as number, lng: json.longitude as number };
-        }
+      // 3. Fallback: first failed auth IP
+      const fb2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
+      if (fb2 && !isPrivateIP(fb2)) {
+        const result = await tryGeolocate(fb2);
+        if (result) return result;
       }
 
       return null;
     },
-    enabled: !!firewallHostname || !!snapshot?.metrics?.topAuthIPsSuccess?.length,
+    enabled: !!firewallHostname && !!snapshot,
     staleTime: 1000 * 60 * 30,
   });
 
