@@ -16,6 +16,28 @@ import { formatDistanceToNow, differenceInHours, differenceInMinutes } from 'dat
 import { ptBR } from 'date-fns/locale';
 import { useCVESources } from '@/hooks/useCVECache';
 
+// ── Shared renderer ──
+function renderNextRunShared(nextRunAt: string | null) {
+  if (!nextRunAt) return <span className="text-muted-foreground">—</span>;
+  const next = new Date(nextRunAt);
+  const now = new Date();
+  const diffMin = differenceInMinutes(next, now);
+  if (diffMin < 0) return <span className="text-muted-foreground">Atrasado</span>;
+  const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
+  if (diffMin < 60) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+        </span>
+        <span className="text-emerald-400 font-medium">{relative}</span>
+      </div>
+    );
+  }
+  return <span className="text-foreground">{relative}</span>;
+}
+
 // ── Unified type ──
 
 interface UnifiedSchedule {
@@ -263,26 +285,7 @@ export default function SchedulesPage() {
 
   // ── Renderers ──
 
-  const renderNextRun = (nextRunAt: string | null) => {
-    if (!nextRunAt) return <span className="text-muted-foreground">—</span>;
-    const next = new Date(nextRunAt);
-    const now = new Date();
-    const diffMin = differenceInMinutes(next, now);
-    if (diffMin < 0) return <span className="text-muted-foreground">Atrasado</span>;
-    const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
-    if (diffMin < 60) {
-      return (
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-          </span>
-          <span className="text-emerald-400 font-medium">{relative}</span>
-        </div>
-      );
-    }
-    return <span className="text-foreground">{relative}</span>;
-  };
+  const renderNextRun = renderNextRunShared;
 
   const renderTaskStatus = (targetId: string) => {
     const task = latestTasks?.get(targetId);
@@ -628,6 +631,7 @@ function CVESourcesSection() {
                 <TableHead>Módulo</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Último Sync</TableHead>
+                <TableHead>Próxima Execução</TableHead>
                 <TableHead className="text-right">CVEs</TableHead>
               </TableRow>
             </TableHeader>
@@ -662,6 +666,9 @@ function CVESourcesSection() {
                       {source.last_sync_at
                         ? formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })
                         : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {renderNextRunShared(source.next_run_at)}
                     </TableCell>
                     <TableCell className="text-right font-medium text-foreground">
                       {source.last_sync_count || 0}

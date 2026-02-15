@@ -818,6 +818,7 @@ export type Database = {
           last_sync_error: string | null
           last_sync_status: string | null
           module_code: string
+          next_run_at: string | null
           source_label: string
           source_type: string
           updated_at: string
@@ -832,6 +833,7 @@ export type Database = {
           last_sync_error?: string | null
           last_sync_status?: string | null
           module_code: string
+          next_run_at?: string | null
           source_label: string
           source_type: string
           updated_at?: string
@@ -846,6 +848,7 @@ export type Database = {
           last_sync_error?: string | null
           last_sync_status?: string | null
           module_code?: string
+          next_run_at?: string | null
           source_label?: string
           source_type?: string
           updated_at?: string
