@@ -229,9 +229,9 @@ export default function AnalyzerDashboardPage() {
     ],
     queryFn: async () => {
       const tryGeolocate = async (target: string) => {
-        const res = await fetch(`https://ipwho.is/${target}`);
+        const res = await fetch(`https://ipapi.co/${target}/json/`);
         const json = await res.json();
-        if (json.success) return { lat: json.latitude as number, lng: json.longitude as number };
+        if (!json.error) return { lat: json.latitude as number, lng: json.longitude as number };
         return null;
       };
 
@@ -245,7 +245,7 @@ export default function AnalyzerDashboardPage() {
           try {
             const dnsRes = await fetch(`https://dns.google/resolve?name=${firewallHostname}&type=A`);
             const dnsJson = await dnsRes.json();
-            const resolvedIP = dnsJson?.Answer?.[0]?.data;
+            const resolvedIP = dnsJson?.Answer?.find((a: any) => a.type === 1)?.data;
             if (resolvedIP) {
               const result = await tryGeolocate(resolvedIP);
               if (result) return result;
