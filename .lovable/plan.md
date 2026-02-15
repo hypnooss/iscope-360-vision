@@ -1,49 +1,23 @@
 
-# Ordenacao Multi-Criterio dos Cards do Attack Surface Analyzer
+# Melhorar Linha Conectora e Cor dos Links
 
-## Objetivo
+## Duas mudancas no arquivo `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Alterar a ordenacao padrao ("Maior Risco") para usar tres criterios em cascata:
+### 1. Linha conectora entre secoes (quase invisivel)
 
-1. **Severidade maxima das CVEs** -- cards com CVEs CRITICAL vem primeiro, depois HIGH, MEDIUM, LOW
-2. **Quantidade de servicos** -- em caso de empate no criterio anterior, quem tem mais servicos vem primeiro
-3. **Quantidade de portas** -- em caso de empate nos dois criterios anteriores, quem tem mais portas vem primeiro
+A linha vertical entre "Portas Abertas", "Servicos & Tecnologias" e "Certificados TLS" usa `bg-primary/20` (20% de opacidade), tornando-a quase invisivel no tema escuro.
 
-Resultado: cards com risco LOW, 0 servicos e 0 portas aparecem por ultimo.
+**Correcao**: Aumentar opacidade para `bg-primary/50` e largura para `w-1` (4px), tornando a linha claramente visivel. Linha 711.
 
-## Detalhes tecnicos
+### 2. Cor dos links em Servicos & Tecnologias
 
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+Os links (URLs como `http://177.200.196.228:80`) usam `text-primary` que e o tom de verde/teal da aplicacao. Mudar para tom de azul consistente com o icone de Servicos & Tecnologias.
 
-#### 1. Criar funcao auxiliar `maxCVESeverityRank`
-
-Retorna um valor numerico para a severidade mais alta encontrada nas CVEs de um asset:
-- CRITICAL = 4, HIGH = 3, MEDIUM = 2, LOW = 1, sem CVEs = 0
-
-#### 2. Atualizar o sort do modo `risk`
-
-Substituir o sort simples `b.riskScore - a.riskScore` por um sort multi-criterio:
-
-```typescript
-case 'risk':
-  return sorted.sort((a, b) => {
-    // 1. Severidade maxima das CVEs
-    const sevDiff = maxCVESeverityRank(b) - maxCVESeverityRank(a);
-    if (sevDiff !== 0) return sevDiff;
-    // 2. Quantidade de servicos
-    const svcDiff = (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
-    if (svcDiff !== 0) return svcDiff;
-    // 3. Quantidade de portas
-    return b.ports.length - a.ports.length;
-  });
-```
-
-#### 3. Atualizar tambem o sort padrao em `buildAssets`
-
-A funcao `buildAssets` (linha 436) que faz o sort inicial tambem sera atualizada para usar a mesma logica multi-criterio, garantindo consistencia mesmo antes de qualquer interacao do usuario com o seletor de ordenacao.
+**Correcao**: Na linha 641, trocar `text-primary` por `text-blue-400` nos links de web services.
 
 ### Resumo
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `AttackSurfaceAnalyzerPage.tsx` | Adicionar `maxCVESeverityRank`, atualizar sort em `filteredAssets` (modo risk) e em `buildAssets` |
+| Local | Antes | Depois |
+|-------|-------|--------|
+| Linha conectora (L711) | `w-0.5 bg-primary/20` | `w-1 bg-primary/50` |
+| Link URL web service (L641) | `text-primary` | `text-blue-400` |
