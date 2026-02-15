@@ -676,12 +676,14 @@ function OrphanCVEsBlock({ cves }: { cves: AttackSurfaceCVE[] }) {
 function TimelineSection({ 
   icon: Icon, 
   iconColor, 
+  iconBorderClass = "border-primary/40 bg-primary/10",
   title, 
   isLast, 
   children 
 }: { 
   icon: React.ElementType; 
   iconColor: string; 
+  iconBorderClass?: string;
   title: string; 
   isLast?: boolean; 
   children: React.ReactNode;
@@ -697,8 +699,8 @@ function TimelineSection({
         {/* Header row: icon + title */}
         <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-border/40">
           <div className={cn(
-            "w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10",
-            "flex items-center justify-center shrink-0"
+            "w-8 h-8 rounded-lg border-2 flex items-center justify-center shrink-0",
+            iconBorderClass
           )}>
             <Icon className={cn("w-4 h-4", iconColor)} />
           </div>
@@ -789,9 +791,10 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
          <div className="border-t border-border/50 py-6 pr-4 pl-10 bg-muted/10">
            {/* Block 1: Ports */}
            {hasPorts && (
-             <TimelineSection
-               icon={Server}
-               iconColor="text-orange-400"
+            <TimelineSection
+                icon={Server}
+                iconColor="text-orange-400"
+                iconBorderClass="border-orange-400/40 bg-orange-400/10"
                title={`Portas Abertas (${asset.ports.length})`}
                isLast={!hasServices && !hasCerts}
              >
@@ -805,9 +808,10 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
 
            {/* Block 2: Services & Technologies (with inline CVEs) */}
            {hasServices && (
-             <TimelineSection
-               icon={Globe}
-               iconColor="text-primary"
+            <TimelineSection
+                icon={Globe}
+                iconColor="text-blue-400"
+                iconBorderClass="border-blue-400/40 bg-blue-400/10"
                title="Serviços & Tecnologias"
                isLast={!hasCerts}
              >
