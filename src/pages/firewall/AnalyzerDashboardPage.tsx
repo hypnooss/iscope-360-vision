@@ -220,11 +220,52 @@ export default function AnalyzerDashboardPage() {
 
   const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
 
+  // Query to fetch WAN public IP from firewall interfaces
+  const { data: firewallWanIP } = useQuery({
+    queryKey: ['firewall-wan-ip', selectedFirewall],
+    queryFn: async () => {
+      const { data: tasks } = await supabase
+        .from('agent_tasks')
+        .select('id')
+        .eq('target_id', selectedFirewall)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1);
+      if (!tasks?.length) return null;
+
+      const { data: stepResult } = await supabase
+        .from('task_step_results')
+        .select('data')
+        .eq('task_id', tasks[0].id)
+        .eq('step_id', 'system_interface')
+        .limit(1)
+        .single();
+
+      if (!stepResult?.data) return null;
+      const results = (stepResult.data as any)?.results;
+      if (!Array.isArray(results)) return null;
+
+      for (const iface of results) {
+        if (iface.role === 'wan' && iface.ip && iface.status === 'up') {
+          const ipOnly = String(iface.ip).split(' ')[0];
+          if (ipOnly && !isPrivateIP(ipOnly) && ipOnly !== '0.0.0.0') {
+            console.log('[firewall-wan-ip] found:', ipOnly);
+            return ipOnly;
+          }
+        }
+      }
+      return null;
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 60 * 30,
+  });
+
   const { data: firewallGeo } = useQuery({
     queryKey: [
       'firewall-geo-v2',
       selectedFirewall,
       firewallHostname,
+      firewallWanIP,
       snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip,
       snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip,
     ],
@@ -248,20 +289,26 @@ export default function AnalyzerDashboardPage() {
             const resolvedIP = dnsJson?.Answer?.find((a: any) => a.type === 1)?.data;
             if (resolvedIP) {
               const result = await tryGeolocate(resolvedIP);
-              if (result) { console.log('[firewall-geo] result:', result); return result; }
+              if (result) { console.log('[firewall-geo] dns result:', result); return result; }
             }
           } catch { /* DNS resolution failed, try fallbacks */ }
         }
       }
 
-      // 2. Fallback: first successful auth IP
+      // 2. Fallback: WAN interface public IP from firewall config
+      if (firewallWanIP) {
+        const result = await tryGeolocate(firewallWanIP);
+        if (result) { console.log('[firewall-geo] wan-ip result:', result); return result; }
+      }
+
+      // 3. Fallback: first successful auth IP
       const fb1 = snapshot?.metrics?.topAuthIPsSuccess?.[0]?.ip;
       if (fb1 && !isPrivateIP(fb1)) {
         const result = await tryGeolocate(fb1);
         if (result) { console.log('[firewall-geo] fallback1 result:', result); return result; }
       }
 
-      // 3. Fallback: first failed auth IP
+      // 4. Fallback: first failed auth IP
       const fb2 = snapshot?.metrics?.topAuthIPsFailed?.[0]?.ip;
       if (fb2 && !isPrivateIP(fb2)) {
         const result = await tryGeolocate(fb2);
@@ -271,7 +318,7 @@ export default function AnalyzerDashboardPage() {
       console.log('[firewall-geo] all attempts failed');
       return null;
     },
-    enabled: !!firewallHostname && !!snapshot,
+    enabled: !!selectedFirewall && !!snapshot,
     staleTime: 1000 * 60 * 5,
   });
 
