@@ -1,70 +1,48 @@
 
 
-# Separadores Visuais com Linha Vertical nos Cards Expandidos do Attack Surface Analyzer
+# Corrigir Layout do TimelineSection: Titulo Dentro da Borda
 
-## Objetivo
+## Problema
 
-Adaptar o layout dos tres topicos expandidos (Portas Abertas, Servicos e Tecnologias, Certificados TLS) no `AssetCard` para usar bordas ao redor de cada secao e uma linha vertical conectando-as, inspirado no design de referencia (print 2).
+O componente `TimelineSection` atual coloca o titulo (com icone) **fora** do container com borda. Na referencia visual, o icone e titulo fazem parte do **cabecalho interno** do container bordado -- tudo fica dentro de um unico bloco com borda.
 
-## Design
+## Design da Referencia
 
-Cada secao sera envolvida por uma borda arredondada com uma barra colorida no topo (similar ao print 2). Uma linha vertical conectara as secoes, criando um visual de "timeline" ou "pipeline".
+Cada bloco tem:
+- Uma borda arredondada envolvendo **tudo** (titulo + conteudo)
+- O cabecalho (icone + label pequeno + titulo grande) fica na parte superior interna
+- A linha vertical conecta os blocos pela lateral esquerda, **entre** os containers
 
-```text
-  |
-  +-- [ Portas Abertas (1) ]
-  |   [ 443 ]
-  |
-  +-- [ Servicos & Tecnologias ]
-  |   [ Apache httpd ... ]
-  |
-  +-- [ Certificados TLS (1) ]
-      [ clientes.novvsgj1... ]
-```
-
-## Detalhes tecnicos
+## Solucao
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-#### 1. Criar componente `TimelineSection`
-
-Um wrapper reutilizavel que renderiza cada secao com:
-- Uma linha vertical a esquerda (borda `border-l-2` com cor primaria)
-- Um conector horizontal (bolinha ou traco) ligando a linha ao titulo
-- Uma borda ao redor do conteudo da secao
+Refatorar o `TimelineSection` para que o titulo e icone fiquem **dentro** do container com borda:
 
 ```typescript
 function TimelineSection({ 
-  icon: Icon, 
-  iconColor, 
-  title, 
-  isLast, 
-  children 
-}: { 
-  icon: React.ElementType; 
-  iconColor: string; 
-  title: string; 
-  isLast?: boolean; 
-  children: React.ReactNode;
+  icon: Icon, iconColor, label, title, isLast, children 
 }) {
   return (
-    <div className="relative flex gap-4">
-      {/* Vertical line + dot */}
-      <div className="flex flex-col items-center">
-        <div className={cn(
-          "w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10",
-          "flex items-center justify-center shrink-0 z-10"
-        )}>
-          <Icon className={cn("w-4 h-4", iconColor)} />
+    <div className="relative">
+      {/* Vertical connector line between sections */}
+      {!isLast && (
+        <div className="absolute left-6 top-full w-0.5 h-4 bg-primary/20 z-0" />
+      )}
+      {/* Bordered container with header + content inside */}
+      <div className="rounded-xl border border-border/60 bg-card/30 mb-4">
+        {/* Header row: icon + title */}
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-border/40">
+          <div className="w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10 flex items-center justify-center shrink-0">
+            <Icon className={cn("w-4 h-4", iconColor)} />
+          </div>
+          <div>
+            {label && <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>}
+            <h4 className="text-sm font-semibold">{title}</h4>
+          </div>
         </div>
-        {!isLast && (
-          <div className="w-0.5 flex-1 bg-primary/20 min-h-[16px]" />
-        )}
-      </div>
-      {/* Content card */}
-      <div className="flex-1 pb-6">
-        <h4 className="text-sm font-medium mb-3">{title}</h4>
-        <div className="rounded-xl border border-border/60 bg-card/30 p-4">
+        {/* Content */}
+        <div className="p-4">
           {children}
         </div>
       </div>
@@ -73,58 +51,11 @@ function TimelineSection({
 }
 ```
 
-#### 2. Refatorar a area expandida do `AssetCard`
-
-Substituir os tres blocos (Portas, Servicos, Certificados) pelo uso do `TimelineSection`:
-
-```typescript
-{open && (
-  <div className="border-t border-border/50 py-6 pr-4 pl-10 bg-muted/10">
-    {asset.ports.length > 0 && (
-      <TimelineSection
-        icon={Server}
-        iconColor="text-orange-400"
-        title={`Portas Abertas (${asset.ports.length})`}
-        isLast={
-          asset.services.length === 0 && 
-          asset.webServices.length === 0 && 
-          asset.tlsCerts.length === 0
-        }
-      >
-        {/* port badges */}
-      </TimelineSection>
-    )}
-    
-    {(asset.services.length > 0 || asset.webServices.length > 0) && (
-      <TimelineSection
-        icon={Globe}
-        iconColor="text-primary"
-        title="Serviços & Tecnologias"
-        isLast={asset.tlsCerts.length === 0}
-      >
-        {/* service rows */}
-      </TimelineSection>
-    )}
-
-    {asset.tlsCerts.length > 0 && (
-      <TimelineSection
-        icon={Shield}
-        iconColor="text-primary"
-        title={`Certificados TLS (${asset.tlsCerts.length})`}
-        isLast={true}
-      >
-        {/* cert rows */}
-      </TimelineSection>
-    )}
-  </div>
-)}
-```
-
-O conteudo interno de cada secao (badges de portas, `NmapServiceRow`, `WebServiceRow`, `OrphanCVEsBlock`, rows de certificados) permanece inalterado, apenas e movido para dentro do `TimelineSection`.
+A linha vertical agora aparece **entre** os containers (do fundo de um ate o topo do proximo), conectando visualmente as secoes.
 
 ### Resumo
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `AttackSurfaceAnalyzerPage.tsx` | Criar `TimelineSection`, refatorar a area expandida do `AssetCard` para usar timeline com bordas e linha vertical |
+| `AttackSurfaceAnalyzerPage.tsx` | Refatorar `TimelineSection` para colocar icone e titulo dentro do container bordado, com linha vertical entre blocos |
 
