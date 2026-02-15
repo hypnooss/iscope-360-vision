@@ -56,10 +56,6 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
           : 'relative w-full rounded-lg border border-border/50 overflow-hidden'
         }
         style={{
-          backgroundImage: `url(${worldMapDark})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
           backgroundColor: fullscreen ? '#000' : undefined,
         }}
       >
@@ -67,8 +63,11 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
           viewBox="0 0 1000 500"
           className={fullscreen ? 'w-full h-full' : 'w-full h-auto relative z-10'}
           style={{ background: 'transparent' }}
-          preserveAspectRatio={fullscreen ? 'xMidYMid meet' : undefined}
+          preserveAspectRatio="xMidYMid meet"
         >
+          {/* Map image inside SVG for perfect alignment */}
+          <image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
+
           {/* SVG Filters for glow effects */}
           <defs>
             <filter id="glow-red" x="-50%" y="-50%" width="200%" height="200%">
