@@ -1,44 +1,48 @@
 
 
-# Adicionar Coluna "Proxima Execucao" na Tabela de CVEs
+# Paginacao e Busca Global na Pagina de CVEs
 
-## Contexto
+## Problema
 
-A secao "Sincronizacao de CVEs" na pagina de Agendamentos nao exibe quando sera a proxima execucao. Diferente dos outros agendamentos (Firewalls, Dominios, etc.), as fontes de CVE nao possuem o campo `next_run_at` no banco de dados.
+A pagina `/cves` renderiza todas as CVEs filtradas de uma vez (potencialmente 1000+ cards), causando lentidao. Alem disso, a busca deve pesquisar em todas as CVEs, nao apenas nas exibidas na pagina atual.
 
-## Plano
+## Solucao
 
-### 1. Migracao SQL: Adicionar coluna `next_run_at` em `cve_sources`
+Adicionar paginacao de 20 itens por pagina, mantendo a busca e filtros operando sobre o dataset completo.
 
-```text
-ALTER TABLE cve_sources 
-ADD COLUMN next_run_at timestamptz;
+### Arquivo: `src/pages/admin/CVEsCachePage.tsx`
+
+### 1. Novo estado de paginacao
+
+Adicionar estado `page` (comecando em 1) e constante `PAGE_SIZE = 20`. Resetar para pagina 1 sempre que `search`, `filterModule` ou `severityFilter` mudarem.
+
+### 2. Separar `filtered` de `displayed`
+
+- `filtered` continua operando sobre TODAS as CVEs (busca + filtros de modulo/severidade) -- sem mudanca
+- Novo `displayed = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)` -- apenas os 20 da pagina atual
+- Renderizar apenas `displayed` no map de CVECards
+
+### 3. Controles de paginacao
+
+Adicionar barra de paginacao abaixo da lista com:
+- Botoes "Anterior" / "Proxima" (desabilitados nos limites)
+- Indicador "Pagina X de Y"
+- Total filtrado: "Mostrando 1-20 de 347 CVEs"
+
+### 4. Texto informativo atualizado
+
+Atualizar o texto "Mostrando X de Y" para refletir o range da pagina:
+```
+Mostrando 1-20 de 347 CVEs (total: 1023)
 ```
 
-### 2. Edge Function `refresh-cve-cache`: Computar `next_run_at` apos cada sync
-
-No update final de cada fonte (linha ~586), adicionar o calculo de `next_run_at`. Como o cron de `run-scheduled-analyses` roda a cada hora, o proximo sync sera em ~1 hora:
-
-```text
-next_run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString()
-```
-
-Isso sera adicionado tanto no path de sucesso quanto no de erro, garantindo que a coluna sempre reflita a proxima tentativa.
-
-### 3. UI: Adicionar coluna na tabela de CVEs
-
-No arquivo `src/pages/admin/SchedulesPage.tsx`, adicionar:
-
-- Nova `TableHead` "Proxima Execucao" entre "Ultimo Sync" e "CVEs"
-- Nova `TableCell` usando a mesma funcao `renderNextRun` ja existente na pagina, mantendo consistencia visual com as outras tabelas de agendamento
-
-### Detalhes Tecnicos
+## Resumo
 
 | Local | Mudanca |
 |-------|---------|
-| Migracao SQL | Adicionar coluna `next_run_at` em `cve_sources` |
-| `refresh-cve-cache/index.ts` (L586-591) | Incluir `next_run_at` no update de sucesso |
-| `refresh-cve-cache/index.ts` (L596-599) | Incluir `next_run_at` no update de erro |
-| `SchedulesPage.tsx` (L627-631) | Adicionar header "Proxima Execucao" |
-| `SchedulesPage.tsx` (L661-665) | Adicionar celula com `renderNextRun(source.next_run_at)` |
+| Estado `page` + `PAGE_SIZE` | Novo estado e constante |
+| `useMemo` para `displayed` | Slice paginado do `filtered` |
+| Reset de pagina | `useEffect` ao mudar filtros/busca |
+| Controles de paginacao | Botoes Anterior/Proxima + indicador |
+| Texto "Mostrando" | Range paginado + total |
 
