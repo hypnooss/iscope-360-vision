@@ -228,6 +228,7 @@ export default function AnalyzerDashboardPage() {
         .from('agent_tasks')
         .select('id')
         .eq('target_id', selectedFirewall)
+        .eq('task_type', 'fortigate_compliance')
         .eq('status', 'completed')
         .order('completed_at', { ascending: false })
         .limit(1);
