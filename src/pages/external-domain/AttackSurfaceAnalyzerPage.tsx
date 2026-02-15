@@ -638,7 +638,7 @@ function WebServiceRow({ ws, cves }: { ws: AttackSurfaceWebService; cves: Attack
           {cves.length > 0 && (
             expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           )}
-          <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-primary truncate max-w-[400px]" onClick={e => e.stopPropagation()}>
+          <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-blue-400 truncate max-w-[400px]" onClick={e => e.stopPropagation()}>
             {ws.url}
           </a>
           <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>{ws.status_code}</Badge>
@@ -708,7 +708,7 @@ function TimelineSection({
     <div className="relative">
       {/* Vertical connector line between sections */}
       {!isLast && (
-        <div className="absolute left-6 top-full w-0.5 h-4 bg-primary/20 z-0" />
+        <div className="absolute left-6 top-full w-1 h-4 bg-primary/50 z-0" />
       )}
       {/* Bordered container with header + content inside */}
       <div className="rounded-xl border border-border/60 bg-card/30 mb-4">
