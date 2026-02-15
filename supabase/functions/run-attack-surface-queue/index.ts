@@ -136,6 +136,8 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
     if (!Array.isArray(interfaces)) continue
 
     for (const iface of interfaces) {
+      const role = (iface.role || '').toLowerCase()
+      if (role !== 'wan') continue
       const ipField = iface.ip || ''
       const expandedIPs = expandSubnet(ipField)
       const ifaceName = iface.name || 'unknown'
