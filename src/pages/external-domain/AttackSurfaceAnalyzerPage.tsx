@@ -687,23 +687,25 @@ function TimelineSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative flex gap-4">
-      {/* Vertical line + dot */}
-      <div className="flex flex-col items-center">
-        <div className={cn(
-          "w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10",
-          "flex items-center justify-center shrink-0 z-10"
-        )}>
-          <Icon className={cn("w-4 h-4", iconColor)} />
+    <div className="relative">
+      {/* Vertical connector line between sections */}
+      {!isLast && (
+        <div className="absolute left-6 top-full w-0.5 h-4 bg-primary/20 z-0" />
+      )}
+      {/* Bordered container with header + content inside */}
+      <div className="rounded-xl border border-border/60 bg-card/30 mb-4">
+        {/* Header row: icon + title */}
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-border/40">
+          <div className={cn(
+            "w-8 h-8 rounded-lg border-2 border-primary/40 bg-primary/10",
+            "flex items-center justify-center shrink-0"
+          )}>
+            <Icon className={cn("w-4 h-4", iconColor)} />
+          </div>
+          <h4 className="text-sm font-semibold">{title}</h4>
         </div>
-        {!isLast && (
-          <div className="w-0.5 flex-1 bg-primary/20 min-h-[16px]" />
-        )}
-      </div>
-      {/* Content card */}
-      <div className="flex-1 pb-6">
-        <h4 className="text-sm font-medium mb-3">{title}</h4>
-        <div className="rounded-xl border border-border/60 bg-card/30 p-4">
+        {/* Content */}
+        <div className="p-4">
           {children}
         </div>
       </div>
