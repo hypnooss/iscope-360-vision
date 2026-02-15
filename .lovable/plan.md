@@ -1,66 +1,85 @@
 
-
-# Fix: Alinhamento do Mapa de Ataques
+# Exibir Agendamentos de Attack Surface no Painel de Agendamentos
 
 ## Problema
 
-Os firewalls BAU-FW e BR-PMP-FW-001 tem coordenadas corretas no banco:
-- BAU-FW: lat=-22.32, lng=-49.06 (Bauru, SP)
-- BR-PMP-FW-001: lat=-18.73, lng=-46.67 (Patos de Minas, MG)
+A pagina `/schedules` (SchedulesPage.tsx) busca dados apenas de duas tabelas:
+- `analysis_schedules` (Firewalls)
+- `external_domain_schedules` (Dominios Externos)
 
-A projecao matematica tambem esta correta, gerando pontos dentro do viewBox 1000x500. O problema e o **desalinhamento entre a imagem de fundo (CSS) e o SVG overlay**.
-
-### Causa raiz
-
-O SVG usa `preserveAspectRatio="xMidYMid meet"` que mantem proporcao 2:1 e centraliza dentro do container. A imagem de fundo usa `backgroundSize: cover` que preenche todo o container e corta o excedente. Quando o container nao tem proporcao exata 2:1 (especialmente em fullscreen), o mapa de fundo e os pontos do SVG ficam desalinhados.
-
-```text
-Container (ex: 1920x900, nao e 2:1)
-+------------------------------------------+
-|  Imagem de fundo: cover (preenche tudo)  |
-|  +------------------------------------+  |
-|  | SVG: meet (mantem 2:1, centraliza) |  |
-|  |  * pontos aqui nao batem com mapa  |  |
-|  +------------------------------------+  |
-+------------------------------------------+
-```
+Os agendamentos de Attack Surface Analyzer ficam na tabela `attack_surface_schedules` (6 registros ativos), que nao e consultada pela pagina.
 
 ## Solucao
 
-Mover a imagem do mapa para dentro do SVG como um elemento `<image>`, eliminando o uso de CSS background. Assim, mapa e pontos compartilham o mesmo sistema de coordenadas e ficam sempre alinhados.
+Adicionar uma terceira query para buscar os dados de `attack_surface_schedules`, unificando-os na mesma lista.
 
 ## Detalhes tecnicos
 
-### Arquivo: `src/components/firewall/AttackMap.tsx`
+### Arquivo: `src/pages/admin/SchedulesPage.tsx`
 
-1. **Remover** o `backgroundImage` do style do container div
-2. **Adicionar** um `<image>` SVG como primeiro filho do `<svg>`:
+1. **Atualizar o tipo `UnifiedSchedule`**: Adicionar `'attack_surface'` ao campo `targetType`:
+   ```typescript
+   targetType: 'firewall' | 'external_domain' | 'attack_surface';
    ```
-   <image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
+
+2. **Nova query**: Buscar `attack_surface_schedules` com join em `clients`:
+   ```typescript
+   const { data: attackSurfaceSchedules, isLoading: loadingAs, refetch: refetchAs } = useQuery({
+     queryKey: ['admin-schedules-as'],
+     refetchInterval: 30_000,
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from('attack_surface_schedules')
+         .select('id, client_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, clients(id, name)')
+         .order('next_run_at', { ascending: true, nullsFirst: false });
+       if (error) throw error;
+       return (data || []).map((s) => ({
+         id: s.id,
+         targetId: s.client_id,
+         targetName: s.clients?.name || '—',
+         targetType: 'attack_surface',
+         frequency: s.frequency,
+         isActive: s.is_active,
+         nextRunAt: s.next_run_at,
+         scheduledHour: s.scheduled_hour,
+         scheduledDayOfWeek: s.scheduled_day_of_week,
+         scheduledDayOfMonth: s.scheduled_day_of_month,
+         clientId: s.client_id,
+         clientName: s.clients?.name || '—',
+         lastScore: null,
+       }));
+     },
+   });
    ```
-3. Manter o `preserveAspectRatio="xMidYMid meet"` no elemento `<svg>` para que tudo escale junto
-4. Ajustar o container div para nao ter background-image, apenas background-color preto (fullscreen) ou transparente (inline)
 
-### Mudanca especifica
+3. **Unificar listas**: Incluir `attackSurfaceSchedules` no merge:
+   ```typescript
+   const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || [])];
+   ```
 
-No container div, remover:
-```
-backgroundImage: `url(${worldMapDark})`,
-backgroundSize: 'cover',
-backgroundPosition: 'center',
-backgroundRepeat: 'no-repeat',
-```
+4. **Loading e refresh**: Incluir `loadingAs` no `isLoading` e `refetchAs` no `handleRefresh`.
 
-No SVG, adicionar antes dos filtros:
-```
-<image href={worldMapDark} x="0" y="0" width="1000" height="500" />
-```
+5. **Badge de tipo**: Adicionar renderizacao para `attack_surface` no `renderTypeBadge`:
+   ```typescript
+   if (type === 'attack_surface') {
+     return (
+       <Badge variant="outline" className="bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+         <Crosshair className="w-3 h-3" />
+         Attack Surface
+       </Badge>
+     );
+   }
+   ```
 
-Definir `preserveAspectRatio="xMidYMid meet"` no SVG para ambos os modos (inline e fullscreen), garantindo alinhamento consistente.
+6. **Filtro de tipo**: Adicionar opcao no Select de tipo:
+   ```typescript
+   <SelectItem value="attack_surface">Attack Surface</SelectItem>
+   ```
 
-### Resumo de arquivos
+7. **Status da ultima tarefa**: Os scans de attack surface nao usam `agent_tasks` da mesma forma, entao para esses registros o status sera "Sem execucao" (comportamento atual de fallback), o que e aceitavel por enquanto.
+
+### Resumo
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `AttackMap.tsx` | Mover imagem de fundo para dentro do SVG como `<image>`, remover CSS background |
-
+| `SchedulesPage.tsx` | Adicionar query de `attack_surface_schedules`, unificar na lista, badge e filtro |
