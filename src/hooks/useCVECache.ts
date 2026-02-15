@@ -28,6 +28,7 @@ export interface CVESource {
   last_sync_status: string | null;
   last_sync_error: string | null;
   last_sync_count: number;
+  next_run_at: string | null;
   created_at: string;
   updated_at: string;
 }
