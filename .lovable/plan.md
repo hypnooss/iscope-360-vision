@@ -1,74 +1,67 @@
 
-# Sync Diferencial de CVEs
+# Limite de CVEs por Invocacao (Sync Paginado)
 
-## Problema Atual
+## Problema
 
-Toda sincronizacao busca o historico completo de CVEs no NVD (sem filtro de data), resultando em centenas de paginas, alto consumo de tempo e risco de timeout -- mesmo com o fix de 1 fonte por vez.
+Ao adicionar um novo produto com milhares de CVEs (ex: 5000), o sync inicial tenta baixar tudo numa unica execucao, causando timeout. O sync diferencial so funciona apos o primeiro sync completo.
 
-## Solucao: Sync Diferencial
+## Solucao
 
-Usar o campo `last_sync_at` da fonte para limitar a busca apenas a CVEs **publicadas ou modificadas** desde a ultima sincronizacao bem-sucedida. Na primeira execucao (quando `last_sync_at` e null), faz o sync completo normalmente.
+Adicionar um limite maximo de CVEs por invocacao (ex: 500) na funcao `fetchAllNvdPages`. Quando o limite e atingido, o sync para e salva o progresso parcial. Na proxima execucao agendada, o sync diferencial busca apenas CVEs modificadas apos o ultimo save -- progressivamente preenchendo o cache.
 
 ### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
 
-### 1. Adicionar parametro `lastModStartDate` ao `fetchAllNvdPages`
+### 1. Novo parametro `maxResults` em `fetchAllNvdPages`
 
-A API NVD v2.0 suporta os parametros `lastModStartDate` e `lastModEndDate` que filtram por data de modificacao (inclui CVEs novas e atualizadas). Isso e melhor que `pubStartDate` porque tambem captura CVEs antigas que tiveram score ou severidade atualizados.
-
-```text
-Novo parametro em options:
-  lastModStartDate?: string  (ISO date)
-
-Se fornecido, adiciona ao URL:
-  lastModStartDate = <valor>
-  lastModEndDate = <agora>
-```
-
-**Importante**: O NVD nao permite combinar `keywordSearch` com `lastModStartDate` se o range for maior que 120 dias. Para ranges curtos (syncs frequentes), isso nao sera problema.
-
-### 2. Passar `last_sync_at` da fonte para as funcoes de sync
-
-As funcoes `syncNistNvdSource` e `syncNistNvdWebSource` receberao a data do ultimo sync bem-sucedido. Se existir, usam como `lastModStartDate`; se nao (primeira vez), fazem sync completo.
+Adicionar um limite opcional. Quando o total de CVEs acumulados atingir esse limite, parar a paginacao e retornar o que ja foi coletado.
 
 ```text
-// No main handler, ao chamar as funcoes:
-counts = await syncNistNvdSource(supabase, source, source.last_sync_at);
-counts = await syncNistNvdWebSource(supabase, source, source.last_sync_at);
+Antes (linha 141):
+  while (startIndex < totalResults) { ... }
+
+Depois:
+  const limit = options?.maxResults ?? Infinity;
+  while (startIndex < totalResults && allVulnerabilities.length < limit) { ... }
 ```
 
-### 3. Logica dentro de cada funcao de sync
+Ao final, logar se o sync foi parcial:
+```text
+if (allVulnerabilities.length < totalResults) {
+  console.log(`  [NVD] Partial sync: fetched ${allVulnerabilities.length} of ${totalResults}`);
+}
+```
+
+### 2. Passar `maxResults` nas funcoes de sync
+
+Tanto `syncNistNvdSource` quanto `syncNistNvdWebSource` passarao `maxResults: 500` para `fetchAllNvdPages`. Isso vale para TODOS os syncs (full e diferencial), garantindo protecao em ambos os cenarios.
+
+### 3. Marcar sync parcial como "success" com flag
+
+O sync parcial ainda salva `last_sync_status: 'success'` e atualiza `last_sync_at`, para que a proxima execucao use a data como filtro diferencial. Assim, a cada rodada do cron, o sistema busca as proximas CVEs que ainda nao foram cacheadas.
+
+### 4. Indicar sync parcial no log e no `last_sync_error`
+
+Quando o sync for parcial, gravar uma mensagem informativa no campo `last_sync_error`:
+```text
+"Sync parcial: 500 de 5000 CVEs processadas nesta rodada"
+```
+Isso da visibilidade ao admin sem impedir o fluxo normal.
+
+## Fluxo para Produto Novo com 5000 CVEs
 
 ```text
-Se last_sync_at existe:
-  -> fetchAllNvdPages(keyword, { lastModStartDate: last_sync_at })
-  -> Busca apenas CVEs modificadas desde o ultimo sync
-  -> Upsert no cache (atualiza existentes, insere novas)
-  -> Contar total REAL do cache apos upsert (SELECT COUNT)
-
-Se last_sync_at e null:
-  -> Sync completo (comportamento atual)
+Rodada 1: Full sync -> busca paginas 0-499 (500 CVEs) -> salva -> last_sync_at = agora
+Rodada 2: Diferencial desde rodada 1 -> busca 0-500 novas/modificadas -> salva
+Rodada 3: Diferencial desde rodada 2 -> busca 0-500 novas/modificadas -> salva
+...
+Rodada N: Diferencial retorna < 500 -> cache completo
 ```
-
-### 4. Recontar o total apos sync diferencial
-
-Como o sync diferencial so traz CVEs novas/modificadas, o `counts.total` retornado nao reflete o total real no cache. Apos o upsert, fazer um `SELECT count(*)` filtrado por `source_id` para obter o numero correto de `last_sync_count`.
-
-### 5. MSRC (M365) -- ja e diferencial
-
-A funcao `syncMsrcSource` ja usa filtro por meses configurado. Nao precisa de mudanca.
 
 ## Resumo das Mudancas
 
 | Local | Mudanca |
 |-------|---------|
-| `fetchAllNvdPages` | Novo parametro `lastModStartDate` para filtrar por data de modificacao |
-| `syncNistNvdSource` | Receber `last_sync_at`, usar como filtro diferencial |
-| `syncNistNvdWebSource` | Receber `last_sync_at`, usar como filtro diferencial |
-| Main handler | Passar `source.last_sync_at` para as funcoes de sync |
-| Main handler | Recontar total real do cache apos sync diferencial |
-
-## Beneficio Esperado
-
-- Sync inicial completo: ~5-10 paginas por fonte (mantido)
-- Syncs subsequentes: 1-2 paginas por fonte (apenas CVEs novas nos ultimos dias)
-- Tempo de execucao cai de ~60s para ~10-15s por fonte
+| `fetchAllNvdPages` (L110-183) | Novo parametro `maxResults` com default 500, para paginacao quando limite e atingido |
+| `syncNistNvdSource` (L206) | Passar `maxResults: 500` |
+| `syncNistNvdWebSource` (L284) | Passar `maxResults: 500` |
+| Main handler (L564-569) | Gravar mensagem informativa quando sync for parcial |
