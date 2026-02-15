@@ -16,11 +16,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
 import { getCountryCode } from '@/lib/countryUtils';
 import { AttackMap } from '@/components/firewall/AttackMap';
+import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
-  Filter, AppWindow, Building2, Zap, Clock,
+  Filter, AppWindow, Building2, Zap, Clock, Maximize2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
@@ -148,6 +149,7 @@ export default function AnalyzerDashboardPage() {
   const { toast } = useToast();
   const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
+  const [showAttackMap, setShowAttackMap] = useState(false);
 
   // Workspace selector for super roles
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -492,22 +494,51 @@ export default function AnalyzerDashboardPage() {
 
         {/* Attack Map - Always visible */}
         {snapshot && (
-          <Card className="glass-card mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Globe className="w-4 h-4 text-primary" />
-                Mapa de Ataques
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <AttackMap
+          <>
+            <Card
+              className="glass-card mb-6 cursor-pointer hover:border-primary/50 transition-colors group"
+              onClick={() => setShowAttackMap(true)}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center justify-between text-base">
+                  <span className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    Mapa de Ataques
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    Tela cheia
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
+                  <AttackMap
+                    deniedCountries={m?.topCountries ?? []}
+                    authFailedCountries={authCountriesFailed}
+                    authSuccessCountries={authCountriesSuccess}
+                    firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {showAttackMap && (
+              <AttackMapFullscreen
                 deniedCountries={m?.topCountries ?? []}
                 authFailedCountries={authCountriesFailed}
                 authSuccessCountries={authCountriesSuccess}
                 firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
+                firewallName={firewallUrl?.name}
+                lastAnalysis={snapshot.created_at}
+                totalDenied={m?.totalDenied ?? 0}
+                totalAuthFailed={(m?.firewallAuthFailures ?? 0) + (m?.vpnFailures ?? 0)}
+                totalAuthSuccess={(m?.firewallAuthSuccesses ?? 0) + (m?.vpnSuccesses ?? 0)}
+                topBlockedIPs={m?.topBlockedIPs ?? []}
+                onClose={() => setShowAttackMap(false)}
               />
-            </CardContent>
-          </Card>
+            )}
+          </>
         )}
 
         {/* Widgets Grid */}
