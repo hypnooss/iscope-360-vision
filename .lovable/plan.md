@@ -1,67 +1,73 @@
 
-# Limite de CVEs por Invocacao (Sync Paginado)
+# Cancelar Syncs, Resincronizar Todas as Fontes e Exibir CVEs nos Agendamentos
 
-## Problema
+## 1. Resetar sincronizacoes travadas (SQL)
 
-Ao adicionar um novo produto com milhares de CVEs (ex: 5000), o sync inicial tenta baixar tudo numa unica execucao, causando timeout. O sync diferencial so funciona apos o primeiro sync completo.
-
-## Solucao
-
-Adicionar um limite maximo de CVEs por invocacao (ex: 500) na funcao `fetchAllNvdPages`. Quando o limite e atingido, o sync para e salva o progresso parcial. Na proxima execucao agendada, o sync diferencial busca apenas CVEs modificadas apos o ultimo save -- progressivamente preenchendo o cache.
-
-### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
-
-### 1. Novo parametro `maxResults` em `fetchAllNvdPages`
-
-Adicionar um limite opcional. Quando o total de CVEs acumulados atingir esse limite, parar a paginacao e retornar o que ja foi coletado.
+Executar UPDATE para resetar as 2 fontes presas em "syncing" (History e PHP):
 
 ```text
-Antes (linha 141):
-  while (startIndex < totalResults) { ... }
-
-Depois:
-  const limit = options?.maxResults ?? Infinity;
-  while (startIndex < totalResults && allVulnerabilities.length < limit) { ... }
+UPDATE cve_sources 
+SET last_sync_status = 'error', 
+    last_sync_error = 'Cancelado manualmente pelo administrador'
+WHERE last_sync_status = 'syncing';
 ```
 
-Ao final, logar se o sync foi parcial:
-```text
-if (allVulnerabilities.length < totalResults) {
-  console.log(`  [NVD] Partial sync: fetched ${allVulnerabilities.length} of ${totalResults}`);
-}
-```
+## 2. Disparar sincronizacao de todas as fontes
 
-### 2. Passar `maxResults` nas funcoes de sync
+Invocar a Edge Function `refresh-cve-cache` para cada fonte individualmente, iterando pelos 12 `source_id`s. Como a funcao agora processa 1 fonte por vez com limite de 500 CVEs, cada chamada sera rapida e segura.
 
-Tanto `syncNistNvdSource` quanto `syncNistNvdWebSource` passarao `maxResults: 500` para `fetchAllNvdPages`. Isso vale para TODOS os syncs (full e diferencial), garantindo protecao em ambos os cenarios.
+## 3. Adicionar secao de CVE Sources na pagina de Agendamentos
 
-### 3. Marcar sync parcial como "success" com flag
+### Arquivo: `src/pages/admin/SchedulesPage.tsx`
 
-O sync parcial ainda salva `last_sync_status: 'success'` e atualiza `last_sync_at`, para que a proxima execucao use a data como filtro diferencial. Assim, a cada rodada do cron, o sistema busca as proximas CVEs que ainda nao foram cacheadas.
+Adicionar uma nova secao no final da pagina (antes da tabela de agendamentos ou como uma tab/secao separada) que exibe o status das fontes de CVE:
 
-### 4. Indicar sync parcial no log e no `last_sync_error`
+- Buscar dados da tabela `cve_sources` via query
+- Exibir uma tabela/lista compacta com:
+  - Nome da fonte (`source_label`)
+  - Modulo (badge colorido: Firewall/M365/Dominio Externo)
+  - Status do ultimo sync (icone + label)
+  - Data do ultimo sync (tempo relativo)
+  - Quantidade de CVEs no cache
+  - Indicador de sync parcial (quando `last_sync_error` contem "parcial")
+- A secao tera titulo "Sincronizacao de CVEs" com icone Database
+- Manter o mesmo estilo visual da pagina (badges, cores por modulo)
 
-Quando o sync for parcial, gravar uma mensagem informativa no campo `last_sync_error`:
-```text
-"Sync parcial: 500 de 5000 CVEs processadas nesta rodada"
-```
-Isso da visibilidade ao admin sem impedir o fluxo normal.
-
-## Fluxo para Produto Novo com 5000 CVEs
+### Estrutura visual
 
 ```text
-Rodada 1: Full sync -> busca paginas 0-499 (500 CVEs) -> salva -> last_sync_at = agora
-Rodada 2: Diferencial desde rodada 1 -> busca 0-500 novas/modificadas -> salva
-Rodada 3: Diferencial desde rodada 2 -> busca 0-500 novas/modificadas -> salva
-...
-Rodada N: Diferencial retorna < 500 -> cache completo
++--------------------------------------------------+
+| Agendamentos                                      |
+|                                                    |
+| [Cards de stats existentes]                        |
+| [Filtros existentes]                               |
+| [Tabela de agendamentos existente]                |
+|                                                    |
+| ── Sincronizacao de CVEs ──────────────────────── |
+|                                                    |
+| Fonte          | Modulo   | Status   | Sync    | CVEs |
+| FortiGate      | Firewall | Erro     | 1h atras| 0    |
+| SonicWall      | Firewall | OK       | 12h     | 0    |
+| Nginx          | Dom.Ext  | OK       | 30min   | 267  |
+| Node.js        | Dom.Ext  | OK       | 30min   | 518  |
+| ...            |          |          |         |      |
++--------------------------------------------------+
 ```
 
-## Resumo das Mudancas
+### Hook reutilizado
 
-| Local | Mudanca |
-|-------|---------|
-| `fetchAllNvdPages` (L110-183) | Novo parametro `maxResults` com default 500, para paginacao quando limite e atingido |
-| `syncNistNvdSource` (L206) | Passar `maxResults: 500` |
-| `syncNistNvdWebSource` (L284) | Passar `maxResults: 500` |
-| Main handler (L564-569) | Gravar mensagem informativa quando sync for parcial |
+Importar `useCVESources` de `@/hooks/useCVECache` (ja existente) para buscar os dados, evitando duplicacao.
+
+### Componentes reutilizados
+
+- Badges de modulo com mesmas cores do `CVESourcesPage` (laranja/azul/esmeralda)
+- Icones de status (CheckCircle2, XCircle, RefreshCw, Clock)
+- `formatDistanceToNow` com locale ptBR
+
+## Resumo
+
+| Acao | Tipo |
+|------|------|
+| Reset fontes "syncing" | SQL (insert tool) |
+| Disparar sync de todas as fontes | Chamada a Edge Function |
+| Adicionar secao CVE Sources no SchedulesPage | Codigo (SchedulesPage.tsx) |
