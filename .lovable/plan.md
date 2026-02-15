@@ -1,99 +1,119 @@
 
 
-# Mapa de Ataques: Fullscreen com Animacoes Melhoradas
+# Geolocalizacao no Cadastro do Firewall
 
 ## Resumo
 
-Transformar o mapa de ataques em um botao no dashboard que abre uma visualizacao fullscreen imersiva, inspirada nos mapas da SonicWall e FortiGuard. Inclui animacoes de "projeteis" viajando dos atacantes ao firewall e painel de estatisticas overlay.
+Adicionar campos `geo_latitude` e `geo_longitude` na tabela `firewalls` e nos formularios de cadastro/edicao. Um botao "Buscar Localizacao" ao lado dos campos resolve automaticamente as coordenadas a partir da URL do firewall (usando as mesmas tecnicas de DNS + ipapi.co ja existentes). No Analyzer Dashboard, o sistema usa as coordenadas cadastradas diretamente, eliminando a cadeia complexa de fallbacks.
 
-## Mudancas visuais principais
+## 1. Migracao de Banco de Dados
 
-### 1. Dashboard: Substituir card do mapa por botao
+Adicionar duas colunas na tabela `firewalls`:
 
-O card atual do "Mapa de Ataques" sera substituido por um botao compacto com preview miniatura do mapa, que ao clicar abre a tela fullscreen.
+```sql
+ALTER TABLE public.firewalls
+  ADD COLUMN geo_latitude double precision,
+  ADD COLUMN geo_longitude double precision;
+```
 
-### 2. Tela Fullscreen do Mapa
+Colunas nullable -- preenchimento opcional mas recomendado.
 
-- Fundo preto total (como SonicWall)
-- Mapa ocupa toda a tela
-- Botao "Voltar" no canto superior esquerdo
-- Legenda e estatisticas em overlay semitransparente na parte inferior
-- Painel lateral com Top 3 paises atacantes (como FortiGuard/SonicWall)
+## 2. Formularios de Cadastro e Edicao
 
-### 3. Animacoes melhoradas (inspiradas em SonicWall)
+### Arquivos afetados:
+- `src/pages/firewall/FirewallCreatePage.tsx`
+- `src/pages/firewall/FirewallEditPage.tsx`
+- `src/components/firewall/AddFirewallDialog.tsx` (dialog rapido na lista)
 
-Em vez de linhas tracejadas estaticas, implementar "projeteis" animados:
-- Pequenos circulos brilhantes que viajam do pais atacante ate o firewall
-- Cada tipo de ataque tem cor diferente (vermelho, laranja, verde)
-- Os projeteis aparecem em intervalos alternados (efeito de fluxo continuo)
-- Ao chegar no firewall, um flash de impacto pulsa brevemente
-- Pontos de origem pulsam com glow mais intenso
+### Mudancas em cada formulario:
 
-## Detalhes tecnicos
+Adicionar ao `formData`:
+- `geo_latitude: '' (string para input)`
+- `geo_longitude: '' (string para input)`
 
-### Arquivo: `src/components/firewall/AttackMap.tsx`
+Adicionar nova secao "Localizacao" no formulario, abaixo da URL:
 
-Refatorar completamente para suportar dois modos: `inline` (preview miniatura) e `fullscreen`.
+```text
++------------------------------------------+
+| Localizacao (opcional)                   |
+| [Latitude____] [Longitude___] [Buscar]   |
+|  Buscando...  ou  Localizacao encontrada |
++------------------------------------------+
+```
 
-Principais mudancas:
-- Nova prop `fullscreen?: boolean` que controla o layout
-- Substituir linhas tracejadas por animacao de projeteis usando `<circle>` com `<animateMotion>` ao longo de `<path>` reto entre atacante e firewall
-- Cada projetil e um circulo pequeno (r=2-3) com glow filter SVG
-- Multiplos projeteis por linha com `begin` offset diferente para efeito continuo
-- Flash de impacto: circulo no ponto do firewall que pulsa brevemente quando projetil "chega"
-- SVG filter `<feGaussianBlur>` para efeito neon/glow nos projeteis
-- Em modo fullscreen: viewBox maior, fundo preto, sem border radius
+- Dois inputs numericos lado a lado (latitude e longitude)
+- Botao "Buscar Localizacao" (icone MapPin) que:
+  1. Extrai o hostname da URL do firewall
+  2. Se for IP publico, consulta ipapi.co diretamente
+  3. Se for hostname, resolve DNS via dns.google e depois consulta ipapi.co
+  4. Preenche os campos automaticamente
+  5. Mostra feedback: loading spinner, sucesso ou erro
+- Campos editaveis manualmente (usuario pode corrigir)
 
-### Arquivo: `src/components/firewall/AttackMapFullscreen.tsx` (NOVO)
+### Logica do botao "Buscar Localizacao"
 
-Componente wrapper fullscreen:
-- `position: fixed inset-0 z-50` com fundo preto
-- Botao "Voltar" (icone ArrowLeft + texto) no canto superior esquerdo
-- Renderiza `<AttackMap fullscreen />` ocupando toda a tela
-- Painel overlay inferior com legenda e contadores totais
-- Painel lateral direito com Top 3 paises atacantes (bandeira + contagem)
-- Animacao de entrada (fade-in)
+Reutiliza a mesma estrategia ja implementada no AnalyzerDashboardPage:
+
+```typescript
+const handleFetchLocation = async () => {
+  setGeoLoading(true);
+  try {
+    const url = new URL(formData.fortigate_url);
+    const hostname = url.hostname;
+    
+    // Se for IP publico, consulta direto
+    if (looksLikeIP(hostname) && !isPrivateIP(hostname)) {
+      const geo = await tryGeolocate(hostname);
+      if (geo) { setFormData({...formData, geo_latitude: geo.lat, geo_longitude: geo.lng}); return; }
+    }
+    
+    // Resolve DNS
+    const dnsRes = await fetch(`https://dns.google/resolve?name=${hostname}&type=A`);
+    const dnsJson = await dnsRes.json();
+    const ip = dnsJson?.Answer?.find(a => a.type === 1)?.data;
+    if (ip) {
+      const geo = await tryGeolocate(ip);
+      if (geo) { setFormData({...formData, geo_latitude: geo.lat, geo_longitude: geo.lng}); return; }
+    }
+    
+    toast.error('Nao foi possivel determinar a localizacao');
+  } catch {
+    toast.error('Erro ao buscar localizacao');
+  } finally {
+    setGeoLoading(false);
+  }
+};
+```
+
+### Salvar no banco
+
+Incluir `geo_latitude` e `geo_longitude` no INSERT (create) e UPDATE (edit) do firewall. Converter string para `parseFloat` ou `null` se vazio.
+
+## 3. Analyzer Dashboard -- Usar coordenadas cadastradas
 
 ### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-Substituir o card do mapa (linhas 493-511) por:
-- Um botao/card clicavel com preview miniatura do mapa
-- Estado `showAttackMap` que controla visibilidade do fullscreen
-- Renderizar `<AttackMapFullscreen>` condicionalmente
+Simplificar a logica de geolocalizacao:
 
-### Animacao de projeteis (detalhe tecnico)
+1. Buscar `geo_latitude` e `geo_longitude` do firewall selecionado (ja vem na query de firewalls)
+2. Se ambos existirem, usar diretamente -- pular toda a cadeia de fallbacks
+3. Se nao existirem, manter os fallbacks atuais como backup
 
-```text
-Atacante (ponto)  ----[projetil]----->  Firewall (shield)
-     |                                      |
-   pulse                              flash on impact
+```typescript
+// Prioridade 0: coordenadas cadastradas
+if (firewall?.geo_latitude && firewall?.geo_longitude) {
+  return { lat: firewall.geo_latitude, lng: firewall.geo_longitude };
+}
+// ... fallbacks existentes (DNS, WAN IP, auth IPs)
 ```
 
-Para cada linha atacante-firewall:
-- Criar `<path>` invisivel (stroke="none") entre os dois pontos
-- 3 projeteis `<circle>` com `<animateMotion>` seguindo esse path
-- `dur="2s"` com `begin="0s"`, `begin="0.7s"`, `begin="1.4s"` (escalonados)
-- Projeteis tem `fill` da cor do tipo + SVG glow filter
-- `repeatCount="indefinite"` para loop continuo
-
-### Overlay de estatisticas (parte inferior)
-
-Barra semitransparente na base da tela com:
-- Total de eventos por tipo (Negado, Auth Falha, Auth Sucesso)
-- Nome do firewall selecionado
-- Data da ultima analise
-
-### Painel lateral (lado direito)
-
-Coluna semitransparente com:
-- "Top 3 Origens de Ataque" com bandeira do pais e contagem
-- "Top 3 IPs Bloqueados" com IP e contagem
-
-### Resumo de arquivos
+## 4. Resumo de arquivos
 
 | Arquivo | Acao |
 |---------|------|
-| `AttackMap.tsx` | Refatorar: adicionar modo fullscreen, projeteis animados com glow |
-| `AttackMapFullscreen.tsx` | Novo: wrapper fullscreen com overlays e botao voltar |
-| `AnalyzerDashboardPage.tsx` | Trocar card do mapa por botao que abre fullscreen |
+| Migracao SQL | Adicionar `geo_latitude` e `geo_longitude` na tabela `firewalls` |
+| `FirewallCreatePage.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
+| `FirewallEditPage.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
+| `AddFirewallDialog.tsx` | Adicionar campos lat/lng + botao "Buscar Localizacao" |
+| `AnalyzerDashboardPage.tsx` | Usar coordenadas cadastradas como prioridade, fallbacks como backup |
 
