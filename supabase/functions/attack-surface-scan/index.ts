@@ -194,13 +194,12 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
     if (!Array.isArray(interfaces)) continue
 
     for (const iface of interfaces) {
+      const role = (iface.role || '').toLowerCase()
+      if (role !== 'wan') continue
       const ipField = iface.ip || ''
       const expandedIPs = expandSubnet(ipField)
-      const role = (iface.role || '').toLowerCase()
       const ifaceName = iface.name || 'unknown'
-      const label = role === 'wan'
-        ? `${firewallName} - ${ifaceName} (WAN)`
-        : `${firewallName} - ${ifaceName}`
+      const label = `${firewallName} - ${ifaceName} (WAN)`
       for (const expandedIP of expandedIPs) {
         if (expandedIP === '0.0.0.0' || seen.has(expandedIP) || isPrivateIP(expandedIP)) continue
         seen.add(expandedIP)
