@@ -1,120 +1,72 @@
 
 
-# Substituir Offset Numerico por Cursor de Data nas Syncs de CVE
+# Resetar Sync da Fonte History para Recomecar com Cursor de Data
 
-## Problema Atual
+## Problema
 
-O sistema usa `sync_offset` (numero) para paginar a API NVD. Porem a API nao garante ordenacao estavel entre chamadas, entao o offset numerico pode resultar em CVEs duplicadas e CVEs perdidas.
+A sync inicial (537 CVEs) foi feita com offset numerico, sem ordenacao por data. A API NVD retornou CVEs de 1997 a 2026 de forma nao-sequencial. O cursor atual (`2025-09-29`) pula qualquer CVE antiga que a API nao tenha retornado nos primeiros 537 resultados.
 
-## Solucao: Cursor Baseado em Data
+## Solucao
 
-Em vez de salvar um offset numerico, o sistema salvara a data da CVE mais recente sincronizada (`sync_cursor_date`). Na proxima execucao, usara essa data como filtro `pubStartDate` para buscar apenas CVEs publicadas a partir dali.
+Resetar a fonte History para recomecar do zero com a logica de cursor por data. Isso garante varredura cronologica completa.
 
-### Logica Nova
+### Passos
 
-```text
-1. Sync inicial (last_sync_at = NULL, sem sync_cursor_date):
-   - Busca CVEs sem filtro de data (startIndex=0)
-   - Limite de 500 CVEs por execucao
-   - Ao final: pega a published_date da CVE mais recente do lote
-   - Se buscou 500 (parcial): salva sync_cursor_date no config, NAO seta last_sync_at
-   - Se buscou < 500 (completo): limpa sync_cursor_date, seta last_sync_at = NOW
+1. **Limpar CVEs existentes da fonte History** no `cve_cache`
+2. **Resetar o estado da fonte**: limpar `sync_cursor_date`, `last_sync_at`, `last_sync_count`
+3. **Garantir que `fetchAllNvdPages` ordena por data de publicacao** (parametro `pubStartDate` na API NVD ja faz isso naturalmente)
 
-2. Sync continuacao (sync_cursor_date existe):
-   - Busca CVEs com pubStartDate = sync_cursor_date (startIndex=0)
-   - Limite de 500 CVEs por execucao
-   - Ao final: pega a published_date da CVE mais recente do lote
-   - Se buscou 500 (parcial): atualiza sync_cursor_date
-   - Se buscou < 500 (completo): limpa sync_cursor_date, seta last_sync_at = NOW
+### Execucao
 
-3. Sync diferencial (last_sync_at != NULL, sem sync_cursor_date):
-   - Comportamento atual (busca por lastModStartDate) -- sem mudanca
+Uma unica migracao SQL:
+
+```sql
+-- Limpar CVEs da fonte History
+DELETE FROM cve_cache
+WHERE source_id = (SELECT id FROM cve_sources WHERE source_label = 'History');
+
+-- Resetar estado da fonte
+UPDATE cve_sources
+SET
+  config = config - 'sync_cursor_date' - 'sync_offset',
+  last_sync_at = NULL,
+  last_sync_count = 0,
+  last_sync_status = 'pending',
+  last_sync_error = NULL
+WHERE source_label = 'History';
 ```
 
-### Fluxo Visual
+Apos isso, ao clicar "Sincronizar", a fonte vai:
+1. Buscar as 500 CVEs mais antigas (sem filtro de data)
+2. Salvar cursor = data da CVE mais recente do lote
+3. Continuar de onde parou a cada clique
 
-```text
-  Clique "Sincronizar"
-         |
-   sync_cursor_date existe?
-    /              \
-  NAO               SIM
-   |                 |
-  last_sync_at?     Continuacao
-  /       \         pubStartDate=cursor
-NULL      SET       limit 500
- |         |            |
-Full     Diferencial   Buscou 500?
-limit500 lastModDate   /       \
- |         |         SIM      NAO
-Buscou    Fim         |        |
- 500?              Atualiza   Limpa cursor
-/    \             cursor     Seta last_sync_at
-SIM  NAO
-|     |
-Salva Seta
-cursor last_sync_at
+### Consideracao sobre a Fonte Node.js
+
+A mesma situacao pode afetar a fonte Node.js (518 CVEs). Recomendo resetar tambem:
+
+```sql
+DELETE FROM cve_cache
+WHERE source_id = (SELECT id FROM cve_sources WHERE source_label = 'Node.js');
+
+UPDATE cve_sources
+SET
+  config = config - 'sync_cursor_date' - 'sync_offset',
+  last_sync_at = NULL,
+  last_sync_count = 0,
+  last_sync_status = 'pending',
+  last_sync_error = NULL
+WHERE source_label = 'Node.js';
 ```
 
-## Vantagens sobre Offset Numerico
+### Verificacao Importante na Edge Function
 
-- Nao depende de ordenacao estavel da API
-- O upsert por `cve_id` ja garante que duplicatas sejam ignoradas (idempotente)
-- Se a mesma CVE aparecer novamente, e apenas um update sem custo
-- Progresso real: cada execucao avanca no tempo, impossivel ficar preso
+Preciso confirmar que a API NVD retorna resultados ordenados por `published_date` quando usamos o endpoint sem filtro de data. Se nao, sera necessario adicionar um parametro de ordenacao na chamada da API.
 
-## Alteracoes no Codigo
-
-### Arquivo: `supabase/functions/refresh-cve-cache/index.ts`
-
-**a) `fetchAllNvdPages`:**
-
-- Remover parametro `startIndex`
-- Adicionar parametro `pubStartDate?: string` para filtrar por data de publicacao
-- Quando `pubStartDate` e fornecido, setar os parametros `pubStartDate` e `pubEndDate` (now) na URL da API NVD
-- Manter `startIndex=0` fixo (sem offset numerico)
-- Manter `maxResults` para limitar a 500
-
-**b) `syncNistNvdSource`:**
-
-- Ler `sync_cursor_date` do `source.config` em vez de `sync_offset`
-- Se `last_sync_at` e NULL OU `sync_cursor_date` existe: fazer full/continuacao sync
-  - Se `sync_cursor_date` existe: passar como `pubStartDate`
-  - Se nao: sem filtro de data (primeira vez)
-- Apos buscar CVEs: encontrar a `published_date` mais recente do lote
-- Se buscou >= 500: setar `isPartial = true` e `newCursorDate = max published_date`
-- Se buscou < 500: sync completa
-
-**c) `syncNistNvdWebSource`:**
-
-- Mesma logica do item (b) acima
-
-**d) Handler principal (linhas 578-602):**
-
-- Se `isPartial`: salvar `sync_cursor_date` no config (em vez de `sync_offset`)
-- Se completo: limpar `sync_cursor_date` do config (em vez de `sync_offset`)
-- Remover qualquer referencia a `sync_offset`
-
-### Sem alteracao no banco de dados
-
-O campo `config` (JSONB) ja suporta `sync_cursor_date` sem migracao.
-
-### Sem alteracao no frontend
-
-O comportamento visivel e identico: o usuario clica "Sincronizar" e ve o contador crescer ate completar.
-
-## Resultado Esperado
-
-| Acao | Comportamento |
-|---|---|
-| 1a sync | Busca 500 CVEs mais antigas, salva cursor = data da mais recente |
-| 2a sync | Busca 500 CVEs a partir do cursor, avanca cursor |
-| 3a sync | Busca restante (< 500), limpa cursor, seta last_sync_at |
-| Syncs seguintes | Diferencial por lastModStartDate (captura updates) |
-
-## Arquivo Modificado
+## Arquivos Modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/refresh-cve-cache/index.ts` | Substituir logica de offset numerico por cursor de data em 4 pontos |
+| Migracao SQL | Reset das fontes History e Node.js |
+| `supabase/functions/refresh-cve-cache/index.ts` | Verificar/garantir ordenacao por data na chamada da API NVD |
 
