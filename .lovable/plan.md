@@ -1,23 +1,34 @@
 
-# Adicionar tooltips explicativos nos tipos de breach
+# Corrigir posicionamento dos tooltips de tipo de breach
 
-## O que muda
+## Problema
 
-Adicionar um tooltip em cada badge de tipo na coluna "Tipo" da tabela de credenciais vazadas, explicando em portugues o que cada classificacao significa.
+O tooltip Radix nao consegue calcular a posicao correta porque o `TooltipTrigger` com `asChild` esta sendo aplicado diretamente no `Badge` dentro de uma celula de tabela (`td`). O Radix Popper calcula `transform: translate(0px, -200%)`, jogando o balao para fora da tela.
 
-## Alteracao
+## Solucao
 
 **Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
 
-1. Adicionar um campo `tooltip` ao `breachTypeConfig` com descricoes explicativas:
-   - **Credential Leak**: "Vazamento real de credenciais (email + senha) obtidas em invasoes a sistemas e bancos de dados."
-   - **Stealer Logs**: "Credenciais capturadas por malware (info-stealer) instalado no dispositivo da vitima."
-   - **Scraping**: "Dados publicos coletados automaticamente de sites, redes sociais ou registros WHOIS. Nao envolve senhas."
-   - **Combo List**: "Lista compilada a partir de multiplos vazamentos ou dados fabricados. Origem nao verificada."
-   - **Desconhecido**: "Tipo de vazamento nao classificado. Execute uma nova consulta para atualizar."
+Envolver o `Badge` em um `<span>` inline com `display: inline-flex` e usar esse `<span>` como trigger do tooltip. Isso garante que o Radix consiga medir corretamente as dimensoes e posicao do elemento trigger dentro da tabela.
 
-2. Envolver cada badge de tipo com `Tooltip` / `TooltipTrigger` / `TooltipContent` (ja importados no projeto via `@/components/ui/tooltip`).
+Alteracao na celula do tipo (linhas 545-557):
 
-3. Adicionar um `TooltipProvider` ao redor da tabela (ou verificar se ja existe um no nivel superior).
+```text
+<td className="px-3 py-2">
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <span className="inline-flex cursor-help">
+        <Badge variant="outline" className={cn("text-[10px] px-1.5 gap-1", bt.className)}>
+          <BtIcon className="w-3 h-3" />
+          {bt.label}
+        </Badge>
+      </span>
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-xs text-xs">
+      {bt.tooltip}
+    </TooltipContent>
+  </Tooltip>
+</td>
+```
 
-Nenhuma outra alteracao e necessaria - apenas UI.
+Isso resolve tanto o posicionamento incorreto do balao quanto o hover que nao funciona diretamente na badge.
