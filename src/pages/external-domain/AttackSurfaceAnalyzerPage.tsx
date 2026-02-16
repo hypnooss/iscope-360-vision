@@ -414,6 +414,38 @@ function buildAssets(
       for (const t of ws.technologies || []) techSet.add(t);
     }
 
+    // Extract tech from NSE scripts
+    for (const svc of result.services || []) {
+      const scripts = svc.scripts || {};
+
+      // ssl-cert: extract org/CN from subject
+      if (scripts['ssl-cert']) {
+        const orgMatch = scripts['ssl-cert'].match(/organizationName=([^\n\/,]+)/i);
+        if (orgMatch) techSet.add(orgMatch[1].trim());
+        else {
+          const cnMatch = scripts['ssl-cert'].match(/commonName=([^\n\/,]+)/i);
+          if (cnMatch && !cnMatch[1].includes('*')) techSet.add(cnMatch[1].trim());
+        }
+      }
+
+      // smb-os-discovery
+      if (scripts['smb-os-discovery']) {
+        const osMatch = scripts['smb-os-discovery'].match(/OS:\s*(.+)/i);
+        if (osMatch) techSet.add(osMatch[1].trim());
+      }
+
+      // rdp-ntlm-info
+      if (scripts['rdp-ntlm-info']) {
+        const prodMatch = scripts['rdp-ntlm-info'].match(/Product_Version:\s*(.+)/i);
+        if (prodMatch) techSet.add(`Windows ${prodMatch[1].trim()}`);
+      }
+
+      // http-server-header (fallback if no httpx server)
+      if (scripts['http-server-header']) {
+        techSet.add(scripts['http-server-header'].trim().split('\n')[0]);
+      }
+    }
+
     // Risk score calculation
     let riskScore = 0;
     for (const cve of cves) {
