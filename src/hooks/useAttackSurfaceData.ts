@@ -132,6 +132,29 @@ export function useLatestAttackSurfaceSnapshot(clientId?: string) {
   });
 }
 
+export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['attack-surface-running', clientId],
+    queryFn: async () => {
+      if (!clientId) return null;
+      const { data, error } = await (supabase
+        .from('attack_surface_snapshots' as any)
+        .select('*')
+        .eq('client_id', clientId)
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1) as any);
+      if (error) throw error;
+      const rows = (data as any[]) || [];
+      if (rows.length === 0) return null;
+      return parseSnapshot(rows[0] as Record<string, unknown>);
+    },
+    enabled: !!clientId && enabled,
+    refetchInterval: 15000,
+    staleTime: 10000,
+  });
+}
+
 export function useAttackSurfaceScan(clientId?: string) {
   const queryClient = useQueryClient();
 
