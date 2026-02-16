@@ -63,7 +63,7 @@ class NmapExecutor(BaseExecutor):
             f'-p{port_str}',
             ip,
             '-oX', '-',
-            '-T4',
+            '-T3',  # Rollback: trocar para -T4 se o scan ficar lento demais
             '--host-timeout', '120s',
             '--max-retries', '1',
         ]
@@ -98,7 +98,7 @@ class NmapExecutor(BaseExecutor):
                     f'-p{port_str}',
                     ip,
                     '-oX', '-',
-                    '-T4',
+                    '-T3',  # Rollback: trocar para -T4 se o scan ficar lento demais
                     '--host-timeout', '60s',
                     '--max-retries', '1',
                 ]
