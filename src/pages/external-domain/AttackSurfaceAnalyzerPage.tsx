@@ -601,6 +601,77 @@ function NseScriptsBlock({ scripts }: { scripts: Record<string, string> }) {
   );
 }
 
+function extractPortFromUrl(url: string): number | null {
+  try {
+    const u = new URL(url);
+    if (u.port) return parseInt(u.port, 10);
+    return u.protocol === 'https:' ? 443 : u.protocol === 'http:' ? 80 : null;
+  } catch { return null; }
+}
+
+function UnifiedServiceRow({ ws, svc, cves }: { ws: AttackSurfaceWebService; svc: AttackSurfaceService | null; cves: AttackSurfaceCVE[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const top2 = cves.slice(0, 2);
+  const hasMore = cves.length > 2;
+  const hasScripts = svc?.scripts && Object.keys(svc.scripts).length > 0;
+  const isExpandable = cves.length > 0 || hasScripts;
+
+  const statusColor = ws.status_code >= 200 && ws.status_code < 300
+    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+    : ws.status_code >= 300 && ws.status_code < 400
+      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+      : 'bg-destructive/20 text-destructive border-destructive/30';
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2",
+          isExpandable && "cursor-pointer hover:bg-muted/40 transition-colors"
+        )}
+        onClick={() => isExpandable && setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {isExpandable && (
+            expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          )}
+          <a href={ws.url} target="_blank" rel="noopener noreferrer" className="text-sm font-mono hover:underline text-blue-400 truncate max-w-[400px]" onClick={e => e.stopPropagation()}>
+            {ws.url}
+          </a>
+          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusColor)}>{ws.status_code}</Badge>
+          {svc && (svc.product || svc.name) && (
+            <span className="text-xs text-muted-foreground">• {svc.product || svc.name}{svc.version ? `/${svc.version}` : ''}</span>
+          )}
+          {svc?.extra_info && <span className="text-muted-foreground/70 text-xs italic">{svc.extra_info}</span>}
+          {ws.server && !(svc?.product) && <span className="text-xs text-muted-foreground">• {ws.server}</span>}
+          {hasScripts && !expanded && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/30">NSE</Badge>
+          )}
+          {!expanded && top2.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              {top2.map(cve => <CVEInlineBadge key={cve.cve_id} cve={cve} />)}
+              {hasMore && <span className="text-[10px] text-muted-foreground">+{cves.length - 2}</span>}
+            </div>
+          )}
+        </div>
+        {ws.technologies && ws.technologies.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {ws.technologies.map((t, j) => (
+              <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>
+            ))}
+          </div>
+        )}
+      </div>
+      {expanded && (
+        <div className="pl-6">
+          {hasScripts && <NseScriptsBlock scripts={svc!.scripts!} />}
+          <CVEExpandedList cves={cves} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NmapServiceRow({ svc, cves }: { svc: AttackSurfaceService; cves: AttackSurfaceCVE[] }) {
   const [expanded, setExpanded] = useState(false);
   const top2 = cves.slice(0, 2);
@@ -889,23 +960,54 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: { asset: Expo
                isLast={!hasCerts}
              >
                <div className="space-y-2">
-                  {asset.services.filter(s => s.product || s.name || (s.scripts && Object.keys(s.scripts).length > 0)).map((svc, i) => (
-                    <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product || svc.name || '', asset.cves)} />
-                 ))}
-                 {asset.webServices.map((ws, i) => {
-                   const names: string[] = [];
-                   if (ws.server) { const [n] = ws.server.toLowerCase().split('/'); names.push(n.trim()); }
-                   for (const t of ws.technologies || []) { const [n] = t.split(':'); names.push(n.trim().toLowerCase()); }
-                   const wsCves = new Map<string, AttackSurfaceCVE>();
-                   for (const name of names) {
-                     for (const cve of matchCVEsToService(name, asset.cves)) {
-                       wsCves.set(cve.cve_id, cve);
-                     }
-                   }
-                   const sortedCves = Array.from(wsCves.values()).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-                   return <WebServiceRow key={`ws-${i}`} ws={ws} cves={sortedCves} />;
-                 })}
-                 <OrphanCVEsBlock cves={orphans} />
+                  {(() => {
+                    // Build port -> nmapService map
+                    const portToNmap = new Map<number, AttackSurfaceService>();
+                    for (const svc of asset.services) {
+                      if (svc.port && !portToNmap.has(svc.port)) {
+                        portToNmap.set(svc.port, svc);
+                      }
+                    }
+                    const consumedPorts = new Set<number>();
+
+                    // Render unified rows for webServices with matching nmap services
+                    const unifiedRows = asset.webServices.map((ws, i) => {
+                      const port = extractPortFromUrl(ws.url);
+                      const nmapSvc = port !== null ? portToNmap.get(port) ?? null : null;
+                      if (nmapSvc && port !== null) consumedPorts.add(port);
+
+                      // Collect CVEs from both sources
+                      const cveMap = new Map<string, AttackSurfaceCVE>();
+                      // From nmap service
+                      if (nmapSvc) {
+                        for (const cve of matchCVEsToService(nmapSvc.product || nmapSvc.name || '', asset.cves)) {
+                          cveMap.set(cve.cve_id, cve);
+                        }
+                      }
+                      // From web service
+                      const names: string[] = [];
+                      if (ws.server) { const [n] = ws.server.toLowerCase().split('/'); names.push(n.trim()); }
+                      for (const t of ws.technologies || []) { const [n] = t.split(':'); names.push(n.trim().toLowerCase()); }
+                      for (const name of names) {
+                        for (const cve of matchCVEsToService(name, asset.cves)) {
+                          cveMap.set(cve.cve_id, cve);
+                        }
+                      }
+                      const combinedCves = Array.from(cveMap.values()).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+                      return <UnifiedServiceRow key={`unified-${i}`} ws={ws} svc={nmapSvc} cves={combinedCves} />;
+                    });
+
+                    // Render remaining nmap services not consumed by any webService
+                    const remainingNmap = asset.services
+                      .filter(s => !consumedPorts.has(s.port) && (s.product || s.name || (s.scripts && Object.keys(s.scripts).length > 0)))
+                      .map((svc, i) => (
+                        <NmapServiceRow key={`svc-remaining-${i}`} svc={svc} cves={matchCVEsToService(svc.product || svc.name || '', asset.cves)} />
+                      ));
+
+                    return [...unifiedRows, ...remainingNmap];
+                  })()}
+                  <OrphanCVEsBlock cves={orphans} />
                </div>
              </TimelineSection>
            )}
