@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Globe, Loader2, Play, Pencil, Trash2 } from 'lucide-react';
+import { Globe, Loader2, Pencil, Trash2 } from 'lucide-react';
 import type { ScheduleFrequency } from '@/components/external-domain/AddExternalDomainDialog';
 
 export interface ExternalDomainRow {
@@ -25,8 +25,6 @@ interface ExternalDomainTableProps {
   domains: ExternalDomainRow[];
   loading: boolean;
   canEdit: boolean;
-  analyzingId: string | null;
-  onAnalyze: (domain: ExternalDomainRow) => Promise<void>;
   onEdit: (domain: ExternalDomainRow) => void;
   onDelete: (domain: ExternalDomainRow) => void;
 }
@@ -48,8 +46,6 @@ export function ExternalDomainTable({
   domains,
   loading,
   canEdit,
-  analyzingId,
-  onAnalyze,
   onEdit,
   onDelete,
 }: ExternalDomainTableProps) {
@@ -97,19 +93,6 @@ export function ExternalDomainTable({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Analisar"
-                        onClick={() => onAnalyze(domain)}
-                        disabled={analyzingId === domain.id}
-                      >
-                        {analyzingId === domain.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Play className="w-4 h-4" />
-                        )}
-                      </Button>
                       {canEdit && (
                         <>
                           <Button
@@ -117,7 +100,6 @@ export function ExternalDomainTable({
                             size="icon"
                             title="Editar"
                             onClick={() => onEdit(domain)}
-                            disabled={analyzingId === domain.id}
                           >
                             <Pencil className="w-4 h-4" />
                           </Button>
@@ -126,7 +108,6 @@ export function ExternalDomainTable({
                             size="icon"
                             title="Excluir"
                             onClick={() => onDelete(domain)}
-                            disabled={analyzingId === domain.id}
                           >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>

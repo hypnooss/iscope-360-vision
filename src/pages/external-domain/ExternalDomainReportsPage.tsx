@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, Building2, Activity, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, Building2, Activity, Clock, CheckCircle2, XCircle, Play } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -37,6 +37,7 @@ interface GroupedDomain {
   domain_url: string;
   client_id: string;
   client_name: string;
+  agent_id: string | null;
   analyses: {
     id: string;
     score: number;
@@ -54,7 +55,9 @@ export default function ExternalDomainReportsPage() {
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
+  const [domainsMeta, setDomainsMeta] = useState<{ id: string; name: string; domain: string; client_id: string; agent_id: string | null; client_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   
   const [search, setSearch] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
@@ -103,42 +106,45 @@ export default function ExternalDomainReportsPage() {
         ? previewTarget.workspaces.map(w => w.id)
         : null;
 
-      const { data: historyData } = await supabase
-        .from('external_domain_analysis_history')
-        .select('id, domain_id, score, created_at, status, completed_at')
-        .order('created_at', { ascending: false });
-
-      if (!historyData || historyData.length === 0) {
-        setReports([]);
-        setLoading(false);
-        return;
-      }
-
-      const domainIds = [...new Set(historyData.map(h => h.domain_id))];
+      // 1. Fetch all domains first (filtered by workspace)
       let domainsQuery = supabase
         .from('external_domains')
-        .select('id, name, domain, client_id')
-        .in('id', domainIds);
+        .select('id, name, domain, client_id, agent_id');
       
       if (workspaceIds && workspaceIds.length > 0) {
         domainsQuery = domainsQuery.in('client_id', workspaceIds);
       }
       
-      const { data: domainsData } = await domainsQuery;
+      const { data: domainsData, error: domainsError } = await domainsQuery;
+      if (domainsError) throw domainsError;
 
-      const clientIds = [...new Set((domainsData || []).map(d => d.client_id))];
+      if (!domainsData || domainsData.length === 0) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      const domainIds = domainsData.map(d => d.id);
+
+      // 2. Fetch history for those domains
+      const { data: historyData } = await supabase
+        .from('external_domain_analysis_history')
+        .select('id, domain_id, score, created_at, status, completed_at')
+        .in('domain_id', domainIds)
+        .order('created_at', { ascending: false });
+
+      // 3. Fetch client names
+      const clientIds = [...new Set(domainsData.map(d => d.client_id))];
       const { data: clientsData } = await supabase
         .from('clients')
         .select('id, name')
         .in('id', clientIds);
 
-      const domainMap = new Map((domainsData || []).map(d => [d.id, d]));
+      const domainMap = new Map(domainsData.map(d => [d.id, d]));
       const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
 
-      const accessibleDomainIds = new Set((domainsData || []).map(d => d.id));
-      const filteredHistory = historyData.filter(h => accessibleDomainIds.has(h.domain_id));
-
-      const formattedReports: DomainReport[] = filteredHistory.map(h => {
+      // Build reports from history
+      const formattedReports: DomainReport[] = (historyData || []).map(h => {
         const domain = domainMap.get(h.domain_id);
         const client = domain ? clientMap.get(domain.client_id) : null;
         return {
@@ -156,6 +162,16 @@ export default function ExternalDomainReportsPage() {
       });
 
       setReports(formattedReports);
+
+      // Store domain metadata for domains without history
+      setDomainsMeta(domainsData.map(d => ({
+        id: d.id,
+        name: d.name,
+        domain: d.domain,
+        client_id: d.client_id,
+        agent_id: d.agent_id,
+        client_name: clientMap.get(d.client_id)?.name || 'N/A',
+      })));
     } catch (error) {
       console.error('Error fetching external domain reports:', error);
       toast.error('Erro ao carregar relatórios');
@@ -164,15 +180,36 @@ export default function ExternalDomainReportsPage() {
     }
   };
 
-  // Group reports by domain with search + workspace filter
+  // Group reports by domain with search + workspace filter, including domains without analyses
   const groupedDomains = useMemo(() => {
-    // Filter by workspace first
+    // Filter domainsMeta by workspace
+    const filteredMeta = selectedWorkspaceId
+      ? domainsMeta.filter(d => d.client_id === selectedWorkspaceId)
+      : domainsMeta;
+
+    // Filter reports by workspace
     const workspaceFiltered = selectedWorkspaceId
       ? reports.filter(r => r.client_id === selectedWorkspaceId)
       : reports;
 
     const groups = new Map<string, GroupedDomain>();
+
+    // First, seed all domains (including those without analyses)
+    filteredMeta.forEach(d => {
+      if (!groups.has(d.id)) {
+        groups.set(d.id, {
+          domain_id: d.id,
+          domain_name: d.name,
+          domain_url: d.domain,
+          client_id: d.client_id,
+          client_name: d.client_name,
+          agent_id: d.agent_id,
+          analyses: [],
+        });
+      }
+    });
     
+    // Then add analyses
     workspaceFiltered.forEach(report => {
       if (!groups.has(report.domain_id)) {
         groups.set(report.domain_id, {
@@ -181,6 +218,7 @@ export default function ExternalDomainReportsPage() {
           domain_url: report.domain_url,
           client_id: report.client_id,
           client_name: report.client_name,
+          agent_id: null,
           analyses: [],
         });
       }
@@ -210,7 +248,7 @@ export default function ExternalDomainReportsPage() {
       g.domain_name.toLowerCase().includes(q) ||
       g.client_name.toLowerCase().includes(q)
     );
-  }, [reports, search, selectedWorkspaceId]);
+  }, [reports, domainsMeta, search, selectedWorkspaceId]);
 
   // Auto-select first workspace when list loads
   useEffect(() => {
@@ -225,6 +263,7 @@ export default function ExternalDomainReportsPage() {
     let pending = 0, running = 0, completed = 0, failed = 0;
     groupedDomains.forEach(g => {
       const status = g.analyses[0]?.status;
+      if (!status) return; // domain without analyses - don't count in status
       if (status === 'pending') pending++;
       else if (status === 'running') running++;
       else if (status === 'failed') failed++;
@@ -272,6 +311,55 @@ export default function ExternalDomainReportsPage() {
       createdAt: data.created_at,
       domainId: data.domain_id,
     };
+  };
+
+  const handleAnalyze = async (domainId: string, agentId: string | null) => {
+    if (!agentId) {
+      toast.error('Agent não configurado', {
+        description: 'Configure um agent para este domínio antes de executar a análise.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    setAnalyzingId(domainId);
+    try {
+      const { data, error } = await supabase.functions.invoke('trigger-external-domain-analysis', {
+        body: { domain_id: domainId },
+      });
+
+      if (error) {
+        console.error('Trigger external domain analysis error:', error);
+        toast.error('Erro ao agendar análise', {
+          description: 'Não foi possível criar a tarefa de análise. Tente novamente.',
+          duration: 8000,
+        });
+        return;
+      }
+
+      if (!data?.success) {
+        toast.error(data?.error || 'Erro ao agendar análise', {
+          description: data?.message || 'Verifique a configuração do domínio.',
+          duration: 10000,
+        });
+        return;
+      }
+
+      toast.success('Análise agendada!', {
+        description: 'O agent irá processar em breve. Acompanhe o status na página.',
+        duration: 5000,
+      });
+
+      await fetchReports();
+    } catch (e: any) {
+      console.error('Trigger external domain analysis exception:', e);
+      toast.error('Erro inesperado', {
+        description: e?.message || 'Ocorreu um erro ao agendar a análise.',
+        duration: 8000,
+      });
+    } finally {
+      setAnalyzingId(null);
+    }
   };
 
   const handleViewReport = async (group: GroupedDomain) => {
@@ -518,42 +606,64 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>
                           {renderStatusBadge(currentAnalysis)}
+                          {!currentAnalysis && (
+                            <Badge variant="outline" className="bg-muted/20 text-muted-foreground border-muted/30">Sem análise</Badge>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Select 
-                            value={selectedAnalyses[group.domain_id] || group.analyses[0]?.id}
-                            onValueChange={(value) => setSelectedAnalyses(prev => ({
-                              ...prev,
-                              [group.domain_id]: value
-                            }))}
-                          >
-                            <SelectTrigger className="w-[180px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {group.analyses.map((analysis) => (
-                                <SelectItem key={analysis.id} value={analysis.id}>
-                                  {formatDate(analysis.created_at)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {group.analyses.length > 0 ? (
+                            <Select 
+                              value={selectedAnalyses[group.domain_id] || group.analyses[0]?.id}
+                              onValueChange={(value) => setSelectedAnalyses(prev => ({
+                                ...prev,
+                                [group.domain_id]: value
+                              }))}
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {group.analyses.map((analysis) => (
+                                  <SelectItem key={analysis.id} value={analysis.id}>
+                                    {formatDate(analysis.created_at)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                              <Button
                                variant="ghost"
                                size="icon"
-                               onClick={() => handleViewReport(group)}
-                               disabled={loadingReportId === currentAnalysis?.id}
-                               title="Visualizar"
+                               onClick={() => handleAnalyze(group.domain_id, group.agent_id)}
+                               disabled={analyzingId === group.domain_id}
+                               title="Analisar"
                              >
-                               {loadingReportId === currentAnalysis?.id ? (
+                               {analyzingId === group.domain_id ? (
                                  <Loader2 className="w-4 h-4 animate-spin" />
                                ) : (
-                                 <Eye className="w-4 h-4" />
+                                 <Play className="w-4 h-4" />
                                )}
                              </Button>
+                             {currentAnalysis?.status === 'completed' && (
+                               <Button
+                                 variant="ghost"
+                                 size="icon"
+                                 onClick={() => handleViewReport(group)}
+                                 disabled={loadingReportId === currentAnalysis?.id}
+                                 title="Visualizar"
+                               >
+                                 {loadingReportId === currentAnalysis?.id ? (
+                                   <Loader2 className="w-4 h-4 animate-spin" />
+                                 ) : (
+                                   <Eye className="w-4 h-4" />
+                                 )}
+                               </Button>
+                             )}
                           </div>
                         </TableCell>
                       </TableRow>
