@@ -1231,13 +1231,8 @@ export default function AttackSurfaceAnalyzerPage() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Radar className="w-7 h-7 text-teal-400" />
-                Attack Surface Analyzer
-              </h1>
-              <p className="text-muted-foreground text-sm mt-1">
-                Visão consolidada de ativos expostos — organizada por risco
-              </p>
+              <h1 className="text-2xl font-bold text-foreground">Surface Analyzer</h1>
+              <p className="text-muted-foreground">Visão consolidada de ativos expostos</p>
             </div>
             <div className="flex items-center gap-3">
               {isSuperRole && workspaces && (
