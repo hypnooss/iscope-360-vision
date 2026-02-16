@@ -383,7 +383,7 @@ export default function ExternalDomainListPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-        { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
+        { label: 'Domínio Externo' },
         { label: 'Domínios' }]
         } />
         
