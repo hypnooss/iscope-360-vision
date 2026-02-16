@@ -162,6 +162,17 @@ install_deps() {
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y
     apt-get install -y tar curl python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
+
+    # Tentar instalar Python 3.9+ se o python3 padrao for < 3.9 (ex: Ubuntu 20.04)
+    local py3_ver
+    py3_ver="\$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
+    if [[ "\$py3_ver" -lt 9 ]]; then
+      echo "Python 3 padrao e 3.\$py3_ver. Tentando instalar Python 3.9+..."
+      apt-get install -y software-properties-common || true
+      add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
+      apt-get update -y
+      apt-get install -y python3.9 python3.9-venv python3.9-distutils || true
+    fi
     return
   fi
 
