@@ -1,54 +1,46 @@
 
 
-# Auto-refresh do snapshot apos rescan completar
+# Fix: Adicionar `-Pn` ao executor de fingerprinting
 
-## Problema
+## Causa raiz
 
-O hook `useLatestAttackSurfaceSnapshot` nao faz polling. Quando o agente termina o rescan e faz merge no snapshot, o frontend nao sabe que os dados mudaram. O usuario precisa recarregar a pagina manualmente.
+O executor `nmap_discovery.py` usa `-Pn` (skip host discovery), mas o `nmap.py` (fingerprint) nao usa. Sem `-Pn`, o nmap tenta pingar o host antes de escanear. Hosts que nao respondem ICMP (firewalls, IPS) sao classificados como "down" e o nmap pula o scan inteiro -- retornando 0 servicos.
 
-## Solucao
+## Correcao
 
-Usar o hook `useAttackSurfaceProgress` (que ja faz polling a cada 10s) para detectar quando o status volta para `completed` e invalidar automaticamente as queries do snapshot.
+### Arquivo: `python-agent/agent/executors/nmap.py`
 
-## Plano Tecnico
+Adicionar `-Pn` em 3 locais:
 
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+1. **Scan primario** (linha 76-86): adicionar `'-Pn'` ao comando
+2. **Scan fallback** (linha 111-120): adicionar `'-Pn'` ao comando  
+3. **Scan de enriquecimento NSE** (metodo `_enrich_with_contextual_scripts`, ~linha 195): adicionar `'-Pn'` ao comando
 
-Adicionar um `useEffect` que observa o resultado do `useAttackSurfaceProgress`. Quando o status mudar para `completed`, invalida as queries do snapshot para forcar o re-fetch.
+```python
+# Antes (scan primario):
+cmd = [
+    'nmap', '-sT', '-sV',
+    '--version-intensity', '5',
+    ...
+]
 
-```typescript
-const queryClient = useQueryClient();
-const progress = useAttackSurfaceProgress(clientId);
-
-useEffect(() => {
-  if (progress.data?.status === 'completed') {
-    queryClient.invalidateQueries({ queryKey: ['attack-surface-latest', clientId] });
-    queryClient.invalidateQueries({ queryKey: ['attack-surface-snapshots', clientId] });
-  }
-}, [progress.data?.status, clientId, queryClient]);
+# Depois:
+cmd = [
+    'nmap', '-sT', '-Pn', '-sV',
+    '--version-intensity', '5',
+    ...
+]
 ```
 
-Para evitar invalidacoes desnecessarias (quando o status ja era `completed` antes), guardar o status anterior com `useRef`:
+A mesma mudanca nos outros dois comandos.
 
-```typescript
-const prevStatus = useRef<string | null>(null);
+## Justificativa
 
-useEffect(() => {
-  const currentStatus = progress.data?.status ?? null;
-  // So invalida na transicao running/pending -> completed
-  if (currentStatus === 'completed' && prevStatus.current && prevStatus.current !== 'completed') {
-    queryClient.invalidateQueries({ queryKey: ['attack-surface-latest', clientId] });
-    queryClient.invalidateQueries({ queryKey: ['attack-surface-snapshots', clientId] });
-  }
-  prevStatus.current = currentStatus;
-}, [progress.data?.status, clientId, queryClient]);
-```
+As portas ja foram confirmadas como abertas pelo `nmap_discovery`. Nao faz sentido o fingerprint refazer host discovery. O `-Pn` e seguro aqui porque ja sabemos que o host esta ativo.
 
-### Resumo
+## Impacto
 
-| Arquivo | Mudanca |
-|---|---|
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Adicionar `useEffect` + `useRef` para detectar transicao de status e invalidar queries do snapshot automaticamente |
-
-Nenhuma outra mudanca necessaria. O card sera atualizado automaticamente ~10 segundos apos o agente concluir o rescan (proximo tick do polling de progresso).
+- Corrige o problema de 0 servicos em hosts que bloqueiam ICMP
+- Torna o fingerprint mais rapido (pula a fase de ping)
+- Nenhum risco: as portas ja foram validadas pelo passo anterior do pipeline
 
