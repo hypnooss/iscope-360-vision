@@ -9,6 +9,22 @@ from typing import Dict, Any, List
 
 from agent.executors.base import BaseExecutor
 
+# Contextual NSE scripts per port for enrichment scan
+PORT_SCRIPTS: Dict[int, List[str]] = {
+    21:   ['ftp-anon', 'ftp-syst'],
+    22:   ['ssh-hostkey', 'ssh2-enum-algos'],
+    25:   ['smtp-commands', 'smtp-ntlm-info'],
+    161:  ['snmp-info', 'snmp-sysdescr'],
+    389:  ['ldap-rootdse'],
+    445:  ['smb-os-discovery', 'smb-protocols', 'smb-security-mode'],
+    587:  ['smtp-commands', 'smtp-ntlm-info'],
+    636:  ['ldap-rootdse'],
+    1433: ['ms-sql-info', 'ms-sql-ntlm-info'],
+    3306: ['mysql-info'],
+    3389: ['rdp-ntlm-info', 'rdp-enum-encryption'],
+    5432: ['pgsql-info'],
+}
+
 
 class NmapExecutor(BaseExecutor):
     """Execute nmap service version detection on discovered ports."""
@@ -103,6 +119,9 @@ class NmapExecutor(BaseExecutor):
 
             self.logger.info(f"[nmap] Found {len(services)} services on {ip}")
 
+            # Enrichment: run contextual NSE scripts for known ports
+            services = self._enrich_with_contextual_scripts(ip, services, timeout)
+
             return {
                 'data': {
                     'ip': ip,
@@ -117,6 +136,78 @@ class NmapExecutor(BaseExecutor):
             return {'error': 'nmap not installed. Run: apt install -y nmap'}
         except Exception as e:
             return {'error': f'nmap error: {str(e)}'}
+
+    def _enrich_with_contextual_scripts(
+        self, ip: str, services: List[Dict[str, Any]], timeout: int
+    ) -> List[Dict[str, Any]]:
+        """Run targeted NSE scripts on ports that have enrichment mappings."""
+        # Find open ports that have contextual scripts
+        open_ports = [s['port'] for s in services]
+        target_ports = [p for p in open_ports if p in PORT_SCRIPTS]
+
+        if not target_ports:
+            return services
+
+        # Collect unique scripts needed
+        all_scripts: List[str] = []
+        for p in target_ports:
+            for s in PORT_SCRIPTS[p]:
+                if s not in all_scripts:
+                    all_scripts.append(s)
+
+        port_str = ','.join(str(p) for p in target_ports)
+        script_str = ','.join(all_scripts)
+
+        self.logger.info(
+            f"[nmap-enrich] Running contextual scripts on {ip} "
+            f"ports={port_str} scripts={script_str}"
+        )
+
+        cmd = [
+            'nmap', '-sT',
+            f'--script={script_str}',
+            f'-p{port_str}',
+            ip,
+            '-oX', '-',
+            '-T4',
+            '--host-timeout', '60s',
+            '--max-retries', '1',
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=min(timeout, 120),
+            )
+
+            if result.stderr and result.stderr.strip():
+                self.logger.warning(f"[nmap-enrich] stderr: {result.stderr[:500]}")
+
+            enriched = self._parse_nmap_xml(result.stdout)
+
+            # Merge enriched scripts into existing services
+            enrich_map: Dict[int, Dict[str, str]] = {}
+            for svc in enriched:
+                if svc.get('scripts'):
+                    enrich_map[svc['port']] = svc['scripts']
+
+            for svc in services:
+                extra = enrich_map.get(svc['port'])
+                if extra:
+                    svc['scripts'].update(extra)
+
+            self.logger.info(
+                f"[nmap-enrich] Enriched {len(enrich_map)} services on {ip}"
+            )
+
+        except subprocess.TimeoutExpired:
+            self.logger.warning(f"[nmap-enrich] Timeout on {ip}, keeping base results")
+        except Exception as e:
+            self.logger.warning(f"[nmap-enrich] Error on {ip}: {e}, keeping base results")
+
+        return services
 
     def _parse_nmap_xml(self, xml_output: str) -> List[Dict[str, Any]]:
         """Parse nmap XML output into structured service data."""
