@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .update({ status: 'timeout', error_message: 'Task expirada', completed_at: now })
       .eq('target_id', firewall_id)
-      .eq('task_type', 'firewall_analyzer')
+      .eq('task_type', 'fortigate_analyzer')
       .in('status', ['pending', 'running'])
       .lt('expires_at', now);
 
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .update({ status: 'timeout', error_message: 'Task não foi executada pelo agent', completed_at: now })
       .eq('target_id', firewall_id)
-      .eq('task_type', 'firewall_analyzer')
+      .eq('task_type', 'fortigate_analyzer')
       .eq('status', 'pending')
       .lt('created_at', staleThreshold);
 
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .select('id, status')
       .eq('target_id', firewall_id)
-      .eq('task_type', 'firewall_analyzer')
+      .eq('task_type', 'fortigate_analyzer')
       .in('status', ['pending', 'running'])
       .gt('expires_at', now)
       .maybeSingle();
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
       .from('agent_tasks')
       .insert({
         agent_id: firewall.agent_id,
-        task_type: 'firewall_analyzer',
+        task_type: 'fortigate_analyzer',
         target_id: firewall_id,
         target_type: 'firewall',
         status: 'pending',

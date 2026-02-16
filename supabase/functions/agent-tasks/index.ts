@@ -288,7 +288,7 @@ serve(async (req: Request) => {
 
       enrichedTasks.push({
         id: task.id,
-        type: task.task_type === 'fortigate_compliance' ? 'data_collection' : task.task_type,
+        type: (task.task_type === 'fortigate_compliance' || task.task_type === 'fortigate_analyzer') ? 'data_collection' : task.task_type,
         target: {
           id: task.target?.id || task.target_id,
           type: task.target?.type || task.target_type,
