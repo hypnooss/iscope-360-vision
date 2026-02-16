@@ -1164,17 +1164,16 @@ export default function AttackSurfaceAnalyzerPage() {
   });
   const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
 
-  // Get domain for HIBP section
-  const { data: clientDomain } = useQuery({
-    queryKey: ['client-domain', selectedClientId],
+  // Get all domains for HIBP section
+  const { data: clientDomains } = useQuery({
+    queryKey: ['client-domains', selectedClientId],
     queryFn: async () => {
-      if (!selectedClientId) return null;
+      if (!selectedClientId) return [];
       const { data } = await supabase
         .from('external_domains')
         .select('domain')
-        .eq('client_id', selectedClientId)
-        .limit(1);
-      return data?.[0]?.domain ?? null;
+        .eq('client_id', selectedClientId);
+      return (data || []).map((d) => d.domain);
     },
     enabled: !!selectedClientId,
     staleTime: 1000 * 60 * 10,
@@ -1377,10 +1376,10 @@ export default function AttackSurfaceAnalyzerPage() {
           }
 
           {/* Leaked Credentials (HIBP) */}
-          {selectedClientId && clientDomain && (
+          {selectedClientId && (clientDomains || []).length > 0 && (
             <LeakedCredentialsSection
               clientId={selectedClientId}
-              domain={clientDomain}
+              domains={clientDomains || []}
               isSuperRole={isSuperRole}
             />
           )}
