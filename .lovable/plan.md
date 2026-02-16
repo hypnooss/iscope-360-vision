@@ -1,63 +1,91 @@
 
+# Mover botao "Analisar" de Dominios para Compliance
 
-# Padronizar Design das 4 Telas de Dominio Externo
+## Resumo
 
-## Resumo das inconsistencias encontradas
-
-| Aspecto | Dominios | Compliance | Analyzer | Execucoes |
-|---|---|---|---|---|
-| Stats Cards | `Card` sem `glass-card`, icone `w-5` com wrapper `p-2 rounded-lg` | `glass-card`, icone `w-8` direto | `glass-card`, icone `w-5` com wrapper `p-2 rounded-lg bg-muted/50` | `glass-card`, icone `w-8` direto |
-| Grid stats | `grid-cols-2 lg:grid-cols-4` | `grid-cols-2 md:grid-cols-5` | `grid-cols-2 lg:grid-cols-4` | `grid-cols-2 md:grid-cols-5` |
-| Busca | Input solto | Input solto | Input solto | Dentro de `Card glass-card` |
-| Tabela | `Card` sem `glass-card` | `Card` sem `glass-card` | N/A (usa cards) | `Card glass-card` |
-| Workspace selector | Dentro do header com `Building2` no trigger | Separado do header com `Building2` fora | Dentro do header com `Building2` no trigger | Nao tem |
-
-## Padrao alvo (baseado em Compliance/Execucoes)
-
-- **Stats Cards**: `Card className="glass-card"` + icone `w-8 h-8` direto (sem wrapper div) + valor `text-2xl font-bold` + label `text-xs text-muted-foreground`
-- **Grid stats**: Manter o grid adequado a quantidade de cards de cada pagina
-- **Busca**: Input solto (sem card wrapper) - mais limpo e usado em 3 de 4 telas
-- **Tabela**: `Card` sem `glass-card` (consistente com maioria)
-- **Workspace selector**: Dentro do header, com `Building2` no trigger do `SelectTrigger`
+Remover o botao Play (Analisar) da coluna de acoes em **Dominios Externos** e adiciona-lo na coluna de acoes em **Compliance**. Para que dominios sem analise aparecam na tela de Compliance, a query dessa pagina precisa ser refatorada para listar todos os dominios (nao apenas os que tem historico de analise).
 
 ## Mudancas
 
-### 1. ExternalDomainListPage - Stats Cards
+### 1. ExternalDomainTable - Remover botao Analisar
 
-Adicionar `className="glass-card"` aos 4 Cards de stats (linhas 418, 431, 444, 457). Remover os wrappers `div p-2 rounded-lg` dos icones e mudar icones de `w-5 h-5` para `w-8 h-8`.
+No componente `src/components/external-domain/ExternalDomainTable.tsx`:
+- Remover o botao Play/Analisar (linhas 100-112)
+- Remover props `analyzingId` e `onAnalyze` da interface e do componente
+- Remover imports `Play` e `Loader2` que ficarem sem uso (manter `Loader2` pois e usado no loading state)
+- Remover `Play` do import de lucide-react
 
-### 2. AttackSurfaceAnalyzerPage - StatCard local
+### 2. ExternalDomainListPage - Limpar props do Table
 
-Atualizar a funcao `StatCard` local (linha 496-510) para usar icone `w-8 h-8` direto, sem o wrapper `div p-2 rounded-lg bg-muted/50`.
+No `src/pages/external-domain/ExternalDomainListPage.tsx`:
+- Remover o estado `analyzing` e a funcao `handleAnalyze` (nao mais necessarios nesta pagina)
+- Remover as props `analyzingId` e `onAnalyze` na chamada do `ExternalDomainTable`
+- Limpar imports nao utilizados (`Play`)
 
-### 3. ExternalDomainReportsPage - Workspace selector
+### 3. ExternalDomainReportsPage - Adicionar botao Analisar e listar todos os dominios
 
-Mover o icone `Building2` para dentro do `SelectTrigger` (como esta em Dominios e Analyzer), em vez de ficar fora com `flex items-center gap-2`.
+Este e o passo mais significativo. No `src/pages/external-domain/ExternalDomainReportsPage.tsx`:
 
-### 4. ExternalDomainExecutionsPage - Busca e Tabela
+**3a. Refatorar `fetchReports` para incluir dominios sem analise**
 
-Remover o `Card glass-card` que envolve a area de busca (linhas 584-626), deixando os inputs soltos. Remover `glass-card` do Card da tabela (linha 629).
+Atualmente a query parte de `external_domain_analysis_history` e depois busca os dominios. Precisa inverter: buscar primeiro todos os `external_domains` (filtrados por workspace/preview), depois buscar o historico correspondente. Dominios sem historico aparecem na tabela com score vazio e sem analises.
+
+**3b. Adicionar estado e funcao `handleAnalyze`**
+
+Copiar a logica de `handleAnalyze` do `ExternalDomainListPage` (invoca `trigger-external-domain-analysis` edge function). Adicionar estado `analyzingId`.
+
+**3c. Adicionar botao Play na coluna de acoes**
+
+Na celula de acoes (linha 542-557), adicionar o botao Play antes do botao Eye (Visualizar). O botao Eye so aparece se houver analise selecionada com status `completed`.
+
+**3d. Buscar `agent_id` dos dominios**
+
+A query de dominios precisa incluir `agent_id` para que a validacao do `handleAnalyze` funcione (verificar se tem agent configurado).
+
+**3e. Atualizar stats e interface**
+
+Os stats cards continuam funcionando pois sao calculados sobre `groupedDomains`. Dominios sem analise contarao como "Total" mas nao incrementarao nenhum status.
 
 ## Detalhes tecnicos
 
+### Arquivo: `src/components/external-domain/ExternalDomainTable.tsx`
+
+- Remover `Play` do import lucide-react
+- Remover `analyzingId` e `onAnalyze` da interface `ExternalDomainTableProps`
+- Remover da desestruturacao do componente
+- Remover o `<Button>` de Analisar (linhas 100-112)
+- Remover `disabled={analyzingId === domain.id}` dos botoes Editar e Excluir
+
 ### Arquivo: `src/pages/external-domain/ExternalDomainListPage.tsx`
 
-**Linhas 418-469**: Nos 4 cards de stats, adicionar `glass-card` ao Card e simplificar os icones:
-- Remover `<div className="p-2 rounded-lg bg-...">` wrapper
-- Mudar icones de `w-5 h-5` para `w-8 h-8`
-
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-**Linhas 496-510**: Atualizar StatCard local:
-- Remover wrapper `<div className={cn("p-2 rounded-lg bg-muted/50", iconClass)}>`
-- Icone direto com `w-8 h-8` e a classe de cor
+- Remover estado `analyzing` (`useState<string | null>(null)`)
+- Remover funcao `handleAnalyze`
+- Remover props `analyzingId={analyzing}` e `onAnalyze={handleAnalyze}` do `<ExternalDomainTable>`
 
 ### Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
 
-**Linhas 368-382**: Reestruturar workspace selector para ficar dentro do header `div` com `Building2` dentro do `SelectTrigger`.
+**Imports**: Adicionar `Play` de lucide-react. Adicionar import de `supabase.functions`.
 
-### Arquivo: `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
+**Interface `GroupedDomain`**: Adicionar campo `agent_id: string | null`.
 
-**Linhas 583-626**: Remover `Card glass-card` wrapper da busca, manter inputs soltos.
-**Linha 629**: Remover `glass-card` do Card da tabela.
+**`fetchReports` refatorado**:
+1. Buscar `external_domains` com `id, name, domain, client_id, agent_id` (filtro workspace/preview)
+2. Buscar `external_domain_analysis_history` para os domain_ids encontrados
+3. Montar os grupos incluindo dominios sem historico (analyses = [])
 
+**Novo estado e funcao**:
+```text
+const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+const handleAnalyze = async (domainId: string, agentId: string | null) => {
+  // Mesma logica do ExternalDomainListPage
+  // Invoca trigger-external-domain-analysis
+  // Apos sucesso, chama fetchReports() para atualizar a lista
+};
+```
+
+**Tabela - coluna Acoes**:
+- Botao Play (Analisar) - sempre visivel
+- Botao Eye (Visualizar) - visivel apenas se `currentAnalysis?.status === 'completed'`
+
+**Stats**: Ajustar contagem para tratar dominios sem analise (sem status) como uma categoria separada ou excluir dos contadores de status.
