@@ -1,38 +1,32 @@
 
 
-# Padronizar titulo e subtitulo do Analyzer
+# Padronizar header do Surface Analyzer
 
-## O que muda
+## Diferencas encontradas
 
-O header do Attack Surface Analyzer sera ajustado para seguir o mesmo padrao visual das paginas "Dominios Externos" e "Execucoes":
+Comparando o Analyzer com as paginas de referencia (Dominios Externos e Firewalls):
 
-| Aspecto | Atual (Analyzer) | Padrao (outras paginas) |
+| Aspecto | Analyzer (atual) | Padrao (referencia) |
 |---|---|---|
-| Titulo | `text-2xl font-bold flex items-center gap-2` + icone Radar | `text-2xl font-bold text-foreground` sem icone |
-| Texto titulo | "Attack Surface Analyzer" | "Surface Analyzer" |
-| Subtitulo | `text-muted-foreground text-sm mt-1` | `text-muted-foreground` (sem text-sm, sem mt-1) |
-| Texto subtitulo | "Visao consolidada de ativos expostos -- organizada por risco" | "Visao consolidada de ativos expostos" |
+| Wrapper do header | `flex items-center justify-between` | `flex flex-col md:flex-row md:items-center md:justify-between gap-4` |
+| Botoes | `size="sm"` | sem `size` (tamanho default) |
+| Select width | `w-[220px]` | `w-[220px]` (ja esta igual) |
 
-## Detalhes tecnicos
+O Select ja esta no padrao. As diferencas reais sao:
+1. O wrapper nao tem responsividade (`flex-col md:flex-row`) nem `gap-4`
+2. Os botoes usam `size="sm"` enquanto o padrao usa tamanho default
 
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linhas 1234-1240)
+## Mudancas
 
-**De:**
-```html
-<h1 className="text-2xl font-bold flex items-center gap-2">
-  <Radar className="w-7 h-7 text-teal-400" />
-  Attack Surface Analyzer
-</h1>
-<p className="text-muted-foreground text-sm mt-1">
-  Visao consolidada de ativos expostos -- organizada por risco
-</p>
-```
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**Para:**
-```html
-<h1 className="text-2xl font-bold text-foreground">Surface Analyzer</h1>
-<p className="text-muted-foreground">Visao consolidada de ativos expostos</p>
-```
+**1. Linha 1232 - Wrapper do header**
+De: `flex items-center justify-between`
+Para: `flex flex-col md:flex-row md:items-center md:justify-between gap-4`
 
-Mudanca unica em um arquivo. O import do `Radar` pode ser mantido caso seja usado em outro lugar do componente.
+**2. Linha 1252 - Botao "Executar Analise"**
+Remover `size="sm"`
+
+**3. Linha 1258 - Botao "Cancelar Analise"**
+Remover `size="sm"`
 
