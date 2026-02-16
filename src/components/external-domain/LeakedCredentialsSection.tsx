@@ -3,6 +3,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   KeyRound,
   Search,
@@ -13,6 +22,7 @@ import {
   ShieldAlert,
   Settings,
   RefreshCw,
+  Globe,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -79,36 +89,148 @@ function TimelineSection({
   );
 }
 
+/* ── Domain Selection Modal ── */
+
+function DomainSelectionModal({
+  open,
+  onOpenChange,
+  domains,
+  isPending,
+  progressText,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  domains: string[];
+  isPending: boolean;
+  progressText: string;
+  onConfirm: (selected: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(domains));
+
+  // Reset selection when modal opens
+  React.useEffect(() => {
+    if (open) setSelected(new Set(domains));
+  }, [open, domains]);
+
+  const toggleDomain = (d: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === domains.length) setSelected(new Set());
+    else setSelected(new Set(domains));
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Globe className="w-5 h-5 text-rose-400" />
+            Selecionar Domínios para Consulta HIBP
+          </DialogTitle>
+          <DialogDescription>
+            Selecione os domínios que deseja consultar no Have I Been Pwned.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          {/* Select all */}
+          <label className="flex items-center gap-2 cursor-pointer px-1">
+            <Checkbox
+              checked={selected.size === domains.length}
+              onCheckedChange={toggleAll}
+            />
+            <span className="text-sm font-medium">Selecionar todos</span>
+            <span className="text-xs text-muted-foreground ml-auto">{domains.length} domínio(s)</span>
+          </label>
+
+          <div className="border-t border-border/50" />
+
+          {/* Domain list */}
+          <div className="max-h-60 overflow-y-auto space-y-2 px-1">
+            {domains.map((d) => (
+              <label key={d} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={selected.has(d)}
+                  onCheckedChange={() => toggleDomain(d)}
+                />
+                <span className="text-sm font-mono">{d}</span>
+              </label>
+            ))}
+          </div>
+
+          {isPending && progressText && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground pt-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {progressText}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => onConfirm(Array.from(selected))}
+            disabled={selected.size === 0 || isPending}
+          >
+            {isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Search className="w-4 h-4 mr-2" />
+            )}
+            Consultar ({selected.size})
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Main Component ── */
+
 export default function LeakedCredentialsSection({
   clientId,
-  domain,
+  domains,
   isSuperRole,
 }: {
   clientId: string;
-  domain: string | null;
+  domains: string[];
   isSuperRole: boolean;
 }) {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [progressText, setProgressText] = useState('');
 
-  // Fetch cached data
-  const { data: cacheData, isLoading } = useQuery({
-    queryKey: ['dehashed-cache', clientId, domain],
+  // Fetch cached data for ALL domains of this client
+  const { data: allCacheData, isLoading } = useQuery({
+    queryKey: ['dehashed-cache', clientId],
     queryFn: async () => {
-      if (!domain) return null;
       const { data, error } = await supabase
         .from('dehashed_cache' as any)
         .select('*')
         .eq('client_id', clientId)
-        .eq('domain', domain)
-        .order('queried_at', { ascending: false })
-        .limit(1);
+        .order('queried_at', { ascending: false });
       if (error) throw error;
-      const row = (data as any[])?.[0];
-      if (!row) return null;
-      return row as HIBPCacheData;
+      // Deduplicate: keep latest per domain
+      const byDomain = new Map<string, HIBPCacheData>();
+      for (const row of (data as any[]) || []) {
+        if (!byDomain.has(row.domain)) {
+          byDomain.set(row.domain, row as HIBPCacheData);
+        }
+      }
+      return Array.from(byDomain.values());
     },
-    enabled: !!clientId && !!domain,
+    enabled: !!clientId,
     staleTime: 1000 * 60 * 5,
   });
 
@@ -122,28 +244,35 @@ export default function LeakedCredentialsSection({
       if (error) return { configured: false };
       const keys = data?.keys || [];
       const hibpKey = keys.find((k: any) => k.name === 'HIBP_API_KEY');
-      return {
-        configured: !!hibpKey?.configured,
-      };
+      return { configured: !!hibpKey?.configured };
     },
     staleTime: 1000 * 60 * 10,
   });
 
-  // Query mutation
+  // Query mutation for multiple domains
   const queryMutation = useMutation({
-    mutationFn: async (forceRefresh: boolean) => {
-      const { data, error } = await supabase.functions.invoke('dehashed-search', {
-        body: { domain, client_id: clientId, force_refresh: forceRefresh },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data.data as HIBPCacheData;
+    mutationFn: async ({ selectedDomains, forceRefresh }: { selectedDomains: string[]; forceRefresh: boolean }) => {
+      const results: HIBPCacheData[] = [];
+      for (let i = 0; i < selectedDomains.length; i++) {
+        const domain = selectedDomains[i];
+        setProgressText(`Consultando ${domain} (${i + 1}/${selectedDomains.length})...`);
+        const { data, error } = await supabase.functions.invoke('dehashed-search', {
+          body: { domain, client_id: clientId, force_refresh: forceRefresh },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(`${domain}: ${data.error}`);
+        results.push(data.data as HIBPCacheData);
+      }
+      return results;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dehashed-cache', clientId, domain] });
+      queryClient.invalidateQueries({ queryKey: ['dehashed-cache', clientId] });
       toast.success('Consulta HIBP concluída');
+      setModalOpen(false);
+      setProgressText('');
     },
     onError: (err: any) => {
+      setProgressText('');
       if (err.message?.includes('NO_API_KEY')) {
         toast.error('API key do HIBP não configurada. Vá em Settings > API Keys.');
       } else {
@@ -152,42 +281,73 @@ export default function LeakedCredentialsSection({
     },
   });
 
-  // Stats
+  // Consolidated stats
   const stats = useMemo(() => {
-    if (!cacheData) return { total: 0, uniqueBreaches: 0, uniqueEmails: 0 };
-    const entries = cacheData.entries || [];
-    const emailSet = new Set(entries.map((e) => e.email).filter(Boolean));
-    return {
-      total: cacheData.total_entries,
-      uniqueBreaches: (cacheData.databases || []).length,
-      uniqueEmails: emailSet.size,
-    };
-  }, [cacheData]);
+    if (!allCacheData || allCacheData.length === 0) return { total: 0, uniqueBreaches: 0, uniqueEmails: 0 };
+    let total = 0;
+    const dbSet = new Set<string>();
+    const emailSet = new Set<string>();
+    for (const cache of allCacheData) {
+      total += cache.total_entries;
+      for (const db of cache.databases || []) dbSet.add(db);
+      for (const e of cache.entries || []) if (e.email) emailSet.add(e.email);
+    }
+    return { total, uniqueBreaches: dbSet.size, uniqueEmails: emailSet.size };
+  }, [allCacheData]);
+
+  // All entries with domain info
+  const allEntries = useMemo(() => {
+    if (!allCacheData) return [];
+    return allCacheData.flatMap((cache) =>
+      (cache.entries || []).map((e) => ({ ...e, domain: cache.domain }))
+    );
+  }, [allCacheData]);
+
+  // All unique databases
+  const allDatabases = useMemo(() => {
+    if (!allCacheData) return [];
+    const dbSet = new Set<string>();
+    for (const cache of allCacheData) {
+      for (const db of cache.databases || []) dbSet.add(db);
+    }
+    return Array.from(dbSet);
+  }, [allCacheData]);
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
-    if (!cacheData?.entries) return [];
-    if (!searchTerm) return cacheData.entries;
+    if (!allEntries.length) return [];
+    if (!searchTerm) return allEntries;
     const q = searchTerm.toLowerCase();
-    return cacheData.entries.filter(
+    return allEntries.filter(
       (e) =>
         e.email?.toLowerCase().includes(q) ||
         e.username?.toLowerCase().includes(q) ||
-        e.database_name?.toLowerCase().includes(q)
+        e.database_name?.toLowerCase().includes(q) ||
+        e.domain?.toLowerCase().includes(q)
     );
-  }, [cacheData, searchTerm]);
+  }, [allEntries, searchTerm]);
 
-  if (!domain) return null;
+  const hasData = allCacheData && allCacheData.length > 0;
 
-  // Cache age
-  const cacheAgeText = cacheData?.queried_at
-    ? (() => {
-        const days = Math.floor((Date.now() - new Date(cacheData.queried_at).getTime()) / (1000 * 60 * 60 * 24));
-        if (days === 0) return 'hoje';
-        if (days === 1) return 'ontem';
-        return `há ${days} dias`;
-      })()
-    : null;
+  // Cache age (oldest)
+  const cacheAgeText = useMemo(() => {
+    if (!allCacheData || allCacheData.length === 0) return null;
+    const oldest = allCacheData.reduce((a, b) =>
+      new Date(a.queried_at) < new Date(b.queried_at) ? a : b
+    );
+    const days = Math.floor((Date.now() - new Date(oldest.queried_at).getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return 'hoje';
+    if (days === 1) return 'ontem';
+    return `há ${days} dias`;
+  }, [allCacheData]);
+
+  const handleOpenModal = () => setModalOpen(true);
+
+  const handleConfirmQuery = (selectedDomains: string[], forceRefresh = false) => {
+    queryMutation.mutate({ selectedDomains, forceRefresh });
+  };
+
+  if (domains.length === 0) return null;
 
   return (
     <TimelineSection
@@ -197,8 +357,18 @@ export default function LeakedCredentialsSection({
       title="Credenciais Vazadas (HIBP)"
       isLast
     >
+      {/* Domain Selection Modal */}
+      <DomainSelectionModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        domains={domains}
+        isPending={queryMutation.isPending}
+        progressText={progressText}
+        onConfirm={(selected) => handleConfirmQuery(selected, hasData ? true : false)}
+      />
+
       {/* No API key configured */}
-      {apiKeysStatus && !apiKeysStatus.configured && !cacheData && (
+      {apiKeysStatus && !apiKeysStatus.configured && !hasData && (
         <Card className="glass-card border-warning/30">
           <CardContent className="py-8">
             <div className="text-center text-muted-foreground">
@@ -221,19 +391,15 @@ export default function LeakedCredentialsSection({
       )}
 
       {/* No data yet, but API key might be configured */}
-      {!cacheData && !isLoading && (apiKeysStatus?.configured || !apiKeysStatus) && (
+      {!hasData && !isLoading && (apiKeysStatus?.configured || !apiKeysStatus) && (
         <Card className="glass-card">
           <CardContent className="py-8">
             <div className="text-center text-muted-foreground">
               <ShieldAlert className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">Nenhuma consulta realizada</p>
-              <p className="text-sm mt-1">Clique abaixo para consultar credenciais vazadas para <strong>{domain}</strong></p>
+              <p className="text-sm mt-1">Clique abaixo para consultar credenciais vazadas</p>
               {isSuperRole && (
-                <Button
-                  className="mt-4"
-                  onClick={() => queryMutation.mutate(false)}
-                  disabled={queryMutation.isPending}
-                >
+                <Button className="mt-4" onClick={handleOpenModal} disabled={queryMutation.isPending}>
                   {queryMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   ) : (
@@ -255,7 +421,7 @@ export default function LeakedCredentialsSection({
       )}
 
       {/* Has data */}
-      {cacheData && (
+      {hasData && (
         <div className="space-y-4">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
@@ -269,7 +435,7 @@ export default function LeakedCredentialsSection({
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por email, username ou breach..."
+                placeholder="Buscar por email, username, breach ou domínio..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
@@ -280,7 +446,7 @@ export default function LeakedCredentialsSection({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => queryMutation.mutate(true)}
+                onClick={handleOpenModal}
                 disabled={queryMutation.isPending}
                 className="gap-1.5"
               >
@@ -301,9 +467,9 @@ export default function LeakedCredentialsSection({
           </div>
 
           {/* Breaches list */}
-          {(cacheData.databases || []).length > 0 && (
+          {allDatabases.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {(cacheData.databases as string[]).map((db) => (
+              {allDatabases.map((db) => (
                 <Badge key={db} variant="outline" className="text-[10px] px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/30">
                   {db}
                 </Badge>
@@ -319,6 +485,7 @@ export default function LeakedCredentialsSection({
                   <thead>
                     <tr className="border-b border-border/50 bg-muted/30">
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Email</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Domínio</th>
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Breach</th>
                     </tr>
                   </thead>
@@ -327,6 +494,11 @@ export default function LeakedCredentialsSection({
                       <tr key={i} className="border-b border-border/30 last:border-0 hover:bg-muted/20">
                         <td className="px-3 py-2">
                           <span className="font-mono text-xs">{entry.email}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant="outline" className="text-[10px] px-1.5">
+                            {entry.domain}
+                          </Badge>
                         </td>
                         <td className="px-3 py-2">
                           {entry.database_name ? (
@@ -362,7 +534,7 @@ export default function LeakedCredentialsSection({
                 <div className="text-center text-muted-foreground">
                   <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-teal-400 opacity-60" />
                   <p className="font-medium text-teal-400">Nenhuma credencial vazada encontrada</p>
-                  <p className="text-sm mt-1">O domínio <strong>{domain}</strong> não possui registros no HIBP.</p>
+                  <p className="text-sm mt-1">Nenhum dos domínios consultados possui registros no HIBP.</p>
                 </div>
               </CardContent>
             </Card>
