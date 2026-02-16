@@ -136,10 +136,14 @@ export function useAttackSurfaceScan(clientId?: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (selectedIps?: { ip: string; source: 'dns' | 'firewall'; label: string }[]) => {
       if (!clientId) throw new Error('client_id is required');
+      const body: Record<string, unknown> = { client_id: clientId };
+      if (selectedIps && selectedIps.length > 0) {
+        body.selected_ips = selectedIps;
+      }
       const { data, error } = await supabase.functions.invoke('run-attack-surface-queue', {
-        body: { client_id: clientId },
+        body,
       });
       if (error) throw error;
       return data;

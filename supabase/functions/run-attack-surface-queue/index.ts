@@ -163,9 +163,10 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, serviceKey)
 
-    // Read optional client_id from request body
+    // Read optional client_id and selected_ips from request body
     const body = await req.json().catch(() => ({}))
     const targetClientId = body.client_id
+    const selectedIps: { ip: string; source: string; label: string }[] | undefined = body.selected_ips
 
     let clients: any[]
     if (targetClientId) {
@@ -190,67 +191,77 @@ Deno.serve(async (req) => {
     let totalTasks = 0
 
     for (const client of (clients || [])) {
-      // Collect IPs from domain analyses
-      const { data: domains } = await supabase
-        .from('external_domains')
-        .select('id, domain, name')
-        .eq('client_id', client.id)
+      let allIPs: SourceIP[]
 
-      const allIPs: SourceIP[] = []
-      const seenIPs = new Set<string>()
+      // If selected_ips provided, use them directly instead of auto-collecting
+      if (selectedIps && Array.isArray(selectedIps) && selectedIps.length > 0) {
+        allIPs = selectedIps.map(s => ({
+          ip: s.ip,
+          source: (s.source === 'firewall' ? 'firewall' : 'dns') as 'dns' | 'firewall',
+          label: s.label,
+        }))
+        console.log(`[queue] Client ${client.name}: using ${allIPs.length} user-selected IPs`)
+      } else {
+        // Auto-collect IPs from domain analyses
+        const { data: domains } = await supabase
+          .from('external_domains')
+          .select('id, domain, name')
+          .eq('client_id', client.id)
 
-      for (const domain of (domains || [])) {
-        const { data: analyses } = await supabase
-          .from('external_domain_analysis_history')
-          .select('report_data')
-          .eq('domain_id', domain.id)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(1)
+        allIPs = []
+        const seenIPs = new Set<string>()
 
-        if (analyses?.[0]?.report_data) {
-          const domainIPs = extractDomainIPs(analyses[0].report_data, domain.domain)
-          for (const dip of domainIPs) {
-            if (!seenIPs.has(dip.ip)) {
-              seenIPs.add(dip.ip)
-              allIPs.push(dip)
+        for (const domain of (domains || [])) {
+          const { data: analyses } = await supabase
+            .from('external_domain_analysis_history')
+            .select('report_data')
+            .eq('domain_id', domain.id)
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (analyses?.[0]?.report_data) {
+            const domainIPs = extractDomainIPs(analyses[0].report_data, domain.domain)
+            for (const dip of domainIPs) {
+              if (!seenIPs.has(dip.ip)) {
+                seenIPs.add(dip.ip)
+                allIPs.push(dip)
+              }
             }
           }
         }
-      }
 
-      // Collect IPs from firewall analyses (step results with system_interface)
-      const { data: firewalls } = await supabase
-        .from('firewalls')
-        .select('id, name')
-        .eq('client_id', client.id)
+        // Collect IPs from firewall analyses (step results with system_interface)
+        const { data: firewalls } = await supabase
+          .from('firewalls')
+          .select('id, name')
+          .eq('client_id', client.id)
 
-      for (const fw of (firewalls || [])) {
-        // Get the latest completed firewall task ID
-        const { data: tasks } = await supabase
-          .from('agent_tasks')
-          .select('id')
-          .eq('target_id', fw.id)
-          .eq('target_type', 'firewall')
-          .eq('task_type', 'fortigate_compliance')
-          .eq('status', 'completed')
-          .order('completed_at', { ascending: false })
-          .limit(1)
+        for (const fw of (firewalls || [])) {
+          const { data: tasks } = await supabase
+            .from('agent_tasks')
+            .select('id')
+            .eq('target_id', fw.id)
+            .eq('target_type', 'firewall')
+            .eq('task_type', 'fortigate_compliance')
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false })
+            .limit(1)
 
-        if (tasks?.[0]?.id) {
-          // Read step results from the correct table
-          const { data: stepResults } = await supabase
-            .from('task_step_results')
-            .select('step_id, data')
-            .eq('task_id', tasks[0].id)
-            .eq('step_id', 'system_interface')
+          if (tasks?.[0]?.id) {
+            const { data: stepResults } = await supabase
+              .from('task_step_results')
+              .select('step_id, data')
+              .eq('task_id', tasks[0].id)
+              .eq('step_id', 'system_interface')
 
-          if (stepResults && stepResults.length > 0) {
-            const fwIPs = extractFirewallIPs(stepResults, fw.name)
-            for (const fip of fwIPs) {
-              if (!seenIPs.has(fip.ip)) {
-                seenIPs.add(fip.ip)
-                allIPs.push(fip)
+            if (stepResults && stepResults.length > 0) {
+              const fwIPs = extractFirewallIPs(stepResults, fw.name)
+              for (const fip of fwIPs) {
+                if (!seenIPs.has(fip.ip)) {
+                  seenIPs.add(fip.ip)
+                  allIPs.push(fip)
+                }
               }
             }
           }
