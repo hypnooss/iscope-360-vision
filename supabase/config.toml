@@ -114,3 +114,6 @@ verify_jwt = false
 [functions.attack-surface-rescan-ip]
 verify_jwt = false
 
+[functions.attack-surface-preview]
+verify_jwt = false
+

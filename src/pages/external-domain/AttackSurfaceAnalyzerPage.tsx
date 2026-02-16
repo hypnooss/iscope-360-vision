@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1094,6 +1095,7 @@ export default function AttackSurfaceAnalyzerPage() {
 
   const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
   const cancelMutation = useAttackSurfaceCancelScan(selectedClientId ?? undefined);
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
@@ -1212,8 +1214,8 @@ export default function AttackSurfaceAnalyzerPage() {
                 </Select>
               )}
               {isSuperRole && !isRunning && (
-                <Button size="sm" onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending}>
-                  {scanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                <Button size="sm" onClick={() => setScanDialogOpen(true)}>
+                  <Play className="w-4 h-4" />
                   Disparar Scan
                 </Button>
               )}
@@ -1321,6 +1323,20 @@ export default function AttackSurfaceAnalyzerPage() {
             </div>
           )}
         </div>
+
+        {selectedClientId && (
+          <AttackSurfaceScanDialog
+            open={scanDialogOpen}
+            onOpenChange={setScanDialogOpen}
+            clientId={selectedClientId}
+            onStartScan={(ips) => {
+              scanMutation.mutate(ips, {
+                onSuccess: () => setScanDialogOpen(false),
+              });
+            }}
+            isPending={scanMutation.isPending}
+          />
+        )}
       </TooltipProvider>
     </AppLayout>
   );
