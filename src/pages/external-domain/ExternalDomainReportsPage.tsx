@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,8 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, TrendingUp, Shield } from 'lucide-react';
-import { ExternalDomainStatsCards } from '@/components/external-domain/ExternalDomainStatsCards';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, TrendingUp, Shield, Building2 } from 'lucide-react';
+import { StatCard } from '@/components/StatCard';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 interface DomainReport {
@@ -26,11 +28,8 @@ interface DomainReport {
   score: number;
   created_at: string;
   report_data?: any;
-}
-
-interface FilterOption {
-  id: string;
-  name: string;
+  status: string;
+  completed_at: string | null;
 }
 
 interface GroupedDomain {
@@ -44,6 +43,8 @@ interface GroupedDomain {
     score: number;
     created_at: string;
     report_data: any;
+    status: string;
+    completed_at: string | null;
   }[];
 }
 
@@ -51,19 +52,32 @@ export default function ExternalDomainReportsPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess, loading: moduleLoading } = useModules();
   const { isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Filter states
-  const [selectedClient, setSelectedClient] = useState<string>('all');
-  const [selectedDomain, setSelectedDomain] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [clients, setClients] = useState<FilterOption[]>([]);
-  const [domains, setDomains] = useState<FilterOption[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('all');
   
   // State for selected analysis per domain
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  // Fetch workspaces for super roles
+  const { data: workspaces = [] } = useQuery({
+    queryKey: ['compliance-workspaces'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isSuperRole,
+  });
 
   useEffect(() => {
     if (authLoading || moduleLoading) return;
@@ -86,14 +100,13 @@ export default function ExternalDomainReportsPage() {
 
   const fetchReports = async () => {
     try {
-      // Get workspace IDs to filter by (for preview mode)
       const workspaceIds = isPreviewMode && previewTarget?.workspaces
         ? previewTarget.workspaces.map(w => w.id)
         : null;
 
       const { data: historyData } = await supabase
         .from('external_domain_analysis_history')
-        .select('id, domain_id, score, created_at')
+        .select('id, domain_id, score, created_at, status, completed_at')
         .order('created_at', { ascending: false });
 
       if (!historyData || historyData.length === 0) {
@@ -108,7 +121,6 @@ export default function ExternalDomainReportsPage() {
         .select('id, name, domain, client_id')
         .in('id', domainIds);
       
-      // Filter by workspaces in preview mode
       if (workspaceIds && workspaceIds.length > 0) {
         domainsQuery = domainsQuery.in('client_id', workspaceIds);
       }
@@ -124,10 +136,6 @@ export default function ExternalDomainReportsPage() {
       const domainMap = new Map((domainsData || []).map(d => [d.id, d]));
       const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
 
-      setClients((clientsData || []).map(c => ({ id: c.id, name: c.name })));
-      setDomains((domainsData || []).map(d => ({ id: d.id, name: d.name })));
-
-      // Filter history to only include accessible domains
       const accessibleDomainIds = new Set((domainsData || []).map(d => d.id));
       const filteredHistory = historyData.filter(h => accessibleDomainIds.has(h.domain_id));
 
@@ -143,6 +151,8 @@ export default function ExternalDomainReportsPage() {
           client_name: client?.name || 'N/A',
           score: h.score,
           created_at: h.created_at,
+          status: h.status,
+          completed_at: h.completed_at,
         };
       });
 
@@ -155,20 +165,16 @@ export default function ExternalDomainReportsPage() {
     }
   };
 
-  // Filtered reports based on selected filters
-  const filteredReports = useMemo(() => {
-    return reports.filter(report => {
-      const matchesClient = selectedClient === 'all' || report.client_id === selectedClient;
-      const matchesDomain = selectedDomain === 'all' || report.domain_id === selectedDomain;
-      return matchesClient && matchesDomain;
-    });
-  }, [reports, selectedClient, selectedDomain]);
-
-  // Group reports by domain
+  // Group reports by domain with search + workspace filter
   const groupedDomains = useMemo(() => {
+    // Filter by workspace first
+    const workspaceFiltered = selectedWorkspaceId === 'all'
+      ? reports
+      : reports.filter(r => r.client_id === selectedWorkspaceId);
+
     const groups = new Map<string, GroupedDomain>();
     
-    filteredReports.forEach(report => {
+    workspaceFiltered.forEach(report => {
       if (!groups.has(report.domain_id)) {
         groups.set(report.domain_id, {
           domain_id: report.domain_id,
@@ -185,10 +191,11 @@ export default function ExternalDomainReportsPage() {
         score: report.score,
         created_at: report.created_at,
         report_data: report.report_data,
+        status: report.status,
+        completed_at: report.completed_at,
       });
     });
     
-    // Sort analyses by date (most recent first)
     groups.forEach(group => {
       group.analyses.sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -197,7 +204,6 @@ export default function ExternalDomainReportsPage() {
     
     const all = Array.from(groups.values());
 
-    // Apply search filter
     if (!search.trim()) return all;
     const q = search.toLowerCase();
     return all.filter(g =>
@@ -205,7 +211,7 @@ export default function ExternalDomainReportsPage() {
       g.domain_name.toLowerCase().includes(q) ||
       g.client_name.toLowerCase().includes(q)
     );
-  }, [filteredReports, search]);
+  }, [reports, search, selectedWorkspaceId]);
 
   // Stats cards data
   const stats = useMemo(() => {
@@ -231,25 +237,6 @@ export default function ExternalDomainReportsPage() {
       setSelectedAnalyses(prev => ({ ...prev, ...initial }));
     }
   }, [groupedDomains]);
-
-  // Filter domains by selected client
-  const availableDomains = useMemo(() => {
-    if (selectedClient === 'all') return domains;
-    return domains.filter(d => {
-      const report = reports.find(r => r.domain_id === d.id);
-      return report?.client_id === selectedClient;
-    });
-  }, [domains, selectedClient, reports]);
-
-  // Reset domain filter when client changes
-  useEffect(() => {
-    if (selectedClient !== 'all') {
-      const currentDomainValid = availableDomains.some(d => d.id === selectedDomain);
-      if (!currentDomainValid && selectedDomain !== 'all') {
-        setSelectedDomain('all');
-      }
-    }
-  }, [selectedClient, availableDomains, selectedDomain]);
 
   const getSelectedAnalysis = (group: GroupedDomain) => {
     const selectedId = selectedAnalyses[group.domain_id];
@@ -305,11 +292,10 @@ export default function ExternalDomainReportsPage() {
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 90) return 'bg-success/10 text-success';
-    if (score >= 75) return 'bg-success/10 text-success';
-    if (score >= 60) return 'bg-warning/10 text-warning';
-    return 'bg-destructive/10 text-destructive';
+  const getScoreBadgeClass = (score: number) => {
+    if (score >= 75) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+    if (score >= 50) return 'bg-warning/20 text-warning border-warning/30';
+    return 'bg-destructive/20 text-destructive border-destructive/30';
   };
 
   const formatDate = (dateStr: string) => {
@@ -320,6 +306,27 @@ export default function ExternalDomainReportsPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const renderStatusBadge = (analysis: GroupedDomain['analyses'][0] | undefined) => {
+    if (!analysis) return null;
+    const status = analysis.status;
+    if (status === 'pending') {
+      return <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30">Pendente</Badge>;
+    }
+    if (status === 'running') {
+      return (
+        <Badge variant="outline" className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+          Executando
+        </Badge>
+      );
+    }
+    // completed or other
+    if (analysis.completed_at) {
+      return <span className="text-sm text-muted-foreground">{formatDate(analysis.completed_at)}</span>;
+    }
+    return <span className="text-sm text-muted-foreground">{formatDate(analysis.created_at)}</span>;
   };
 
   if (authLoading || moduleLoading) {
@@ -340,23 +347,63 @@ export default function ExternalDomainReportsPage() {
           { label: 'Compliance' },
         ]} />
         
-        {/* Header */}
+        {/* Header with Workspace Selector */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Compliance</h1>
             <p className="text-muted-foreground">Histórico de análises de compliance</p>
           </div>
+          {isSuperRole && workspaces.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-muted-foreground" />
+              <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Todos os workspaces" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os workspaces</SelectItem>
+                  {workspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
-        {/* Stats Cards */}
-        <ExternalDomainStatsCards
-          totalDomains={stats.total}
-          averageScore={stats.avg}
-          criticalAlerts={stats.critical}
-          criticalFailures={stats.failures}
-        />
+        {/* Stats Cards - Analyzer pattern */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Domínios"
+            value={stats.total}
+            icon={Globe}
+            variant="default"
+            delay={0}
+          />
+          <StatCard
+            title="Score Médio"
+            value={stats.avg}
+            icon={TrendingUp}
+            variant="default"
+            delay={0.05}
+          />
+          <StatCard
+            title="Alertas Críticos"
+            value={stats.critical}
+            icon={AlertTriangle}
+            variant="warning"
+            delay={0.1}
+          />
+          <StatCard
+            title="Falhas Críticas"
+            value={stats.failures}
+            icon={Shield}
+            variant="destructive"
+            delay={0.15}
+          />
+        </div>
 
-        {/* Search + Filters */}
+        {/* Search only */}
         <div className="flex flex-wrap gap-4 items-center">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
@@ -367,35 +414,6 @@ export default function ExternalDomainReportsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {clients.length > 1 && (
-            <Select value={selectedClient} onValueChange={setSelectedClient}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Todos os clientes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os clientes</SelectItem>
-                {clients.map(client => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          
-            <Select value={selectedDomain} onValueChange={setSelectedDomain}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Todos os domínios" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os domínios</SelectItem>
-                {availableDomains.map(d => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
         </div>
 
         {/* Reports Table */}
@@ -426,6 +444,7 @@ export default function ExternalDomainReportsPage() {
                     <TableHead>Domínio</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Score</TableHead>
+                    <TableHead>Status Execução</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -448,10 +467,10 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
-                          {currentAnalysis && (
-                            <Badge className={getScoreColor(currentAnalysis.score)}>
+                          {currentAnalysis && currentAnalysis.score != null && (
+                            <Badge variant="outline" className={getScoreBadgeClass(currentAnalysis.score)}>
                               <span className="flex items-center gap-1">
-                                {currentAnalysis.score >= 80 ? (
+                                {currentAnalysis.score >= 75 ? (
                                   <CheckCircle className="w-3 h-3" />
                                 ) : (
                                   <AlertTriangle className="w-3 h-3" />
@@ -460,6 +479,9 @@ export default function ExternalDomainReportsPage() {
                               </span>
                             </Badge>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          {renderStatusBadge(currentAnalysis)}
                         </TableCell>
                         <TableCell>
                           <Select 
