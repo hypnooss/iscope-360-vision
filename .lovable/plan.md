@@ -1,79 +1,53 @@
 
 
-# Extrair tecnologias dos scripts NSE do Nmap para badges
+# Corrigir instalacao do Super Agent em Ubuntu 20.04 (Python 3.8)
 
 ## Problema
 
-Atualmente, os badges de tecnologia no header do AssetCard sao alimentados por tres fontes:
-- `svc.product` do Nmap (ex: "Apache/2.4.41")
-- `ws.server` do httpx (ex: "nginx")
-- `ws.technologies` do httpx (ex: "HSTS", "jQuery")
+Ubuntu 20.04 (Focal) vem com Python 3.8 como `python3` padrao. A funcao `install_deps` do instalador so instala `python3` via apt-get, que no Focal resolve para 3.8. Depois, `require_python_min_version` falha com:
 
-Os dados coletados pelo **nmap-enrich** (scripts NSE como `ssl-cert`, `rdp-ntlm-info`, `smb-os-discovery`) nao sao processados para gerar badges. No exemplo da imagem, o `ssl-cert` mostra `commonName=FortiGate/organizationName=Fortinet Ltd.`, mas nenhum badge "FortiGate" ou "Fortinet" aparece no header do card.
+```
+Erro: Python >= 3.9 e obrigatorio. Detectado: 3.8 (python3.8)
+```
 
 ## Solucao
 
-Adicionar um parser que extrai informacoes relevantes dos scripts NSE e as insere no conjunto `techSet` durante a construcao do `allTechs`. O parser cobrira os scripts mais comuns:
-
-| Script NSE | O que extrair | Badge exemplo |
-|---|---|---|
-| `ssl-cert` | organizationName ou commonName do Subject | `FortiGate`, `Fortinet` |
-| `http-server-header` | Nome do servidor | `Apache/2.4.58` |
-| `smb-os-discovery` | Nome do OS | `Windows Server 2019` |
-| `rdp-ntlm-info` | Product Version ou DNS Domain | `Windows 10.0` |
-| `ssh-hostkey` | Tipo de chave | `RSA-2048`, `ED25519` |
-| `ftp-syst` | Sistema do FTP | `UNIX` |
-| `ms-sql-info` | Versao do SQL Server | `SQL Server 2019` |
+Alterar a funcao `install_deps` no bloco apt-get para tambem instalar `python3.9` e `python3.9-venv` quando disponiveis. No Ubuntu 20.04, o Python 3.9 esta disponivel no repositorio `universe` como pacote separado. A funcao `choose_python` ja prioriza `python3.11 > python3.10 > python3.9`, entao basta garantir que o pacote esteja instalado.
 
 ## Detalhes tecnicos
 
 ### Arquivo a modificar
 
-`src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+`supabase/functions/super-agent-install/index.ts`
 
-### Mudanca
+### Mudanca na funcao `install_deps` (bloco apt-get, linhas 162-166)
 
-Apos o bloco existente de extracao de techs (linhas 408-415), adicionar um loop pelos `services` que percorre `svc.scripts` e aplica regex/parsing para extrair nomes de tecnologia relevantes:
-
-```typescript
-// Extract tech from NSE scripts
-for (const svc of result.services || []) {
-  const scripts = svc.scripts || {};
-
-  // ssl-cert: extract org/CN from subject
-  if (scripts['ssl-cert']) {
-    const orgMatch = scripts['ssl-cert'].match(/organizationName=([^\n\/,]+)/i);
-    if (orgMatch) techSet.add(orgMatch[1].trim());
-    else {
-      const cnMatch = scripts['ssl-cert'].match(/commonName=([^\n\/,]+)/i);
-      if (cnMatch && !cnMatch[1].includes('*')) techSet.add(cnMatch[1].trim());
-    }
-  }
-
-  // smb-os-discovery
-  if (scripts['smb-os-discovery']) {
-    const osMatch = scripts['smb-os-discovery'].match(/OS:\s*(.+)/i);
-    if (osMatch) techSet.add(osMatch[1].trim());
-  }
-
-  // rdp-ntlm-info
-  if (scripts['rdp-ntlm-info']) {
-    const prodMatch = scripts['rdp-ntlm-info'].match(/Product_Version:\s*(.+)/i);
-    if (prodMatch) techSet.add(`Windows ${prodMatch[1].trim()}`);
-  }
-
-  // http-server-header (fallback if no httpx server)
-  if (scripts['http-server-header']) {
-    techSet.add(scripts['http-server-header'].trim().split('\n')[0]);
-  }
-}
+**Antes:**
+```bash
+apt-get update -y
+apt-get install -y tar curl python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
 ```
 
-Isso garante que informacoes ricas ja coletadas pelo enriquecimento NSE sejam promovidas a badges visiveis no resumo do ativo, sem alterar nenhum componente visual -- apenas alimentando o `techSet` existente com novas fontes de dados.
+**Depois:**
+```bash
+apt-get update -y
+apt-get install -y tar curl python3 python3-venv python3-pip build-essential libssl-dev libffi-dev
 
-### Arquivo
+# Tentar instalar Python 3.9+ se o python3 padrao for < 3.9 (ex: Ubuntu 20.04)
+local py3_ver
+py3_ver="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
+if [[ "$py3_ver" -lt 9 ]]; then
+  echo "Python 3 padrao e 3.$py3_ver. Tentando instalar Python 3.9+..."
+  apt-get install -y software-properties-common || true
+  add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
+  apt-get update -y
+  apt-get install -y python3.9 python3.9-venv python3.9-distutils || true
+fi
+```
+
+Isso adiciona o PPA `deadsnakes` (repositorio confiavel e amplamente usado para versoes alternativas de Python no Ubuntu) e instala Python 3.9 com suporte a venv. A funcao `choose_python` ja existente vai detectar `python3.9` automaticamente na proxima etapa.
 
 | Arquivo | Acao |
 |---|---|
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Modificar - adicionar extracao de techs dos scripts NSE no bloco de construcao do `allTechs` (apos linha 415) |
+| `supabase/functions/super-agent-install/index.ts` | Modificar bloco apt-get do `install_deps` para instalar Python 3.9 quando o padrao for < 3.9 |
 
