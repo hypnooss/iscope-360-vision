@@ -33,6 +33,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot,
+  useRunningAttackSurfaceSnapshot,
   useAttackSurfaceScan,
   useAttackSurfaceCancelScan,
   useAttackSurfaceRescanIP,
@@ -1131,6 +1132,9 @@ export default function AttackSurfaceAnalyzerPage() {
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
+  const isRunning = progress?.status === 'pending' || progress?.status === 'running';
+  const { data: runningSnapshot, refetch: refetchRunning, isFetching: isRefetchingRunning } = useRunningAttackSurfaceSnapshot(selectedClientId ?? undefined, isRunning);
+
   // Auto-refresh snapshot when rescan completes
   const queryClient = useQueryClient();
   const prevProgressStatus = useRef<string | null>(null);
@@ -1160,13 +1164,16 @@ export default function AttackSurfaceAnalyzerPage() {
   });
   const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
 
-  const isRunning = progress?.status === 'pending' || progress?.status === 'running';
+  // isRunning already declared above
+
+  // Use running snapshot data when scan is active, fallback to completed
+  const activeSnapshot = isRunning && runningSnapshot ? runningSnapshot : snapshot;
 
   // Build asset-centric data
   const assets = useMemo(() => {
-    if (!snapshot) return [];
-    return buildAssets(snapshot, cachedCVEs);
-  }, [snapshot, cachedCVEs]);
+    if (!activeSnapshot) return [];
+    return buildAssets(activeSnapshot, cachedCVEs);
+  }, [activeSnapshot, cachedCVEs]);
 
   // Search & Sort
   const [searchTerm, setSearchTerm] = useState('');
@@ -1251,10 +1258,22 @@ export default function AttackSurfaceAnalyzerPage() {
                   Disparar Scan
                 </Button>
               )}
-              {isSuperRole && isRunning && (
+               {isSuperRole && isRunning && (
                 <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
                   {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                   Cancelar Scan
+                </Button>
+              )}
+              {isRunning && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-teal-500/30 text-teal-400"
+                  onClick={() => refetchRunning()}
+                  disabled={isRefetchingRunning}
+                >
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Atualizando...
                 </Button>
               )}
             </div>
@@ -1277,7 +1296,7 @@ export default function AttackSurfaceAnalyzerPage() {
           )}
 
           {/* Executive Stats */}
-          {snapshot && (
+          {activeSnapshot && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard icon={Globe} label="Ativos Expostos" value={stats.totalAssets} iconClass="text-teal-400" />
               <StatCard icon={Server} label="Serviços Detectados" value={stats.totalServices} iconClass="text-blue-400" />
@@ -1287,7 +1306,7 @@ export default function AttackSurfaceAnalyzerPage() {
           )}
 
           {/* Search + Sort */}
-          {snapshot && assets.length > 0 && (
+          {activeSnapshot && assets.length > 0 && (
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1318,7 +1337,7 @@ export default function AttackSurfaceAnalyzerPage() {
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
-          ) : !snapshot || assets.length === 0 ? (
+          ) : !activeSnapshot || assets.length === 0 ? (
             <Card className="glass-card">
               <CardContent className="py-16">
                 <div className="text-center text-muted-foreground">
@@ -1335,7 +1354,7 @@ export default function AttackSurfaceAnalyzerPage() {
                   key={asset.ip}
                   asset={asset}
                   isSuperRole={isSuperRole}
-                  onRescan={(a) => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname, snapshotId: snapshot!.id })}
+                  onRescan={(a) => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname, snapshotId: activeSnapshot!.id })}
                   isRescanning={rescanMutation.isPending}
                 />
               ))}
