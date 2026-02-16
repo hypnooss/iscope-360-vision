@@ -1229,7 +1229,7 @@ export default function AttackSurfaceAnalyzerPage() {
           ]} />
 
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Surface Analyzer</h1>
               <p className="text-muted-foreground">Visão consolidada de ativos expostos</p>
@@ -1249,13 +1249,13 @@ export default function AttackSurfaceAnalyzerPage() {
                 </Select>
               )}
               {isSuperRole && !isRunning && (
-                <Button size="sm" onClick={() => setScanDialogOpen(true)}>
+                <Button onClick={() => setScanDialogOpen(true)}>
                   <Play className="w-4 h-4" />
                   Executar Análise
                 </Button>
               )}
                {isSuperRole && isRunning && (
-                <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                <Button variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
                   {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                   Cancelar Análise
                 </Button>
