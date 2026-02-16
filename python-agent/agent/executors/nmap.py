@@ -25,6 +25,23 @@ PORT_SCRIPTS: Dict[int, List[str]] = {
     5432: ['pgsql-info'],
 }
 
+# Contextual NSE scripts per detected service name (handles non-standard ports)
+SERVICE_SCRIPTS: Dict[str, List[str]] = {
+    'http':          ['http-title', 'http-server-header', 'http-headers'],
+    'https':         ['http-title', 'http-server-header', 'http-headers', 'ssl-cert'],
+    'ssl':           ['ssl-cert', 'ssl-enum-ciphers'],
+    'ssh':           ['ssh-hostkey', 'ssh2-enum-algos'],
+    'ftp':           ['ftp-anon', 'ftp-syst'],
+    'smtp':          ['smtp-commands', 'smtp-ntlm-info'],
+    'snmp':          ['snmp-info', 'snmp-sysdescr'],
+    'ldap':          ['ldap-rootdse'],
+    'smb':           ['smb-os-discovery', 'smb-protocols', 'smb-security-mode'],
+    'ms-sql-s':      ['ms-sql-info', 'ms-sql-ntlm-info'],
+    'mysql':         ['mysql-info'],
+    'ms-wbt-server': ['rdp-ntlm-info', 'rdp-enum-encryption'],
+    'postgresql':    ['pgsql-info'],
+}
+
 
 class NmapExecutor(BaseExecutor):
     """Execute nmap service version detection on discovered ports."""
@@ -141,17 +158,35 @@ class NmapExecutor(BaseExecutor):
         self, ip: str, services: List[Dict[str, Any]], timeout: int
     ) -> List[Dict[str, Any]]:
         """Run targeted NSE scripts on ports that have enrichment mappings."""
-        # Find open ports that have contextual scripts
-        open_ports = [s['port'] for s in services]
-        target_ports = [p for p in open_ports if p in PORT_SCRIPTS]
+        # Build per-port script list from both port and service-name mappings
+        scripts_by_port: Dict[int, List[str]] = {}
 
-        if not target_ports:
+        for svc in services:
+            port = svc['port']
+            scripts: List[str] = []
+
+            # 1. Fixed port mapping (priority)
+            if port in PORT_SCRIPTS:
+                scripts.extend(PORT_SCRIPTS[port])
+
+            # 2. Detected service name mapping (non-standard ports)
+            svc_name = svc.get('name', '')
+            if svc_name in SERVICE_SCRIPTS:
+                for s in SERVICE_SCRIPTS[svc_name]:
+                    if s not in scripts:
+                        scripts.append(s)
+
+            if scripts:
+                scripts_by_port[port] = scripts
+
+        if not scripts_by_port:
             return services
 
-        # Collect unique scripts needed
+        # Collect unique scripts and target ports
+        target_ports = list(scripts_by_port.keys())
         all_scripts: List[str] = []
-        for p in target_ports:
-            for s in PORT_SCRIPTS[p]:
+        for sl in scripts_by_port.values():
+            for s in sl:
                 if s not in all_scripts:
                     all_scripts.append(s)
 
