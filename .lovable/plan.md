@@ -1,64 +1,35 @@
 
 
-# Remover Fallback do httpx Quando Nmap Nao Encontra Portas
-
-## Contexto
-
-Atualmente, quando o nmap nao encontra portas abertas num IP, o httpx faz um fallback e tenta sondar 4 portas padrão (80, 443, 8080, 8443). Com o nmap agora confiavel (duas fases, scripts contextuais), esse fallback e desnecessario e consome tempo.
+# Ajustar Timing do Nmap Fingerprint: T4 -> T3
 
 ## Mudanca
 
-**Arquivo: `python-agent/agent/executors/httpx_executor.py`**
+**Arquivo: `python-agent/agent/executors/nmap.py`**
 
-Na linha 31-35, onde o codigo decide quais portas usar:
+Trocar `-T4` por `-T3` em dois lugares:
 
-```python
-# Codigo atual
-ports = params.get('ports', [])
-if not ports:
-    all_ports = context.get('ports', [])
-    ports = all_ports if all_ports else self.DEFAULT_HTTP_PORTS[:4]  # <-- fallback
-```
+1. **Scan primario** (linha ~66): o scan com `--version-intensity 5` e scripts `banner,ssl-cert`
+2. **Scan fallback** (linha ~100): o scan com `--version-intensity 3` e script `banner`
 
-Sera alterado para: se nao houver portas do contexto (nmap), retornar resultado vazio imediatamente sem executar o httpx:
+O scan de **enriquecimento NSE** (linha ~147) permanece com `-T4` -- ele nao faz deteccao de versao, apenas roda scripts pontuais por porta.
 
-```python
-# Codigo novo
-ports = params.get('ports', [])
-if not ports:
-    all_ports = context.get('ports', [])
-    if not all_ports:
-        self.logger.info(f"[httpx] No open ports from nmap on {target}, skipping probe")
-        return {
-            'data': {
-                'ip': ip,
-                'hostname': hostname or '',
-                'web_services': [],
-            }
-        }
-    ports = all_ports
-```
+## Rollback
 
-## O que muda
+Se o `-T3` nao resolver ou deixar o scan muito lento, basta reverter as duas linhas de volta para `-T4`. Vou deixar um comentario no codigo indicando isso.
 
-- Se o nmap encontrou portas: httpx analisa todas elas (comportamento atual, sem mudanca)
-- Se o nmap NAO encontrou portas: httpx retorna vazio imediatamente, economizando ~30-60s por IP
+## Impacto esperado
 
-## Excecao: IPs de CDN
-
-Para IPs de CDN (Cloudflare, etc), o nmap_discovery ja retorna uma lista fixa de 14 portas web. Portanto, o httpx sempre recebera portas no contexto para CDNs -- nao ha impacto nesse fluxo.
-
-## Impacto
-
-| Cenario | Antes | Depois |
+| Metrica | T4 (atual) | T3 (novo) |
 |---|---|---|
-| Nmap encontra portas | httpx analisa todas | Sem mudanca |
-| Nmap NAO encontra portas | httpx tenta 4 portas default (~30-60s) | httpx retorna vazio (0s) |
-| IP de CDN | httpx recebe 14 portas do contexto | Sem mudanca |
+| Probe timeout interno | ~1.25s | ~5s |
+| Tempo por IP (pior caso) | ~30-60s | ~60-120s |
+| Taxa de fingerprint em hosts com IPS | Baixa (fallback frequente) | Deve melhorar significativamente |
 
-## Arquivo Modificado
+O `--host-timeout 120s` do primario e `60s` do fallback continuam como teto de seguranca.
+
+## Arquivos modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `python-agent/agent/executors/httpx_executor.py` | Remover fallback de portas default, retornar vazio quando nmap nao encontrou portas |
+| `python-agent/agent/executors/nmap.py` | `-T4` -> `-T3` nos scans primario e fallback, com comentario de rollback |
 
