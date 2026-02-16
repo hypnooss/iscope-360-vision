@@ -13,8 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, TrendingUp, Shield, Building2 } from 'lucide-react';
-import { StatCard } from '@/components/StatCard';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, Building2, Activity, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -58,7 +57,7 @@ export default function ExternalDomainReportsPage() {
   const [loading, setLoading] = useState(true);
   
   const [search, setSearch] = useState('');
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('all');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   
   // State for selected analysis per domain
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
@@ -168,9 +167,9 @@ export default function ExternalDomainReportsPage() {
   // Group reports by domain with search + workspace filter
   const groupedDomains = useMemo(() => {
     // Filter by workspace first
-    const workspaceFiltered = selectedWorkspaceId === 'all'
-      ? reports
-      : reports.filter(r => r.client_id === selectedWorkspaceId);
+    const workspaceFiltered = selectedWorkspaceId
+      ? reports.filter(r => r.client_id === selectedWorkspaceId)
+      : reports;
 
     const groups = new Map<string, GroupedDomain>();
     
@@ -213,16 +212,25 @@ export default function ExternalDomainReportsPage() {
     );
   }, [reports, search, selectedWorkspaceId]);
 
-  // Stats cards data
+  // Auto-select first workspace when list loads
+  useEffect(() => {
+    if (isSuperRole && workspaces.length > 0 && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(workspaces[0].id);
+    }
+  }, [workspaces, isSuperRole, selectedWorkspaceId]);
+
+  // Stats cards data - based on latest analysis status per domain
   const stats = useMemo(() => {
     const total = groupedDomains.length;
-    const scores = groupedDomains
-      .map(g => g.analyses[0]?.score)
-      .filter((s): s is number => s != null);
-    const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-    const critical = scores.filter(s => s < 50).length;
-    const failures = scores.filter(s => s < 30).length;
-    return { total, avg, critical, failures };
+    let pending = 0, running = 0, completed = 0, failed = 0;
+    groupedDomains.forEach(g => {
+      const status = g.analyses[0]?.status;
+      if (status === 'pending') pending++;
+      else if (status === 'running') running++;
+      else if (status === 'failed') failed++;
+      else completed++;
+    });
+    return { total, pending, running, completed, failed };
   }, [groupedDomains]);
 
   // Initialize with most recent analysis for each domain
@@ -322,11 +330,15 @@ export default function ExternalDomainReportsPage() {
         </Badge>
       );
     }
-    // completed or other
-    if (analysis.completed_at) {
-      return <span className="text-sm text-muted-foreground">{formatDate(analysis.completed_at)}</span>;
+    if (status === 'failed') {
+      return <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">Falha</Badge>;
     }
-    return <span className="text-sm text-muted-foreground">{formatDate(analysis.created_at)}</span>;
+    // completed or other
+    return (
+      <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30 font-normal">
+        {formatDate(analysis.completed_at || analysis.created_at)}
+      </Badge>
+    );
   };
 
   if (authLoading || moduleLoading) {
@@ -361,7 +373,6 @@ export default function ExternalDomainReportsPage() {
                   <SelectValue placeholder="Todos os workspaces" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos os workspaces</SelectItem>
                   {workspaces.map(w => (
                     <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                   ))}
@@ -371,36 +382,63 @@ export default function ExternalDomainReportsPage() {
           )}
         </div>
 
-        {/* Stats Cards - Analyzer pattern */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Domínios"
-            value={stats.total}
-            icon={Globe}
-            variant="default"
-            delay={0}
-          />
-          <StatCard
-            title="Score Médio"
-            value={stats.avg}
-            icon={TrendingUp}
-            variant="default"
-            delay={0.05}
-          />
-          <StatCard
-            title="Alertas Críticos"
-            value={stats.critical}
-            icon={AlertTriangle}
-            variant="warning"
-            delay={0.1}
-          />
-          <StatCard
-            title="Falhas Críticas"
-            value={stats.failures}
-            icon={Shield}
-            variant="destructive"
-            delay={0.15}
-          />
+        {/* Stats Cards - Executions pattern */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Activity className="w-8 h-8 text-primary" />
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="w-8 h-8 text-yellow-500" />
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{stats.pending}</p>
+                  <p className="text-xs text-muted-foreground">Pendentes</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-8 h-8 text-blue-500" />
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{stats.running}</p>
+                  <p className="text-xs text-muted-foreground">Executando</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-8 h-8 text-green-500" />
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{stats.completed}</p>
+                  <p className="text-xs text-muted-foreground">Concluídas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="glass-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <XCircle className="w-8 h-8 text-red-500" />
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{stats.failed}</p>
+                  <p className="text-xs text-muted-foreground">Falhas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search only */}
