@@ -10,9 +10,6 @@ import {
   AlertTriangle,
   Database,
   Mail,
-  Lock,
-  Eye,
-  EyeOff,
   ShieldAlert,
   Settings,
   RefreshCw,
@@ -22,24 +19,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-interface DehashedEntry {
+interface HIBPEntry {
   email: string;
   username: string;
-  password: string;
-  password_raw: string;
-  hashed_password: string;
-  hashed_password_raw: string;
   database_name: string;
-  ip_address: string;
-  name: string;
-  phone: string;
 }
 
-interface DehashedCacheData {
+interface HIBPCacheData {
   client_id: string;
   domain: string;
   total_entries: number;
-  entries: DehashedEntry[];
+  entries: HIBPEntry[];
   databases: string[];
   queried_at: string;
 }
@@ -100,7 +90,6 @@ export default function LeakedCredentialsSection({
 }) {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [showPasswords, setShowPasswords] = useState(false);
 
   // Fetch cached data
   const { data: cacheData, isLoading } = useQuery({
@@ -117,25 +106,24 @@ export default function LeakedCredentialsSection({
       if (error) throw error;
       const row = (data as any[])?.[0];
       if (!row) return null;
-      return row as DehashedCacheData;
+      return row as HIBPCacheData;
     },
     enabled: !!clientId && !!domain,
     staleTime: 1000 * 60 * 5,
   });
 
-  // Check if API keys are configured
+  // Check if API key is configured
   const { data: apiKeysStatus } = useQuery({
-    queryKey: ['dehashed-api-status'],
+    queryKey: ['hibp-api-status'],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('manage-api-keys', {
         method: 'GET',
       });
       if (error) return { configured: false };
       const keys = data?.keys || [];
-      const dehashedKey = keys.find((k: any) => k.name === 'DEHASHED_API_KEY');
-      const dehashedEmail = keys.find((k: any) => k.name === 'DEHASHED_EMAIL');
+      const hibpKey = keys.find((k: any) => k.name === 'HIBP_API_KEY');
       return {
-        configured: dehashedKey?.configured && dehashedEmail?.configured,
+        configured: !!hibpKey?.configured,
       };
     },
     staleTime: 1000 * 60 * 10,
@@ -149,30 +137,28 @@ export default function LeakedCredentialsSection({
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      return data.data as DehashedCacheData;
+      return data.data as HIBPCacheData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dehashed-cache', clientId, domain] });
-      toast.success('Consulta DeHashed concluída');
+      toast.success('Consulta HIBP concluída');
     },
     onError: (err: any) => {
       if (err.message?.includes('NO_API_KEY')) {
-        toast.error('API keys do DeHashed não configuradas. Vá em Settings > API Keys.');
+        toast.error('API key do HIBP não configurada. Vá em Settings > API Keys.');
       } else {
-        toast.error(`Erro ao consultar DeHashed: ${err.message}`);
+        toast.error(`Erro ao consultar HIBP: ${err.message}`);
       }
     },
   });
 
   // Stats
   const stats = useMemo(() => {
-    if (!cacheData) return { total: 0, plaintext: 0, uniqueBreaches: 0, uniqueEmails: 0 };
+    if (!cacheData) return { total: 0, uniqueBreaches: 0, uniqueEmails: 0 };
     const entries = cacheData.entries || [];
-    const plaintext = entries.filter((e) => e.password_raw && e.password_raw.length > 0).length;
     const emailSet = new Set(entries.map((e) => e.email).filter(Boolean));
     return {
       total: cacheData.total_entries,
-      plaintext,
       uniqueBreaches: (cacheData.databases || []).length,
       uniqueEmails: emailSet.size,
     };
@@ -208,7 +194,7 @@ export default function LeakedCredentialsSection({
       icon={KeyRound}
       iconColor="text-rose-400"
       iconBorderClass="border-rose-400/40 bg-rose-400/10"
-      title="Credenciais Vazadas (DeHashed)"
+      title="Credenciais Vazadas (HIBP)"
       isLast
     >
       {/* No API key configured */}
@@ -217,18 +203,24 @@ export default function LeakedCredentialsSection({
           <CardContent className="py-8">
             <div className="text-center text-muted-foreground">
               <Settings className="w-10 h-10 mx-auto mb-3 opacity-40" />
-              <p className="font-medium">API Keys do DeHashed não configuradas</p>
+              <p className="font-medium">API Key do HIBP não configurada</p>
               <p className="text-sm mt-1">
                 Vá em <strong>Settings &gt; API Keys</strong> e cadastre{' '}
-                <code className="text-xs bg-muted px-1 rounded">DEHASHED_API_KEY</code> e{' '}
-                <code className="text-xs bg-muted px-1 rounded">DEHASHED_EMAIL</code>
+                <code className="text-xs bg-muted px-1 rounded">HIBP_API_KEY</code>
+              </p>
+              <p className="text-xs mt-2 text-muted-foreground/70">
+                O domínio deve estar registrado no{' '}
+                <a href="https://haveibeenpwned.com/DomainSearch" target="_blank" rel="noopener noreferrer" className="underline">
+                  Domain Search Dashboard
+                </a>{' '}
+                do HIBP
               </p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* No data yet, but API keys might be configured */}
+      {/* No data yet, but API key might be configured */}
       {!cacheData && !isLoading && (apiKeysStatus?.configured || !apiKeysStatus) && (
         <Card className="glass-card">
           <CardContent className="py-8">
@@ -247,7 +239,7 @@ export default function LeakedCredentialsSection({
                   ) : (
                     <Search className="w-4 h-4 mr-2" />
                   )}
-                  Consultar DeHashed
+                  Consultar HIBP
                 </Button>
               )}
             </div>
@@ -266,9 +258,8 @@ export default function LeakedCredentialsSection({
       {cacheData && (
         <div className="space-y-4">
           {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <StatCard icon={KeyRound} label="Total Vazamentos" value={stats.total} iconClass="text-rose-400" />
-            <StatCard icon={Lock} label="Senhas em Texto Claro" value={stats.plaintext} iconClass="text-destructive" />
             <StatCard icon={Database} label="Breaches Únicos" value={stats.uniqueBreaches} iconClass="text-amber-400" />
             <StatCard icon={Mail} label="Emails Únicos" value={stats.uniqueEmails} iconClass="text-blue-400" />
           </div>
@@ -284,18 +275,6 @@ export default function LeakedCredentialsSection({
                 className="pl-9"
               />
             </div>
-
-            {isSuperRole && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowPasswords(!showPasswords)}
-                className="gap-1.5"
-              >
-                {showPasswords ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                {showPasswords ? 'Ocultar' : 'Revelar'} Senhas
-              </Button>
-            )}
 
             {isSuperRole && (
               <Button
@@ -339,9 +318,7 @@ export default function LeakedCredentialsSection({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border/50 bg-muted/30">
-                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Email / Username</th>
-                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Senha</th>
-                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Hash</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Email</th>
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Breach</th>
                     </tr>
                   </thead>
@@ -349,34 +326,7 @@ export default function LeakedCredentialsSection({
                     {filteredEntries.slice(0, 100).map((entry, i) => (
                       <tr key={i} className="border-b border-border/30 last:border-0 hover:bg-muted/20">
                         <td className="px-3 py-2">
-                          <div className="flex flex-col">
-                            {entry.email && <span className="font-mono text-xs">{entry.email}</span>}
-                            {entry.username && entry.username !== entry.email && (
-                              <span className="font-mono text-xs text-muted-foreground">{entry.username}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          {entry.password_raw ? (
-                            <span className="font-mono text-xs">
-                              {showPasswords ? (
-                                <span className="text-destructive">{entry.password_raw}</span>
-                              ) : (
-                                <span className="text-warning">{entry.password}</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          {entry.hashed_password ? (
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {showPasswords ? entry.hashed_password_raw : entry.hashed_password}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <span className="font-mono text-xs">{entry.email}</span>
                         </td>
                         <td className="px-3 py-2">
                           {entry.database_name ? (
@@ -412,7 +362,7 @@ export default function LeakedCredentialsSection({
                 <div className="text-center text-muted-foreground">
                   <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-teal-400 opacity-60" />
                   <p className="font-medium text-teal-400">Nenhuma credencial vazada encontrada</p>
-                  <p className="text-sm mt-1">O domínio <strong>{domain}</strong> não possui registros no DeHashed.</p>
+                  <p className="text-sm mt-1">O domínio <strong>{domain}</strong> não possui registros no HIBP.</p>
                 </div>
               </CardContent>
             </Card>

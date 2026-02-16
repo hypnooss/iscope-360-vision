@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-// LeakedCredentialsSection desativado - nenhuma API viável disponível no momento
-// import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
+import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -844,6 +843,7 @@ function TimelineSection({
 
 
 
+
 }: {icon: React.ElementType;iconColor: string;iconBorderClass?: string;title: string;isLast?: boolean;children: React.ReactNode;}) {
   return (
     <div className="relative">
@@ -1164,7 +1164,7 @@ export default function AttackSurfaceAnalyzerPage() {
   });
   const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
 
-  // Get domain for DeHashed section
+  // Get domain for HIBP section
   const { data: clientDomain } = useQuery({
     queryKey: ['client-domain', selectedClientId],
     queryFn: async () => {
@@ -1376,8 +1376,14 @@ export default function AttackSurfaceAnalyzerPage() {
             </div>
           }
 
-          {/* Leaked Credentials - desativado temporariamente (sem API viável) */}
-
+          {/* Leaked Credentials (HIBP) */}
+          {selectedClientId && clientDomain && (
+            <LeakedCredentialsSection
+              clientId={selectedClientId}
+              domain={clientDomain}
+              isSuperRole={isSuperRole}
+            />
+          )}
           {/* Last scan timestamp */}
           {snapshot?.completed_at &&
           <div className="flex items-center gap-4 text-xs text-muted-foreground pb-4">

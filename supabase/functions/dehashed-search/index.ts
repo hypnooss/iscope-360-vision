@@ -42,7 +42,7 @@ async function getApiKey(supabase: any): Promise<string | null> {
   const { data: settings } = await supabase
     .from("system_settings")
     .select("key, value")
-    .eq("key", "api_key_DEHASHED_API_KEY");
+    .eq("key", "api_key_HIBP_API_KEY");
 
   if (settings && settings.length > 0) {
     const s = settings[0];
@@ -57,25 +57,7 @@ async function getApiKey(supabase: any): Promise<string | null> {
   }
 
   // Fallback to env var
-  return Deno.env.get("DEHASHED_API_KEY") || null;
-}
-
-function maskPassword(password: string | null): string {
-  if (!password) return "";
-  if (password.length <= 3) return "***";
-  return password.substring(0, 3) + "*".repeat(Math.min(password.length - 3, 8));
-}
-
-function maskHash(hash: string | null): string {
-  if (!hash) return "";
-  if (hash.startsWith("$2")) return `bcrypt: ${hash.substring(0, 12)}...`;
-  if (hash.startsWith("$1")) return `md5crypt: ${hash.substring(0, 12)}...`;
-  if (hash.startsWith("$5")) return `sha256crypt: ${hash.substring(0, 12)}...`;
-  if (hash.startsWith("$6")) return `sha512crypt: ${hash.substring(0, 12)}...`;
-  if (hash.length === 32) return `md5: ${hash.substring(0, 8)}...`;
-  if (hash.length === 40) return `sha1: ${hash.substring(0, 8)}...`;
-  if (hash.length === 64) return `sha256: ${hash.substring(0, 8)}...`;
-  return hash.length > 12 ? `${hash.substring(0, 8)}...` : hash;
+  return Deno.env.get("HIBP_API_KEY") || null;
 }
 
 serve(async (req) => {
@@ -148,121 +130,96 @@ serve(async (req) => {
       }
     }
 
-    // Get API key
+    // Get HIBP API key
     const apiKey = await getApiKey(supabase);
     if (!apiKey) {
       return new Response(JSON.stringify({
-        error: "API key do DeHashed não configurada",
+        error: "API key do HIBP não configurada",
         code: "NO_API_KEY",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Call DeHashed API v2
-    const searchUrl = "https://api.dehashed.com/v2/search";
+    // Call HIBP API v3 - breached domain
+    const searchUrl = `https://haveibeenpwned.com/api/v3/breacheddomain/${encodeURIComponent(domain)}`;
 
-    console.log(`[dehashed-search] Querying domain: ${domain}`);
+    console.log(`[dehashed-search] Querying HIBP for domain: ${domain}`);
 
     const response = await fetch(searchUrl, {
-      method: "POST",
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
-        "DeHashed-Api-Key": apiKey,
+        "hibp-api-key": apiKey,
+        "User-Agent": "iScope-SecurityPlatform",
       },
-      body: JSON.stringify({
-        query: `domain:${domain}`,
-        page: 1,
-        size: 10000,
-        wildcard: false,
-        regex: false,
-        de_dupe: true,
-      }),
     });
+
+    // HIBP returns 404 when no breaches found for domain
+    if (response.status === 404) {
+      console.log(`[dehashed-search] No breaches found for ${domain}`);
+
+      // Save empty result to cache
+      await saveToCache(supabase, client_id, domain, 0, [], []);
+
+      // Audit log
+      await logActivity(supabase, user.id, client_id, domain, 0, 0);
+
+      return new Response(JSON.stringify({
+        success: true,
+        source: "api",
+        data: {
+          client_id,
+          domain,
+          total_entries: 0,
+          entries: [],
+          databases: [],
+          queried_at: new Date().toISOString(),
+        },
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[dehashed-search] API error ${response.status}: ${errorText}`);
+      console.error(`[dehashed-search] HIBP API error ${response.status}: ${errorText}`);
       return new Response(JSON.stringify({
-        error: `DeHashed API retornou erro ${response.status}`,
+        error: `HIBP API retornou erro ${response.status}`,
         details: errorText,
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const apiData = await response.json();
-    const entries = apiData.entries || [];
-    const totalEntries = apiData.total || entries.length;
+    // HIBP response: { "alias1": ["Breach1", "Breach2"], "alias2": ["Breach3"] }
+    const apiData: Record<string, string[]> = await response.json();
 
-    // Process entries - mask sensitive data
-    const processedEntries = entries.map((entry: any) => ({
-      email: entry.email || "",
-      username: entry.username || "",
-      password: maskPassword(entry.password),
-      password_raw: entry.password || "",
-      hashed_password: maskHash(entry.hashed_password),
-      hashed_password_raw: entry.hashed_password || "",
-      database_name: entry.database_name || "",
-      ip_address: entry.ip_address || "",
-      name: entry.name || "",
-      phone: entry.phone || "",
-    }));
+    // Transform HIBP response into entries compatible with dehashed_cache
+    const processedEntries: any[] = [];
+    const breachSet = new Set<string>();
 
-    // Extract unique databases
-    const dbSet = new Set<string>();
-    for (const e of processedEntries) {
-      if (e.database_name) dbSet.add(e.database_name);
+    for (const [alias, breaches] of Object.entries(apiData)) {
+      for (const breach of breaches) {
+        breachSet.add(breach);
+        processedEntries.push({
+          email: `${alias}@${domain}`,
+          username: alias,
+          password: "",
+          password_raw: "",
+          hashed_password: "",
+          hashed_password_raw: "",
+          database_name: breach,
+          ip_address: "",
+          name: "",
+          phone: "",
+        });
+      }
     }
-    const uniqueDatabases = Array.from(dbSet);
+
+    const uniqueDatabases = Array.from(breachSet);
+    const totalEntries = processedEntries.length;
 
     // Save to cache
-    const { data: cacheRecord, error: cacheError } = await supabase
-      .from("dehashed_cache")
-      .upsert({
-        client_id,
-        domain,
-        total_entries: totalEntries,
-        entries: processedEntries,
-        databases: uniqueDatabases,
-        queried_at: new Date().toISOString(),
-      }, {
-        onConflict: "client_id,domain",
-        ignoreDuplicates: false,
-      })
-      .select()
-      .single();
-
-    // If upsert fails due to no unique constraint, just insert
-    if (cacheError) {
-      console.log("[dehashed-search] Upsert failed, doing insert:", cacheError.message);
-      // Delete old cache for this domain/client
-      await supabase
-        .from("dehashed_cache")
-        .delete()
-        .eq("client_id", client_id)
-        .eq("domain", domain);
-
-      await supabase
-        .from("dehashed_cache")
-        .insert({
-          client_id,
-          domain,
-          total_entries: totalEntries,
-          entries: processedEntries,
-          databases: uniqueDatabases,
-          queried_at: new Date().toISOString(),
-        });
-    }
+    await saveToCache(supabase, client_id, domain, totalEntries, processedEntries, uniqueDatabases);
 
     // Audit log
-    await supabase.from("admin_activity_logs").insert({
-      admin_id: user.id,
-      action: "dehashed_search",
-      action_type: "scan",
-      target_type: "domain",
-      target_id: client_id,
-      target_name: domain,
-      details: { domain, total_entries: totalEntries, databases_count: uniqueDatabases.length },
-    });
+    await logActivity(supabase, user.id, client_id, domain, totalEntries, uniqueDatabases.length);
 
-    console.log(`[dehashed-search] Found ${totalEntries} entries for ${domain}`);
+    console.log(`[dehashed-search] HIBP found ${totalEntries} entries across ${uniqueDatabases.length} breaches for ${domain}`);
 
     return new Response(JSON.stringify({
       success: true,
@@ -283,3 +240,65 @@ serve(async (req) => {
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
+
+async function saveToCache(
+  supabase: any,
+  client_id: string,
+  domain: string,
+  totalEntries: number,
+  entries: any[],
+  databases: string[]
+) {
+  const { error: cacheError } = await supabase
+    .from("dehashed_cache")
+    .upsert({
+      client_id,
+      domain,
+      total_entries: totalEntries,
+      entries,
+      databases,
+      queried_at: new Date().toISOString(),
+    }, {
+      onConflict: "client_id,domain",
+      ignoreDuplicates: false,
+    });
+
+  if (cacheError) {
+    console.log("[dehashed-search] Upsert failed, doing insert:", cacheError.message);
+    await supabase
+      .from("dehashed_cache")
+      .delete()
+      .eq("client_id", client_id)
+      .eq("domain", domain);
+
+    await supabase
+      .from("dehashed_cache")
+      .insert({
+        client_id,
+        domain,
+        total_entries: totalEntries,
+        entries,
+        databases,
+        queried_at: new Date().toISOString(),
+      });
+  }
+}
+
+async function logActivity(
+  supabase: any,
+  userId: string,
+  clientId: string,
+  domain: string,
+  totalEntries: number,
+  databasesCount: number
+) {
+  await supabase.from("admin_activity_logs").insert({
+    admin_id: userId,
+    action: "hibp_search",
+    action_type: "scan",
+    target_type: "domain",
+    target_id: clientId,
+    target_name: domain,
+    details: { domain, total_entries: totalEntries, databases_count: databasesCount, source: "hibp" },
+  });
+}
