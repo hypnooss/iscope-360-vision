@@ -855,6 +855,47 @@ export type Database = {
         }
         Relationships: []
       }
+      dehashed_cache: {
+        Row: {
+          client_id: string
+          created_at: string
+          databases: Json
+          domain: string
+          entries: Json
+          id: string
+          queried_at: string
+          total_entries: number
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          databases?: Json
+          domain: string
+          entries?: Json
+          id?: string
+          queried_at?: string
+          total_entries?: number
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          databases?: Json
+          domain?: string
+          entries?: Json
+          id?: string
+          queried_at?: string
+          total_entries?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dehashed_cache_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       device_blueprints: {
         Row: {
           collection_steps: Json

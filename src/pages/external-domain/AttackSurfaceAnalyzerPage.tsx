@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -1162,6 +1163,22 @@ export default function AttackSurfaceAnalyzerPage() {
   });
   const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
 
+  // Get domain for DeHashed section
+  const { data: clientDomain } = useQuery({
+    queryKey: ['client-domain', selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return null;
+      const { data } = await supabase
+        .from('external_domains')
+        .select('domain')
+        .eq('client_id', selectedClientId)
+        .limit(1);
+      return data?.[0]?.domain ?? null;
+    },
+    enabled: !!selectedClientId,
+    staleTime: 1000 * 60 * 10,
+  });
+
   // isRunning already declared above
 
   // Use running snapshot only when it already has partial results; otherwise keep showing last completed
@@ -1357,6 +1374,15 @@ export default function AttackSurfaceAnalyzerPage() {
             }
             </div>
           }
+
+          {/* Leaked Credentials (DeHashed) */}
+          {selectedClientId && clientDomain && (
+            <LeakedCredentialsSection
+              clientId={selectedClientId}
+              domain={clientDomain}
+              isSuperRole={isSuperRole}
+            />
+          )}
 
           {/* Last scan timestamp */}
           {snapshot?.completed_at &&
