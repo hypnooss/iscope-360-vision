@@ -86,55 +86,55 @@ interface UnifiedExecution {
   original: AnalysisHistory | AgentTask | AttackSurfaceSnapshotRow;
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+const statusConfig: Record<string, {label: string;color: string;icon: React.ReactNode;}> = {
   pending: {
     label: 'Pendente',
     color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30',
-    icon: <Clock className="w-3 h-3" />,
+    icon: <Clock className="w-3 h-3" />
   },
   running: {
     label: 'Executando',
     color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
-    icon: <Loader2 className="w-3 h-3 animate-spin" />,
+    icon: <Loader2 className="w-3 h-3 animate-spin" />
   },
   completed: {
     label: 'Concluída',
     color: 'bg-green-500/20 text-green-500 border-green-500/30',
-    icon: <CheckCircle2 className="w-3 h-3" />,
+    icon: <CheckCircle2 className="w-3 h-3" />
   },
   failed: {
     label: 'Falhou',
     color: 'bg-red-500/20 text-red-500 border-red-500/30',
-    icon: <XCircle className="w-3 h-3" />,
+    icon: <XCircle className="w-3 h-3" />
   },
   timeout: {
     label: 'Timeout',
     color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
-    icon: <Timer className="w-3 h-3" />,
+    icon: <Timer className="w-3 h-3" />
   },
   cancelled: {
     label: 'Cancelada',
     color: 'bg-muted text-muted-foreground border-border',
-    icon: <Ban className="w-3 h-3" />,
-  },
+    icon: <Ban className="w-3 h-3" />
+  }
 };
 
-const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+const typeConfig: Record<string, {label: string;color: string;icon: React.ReactNode;}> = {
   api: {
     label: 'API',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
-    icon: <Cloud className="w-3 h-3" />,
+    icon: <Cloud className="w-3 h-3" />
   },
   agent: {
     label: 'Agent',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
-    icon: <Terminal className="w-3 h-3" />,
+    icon: <Terminal className="w-3 h-3" />
   },
   attack_surface: {
     label: 'Attack Surface',
     color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
-    icon: <Radar className="w-3 h-3" />,
-  },
+    icon: <Radar className="w-3 h-3" />
+  }
 };
 
 export default function ExternalDomainExecutionsPage() {
@@ -157,18 +157,18 @@ export default function ExternalDomainExecutionsPage() {
   const getTimeFilterDate = () => {
     const now = new Date();
     switch (timeFilter) {
-      case '1h': return new Date(now.getTime() - 60 * 60 * 1000);
-      case '6h': return new Date(now.getTime() - 6 * 60 * 60 * 1000);
-      case '12h': return new Date(now.getTime() - 12 * 60 * 60 * 1000);
-      case '24h': return new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      case '7d': return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      default: return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      case '1h':return new Date(now.getTime() - 60 * 60 * 1000);
+      case '6h':return new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      case '12h':return new Date(now.getTime() - 12 * 60 * 60 * 1000);
+      case '24h':return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      case '7d':return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      default:return new Date(now.getTime() - 24 * 60 * 60 * 1000);
     }
   };
 
-  const workspaceIds = isPreviewMode && previewTarget?.workspaces
-    ? previewTarget.workspaces.map(w => w.id)
-    : null;
+  const workspaceIds = isPreviewMode && previewTarget?.workspaces ?
+  previewTarget.workspaces.map((w) => w.id) :
+  null;
 
   // Lookup: domains
   const { data: domains = [] } = useQuery({
@@ -177,7 +177,7 @@ export default function ExternalDomainExecutionsPage() {
       const { data, error } = await supabase.from('external_domains').select('id, domain, name, client_id');
       if (error) throw error;
       return data || [];
-    },
+    }
   });
 
   // Lookup: agents
@@ -187,13 +187,13 @@ export default function ExternalDomainExecutionsPage() {
       const { data, error } = await supabase.from('agents').select('id, name');
       if (error) throw error;
       return data || [];
-    },
+    }
   });
 
   // Accessible domain IDs (for preview mode filtering)
   const accessibleDomainIds = useMemo(() => {
     if (!workspaceIds || workspaceIds.length === 0) return null;
-    return domains.filter(d => workspaceIds.includes(d.client_id)).map(d => d.id);
+    return domains.filter((d) => workspaceIds.includes(d.client_id)).map((d) => d.id);
   }, [domains, workspaceIds]);
 
   // Query: external_domain_analysis_history (API executions)
@@ -201,13 +201,13 @@ export default function ExternalDomainExecutionsPage() {
     queryKey: ['external-domain-analysis-history', statusFilter, timeFilter, accessibleDomainIds],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
-      let query = supabase
-        .from('external_domain_analysis_history')
-        .select('id, domain_id, score, report_data, analyzed_by, created_at, status, source, started_at, completed_at, execution_time_ms')
-        .eq('source', 'api')
-        .gte('created_at', startTime.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(100);
+      let query = supabase.
+      from('external_domain_analysis_history').
+      select('id, domain_id, score, report_data, analyzed_by, created_at, status, source, started_at, completed_at, execution_time_ms').
+      eq('source', 'api').
+      gte('created_at', startTime.toISOString()).
+      order('created_at', { ascending: false }).
+      limit(100);
 
       if (accessibleDomainIds && accessibleDomainIds.length > 0) {
         query = query.in('domain_id', accessibleDomainIds);
@@ -225,10 +225,10 @@ export default function ExternalDomainExecutionsPage() {
     },
     refetchInterval: (query) => {
       const data = query.state.data as AnalysisHistory[] | undefined;
-      const hasActive = data?.some(a => a.status === 'pending' || a.status === 'running');
+      const hasActive = data?.some((a) => a.status === 'pending' || a.status === 'running');
       return hasActive ? 10000 : false;
     },
-    enabled: domains.length > 0 || !workspaceIds,
+    enabled: domains.length > 0 || !workspaceIds
   });
 
   // Query: agent_tasks (Agent executions)
@@ -256,11 +256,11 @@ export default function ExternalDomainExecutionsPage() {
           completed_at,
           expires_at,
           timeout_at
-        `)
-        .eq('target_type', 'external_domain')
-        .gte('created_at', startTime.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(100);
+        `).
+      eq('target_type', 'external_domain').
+      gte('created_at', startTime.toISOString()).
+      order('created_at', { ascending: false }).
+      limit(100);
 
       if (accessibleDomainIds && accessibleDomainIds.length > 0) {
         query = query.in('target_id', accessibleDomainIds);
@@ -276,10 +276,10 @@ export default function ExternalDomainExecutionsPage() {
     },
     refetchInterval: (query) => {
       const data = query.state.data as AgentTask[] | undefined;
-      const hasActive = data?.some(t => t.status === 'running' || t.status === 'pending');
+      const hasActive = data?.some((t) => t.status === 'running' || t.status === 'pending');
       return hasActive ? 10000 : false;
     },
-    enabled: domains.length > 0 || !workspaceIds,
+    enabled: domains.length > 0 || !workspaceIds
   });
 
   // Query: attack_surface_snapshots
@@ -288,12 +288,12 @@ export default function ExternalDomainExecutionsPage() {
     queryFn: async () => {
       const startTime = getTimeFilterDate();
 
-      let query = supabase
-        .from('attack_surface_snapshots')
-        .select('id, client_id, status, score, summary, created_at, completed_at')
-        .gte('created_at', startTime.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(100);
+      let query = supabase.
+      from('attack_surface_snapshots').
+      select('id, client_id, status, score, summary, created_at, completed_at').
+      gte('created_at', startTime.toISOString()).
+      order('created_at', { ascending: false }).
+      limit(100);
 
       if (workspaceIds && workspaceIds.length > 0) {
         query = query.in('client_id', workspaceIds);
@@ -311,9 +311,9 @@ export default function ExternalDomainExecutionsPage() {
     },
     refetchInterval: (query) => {
       const data = query.state.data as AttackSurfaceSnapshotRow[] | undefined;
-      const hasActive = data?.some(s => s.status === 'pending' || s.status === 'running' || s.status === 'processing');
+      const hasActive = data?.some((s) => s.status === 'pending' || s.status === 'running' || s.status === 'processing');
       return hasActive ? 10000 : false;
-    },
+    }
   });
 
   const formatDuration = (ms: number | null) => {
@@ -323,7 +323,7 @@ export default function ExternalDomainExecutionsPage() {
     return `${(ms / 60000).toFixed(1)}m`;
   };
 
-  const getDuration = (item: { started_at?: string | null; completed_at?: string | null; execution_time_ms?: number | null }) => {
+  const getDuration = (item: {started_at?: string | null;completed_at?: string | null;execution_time_ms?: number | null;}) => {
     if (item.execution_time_ms) {
       return formatDuration(item.execution_time_ms);
     }
@@ -336,7 +336,7 @@ export default function ExternalDomainExecutionsPage() {
 
   // Merge into unified list
   const unifiedExecutions = useMemo<UnifiedExecution[]>(() => {
-    const apiItems: UnifiedExecution[] = analysisHistory.map(hist => ({
+    const apiItems: UnifiedExecution[] = analysisHistory.map((hist) => ({
       id: hist.id,
       source: 'analysis' as const,
       domainId: hist.domain_id,
@@ -346,13 +346,13 @@ export default function ExternalDomainExecutionsPage() {
       duration: hist.execution_time_ms ? formatDuration(hist.execution_time_ms) : getDuration({
         started_at: hist.started_at,
         completed_at: hist.completed_at,
-        execution_time_ms: hist.execution_time_ms,
+        execution_time_ms: hist.execution_time_ms
       }),
       createdAt: hist.created_at,
-      original: hist,
+      original: hist
     }));
 
-    const taskItems: UnifiedExecution[] = agentTasks.map(task => ({
+    const taskItems: UnifiedExecution[] = agentTasks.map((task) => ({
       id: task.id,
       source: 'agent_task' as const,
       domainId: task.target_id,
@@ -361,10 +361,10 @@ export default function ExternalDomainExecutionsPage() {
       status: task.status,
       duration: getDuration(task),
       createdAt: task.created_at,
-      original: task,
+      original: task
     }));
 
-    const snapshotItems: UnifiedExecution[] = attackSurfaceSnapshots.map(snap => ({
+    const snapshotItems: UnifiedExecution[] = attackSurfaceSnapshots.map((snap) => ({
       id: snap.id,
       source: 'attack_surface' as const,
       domainId: '',
@@ -373,7 +373,7 @@ export default function ExternalDomainExecutionsPage() {
       status: snap.status === 'processing' ? 'running' : snap.status,
       duration: getDuration({ started_at: snap.created_at, completed_at: snap.completed_at, execution_time_ms: null }),
       createdAt: snap.created_at,
-      original: snap,
+      original: snap
     }));
 
     return [...apiItems, ...taskItems, ...snapshotItems].sort(
@@ -381,19 +381,19 @@ export default function ExternalDomainExecutionsPage() {
     );
   }, [analysisHistory, agentTasks, attackSurfaceSnapshots]);
 
-  const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending');
+  const hasActive = unifiedExecutions.some((e) => e.status === 'running' || e.status === 'pending');
 
   const stats = useMemo(() => ({
     total: unifiedExecutions.length,
-    pending: unifiedExecutions.filter(e => e.status === 'pending').length,
-    running: unifiedExecutions.filter(e => e.status === 'running').length,
-    completed: unifiedExecutions.filter(e => e.status === 'completed').length,
-    failed: unifiedExecutions.filter(e => ['failed', 'timeout', 'cancelled'].includes(e.status)).length,
+    pending: unifiedExecutions.filter((e) => e.status === 'pending').length,
+    running: unifiedExecutions.filter((e) => e.status === 'running').length,
+    completed: unifiedExecutions.filter((e) => e.status === 'completed').length,
+    failed: unifiedExecutions.filter((e) => ['failed', 'timeout', 'cancelled'].includes(e.status)).length
   }), [unifiedExecutions]);
 
   const getDomainLabel = (domainId: string) => {
     if (!domainId) return 'Attack Surface Scan';
-    const d = domains.find(x => x.id === domainId);
+    const d = domains.find((x) => x.id === domainId);
     if (!d) return domainId.slice(0, 8) + '...';
     const domain = (d.domain || '').trim();
     const name = (d.name || '').trim();
@@ -403,22 +403,22 @@ export default function ExternalDomainExecutionsPage() {
   };
 
   const getAgentName = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
+    const agent = agents.find((a) => a.id === agentId);
     return agent?.name || agentId.slice(0, 8) + '...';
   };
 
-  const filteredExecutions = unifiedExecutions.filter(item => {
+  const filteredExecutions = unifiedExecutions.filter((item) => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
-    const domain = domains.find(d => d.id === item.domainId);
-    const agent = item.agentId ? agents.find(a => a.id === item.agentId) : null;
+    const domain = domains.find((d) => d.id === item.domainId);
+    const agent = item.agentId ? agents.find((a) => a.id === item.agentId) : null;
     return (
       domain?.name?.toLowerCase().includes(s) ||
       domain?.domain?.toLowerCase().includes(s) ||
       agent?.name?.toLowerCase().includes(s) ||
-      (item.type === 'api' && 'edge function'.includes(s)) ||
-      (item.type === 'attack_surface' && 'attack surface'.includes(s))
-    );
+      item.type === 'api' && 'edge function'.includes(s) ||
+      item.type === 'attack_surface' && 'attack surface'.includes(s));
+
   });
 
   const cancelMutation = useMutation({
@@ -426,20 +426,20 @@ export default function ExternalDomainExecutionsPage() {
       const { error } = await supabase.from('agent_tasks').update({
         status: 'cancelled',
         completed_at: new Date().toISOString(),
-        error_message: 'Cancelada pelo usuário',
+        error_message: 'Cancelada pelo usuário'
       }).eq('id', taskId).in('status', ['pending', 'running']);
       if (error) throw error;
     },
     onSuccess: async () => {
       toast.success('Tarefa cancelada com sucesso');
       await queryClient.invalidateQueries({ queryKey: ['external-domain-agent-tasks'] });
-      setSelectedTask(prev => {
+      setSelectedTask((prev) => {
         if (!prev || prev.id !== taskToCancel?.id) return prev;
         return {
           ...prev,
           status: 'cancelled',
           completed_at: new Date().toISOString(),
-          error_message: prev.error_message || 'Cancelada pelo usuário',
+          error_message: prev.error_message || 'Cancelada pelo usuário'
         };
       });
       setCancelOpen(false);
@@ -448,7 +448,7 @@ export default function ExternalDomainExecutionsPage() {
     onError: (e: any) => {
       console.error('Failed to cancel task:', e);
       toast.error('Erro ao cancelar tarefa', { description: e?.message });
-    },
+    }
   });
 
   const requestCancel = (task: AgentTask) => {
@@ -470,19 +470,19 @@ export default function ExternalDomainExecutionsPage() {
       setTaskDetailsOpen(true);
       setLoadingDetails(true);
       try {
-        const { data: taskDetails } = await supabase
-          .from('agent_tasks')
-          .select('payload, result, error_message, execution_time_ms, started_at, completed_at')
-          .eq('id', task.id)
-          .maybeSingle();
+        const { data: taskDetails } = await supabase.
+        from('agent_tasks').
+        select('payload, result, error_message, execution_time_ms, started_at, completed_at').
+        eq('id', task.id).
+        maybeSingle();
         if (taskDetails) {
-          setSelectedTask(prev => prev ? { ...prev, ...taskDetails } : prev);
+          setSelectedTask((prev) => prev ? { ...prev, ...taskDetails } : prev);
         }
-        const { data: steps, error: stepsError } = await supabase
-          .from('task_step_results')
-          .select('id, task_id, step_id, status, duration_ms, error_message, data, created_at')
-          .eq('task_id', task.id)
-          .order('created_at', { ascending: true });
+        const { data: steps, error: stepsError } = await supabase.
+        from('task_step_results').
+        select('id, task_id, step_id, status, duration_ms, error_message, data, created_at').
+        eq('task_id', task.id).
+        order('created_at', { ascending: true });
         if (stepsError) throw stepsError;
         setSelectedTaskSteps((steps || []) as TaskStepResultRow[]);
       } catch (e: any) {
@@ -506,14 +506,14 @@ export default function ExternalDomainExecutionsPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-          { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
-          { label: 'Execuções' },
-        ]} />
+        { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
+        { label: 'Execuções' }]
+        } />
 
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Execuções de Análise</h1>
-            <p className="text-muted-foreground">Monitore as análises via API e tasks do agente</p>
+            <h1 className="text-2xl font-bold">Execuções de Análises</h1>
+            <p className="text-muted-foreground">Monitore as análises via API e do Agente</p>
           </div>
           <Button onClick={handleRefresh} variant="outline" size="sm">
             <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
@@ -590,9 +590,9 @@ export default function ExternalDomainExecutionsPage() {
                   <Input
                     placeholder="Buscar por domínio ou agente..."
                     value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10" />
+
                 </div>
               </div>
               <Select value={timeFilter} onValueChange={setTimeFilter}>
@@ -628,18 +628,18 @@ export default function ExternalDomainExecutionsPage() {
         {/* Unified Table */}
         <Card className="glass-card">
           <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
+            {isLoading ?
+            <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredExecutions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              </div> :
+            filteredExecutions.length === 0 ?
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Globe className="w-12 h-12 mb-4 opacity-50" />
                 <p>Nenhuma execução encontrada</p>
                 <p className="text-sm mt-1">As execuções aparecerão aqui quando forem iniciadas</p>
-              </div>
-            ) : (
-              <Table>
+              </div> :
+
+            <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Domínio</TableHead>
@@ -652,11 +652,11 @@ export default function ExternalDomainExecutionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredExecutions.map(item => {
-                    const sConfig = statusConfig[item.status] || statusConfig.pending;
-                    const tConfig = typeConfig[item.type];
-                    return (
-                      <TableRow key={`${item.source}-${item.id}`}>
+                  {filteredExecutions.map((item) => {
+                  const sConfig = statusConfig[item.status] || statusConfig.pending;
+                  const tConfig = typeConfig[item.type];
+                  return (
+                    <TableRow key={`${item.source}-${item.id}`}>
                         <TableCell className="font-medium">
                           {getDomainLabel(item.domainId)}
                         </TableCell>
@@ -683,28 +683,28 @@ export default function ExternalDomainExecutionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {item.source === 'agent_task' && ['pending', 'running'].includes(item.status) && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => requestCancel(item.original as AgentTask)}
-                                disabled={cancelMutation.isPending}
-                                title="Cancelar tarefa"
-                              >
+                            {item.source === 'agent_task' && ['pending', 'running'].includes(item.status) &&
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => requestCancel(item.original as AgentTask)}
+                            disabled={cancelMutation.isPending}
+                            title="Cancelar tarefa">
+
                                 <Ban className="w-4 h-4 text-destructive" />
                               </Button>
-                            )}
+                          }
                             <Button variant="ghost" size="icon" onClick={() => openDetails(item)}>
                               <Eye className="w-4 h-4" />
                             </Button>
                           </div>
                         </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                      </TableRow>);
+
+                })}
                 </TableBody>
               </Table>
-            )}
+            }
           </CardContent>
         </Card>
 
@@ -717,8 +717,8 @@ export default function ExternalDomainExecutionsPage() {
                 Detalhes da Análise via API
               </DialogTitle>
             </DialogHeader>
-            {selectedAnalysis && (
-              <ScrollArea className="max-h-[60vh] pr-4">
+            {selectedAnalysis &&
+            <ScrollArea className="max-h-[60vh] pr-4">
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -744,8 +744,8 @@ export default function ExternalDomainExecutionsPage() {
                     </div>
                   </div>
 
-                  {selectedAnalysis.report_data && (
-                    <div>
+                  {selectedAnalysis.report_data &&
+                <div>
                       <p className="text-sm text-muted-foreground mb-2">Dados do Relatório (JSON)</p>
                       <div className="bg-muted/50 border rounded-lg p-3">
                         <ScrollArea className="h-[300px]">
@@ -755,10 +755,10 @@ export default function ExternalDomainExecutionsPage() {
                         </ScrollArea>
                       </div>
                     </div>
-                  )}
+                }
                 </div>
               </ScrollArea>
-            )}
+            }
           </DialogContent>
         </Dialog>
 
@@ -771,8 +771,8 @@ export default function ExternalDomainExecutionsPage() {
                 Detalhes do Attack Surface Scan
               </DialogTitle>
             </DialogHeader>
-            {selectedSnapshot && (
-              <ScrollArea className="max-h-[60vh] pr-4">
+            {selectedSnapshot &&
+            <ScrollArea className="max-h-[60vh] pr-4">
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -799,49 +799,49 @@ export default function ExternalDomainExecutionsPage() {
                         {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
                       </p>
                     </div>
-                    {selectedSnapshot.completed_at && (
-                      <div>
+                    {selectedSnapshot.completed_at &&
+                  <div>
                         <p className="text-sm text-muted-foreground">Concluído em</p>
                         <p className="font-medium">
                           {format(new Date(selectedSnapshot.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
                         </p>
                       </div>
-                    )}
+                  }
                   </div>
 
-                  {selectedSnapshot.summary && (
-                    <div>
+                  {selectedSnapshot.summary &&
+                <div>
                       <p className="text-sm text-muted-foreground mb-2">Resumo</p>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {(() => {
-                          const s = selectedSnapshot.summary as Record<string, unknown>;
-                          return (
-                            <>
+                      const s = selectedSnapshot.summary as Record<string, unknown>;
+                      return (
+                        <>
                               <div className="bg-muted/50 border rounded-lg p-3 text-center">
-                                <p className="text-xl font-bold">{(s.total_ips as number) ?? 0}</p>
+                                <p className="text-xl font-bold">{s.total_ips as number ?? 0}</p>
                                 <p className="text-xs text-muted-foreground">IPs</p>
                               </div>
                               <div className="bg-muted/50 border rounded-lg p-3 text-center">
-                                <p className="text-xl font-bold">{(s.open_ports as number) ?? 0}</p>
+                                <p className="text-xl font-bold">{s.open_ports as number ?? 0}</p>
                                 <p className="text-xs text-muted-foreground">Portas</p>
                               </div>
                               <div className="bg-muted/50 border rounded-lg p-3 text-center">
-                                <p className="text-xl font-bold">{(s.services as number) ?? 0}</p>
+                                <p className="text-xl font-bold">{s.services as number ?? 0}</p>
                                 <p className="text-xs text-muted-foreground">Serviços</p>
                               </div>
                               <div className="bg-muted/50 border rounded-lg p-3 text-center">
-                                <p className="text-xl font-bold">{(s.cves as number) ?? 0}</p>
+                                <p className="text-xl font-bold">{s.cves as number ?? 0}</p>
                                 <p className="text-xs text-muted-foreground">CVEs</p>
                               </div>
-                            </>
-                          );
-                        })()}
+                            </>);
+
+                    })()}
                       </div>
                     </div>
-                  )}
+                }
                 </div>
               </ScrollArea>
-            )}
+            }
           </DialogContent>
         </Dialog>
 
@@ -854,14 +854,14 @@ export default function ExternalDomainExecutionsPage() {
                 Detalhes da Tarefa do Agent
               </DialogTitle>
             </DialogHeader>
-            {selectedTask && (
-              <div className="flex-1 overflow-y-auto space-y-6 pr-4">
-                {loadingDetails && (
-                  <div className="flex items-center justify-center py-4">
+            {selectedTask &&
+            <div className="flex-1 overflow-y-auto space-y-6 pr-4">
+                {loadingDetails &&
+              <div className="flex items-center justify-center py-4">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     <span className="ml-2 text-muted-foreground">Carregando detalhes...</span>
                   </div>
-                )}
+              }
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -901,31 +901,31 @@ export default function ExternalDomainExecutionsPage() {
                     <p className="text-sm text-muted-foreground">Criado em</p>
                     <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
                   </div>
-                  {selectedTask.started_at && (
-                    <div>
+                  {selectedTask.started_at &&
+                <div>
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
                       <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
                     </div>
-                  )}
-                  {selectedTask.completed_at && (
-                    <div>
+                }
+                  {selectedTask.completed_at &&
+                <div>
                       <p className="text-sm text-muted-foreground">Concluído em</p>
                       <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
                     </div>
-                  )}
+                }
                 </div>
 
-                {selectedTask.error_message && (
-                  <div>
+                {selectedTask.error_message &&
+              <div>
                     <p className="text-sm text-muted-foreground mb-2">Erro</p>
                     <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
                       <p className="text-sm text-destructive">{selectedTask.error_message}</p>
                     </div>
                   </div>
-                )}
+              }
 
-                {selectedTask.payload && (
-                  <div>
+                {selectedTask.payload &&
+              <div>
                     <p className="text-sm text-muted-foreground mb-2">Payload (JSON)</p>
                     <div className="bg-muted/50 border rounded-lg p-3">
                       <ScrollArea className="h-[150px]">
@@ -935,23 +935,23 @@ export default function ExternalDomainExecutionsPage() {
                       </ScrollArea>
                     </div>
                   </div>
-                )}
+              }
 
-                {selectedTaskSteps.length > 0 && (
-                  <div>
+                {selectedTaskSteps.length > 0 &&
+              <div>
                     <p className="text-sm text-muted-foreground mb-2">Steps Executados</p>
                     <div className="space-y-2">
-                      {selectedTaskSteps.map(step => {
-                        const ok = step.status === 'success';
-                        const skipped = step.status === 'skipped';
-                        const failed = !ok && !skipped;
-                        return (
-                          <div key={step.id} className={cn(
-                            'rounded-lg border p-2',
-                            ok && 'bg-green-500/10 border-green-500/30',
-                            failed && 'bg-red-500/10 border-red-500/30',
-                            skipped && 'bg-muted/50 border-border',
-                          )}>
+                      {selectedTaskSteps.map((step) => {
+                    const ok = step.status === 'success';
+                    const skipped = step.status === 'skipped';
+                    const failed = !ok && !skipped;
+                    return (
+                      <div key={step.id} className={cn(
+                        'rounded-lg border p-2',
+                        ok && 'bg-green-500/10 border-green-500/30',
+                        failed && 'bg-red-500/10 border-red-500/30',
+                        skipped && 'bg-muted/50 border-border'
+                      )}>
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-2 min-w-0">
                                 {ok && <CheckCircle2 className="w-4 h-4 text-green-500" />}
@@ -960,36 +960,36 @@ export default function ExternalDomainExecutionsPage() {
                                 <span className="font-mono text-sm truncate">{step.step_id}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                {step.duration_ms !== null && (
-                                  <span className="text-xs text-muted-foreground">{formatDuration(step.duration_ms)}</span>
-                                )}
+                                {step.duration_ms !== null &&
+                            <span className="text-xs text-muted-foreground">{formatDuration(step.duration_ms)}</span>
+                            }
                               </div>
                             </div>
-                            {(step.error_message || step.data) && (
-                              <div className="mt-2 space-y-2">
-                                {step.error_message && (
-                                  <div className="text-xs text-destructive break-words">{step.error_message}</div>
-                                )}
-                                {step.data && (
-                                  <div className="bg-muted/50 border rounded-md p-2">
+                            {(step.error_message || step.data) &&
+                        <div className="mt-2 space-y-2">
+                                {step.error_message &&
+                          <div className="text-xs text-destructive break-words">{step.error_message}</div>
+                          }
+                                {step.data &&
+                          <div className="bg-muted/50 border rounded-md p-2">
                                     <ScrollArea className="h-[160px]">
                                       <pre className="text-xs font-mono whitespace-pre-wrap break-all">
                                         {JSON.stringify(step.data, null, 2)}
                                       </pre>
                                     </ScrollArea>
                                   </div>
-                                )}
+                          }
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                        }
+                          </div>);
+
+                  })}
                     </div>
                   </div>
-                )}
+              }
 
-                {selectedTask.result && (
-                  <div>
+                {selectedTask.result &&
+              <div>
                     <p className="text-sm text-muted-foreground mb-2">Resultado (JSON)</p>
                     <div className="bg-muted/50 border rounded-lg p-3">
                       <ScrollArea className="h-[200px]">
@@ -999,9 +999,9 @@ export default function ExternalDomainExecutionsPage() {
                       </ScrollArea>
                     </div>
                   </div>
-                )}
+              }
               </div>
-            )}
+            }
           </DialogContent>
         </Dialog>
 
@@ -1024,14 +1024,14 @@ export default function ExternalDomainExecutionsPage() {
                   if (!taskToCancel) return;
                   cancelMutation.mutate(taskToCancel.id);
                 }}
-                disabled={!taskToCancel || cancelMutation.isPending}
-              >
+                disabled={!taskToCancel || cancelMutation.isPending}>
+
                 {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </AppLayout>
-  );
+    </AppLayout>);
+
 }
