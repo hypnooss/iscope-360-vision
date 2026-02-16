@@ -443,20 +443,31 @@ export default function LeakedCredentialsSection({
             </div>
 
             {isSuperRole && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenModal}
-                disabled={queryMutation.isPending}
-                className="gap-1.5"
-              >
-                {queryMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
+              <>
+                <Button
+                  size="sm"
+                  onClick={handleOpenModal}
+                  disabled={queryMutation.isPending}
+                  className="gap-1.5"
+                >
+                  {queryMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5" />
+                  )}
+                  Consultar HIBP
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenModal}
+                  disabled={queryMutation.isPending}
+                  className="gap-1.5"
+                >
                   <RefreshCw className="w-3.5 h-3.5" />
-                )}
-                Atualizar
-              </Button>
+                  Atualizar
+                </Button>
+              </>
             )}
 
             {cacheAgeText && (
