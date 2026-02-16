@@ -1,46 +1,97 @@
 
 
-# Corrigir filtro de servicos que oculta portas sem "product"
+# Unificar servicos Nmap + httpx por porta
 
-## Problema
+## Problema atual
 
-Na linha 892 do `AttackSurfaceAnalyzerPage.tsx`, o filtro `.filter(s => s.product)` remove servicos que nao possuem o campo `product` preenchido pelo Nmap. As portas 80 e 10443 provavelmente foram detectadas com um `name` (ex: "http", "https") mas sem `product`, entao sao completamente ocultadas da secao "Servicos e Tecnologias".
+O Nmap e o httpx analisam as mesmas portas (ex: 80, 443, 10443), mas os resultados aparecem em cards separados:
+- `NmapServiceRow` mostra porta + produto/nome + scripts NSE
+- `WebServiceRow` mostra URL + status code + tecnologias
 
-Apenas a porta 541 aparece porque o Nmap conseguiu identificar o product como "SSL/TLS ClientHello" (ou similar).
+O usuario quer ver um unico card por porta que combine ambas as informacoes.
 
 ## Solucao
 
-Alterar o filtro para mostrar servicos que tenham `product` OU `name` OU `scripts` -- qualquer dado relevante. Tambem ajustar o `matchCVEsToService` para considerar o `name` do servico.
+Na secao "Servicos e Tecnologias" do `AssetCard`, em vez de renderizar os dois tipos separadamente, criar um passo de merge que agrupa por porta:
+
+1. Para cada `webService`, extrair a porta da URL
+2. Encontrar o `service` do Nmap com a mesma porta
+3. Quando houver match, renderizar um card unificado com:
+   - **Titulo**: URL completa do httpx (ex: `https://ida-fw.taschibra.com.br:443`)
+   - **Badges**: status code do httpx + tecnologias
+   - **Detalhes do Nmap**: produto, versao, extra_info, scripts NSE
+   - **CVEs**: combinados de ambas as fontes
+4. Servicos Nmap sem match httpx: renderizar como `NmapServiceRow` (como hoje)
+5. Web services httpx sem match Nmap: renderizar como `WebServiceRow` (como hoje)
 
 ## Plano Tecnico
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**Linha 892** - Alterar o filtro:
+#### 1. Criar funcao utilitaria `extractPortFromUrl`
 
 ```typescript
-// Antes:
-{asset.services.filter(s => s.product).map((svc, i) => (
-
-// Depois:
-{asset.services.filter(s => s.product || s.name || (s.scripts && Object.keys(s.scripts).length > 0)).map((svc, i) => (
+function extractPortFromUrl(url: string): number | null {
+  try {
+    const u = new URL(url);
+    if (u.port) return parseInt(u.port, 10);
+    return u.protocol === 'https:' ? 443 : u.protocol === 'http:' ? 80 : null;
+  } catch { return null; }
+}
 ```
 
-**Linha 893** - Ajustar o match de CVEs para considerar tambem o `name`:
+#### 2. Criar componente `UnifiedServiceRow`
 
-```typescript
-// Antes:
-<NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
+Componente que renderiza um card combinado:
+- Titulo: URL clicavel (do httpx)
+- Status code badge (do httpx)
+- Produto/versao/extra_info (do Nmap)
+- Tecnologias (do httpx)
+- Scripts NSE expandiveis (do Nmap)
+- CVEs combinados
 
-// Depois:
-<NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product || svc.name || '', asset.cves)} />
+#### 3. Alterar a logica de renderizacao na secao "Servicos e Tecnologias" (linhas 891-907)
+
+Em vez de iterar `services` e depois `webServices` separadamente:
+
+```
+1. Criar mapa port -> nmapService
+2. Para cada webService:
+   a. Extrair porta da URL
+   b. Se existe nmapService na mesma porta -> renderizar UnifiedServiceRow
+   c. Marcar a nmapService como "consumida"
+   d. Senao -> renderizar WebServiceRow (como hoje)
+3. Para cada nmapService nao consumida -> renderizar NmapServiceRow (como hoje)
 ```
 
-## Resultado
+## Resultado esperado
 
-Todas as portas com servicos detectados (mesmo sem `product` especifico) aparecerao na secao de Servicos, exibindo o `name` como fallback (ex: "http", "https", "ms-wbt-server").
+Antes:
+```
+80/    http    [NSE]
+443/   https   [NSE]
+10443/ cirrossp
+https://ida-fw.taschibra.com.br:443   [403]
+https://ida-fw.taschibra.com.br:10443 [200] HSTS
+http://ida-fw.taschibra.com.br:80     [307] HSTS
+```
+
+Depois:
+```
+http://ida-fw.taschibra.com.br:80     [307] HSTS
+  http | [NSE expandivel]
+
+https://ida-fw.taschibra.com.br:443   [403]
+  https | [NSE expandivel]
+
+https://ida-fw.taschibra.com.br:10443 [200] HSTS
+  cirrossp
+
+(servicos nmap sem httpx continuam como antes)
+```
+
+## Arquivos modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Relaxar filtro de servicos e usar `name` como fallback no match de CVEs |
-
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Adicionar `extractPortFromUrl`, criar `UnifiedServiceRow`, alterar logica de merge na secao de servicos |
