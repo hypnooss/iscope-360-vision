@@ -2321,6 +2321,7 @@ export type Database = {
         | "external_domain_analysis"
         | "m365_powershell"
         | "firewall_analyzer"
+        | "fortigate_analyzer"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       blueprint_executor_type: "agent" | "edge_function" | "hybrid"
       device_category:
@@ -2497,6 +2498,7 @@ export const Constants = {
         "external_domain_analysis",
         "m365_powershell",
         "firewall_analyzer",
+        "fortigate_analyzer",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       blueprint_executor_type: ["agent", "edge_function", "hybrid"],

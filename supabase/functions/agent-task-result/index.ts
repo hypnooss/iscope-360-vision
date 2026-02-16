@@ -4367,12 +4367,12 @@ serve(async (req: Request) => {
     // ========================================================
     // Firewall Analyzer: Process log data into security insights
     // ========================================================
-    if ((body.status === 'completed' || body.status === 'partial') && task.task_type === 'firewall_analyzer' && rawData) {
+    if ((body.status === 'completed' || body.status === 'partial') && task.task_type === 'fortigate_analyzer' && rawData) {
       const taskPayload = task.payload as Record<string, unknown> | null;
       const snapshotId = taskPayload?.snapshot_id as string | undefined;
 
       if (snapshotId) {
-        console.log(`[firewall_analyzer] Processing insights for snapshot: ${snapshotId}`);
+        console.log(`[fortigate_analyzer] Processing insights for snapshot: ${snapshotId}`);
         try {
           const analyzerUrl = `${supabaseUrl}/functions/v1/firewall-analyzer`;
           const analyzerResponse = await fetch(analyzerUrl, {
@@ -4381,9 +4381,9 @@ serve(async (req: Request) => {
             body: JSON.stringify({ snapshot_id: snapshotId, task_id: body.task_id, raw_data: rawData }),
           });
           const analyzerResult = await analyzerResponse.json();
-          console.log(`[firewall_analyzer] Result: score=${analyzerResult.score}, insights=${analyzerResult.insights_count}`);
+          console.log(`[fortigate_analyzer] Result: score=${analyzerResult.score}, insights=${analyzerResult.insights_count}`);
         } catch (e) {
-          console.error(`[firewall_analyzer] Error:`, e);
+          console.error(`[fortigate_analyzer] Error:`, e);
           await supabase.from('analyzer_snapshots').update({ status: 'failed' }).eq('id', snapshotId);
         }
       }
@@ -4497,7 +4497,7 @@ serve(async (req: Request) => {
     }
 
     // If task completed successfully and has raw data, process with compliance rules
-    if ((body.status === 'completed' || body.status === 'partial') && rawData && task.task_type !== 'firewall_analyzer') {
+    if ((body.status === 'completed' || body.status === 'partial') && rawData && task.task_type !== 'fortigate_analyzer') {
       let deviceTypeId: string | null = null;
 
       if (task.target_type === 'firewall') {
