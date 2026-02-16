@@ -1,34 +1,47 @@
 
-# Corrigir posicionamento dos tooltips de tipo de breach
+
+# Ocultar ativos sem portas/servicos e adicionar card de resumo
 
 ## Problema
 
-O tooltip Radix nao consegue calcular a posicao correta porque o `TooltipTrigger` com `asChild` esta sendo aplicado diretamente no `Badge` dentro de uma celula de tabela (`td`). O Radix Popper calcula `transform: translate(0px, -200%)`, jogando o balao para fora da tela.
+Ativos com 0 portas e 0 servicos ocupam espaco na lista sem trazer informacao util, gerando scroll desnecessario.
 
 ## Solucao
 
-**Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
+**Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Envolver o `Badge` em um `<span>` inline com `display: inline-flex` e usar esse `<span>` como trigger do tooltip. Isso garante que o Radix consiga medir corretamente as dimensoes e posicao do elemento trigger dentro da tabela.
+### 1. Separar ativos "vazios" dos ativos relevantes
 
-Alteracao na celula do tipo (linhas 545-557):
+No `useMemo` de `filteredAssets` (linha ~1198), dividir em dois grupos:
+- **activeAssets**: ativos com pelo menos 1 porta OU 1 servico (nmap ou web)
+- **emptyAssets**: ativos com 0 portas E 0 servicos
 
+A lista principal renderiza apenas `activeAssets`.
+
+### 2. Card de resumo no final da lista
+
+Criar um componente `EmptyAssetsSummary` que aparece apos o ultimo asset card, exibindo:
+- Quantidade total de ativos sem portas/servicos
+- Lista compacta dos hostnames/IPs agrupados (colapsavel)
+- Visual discreto (glass-card, cor neutra) para nao competir com os ativos relevantes
+- Icone `CheckCircle2` indicando que esses ativos foram verificados mas nao possuem exposicao detectada
+
+Exemplo visual:
 ```text
-<td className="px-3 py-2">
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <span className="inline-flex cursor-help">
-        <Badge variant="outline" className={cn("text-[10px] px-1.5 gap-1", bt.className)}>
-          <BtIcon className="w-3 h-3" />
-          {bt.label}
-        </Badge>
-      </span>
-    </TooltipTrigger>
-    <TooltipContent side="top" className="max-w-xs text-xs">
-      {bt.tooltip}
-    </TooltipContent>
-  </Tooltip>
-</td>
++-------------------------------------------------------+
+| [CheckCircle2] 12 ativos sem exposicao detectada       |
+|                                                        |
+| Nenhuma porta aberta ou servico identificado.          |
+| [v] Ver lista                                          |
+|   host1.example.com (1.2.3.4)                          |
+|   host2.example.com (5.6.7.8)                          |
+|   ...                                                  |
++-------------------------------------------------------+
 ```
 
-Isso resolve tanto o posicionamento incorreto do balao quanto o hover que nao funciona diretamente na badge.
+### Detalhes tecnicos
+
+- Usar `Collapsible` do Radix para a lista de hostnames
+- Os ativos vazios continuam contabilizados nos stat cards de "Ativos Expostos" (total real)
+- O filtro de busca se aplica tambem aos ativos vazios (se o usuario buscar um hostname que esta no grupo vazio, ele aparece no card de resumo filtrado)
+
