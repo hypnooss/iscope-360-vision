@@ -180,10 +180,10 @@ export function useAttackSurfaceRescanIP(clientId?: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ ip, source, label }: { ip: string; source: string; label: string }) => {
+    mutationFn: async ({ ip, source, label, snapshotId }: { ip: string; source: string; label: string; snapshotId: string }) => {
       if (!clientId) throw new Error('client_id is required');
       const { data, error } = await supabase.functions.invoke('attack-surface-rescan-ip', {
-        body: { client_id: clientId, ip, source, label },
+        body: { client_id: clientId, ip, source, label, snapshot_id: snapshotId },
       });
       if (error) throw error;
       return data;

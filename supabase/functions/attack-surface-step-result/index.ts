@@ -73,15 +73,25 @@ Deno.serve(async (req) => {
         .select('ip, source, label, status, result')
         .eq('snapshot_id', snapshotId)
 
-      // Consolidate results
-      const results: Record<string, any> = {}
+      // Fetch existing results from snapshot to merge
+      const { data: existingSnapshot } = await supabase
+        .from('attack_surface_snapshots')
+        .select('results')
+        .eq('id', snapshotId)
+        .single()
+
+      const existingResults: Record<string, any> = (existingSnapshot?.results as Record<string, any>) || {}
+
+      // Consolidate: start with existing results, then overlay task results
+      const results: Record<string, any> = { ...existingResults }
       let totalPorts = 0
       let totalServices = 0
       const allVulns = new Set<string>()
 
+      // Update only IPs that had tasks in this batch
       for (const t of (allTasks || [])) {
         const r = t.result || {}
-      results[t.ip] = {
+        results[t.ip] = {
           ports: r.ports || [],
           services: r.services || [],
           web_services: r.web_services || [],
@@ -91,6 +101,11 @@ Deno.serve(async (req) => {
           asn: r.raw_steps?.asn_classifier?.data || null,
           error: t.status === 'failed' ? (r.error || 'Task failed') : undefined,
         }
+      }
+
+      // Recalculate summary from ALL IPs (existing + updated)
+      for (const ip of Object.keys(results)) {
+        const r = results[ip]
         totalPorts += (r.ports || []).length
         totalServices += (r.services || []).length + (r.web_services || []).length
         for (const v of (r.vulns || [])) allVulns.add(v)

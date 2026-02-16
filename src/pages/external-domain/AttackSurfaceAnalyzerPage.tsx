@@ -1156,7 +1156,7 @@ export default function AttackSurfaceAnalyzerPage() {
                   key={asset.ip}
                   asset={asset}
                   isSuperRole={isSuperRole}
-                  onRescan={(a) => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname })}
+                  onRescan={(a) => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname, snapshotId: snapshot!.id })}
                   isRescanning={rescanMutation.isPending}
                 />
               ))}
