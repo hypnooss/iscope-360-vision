@@ -31,8 +31,16 @@ class HttpxExecutor(BaseExecutor):
         ports = params.get('ports', [])
         if not ports:
             all_ports = context.get('ports', [])
-            # Probe all discovered ports - web servers can run on any port
-            ports = all_ports if all_ports else self.DEFAULT_HTTP_PORTS[:4]
+            if not all_ports:
+                self.logger.info(f"[httpx] No open ports from nmap on {target}, skipping probe")
+                return {
+                    'data': {
+                        'ip': ip,
+                        'hostname': hostname or '',
+                        'web_services': [],
+                    }
+                }
+            ports = all_ports
 
         # Protection against "Argument list too long" - cap at 200 ports
         MAX_PORTS = 200
