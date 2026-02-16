@@ -1251,13 +1251,13 @@ export default function AttackSurfaceAnalyzerPage() {
               {isSuperRole && !isRunning && (
                 <Button size="sm" onClick={() => setScanDialogOpen(true)}>
                   <Play className="w-4 h-4" />
-                  Disparar Scan
+                  Executar Análise
                 </Button>
               )}
                {isSuperRole && isRunning && (
                 <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
                   {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                  Cancelar Scan
+                  Cancelar Análise
                 </Button>
               )}
             </div>
