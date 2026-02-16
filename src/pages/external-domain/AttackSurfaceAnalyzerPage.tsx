@@ -1166,8 +1166,9 @@ export default function AttackSurfaceAnalyzerPage() {
 
   // isRunning already declared above
 
-  // Use running snapshot data when scan is active, fallback to completed
-  const activeSnapshot = isRunning && runningSnapshot ? runningSnapshot : snapshot;
+  // Use running snapshot only when it already has partial results; otherwise keep showing last completed
+  const hasPartialResults = runningSnapshot && Object.keys(runningSnapshot.results || {}).length > 0;
+  const activeSnapshot = isRunning && hasPartialResults ? runningSnapshot : snapshot;
 
   // Build asset-centric data
   const assets = useMemo(() => {
