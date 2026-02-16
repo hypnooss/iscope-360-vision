@@ -513,7 +513,7 @@ export default function ExternalDomainExecutionsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Execuções de Análises</h1>
-            <p className="text-muted-foreground">Monitore as análises via API e do Agente</p>
+            <p className="text-muted-foreground">Monitore as análises via API e via Agent</p>
           </div>
           <Button onClick={handleRefresh} variant="outline" size="sm">
             <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
