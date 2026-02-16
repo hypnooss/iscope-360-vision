@@ -29,6 +29,16 @@ const MANAGED_KEYS = [
     label: "Censys",
     description: "Usada para enriquecimento de IPs via Censys Search API (hosts, serviços, certificados TLS)",
   },
+  {
+    name: "DEHASHED_API_KEY",
+    label: "DeHashed API Key",
+    description: "API Key do DeHashed para consulta de credenciais vazadas por domínio",
+  },
+  {
+    name: "DEHASHED_EMAIL",
+    label: "DeHashed Email",
+    description: "Email da conta DeHashed usado na autenticação Basic Auth da API",
+  },
 ];
 
 function fromHex(hex: string): Uint8Array {
