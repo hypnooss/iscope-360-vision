@@ -15,6 +15,9 @@ export interface AttackSurfaceService {
   version: string;
   banner: string;
   cpe: string[];
+  name?: string;
+  extra_info?: string;
+  scripts?: Record<string, string>;
 }
 
 export interface AttackSurfaceWebService {

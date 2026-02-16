@@ -581,27 +581,53 @@ function CVEExpandedList({ cves }: { cves: AttackSurfaceCVE[] }) {
   );
 }
 
+function NseScriptsBlock({ scripts }: { scripts: Record<string, string> }) {
+  const entries = Object.entries(scripts).filter(([, v]) => v && v.trim());
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-2">
+      {entries.map(([scriptName, output]) => (
+        <div key={scriptName} className="rounded-lg border border-border/50 bg-muted/10 overflow-hidden">
+          <div className="px-3 py-1.5 bg-muted/30 border-b border-border/30">
+            <span className="text-xs font-mono font-semibold text-primary">{scriptName}</span>
+          </div>
+          <pre className="px-3 py-2 text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">
+            {output.trim()}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NmapServiceRow({ svc, cves }: { svc: AttackSurfaceService; cves: AttackSurfaceCVE[] }) {
   const [expanded, setExpanded] = useState(false);
   const top2 = cves.slice(0, 2);
   const hasMore = cves.length > 2;
+  const hasScripts = svc.scripts && Object.keys(svc.scripts).length > 0;
+  const isExpandable = cves.length > 0 || hasScripts;
 
   return (
     <div>
       <div
         className={cn(
           "rounded-lg border border-border/50 bg-muted/20 px-3 py-2 flex items-center gap-3 flex-wrap text-sm",
-          cves.length > 0 && "cursor-pointer hover:bg-muted/40 transition-colors"
+          isExpandable && "cursor-pointer hover:bg-muted/40 transition-colors"
         )}
-        onClick={() => cves.length > 0 && setExpanded(!expanded)}
+        onClick={() => isExpandable && setExpanded(!expanded)}
       >
-        {cves.length > 0 && (
+        {isExpandable && (
           expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         )}
         <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
-        <span className="font-medium">{svc.product}</span>
+        <span className="font-medium">{svc.product || svc.name || '—'}</span>
         {svc.version && <span className="text-muted-foreground text-xs">{svc.version}</span>}
-        {svc.banner && <span className="text-muted-foreground text-xs truncate max-w-[300px]">{svc.banner}</span>}
+        {svc.extra_info && <span className="text-muted-foreground/70 text-xs italic">{svc.extra_info}</span>}
+        {svc.banner && !svc.extra_info && <span className="text-muted-foreground text-xs truncate max-w-[300px]">{svc.banner}</span>}
+        {hasScripts && !expanded && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/30">NSE</Badge>
+        )}
         {!expanded && top2.length > 0 && (
           <div className="flex items-center gap-1.5 ml-auto">
             {top2.map(cve => <CVEInlineBadge key={cve.cve_id} cve={cve} />)}
@@ -609,7 +635,12 @@ function NmapServiceRow({ svc, cves }: { svc: AttackSurfaceService; cves: Attack
           </div>
         )}
       </div>
-      {expanded && <div className="pl-6"><CVEExpandedList cves={cves} /></div>}
+      {expanded && (
+        <div className="pl-6">
+          {hasScripts && <NseScriptsBlock scripts={svc.scripts!} />}
+          <CVEExpandedList cves={cves} />
+        </div>
+      )}
     </div>
   );
 }
