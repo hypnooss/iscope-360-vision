@@ -1,77 +1,46 @@
 
 
-# Exibir dados enriquecidos do Nmap no frontend (scripts, extra_info)
+# Corrigir filtro de servicos que oculta portas sem "product"
 
 ## Problema
 
-O executor `nmap.py` coleta dados valiosos via scripts NSE (como `rdp-ntlm-info`, `rdp-enum-encryption`, `ssh-hostkey`, `ssl-cert`, etc.) e campos adicionais (`extra_info`, `name`). Porem, a interface do `AttackSurfaceService` no frontend nao inclui esses campos, e o componente `NmapServiceRow` nao renderiza essas informacoes. Os dados estao no banco, mas sao ignorados pelo frontend.
+Na linha 892 do `AttackSurfaceAnalyzerPage.tsx`, o filtro `.filter(s => s.product)` remove servicos que nao possuem o campo `product` preenchido pelo Nmap. As portas 80 e 10443 provavelmente foram detectadas com um `name` (ex: "http", "https") mas sem `product`, entao sao completamente ocultadas da secao "Servicos e Tecnologias".
 
-## Dados que o nmap coleta mas o frontend ignora
+Apenas a porta 541 aparece porque o Nmap conseguiu identificar o product como "SSL/TLS ClientHello" (ou similar).
 
-- `scripts`: dicionario com saida de cada script NSE (ex: `rdp-ntlm-info` traz versao do Windows, nome do servidor, dominio)
-- `extra_info`: informacoes adicionais do fingerprint (ex: "Windows Server 2019")
-- `name`: nome do servico detectado (ex: "ms-wbt-server" para RDP)
+## Solucao
+
+Alterar o filtro para mostrar servicos que tenham `product` OU `name` OU `scripts` -- qualquer dado relevante. Tambem ajustar o `matchCVEsToService` para considerar o `name` do servico.
 
 ## Plano Tecnico
 
-### 1. Atualizar a interface `AttackSurfaceService` (`src/hooks/useAttackSurfaceData.ts`)
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Adicionar os campos que o nmap retorna:
+**Linha 892** - Alterar o filtro:
 
 ```typescript
-export interface AttackSurfaceService {
-  port: number;
-  transport: string;
-  product: string;
-  version: string;
-  banner: string;
-  cpe: string[];
-  name?: string;           // NOVO: nome do servico (ex: "ms-wbt-server")
-  extra_info?: string;     // NOVO: info adicional do fingerprint
-  scripts?: Record<string, string>;  // NOVO: saida dos scripts NSE
-}
+// Antes:
+{asset.services.filter(s => s.product).map((svc, i) => (
+
+// Depois:
+{asset.services.filter(s => s.product || s.name || (s.scripts && Object.keys(s.scripts).length > 0)).map((svc, i) => (
 ```
 
-### 2. Atualizar o componente `NmapServiceRow` (`src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`)
+**Linha 893** - Ajustar o match de CVEs para considerar tambem o `name`:
 
-Exibir os novos campos no card do servico:
+```typescript
+// Antes:
+<NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
 
-- Mostrar `extra_info` ao lado da versao (texto secundario)
-- Adicionar uma secao expansivel mostrando a saida de cada script NSE como pares chave/valor
-- Tornar o card clicavel para expandir os scripts (mesmo sem CVEs)
-
-Exemplo visual apos a mudanca:
-
-```text
-+-----------------------------------------------------------+
-| 3389/tcp  Microsoft Terminal Services                      |
-|           Windows Server 2019 Standard (extra_info)        |
-+-----------------------------------------------------------+
-|  rdp-ntlm-info:                                           |
-|    Target_Name: CONTOSO                                    |
-|    NetBIOS_Domain: CONTOSO                                 |
-|    DNS_Computer: SRV01.contoso.local                       |
-|    Product_Version: 10.0.17763                             |
-|  rdp-enum-encryption:                                      |
-|    Security layer: CredSSP (NLA)                           |
-|    RDP Encryption level: High                              |
-+-----------------------------------------------------------+
+// Depois:
+<NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product || svc.name || '', asset.cves)} />
 ```
 
-### 3. Logica de expansao
+## Resultado
 
-Atualmente o `NmapServiceRow` so expande quando ha CVEs. Precisa ser ajustado para tambem expandir quando houver `scripts` com conteudo. O click toggle mostrara:
-- Scripts NSE formatados (se existirem)
-- CVEs (se existirem)
-
-## Arquivos modificados
+Todas as portas com servicos detectados (mesmo sem `product` especifico) aparecerao na secao de Servicos, exibindo o `name` como fallback (ex: "http", "https", "ms-wbt-server").
 
 | Arquivo | Mudanca |
 |---|---|
-| `src/hooks/useAttackSurfaceData.ts` | Adicionar `name`, `extra_info`, `scripts` ao `AttackSurfaceService` |
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Atualizar `NmapServiceRow` para exibir `extra_info` e scripts NSE expandiveis |
-
-## Resultado esperado
-
-Apos a mudanca, o card do RDP mostrara todas as informacoes coletadas pelo nmap, incluindo versao do Windows, nome do servidor, dominio, nivel de criptografia e demais dados dos scripts NSE.
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Relaxar filtro de servicos e usar `name` como fallback no match de CVEs |
 
