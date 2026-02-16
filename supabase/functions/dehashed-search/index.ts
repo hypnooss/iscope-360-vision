@@ -38,7 +38,6 @@ async function decryptSecret(encryptedData: string): Promise<string> {
 }
 
 async function getApiKey(supabase: any): Promise<string | null> {
-  // Try system_settings first
   const { data: settings } = await supabase
     .from("system_settings")
     .select("key, value")
@@ -56,9 +55,50 @@ async function getApiKey(supabase: any): Promise<string | null> {
     }
   }
 
-  // Fallback to env var
   return Deno.env.get("HIBP_API_KEY") || null;
 }
+
+// ── Breach metadata & classification ──
+
+interface BreachMeta {
+  Name: string;
+  DataClasses: string[];
+  IsMalware: boolean;
+  IsSpamList: boolean;
+  IsFabricated: boolean;
+}
+
+type BreachType = "credential_leak" | "stealer_logs" | "scraping" | "combo_list";
+
+function classifyBreach(meta: BreachMeta): BreachType {
+  if (meta.IsSpamList || meta.IsFabricated) return "combo_list";
+  const hasPasswords = meta.DataClasses?.some(
+    (dc) => dc === "Passwords" || dc === "Password hints"
+  );
+  if (hasPasswords && meta.IsMalware) return "stealer_logs";
+  if (hasPasswords) return "credential_leak";
+  return "scraping";
+}
+
+async function fetchBreachesMetadata(): Promise<Map<string, BreachMeta>> {
+  const map = new Map<string, BreachMeta>();
+  try {
+    const res = await fetch("https://haveibeenpwned.com/api/v3/breaches", {
+      headers: { "User-Agent": "iScope-SecurityPlatform" },
+    });
+    if (res.ok) {
+      const breaches: BreachMeta[] = await res.json();
+      for (const b of breaches) map.set(b.Name, b);
+    } else {
+      console.warn(`[dehashed-search] Failed to fetch breaches metadata: ${res.status}`);
+    }
+  } catch (e) {
+    console.warn("[dehashed-search] Error fetching breaches metadata:", e);
+  }
+  return map;
+}
+
+// ── Main handler ──
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -76,7 +116,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify user
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -86,7 +125,6 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Check admin role
     const { data: roleData } = await supabase
       .from("user_roles")
       .select("role")
@@ -130,7 +168,6 @@ serve(async (req) => {
       }
     }
 
-    // Get HIBP API key
     const apiKey = await getApiKey(supabase);
     if (!apiKey) {
       return new Response(JSON.stringify({
@@ -141,7 +178,6 @@ serve(async (req) => {
 
     // Call HIBP API v3 - breached domain
     const searchUrl = `https://haveibeenpwned.com/api/v3/breacheddomain/${encodeURIComponent(domain)}`;
-
     console.log(`[dehashed-search] Querying HIBP for domain: ${domain}`);
 
     const response = await fetch(searchUrl, {
@@ -152,25 +188,16 @@ serve(async (req) => {
       },
     });
 
-    // HIBP returns 404 when no breaches found for domain
     if (response.status === 404) {
       console.log(`[dehashed-search] No breaches found for ${domain}`);
-
-      // Save empty result to cache
       await saveToCache(supabase, client_id, domain, 0, [], []);
-
-      // Audit log
       await logActivity(supabase, user.id, client_id, domain, 0, 0);
 
       return new Response(JSON.stringify({
         success: true,
         source: "api",
         data: {
-          client_id,
-          domain,
-          total_entries: 0,
-          entries: [],
-          databases: [],
+          client_id, domain, total_entries: 0, entries: [], databases: [],
           queried_at: new Date().toISOString(),
         },
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -185,16 +212,20 @@ serve(async (req) => {
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // HIBP response: { "alias1": ["Breach1", "Breach2"], "alias2": ["Breach3"] }
     const apiData: Record<string, string[]> = await response.json();
 
-    // Transform HIBP response into entries compatible with dehashed_cache
+    // Fetch breach metadata to classify each breach
+    const breachMetaMap = await fetchBreachesMetadata();
+
     const processedEntries: any[] = [];
     const breachSet = new Set<string>();
 
     for (const [alias, breaches] of Object.entries(apiData)) {
       for (const breach of breaches) {
         breachSet.add(breach);
+        const meta = breachMetaMap.get(breach);
+        const breachType = meta ? classifyBreach(meta) : "credential_leak";
+
         processedEntries.push({
           email: `${alias}@${domain}`,
           username: alias,
@@ -203,6 +234,7 @@ serve(async (req) => {
           hashed_password: "",
           hashed_password_raw: "",
           database_name: breach,
+          breach_type: breachType,
           ip_address: "",
           name: "",
           phone: "",
@@ -213,10 +245,7 @@ serve(async (req) => {
     const uniqueDatabases = Array.from(breachSet);
     const totalEntries = processedEntries.length;
 
-    // Save to cache
     await saveToCache(supabase, client_id, domain, totalEntries, processedEntries, uniqueDatabases);
-
-    // Audit log
     await logActivity(supabase, user.id, client_id, domain, totalEntries, uniqueDatabases.length);
 
     console.log(`[dehashed-search] HIBP found ${totalEntries} entries across ${uniqueDatabases.length} breaches for ${domain}`);
@@ -225,11 +254,8 @@ serve(async (req) => {
       success: true,
       source: "api",
       data: {
-        client_id,
-        domain,
-        total_entries: totalEntries,
-        entries: processedEntries,
-        databases: uniqueDatabases,
+        client_id, domain, total_entries: totalEntries,
+        entries: processedEntries, databases: uniqueDatabases,
         queried_at: new Date().toISOString(),
       },
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -242,63 +268,33 @@ serve(async (req) => {
 });
 
 async function saveToCache(
-  supabase: any,
-  client_id: string,
-  domain: string,
-  totalEntries: number,
-  entries: any[],
-  databases: string[]
+  supabase: any, client_id: string, domain: string,
+  totalEntries: number, entries: any[], databases: string[]
 ) {
   const { error: cacheError } = await supabase
     .from("dehashed_cache")
     .upsert({
-      client_id,
-      domain,
-      total_entries: totalEntries,
-      entries,
-      databases,
-      queried_at: new Date().toISOString(),
-    }, {
-      onConflict: "client_id,domain",
-      ignoreDuplicates: false,
-    });
+      client_id, domain, total_entries: totalEntries,
+      entries, databases, queried_at: new Date().toISOString(),
+    }, { onConflict: "client_id,domain", ignoreDuplicates: false });
 
   if (cacheError) {
     console.log("[dehashed-search] Upsert failed, doing insert:", cacheError.message);
-    await supabase
-      .from("dehashed_cache")
-      .delete()
-      .eq("client_id", client_id)
-      .eq("domain", domain);
-
-    await supabase
-      .from("dehashed_cache")
-      .insert({
-        client_id,
-        domain,
-        total_entries: totalEntries,
-        entries,
-        databases,
-        queried_at: new Date().toISOString(),
-      });
+    await supabase.from("dehashed_cache").delete().eq("client_id", client_id).eq("domain", domain);
+    await supabase.from("dehashed_cache").insert({
+      client_id, domain, total_entries: totalEntries,
+      entries, databases, queried_at: new Date().toISOString(),
+    });
   }
 }
 
 async function logActivity(
-  supabase: any,
-  userId: string,
-  clientId: string,
-  domain: string,
-  totalEntries: number,
-  databasesCount: number
+  supabase: any, userId: string, clientId: string,
+  domain: string, totalEntries: number, databasesCount: number
 ) {
   await supabase.from("admin_activity_logs").insert({
-    admin_id: userId,
-    action: "hibp_search",
-    action_type: "scan",
-    target_type: "domain",
-    target_id: clientId,
-    target_name: domain,
+    admin_id: userId, action: "hibp_search", action_type: "scan",
+    target_type: "domain", target_id: clientId, target_name: domain,
     details: { domain, total_entries: totalEntries, databases_count: databasesCount, source: "hibp" },
   });
 }
