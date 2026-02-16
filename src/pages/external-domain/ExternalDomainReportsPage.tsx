@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { Eye, Loader2, AlertTriangle, CheckCircle, Globe } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, TrendingUp, Shield } from 'lucide-react';
+import { ExternalDomainStatsCards } from '@/components/external-domain/ExternalDomainStatsCards';
 import { toast } from 'sonner';
 
 interface DomainReport {
@@ -56,6 +58,7 @@ export default function ExternalDomainReportsPage() {
   // Filter states
   const [selectedClient, setSelectedClient] = useState<string>('all');
   const [selectedDomain, setSelectedDomain] = useState<string>('all');
+  const [search, setSearch] = useState('');
   const [clients, setClients] = useState<FilterOption[]>([]);
   const [domains, setDomains] = useState<FilterOption[]>([]);
   
@@ -192,8 +195,29 @@ export default function ExternalDomainReportsPage() {
       );
     });
     
-    return Array.from(groups.values());
-  }, [filteredReports]);
+    const all = Array.from(groups.values());
+
+    // Apply search filter
+    if (!search.trim()) return all;
+    const q = search.toLowerCase();
+    return all.filter(g =>
+      g.domain_url.toLowerCase().includes(q) ||
+      g.domain_name.toLowerCase().includes(q) ||
+      g.client_name.toLowerCase().includes(q)
+    );
+  }, [filteredReports, search]);
+
+  // Stats cards data
+  const stats = useMemo(() => {
+    const total = groupedDomains.length;
+    const scores = groupedDomains
+      .map(g => g.analyses[0]?.score)
+      .filter((s): s is number => s != null);
+    const avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const critical = scores.filter(s => s < 50).length;
+    const failures = scores.filter(s => s < 30).length;
+    return { total, avg, critical, failures };
+  }, [groupedDomains]);
 
   // Initialize with most recent analysis for each domain
   useEffect(() => {
@@ -324,8 +348,25 @@ export default function ExternalDomainReportsPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-4">
+        {/* Stats Cards */}
+        <ExternalDomainStatsCards
+          totalDomains={stats.total}
+          averageScore={stats.avg}
+          criticalAlerts={stats.critical}
+          criticalFailures={stats.failures}
+        />
+
+        {/* Search + Filters */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Buscar domínio ou cliente..."
+              className="pl-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           {clients.length > 1 && (
             <Select value={selectedClient} onValueChange={setSelectedClient}>
               <SelectTrigger className="w-[200px]">
