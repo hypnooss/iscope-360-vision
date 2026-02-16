@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -29,7 +29,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot,
   useAttackSurfaceScan,
@@ -963,6 +963,18 @@ export default function AttackSurfaceAnalyzerPage() {
   const cancelMutation = useAttackSurfaceCancelScan(selectedClientId ?? undefined);
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
+
+  // Auto-refresh snapshot when rescan completes
+  const queryClient = useQueryClient();
+  const prevProgressStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const currentStatus = progress?.status ?? null;
+    if (currentStatus === 'completed' && prevProgressStatus.current && prevProgressStatus.current !== 'completed') {
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-latest', selectedClientId] });
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-snapshots', selectedClientId] });
+    }
+    prevProgressStatus.current = currentStatus;
+  }, [progress?.status, selectedClientId, queryClient]);
 
   const { data: cachedCVEs } = useQuery({
     queryKey: ['cve-cache', 'external_domain'],
