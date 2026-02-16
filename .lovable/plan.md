@@ -1,126 +1,78 @@
 
 
-# Exibir Informacao de ASN no Card de cada IP
-
-## Contexto
-
-O card do IP `www.taschibra.com.br` (191.252.123.34) mostra 16 portas abertas mas apenas 2 servicos. Sem contexto de ASN/provedor, nao fica claro o motivo da discrepancia (ex: hosting compartilhado com muitas portas de servico).
+# Botao "Testar" no Card do Attack Surface Analyzer
 
 ## O que muda
 
-Adicionar a informacao de ASN (numero + provedor) ao lado do IP no card do ativo, para que o usuario entenda imediatamente a infraestrutura por tras daquele IP.
-
-Exemplo visual no card:
-
-```text
-www.taschibra.com.br  191.252.123.34  AS27715 (unknown)
-```
-
-Quando o provedor for identificado (ex: Cloudflare), ficaria:
-
-```text
-cdn.exemplo.com  104.26.14.188  AS13335 (cloudflare)
-```
+Cada card de IP/ativo no Attack Surface Analyzer ganha um botao discreto "Testar" (visivel apenas para super_admin / super_suporte). Ao clicar, o sistema cria um snapshot + task apenas para aquele IP, permitindo re-scanear um ativo especifico sem executar o scan do workspace inteiro.
 
 ## Plano Tecnico
 
-### 1. Propagar dados de ASN para o snapshot (Edge Functions)
+### 1. Nova Edge Function: `attack-surface-rescan-ip`
 
-Os dados de ASN ja existem em `attack_surface_tasks.result.raw_steps.asn_classifier.data`, mas NAO sao copiados para `attack_surface_snapshots.results` durante a consolidacao.
+Cria uma edge function dedicada que recebe `client_id`, `ip`, `source` e `label`, e:
 
-**Arquivos:**
-- `supabase/functions/attack-surface-step-result/index.ts` (linhas ~82-92)
-- `supabase/functions/agent-task-result/index.ts` (logica equivalente)
-
-Adicionar ao objeto consolidado por IP:
+1. Cria um novo `attack_surface_snapshots` com `status: 'pending'` e `source_ips` contendo apenas o IP informado
+2. Cria uma unica `attack_surface_tasks` vinculada ao snapshot
+3. Retorna o `snapshot_id` criado
 
 ```typescript
-results[t.ip] = {
-  ports: r.ports || [],
-  services: r.services || [],
-  // ... campos existentes ...
-  asn: r.raw_steps?.asn_classifier?.data || null,  // NOVO
-}
+// supabase/functions/attack-surface-rescan-ip/index.ts
+// Body: { client_id, ip, source, label }
+// Cria snapshot + 1 task para o IP especifico
 ```
 
-O campo `asn` tera o formato: `{ asn: "AS27715", provider: "unknown", org: "", is_cdn: false }`
-
-### 2. Adicionar campo `asn` ao modelo `ExposedAsset`
-
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-Na interface `ExposedAsset` (linha ~345):
-
-```typescript
-interface ExposedAsset {
-  hostname: string;
-  ip: string;
-  asn: { asn: string; provider: string; org: string; is_cdn: boolean } | null;  // NOVO
-  // ... demais campos
-}
-```
-
-Na funcao `buildAssets` (linha ~430):
-
-```typescript
-assets.push({
-  hostname,
-  ip,
-  asn: result.asn || null,  // NOVO
-  // ... demais campos
-});
-```
-
-### 3. Exibir ASN no card
-
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` - funcao `AssetCard` (linha ~751-756)
-
-Apos o IP, adicionar o badge de ASN:
-
-```typescript
-{/* Row 1: hostname + IP + ASN + risk badge */}
-<div className="flex items-center gap-3 flex-wrap">
-  <span className="text-base font-semibold truncate">{asset.hostname}</span>
-  {asset.hostname !== asset.ip && (
-    <span className="text-sm text-muted-foreground font-mono">{asset.ip}</span>
-  )}
-  {asset.asn?.asn && (
-    <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
-      {asset.asn.asn}
-      {asset.asn.provider !== 'unknown' && ` (${asset.asn.provider})`}
-    </Badge>
-  )}
-  <Badge variant="outline" className={cn("text-[10px] ml-auto shrink-0", rc.badge)}>
-    {asset.riskLevel}
-  </Badge>
-</div>
-```
-
-O badge usara cor violeta para se distinguir das demais informacoes (laranja=portas, azul=servicos, verde=certificados).
-
-### 4. Tipo na interface de dados
+### 2. Hook de mutacao no frontend
 
 **Arquivo:** `src/hooks/useAttackSurfaceData.ts`
 
-Adicionar `asn` ao tipo `AttackSurfaceIPResult`:
+Adicionar um novo hook `useAttackSurfaceRescanIP` que:
+- Recebe `clientId`
+- Expoe `mutate({ ip, source, label })`
+- Invalida as queries de snapshot apos sucesso
+- Mostra toast de sucesso/erro
+
+### 3. Botao "Testar" no AssetCard
+
+**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+
+Na funcao `AssetCard`, adicionar um botao discreto ao lado do chevron (canto direito do card):
+
+- Visivel apenas quando `isSuperRole === true`
+- Botao `ghost` com icone `Play` e texto "Testar" em tamanho pequeno
+- Usa `e.stopPropagation()` para nao abrir/fechar o card ao clicar
+- Mostra `Loader2` durante o loading da mutacao
+
+Posicao: entre os badges de CVE e o chevron, no canto inferior direito do summary row.
+
+```text
++-----------------------------------------------------------------+
+| (globe) vpn.nexta.com.br  34.95.238.67  AS13335   [CRITICAL] > |
+|   6 portas . 9 servicos . Cert Valido . FortiSSH . HSTS        |
+|   5 Critical                                     [Testar]       |
++-----------------------------------------------------------------+
+```
+
+O botao recebe as props necessarias: `ip`, `source` (do `source_ips` do snapshot), `label` (hostname).
+
+### 4. Passar dados para o AssetCard
+
+Para que o botao tenha acesso ao `source` e `label`, o `ExposedAsset` precisa de um campo extra `source`:
 
 ```typescript
-export interface AttackSurfaceIPResult {
+interface ExposedAsset {
   // ... campos existentes ...
-  asn?: { asn: string; provider: string; org: string; is_cdn: boolean } | null;
+  source: 'dns' | 'firewall';  // NOVO - de onde veio o IP
 }
 ```
+
+Na funcao `buildAssets`, extrair o `source` do `source_ips` do snapshot.
 
 ## Arquivos modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/attack-surface-step-result/index.ts` | Propagar `asn` na consolidacao |
-| `supabase/functions/agent-task-result/index.ts` | Propagar `asn` na consolidacao |
-| `src/hooks/useAttackSurfaceData.ts` | Adicionar `asn` ao tipo `AttackSurfaceIPResult` |
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Adicionar `asn` a `ExposedAsset`, extrair em `buildAssets`, exibir no `AssetCard` |
-
-## Nota
-
-Snapshots ja finalizados NAO terao ASN nos resultados. Somente snapshots gerados apos o deploy das Edge Functions terao o campo. Na UI, o badge simplesmente nao aparece quando `asn` e null.
+| `supabase/functions/attack-surface-rescan-ip/index.ts` | Nova edge function (cria snapshot + task para 1 IP) |
+| `src/hooks/useAttackSurfaceData.ts` | Novo hook `useAttackSurfaceRescanIP` |
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Adicionar `source` ao `ExposedAsset`, botao "Testar" no `AssetCard` (apenas super roles) |
 
