@@ -1,43 +1,41 @@
 
 
-# Corrigir exibicao de interfaces Firewall no dialog de preview
+# Renomear task_type `firewall_analyzer` para `fortigate_analyzer`
 
-## Problema
+## Resumo
 
-A edge function `attack-surface-preview` possui uma verificacao de sobreposicao (overlap) na linha 255 que remove **todo o bloco de firewall** se qualquer um dos IPs expandidos ja existir na lista de DNS. No caso do cliente Taschibra:
-
-- DNS contem `177.200.196.230` (ida-fw.taschibra.com.br)
-- Firewall wan2 tem subnet `177.200.196.230/29`, que expande para IPs .225 a .230
-- Como `.230` ja esta no DNS, o firewall inteiro e descartado
-- wan1 tem IP `0.0.0.0` e e filtrada por ser invalida
-
-## Solucao
-
-Alterar a logica de deduplicacao para **remover apenas os IPs sobrepostos** do `expanded_ips` em vez de descartar a interface inteira. Se ainda restarem IPs apos a filtragem, a interface aparece normalmente.
+O tipo de tarefa `firewall_analyzer` sera renomeado para `fortigate_analyzer` para manter consistencia com o padrao existente (`fortigate_compliance`). A mudanca envolve o enum do banco de dados, a funcao RPC, edge functions e tipos do frontend.
 
 ## Detalhes tecnicos
 
-No arquivo `supabase/functions/attack-surface-preview/index.ts`, substituir o bloco de overlap (linhas 253-259):
+### 1. Migracao SQL
 
-**Antes:**
-```typescript
-const hasOverlap = ft.expanded_ips.some(eip => seenDNS.has(eip))
-if (!hasOverlap) {
-  firewallTargets.push(ft)
-}
-```
+Criar uma migracao que:
+- Adiciona o valor `fortigate_analyzer` ao enum `agent_task_type`
+- Atualiza todos os registros existentes de `firewall_analyzer` para `fortigate_analyzer`
+- Atualiza a funcao RPC `rpc_get_agent_tasks` para referenciar `fortigate_analyzer` no `CASE WHEN`
 
-**Depois:**
-```typescript
-const filteredIPs = ft.expanded_ips.filter(eip => !seenDNS.has(eip))
-if (filteredIPs.length > 0) {
-  firewallTargets.push({ ...ft, expanded_ips: filteredIPs })
-}
-```
+Nota: Nao e possivel remover valores de um enum PostgreSQL sem recriar o tipo, entao o valor antigo permanecera no enum mas nao sera mais utilizado.
 
-Isso mantem a deduplicacao (nao scannear IPs ja cobertos pelo DNS), mas preserva a visibilidade da interface com os IPs restantes.
+### 2. Edge Functions
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/attack-surface-preview/index.ts` | Corrigir logica de overlap para filtrar IPs individuais em vez de descartar interface inteira |
+| `supabase/functions/trigger-firewall-analyzer/index.ts` | Trocar todas as referencias `firewall_analyzer` por `fortigate_analyzer` (task_type em queries e insert) |
+| `supabase/functions/agent-task-result/index.ts` | Trocar comparacao `task.task_type === 'firewall_analyzer'` por `'fortigate_analyzer'` e logs |
+
+### 3. Frontend
+
+| Arquivo | Mudanca |
+|---|---|
+| `src/integrations/supabase/types.ts` | Adicionar `fortigate_analyzer` ao enum e manter `firewall_analyzer` para compatibilidade |
+
+### Arquivos a criar/modificar
+
+| Arquivo | Acao |
+|---|---|
+| `supabase/migrations/[timestamp].sql` | Criar - adicionar enum value + UPDATE registros + atualizar RPC |
+| `supabase/functions/trigger-firewall-analyzer/index.ts` | Modificar - 4 ocorrencias |
+| `supabase/functions/agent-task-result/index.ts` | Modificar - 5 ocorrencias |
+| `src/integrations/supabase/types.ts` | Modificar - adicionar novo valor ao enum |
 
