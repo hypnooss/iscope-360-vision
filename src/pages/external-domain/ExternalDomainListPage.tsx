@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
-import { Globe, Play, Trash2, Loader2, Pencil, Building2, Search, TrendingUp, AlertTriangle, Shield } from 'lucide-react';
+import { Globe, Play, Trash2, Loader2, Pencil, Building2, Search, TrendingUp, AlertTriangle, Shield, CheckCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -66,9 +66,9 @@ const FREQUENCY_COLORS: Record<string, string> = {
 
 const getScoreColor = (score: number | null) => {
   if (score === null) return 'bg-muted text-muted-foreground';
-  if (score >= 75) return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-  if (score >= 60) return 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
-  return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+  if (score >= 75) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+  if (score >= 50) return 'bg-warning/20 text-warning border-warning/30';
+  return 'bg-destructive/20 text-destructive border-destructive/30';
 };
 
 export default function ExternalDomainListPage() {
@@ -537,7 +537,14 @@ export default function ExternalDomainListPage() {
                         <TableCell>
                           {d.last_score !== null && d.last_score !== undefined ?
                         <Badge variant="outline" className={getScoreColor(d.last_score)}>
-                              {d.last_score}
+                              <span className="flex items-center gap-1">
+                                {d.last_score >= 75 ? (
+                                  <CheckCircle className="w-3 h-3" />
+                                ) : (
+                                  <AlertTriangle className="w-3 h-3" />
+                                )}
+                                {d.last_score}%
+                              </span>
                             </Badge> :
 
                         <span className="text-muted-foreground">—</span>

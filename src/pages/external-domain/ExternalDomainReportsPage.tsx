@@ -481,7 +481,7 @@ export default function ExternalDomainReportsPage() {
                   <TableRow>
                     <TableHead>Domínio</TableHead>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>Score</TableHead>
+                    <TableHead>Último Score</TableHead>
                     <TableHead>Status Execução</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
