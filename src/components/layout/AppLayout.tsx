@@ -127,9 +127,9 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-teal-500',
     items: [
       { label: 'Domínios Externos', href: '/scope-external-domain/domains', icon: Globe },
+      { label: 'Compliance', href: '/scope-external-domain/reports', icon: FileText },
       { label: 'Analyzer', href: '/scope-external-domain/analyzer', icon: Radar },
       { label: 'Execuções', href: '/scope-external-domain/executions', icon: Activity },
-      { label: 'Relatórios', href: '/scope-external-domain/reports', icon: FileText },
     ],
   },
   'scope_m365': {
