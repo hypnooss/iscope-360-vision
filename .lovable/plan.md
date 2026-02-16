@@ -1,26 +1,35 @@
 
 
-# Adicionar CVEs do IIS ao cache de vulnerabilidades
+# Corrigir product_filter do IIS para sincronizar CVEs
 
-## O que sera feito
+## Problema
 
-Inserir uma nova fonte de CVE na tabela `cve_sources` para o Microsoft IIS (Internet Information Services), seguindo o mesmo padrao das fontes existentes como Nginx, Apache HTTP Server, OpenSSH, etc.
+A fonte "Microsoft IIS" foi inserida com `product_filter: "internet_information_services"` (com underscores). Porem, a funcao `syncNistNvdWebSource` usa esse valor diretamente como `keywordSearch` na API do NIST NVD, que busca nas **descricoes textuais** dos CVEs. As descricoes usam "Internet Information Services" (com espacos), entao a busca exata com underscores retorna 0 resultados.
 
-## Detalhes
+Outras fontes como `nginx`, `openssh`, `php` funcionam porque sao palavras unicas sem espacos.
 
-A infraestrutura ja esta pronta -- o `refresh-cve-cache` suporta o tipo `nist_nvd_web` que busca CVEs no NIST NVD por keyword. Basta inserir um registro na tabela `cve_sources` com:
+## Solucao
 
-| Campo | Valor |
+Atualizar o registro na tabela `cve_sources` para usar espacos no `product_filter`:
+
+```sql
+UPDATE cve_sources 
+SET config = '{"product_filter": "Internet Information Services"}'
+WHERE source_label = 'Microsoft IIS';
+```
+
+Apos o update, basta clicar "Sincronizar" novamente na pagina de Fontes.
+
+## Detalhes tecnicos
+
+- O `product_filter` e passado para `fetchAllNvdPages(productFilter, { useExactMatch: true })` (linha 305-306)
+- Isso gera a URL: `keywordSearch=Internet Information Services&keywordExactMatch`
+- A API NVD retornara CVEs cujas descricoes contenham exatamente "Internet Information Services"
+- O codigo ja faz `.toLowerCase()` no filter (linha 294), mas isso nao afeta a busca na API NVD
+
+## Arquivo modificado
+
+| Arquivo | Mudanca |
 |---|---|
-| module_code | `external_domain` |
-| source_type | `nist_nvd_web` |
-| source_label | `Microsoft IIS` |
-| config | `{"product_filter": "internet_information_services"}` |
-| is_active | `true` |
-
-O `product_filter` usa o nome do produto no NVD CPE (`internet_information_services`), que e o termo oficial usado pela Microsoft no repositorio NIST para o IIS.
-
-## Nenhuma alteracao de codigo necessaria
-
-Nao ha alteracoes em arquivos do projeto. Apenas um INSERT na tabela `cve_sources`. Apos a insercao, basta clicar "Sincronizar" no painel de Fontes de CVE para popular o cache.
+| Nova migration SQL | UPDATE do config na tabela cve_sources para usar espacos em vez de underscores |
 
