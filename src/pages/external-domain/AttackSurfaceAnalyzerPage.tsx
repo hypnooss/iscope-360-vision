@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
@@ -490,6 +491,45 @@ cachedCVEs?: CachedCVERecord[])
     if (svcDiff !== 0) return svcDiff;
     return b.ports.length - a.ports.length;
   });
+}
+
+/* ──────────────── Empty Assets Summary ──────────────── */
+
+function EmptyAssetsSummary({ assets }: { assets: ExposedAsset[] }) {
+  const [open, setOpen] = useState(false);
+  if (assets.length === 0) return null;
+  return (
+    <Card className="glass-card border-muted/30">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0" />
+          <span className="text-sm font-medium text-foreground">
+            {assets.length} {assets.length === 1 ? 'ativo' : 'ativos'} sem exposição detectada
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground ml-7 mb-2">
+          Nenhuma porta aberta ou serviço identificado.
+        </p>
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleTrigger asChild>
+            <button className="ml-7 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+              {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              {open ? 'Ocultar lista' : 'Ver lista'}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="ml-7 mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5">
+              {assets.map((a) => (
+                <span key={a.ip} className="text-xs text-muted-foreground truncate">
+                  {a.hostname !== a.ip ? `${a.hostname} (${a.ip})` : a.ip}
+                </span>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </CardContent>
+    </Card>
+  );
 }
 
 /* ──────────────────────────── Stat Card ──────────────────────────── */
@@ -1195,7 +1235,7 @@ export default function AttackSurfaceAnalyzerPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('risk');
 
-  const filteredAssets = useMemo(() => {
+  const { activeAssets: filteredAssets, emptyAssets: filteredEmptyAssets } = useMemo(() => {
     let list = assets;
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -1205,20 +1245,32 @@ export default function AttackSurfaceAnalyzerPage() {
       a.allTechs.some((t) => t.toLowerCase().includes(q))
       );
     }
-    const sorted = [...list];
+
+    // Separate assets with no ports AND no services
+    const active: ExposedAsset[] = [];
+    const empty: ExposedAsset[] = [];
+    for (const a of list) {
+      if (a.ports.length === 0 && a.services.length === 0 && a.webServices.length === 0) {
+        empty.push(a);
+      } else {
+        active.push(a);
+      }
+    }
+
+    const sorted = [...active];
     switch (sortMode) {
-      case 'risk':return sorted.sort((a, b) => {
+      case 'risk':sorted.sort((a, b) => {
           const sevDiff = maxCVESeverityRank(b) - maxCVESeverityRank(a);
           if (sevDiff !== 0) return sevDiff;
           const svcDiff = b.services.length + b.webServices.length - (a.services.length + a.webServices.length);
           if (svcDiff !== 0) return svcDiff;
           return b.ports.length - a.ports.length;
-        });
-      case 'cves':return sorted.sort((a, b) => b.cves.length - a.cves.length);
-      case 'ports':return sorted.sort((a, b) => b.ports.length - a.ports.length);
-      case 'alpha':return sorted.sort((a, b) => a.hostname.localeCompare(b.hostname));
-      default:return sorted;
+        }); break;
+      case 'cves':sorted.sort((a, b) => b.cves.length - a.cves.length); break;
+      case 'ports':sorted.sort((a, b) => b.ports.length - a.ports.length); break;
+      case 'alpha':sorted.sort((a, b) => a.hostname.localeCompare(b.hostname)); break;
     }
+    return { activeAssets: sorted, emptyAssets: empty };
   }, [assets, searchTerm, sortMode]);
 
   // Executive stats
@@ -1369,9 +1421,10 @@ export default function AttackSurfaceAnalyzerPage() {
               isRescanning={rescanMutation.isPending} />
 
             )}
-              {filteredAssets.length === 0 && searchTerm &&
+            {filteredAssets.length === 0 && searchTerm &&
             <p className="text-center text-muted-foreground py-8">Nenhum ativo encontrado para "{searchTerm}"</p>
             }
+              <EmptyAssetsSummary assets={filteredEmptyAssets} />
             </div>
           }
 
