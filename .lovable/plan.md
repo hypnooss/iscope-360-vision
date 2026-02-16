@@ -1,94 +1,63 @@
 
 
-# Corrigir exibicao de dados parciais durante scan em andamento
+# Unificar indicador de atualização no card "Scan em andamento"
 
-## Problema
+## Objetivo
 
-O hook `useRunningAttackSurfaceSnapshot` busca o snapshot com status `running`, mas esse snapshot tem `results: {}` (vazio). Os resultados parciais de cada IP ficam armazenados na tabela `attack_surface_tasks` (campo `result`), e so sao consolidados no campo `results` do snapshot quando o scan inteiro termina. Por isso, mesmo com 10+ IPs ja processados, a pagina mostra "Nenhum dado disponivel".
+Remover o botão separado "Atualizando..." do header e integrar a funcionalidade de refresh manual diretamente no card de progresso "Scan em andamento" que já existe. Assim o usuário tem um único elemento visual durante o scan.
 
-## Solucao
+## Mudancas
 
-Modificar o hook `useRunningAttackSurfaceSnapshot` para, alem de buscar o snapshot running, tambem buscar os resultados parciais da tabela `attack_surface_tasks` e montar um snapshot virtual com esses dados.
+### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-## Detalhes tecnicos
+**1. Remover o botão "Atualizando..."** (linhas 1267-1278)
 
-### Arquivo a modificar
-
-`src/hooks/useAttackSurfaceData.ts`
-
-### Mudanca no `useRunningAttackSurfaceSnapshot`
-
-Apos buscar o snapshot running, fazer uma segunda query para buscar as tasks completadas desse snapshot e montar o campo `results` a partir delas:
-
-```typescript
-export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = true) {
-  return useQuery({
-    queryKey: ['attack-surface-running', clientId],
-    queryFn: async () => {
-      if (!clientId) return null;
-
-      // 1. Buscar snapshot running/pending
-      const { data, error } = await (supabase
-        .from('attack_surface_snapshots' as any)
-        .select('*')
-        .eq('client_id', clientId)
-        .in('status', ['pending', 'running'])
-        .order('created_at', { ascending: false })
-        .limit(1) as any);
-      if (error) throw error;
-      const rows = (data as any[]) || [];
-      if (rows.length === 0) return null;
-
-      const snap = parseSnapshot(rows[0] as Record<string, unknown>);
-
-      // 2. Buscar resultados parciais das tasks completadas
-      const { data: tasks, error: tasksError } = await (supabase
-        .from('attack_surface_tasks')
-        .select('ip, source, label, result')
-        .eq('snapshot_id', snap.id)
-        .eq('status', 'completed')
-        .not('result', 'is', null) as any);
-
-      if (!tasksError && tasks && tasks.length > 0) {
-        const partialResults: Record<string, any> = {};
-        for (const task of tasks as any[]) {
-          if (task.ip && task.result) {
-            partialResults[task.ip] = task.result;
-          }
-        }
-        // Montar source_ips a partir das tasks se o snapshot nao tiver
-        if (!snap.source_ips || snap.source_ips.length === 0) {
-          snap.source_ips = (tasks as any[]).map((t: any) => ({
-            ip: t.ip,
-            source: t.source || 'dns',
-            label: t.label || t.ip,
-          }));
-        }
-        snap.results = partialResults;
-      }
-
-      return snap;
-    },
-    enabled: !!clientId && enabled,
-    refetchInterval: 15000,
-    staleTime: 10000,
-  });
-}
+Eliminar completamente o bloco:
+```tsx
+{isRunning && (
+  <Button size="sm" variant="outline" ...>
+    <Loader2 ... /> Atualizando...
+  </Button>
+)}
 ```
 
-### Como funciona
+**2. Adicionar botão de refresh no card de progresso** (linhas 1283-1296)
 
-1. Busca o snapshot com status `pending` ou `running` (como antes)
-2. Usa o `snapshot.id` para buscar na tabela `attack_surface_tasks` todas as tasks com `status = 'completed'` e `result IS NOT NULL`
-3. Monta o mapa `results` (chave = IP, valor = resultado do nmap/httpx) a partir dos dados das tasks
-4. Tambem reconstroi `source_ips` a partir das tasks caso o snapshot nao tenha esse dado preenchido
-5. Retorna o snapshot enriquecido com os dados parciais
+Dentro do card "Scan em andamento", adicionar um botão pequeno de refresh ao lado do texto de progresso. O card passa a ser:
 
-Assim, a cada 15 segundos o hook refaz a query, pega mais IPs concluidos e a interface exibe os novos assets progressivamente.
+```tsx
+{isRunning && progress && (
+  <Card className="glass-card border-teal-500/30">
+    <CardContent className="p-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
+        <span className="text-sm font-medium">Scan em andamento...</span>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-muted-foreground">
+            {progress.done} de {progress.total} IPs processados
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs text-teal-400 hover:text-teal-300"
+            onClick={() => refetchRunning()}
+            disabled={isRefetchingRunning}
+          >
+            <Loader2 className={cn("w-3 h-3", isRefetchingRunning && "animate-spin")} />
+            Atualizar
+          </Button>
+        </div>
+      </div>
+      <Progress value={progress.percent} className="h-2" />
+    </CardContent>
+  </Card>
+)}
+```
 
-### Arquivos
+O icone de loading so gira quando `isRefetchingRunning` esta ativo, dando feedback visual claro ao usuario.
+
+## Resumo
 
 | Arquivo | Acao |
 |---|---|
-| `src/hooks/useAttackSurfaceData.ts` | Modificar `useRunningAttackSurfaceSnapshot` para buscar resultados parciais de `attack_surface_tasks` |
-
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Remover botao "Atualizando" do header; adicionar botao "Atualizar" dentro do card de progresso |
