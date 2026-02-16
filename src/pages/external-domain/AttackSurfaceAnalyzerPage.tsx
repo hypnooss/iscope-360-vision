@@ -889,8 +889,8 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: { asset: Expo
                isLast={!hasCerts}
              >
                <div className="space-y-2">
-                 {asset.services.filter(s => s.product).map((svc, i) => (
-                   <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product, asset.cves)} />
+                  {asset.services.filter(s => s.product || s.name || (s.scripts && Object.keys(s.scripts).length > 0)).map((svc, i) => (
+                    <NmapServiceRow key={`svc-${i}`} svc={svc} cves={matchCVEsToService(svc.product || svc.name || '', asset.cves)} />
                  ))}
                  {asset.webServices.map((ws, i) => {
                    const names: string[] = [];
