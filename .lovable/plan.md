@@ -1,63 +1,52 @@
 
 
-# Unificar indicador de atualização no card "Scan em andamento"
+# Corrigir alternancia de dados durante scan em andamento
 
-## Objetivo
+## Problema
 
-Remover o botão separado "Atualizando..." do header e integrar a funcionalidade de refresh manual diretamente no card de progresso "Scan em andamento" que já existe. Assim o usuário tem um único elemento visual durante o scan.
+Quando o scan esta rodando, o `activeSnapshot` alterna entre o snapshot running (que pode ter `results` vazio no inicio) e o snapshot completo anterior. Isso faz com que a pagina as vezes mostre dados (print 2) e as vezes mostre "Nenhum dado disponivel" (print 1).
 
-## Mudancas
+A logica atual e:
+```
+const activeSnapshot = isRunning && runningSnapshot ? runningSnapshot : snapshot;
+```
+
+Quando `runningSnapshot` existe mas ainda nao tem tasks completadas, ele tem `results: {}` -- e os stats mostram tudo zero.
+
+## Solucao
+
+Mudar a logica para so usar o `runningSnapshot` quando ele tiver resultados parciais. Se nao tiver, manter o ultimo snapshot completo como visivel:
+
+```typescript
+const hasPartialResults = runningSnapshot && Object.keys(runningSnapshot.results || {}).length > 0;
+const activeSnapshot = isRunning && hasPartialResults ? runningSnapshot : snapshot;
+```
+
+Assim:
+- No inicio do scan (0 tasks completas): mostra dados do ultimo scan completo
+- Assim que o primeiro IP termina: troca para os dados parciais do scan em andamento
+- Apos conclusao: volta para o snapshot completo atualizado
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-**1. Remover o botão "Atualizando..."** (linhas 1267-1278)
+Modificar a linha 1170:
 
-Eliminar completamente o bloco:
-```tsx
-{isRunning && (
-  <Button size="sm" variant="outline" ...>
-    <Loader2 ... /> Atualizando...
-  </Button>
-)}
+**De:**
+```typescript
+const activeSnapshot = isRunning && runningSnapshot ? runningSnapshot : snapshot;
 ```
 
-**2. Adicionar botão de refresh no card de progresso** (linhas 1283-1296)
-
-Dentro do card "Scan em andamento", adicionar um botão pequeno de refresh ao lado do texto de progresso. O card passa a ser:
-
-```tsx
-{isRunning && progress && (
-  <Card className="glass-card border-teal-500/30">
-    <CardContent className="p-4">
-      <div className="flex items-center gap-3 mb-2">
-        <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
-        <span className="text-sm font-medium">Scan em andamento...</span>
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-xs text-muted-foreground">
-            {progress.done} de {progress.total} IPs processados
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs text-teal-400 hover:text-teal-300"
-            onClick={() => refetchRunning()}
-            disabled={isRefetchingRunning}
-          >
-            <Loader2 className={cn("w-3 h-3", isRefetchingRunning && "animate-spin")} />
-            Atualizar
-          </Button>
-        </div>
-      </div>
-      <Progress value={progress.percent} className="h-2" />
-    </CardContent>
-  </Card>
-)}
+**Para:**
+```typescript
+const hasPartialResults = runningSnapshot && Object.keys(runningSnapshot.results || {}).length > 0;
+const activeSnapshot = isRunning && hasPartialResults ? runningSnapshot : snapshot;
 ```
 
-O icone de loading so gira quando `isRefetchingRunning` esta ativo, dando feedback visual claro ao usuario.
-
-## Resumo
+### Arquivo unico
 
 | Arquivo | Acao |
 |---|---|
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Remover botao "Atualizando" do header; adicionar botao "Atualizar" dentro do card de progresso |
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Ajustar condicao do `activeSnapshot` para verificar se ha resultados parciais |
+
