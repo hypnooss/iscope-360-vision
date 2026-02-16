@@ -40,6 +40,7 @@ export interface AttackSurfaceIPResult {
   vulns: string[];
   os: string;
   hostnames: string[];
+  asn?: { asn: string; provider: string; org: string; is_cdn: boolean } | null;
   error?: string;
 }
 
