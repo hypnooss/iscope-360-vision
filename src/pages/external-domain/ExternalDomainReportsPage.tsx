@@ -313,13 +313,15 @@ export default function ExternalDomainReportsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
-          { label: 'Relatórios' },
+          { label: 'Compliance' },
         ]} />
         
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
-          <p className="text-muted-foreground">Histórico de análises de compliance</p>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Compliance</h1>
+            <p className="text-muted-foreground">Histórico de análises de compliance</p>
+          </div>
         </div>
 
         {/* Filters */}
