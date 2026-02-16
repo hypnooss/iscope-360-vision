@@ -1,29 +1,52 @@
 
+# Adicionar tipo de breach (Scraping vs Credential Leak) na tabela HIBP
 
-# Tornar o botao de nova consulta HIBP mais visivel
+## Resumo
 
-## Problema
+A API do HIBP no endpoint `/breacheddomain` retorna apenas o mapeamento `alias -> [breach_names]`, sem metadados sobre o tipo de breach. Para saber se um breach e do tipo "scraping" ou "credential leak", precisamos consultar o endpoint `/breaches` da HIBP, que retorna metadados como `DataClasses` (tipos de dados expostos) e `IsFabricated`, `IsSpamList`, `IsSensitive`, etc.
 
-Quando ja existem dados na secao de Credenciais Vazadas, o unico botao disponivel e o "Atualizar", que nao deixa claro que ele abre o modal de selecao de dominios para uma nova consulta HIBP. O usuario espera um botao explicito como "Consultar HIBP".
+## Alteracoes
 
-## Solucao
+### 1. Edge Function: buscar metadados dos breaches (dehashed-search/index.ts)
 
-Adicionar um botao "Consultar HIBP" mais proeminente ao lado do botao "Atualizar" na area de acoes, quando ja existem dados.
+Apos obter a lista de breaches do `/breacheddomain`, fazer uma chamada adicional ao endpoint publico `https://haveibeenpwned.com/api/v3/breaches` (nao requer API key) para obter metadados de todos os breaches. Cruzar os nomes para enriquecer cada entrada com:
 
-## Alteracao
+- `breach_type`: classificacao derivada dos `DataClasses` do breach:
+  - **"credential_leak"** se contem "Passwords" ou "Password hints"
+  - **"stealer_logs"** se contem "Passwords" E o breach tem `IsMalware: true`
+  - **"scraping"** se nao contem senhas (apenas emails, nomes, telefones, etc)
+  - **"combo_list"** se `IsSpamList: true` ou `IsFabricated: true`
 
-**Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
+- Incluir `breach_type` em cada entrada do array `entries` salvo no cache
 
-Na secao de acoes (linhas 434-467), onde atualmente so aparece o campo de busca e o botao "Atualizar":
+### 2. Frontend: coluna "Tipo" na tabela (LeakedCredentialsSection.tsx)
 
-- Adicionar um botao **"Consultar HIBP"** (com icone Search) que abre o modal de selecao de dominios
-- Manter o botao "Atualizar" como esta, para quem ja conhece o fluxo
-- Ambos os botoes abrem o mesmo modal de selecao de dominios
+Adicionar uma coluna **"Tipo"** na tabela de resultados, entre "Breach" e o final:
 
-O resultado visual sera:
+- **Credential Leak**: Badge vermelha com icone Key
+- **Stealer Logs**: Badge vermelha escura com icone Bug
+- **Scraping**: Badge amarela com icone Globe
+- **Combo List**: Badge laranja com icone List
 
+Isso da contexto imediato ao usuario sobre a gravidade de cada entrada.
+
+### 3. Cache retrocompativel
+
+Entradas antigas no cache que nao possuem `breach_type` serao exibidas como "Desconhecido" com badge cinza, ate que uma nova consulta enriqueca os dados.
+
+## Detalhes tecnicos
+
+**Endpoint publico HIBP**: `GET https://haveibeenpwned.com/api/v3/breaches` retorna array com todos os breaches conhecidos. E publico (sem API key), mas faremos cache local em memoria durante a execucao da function para nao repetir chamadas.
+
+**Mapeamento de tipo**: Criar funcao `classifyBreach(breach)` na edge function que analisa `DataClasses`, `IsMalware`, `IsSpamList`, `IsFabricated` para retornar o tipo.
+
+**Estrutura da entrada enriquecida**:
 ```text
-[Campo de busca]  [Consultar HIBP]  [Atualizar]  Ultima consulta: hoje
+{
+  email: "user@domain.com",
+  username: "user",
+  database_name: "Speedio",
+  breach_type: "scraping",   // novo campo
+  ...
+}
 ```
-
-Isso torna obvio que o usuario pode iniciar uma nova consulta a qualquer momento.
