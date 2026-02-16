@@ -366,10 +366,9 @@ export default function ExternalDomainReportsPage() {
             <p className="text-muted-foreground">Histórico de análises de compliance</p>
           </div>
           {isSuperRole && workspaces.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
               <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Todos os workspaces" />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,7 +377,6 @@ export default function ExternalDomainReportsPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
           )}
         </div>
 

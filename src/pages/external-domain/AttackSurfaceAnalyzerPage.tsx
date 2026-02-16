@@ -497,9 +497,7 @@ function StatCard({ icon: Icon, label, value, iconClass }: {icon: React.ElementT
   return (
     <Card className="glass-card">
       <CardContent className="p-4 flex items-center gap-3">
-        <div className={cn("p-2 rounded-lg bg-muted/50", iconClass)}>
-          <Icon className="w-5 h-5" />
-        </div>
+        <Icon className={cn("w-8 h-8", iconClass)} />
         <div>
           <p className="text-2xl font-bold">{value}</p>
           <p className="text-xs text-muted-foreground">{label}</p>

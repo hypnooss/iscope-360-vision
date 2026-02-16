@@ -415,12 +415,10 @@ export default function ExternalDomainListPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Globe className="w-5 h-5 text-primary" />
-                </div>
+                <Globe className="w-8 h-8 text-primary" />
                 <div>
                   <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.total}</p>
                   <p className="text-xs text-muted-foreground">Domínios</p>
@@ -428,12 +426,10 @@ export default function ExternalDomainListPage() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${stats.avg >= 75 ? 'bg-emerald-500/10' : stats.avg >= 60 ? 'bg-yellow-500/10' : 'bg-rose-500/10'}`}>
-                  <TrendingUp className={`w-5 h-5 ${stats.avg >= 75 ? 'text-emerald-400' : stats.avg >= 60 ? 'text-yellow-400' : 'text-rose-400'}`} />
-                </div>
+                <TrendingUp className={`w-8 h-8 ${stats.avg >= 75 ? 'text-emerald-400' : stats.avg >= 60 ? 'text-yellow-400' : 'text-rose-400'}`} />
                 <div>
                   <p className="text-2xl font-bold text-foreground">{loading ? '—' : `${stats.avg}%`}</p>
                   <p className="text-xs text-muted-foreground">Score Médio</p>
@@ -441,12 +437,10 @@ export default function ExternalDomainListPage() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-500/10">
-                  <AlertTriangle className="w-5 h-5 text-amber-400" />
-                </div>
+                <AlertTriangle className="w-8 h-8 text-amber-400" />
                 <div>
                   <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.critical}</p>
                   <p className="text-xs text-muted-foreground">Alertas Críticos</p>
@@ -454,12 +448,10 @@ export default function ExternalDomainListPage() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-rose-500/10">
-                  <Shield className="w-5 h-5 text-rose-400" />
-                </div>
+                <Shield className="w-8 h-8 text-rose-400" />
                 <div>
                   <p className="text-2xl font-bold text-foreground">{loading ? '—' : stats.failures}</p>
                   <p className="text-xs text-muted-foreground">Falhas Críticas</p>

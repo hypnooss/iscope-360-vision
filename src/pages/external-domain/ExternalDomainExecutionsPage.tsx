@@ -581,52 +581,47 @@ export default function ExternalDomainExecutionsPage() {
         </div>
 
         {/* Filters */}
-        <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por domínio ou agente..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10" />
-
-                </div>
-              </div>
-              <Select value={timeFilter} onValueChange={setTimeFilter}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="Período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1h">Última hora</SelectItem>
-                  <SelectItem value="6h">Últimas 6 horas</SelectItem>
-                  <SelectItem value="12h">Últimas 12 horas</SelectItem>
-                  <SelectItem value="24h">Últimas 24 horas</SelectItem>
-                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="pending">Pendentes</SelectItem>
-                  <SelectItem value="running">Executando</SelectItem>
-                  <SelectItem value="completed">Concluídas</SelectItem>
-                  <SelectItem value="failed">Falhas</SelectItem>
-                  <SelectItem value="timeout">Timeout</SelectItem>
-                  <SelectItem value="cancelled">Canceladas</SelectItem>
-                </SelectContent>
-              </Select>
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por domínio ou agente..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10" />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <Select value={timeFilter} onValueChange={setTimeFilter}>
+            <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1h">Última hora</SelectItem>
+              <SelectItem value="6h">Últimas 6 horas</SelectItem>
+              <SelectItem value="12h">Últimas 12 horas</SelectItem>
+              <SelectItem value="24h">Últimas 24 horas</SelectItem>
+              <SelectItem value="7d">Últimos 7 dias</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="pending">Pendentes</SelectItem>
+              <SelectItem value="running">Executando</SelectItem>
+              <SelectItem value="completed">Concluídas</SelectItem>
+              <SelectItem value="failed">Falhas</SelectItem>
+              <SelectItem value="timeout">Timeout</SelectItem>
+              <SelectItem value="cancelled">Canceladas</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Unified Table */}
-        <Card className="glass-card">
+        <Card>
           <CardContent className="p-0">
             {isLoading ?
             <div className="flex items-center justify-center py-12">
