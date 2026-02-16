@@ -1,32 +1,55 @@
 
 
-# Padronizar header do Surface Analyzer
+# Renomear menu "Relatórios" para "Compliance" e padronizar a tela
 
-## Diferencas encontradas
+## 1. Renomear e reordenar o menu
 
-Comparando o Analyzer com as paginas de referencia (Dominios Externos e Firewalls):
+No arquivo `src/components/layout/AppLayout.tsx`, a lista de itens do modulo External Domain sera alterada de:
 
-| Aspecto | Analyzer (atual) | Padrao (referencia) |
-|---|---|---|
-| Wrapper do header | `flex items-center justify-between` | `flex flex-col md:flex-row md:items-center md:justify-between gap-4` |
-| Botoes | `size="sm"` | sem `size` (tamanho default) |
-| Select width | `w-[220px]` | `w-[220px]` (ja esta igual) |
+```
+Dominios Externos, Analyzer, Execucoes, Relatorios
+```
 
-O Select ja esta no padrao. As diferencas reais sao:
-1. O wrapper nao tem responsividade (`flex-col md:flex-row`) nem `gap-4`
-2. Os botoes usam `size="sm"` enquanto o padrao usa tamanho default
+Para:
 
-## Mudancas
+```
+Dominios Externos, Compliance, Analyzer, Execucoes
+```
 
-### Arquivo: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+## 2. Padronizar o header da tela
 
-**1. Linha 1232 - Wrapper do header**
-De: `flex items-center justify-between`
-Para: `flex flex-col md:flex-row md:items-center md:justify-between gap-4`
+No arquivo `src/pages/external-domain/ExternalDomainReportsPage.tsx`:
 
-**2. Linha 1252 - Botao "Executar Analise"**
-Remover `size="sm"`
+- **Breadcrumb**: Alterar o label de "Relatorios" para "Compliance"
+- **Titulo**: Alterar de "Relatorios" para "Compliance"
+- **Subtitulo**: Manter "Historico de analises de compliance" (ja esta adequado)
+- **Wrapper do header**: O header atual (linha 320) usa apenas `<div>`. Sera alterado para `<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">` para seguir o padrao das outras telas
 
-**3. Linha 1258 - Botao "Cancelar Analise"**
-Remover `size="sm"`
+## Detalhes tecnicos
+
+### Arquivo: `src/components/layout/AppLayout.tsx` (linhas 129-132)
+
+Reordenar os itens do submenu:
+
+```
+{ label: 'Dominios Externos', href: '/scope-external-domain/domains', icon: Globe },
+{ label: 'Compliance', href: '/scope-external-domain/reports', icon: FileText },
+{ label: 'Analyzer', href: '/scope-external-domain/analyzer', icon: Radar },
+{ label: 'Execucoes', href: '/scope-external-domain/executions', icon: Activity },
+```
+
+### Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
+
+**Breadcrumb (linha 316)**: "Relatorios" para "Compliance"
+
+**Header (linhas 320-323)**: Alterar o titulo para "Compliance" e adicionar classes responsivas ao wrapper:
+
+```
+<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+  <div>
+    <h1 className="text-2xl font-bold text-foreground">Compliance</h1>
+    <p className="text-muted-foreground">Historico de analises de compliance</p>
+  </div>
+</div>
+```
 
