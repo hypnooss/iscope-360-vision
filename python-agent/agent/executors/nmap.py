@@ -74,7 +74,7 @@ class NmapExecutor(BaseExecutor):
 
         # Primary scan: optimized for speed (ports already confirmed open)
         cmd = [
-            'nmap', '-sT', '-sV',
+            'nmap', '-sT', '-Pn', '-sV',
             '--version-intensity', '5',
             '--script=banner,ssl-cert',
             f'-p{port_str}',
@@ -109,7 +109,7 @@ class NmapExecutor(BaseExecutor):
                     f"Retrying with lighter scan..."
                 )
                 cmd_fallback = [
-                    'nmap', '-sT', '-sV',
+                    'nmap', '-sT', '-Pn', '-sV',
                     '--version-intensity', '3',
                     '--script=banner',
                     f'-p{port_str}',
@@ -199,7 +199,7 @@ class NmapExecutor(BaseExecutor):
         )
 
         cmd = [
-            'nmap', '-sT',
+            'nmap', '-sT', '-Pn',
             f'--script={script_str}',
             f'-p{port_str}',
             ip,
