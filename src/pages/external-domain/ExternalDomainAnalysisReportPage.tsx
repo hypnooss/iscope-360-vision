@@ -600,7 +600,7 @@ export default function ExternalDomainAnalysisReportPage() {
         <div className="p-6 lg:p-8">
           <PageBreadcrumb
             items={[
-              { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
+              { label: 'Domínio Externo' },
               { label: 'Relatórios', href: '/scope-external-domain/reports' },
               { label: domain?.name || 'Relatório' },
             ]}
@@ -629,7 +629,7 @@ export default function ExternalDomainAnalysisReportPage() {
       <div className="p-6 lg:p-8">
         <PageBreadcrumb
           items={[
-            { label: 'Domínio Externo', href: '/scope-external-domain/domains' },
+            { label: 'Domínio Externo' },
             { label: 'Relatórios', href: '/scope-external-domain/reports' },
             { label: domain?.name || 'Relatório' },
           ]}

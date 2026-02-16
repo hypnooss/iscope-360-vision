@@ -39,7 +39,7 @@ export function PageBreadcrumb({ items }: PageBreadcrumbProps) {
                     </Link>
                   </BreadcrumbLink>
                 ) : (
-                  <span className="text-muted-foreground">{item.label}</span>
+                  <span className="text-muted-foreground hover:text-primary transition-colors cursor-default">{item.label}</span>
                 )}
               </BreadcrumbItem>
               {!isLast && <BreadcrumbSeparator />}
