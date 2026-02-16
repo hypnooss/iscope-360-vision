@@ -1,62 +1,42 @@
 
 
-# Padronizar tela Compliance com as outras telas de Dominio Externo
+# Adicionar Stats Cards e Campo de Busca na tela Compliance
 
-## Diferencas identificadas
+## O que sera feito
 
-Comparando a tela Compliance com Dominios Externos, Analyzer e Execucoes:
+Alinhar a tela Compliance com o padrao visual da tela Dominios Externos, adicionando os dois elementos que faltam:
 
-| Aspecto | Compliance (atual) | Padrao (referencia) |
+### 1. Stats Cards
+
+Adicionar uma grade de 4 cards de metricas entre o header e os filtros, calculados a partir dos dados ja carregados:
+
+| Card | Icone | Metrica |
 |---|---|---|
-| Card da tabela | Usa `CardHeader` com `CardTitle` e `CardDescription` | Usa apenas `Card > CardContent className="p-0"` sem header |
-| Classe do card | `glass-card` | Dominios Externos usa `Card` sem glass-card; Execucoes usa `glass-card` |
-| Filtros | Standalone com icone `Filter` separado | Dominios Externos: search bar standalone; Execucoes: filtros dentro de um Card |
-| Estado vazio | Dentro do CardContent com texto | Padrao: dentro do CardContent com icone + texto centralizado |
-| Loading | Loader dentro do CardContent | Padrao igual |
+| Dominios | Globe | Total de dominios unicos com analises |
+| Score Medio | TrendingUp | Media dos scores mais recentes por dominio |
+| Alertas Criticos | AlertTriangle | Dominios com score abaixo de 50 |
+| Falhas Criticas | Shield | Dominios com score abaixo de 30 |
 
-## Mudancas propostas
+Estilo identico ao da tela Dominios Externos: `Card > CardContent className="p-4"` com icone colorido e texto.
+
+### 2. Campo de Busca
+
+Adicionar um `Input` com icone `Search` antes dos filtros Select, permitindo buscar por nome de dominio ou cliente. Seguindo o padrao: `relative flex-1 max-w-sm` com icone posicionado a esquerda.
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
 
-**1. Remover CardHeader/CardTitle/CardDescription da tabela**
+**Imports a adicionar**: `Input`, `Search`, `TrendingUp`, `Shield` (os demais ja existem ou serao usados dos imports atuais).
 
-O card da tabela passara a usar apenas `Card > CardContent className="p-0"`, sem o header com titulo e descricao (seguindo o padrao de Dominios Externos).
+**Stats (useMemo)**: Calcular `total`, `avg`, `critical`, `failures` a partir de `groupedDomains`, usando o score da analise mais recente de cada dominio.
 
-**2. Mover os filtros para o padrao**
+**Busca (useState + useMemo)**: Adicionar estado `search` e filtrar `groupedDomains` por `domain_url` ou `client_name`.
 
-Os filtros de cliente e dominio serao mantidos como estao (standalone), pois a tela de Dominios Externos tambem usa filtros standalone. Apenas remover o icone `Filter` avulso para simplificar.
-
-**3. Ajustar estrutura do Card da tabela**
-
-```
-De:
-  <Card className="glass-card">
-    <CardHeader>
-      <CardTitle>...</CardTitle>
-      <CardDescription>...</CardDescription>
-    </CardHeader>
-    <CardContent>
-      <Table>...</Table>
-    </CardContent>
-  </Card>
-
-Para:
-  <Card>
-    <CardContent className="p-0">
-      <Table>...</Table>
-    </CardContent>
-  </Card>
-```
-
-**4. Remover imports nao utilizados**
-
-Remover `CardDescription`, `CardHeader`, `CardTitle`, `FileText` e `Filter` dos imports apos as mudancas.
-
-**5. Ajustar estado vazio**
-
-O estado vazio ficara dentro do `CardContent` com `p-12 text-center` seguindo o padrao de Dominios Externos.
-
-## Resumo
-
-A tela Compliance tera a mesma estrutura visual das outras telas: header responsivo (ja ajustado), filtros standalone, e tabela em Card limpo sem header decorativo.
+**Ordem dos blocos no JSX**:
+1. Breadcrumb
+2. Header responsivo (ja existe)
+3. Stats Cards (novo - grid 4 colunas)
+4. Busca + Filtros Select (busca nova, selects existentes)
+5. Tabela em Card (ja existe)
 
