@@ -137,6 +137,8 @@ export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = tru
     queryKey: ['attack-surface-running', clientId],
     queryFn: async () => {
       if (!clientId) return null;
+
+      // 1. Buscar snapshot running/pending
       const { data, error } = await (supabase
         .from('attack_surface_snapshots' as any)
         .select('*')
@@ -147,7 +149,36 @@ export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = tru
       if (error) throw error;
       const rows = (data as any[]) || [];
       if (rows.length === 0) return null;
-      return parseSnapshot(rows[0] as Record<string, unknown>);
+
+      const snap = parseSnapshot(rows[0] as Record<string, unknown>);
+
+      // 2. Buscar resultados parciais das tasks completadas
+      const { data: tasks, error: tasksError } = await (supabase
+        .from('attack_surface_tasks' as any)
+        .select('ip, source, label, result')
+        .eq('snapshot_id', snap.id)
+        .eq('status', 'completed')
+        .not('result', 'is', null) as any);
+
+      if (!tasksError && tasks && (tasks as any[]).length > 0) {
+        const partialResults: Record<string, AttackSurfaceIPResult> = {};
+        for (const task of tasks as any[]) {
+          if (task.ip && task.result) {
+            partialResults[task.ip] = task.result as AttackSurfaceIPResult;
+          }
+        }
+        // Montar source_ips a partir das tasks se o snapshot não tiver
+        if (!snap.source_ips || snap.source_ips.length === 0) {
+          snap.source_ips = (tasks as any[]).map((t: any) => ({
+            ip: t.ip,
+            source: t.source || 'dns',
+            label: t.label || t.ip,
+          }));
+        }
+        snap.results = partialResults;
+      }
+
+      return snap;
     },
     enabled: !!clientId && enabled,
     refetchInterval: 15000,
