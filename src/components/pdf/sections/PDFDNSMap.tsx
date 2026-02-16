@@ -427,54 +427,58 @@ export function PDFDNSMap({ dnsSummary, emailAuth, subdomainSummary, categories 
       <View style={styles.section}>
         {activeSubdomains.length > 0 ? (
           <>
-            {/* Initial block: Header + first 4 subdomains - kept together */}
+            {/* Header + first pair kept together */}
             <View wrap={false}>
               <CategoryHeader title="Subdomínios" color={headerColors.subdomain} />
-              <View style={styles.twoColumnContainer}>
-                <View style={[styles.column, styles.columnLeft]}>
-                  {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
+              {activeSubdomains.length >= 2 ? (
+                <View style={styles.twoColumnContainer}>
+                  <View style={[styles.column, styles.columnLeft]}>
                     <ValueCard 
-                      key={idx}
-                      primary={truncate(sub.subdomain, 35)}
-                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                      primary={truncate(activeSubdomains[0].subdomain, 35)}
+                      secondary={activeSubdomains[0].addresses?.map(a => a.ip).join(', ') || undefined}
                     />
-                  ))}
-                </View>
-                <View style={styles.column}>
-                  {activeSubdomains.slice(0, 4).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
+                  </View>
+                  <View style={styles.column}>
                     <ValueCard 
-                      key={idx}
-                      primary={truncate(sub.subdomain, 35)}
-                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                      primary={truncate(activeSubdomains[1].subdomain, 35)}
+                      secondary={activeSubdomains[1].addresses?.map(a => a.ip).join(', ') || undefined}
                     />
-                  ))}
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <ValueCard 
+                  primary={truncate(activeSubdomains[0].subdomain, 35)}
+                  secondary={activeSubdomains[0].addresses?.map(a => a.ip).join(', ') || undefined}
+                />
+              )}
             </View>
             
-            {/* Remaining subdomains - can break across pages */}
-            {activeSubdomains.length > 4 && (
-              <View style={styles.twoColumnContainer}>
-                <View style={[styles.column, styles.columnLeft]}>
-                  {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 0).map((sub, idx) => (
+            {/* Remaining subdomains in atomic row pairs */}
+            {(() => {
+              const remaining = activeSubdomains.slice(2, 20);
+              const pairs: SubdomainEntry[][] = [];
+              for (let i = 0; i < remaining.length; i += 2) {
+                pairs.push(remaining.slice(i, i + 2));
+              }
+              return pairs.map((pair, pairIdx) => (
+                <View key={pairIdx} wrap={false} style={styles.twoColumnContainer}>
+                  <View style={[styles.column, styles.columnLeft]}>
                     <ValueCard 
-                      key={idx}
-                      primary={truncate(sub.subdomain, 35)}
-                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
+                      primary={truncate(pair[0].subdomain, 35)}
+                      secondary={pair[0].addresses?.map(a => a.ip).join(', ') || undefined}
                     />
-                  ))}
+                  </View>
+                  {pair[1] && (
+                    <View style={styles.column}>
+                      <ValueCard 
+                        primary={truncate(pair[1].subdomain, 35)}
+                        secondary={pair[1].addresses?.map(a => a.ip).join(', ') || undefined}
+                      />
+                    </View>
+                  )}
                 </View>
-                <View style={styles.column}>
-                  {activeSubdomains.slice(4, 20).filter((_, idx) => idx % 2 === 1).map((sub, idx) => (
-                    <ValueCard 
-                      key={idx}
-                      primary={truncate(sub.subdomain, 35)}
-                      secondary={sub.addresses?.map(a => a.ip).join(', ') || undefined}
-                    />
-                  ))}
-                </View>
-              </View>
-            )}
+              ));
+            })()}
             
             {activeSubdomains.length > 20 && (
               <Text style={styles.emptyText}>+ {activeSubdomains.length - 20} subdomínios adicionais</Text>
