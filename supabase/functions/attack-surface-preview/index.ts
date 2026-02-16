@@ -252,9 +252,9 @@ Deno.serve(async (req) => {
           const fwTargets = extractFirewallTargets(stepResults, fw.name)
           for (const ft of fwTargets) {
             // Check for overlap with DNS
-            const hasOverlap = ft.expanded_ips.some(eip => seenDNS.has(eip))
-            if (!hasOverlap) {
-              firewallTargets.push(ft)
+          const filteredIPs = ft.expanded_ips.filter(eip => !seenDNS.has(eip))
+            if (filteredIPs.length > 0) {
+              firewallTargets.push({ ...ft, expanded_ips: filteredIPs })
             }
           }
         }
