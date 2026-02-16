@@ -1,75 +1,49 @@
 
-
-# Integrar Have I Been Pwned (HIBP) para Credenciais Vazadas
+# Modal de Selecao de Dominio para Consulta HIBP
 
 ## Resumo
 
-Substituir a integração DeHashed pela API v3 do HIBP usando o endpoint `GET /api/v3/breacheddomain/{domain}`. Voce ja tem acesso para registrar dominios no painel do HIBP, e a mesma API key que voce ja usa para buscar emails funciona para domain search.
-
-## Pre-requisitos do usuario
-
-1. Ter uma **API key do HIBP** (comprada em haveibeenpwned.com/API/Key)
-2. Registrar o dominio no **Domain Search Dashboard** do HIBP (verificacao por DNS TXT ou meta tag)
-3. Cadastrar a chave como `HIBP_API_KEY` em Settings > API Keys
-
-## Como funciona a API
-
-- **Endpoint**: `GET https://haveibeenpwned.com/api/v3/breacheddomain/{domain}`
-- **Header**: `hibp-api-key: {sua_key}`
-- **Resposta**: Mapa de aliases (parte local do email) para lista de breaches:
-```text
-{
-  "joao": ["Adobe", "LinkedIn"],
-  "maria": ["Dropbox"]
-}
-```
-- Nota: a API retorna apenas o **alias** (parte antes do @) e os **nomes dos breaches**, sem senhas ou hashes
+Ao clicar em "Consultar HIBP" ou "Atualizar", um modal (Dialog) sera exibido listando todos os dominios do workspace (tabela `external_domains`). O usuario seleciona um ou mais dominios e confirma para iniciar a consulta.
 
 ## Alteracoes
 
-### 1. Nova Edge Function ou adaptar a existente
+### 1. Buscar todos os dominios do cliente (AttackSurfaceAnalyzerPage.tsx)
 
-**Arquivo**: `supabase/functions/dehashed-search/index.ts`
+Alterar a query `client-domain` para retornar **todos** os dominios em vez de apenas 1:
+- Remover `.limit(1)` 
+- Retornar array de `{ domain: string }` em vez de string unica
+- Passar a lista completa para o `LeakedCredentialsSection`
 
-- Renomear internamente a logica para chamar HIBP em vez de DeHashed
-- Buscar `HIBP_API_KEY` de `system_settings` (mesmo padrao das outras chaves)
-- Chamar `GET https://haveibeenpwned.com/api/v3/breacheddomain/{domain}` com header `hibp-api-key`
-- Transformar a resposta (alias -> breaches) em entries com formato `email = alias@domain`, `database_name = breach name`
-- Campos de senha ficam vazios (HIBP nao retorna senhas)
-- Continuar salvando no cache `dehashed_cache` com a mesma estrutura
+### 2. Criar modal de selecao no LeakedCredentialsSection
 
-### 2. Atualizar manage-api-keys
+Adicionar um Dialog dentro do componente `LeakedCredentialsSection.tsx`:
+- Receber `domains: string[]` (lista de todos os dominios) em vez de `domain: string`
+- Estado `modalOpen` para controlar abertura
+- Lista de checkboxes com os dominios disponíveis
+- Botao "Consultar" que dispara a mutation para cada dominio selecionado
+- O botao "Consultar HIBP" e "Atualizar" abrem o modal em vez de executar diretamente
 
-**Arquivo**: `supabase/functions/manage-api-keys/index.ts`
+### 3. Adaptar exibicao de dados para multiplos dominios
 
-- Substituir as entradas `DEHASHED_API_KEY` e `DEHASHED_EMAIL` por uma unica entrada `HIBP_API_KEY` com label "Have I Been Pwned" e descricao adequada
+- A query de cache buscara dados de **todos** os dominios do cliente (sem filtro por dominio unico)
+- Agrupar/exibir resultados com indicacao do dominio de origem na tabela
+- Stats consolidam todos os dominios consultados
 
-### 3. Atualizar o componente de UI
+## Detalhes tecnicos
 
-**Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
+**Props do componente** mudam de:
+```text
+{ clientId: string; domain: string | null; isSuperRole: boolean }
+```
+Para:
+```text
+{ clientId: string; domains: string[]; isSuperRole: boolean }
+```
 
-- Titulo: "Credenciais Vazadas (HIBP)" em vez de "(DeHashed)"
-- Labels dos botoes: "Consultar HIBP"
-- Remover coluna "Senha" e "Hash" da tabela (HIBP nao fornece essas infos)
-- Remover toggle "Revelar Senhas"
-- Stat card "Senhas em Texto Claro" substituido por outro relevante (ex: "Total Breaches" global)
-- Mensagem de API key: mencionar `HIBP_API_KEY`
+**Modal**: Usar `Dialog` do Radix (ja disponivel no projeto) com checkboxes para cada dominio. Pre-selecionar todos por padrao.
 
-### 4. Reativar o componente na pagina
+**Mutation**: Executar sequencialmente (ou em paralelo) a edge function `dehashed-search` para cada dominio selecionado, mostrando progresso.
 
-**Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+**Tabela de resultados**: Adicionar coluna "Dominio" para distinguir de qual dominio veio cada entrada quando houver dados de multiplos dominios.
 
-- Descomentar o import do `LeakedCredentialsSection`
-- Restaurar a renderizacao do componente
-
-## Limitacao importante
-
-O HIBP **nao retorna senhas nem hashes** -- apenas quais breaches afetaram cada alias do dominio. Isso e uma diferenca significativa em relacao ao DeHashed. O valor esta em saber **quais usuarios foram comprometidos** e em **quais breaches**, permitindo acoes como forcar troca de senha.
-
-## Sequencia de implementacao
-
-1. Adicionar `HIBP_API_KEY` ao `manage-api-keys`
-2. Reescrever a edge function `dehashed-search` para usar HIBP
-3. Atualizar o componente `LeakedCredentialsSection`
-4. Reativar o componente no `AttackSurfaceAnalyzerPage`
-
+**Cache**: A query de cache passa a buscar todos os registros do `client_id` (sem filtro de dominio), agrupando por dominio.
