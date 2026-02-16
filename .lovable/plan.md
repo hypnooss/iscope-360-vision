@@ -1,45 +1,22 @@
 
-# Corrigir quebra de pagina na tabela de Subdominios do PDF
+
+# Corrigir borda branca da tabela de Compliance
 
 ## Problema
 
-Na exportacao PDF, a secao de Subdominios usa um layout de duas colunas (`flexDirection: 'row'`). O `@react-pdf/renderer` nao consegue quebrar corretamente Views com `flexDirection: row` entre paginas — as colunas esquerda e direita quebram de forma independente, resultando em cards cortados e desalinhados.
+A tabela de Compliance esta envolvida por um `<Card>` sem a classe `glass-card`. O componente Card aplica `border border-border` por padrao, que no tema escuro resulta em uma borda branca/clara com opacidade total.
+
+Os stats cards na mesma pagina usam `glass-card`, que aplica `border border-border/50` (50% de opacidade), resultando em uma borda sutil e consistente com o design.
 
 ## Solucao
 
-Substituir o layout de duas colunas por um layout de linha unica (uma coluna), onde cada par de subdominios e renderizado em uma linha horizontal com `wrap={false}`. Isso garante que cada linha seja uma unidade atomica que nao sera cortada, e a quebra de pagina ocorre apenas entre linhas.
+Adicionar a classe `glass-card` ao `<Card>` da tabela (linha 545 de `ExternalDomainReportsPage.tsx`), igualando ao padrao visual dos demais cards da pagina e das outras telas de Dominio Externo.
 
-## Mudancas
+## Mudanca
 
-### Arquivo: `src/components/pdf/sections/PDFDNSMap.tsx`
+### Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
 
-**1. Criar componente `SubdomainRow`**
+**Linha 545**: Alterar `<Card>` para `<Card className="glass-card">`.
 
-Um componente simples que renderiza dois `ValueCard` lado a lado em uma View com `wrap={false}` e `flexDirection: 'row'`.
+Isso aplica `bg-card/80 backdrop-blur-xl border border-border/50` ao card da tabela, tornando a borda sutil e consistente.
 
-**2. Refatorar a secao de Subdominios**
-
-Em vez de dividir subdominios em duas colunas separadas (left/right), agrupar em pares e renderizar cada par como um `SubdomainRow`:
-
-```text
-// Antes (duas colunas independentes):
-<View style={twoColumnContainer}>
-  <View style={columnLeft}>  -- coluna esquerda inteira
-  <View style={column}>      -- coluna direita inteira
-
-// Depois (linhas de pares):
-subdominios em pares de 2:
-  <View wrap={false} flexDirection="row">
-    <ValueCard ... />   <ValueCard ... />
-  </View>
-  <View wrap={false} flexDirection="row">
-    <ValueCard ... />   <ValueCard ... />
-  </View>
-```
-
-**3. Aplicar para ambos os blocos**
-
-- Bloco inicial (primeiros 4 subdominios): manter `wrap={false}` no bloco inteiro (ja funciona)
-- Bloco restante (subdominios 5-20): refatorar para usar pares com `wrap={false}` individual
-
-Isso garante que cada par de subdominios nunca sera cortado entre paginas, enquanto a quebra de pagina pode ocorrer entre qualquer par.
