@@ -5,13 +5,13 @@ import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { FileText, Eye, Loader2, AlertTriangle, CheckCircle, Filter, Globe } from 'lucide-react';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DomainReport {
@@ -327,26 +327,21 @@ export default function ExternalDomainReportsPage() {
         {/* Filters */}
         <div className="flex flex-wrap gap-4">
           {clients.length > 1 && (
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground" />
-              <Select value={selectedClient} onValueChange={setSelectedClient}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Todos os clientes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os clientes</SelectItem>
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={selectedClient} onValueChange={setSelectedClient}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Todos os clientes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os clientes</SelectItem>
+                {clients.map(client => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           
-          <div className="flex items-center gap-2">
-            {clients.length <= 1 && <Filter className="w-4 h-4 text-muted-foreground" />}
             <Select value={selectedDomain} onValueChange={setSelectedDomain}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Todos os domínios" />
@@ -360,21 +355,11 @@ export default function ExternalDomainReportsPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
         </div>
 
         {/* Reports Table */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Histórico de Análises
-            </CardTitle>
-            <CardDescription>
-              {groupedDomains.length} domínio(s) com {filteredReports.length} análise(s) no total
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Card>
+          <CardContent className="p-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
