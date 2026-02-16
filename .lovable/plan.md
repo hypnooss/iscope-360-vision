@@ -1,46 +1,77 @@
 
 
-# Fix: Adicionar `-Pn` ao executor de fingerprinting
+# Exibir dados enriquecidos do Nmap no frontend (scripts, extra_info)
 
-## Causa raiz
+## Problema
 
-O executor `nmap_discovery.py` usa `-Pn` (skip host discovery), mas o `nmap.py` (fingerprint) nao usa. Sem `-Pn`, o nmap tenta pingar o host antes de escanear. Hosts que nao respondem ICMP (firewalls, IPS) sao classificados como "down" e o nmap pula o scan inteiro -- retornando 0 servicos.
+O executor `nmap.py` coleta dados valiosos via scripts NSE (como `rdp-ntlm-info`, `rdp-enum-encryption`, `ssh-hostkey`, `ssl-cert`, etc.) e campos adicionais (`extra_info`, `name`). Porem, a interface do `AttackSurfaceService` no frontend nao inclui esses campos, e o componente `NmapServiceRow` nao renderiza essas informacoes. Os dados estao no banco, mas sao ignorados pelo frontend.
 
-## Correcao
+## Dados que o nmap coleta mas o frontend ignora
 
-### Arquivo: `python-agent/agent/executors/nmap.py`
+- `scripts`: dicionario com saida de cada script NSE (ex: `rdp-ntlm-info` traz versao do Windows, nome do servidor, dominio)
+- `extra_info`: informacoes adicionais do fingerprint (ex: "Windows Server 2019")
+- `name`: nome do servico detectado (ex: "ms-wbt-server" para RDP)
 
-Adicionar `-Pn` em 3 locais:
+## Plano Tecnico
 
-1. **Scan primario** (linha 76-86): adicionar `'-Pn'` ao comando
-2. **Scan fallback** (linha 111-120): adicionar `'-Pn'` ao comando  
-3. **Scan de enriquecimento NSE** (metodo `_enrich_with_contextual_scripts`, ~linha 195): adicionar `'-Pn'` ao comando
+### 1. Atualizar a interface `AttackSurfaceService` (`src/hooks/useAttackSurfaceData.ts`)
 
-```python
-# Antes (scan primario):
-cmd = [
-    'nmap', '-sT', '-sV',
-    '--version-intensity', '5',
-    ...
-]
+Adicionar os campos que o nmap retorna:
 
-# Depois:
-cmd = [
-    'nmap', '-sT', '-Pn', '-sV',
-    '--version-intensity', '5',
-    ...
-]
+```typescript
+export interface AttackSurfaceService {
+  port: number;
+  transport: string;
+  product: string;
+  version: string;
+  banner: string;
+  cpe: string[];
+  name?: string;           // NOVO: nome do servico (ex: "ms-wbt-server")
+  extra_info?: string;     // NOVO: info adicional do fingerprint
+  scripts?: Record<string, string>;  // NOVO: saida dos scripts NSE
+}
 ```
 
-A mesma mudanca nos outros dois comandos.
+### 2. Atualizar o componente `NmapServiceRow` (`src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`)
 
-## Justificativa
+Exibir os novos campos no card do servico:
 
-As portas ja foram confirmadas como abertas pelo `nmap_discovery`. Nao faz sentido o fingerprint refazer host discovery. O `-Pn` e seguro aqui porque ja sabemos que o host esta ativo.
+- Mostrar `extra_info` ao lado da versao (texto secundario)
+- Adicionar uma secao expansivel mostrando a saida de cada script NSE como pares chave/valor
+- Tornar o card clicavel para expandir os scripts (mesmo sem CVEs)
 
-## Impacto
+Exemplo visual apos a mudanca:
 
-- Corrige o problema de 0 servicos em hosts que bloqueiam ICMP
-- Torna o fingerprint mais rapido (pula a fase de ping)
-- Nenhum risco: as portas ja foram validadas pelo passo anterior do pipeline
+```text
++-----------------------------------------------------------+
+| 3389/tcp  Microsoft Terminal Services                      |
+|           Windows Server 2019 Standard (extra_info)        |
++-----------------------------------------------------------+
+|  rdp-ntlm-info:                                           |
+|    Target_Name: CONTOSO                                    |
+|    NetBIOS_Domain: CONTOSO                                 |
+|    DNS_Computer: SRV01.contoso.local                       |
+|    Product_Version: 10.0.17763                             |
+|  rdp-enum-encryption:                                      |
+|    Security layer: CredSSP (NLA)                           |
+|    RDP Encryption level: High                              |
++-----------------------------------------------------------+
+```
+
+### 3. Logica de expansao
+
+Atualmente o `NmapServiceRow` so expande quando ha CVEs. Precisa ser ajustado para tambem expandir quando houver `scripts` com conteudo. O click toggle mostrara:
+- Scripts NSE formatados (se existirem)
+- CVEs (se existirem)
+
+## Arquivos modificados
+
+| Arquivo | Mudanca |
+|---|---|
+| `src/hooks/useAttackSurfaceData.ts` | Adicionar `name`, `extra_info`, `scripts` ao `AttackSurfaceService` |
+| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Atualizar `NmapServiceRow` para exibir `extra_info` e scripts NSE expandiveis |
+
+## Resultado esperado
+
+Apos a mudanca, o card do RDP mostrara todas as informacoes coletadas pelo nmap, incluindo versao do Windows, nome do servidor, dominio, nivel de criptografia e demais dados dos scripts NSE.
 
