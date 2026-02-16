@@ -23,17 +23,31 @@ import {
   Settings,
   RefreshCw,
   Globe,
+  Bug,
+  List,
+  HelpCircle,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
+type BreachType = "credential_leak" | "stealer_logs" | "scraping" | "combo_list";
+
 interface HIBPEntry {
   email: string;
   username: string;
   database_name: string;
+  breach_type?: BreachType;
 }
+
+const breachTypeConfig: Record<BreachType | "unknown", { label: string; icon: React.ElementType; className: string }> = {
+  credential_leak: { label: "Credential Leak", icon: KeyRound, className: "bg-destructive/15 text-destructive border-destructive/30" },
+  stealer_logs: { label: "Stealer Logs", icon: Bug, className: "bg-rose-900/20 text-rose-300 border-rose-500/30" },
+  scraping: { label: "Scraping", icon: Globe, className: "bg-warning/15 text-warning border-warning/30" },
+  combo_list: { label: "Combo List", icon: List, className: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  unknown: { label: "Desconhecido", icon: HelpCircle, className: "bg-muted text-muted-foreground border-border" },
+};
 
 interface HIBPCacheData {
   client_id: string;
@@ -498,30 +512,43 @@ export default function LeakedCredentialsSection({
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Email</th>
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Domínio</th>
                       <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Breach</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Tipo</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredEntries.slice(0, 100).map((entry, i) => (
-                      <tr key={i} className="border-b border-border/30 last:border-0 hover:bg-muted/20">
-                        <td className="px-3 py-2">
-                          <span className="font-mono text-xs">{entry.email}</span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="text-[10px] px-1.5">
-                            {entry.domain}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2">
-                          {entry.database_name ? (
-                            <Badge variant="outline" className="text-[10px] px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/30">
-                              {entry.database_name}
+                    {filteredEntries.slice(0, 100).map((entry, i) => {
+                      const bt = entry.breach_type && breachTypeConfig[entry.breach_type]
+                        ? breachTypeConfig[entry.breach_type]
+                        : breachTypeConfig.unknown;
+                      const BtIcon = bt.icon;
+                      return (
+                        <tr key={i} className="border-b border-border/30 last:border-0 hover:bg-muted/20">
+                          <td className="px-3 py-2">
+                            <span className="font-mono text-xs">{entry.email}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline" className="text-[10px] px-1.5">
+                              {entry.domain}
                             </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-3 py-2">
+                            {entry.database_name ? (
+                              <Badge variant="outline" className="text-[10px] px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/30">
+                                {entry.database_name}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline" className={cn("text-[10px] px-1.5 gap-1", bt.className)}>
+                              <BtIcon className="w-3 h-3" />
+                              {bt.label}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
