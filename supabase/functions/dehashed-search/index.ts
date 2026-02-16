@@ -37,40 +37,27 @@ async function decryptSecret(encryptedData: string): Promise<string> {
   return new TextDecoder().decode(decrypted);
 }
 
-async function getApiCredentials(supabase: any): Promise<{ email: string; apiKey: string } | null> {
+async function getApiKey(supabase: any): Promise<string | null> {
   // Try system_settings first
-  const keys = ["api_key_DEHASHED_EMAIL", "api_key_DEHASHED_API_KEY"];
   const { data: settings } = await supabase
     .from("system_settings")
     .select("key, value")
-    .in("key", keys);
-
-  let email = "";
-  let apiKey = "";
+    .eq("key", "api_key_DEHASHED_API_KEY");
 
   if (settings && settings.length > 0) {
-    for (const s of settings) {
-      const cleanVal = typeof s.value === "string"
-        ? s.value.replace(/^"|"$/g, "")
-        : JSON.stringify(s.value).replace(/^"|"$/g, "");
-      try {
-        const decrypted = await decryptSecret(cleanVal);
-        if (s.key === "api_key_DEHASHED_EMAIL") email = decrypted;
-        if (s.key === "api_key_DEHASHED_API_KEY") apiKey = decrypted;
-      } catch {
-        // If decryption fails, use raw value
-        if (s.key === "api_key_DEHASHED_EMAIL") email = cleanVal;
-        if (s.key === "api_key_DEHASHED_API_KEY") apiKey = cleanVal;
-      }
+    const s = settings[0];
+    const cleanVal = typeof s.value === "string"
+      ? s.value.replace(/^"|"$/g, "")
+      : JSON.stringify(s.value).replace(/^"|"$/g, "");
+    try {
+      return await decryptSecret(cleanVal);
+    } catch {
+      return cleanVal;
     }
   }
 
-  // Fallback to env vars
-  if (!email) email = Deno.env.get("DEHASHED_EMAIL") || "";
-  if (!apiKey) apiKey = Deno.env.get("DEHASHED_API_KEY") || "";
-
-  if (!email || !apiKey) return null;
-  return { email, apiKey };
+  // Fallback to env var
+  return Deno.env.get("DEHASHED_API_KEY") || null;
 }
 
 function maskPassword(password: string | null): string {
@@ -161,26 +148,34 @@ serve(async (req) => {
       }
     }
 
-    // Get API credentials
-    const creds = await getApiCredentials(supabase);
-    if (!creds) {
+    // Get API key
+    const apiKey = await getApiKey(supabase);
+    if (!apiKey) {
       return new Response(JSON.stringify({
-        error: "API keys do DeHashed não configuradas",
+        error: "API key do DeHashed não configurada",
         code: "NO_API_KEY",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Call DeHashed API
-    const basicAuth = btoa(`${creds.email}:${creds.apiKey}`);
-    const searchUrl = `https://api.dehashed.com/search?query=domain:${encodeURIComponent(domain)}&size=10000`;
+    // Call DeHashed API v2
+    const searchUrl = "https://api.dehashed.com/v2/search";
 
     console.log(`[dehashed-search] Querying domain: ${domain}`);
 
     const response = await fetch(searchUrl, {
+      method: "POST",
       headers: {
-        "Accept": "application/json",
-        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/json",
+        "DeHashed-Api-Key": apiKey,
       },
+      body: JSON.stringify({
+        query: `domain:${domain}`,
+        page: 1,
+        size: 10000,
+        wildcard: false,
+        regex: false,
+        de_dupe: true,
+      }),
     });
 
     if (!response.ok) {
