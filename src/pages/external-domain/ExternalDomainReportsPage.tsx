@@ -131,6 +131,7 @@ export default function ExternalDomainReportsPage() {
         .from('external_domain_analysis_history')
         .select('id, domain_id, score, created_at, status, completed_at')
         .in('domain_id', domainIds)
+        .eq('source', 'agent')
         .order('created_at', { ascending: false });
 
       // 3. Fetch client names
