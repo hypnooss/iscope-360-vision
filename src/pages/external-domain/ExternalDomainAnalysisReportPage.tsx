@@ -601,7 +601,7 @@ export default function ExternalDomainAnalysisReportPage() {
           <PageBreadcrumb
             items={[
               { label: 'Domínio Externo' },
-              { label: 'Relatórios', href: '/scope-external-domain/reports' },
+            { label: 'Compliance', href: '/scope-external-domain/reports' },
               { label: domain?.name || 'Relatório' },
             ]}
           />
@@ -630,7 +630,7 @@ export default function ExternalDomainAnalysisReportPage() {
         <PageBreadcrumb
           items={[
             { label: 'Domínio Externo' },
-            { label: 'Relatórios', href: '/scope-external-domain/reports' },
+            { label: 'Compliance', href: '/scope-external-domain/reports' },
             { label: domain?.name || 'Relatório' },
           ]}
         />
