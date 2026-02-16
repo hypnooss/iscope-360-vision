@@ -17,37 +17,35 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { client_id, ip, source, label } = await req.json();
+    const { client_id, ip, source, label, snapshot_id } = await req.json();
 
-    if (!client_id || !ip || !source) {
+    if (!client_id || !ip || !source || !snapshot_id) {
       return new Response(
-        JSON.stringify({ error: "client_id, ip and source are required" }),
+        JSON.stringify({ error: "client_id, ip, source and snapshot_id are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 1. Create snapshot with a single source IP
-    const sourceIps = [{ ip, source, label: label || ip }];
+    // Verify snapshot exists and belongs to client
     const { data: snapshot, error: snapErr } = await supabase
       .from("attack_surface_snapshots")
-      .insert({
-        client_id,
-        status: "pending",
-        source_ips: sourceIps,
-        results: {},
-        cve_matches: [],
-        summary: { total_ips: 1, open_ports: 0, services: 0, cves: 0 },
-      })
-      .select("id")
+      .select("id, client_id")
+      .eq("id", snapshot_id)
+      .eq("client_id", client_id)
       .single();
 
-    if (snapErr) throw snapErr;
+    if (snapErr || !snapshot) {
+      return new Response(
+        JSON.stringify({ error: "Snapshot not found or access denied" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // 2. Create a single task for this IP
+    // Create a single task linked to the existing snapshot
     const { error: taskErr } = await supabase
       .from("attack_surface_tasks")
       .insert({
-        snapshot_id: snapshot.id,
+        snapshot_id,
         ip,
         source,
         label: label || ip,
@@ -56,8 +54,14 @@ Deno.serve(async (req) => {
 
     if (taskErr) throw taskErr;
 
+    // Mark snapshot as running
+    await supabase
+      .from("attack_surface_snapshots")
+      .update({ status: "running" })
+      .eq("id", snapshot_id);
+
     return new Response(
-      JSON.stringify({ success: true, snapshot_id: snapshot.id }),
+      JSON.stringify({ success: true, snapshot_id }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
