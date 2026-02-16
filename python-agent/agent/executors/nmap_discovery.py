@@ -226,16 +226,26 @@ class NmapDiscoveryExecutor(BaseExecutor):
 
             stderr = result.stderr.strip() if result.stderr else ''
 
+            # Debug: log command and result for troubleshooting
+            self.logger.info(
+                f"[nmap_discovery] cmd={'sudo ' if cmd[0] == 'sudo' else ''}"
+                f"nmap {cmd[-1]}, exit={result.returncode}, "
+                f"stderr_len={len(stderr)}"
+            )
+
             # Detect permission error for -sS fallback
-            if stderr and any(
+            # Only treat as permission error if nmap actually failed (non-zero exit)
+            if result.returncode != 0 and stderr and any(
                 phrase in stderr.lower()
                 for phrase in [
                     'requires root',
-                    'permission denied',
                     'operation not permitted',
                     'you requested a scan type which requires root',
                 ]
             ):
+                self.logger.warning(
+                    f"[nmap_discovery] Permission error on {ip}: {stderr[:200]}"
+                )
                 return 'PERMISSION_ERROR'
 
             if stderr:
