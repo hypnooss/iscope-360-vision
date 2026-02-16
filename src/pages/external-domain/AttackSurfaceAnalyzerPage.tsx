@@ -345,6 +345,7 @@ interface TLSCertInfo {
 interface ExposedAsset {
   hostname: string;
   ip: string;
+  asn: { asn: string; provider: string; org: string; is_cdn: boolean } | null;
   ports: number[];
   services: AttackSurfaceService[];
   webServices: AttackSurfaceWebService[];
@@ -430,6 +431,7 @@ function buildAssets(
     assets.push({
       hostname,
       ip,
+      asn: (result as any).asn || null,
       ports: result.ports || [],
       services: result.services || [],
       webServices: result.web_services || [],
@@ -748,11 +750,17 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
         <div className="flex items-start gap-3">
           <Globe className={cn("w-5 h-5 mt-0.5 shrink-0", rc.icon)} />
           <div className="flex-1 min-w-0 space-y-2">
-            {/* Row 1: hostname + IP + risk badge */}
+            {/* Row 1: hostname + IP + ASN + risk badge */}
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-base font-semibold truncate">{asset.hostname}</span>
               {asset.hostname !== asset.ip && (
                 <span className="text-sm text-muted-foreground font-mono">{asset.ip}</span>
+              )}
+              {asset.asn?.asn && (
+                <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
+                  {asset.asn.asn}
+                  {asset.asn.provider !== 'unknown' && ` (${asset.asn.provider})`}
+                </Badge>
               )}
               <Badge variant="outline" className={cn("text-[10px] ml-auto shrink-0", rc.badge)}>
                 {asset.riskLevel}

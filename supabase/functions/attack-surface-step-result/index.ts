@@ -81,13 +81,14 @@ Deno.serve(async (req) => {
 
       for (const t of (allTasks || [])) {
         const r = t.result || {}
-        results[t.ip] = {
+      results[t.ip] = {
           ports: r.ports || [],
           services: r.services || [],
           web_services: r.web_services || [],
           vulns: r.vulns || [],
           os: r.os || '',
           hostnames: r.hostnames || [],
+          asn: r.raw_steps?.asn_classifier?.data || null,
           error: t.status === 'failed' ? (r.error || 'Task failed') : undefined,
         }
         totalPorts += (r.ports || []).length

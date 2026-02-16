@@ -4005,6 +4005,7 @@ async function handleAttackSurfaceTaskResult(
         vulns: r.vulns || [],
         os: r.os || '',
         hostnames: r.hostnames || [],
+        asn: r.raw_steps?.asn_classifier?.data || null,
         error: t.status === 'failed' ? (r.error || 'Task failed') : undefined,
       };
       totalPorts += (r.ports || []).length;
