@@ -176,6 +176,30 @@ export function useAttackSurfaceCancelScan(clientId?: string) {
   });
 }
 
+export function useAttackSurfaceRescanIP(clientId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ ip, source, label }: { ip: string; source: string; label: string }) => {
+      if (!clientId) throw new Error('client_id is required');
+      const { data, error } = await supabase.functions.invoke('attack-surface-rescan-ip', {
+        body: { client_id: clientId, ip, source, label },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-snapshots', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-latest', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['attack-surface-progress', clientId] });
+      toast({ title: 'Rescan iniciado', description: 'O scan para este IP foi iniciado com sucesso.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erro ao iniciar rescan', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
 /** Check if the Analyzer menu should be visible (both domain and firewall analyses exist) */
 export function useAttackSurfaceAvailability(clientId?: string) {
   return useQuery({

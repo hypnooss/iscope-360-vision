@@ -34,6 +34,7 @@ import {
   useLatestAttackSurfaceSnapshot,
   useAttackSurfaceScan,
   useAttackSurfaceCancelScan,
+  useAttackSurfaceRescanIP,
   type AttackSurfaceSnapshot,
   type AttackSurfaceService,
   type AttackSurfaceWebService,
@@ -346,6 +347,7 @@ interface ExposedAsset {
   hostname: string;
   ip: string;
   asn: { asn: string; provider: string; org: string; is_cdn: boolean } | null;
+  source: 'dns' | 'firewall';
   ports: number[];
   services: AttackSurfaceService[];
   webServices: AttackSurfaceWebService[];
@@ -432,6 +434,7 @@ function buildAssets(
       hostname,
       ip,
       asn: (result as any).asn || null,
+      source: (sourceIP?.source as 'dns' | 'firewall') || 'dns',
       ports: result.ports || [],
       services: result.services || [],
       webServices: result.web_services || [],
@@ -733,7 +736,7 @@ function TimelineSection({
   );
 }
 
-function AssetCard({ asset }: { asset: ExposedAsset }) {
+function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: { asset: ExposedAsset; isSuperRole: boolean; onRescan: (asset: ExposedAsset) => void; isRescanning: boolean }) {
   const [open, setOpen] = useState(false);
   const rc = riskColors[asset.riskLevel];
   const MAX_TECHS = 4;
@@ -789,12 +792,27 @@ function AssetCard({ asset }: { asset: ExposedAsset }) {
               )}
             </div>
 
-            {/* Row 3: CVE summary */}
+            {/* Row 3: CVE summary + Testar button */}
             <div className="flex items-center gap-3 flex-wrap">
               {asset.cves.length > 0 ? (
                 <CVESummaryBadges cves={asset.cves} />
               ) : (
                 <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">0 CVEs</Badge>
+              )}
+              {isSuperRole && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                  disabled={isRescanning}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRescan(asset);
+                  }}
+                >
+                  {isRescanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                  Testar
+                </Button>
               )}
             </div>
           </div>
@@ -961,6 +979,7 @@ export default function AttackSurfaceAnalyzerPage() {
     },
     staleTime: 1000 * 60 * 5,
   });
+  const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
 
   const isRunning = progress?.status === 'pending' || progress?.status === 'running';
 
@@ -1133,7 +1152,13 @@ export default function AttackSurfaceAnalyzerPage() {
           ) : (
             <div className="space-y-3">
               {filteredAssets.map(asset => (
-                <AssetCard key={asset.ip} asset={asset} />
+                <AssetCard
+                  key={asset.ip}
+                  asset={asset}
+                  isSuperRole={isSuperRole}
+                  onRescan={(a) => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname })}
+                  isRescanning={rescanMutation.isPending}
+                />
               ))}
               {filteredAssets.length === 0 && searchTerm && (
                 <p className="text-center text-muted-foreground py-8">Nenhum ativo encontrado para "{searchTerm}"</p>
