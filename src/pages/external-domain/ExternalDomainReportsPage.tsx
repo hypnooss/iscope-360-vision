@@ -55,13 +55,13 @@ export default function ExternalDomainReportsPage() {
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
-  const [domainsMeta, setDomainsMeta] = useState<{ id: string; name: string; domain: string; client_id: string; agent_id: string | null; client_name: string }[]>([]);
+  const [domainsMeta, setDomainsMeta] = useState<{id: string;name: string;domain: string;client_id: string;agent_id: string | null;client_name: string;}[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  
+
   const [search, setSearch] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
-  
+
   // State for selected analysis per domain
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
 
@@ -71,24 +71,24 @@ export default function ExternalDomainReportsPage() {
   const { data: workspaces = [] } = useQuery({
     queryKey: ['compliance-workspaces'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('id, name')
-        .order('name');
+      const { data, error } = await supabase.
+      from('clients').
+      select('id, name').
+      order('name');
       if (error) throw error;
       return data || [];
     },
-    enabled: isSuperRole,
+    enabled: isSuperRole
   });
 
   useEffect(() => {
     if (authLoading || moduleLoading) return;
-    
+
     if (!user) {
       navigate('/auth');
       return;
     }
-    
+
     if (!hasModuleAccess('scope_external_domain')) {
       navigate('/modules');
     }
@@ -102,19 +102,19 @@ export default function ExternalDomainReportsPage() {
 
   const fetchReports = async () => {
     try {
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
+      const workspaceIds = isPreviewMode && previewTarget?.workspaces ?
+      previewTarget.workspaces.map((w) => w.id) :
+      null;
 
       // 1. Fetch all domains first (filtered by workspace)
-      let domainsQuery = supabase
-        .from('external_domains')
-        .select('id, name, domain, client_id, agent_id');
-      
+      let domainsQuery = supabase.
+      from('external_domains').
+      select('id, name, domain, client_id, agent_id');
+
       if (workspaceIds && workspaceIds.length > 0) {
         domainsQuery = domainsQuery.in('client_id', workspaceIds);
       }
-      
+
       const { data: domainsData, error: domainsError } = await domainsQuery;
       if (domainsError) throw domainsError;
 
@@ -124,28 +124,28 @@ export default function ExternalDomainReportsPage() {
         return;
       }
 
-      const domainIds = domainsData.map(d => d.id);
+      const domainIds = domainsData.map((d) => d.id);
 
       // 2. Fetch history for those domains
-      const { data: historyData } = await supabase
-        .from('external_domain_analysis_history')
-        .select('id, domain_id, score, created_at, status, completed_at')
-        .in('domain_id', domainIds)
-        .eq('source', 'agent')
-        .order('created_at', { ascending: false });
+      const { data: historyData } = await supabase.
+      from('external_domain_analysis_history').
+      select('id, domain_id, score, created_at, status, completed_at').
+      in('domain_id', domainIds).
+      eq('source', 'agent').
+      order('created_at', { ascending: false });
 
       // 3. Fetch client names
-      const clientIds = [...new Set(domainsData.map(d => d.client_id))];
-      const { data: clientsData } = await supabase
-        .from('clients')
-        .select('id, name')
-        .in('id', clientIds);
+      const clientIds = [...new Set(domainsData.map((d) => d.client_id))];
+      const { data: clientsData } = await supabase.
+      from('clients').
+      select('id, name').
+      in('id', clientIds);
 
-      const domainMap = new Map(domainsData.map(d => [d.id, d]));
-      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+      const domainMap = new Map(domainsData.map((d) => [d.id, d]));
+      const clientMap = new Map((clientsData || []).map((c) => [c.id, c]));
 
       // Build reports from history
-      const formattedReports: DomainReport[] = (historyData || []).map(h => {
+      const formattedReports: DomainReport[] = (historyData || []).map((h) => {
         const domain = domainMap.get(h.domain_id);
         const client = domain ? clientMap.get(domain.client_id) : null;
         return {
@@ -158,20 +158,20 @@ export default function ExternalDomainReportsPage() {
           score: h.score,
           created_at: h.created_at,
           status: h.status,
-          completed_at: h.completed_at,
+          completed_at: h.completed_at
         };
       });
 
       setReports(formattedReports);
 
       // Store domain metadata for domains without history
-      setDomainsMeta(domainsData.map(d => ({
+      setDomainsMeta(domainsData.map((d) => ({
         id: d.id,
         name: d.name,
         domain: d.domain,
         client_id: d.client_id,
         agent_id: d.agent_id,
-        client_name: clientMap.get(d.client_id)?.name || 'N/A',
+        client_name: clientMap.get(d.client_id)?.name || 'N/A'
       })));
     } catch (error) {
       console.error('Error fetching external domain reports:', error);
@@ -184,19 +184,19 @@ export default function ExternalDomainReportsPage() {
   // Group reports by domain with search + workspace filter, including domains without analyses
   const groupedDomains = useMemo(() => {
     // Filter domainsMeta by workspace
-    const filteredMeta = selectedWorkspaceId
-      ? domainsMeta.filter(d => d.client_id === selectedWorkspaceId)
-      : domainsMeta;
+    const filteredMeta = selectedWorkspaceId ?
+    domainsMeta.filter((d) => d.client_id === selectedWorkspaceId) :
+    domainsMeta;
 
     // Filter reports by workspace
-    const workspaceFiltered = selectedWorkspaceId
-      ? reports.filter(r => r.client_id === selectedWorkspaceId)
-      : reports;
+    const workspaceFiltered = selectedWorkspaceId ?
+    reports.filter((r) => r.client_id === selectedWorkspaceId) :
+    reports;
 
     const groups = new Map<string, GroupedDomain>();
 
     // First, seed all domains (including those without analyses)
-    filteredMeta.forEach(d => {
+    filteredMeta.forEach((d) => {
       if (!groups.has(d.id)) {
         groups.set(d.id, {
           domain_id: d.id,
@@ -205,13 +205,13 @@ export default function ExternalDomainReportsPage() {
           client_id: d.client_id,
           client_name: d.client_name,
           agent_id: d.agent_id,
-          analyses: [],
+          analyses: []
         });
       }
     });
-    
+
     // Then add analyses
-    workspaceFiltered.forEach(report => {
+    workspaceFiltered.forEach((report) => {
       if (!groups.has(report.domain_id)) {
         groups.set(report.domain_id, {
           domain_id: report.domain_id,
@@ -220,34 +220,34 @@ export default function ExternalDomainReportsPage() {
           client_id: report.client_id,
           client_name: report.client_name,
           agent_id: null,
-          analyses: [],
+          analyses: []
         });
       }
-      
+
       groups.get(report.domain_id)!.analyses.push({
         id: report.id,
         score: report.score,
         created_at: report.created_at,
         report_data: report.report_data,
         status: report.status,
-        completed_at: report.completed_at,
+        completed_at: report.completed_at
       });
     });
-    
-    groups.forEach(group => {
-      group.analyses.sort((a, b) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+
+    groups.forEach((group) => {
+      group.analyses.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     });
-    
+
     const all = Array.from(groups.values());
 
     if (!search.trim()) return all;
     const q = search.toLowerCase();
-    return all.filter(g =>
-      g.domain_url.toLowerCase().includes(q) ||
-      g.domain_name.toLowerCase().includes(q) ||
-      g.client_name.toLowerCase().includes(q)
+    return all.filter((g) =>
+    g.domain_url.toLowerCase().includes(q) ||
+    g.domain_name.toLowerCase().includes(q) ||
+    g.client_name.toLowerCase().includes(q)
     );
   }, [reports, domainsMeta, search, selectedWorkspaceId]);
 
@@ -261,14 +261,14 @@ export default function ExternalDomainReportsPage() {
   // Stats cards data - based on latest analysis status per domain
   const stats = useMemo(() => {
     const total = groupedDomains.length;
-    let pending = 0, running = 0, completed = 0, failed = 0;
-    groupedDomains.forEach(g => {
+    let pending = 0,running = 0,completed = 0,failed = 0;
+    groupedDomains.forEach((g) => {
       const status = g.analyses[0]?.status;
       if (!status) return; // domain without analyses - don't count in status
-      if (status === 'pending') pending++;
-      else if (status === 'running') running++;
-      else if (status === 'failed') failed++;
-      else completed++;
+      if (status === 'pending') pending++;else
+      if (status === 'running') running++;else
+      if (status === 'failed') failed++;else
+      completed++;
     });
     return { total, pending, running, completed, failed };
   }, [groupedDomains]);
@@ -276,29 +276,29 @@ export default function ExternalDomainReportsPage() {
   // Initialize with most recent analysis for each domain
   useEffect(() => {
     const initial: Record<string, string> = {};
-    groupedDomains.forEach(group => {
+    groupedDomains.forEach((group) => {
       if (group.analyses.length > 0 && !selectedAnalyses[group.domain_id]) {
         initial[group.domain_id] = group.analyses[0].id;
       }
     });
     if (Object.keys(initial).length > 0) {
-      setSelectedAnalyses(prev => ({ ...prev, ...initial }));
+      setSelectedAnalyses((prev) => ({ ...prev, ...initial }));
     }
   }, [groupedDomains]);
 
   const getSelectedAnalysis = (group: GroupedDomain) => {
     const selectedId = selectedAnalyses[group.domain_id];
-    return group.analyses.find(a => a.id === selectedId) || group.analyses[0];
+    return group.analyses.find((a) => a.id === selectedId) || group.analyses[0];
   };
 
   const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
 
-  const fetchReportData = async (analysisId: string): Promise<{ reportData: any; createdAt: string; domainId: string } | null> => {
-    const { data, error } = await supabase
-      .from('external_domain_analysis_history')
-      .select('report_data, created_at, domain_id')
-      .eq('id', analysisId)
-      .maybeSingle();
+  const fetchReportData = async (analysisId: string): Promise<{reportData: any;createdAt: string;domainId: string;} | null> => {
+    const { data, error } = await supabase.
+    from('external_domain_analysis_history').
+    select('report_data, created_at, domain_id').
+    eq('id', analysisId).
+    maybeSingle();
 
     if (error) {
       console.error('Error fetching external domain report data:', error);
@@ -310,7 +310,7 @@ export default function ExternalDomainReportsPage() {
     return {
       reportData: data.report_data,
       createdAt: data.created_at,
-      domainId: data.domain_id,
+      domainId: data.domain_id
     };
   };
 
@@ -318,7 +318,7 @@ export default function ExternalDomainReportsPage() {
     if (!agentId) {
       toast.error('Agent não configurado', {
         description: 'Configure um agent para este domínio antes de executar a análise.',
-        duration: 8000,
+        duration: 8000
       });
       return;
     }
@@ -326,14 +326,14 @@ export default function ExternalDomainReportsPage() {
     setAnalyzingId(domainId);
     try {
       const { data, error } = await supabase.functions.invoke('trigger-external-domain-analysis', {
-        body: { domain_id: domainId },
+        body: { domain_id: domainId }
       });
 
       if (error) {
         console.error('Trigger external domain analysis error:', error);
         toast.error('Erro ao agendar análise', {
           description: 'Não foi possível criar a tarefa de análise. Tente novamente.',
-          duration: 8000,
+          duration: 8000
         });
         return;
       }
@@ -341,14 +341,14 @@ export default function ExternalDomainReportsPage() {
       if (!data?.success) {
         toast.error(data?.error || 'Erro ao agendar análise', {
           description: data?.message || 'Verifique a configuração do domínio.',
-          duration: 10000,
+          duration: 10000
         });
         return;
       }
 
       toast.success('Análise agendada!', {
         description: 'O agent irá processar em breve. Acompanhe o status na página.',
-        duration: 5000,
+        duration: 5000
       });
 
       await fetchReports();
@@ -356,7 +356,7 @@ export default function ExternalDomainReportsPage() {
       console.error('Trigger external domain analysis exception:', e);
       toast.error('Erro inesperado', {
         description: e?.message || 'Ocorreu um erro ao agendar a análise.',
-        duration: 8000,
+        duration: 8000
       });
     } finally {
       setAnalyzingId(null);
@@ -380,9 +380,9 @@ export default function ExternalDomainReportsPage() {
             domain_id: group.domain_id,
             domain_name: group.domain_name,
             domain_url: group.domain_url,
-            client_name: group.client_name,
-          },
-        },
+            client_name: group.client_name
+          }
+        }
       });
     } finally {
       setLoadingReportId(null);
@@ -401,7 +401,7 @@ export default function ExternalDomainReportsPage() {
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -416,8 +416,8 @@ export default function ExternalDomainReportsPage() {
         <Badge variant="outline" className="bg-blue-500/20 text-blue-400 border-blue-500/30">
           <Loader2 className="w-3 h-3 animate-spin mr-1" />
           Executando
-        </Badge>
-      );
+        </Badge>);
+
     }
     if (status === 'failed') {
       return <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30">Falha</Badge>;
@@ -426,8 +426,8 @@ export default function ExternalDomainReportsPage() {
     return (
       <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30 font-normal">
         {formatDate(analysis.completed_at || analysis.created_at)}
-      </Badge>
-    );
+      </Badge>);
+
   };
 
   if (authLoading || moduleLoading) {
@@ -436,37 +436,37 @@ export default function ExternalDomainReportsPage() {
         <div className="flex items-center justify-center min-h-[50vh]">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
-    );
+      </AppLayout>);
+
   }
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-          { label: 'Domínio Externo' },
-          { label: 'Compliance' },
-        ]} />
+        { label: 'Domínio Externo' },
+        { label: 'Compliance' }]
+        } />
         
         {/* Header with Workspace Selector */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Compliance</h1>
-            <p className="text-muted-foreground">Histórico de análises de compliance</p>
+            <p className="text-muted-foreground">Visão consolidada das análises de compliance</p>
           </div>
-          {isSuperRole && workspaces.length > 0 && (
-              <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+          {isSuperRole && workspaces.length > 0 &&
+          <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
                   <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Todos os workspaces" />
                 </SelectTrigger>
                 <SelectContent>
-                  {workspaces.map(w => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
+                  {workspaces.map((w) =>
+              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              )}
                 </SelectContent>
               </Select>
-          )}
+          }
         </div>
 
         {/* Stats Cards - Executions pattern */}
@@ -536,34 +536,34 @@ export default function ExternalDomainReportsPage() {
               placeholder="Buscar domínio ou cliente..."
               className="pl-10"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+              onChange={(e) => setSearch(e.target.value)} />
+
           </div>
         </div>
 
         {/* Reports Table */}
         <Card className="glass-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
+            {loading ?
+            <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </div>
-            ) : groupedDomains.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
+              </div> :
+            groupedDomains.length === 0 ?
+            <div className="text-center py-12 text-muted-foreground">
                 <Globe className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>{reports.length === 0 ? 'Nenhum relatório disponível' : 'Nenhum relatório encontrado com os filtros selecionados'}</p>
-                {reports.length === 0 && (
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() => navigate('/scope-external-domain/domains')}
-                  >
+                {reports.length === 0 &&
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => navigate('/scope-external-domain/domains')}>
+
                     Verificar Domínio
                   </Button>
-                )}
-              </div>
-            ) : (
-              <Table>
+              }
+              </div> :
+
+            <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Domínio</TableHead>
@@ -576,10 +576,10 @@ export default function ExternalDomainReportsPage() {
                 </TableHeader>
                 <TableBody>
                   {groupedDomains.map((group) => {
-                    const currentAnalysis = getSelectedAnalysis(group);
-                    
-                    return (
-                      <TableRow key={group.domain_id}>
+                  const currentAnalysis = getSelectedAnalysis(group);
+
+                  return (
+                    <TableRow key={group.domain_id}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <div>
@@ -592,90 +592,90 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
-                          {currentAnalysis && currentAnalysis.score != null && (
-                            <Badge variant="outline" className={getScoreBadgeClass(currentAnalysis.score)}>
+                          {currentAnalysis && currentAnalysis.score != null &&
+                        <Badge variant="outline" className={getScoreBadgeClass(currentAnalysis.score)}>
                               <span className="flex items-center gap-1">
-                                {currentAnalysis.score >= 75 ? (
-                                  <CheckCircle className="w-3 h-3" />
-                                ) : (
-                                  <AlertTriangle className="w-3 h-3" />
-                                )}
+                                {currentAnalysis.score >= 75 ?
+                            <CheckCircle className="w-3 h-3" /> :
+
+                            <AlertTriangle className="w-3 h-3" />
+                            }
                                 {currentAnalysis.score}%
                               </span>
                             </Badge>
-                          )}
+                        }
                         </TableCell>
                         <TableCell>
                           {renderStatusBadge(currentAnalysis)}
-                          {!currentAnalysis && (
-                            <Badge variant="outline" className="bg-muted/20 text-muted-foreground border-muted/30">Sem análise</Badge>
-                          )}
+                          {!currentAnalysis &&
+                        <Badge variant="outline" className="bg-muted/20 text-muted-foreground border-muted/30">Sem análise</Badge>
+                        }
                         </TableCell>
                         <TableCell>
-                          {group.analyses.length > 0 ? (
-                            <Select 
-                              value={selectedAnalyses[group.domain_id] || group.analyses[0]?.id}
-                              onValueChange={(value) => setSelectedAnalyses(prev => ({
-                                ...prev,
-                                [group.domain_id]: value
-                              }))}
-                            >
+                          {group.analyses.length > 0 ?
+                        <Select
+                          value={selectedAnalyses[group.domain_id] || group.analyses[0]?.id}
+                          onValueChange={(value) => setSelectedAnalyses((prev) => ({
+                            ...prev,
+                            [group.domain_id]: value
+                          }))}>
+
                               <SelectTrigger className="w-[180px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {group.analyses.map((analysis) => (
-                                  <SelectItem key={analysis.id} value={analysis.id}>
+                                {group.analyses.map((analysis) =>
+                            <SelectItem key={analysis.id} value={analysis.id}>
                                     {formatDate(analysis.created_at)}
                                   </SelectItem>
-                                ))}
+                            )}
                               </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
+                            </Select> :
+
+                        <span className="text-muted-foreground text-sm">—</span>
+                        }
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                              <Button
-                               variant="ghost"
-                               size="icon"
-                               onClick={() => handleAnalyze(group.domain_id, group.agent_id)}
-                               disabled={analyzingId === group.domain_id}
-                               title="Analisar"
-                             >
-                               {analyzingId === group.domain_id ? (
-                                 <Loader2 className="w-4 h-4 animate-spin" />
-                               ) : (
-                                 <Play className="w-4 h-4" />
-                               )}
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleAnalyze(group.domain_id, group.agent_id)}
+                            disabled={analyzingId === group.domain_id}
+                            title="Analisar">
+
+                               {analyzingId === group.domain_id ?
+                            <Loader2 className="w-4 h-4 animate-spin" /> :
+
+                            <Play className="w-4 h-4" />
+                            }
                              </Button>
-                             {currentAnalysis?.status === 'completed' && (
-                               <Button
-                                 variant="ghost"
-                                 size="icon"
-                                 onClick={() => handleViewReport(group)}
-                                 disabled={loadingReportId === currentAnalysis?.id}
-                                 title="Visualizar"
-                               >
-                                 {loadingReportId === currentAnalysis?.id ? (
-                                   <Loader2 className="w-4 h-4 animate-spin" />
-                                 ) : (
-                                   <Eye className="w-4 h-4" />
-                                 )}
+                             {currentAnalysis?.status === 'completed' &&
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleViewReport(group)}
+                            disabled={loadingReportId === currentAnalysis?.id}
+                            title="Visualizar">
+
+                                 {loadingReportId === currentAnalysis?.id ?
+                            <Loader2 className="w-4 h-4 animate-spin" /> :
+
+                            <Eye className="w-4 h-4" />
+                            }
                                </Button>
-                             )}
+                          }
                           </div>
                         </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                      </TableRow>);
+
+                })}
                 </TableBody>
               </Table>
-            )}
+            }
           </CardContent>
         </Card>
       </div>
-    </AppLayout>
-  );
+    </AppLayout>);
+
 }
