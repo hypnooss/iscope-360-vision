@@ -1,22 +1,24 @@
 
-# Atualizar dados em tempo real durante scan no Attack Surface Analyzer
+
+# Corrigir exibicao de dados parciais durante scan em andamento
 
 ## Problema
 
-Atualmente, o hook `useLatestAttackSurfaceSnapshot` so busca snapshots com `status === 'completed'`. Enquanto o scan esta em andamento, os dados parciais que ja foram processados (resultados de IPs concluidos) ficam armazenados no snapshot com status `running`, mas nao sao exibidos. O usuario so ve os novos dados quando o scan inteiro termina.
+O hook `useRunningAttackSurfaceSnapshot` busca o snapshot com status `running`, mas esse snapshot tem `results: {}` (vazio). Os resultados parciais de cada IP ficam armazenados na tabela `attack_surface_tasks` (campo `result`), e so sao consolidados no campo `results` do snapshot quando o scan inteiro termina. Por isso, mesmo com 10+ IPs ja processados, a pagina mostra "Nenhum dado disponivel".
 
 ## Solucao
 
-1. Criar uma nova query que busca o snapshot `running` com seus dados parciais
-2. Quando o scan esta em andamento, usar os dados do snapshot running para exibir resultados parciais em tempo real
-3. Adicionar um botao/indicador "Atualizando..." com auto-refresh no header da pagina
-4. Manter os dados do ultimo snapshot completo como fallback
+Modificar o hook `useRunningAttackSurfaceSnapshot` para, alem de buscar o snapshot running, tambem buscar os resultados parciais da tabela `attack_surface_tasks` e montar um snapshot virtual com esses dados.
 
 ## Detalhes tecnicos
 
-### 1. Novo hook no `useAttackSurfaceData.ts`
+### Arquivo a modificar
 
-Adicionar `useRunningAttackSurfaceSnapshot` que busca o snapshot com status `pending` ou `running`, com `refetchInterval: 15000` (15s) para atualizar os dados parciais periodicamente.
+`src/hooks/useAttackSurfaceData.ts`
+
+### Mudanca no `useRunningAttackSurfaceSnapshot`
+
+Apos buscar o snapshot running, fazer uma segunda query para buscar as tasks completadas desse snapshot e montar o campo `results` a partir delas:
 
 ```typescript
 export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = true) {
@@ -24,65 +26,69 @@ export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = tru
     queryKey: ['attack-surface-running', clientId],
     queryFn: async () => {
       if (!clientId) return null;
-      const { data, error } = await supabase
-        .from('attack_surface_snapshots')
+
+      // 1. Buscar snapshot running/pending
+      const { data, error } = await (supabase
+        .from('attack_surface_snapshots' as any)
         .select('*')
         .eq('client_id', clientId)
         .in('status', ['pending', 'running'])
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(1) as any);
       if (error) throw error;
-      const rows = data || [];
+      const rows = (data as any[]) || [];
       if (rows.length === 0) return null;
-      return parseSnapshot(rows[0]);
+
+      const snap = parseSnapshot(rows[0] as Record<string, unknown>);
+
+      // 2. Buscar resultados parciais das tasks completadas
+      const { data: tasks, error: tasksError } = await (supabase
+        .from('attack_surface_tasks')
+        .select('ip, source, label, result')
+        .eq('snapshot_id', snap.id)
+        .eq('status', 'completed')
+        .not('result', 'is', null) as any);
+
+      if (!tasksError && tasks && tasks.length > 0) {
+        const partialResults: Record<string, any> = {};
+        for (const task of tasks as any[]) {
+          if (task.ip && task.result) {
+            partialResults[task.ip] = task.result;
+          }
+        }
+        // Montar source_ips a partir das tasks se o snapshot nao tiver
+        if (!snap.source_ips || snap.source_ips.length === 0) {
+          snap.source_ips = (tasks as any[]).map((t: any) => ({
+            ip: t.ip,
+            source: t.source || 'dns',
+            label: t.label || t.ip,
+          }));
+        }
+        snap.results = partialResults;
+      }
+
+      return snap;
     },
     enabled: !!clientId && enabled,
-    refetchInterval: 15000, // atualiza a cada 15 segundos
+    refetchInterval: 15000,
     staleTime: 10000,
   });
 }
 ```
 
-### 2. Modificar `AttackSurfaceAnalyzerPage.tsx`
+### Como funciona
 
-**a) Importar e usar o novo hook:**
+1. Busca o snapshot com status `pending` ou `running` (como antes)
+2. Usa o `snapshot.id` para buscar na tabela `attack_surface_tasks` todas as tasks com `status = 'completed'` e `result IS NOT NULL`
+3. Monta o mapa `results` (chave = IP, valor = resultado do nmap/httpx) a partir dos dados das tasks
+4. Tambem reconstroi `source_ips` a partir das tasks caso o snapshot nao tenha esse dado preenchido
+5. Retorna o snapshot enriquecido com os dados parciais
 
-Ao lado do `useLatestAttackSurfaceSnapshot`, usar tambem o `useRunningAttackSurfaceSnapshot` (habilitado apenas quando `isRunning`).
+Assim, a cada 15 segundos o hook refaz a query, pega mais IPs concluidos e a interface exibe os novos assets progressivamente.
 
-**b) Determinar snapshot ativo:**
-
-```typescript
-const activeSnapshot = isRunning && runningSnapshot ? runningSnapshot : snapshot;
-```
-
-Quando o scan esta rodando e temos dados parciais, exibir o snapshot running. Caso contrario, usar o ultimo completo.
-
-**c) Adicionar botao "Atualizando" no header:**
-
-Quando `isRunning`, exibir um botao animado (com `Loader2` girando) ao lado do botao "Cancelar Scan", indicando que os dados estao sendo atualizados automaticamente. Clicar nele forca um refetch imediato.
-
-```tsx
-{isRunning && (
-  <Button
-    size="sm"
-    variant="outline"
-    className="border-teal-500/30 text-teal-400"
-    onClick={() => refetchRunning()}
-    disabled={isRefetchingRunning}
-  >
-    <Loader2 className="w-4 h-4 animate-spin" />
-    Atualizando...
-  </Button>
-)}
-```
-
-**d) Usar `activeSnapshot` no lugar de `snapshot`:**
-
-Na construcao dos assets e nas stats, trocar `snapshot` por `activeSnapshot` para que os dados parciais sejam renderizados.
-
-### Arquivos a modificar
+### Arquivos
 
 | Arquivo | Acao |
 |---|---|
-| `src/hooks/useAttackSurfaceData.ts` | Adicionar export `useRunningAttackSurfaceSnapshot` |
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Importar novo hook, calcular `activeSnapshot`, adicionar botao "Atualizando", usar `activeSnapshot` nos assets e stats |
+| `src/hooks/useAttackSurfaceData.ts` | Modificar `useRunningAttackSurfaceSnapshot` para buscar resultados parciais de `attack_surface_tasks` |
+
