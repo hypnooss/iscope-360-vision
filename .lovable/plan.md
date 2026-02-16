@@ -1,49 +1,29 @@
 
-# Modal de Selecao de Dominio para Consulta HIBP
 
-## Resumo
+# Tornar o botao de nova consulta HIBP mais visivel
 
-Ao clicar em "Consultar HIBP" ou "Atualizar", um modal (Dialog) sera exibido listando todos os dominios do workspace (tabela `external_domains`). O usuario seleciona um ou mais dominios e confirma para iniciar a consulta.
+## Problema
 
-## Alteracoes
+Quando ja existem dados na secao de Credenciais Vazadas, o unico botao disponivel e o "Atualizar", que nao deixa claro que ele abre o modal de selecao de dominios para uma nova consulta HIBP. O usuario espera um botao explicito como "Consultar HIBP".
 
-### 1. Buscar todos os dominios do cliente (AttackSurfaceAnalyzerPage.tsx)
+## Solucao
 
-Alterar a query `client-domain` para retornar **todos** os dominios em vez de apenas 1:
-- Remover `.limit(1)` 
-- Retornar array de `{ domain: string }` em vez de string unica
-- Passar a lista completa para o `LeakedCredentialsSection`
+Adicionar um botao "Consultar HIBP" mais proeminente ao lado do botao "Atualizar" na area de acoes, quando ja existem dados.
 
-### 2. Criar modal de selecao no LeakedCredentialsSection
+## Alteracao
 
-Adicionar um Dialog dentro do componente `LeakedCredentialsSection.tsx`:
-- Receber `domains: string[]` (lista de todos os dominios) em vez de `domain: string`
-- Estado `modalOpen` para controlar abertura
-- Lista de checkboxes com os dominios disponíveis
-- Botao "Consultar" que dispara a mutation para cada dominio selecionado
-- O botao "Consultar HIBP" e "Atualizar" abrem o modal em vez de executar diretamente
+**Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
 
-### 3. Adaptar exibicao de dados para multiplos dominios
+Na secao de acoes (linhas 434-467), onde atualmente so aparece o campo de busca e o botao "Atualizar":
 
-- A query de cache buscara dados de **todos** os dominios do cliente (sem filtro por dominio unico)
-- Agrupar/exibir resultados com indicacao do dominio de origem na tabela
-- Stats consolidam todos os dominios consultados
+- Adicionar um botao **"Consultar HIBP"** (com icone Search) que abre o modal de selecao de dominios
+- Manter o botao "Atualizar" como esta, para quem ja conhece o fluxo
+- Ambos os botoes abrem o mesmo modal de selecao de dominios
 
-## Detalhes tecnicos
+O resultado visual sera:
 
-**Props do componente** mudam de:
 ```text
-{ clientId: string; domain: string | null; isSuperRole: boolean }
-```
-Para:
-```text
-{ clientId: string; domains: string[]; isSuperRole: boolean }
+[Campo de busca]  [Consultar HIBP]  [Atualizar]  Ultima consulta: hoje
 ```
 
-**Modal**: Usar `Dialog` do Radix (ja disponivel no projeto) com checkboxes para cada dominio. Pre-selecionar todos por padrao.
-
-**Mutation**: Executar sequencialmente (ou em paralelo) a edge function `dehashed-search` para cada dominio selecionado, mostrando progresso.
-
-**Tabela de resultados**: Adicionar coluna "Dominio" para distinguir de qual dominio veio cada entrada quando houver dados de multiplos dominios.
-
-**Cache**: A query de cache passa a buscar todos os registros do `client_id` (sem filtro de dominio), agrupando por dominio.
+Isso torna obvio que o usuario pode iniciar uma nova consulta a qualquer momento.
