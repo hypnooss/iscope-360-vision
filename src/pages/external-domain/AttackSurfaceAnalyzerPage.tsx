@@ -1264,18 +1264,6 @@ export default function AttackSurfaceAnalyzerPage() {
                   Cancelar Scan
                 </Button>
               )}
-              {isRunning && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-teal-500/30 text-teal-400"
-                  onClick={() => refetchRunning()}
-                  disabled={isRefetchingRunning}
-                >
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Atualizando...
-                </Button>
-              )}
             </div>
           </div>
 
@@ -1286,9 +1274,21 @@ export default function AttackSurfaceAnalyzerPage() {
                 <div className="flex items-center gap-3 mb-2">
                   <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
                   <span className="text-sm font-medium">Scan em andamento...</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {progress.done} de {progress.total} IPs processados
-                  </span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-xs text-muted-foreground">
+                      {progress.done} de {progress.total} IPs processados
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-teal-400 hover:text-teal-300"
+                      onClick={() => refetchRunning()}
+                      disabled={isRefetchingRunning}
+                    >
+                      <Loader2 className={cn("w-3 h-3", isRefetchingRunning && "animate-spin")} />
+                      Atualizar
+                    </Button>
+                  </div>
                 </div>
                 <Progress value={progress.percent} className="h-2" />
               </CardContent>
