@@ -545,10 +545,12 @@ export default function LeakedCredentialsSection({
           <td className="px-3 py-2">
                              <Tooltip>
                                <TooltipTrigger asChild>
-                                 <Badge variant="outline" className={cn("text-[10px] px-1.5 gap-1 cursor-help", bt.className)}>
-                                   <BtIcon className="w-3 h-3" />
-                                   {bt.label}
-                                 </Badge>
+                                 <span className="inline-flex cursor-help">
+                                   <Badge variant="outline" className={cn("text-[10px] px-1.5 gap-1", bt.className)}>
+                                     <BtIcon className="w-3 h-3" />
+                                     {bt.label}
+                                   </Badge>
+                                 </span>
                                </TooltipTrigger>
                                <TooltipContent side="top" className="max-w-xs text-xs">
                                  {bt.tooltip}
