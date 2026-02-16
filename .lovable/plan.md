@@ -1,52 +1,23 @@
 
-# Adicionar tipo de breach (Scraping vs Credential Leak) na tabela HIBP
+# Adicionar tooltips explicativos nos tipos de breach
 
-## Resumo
+## O que muda
 
-A API do HIBP no endpoint `/breacheddomain` retorna apenas o mapeamento `alias -> [breach_names]`, sem metadados sobre o tipo de breach. Para saber se um breach e do tipo "scraping" ou "credential leak", precisamos consultar o endpoint `/breaches` da HIBP, que retorna metadados como `DataClasses` (tipos de dados expostos) e `IsFabricated`, `IsSpamList`, `IsSensitive`, etc.
+Adicionar um tooltip em cada badge de tipo na coluna "Tipo" da tabela de credenciais vazadas, explicando em portugues o que cada classificacao significa.
 
-## Alteracoes
+## Alteracao
 
-### 1. Edge Function: buscar metadados dos breaches (dehashed-search/index.ts)
+**Arquivo**: `src/components/external-domain/LeakedCredentialsSection.tsx`
 
-Apos obter a lista de breaches do `/breacheddomain`, fazer uma chamada adicional ao endpoint publico `https://haveibeenpwned.com/api/v3/breaches` (nao requer API key) para obter metadados de todos os breaches. Cruzar os nomes para enriquecer cada entrada com:
+1. Adicionar um campo `tooltip` ao `breachTypeConfig` com descricoes explicativas:
+   - **Credential Leak**: "Vazamento real de credenciais (email + senha) obtidas em invasoes a sistemas e bancos de dados."
+   - **Stealer Logs**: "Credenciais capturadas por malware (info-stealer) instalado no dispositivo da vitima."
+   - **Scraping**: "Dados publicos coletados automaticamente de sites, redes sociais ou registros WHOIS. Nao envolve senhas."
+   - **Combo List**: "Lista compilada a partir de multiplos vazamentos ou dados fabricados. Origem nao verificada."
+   - **Desconhecido**: "Tipo de vazamento nao classificado. Execute uma nova consulta para atualizar."
 
-- `breach_type`: classificacao derivada dos `DataClasses` do breach:
-  - **"credential_leak"** se contem "Passwords" ou "Password hints"
-  - **"stealer_logs"** se contem "Passwords" E o breach tem `IsMalware: true`
-  - **"scraping"** se nao contem senhas (apenas emails, nomes, telefones, etc)
-  - **"combo_list"** se `IsSpamList: true` ou `IsFabricated: true`
+2. Envolver cada badge de tipo com `Tooltip` / `TooltipTrigger` / `TooltipContent` (ja importados no projeto via `@/components/ui/tooltip`).
 
-- Incluir `breach_type` em cada entrada do array `entries` salvo no cache
+3. Adicionar um `TooltipProvider` ao redor da tabela (ou verificar se ja existe um no nivel superior).
 
-### 2. Frontend: coluna "Tipo" na tabela (LeakedCredentialsSection.tsx)
-
-Adicionar uma coluna **"Tipo"** na tabela de resultados, entre "Breach" e o final:
-
-- **Credential Leak**: Badge vermelha com icone Key
-- **Stealer Logs**: Badge vermelha escura com icone Bug
-- **Scraping**: Badge amarela com icone Globe
-- **Combo List**: Badge laranja com icone List
-
-Isso da contexto imediato ao usuario sobre a gravidade de cada entrada.
-
-### 3. Cache retrocompativel
-
-Entradas antigas no cache que nao possuem `breach_type` serao exibidas como "Desconhecido" com badge cinza, ate que uma nova consulta enriqueca os dados.
-
-## Detalhes tecnicos
-
-**Endpoint publico HIBP**: `GET https://haveibeenpwned.com/api/v3/breaches` retorna array com todos os breaches conhecidos. E publico (sem API key), mas faremos cache local em memoria durante a execucao da function para nao repetir chamadas.
-
-**Mapeamento de tipo**: Criar funcao `classifyBreach(breach)` na edge function que analisa `DataClasses`, `IsMalware`, `IsSpamList`, `IsFabricated` para retornar o tipo.
-
-**Estrutura da entrada enriquecida**:
-```text
-{
-  email: "user@domain.com",
-  username: "user",
-  database_name: "Speedio",
-  breach_type: "scraping",   // novo campo
-  ...
-}
-```
+Nenhuma outra alteracao e necessaria - apenas UI.
