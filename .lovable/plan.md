@@ -1,78 +1,93 @@
 
 
-# Botao "Testar" no Card do Attack Surface Analyzer
+# Enriquecimento NSE baseado no nome do servico detectado
 
-## O que muda
+## Problema
 
-Cada card de IP/ativo no Attack Surface Analyzer ganha um botao discreto "Testar" (visivel apenas para super_admin / super_suporte). Ao clicar, o sistema cria um snapshot + task apenas para aquele IP, permitindo re-scanear um ativo especifico sem executar o scan do workspace inteiro.
+O `nmap-enrich` atual usa apenas o dicionario `PORT_SCRIPTS` (mapeamento porta -> scripts). Servicos em portas nao-padrao (ex: web server na 65080, SSH na 65022) nunca sao enriquecidos.
+
+## Solucao
+
+Adicionar um segundo dicionario `SERVICE_SCRIPTS` que mapeia o **nome do servico** detectado pelo Nmap (campo `name` do XML, ex: `http`, `ssh`, `ftp`) para scripts NSE. O metodo `_enrich_with_contextual_scripts` passa a considerar ambos os mapeamentos.
 
 ## Plano Tecnico
 
-### 1. Nova Edge Function: `attack-surface-rescan-ip`
+### Arquivo: `python-agent/agent/executors/nmap.py`
 
-Cria uma edge function dedicada que recebe `client_id`, `ip`, `source` e `label`, e:
+**1. Novo dicionario `SERVICE_SCRIPTS` (apos `PORT_SCRIPTS`, linha 26)**
 
-1. Cria um novo `attack_surface_snapshots` com `status: 'pending'` e `source_ips` contendo apenas o IP informado
-2. Cria uma unica `attack_surface_tasks` vinculada ao snapshot
-3. Retorna o `snapshot_id` criado
-
-```typescript
-// supabase/functions/attack-surface-rescan-ip/index.ts
-// Body: { client_id, ip, source, label }
-// Cria snapshot + 1 task para o IP especifico
-```
-
-### 2. Hook de mutacao no frontend
-
-**Arquivo:** `src/hooks/useAttackSurfaceData.ts`
-
-Adicionar um novo hook `useAttackSurfaceRescanIP` que:
-- Recebe `clientId`
-- Expoe `mutate({ ip, source, label })`
-- Invalida as queries de snapshot apos sucesso
-- Mostra toast de sucesso/erro
-
-### 3. Botao "Testar" no AssetCard
-
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
-
-Na funcao `AssetCard`, adicionar um botao discreto ao lado do chevron (canto direito do card):
-
-- Visivel apenas quando `isSuperRole === true`
-- Botao `ghost` com icone `Play` e texto "Testar" em tamanho pequeno
-- Usa `e.stopPropagation()` para nao abrir/fechar o card ao clicar
-- Mostra `Loader2` durante o loading da mutacao
-
-Posicao: entre os badges de CVE e o chevron, no canto inferior direito do summary row.
-
-```text
-+-----------------------------------------------------------------+
-| (globe) vpn.nexta.com.br  34.95.238.67  AS13335   [CRITICAL] > |
-|   6 portas . 9 servicos . Cert Valido . FortiSSH . HSTS        |
-|   5 Critical                                     [Testar]       |
-+-----------------------------------------------------------------+
-```
-
-O botao recebe as props necessarias: `ip`, `source` (do `source_ips` do snapshot), `label` (hostname).
-
-### 4. Passar dados para o AssetCard
-
-Para que o botao tenha acesso ao `source` e `label`, o `ExposedAsset` precisa de um campo extra `source`:
-
-```typescript
-interface ExposedAsset {
-  // ... campos existentes ...
-  source: 'dns' | 'firewall';  // NOVO - de onde veio o IP
+```python
+SERVICE_SCRIPTS: Dict[str, List[str]] = {
+    'http':      ['http-title', 'http-server-header', 'http-headers'],
+    'https':     ['http-title', 'http-server-header', 'http-headers', 'ssl-cert'],
+    'ssl':       ['ssl-cert', 'ssl-enum-ciphers'],
+    'ssh':       ['ssh-hostkey', 'ssh2-enum-algos'],
+    'ftp':       ['ftp-anon', 'ftp-syst'],
+    'smtp':      ['smtp-commands', 'smtp-ntlm-info'],
+    'snmp':      ['snmp-info', 'snmp-sysdescr'],
+    'ldap':      ['ldap-rootdse'],
+    'smb':       ['smb-os-discovery', 'smb-protocols', 'smb-security-mode'],
+    'ms-sql-s':  ['ms-sql-info', 'ms-sql-ntlm-info'],
+    'mysql':     ['mysql-info'],
+    'ms-wbt-server': ['rdp-ntlm-info', 'rdp-enum-encryption'],
+    'postgresql': ['pgsql-info'],
 }
 ```
 
-Na funcao `buildAssets`, extrair o `source` do `source_ips` do snapshot.
+**2. Alterar `_enrich_with_contextual_scripts` (linhas 140-210)**
 
-## Arquivos modificados
+A logica de selecao de portas/scripts passa a ser:
 
-| Arquivo | Mudanca |
-|---|---|
-| `supabase/functions/attack-surface-rescan-ip/index.ts` | Nova edge function (cria snapshot + task para 1 IP) |
-| `src/hooks/useAttackSurfaceData.ts` | Novo hook `useAttackSurfaceRescanIP` |
-| `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` | Adicionar `source` ao `ExposedAsset`, botao "Testar" no `AssetCard` (apenas super roles) |
+```python
+def _enrich_with_contextual_scripts(self, ip, services, timeout):
+    scripts_by_port = {}  # Dict[int, List[str]]
+
+    for svc in services:
+        port = svc['port']
+        scripts = []
+
+        # 1. Mapeamento por porta fixa (prioridade)
+        if port in PORT_SCRIPTS:
+            scripts.extend(PORT_SCRIPTS[port])
+
+        # 2. Mapeamento por nome do servico detectado
+        svc_name = svc.get('name', '')
+        if svc_name in SERVICE_SCRIPTS:
+            for s in SERVICE_SCRIPTS[svc_name]:
+                if s not in scripts:
+                    scripts.append(s)
+
+        if scripts:
+            scripts_by_port[port] = scripts
+
+    if not scripts_by_port:
+        return services
+
+    # Coletar scripts unicos e portas alvo
+    target_ports = list(scripts_by_port.keys())
+    all_scripts = []
+    for sl in scripts_by_port.values():
+        for s in sl:
+            if s not in all_scripts:
+                all_scripts.append(s)
+
+    # ... resto do metodo permanece igual (cmd, subprocess, merge)
+```
+
+Isso garante que um `http` na porta 65080 ou `ssh` na 65022 sejam enriquecidos automaticamente.
+
+## Resultado esperado
+
+No log do scan anterior (portas 443, 541, 10443, 65022, 65080):
+- Porta 443 (https) -> `http-title`, `http-server-header`, `http-headers`, `ssl-cert`
+- Porta 65022 (ssh) -> `ssh-hostkey`, `ssh2-enum-algos`
+- Porta 65080 (http) -> `http-title`, `http-server-header`, `http-headers`
+- Porta 541 e 10443 -> enriquecidos se o Nmap identificar o servico
+
+## Compatibilidade
+
+- Python 3.9 compativel (usa `Dict` e `List` de `typing`)
+- Nenhum import novo necessario
+- `PORT_SCRIPTS` continua funcionando como antes (prioridade)
+- Apenas 1 arquivo modificado
 
