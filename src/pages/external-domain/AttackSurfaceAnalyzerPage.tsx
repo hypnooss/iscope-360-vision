@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
+// LeakedCredentialsSection desativado - nenhuma API viável disponível no momento
+// import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -1375,14 +1376,7 @@ export default function AttackSurfaceAnalyzerPage() {
             </div>
           }
 
-          {/* Leaked Credentials (DeHashed) */}
-          {selectedClientId && clientDomain && (
-            <LeakedCredentialsSection
-              clientId={selectedClientId}
-              domain={clientDomain}
-              isSuperRole={isSuperRole}
-            />
-          )}
+          {/* Leaked Credentials - desativado temporariamente (sem API viável) */}
 
           {/* Last scan timestamp */}
           {snapshot?.completed_at &&
