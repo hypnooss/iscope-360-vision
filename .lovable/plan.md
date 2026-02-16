@@ -1,42 +1,68 @@
 
 
-# Adicionar Stats Cards e Campo de Busca na tela Compliance
+# Ajustar tela Compliance para o padrao do Analyzer
 
-## O que sera feito
+## Mudancas propostas
 
-Alinhar a tela Compliance com o padrao visual da tela Dominios Externos, adicionando os dois elementos que faltam:
+### 1. Stats Cards no padrao Analyzer (StatCard com glass-card)
 
-### 1. Stats Cards
+Substituir o componente `ExternalDomainStatsCards` pelos stat cards no estilo do Analyzer: `Card className="glass-card"` com `CardContent className="p-4 flex items-center gap-3"`, icone em div com `bg-muted/50` e texto abaixo (valor grande + label pequeno).
 
-Adicionar uma grade de 4 cards de metricas entre o header e os filtros, calculados a partir dos dados ja carregados:
+Metricas mantidas:
+- Dominios (Globe, text-teal-400)
+- Score Medio (TrendingUp, text-blue-400)
+- Alertas Criticos (AlertTriangle, text-warning) - score < 50
+- Falhas Criticas (Shield, text-destructive) - score < 30
 
-| Card | Icone | Metrica |
-|---|---|---|
-| Dominios | Globe | Total de dominios unicos com analises |
-| Score Medio | TrendingUp | Media dos scores mais recentes por dominio |
-| Alertas Criticos | AlertTriangle | Dominios com score abaixo de 50 |
-| Falhas Criticas | Shield | Dominios com score abaixo de 30 |
+### 2. Remover seletores "Todos os clientes" e "Todos os dominios"
 
-Estilo identico ao da tela Dominios Externos: `Card > CardContent className="p-4"` com icone colorido e texto.
+Remover os dois `Select` de filtro (cliente e dominio) da linha de busca. Manter apenas o campo de busca textual.
 
-### 2. Campo de Busca
+### 3. Adicionar seletor de Workspace no header
 
-Adicionar um `Input` com icone `Search` antes dos filtros Select, permitindo buscar por nome de dominio ou cliente. Seguindo o padrao: `relative flex-1 max-w-sm` com icone posicionado a esquerda.
+Seguindo exatamente o padrao do Analyzer:
+- Usar `useEffectiveAuth` para obter `effectiveRole`
+- Buscar lista de clientes (workspaces) do Supabase
+- Exibir o seletor com icone `Building2` apenas para roles `super_admin` e `super_suporte`
+- Filtrar os dados da tabela pelo workspace selecionado
+
+### 4. Ajustar cores das badges de score na tabela
+
+Usar o padrao de badges com `variant="outline"` e cores consistentes:
+- Score >= 75: `bg-teal-500/20 text-teal-400 border-teal-500/30`
+- Score >= 50: `bg-warning/20 text-warning border-warning/30`
+- Score < 50: `bg-destructive/20 text-destructive border-destructive/30`
+
+### 5. Adicionar coluna "Status Execucao" na tabela
+
+Nova coluna entre "Score" e "Data" que exibe:
+- **Pendente**: Badge amarela com texto "Pendente" (quando `status = 'pending'`)
+- **Executando**: Badge azul com icone Loader2 animado e texto "Executando" (quando `status = 'running'`)
+- **Concluida**: Texto com a data/hora de conclusao formatada (quando `status = 'completed'`)
+
+Para isso, o fetch precisara trazer tambem os campos `status` e `completed_at` de cada analise.
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/pages/external-domain/ExternalDomainReportsPage.tsx`
 
-**Imports a adicionar**: `Input`, `Search`, `TrendingUp`, `Shield` (os demais ja existem ou serao usados dos imports atuais).
+**Imports a adicionar**: `Building2`, `useEffectiveAuth`, `useQuery`, `cn`
+**Imports a remover**: `ExternalDomainStatsCards`
 
-**Stats (useMemo)**: Calcular `total`, `avg`, `critical`, `failures` a partir de `groupedDomains`, usando o score da analise mais recente de cada dominio.
+**Novo estado**: `selectedWorkspaceId` para o seletor de workspace
 
-**Busca (useState + useMemo)**: Adicionar estado `search` e filtrar `groupedDomains` por `domain_url` ou `client_name`.
+**Query de workspaces** (copiada do Analyzer):
+```text
+useQuery para buscar clients (id, name) quando isSuperRole = true
+```
 
-**Ordem dos blocos no JSX**:
-1. Breadcrumb
-2. Header responsivo (ja existe)
-3. Stats Cards (novo - grid 4 colunas)
-4. Busca + Filtros Select (busca nova, selects existentes)
-5. Tabela em Card (ja existe)
+**Fetch ajustado**: incluir `status, completed_at` no select da `external_domain_analysis_history` e propagar para as interfaces `DomainReport` e `GroupedDomain.analyses`.
+
+**Stats cards inline**: Substituir `<ExternalDomainStatsCards>` por 4 `StatCard` inline no estilo glass-card do Analyzer (grid 2 colunas mobile, 4 desktop).
+
+**Filtros simplificados**: Manter apenas o `Input` de busca, remover os dois `Select` de cliente/dominio e toda logica associada (`selectedClient`, `selectedDomain`, `availableDomains`, etc).
+
+**Filtragem por workspace**: Quando super role, filtrar dados pelo `selectedWorkspaceId`. Para roles normais, manter o comportamento atual.
+
+**Coluna Status na tabela**: Nova `TableHead` "Status Execucao" e `TableCell` com logica condicional baseada no campo `status` da analise selecionada.
 
