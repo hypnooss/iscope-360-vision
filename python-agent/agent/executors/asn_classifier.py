@@ -77,7 +77,7 @@ class AsnClassifierExecutor(BaseExecutor):
 
         self.logger.info("[asn_classifier] Looking up provider for %s", ip)
 
-        provider, asn, org = self._whois_lookup(ip, timeout)
+        provider, asn, org, whois_raw = self._whois_lookup(ip, timeout)
 
         is_cdn = provider in CDN_EDGE_PROVIDERS if provider else False
 
@@ -105,6 +105,29 @@ class AsnClassifierExecutor(BaseExecutor):
             val = rdap.get(key)
             if val:
                 result['data'][key] = val
+
+        # Extract LACNIC/NIC.br specific fields from WHOIS raw text
+        if whois_raw:
+            owner = self._extract_field(whois_raw, [r'owner:\s*(.+)'])
+            ownerid = self._extract_field(whois_raw, [r'ownerid:\s*(.+)'])
+            responsible = self._extract_field(whois_raw, [r'responsible:\s*(.+)'])
+            abuse_handle = self._extract_field(whois_raw, [r'abuse-c:\s*(.+)'])
+            if owner:
+                result['data']['owner'] = owner.strip()
+            if ownerid:
+                result['data']['ownerid'] = ownerid.strip()
+            if responsible:
+                result['data']['responsible'] = responsible.strip()
+            if abuse_handle:
+                result['data']['abuse_handle'] = abuse_handle.strip()
+
+        # Use RDAP as fallback for the new fields
+        if not result['data'].get('abuse_handle') and rdap.get('abuse_handle'):
+            result['data']['abuse_handle'] = rdap['abuse_handle']
+        if not result['data'].get('responsible') and rdap.get('responsible'):
+            result['data']['responsible'] = rdap['responsible']
+        if not result['data'].get('owner') and rdap.get('registrant_org'):
+            result['data']['owner'] = rdap['registrant_org']
 
         # Use RDAP org as fallback if WHOIS org is empty
         if not result['data']['org'] and rdap.get('registrant_org'):
@@ -176,14 +199,22 @@ class AsnClassifierExecutor(BaseExecutor):
             if 'registrant' in roles:
                 if vcard.get('fn'):
                     result['registrant_org'] = vcard['fn']
+                handle = entity.get('handle')
+                if handle:
+                    result.setdefault('abuse_handle', handle)
 
             if 'abuse' in roles:
                 if vcard.get('email'):
                     result['abuse_email'] = vcard['email']
+                handle = entity.get('handle')
+                if handle:
+                    result.setdefault('abuse_handle', handle)
 
             if 'technical' in roles:
                 if vcard.get('email'):
                     result['tech_email'] = vcard['email']
+                if vcard.get('fn'):
+                    result.setdefault('responsible', vcard['fn'])
 
             # Some responses nest abuse+technical in same entity
             if 'abuse' in roles and 'technical' in roles:
@@ -229,8 +260,8 @@ class AsnClassifierExecutor(BaseExecutor):
     # ──────────────── WHOIS lookup (existing) ────────────────
 
     def _whois_lookup(self, ip, timeout):
-        # type: (str, int) -> Tuple[Optional[str], Optional[str], Optional[str]]
-        """Query WHOIS via TCP socket, following referrals if needed."""
+        # type: (str, int) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]
+        """Query WHOIS via TCP socket, following referrals if needed. Returns (provider, asn, org, raw_text)."""
 
         # Try primary server (ARIN)
         server, prefix = WHOIS_SERVERS[0]
@@ -247,7 +278,7 @@ class AsnClassifierExecutor(BaseExecutor):
 
         if not output:
             self.logger.warning("[asn_classifier] All WHOIS servers failed for %s", ip)
-            return None, None, None
+            return None, None, None, None
 
         # Check for referral to another RIR
         referral_server = self._extract_referral(output)
@@ -275,7 +306,7 @@ class AsnClassifierExecutor(BaseExecutor):
 
         provider = self._match_provider(output.lower())
 
-        return provider, asn, org.strip() if org else None
+        return provider, asn, org.strip() if org else None, output
 
     def _query_whois_server(self, server, query, timeout):
         # type: (str, str, int) -> Optional[str]

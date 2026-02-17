@@ -351,7 +351,7 @@ interface TLSCertInfo {
 interface ExposedAsset {
   hostname: string;
   ip: string;
-  asn: {asn: string;provider: string;org: string;is_cdn: boolean;country?: string;abuse_email?: string;tech_email?: string;ip_range?: string;} | null;
+  asn: {asn: string;provider: string;org: string;is_cdn: boolean;country?: string;abuse_email?: string;tech_email?: string;ip_range?: string;owner?: string;ownerid?: string;responsible?: string;abuse_handle?: string;} | null;
   source: 'dns' | 'firewall';
   ports: number[];
   services: AttackSurfaceService[];
@@ -914,8 +914,9 @@ function TimelineSection({
 }
 
 function IpTooltipBody({ asn }: { asn: NonNullable<ExposedAsset['asn']> }) {
+  const unavailable = <span className="italic text-muted-foreground/60">indisponível</span>;
   return (
-    <>
+    <div className="space-y-1.5">
       {asn.asn && (
         <div className="flex items-center gap-2 font-mono text-xs font-semibold">
           <span>{asn.asn}</span>
@@ -933,17 +934,36 @@ function IpTooltipBody({ asn }: { asn: NonNullable<ExposedAsset['asn']> }) {
           Range: {asn.ip_range}
         </div>
       )}
-      {asn.abuse_email && (
-        <div className="text-xs text-muted-foreground">
-          Abuse: {asn.abuse_email}
-        </div>
+
+      {/* WHOIS/RDAP enrichment fields */}
+      <div className="border-t border-border my-1.5" />
+      <div className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
+        <span className="text-muted-foreground font-mono">abuse-c:</span>
+        <span className="truncate">{asn.abuse_handle || unavailable}</span>
+        <span className="text-muted-foreground font-mono">owner:</span>
+        <span className="truncate">{asn.owner || unavailable}</span>
+        <span className="text-muted-foreground font-mono">ownerid:</span>
+        <span className="truncate font-mono">{asn.ownerid || unavailable}</span>
+        <span className="text-muted-foreground font-mono">responsible:</span>
+        <span className="truncate">{asn.responsible || unavailable}</span>
+      </div>
+
+      {(asn.abuse_email || (asn.tech_email && asn.tech_email !== asn.abuse_email)) && (
+        <>
+          <div className="border-t border-border my-1.5" />
+          {asn.abuse_email && (
+            <div className="text-xs text-muted-foreground">
+              Abuse: {asn.abuse_email}
+            </div>
+          )}
+          {asn.tech_email && asn.tech_email !== asn.abuse_email && (
+            <div className="text-xs text-muted-foreground">
+              Técnico: {asn.tech_email}
+            </div>
+          )}
+        </>
       )}
-      {asn.tech_email && asn.tech_email !== asn.abuse_email && (
-        <div className="text-xs text-muted-foreground">
-          Técnico: {asn.tech_email}
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
