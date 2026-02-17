@@ -1,47 +1,106 @@
 
 
-# Ocultar ativos sem portas/servicos e adicionar card de resumo
+# Enriquecer ASN Classifier com RDAP e exibir tooltip no IP
 
-## Problema
+## Resumo
 
-Ativos com 0 portas e 0 servicos ocupam espaco na lista sem trazer informacao util, gerando scroll desnecessario.
+Adicionar uma consulta RDAP (via HTTPS) ao executor `asn_classifier` do Python Agent para coletar dados adicionais: organizacao registrante, pais, e-mail de contato tecnico/abuse e range do bloco IP. No frontend, substituir o badge de ASN por um tooltip rico que aparece ao passar o mouse sobre o IP.
 
-## Solucao
+## Alteracoes
 
-**Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+### 1. Python Agent - `asn_classifier.py`
 
-### 1. Separar ativos "vazios" dos ativos relevantes
+Apos o WHOIS lookup existente, adicionar uma consulta RDAP via HTTPS para enriquecer os dados:
 
-No `useMemo` de `filteredAssets` (linha ~1198), dividir em dois grupos:
-- **activeAssets**: ativos com pelo menos 1 porta OU 1 servico (nmap ou web)
-- **emptyAssets**: ativos com 0 portas E 0 servicos
+- Consultar `https://rdap.registro.br/ip/{ip}` (LACNIC/BR) com fallback para `https://rdap.arin.net/registry/ip/{ip}` e `https://rdap.db.ripe.net/ip/{ip}`
+- Extrair do JSON RDAP:
+  - `country` (campo `country` no topo)
+  - `registrant_org` (entidade com role "registrant", campo `fn` do vCard)
+  - `abuse_email` (entidade com role "abuse", campo `email` do vCard)
+  - `tech_email` (entidade com role "technical", campo `email` do vCard)
+  - `ip_range` (campos `startAddress` + `endAddress`, ex: "45.172.216.0 - 45.172.217.255")
+  - `autnum` (campo `nicbr_autnum` ou extraido do handle)
 
-A lista principal renderiza apenas `activeAssets`.
-
-### 2. Card de resumo no final da lista
-
-Criar um componente `EmptyAssetsSummary` que aparece apos o ultimo asset card, exibindo:
-- Quantidade total de ativos sem portas/servicos
-- Lista compacta dos hostnames/IPs agrupados (colapsavel)
-- Visual discreto (glass-card, cor neutra) para nao competir com os ativos relevantes
-- Icone `CheckCircle2` indicando que esses ativos foram verificados mas nao possuem exposicao detectada
-
-Exemplo visual:
-```text
-+-------------------------------------------------------+
-| [CheckCircle2] 12 ativos sem exposicao detectada       |
-|                                                        |
-| Nenhuma porta aberta ou servico identificado.          |
-| [v] Ver lista                                          |
-|   host1.example.com (1.2.3.4)                          |
-|   host2.example.com (5.6.7.8)                          |
-|   ...                                                  |
-+-------------------------------------------------------+
+- O retorno do executor passa de:
+```python
+{
+  'data': {
+    'ip': ip,
+    'is_cdn': False,
+    'provider': 'unknown',
+    'asn': 'AS268794',
+    'org': 'FINCH BRASIL...',
+  }
+}
+```
+Para:
+```python
+{
+  'data': {
+    'ip': ip,
+    'is_cdn': False,
+    'provider': 'unknown',
+    'asn': 'AS268794',
+    'org': 'FINCH BRASIL...',
+    'country': 'BR',
+    'abuse_email': 'datacenterfinch@gmail.com',
+    'tech_email': 'datacenterfinch@gmail.com',
+    'ip_range': '45.172.216.0 - 45.172.217.255',
+  }
+}
 ```
 
-### Detalhes tecnicos
+- A consulta RDAP e feita via `urllib.request` (stdlib) com timeout de 5s e try/except para nao impactar o fluxo caso falhe.
 
-- Usar `Collapsible` do Radix para a lista de hostnames
-- Os ativos vazios continuam contabilizados nos stat cards de "Ativos Expostos" (total real)
-- O filtro de busca se aplica tambem aos ativos vazios (se o usuario buscar um hostname que esta no grupo vazio, ele aparece no card de resumo filtrado)
+**Logica de descoberta do servidor RDAP correto:**
+1. Primeiro tenta o bootstrap IANA: `https://rdap.iana.org/ip/{ip}` (redireciona para o RIR correto)
+2. Fallback direto para servidores conhecidos se o bootstrap falhar
+
+### 2. Interface ExposedAsset - `AttackSurfaceAnalyzerPage.tsx`
+
+Atualizar a interface `ExposedAsset.asn` para incluir os novos campos:
+
+```text
+asn: {
+  asn: string;
+  provider: string;
+  org: string;
+  is_cdn: boolean;
+  country?: string;
+  abuse_email?: string;
+  tech_email?: string;
+  ip_range?: string;
+} | null;
+```
+
+### 3. Tooltip no IP - `AttackSurfaceAnalyzerPage.tsx`
+
+No componente `AssetCard`, envolver o IP (e o badge ASN) com um `Tooltip` rico que exibe:
+
+```text
++------------------------------------------+
+| AS268794 (FINCH BRASIL SOLUCOES...)      |
+| Pais: BR  [bandeira]                     |
+| Range: 45.172.216.0 - 45.172.217.255     |
+| Abuse: datacenterfinch@gmail.com         |
+| Tecnico: datacenterfinch@gmail.com       |
++------------------------------------------+
+```
+
+- O tooltip aparece ao passar o mouse sobre o endereco IP (ja exibido como `font-mono`)
+- Usar `TooltipProvider` + `Tooltip` + `TooltipTrigger asChild` com `<span>` wrapper (mesmo padrao corrigido nos breach types)
+- `TooltipContent side="top"` com `max-w-sm`
+- Exibir bandeira do pais usando o pacote `flag-icons` ja instalado
+- Se nao houver dados RDAP, o tooltip mostra apenas ASN e org (dados atuais do WHOIS)
+
+### 4. Dados ja coletados continuam funcionando
+
+Os snapshots antigos (sem campos RDAP) continuam exibindo normalmente - os novos campos sao opcionais (`?`). Apenas novos scans trarao os dados enriquecidos.
+
+## Sequencia de implementacao
+
+1. Atualizar `python-agent/agent/executors/asn_classifier.py` - adicionar consulta RDAP
+2. Atualizar `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`:
+   - Expandir interface `ExposedAsset.asn`
+   - Adicionar tooltip rico no IP dentro do `AssetCard`
 
