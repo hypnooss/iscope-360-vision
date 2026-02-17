@@ -989,14 +989,22 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   )}
                 </Tooltip>
               </TooltipProvider>
-              {asset.asn?.asn && (
-                <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
-                  {asset.asn.asn}
-                  {asset.asn.provider && asset.asn.provider !== 'unknown'
-                    ? ` (${asset.asn.provider})`
-                    : asset.asn.org ? ` (${asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '…' : asset.asn.org})` : ''}
-                </Badge>
-              )}
+              {asset.asn && (asset.asn.asn || (asset.asn.provider && asset.asn.provider !== 'unknown') || asset.asn.org) && (() => {
+                const asnNum = asset.asn.asn || '';
+                const providerLabel = asset.asn.provider && asset.asn.provider !== 'unknown'
+                  ? asset.asn.provider
+                  : asset.asn.org
+                    ? (asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '…' : asset.asn.org)
+                    : '';
+                const display = asnNum && providerLabel
+                  ? `${asnNum} (${providerLabel})`
+                  : asnNum || providerLabel;
+                return (
+                  <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
+                    {display}
+                  </Badge>
+                );
+              })()}
               {asset.asn?.country && (
                 <span className={`fi fi-${asset.asn.country.toLowerCase()} text-sm shadow-sm`} title={asset.asn.country} />
               )}
