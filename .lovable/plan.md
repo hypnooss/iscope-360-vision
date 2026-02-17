@@ -1,47 +1,32 @@
 
 
-# Corrigir tooltip do badge "+N" de tecnologias
+# Corrigir posicionamento do tooltip (renderizar via Portal)
 
-## Problemas identificados
+## Problema
 
-1. **Tooltip aparece no card errado** -- O tooltip nao tem seu proprio `TooltipProvider`, dependendo do provider global da pagina. Isso causa posicionamento incorreto.
-2. **Exibe apenas os ocultos** -- O tooltip mostra `allTechs.slice(MAX_TECHS)` em vez de todos (`allTechs`).
-3. **Layout vertical** -- Os itens sao exibidos em coluna (`flex-col`), mas o usuario quer badges em linha com quebra automatica.
+O tooltip do badge "+N" aparece posicionado sobre o card errado. Isso acontece porque o componente `TooltipContent` em `src/components/ui/tooltip.tsx` renderiza o conteudo inline (dentro do DOM do card), sem usar um Portal. Containers com `overflow: hidden` ou posicionamento relativo fazem o tooltip ficar preso ao contexto do card pai, resultando em posicao incorreta.
+
+## Solucao
+
+Adicionar `TooltipPrimitive.Portal` no componente compartilhado `TooltipContent`. Isso garante que o tooltip seja renderizado na raiz do DOM (`document.body`), eliminando problemas de posicionamento causados por containers intermediarios.
 
 ## Mudanca
 
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linhas ~1059-1072)
+**Arquivo:** `src/components/ui/tooltip.tsx`
 
-Substituir o bloco do Tooltip por:
-
-- Envolver com `TooltipProvider delayDuration={200}` proprio (mesmo padrao do IP badge na linha 992)
-- Alterar o conteudo para exibir **todos** os techs: `asset.allTechs.map(...)` em vez de `asset.allTechs.slice(MAX_TECHS)`
-- Trocar `flex-col` por `flex-wrap` com badges coloridas (usando `getTechBadgeColor`)
-- Definir `max-w-sm` (~384px) no `TooltipContent` para limitar largura e forcar quebra de linha quando necessario
-
-### Detalhes tecnicos
+Envolver `TooltipPrimitive.Content` com `TooltipPrimitive.Portal`:
 
 ```text
 Antes:
-  <Tooltip>
-    <TooltipTrigger>...</TooltipTrigger>
-    <TooltipContent className="max-w-xs">
-      <div className="flex flex-col gap-0.5 text-xs">
-        {asset.allTechs.slice(MAX_TECHS).map(...)}  // so os ocultos, texto simples
-      </div>
-    </TooltipContent>
-  </Tooltip>
+  <TooltipPrimitive.Content ... />
 
 Depois:
-  <TooltipProvider delayDuration={200}>
-    <Tooltip>
-      <TooltipTrigger>...</TooltipTrigger>
-      <TooltipContent side="top" className="max-w-sm p-2">
-        <div className="flex flex-wrap gap-1">
-          {asset.allTechs.map(...)}  // TODOS, como Badge com cor
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
+  <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Content ... />
+  </TooltipPrimitive.Portal>
 ```
+
+Esta e uma correcao global que beneficia todos os tooltips do sistema, nao apenas o badge "+N".
+
+Nenhum outro arquivo precisa ser alterado.
 
