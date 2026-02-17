@@ -1,32 +1,30 @@
 
 
-# Corrigir posicionamento do tooltip (renderizar via Portal)
+# Corrigir tooltip do badge "+N" -- adotar mesmo padrao do IP
 
 ## Problema
 
-O tooltip do badge "+N" aparece posicionado sobre o card errado. Isso acontece porque o componente `TooltipContent` em `src/components/ui/tooltip.tsx` renderiza o conteudo inline (dentro do DOM do card), sem usar um Portal. Containers com `overflow: hidden` ou posicionamento relativo fazem o tooltip ficar preso ao contexto do card pai, resultando em posicao incorreta.
-
-## Solucao
-
-Adicionar `TooltipPrimitive.Portal` no componente compartilhado `TooltipContent`. Isso garante que o tooltip seja renderizado na raiz do DOM (`document.body`), eliminando problemas de posicionamento causados por containers intermediarios.
+O tooltip do badge "+N" nao aparece mais apos a mudanca do Portal. O tooltip do IP Address funciona porque envolve o badge em um `<span className="inline-flex cursor-help">` dentro do `TooltipTrigger`. O badge "+N" passa o `Badge` diretamente ao `TooltipTrigger asChild`, e o componente `Badge` nao repassa corretamente o ref/eventos necessarios pelo Radix.
 
 ## Mudanca
 
-**Arquivo:** `src/components/ui/tooltip.tsx`
+**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linhas 1062-1063)
 
-Envolver `TooltipPrimitive.Content` com `TooltipPrimitive.Portal`:
+Envolver o `Badge` do "+N" em um `<span>`, identico ao padrao do IP:
 
 ```text
 Antes:
-  <TooltipPrimitive.Content ... />
+  <TooltipTrigger asChild>
+    <Badge ...>+{overflowTechs}</Badge>
+  </TooltipTrigger>
 
 Depois:
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content ... />
-  </TooltipPrimitive.Portal>
+  <TooltipTrigger asChild>
+    <span className="inline-flex cursor-help">
+      <Badge ...>+{overflowTechs}</Badge>
+    </span>
+  </TooltipTrigger>
 ```
-
-Esta e uma correcao global que beneficia todos os tooltips do sistema, nao apenas o badge "+N".
 
 Nenhum outro arquivo precisa ser alterado.
 
