@@ -13,7 +13,7 @@ const assetTypes = [
     icon: Globe,
     iconColor: 'text-teal-400',
     bgColor: 'bg-teal-400/10',
-    route: '/scope-external-domain/domains',
+    route: '/environment/new/external-domain',
   },
   {
     type: 'firewall',
