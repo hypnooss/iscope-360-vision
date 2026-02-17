@@ -417,6 +417,37 @@ install_httpx() {
   rm -rf "\$tmp_dir"
 }
 
+tune_conntrack() {
+  echo "Configurando kernel conntrack para suportar scans de alta taxa..."
+
+  # Verificar se o módulo nf_conntrack está carregado
+  if ! lsmod | grep -q nf_conntrack 2>/dev/null; then
+    echo "Módulo nf_conntrack não carregado. Tentando carregar..."
+    modprobe nf_conntrack 2>/dev/null || {
+      echo "Aviso: nf_conntrack não disponível neste kernel. Pulando tuning."
+      return
+    }
+  fi
+
+  local conf_file="/etc/sysctl.d/99-iscope-conntrack.conf"
+
+  cat > "\$conf_file" <<CONNTRACK
+net.netfilter.nf_conntrack_max=262144
+net.netfilter.nf_conntrack_tcp_timeout_syn_sent=30
+net.netfilter.nf_conntrack_tcp_timeout_time_wait=30
+CONNTRACK
+
+  sysctl -p "\$conf_file" 2>/dev/null || {
+    echo "Aviso: falha ao aplicar configurações conntrack."
+    return
+  }
+
+  local current_max
+  current_max="\$(sysctl -n net.netfilter.nf_conntrack_max 2>/dev/null || echo 'desconhecido')"
+  echo "Conntrack configurado: max=\$current_max, syn_sent_timeout=30s, time_wait_timeout=30s"
+  echo "Arquivo persistido: \$conf_file"
+}
+
 ensure_user() {
   if id "$SERVICE_USER" >/dev/null 2>&1; then
     local user_home
@@ -839,6 +870,7 @@ main() {
 
   install_deps
   install_scanner_tools
+  tune_conntrack
   ensure_user
   ensure_dirs
   download_release
