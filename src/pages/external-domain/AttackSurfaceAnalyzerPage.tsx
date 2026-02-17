@@ -350,7 +350,7 @@ interface TLSCertInfo {
 interface ExposedAsset {
   hostname: string;
   ip: string;
-  asn: {asn: string;provider: string;org: string;is_cdn: boolean;} | null;
+  asn: {asn: string;provider: string;org: string;is_cdn: boolean;country?: string;abuse_email?: string;tech_email?: string;ip_range?: string;} | null;
   source: 'dns' | 'firewall';
   ports: number[];
   services: AttackSurfaceService[];
@@ -912,6 +912,40 @@ function TimelineSection({
 
 }
 
+function IpTooltipBody({ asn }: { asn: NonNullable<ExposedAsset['asn']> }) {
+  return (
+    <>
+      {asn.asn && (
+        <div className="flex items-center gap-2 font-mono text-xs font-semibold">
+          <span>{asn.asn}</span>
+          {asn.org && <span className="text-muted-foreground font-normal truncate">({asn.org})</span>}
+        </div>
+      )}
+      {asn.country && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`fi fi-${asn.country.toLowerCase()} rounded-sm`} style={{ fontSize: '14px' }} />
+          <span>País: {asn.country}</span>
+        </div>
+      )}
+      {asn.ip_range && (
+        <div className="text-xs text-muted-foreground font-mono">
+          Range: {asn.ip_range}
+        </div>
+      )}
+      {asn.abuse_email && (
+        <div className="text-xs text-muted-foreground">
+          Abuse: {asn.abuse_email}
+        </div>
+      )}
+      {asn.tech_email && asn.tech_email !== asn.abuse_email && (
+        <div className="text-xs text-muted-foreground">
+          Técnico: {asn.tech_email}
+        </div>
+      )}
+    </>
+  );
+}
+
 function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: ExposedAsset;isSuperRole: boolean;onRescan: (asset: ExposedAsset) => void;isRescanning: boolean;}) {
   const [open, setOpen] = useState(false);
   const rc = riskColors[asset.riskLevel];
@@ -931,10 +965,36 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
           <div className="flex-1 min-w-0 space-y-2">
             {/* Row 1: hostname + IP + ASN + risk badge */}
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-base font-semibold truncate">{asset.hostname}</span>
-              {asset.hostname !== asset.ip &&
-              <span className="text-sm text-muted-foreground font-mono">{asset.ip}</span>
-              }
+              {asset.hostname !== asset.ip ? (
+                <>
+                  <span className="text-base font-semibold truncate">{asset.hostname}</span>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-sm text-muted-foreground font-mono cursor-default underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">{asset.ip}</span>
+                      </TooltipTrigger>
+                      {asset.asn && (
+                        <TooltipContent side="top" className="max-w-sm p-3 space-y-1.5">
+                          <IpTooltipBody asn={asset.asn} />
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                </>
+              ) : (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className={cn("text-base font-semibold truncate font-mono", asset.asn ? "cursor-default underline decoration-dotted decoration-muted-foreground/40 underline-offset-2" : "")}>{asset.ip}</span>
+                    </TooltipTrigger>
+                    {asset.asn && (
+                      <TooltipContent side="top" className="max-w-sm p-3 space-y-1.5">
+                        <IpTooltipBody asn={asset.asn} />
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {asset.asn?.asn &&
               <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
                   {asset.asn.asn}
