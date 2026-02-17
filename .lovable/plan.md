@@ -1,34 +1,22 @@
 
 
-# Redesign da tela "Adicionar Dominio Externo"
+# Reduzir largura dos campos Agent e Frequência
 
 ## Problema
 
-A tela atual parece um modal centralizado (card estreito no centro da pagina). Precisa parecer uma tela completa, seguindo o mesmo layout da tela de edicao (`ExternalDomainEditPage`).
+Os campos "Agent" e "Frequência" ocupam 100% da largura do card, ficando desproporcionalmente grandes comparados aos demais campos que estão em grid de 2 colunas.
 
-## O que sera feito
+## Solução
 
-Reescrever o layout de `src/pages/AddExternalDomainPage.tsx` para seguir exatamente o padrao da tela de edicao (print 2):
+1. **Campo Agent**: Mover para dentro do grid de 2 colunas (`grid-cols-1 md:grid-cols-2`), ao lado do campo Workspace/Domínio, ou em uma linha própria mas limitado a metade da largura.
 
-### Layout novo
+2. **Campo Frequência**: Colocar dentro de um grid de 2 colunas também, ocupando apenas metade da largura.
 
-1. **Breadcrumb** no topo: Ambiente > Novo Item > Dominio Externo
-2. **Titulo + subtitulo** com botao de voltar (seta): "Adicionar Dominio Externo" / "Preencha as informacoes do novo dominio"
-3. **Card "Informacoes do Dominio"** (full-width, com icone Globe no titulo):
-   - Grid 2 colunas: Workspace (select ou input disabled) | Dominio Externo (input)
-   - Agent (select, full-width abaixo)
-   - Aviso de propriedade (Alert warning) dentro deste card
-4. **Card "Agendamento de Analise"** (full-width, com icone Clock no titulo + descricao):
-   - Frequencia (select full-width)
-   - Separator + campos condicionais (Horario, Dia da Semana, Dia do Mes)
-   - Texto descritivo da frequencia
-5. **Botoes** no rodape (flex justify-end): Cancelar | Adicionar
+## Detalhes técnicos
 
-### Detalhes tecnicos
+No arquivo `src/pages/AddExternalDomainPage.tsx`:
 
-- Remover o wrapper centralizado (`flex-1 flex items-center justify-center`) e o `max-w-lg`
-- Usar `space-y-6` no container principal (mesmo padrao da tela de edicao)
-- Cards full-width com `CardHeader` + `CardContent`
-- Campos em grid responsivo (`grid-cols-1 md:grid-cols-2`)
-- Manter toda a logica de dados (fetch clients, agents, submit) inalterada
+- Envolver o campo Agent em um `grid grid-cols-1 md:grid-cols-2` para que ocupe apenas metade da largura (coluna esquerda)
+- Fazer o mesmo com o campo Frequência no card de Agendamento
+- Os campos condicionais de horário/dia já estão em grid de 2 colunas, mantê-los como estão
 
