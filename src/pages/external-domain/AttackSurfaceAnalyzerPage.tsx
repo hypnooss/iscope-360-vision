@@ -974,10 +974,10 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <TooltipTrigger asChild>
                     <span className="inline-flex cursor-help">
                       <Badge variant="outline" className={cn(
-                        "font-mono bg-muted/30 text-muted-foreground border-border/50 gap-1 inline-flex items-center",
-                        asset.hostname === asset.ip ? "text-sm px-2 py-0.5" : "text-[10px] px-1.5"
+                        "font-mono text-muted-foreground border-border inline-flex items-center",
+                        asset.hostname === asset.ip ? "text-sm" : "text-[10px]"
                       )}>
-                        <Network className="w-3 h-3" />
+                        <Network className="w-3 h-3 mr-1" />
                         {asset.ip}
                       </Badge>
                     </span>
