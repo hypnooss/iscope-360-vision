@@ -43,34 +43,38 @@ export default function AddAssetPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Ambiente', href: '/environment' }, { label: 'Novo Item' }]} />
 
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Adicionar Novo Item</h1>
-            <p className="text-muted-foreground">Selecione o tipo de ativo que deseja adicionar ao ambiente.</p>
-          </div>
-        </div>
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+          <div className="w-full max-w-lg space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Novo Item</h1>
+                <p className="text-muted-foreground">Selecione o tipo de ativo que deseja adicionar ao ambiente.</p>
+              </div>
+            </div>
 
-        <div className="grid gap-3 max-w-lg">
-          {assetTypes.map((asset) => (
-            <Card
-              key={asset.type}
-              className="cursor-pointer transition-all hover:border-primary hover:shadow-md"
-              onClick={() => navigate(asset.route)}
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className={`rounded-lg p-3 ${asset.bgColor}`}>
-                  <asset.icon className={`w-6 h-6 ${asset.iconColor}`} />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">{asset.title}</p>
-                  <p className="text-sm text-muted-foreground">{asset.description}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+            <div className="grid gap-3">
+              {assetTypes.map((asset) => (
+                <Card
+                  key={asset.type}
+                  className="cursor-pointer transition-all hover:border-primary hover:shadow-md"
+                  onClick={() => navigate(asset.route)}
+                >
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <div className={`rounded-lg p-3 ${asset.bgColor}`}>
+                      <asset.icon className={`w-6 h-6 ${asset.iconColor}`} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{asset.title}</p>
+                      <p className="text-sm text-muted-foreground">{asset.description}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </AppLayout>
