@@ -588,7 +588,7 @@ function CVESummaryBadges({ cves }: {cves: AttackSurfaceCVE[];}) {
 
 function CertStatusBadge({ asset }: {asset: ExposedAsset;}) {
   if (asset.tlsCerts.length === 0) return (
-    <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+    <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
       <Lock className="w-3 h-3 mr-1" /> Sem Certificado
     </Badge>);
 
@@ -974,7 +974,7 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <TooltipTrigger asChild>
                     <span className="inline-flex cursor-help">
                       <Badge variant="outline" className={cn(
-                        "font-mono text-muted-foreground border-border inline-flex items-center",
+                        "font-mono text-muted-foreground border-border inline-flex items-center px-1.5",
                         asset.hostname === asset.ip ? "text-sm" : "text-[10px]"
                       )}>
                         <Network className="w-3 h-3 mr-1" />
@@ -1009,7 +1009,7 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   ? `${asnNum} (${providerLabel})`
                   : asnNum || providerLabel;
                 return (
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+                  <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
                     {display}
                   </Badge>
                 );
