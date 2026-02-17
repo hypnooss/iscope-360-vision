@@ -1,13 +1,18 @@
 """
 ASN Classifier Executor - Identifies CDN/Cloud providers via WHOIS socket lookup.
 Used as Phase 0 in the attack surface pipeline to adapt scan strategy.
+Enriches with RDAP data (country, registrant org, abuse/tech emails, IP range).
 
-Returns: {data: {ip, is_cdn, provider, asn, org}}
+Returns: {data: {ip, is_cdn, provider, asn, org, country, abuse_email, tech_email, ip_range}}
 """
 
+import json
 import re
 import socket
+import ssl
 from typing import Dict, Any, Optional, Tuple
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 from agent.executors.base import BaseExecutor
 
@@ -47,6 +52,15 @@ REFERRAL_PATTERNS = [
     r'refer:\s*([^\s]+)',
 ]
 
+# RDAP servers to try (IANA bootstrap first, then direct fallbacks)
+RDAP_SERVERS = [
+    'https://rdap.iana.org/ip/{}',
+    'https://rdap.registro.br/ip/{}',
+    'https://rdap.arin.net/registry/ip/{}',
+    'https://rdap.db.ripe.net/ip/{}',
+    'https://rdap.apnic.net/ip/{}',
+]
+
 
 class AsnClassifierExecutor(BaseExecutor):
     """Classify an IP by ASN/provider to determine optimal scan strategy."""
@@ -67,12 +81,16 @@ class AsnClassifierExecutor(BaseExecutor):
 
         is_cdn = provider in CDN_EDGE_PROVIDERS if provider else False
 
+        # Enrich with RDAP data
+        rdap = self._rdap_lookup(ip)
+
         self.logger.info(
-            "[asn_classifier] %s -> provider=%s, is_cdn=%s, asn=%s, org=%s",
-            ip, provider or 'unknown', is_cdn, asn or '?', org or '?'
+            "[asn_classifier] %s -> provider=%s, is_cdn=%s, asn=%s, org=%s, country=%s",
+            ip, provider or 'unknown', is_cdn, asn or '?', org or '?',
+            rdap.get('country', '?')
         )
 
-        return {
+        result = {
             'data': {
                 'ip': ip,
                 'is_cdn': is_cdn,
@@ -81,6 +99,134 @@ class AsnClassifierExecutor(BaseExecutor):
                 'org': org or '',
             }
         }
+
+        # Merge RDAP fields (only non-empty values)
+        for key in ('country', 'abuse_email', 'tech_email', 'ip_range'):
+            val = rdap.get(key)
+            if val:
+                result['data'][key] = val
+
+        # Use RDAP org as fallback if WHOIS org is empty
+        if not result['data']['org'] and rdap.get('registrant_org'):
+            result['data']['org'] = rdap['registrant_org']
+
+        # Use RDAP autnum as fallback if WHOIS ASN is empty
+        if not result['data']['asn'] and rdap.get('autnum'):
+            result['data']['asn'] = rdap['autnum']
+
+        return result
+
+    # ──────────────── RDAP lookup ────────────────
+
+    def _rdap_lookup(self, ip):
+        # type: (str) -> Dict[str, str]
+        """Query RDAP via HTTPS to enrich IP data. Returns dict with optional fields."""
+        result = {}  # type: Dict[str, str]
+
+        for url_template in RDAP_SERVERS:
+            url = url_template.format(ip)
+            try:
+                self.logger.info("[asn_classifier] Trying RDAP: %s", url)
+                ctx = ssl.create_default_context()
+                req = Request(url, headers={'Accept': 'application/rdap+json'})
+                resp = urlopen(req, timeout=5, context=ctx)
+
+                # Follow redirects (IANA bootstrap returns 301/302)
+                data = json.loads(resp.read().decode('utf-8', errors='replace'))
+
+                result = self._parse_rdap(data)
+                if result.get('country') or result.get('registrant_org'):
+                    self.logger.info("[asn_classifier] RDAP success from %s", url)
+                    return result
+
+            except (URLError, OSError, json.JSONDecodeError, ValueError) as e:
+                self.logger.debug("[asn_classifier] RDAP failed for %s: %s", url, str(e))
+                continue
+            except Exception as e:
+                self.logger.debug("[asn_classifier] RDAP unexpected error for %s: %s", url, str(e))
+                continue
+
+        return result
+
+    def _parse_rdap(self, data):
+        # type: (Dict[str, Any]) -> Dict[str, str]
+        """Extract useful fields from RDAP JSON response."""
+        result = {}  # type: Dict[str, str]
+
+        # Country (top-level field)
+        if data.get('country'):
+            result['country'] = data['country']
+
+        # IP range
+        start = data.get('startAddress')
+        end = data.get('endAddress')
+        if start and end:
+            result['ip_range'] = '{} - {}'.format(start, end)
+
+        # ASN from nicbr_autnum field
+        autnum = data.get('nicbr_autnum')
+        if autnum:
+            result['autnum'] = 'AS{}'.format(autnum)
+
+        # Parse entities for registrant, abuse, tech contacts
+        for entity in data.get('entities', []):
+            roles = [r.lower() for r in entity.get('roles', [])]
+            vcard = self._extract_vcard(entity)
+
+            if 'registrant' in roles:
+                if vcard.get('fn'):
+                    result['registrant_org'] = vcard['fn']
+
+            if 'abuse' in roles:
+                if vcard.get('email'):
+                    result['abuse_email'] = vcard['email']
+
+            if 'technical' in roles:
+                if vcard.get('email'):
+                    result['tech_email'] = vcard['email']
+
+            # Some responses nest abuse+technical in same entity
+            if 'abuse' in roles and 'technical' in roles:
+                if vcard.get('email'):
+                    result.setdefault('abuse_email', vcard['email'])
+                    result.setdefault('tech_email', vcard['email'])
+
+            # Check nested entities (LACNIC/BR often nests contacts inside registrant)
+            for sub_entity in entity.get('entities', []):
+                sub_roles = [r.lower() for r in sub_entity.get('roles', [])]
+                sub_vcard = self._extract_vcard(sub_entity)
+
+                if 'abuse' in sub_roles and sub_vcard.get('email'):
+                    result.setdefault('abuse_email', sub_vcard['email'])
+                if 'technical' in sub_roles and sub_vcard.get('email'):
+                    result.setdefault('tech_email', sub_vcard['email'])
+                if 'administrative' in sub_roles and sub_vcard.get('email'):
+                    # Use admin email as fallback for tech
+                    result.setdefault('tech_email', sub_vcard['email'])
+
+        return result
+
+    def _extract_vcard(self, entity):
+        # type: (Dict[str, Any]) -> Dict[str, str]
+        """Extract fn and email from jCard/vCard array."""
+        result = {}  # type: Dict[str, str]
+        vcard_array = entity.get('vcardArray')
+        if not vcard_array or not isinstance(vcard_array, list) or len(vcard_array) < 2:
+            return result
+
+        for entry in vcard_array[1]:
+            if not isinstance(entry, list) or len(entry) < 4:
+                continue
+            field_type = entry[0]
+            value = entry[3]
+            if field_type == 'fn' and isinstance(value, str):
+                result['fn'] = value
+            elif field_type == 'email' and isinstance(value, str):
+                result['email'] = value
+
+        return result
+
+    # ──────────────── WHOIS lookup (existing) ────────────────
 
     def _whois_lookup(self, ip, timeout):
         # type: (str, int) -> Tuple[Optional[str], Optional[str], Optional[str]]
