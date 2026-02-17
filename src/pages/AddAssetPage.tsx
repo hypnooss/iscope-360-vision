@@ -40,10 +40,10 @@ export default function AddAssetPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 flex flex-col flex-1 min-h-0">
+      <div className="p-6 lg:p-8 flex flex-col flex-1 min-h-0 space-y-6">
         <PageBreadcrumb items={[{ label: 'Ambiente', href: '/environment' }, { label: 'Novo Item' }]} />
 
-        <div className="flex items-center gap-4 mt-6">
+        <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
