@@ -40,10 +40,10 @@ export default function AddAssetPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="p-6 lg:p-8 flex flex-col flex-1 min-h-0">
         <PageBreadcrumb items={[{ label: 'Ambiente', href: '/environment' }, { label: 'Novo Item' }]} />
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 mt-6">
           <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -53,24 +53,26 @@ export default function AddAssetPage() {
           </div>
         </div>
 
-        <div className="max-w-lg mx-auto mt-8 grid gap-3">
-          {assetTypes.map((asset) => (
-            <Card
-              key={asset.type}
-              className="cursor-pointer transition-all hover:border-primary hover:shadow-md"
-              onClick={() => navigate(asset.route)}
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className={`rounded-lg p-3 ${asset.bgColor}`}>
-                  <asset.icon className={`w-6 h-6 ${asset.iconColor}`} />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">{asset.title}</p>
-                  <p className="text-sm text-muted-foreground">{asset.description}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-lg grid gap-3">
+            {assetTypes.map((asset) => (
+              <Card
+                key={asset.type}
+                className="cursor-pointer transition-all hover:border-primary hover:shadow-md"
+                onClick={() => navigate(asset.route)}
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className={`rounded-lg p-3 ${asset.bgColor}`}>
+                    <asset.icon className={`w-6 h-6 ${asset.iconColor}`} />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{asset.title}</p>
+                    <p className="text-sm text-muted-foreground">{asset.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </div>
     </AppLayout>
