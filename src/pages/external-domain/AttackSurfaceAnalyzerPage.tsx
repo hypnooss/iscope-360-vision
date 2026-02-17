@@ -990,12 +990,18 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                 </Tooltip>
               </TooltipProvider>
               {asset.asn && (asset.asn.asn || (asset.asn.provider && asset.asn.provider !== 'unknown') || asset.asn.org) && (() => {
+                const PROVIDER_DOMAINS: Record<string, string> = {
+                  'cloudflare': 'cloudflare.com', 'akamai': 'akamai.com', 'fastly': 'fastly.com',
+                  'aws_cloudfront': 'aws.com', 'aws': 'aws.com', 'azure': 'microsoft.com',
+                  'google_cloud': 'google.com', 'incapsula': 'imperva.com', 'sucuri': 'sucuri.net',
+                  'stackpath': 'stackpath.com', 'limelight': 'edgecast.com', 'ovh': 'ovh.com',
+                };
                 const asnNum = asset.asn.asn || '';
-                const providerLabel = asset.asn.provider && asset.asn.provider !== 'unknown'
-                  ? asset.asn.provider
-                  : asset.asn.org
-                    ? (asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '…' : asset.asn.org)
-                    : '';
+                const raw = asset.asn.provider && asset.asn.provider !== 'unknown' ? asset.asn.provider : '';
+                const friendly = raw ? (PROVIDER_DOMAINS[raw] || raw) : '';
+                const providerLabel = friendly || (asset.asn.org
+                  ? (asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '…' : asset.asn.org)
+                  : '');
                 const display = asnNum && providerLabel
                   ? `${asnNum} (${providerLabel})`
                   : asnNum || providerLabel;
