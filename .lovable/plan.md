@@ -1,67 +1,53 @@
 
-# Criar menu "Ambiente" e tela unificada de gestao de ativos
+# Separar ativos por categoria com tabelas individuais e coluna Agent
 
 ## Objetivo
 
-Adicionar um novo item "Ambiente" no menu lateral, posicionado acima de "Usuarios" (e apos os modulos + divisor). A tela correspondente listara todos os itens monitorados do workspace (Firewalls, Dominios Externos e Tenants M365) numa unica interface, seguindo o padrao visual ja utilizado nas telas de Dominio Externo.
+Substituir a tabela unica de ativos por 3 secoes separadas por modulo (Firewalls, Dominios Externos, Tenants M365), cada uma com sua propria tabela. Trocar a coluna "Tipo" pela coluna "Agent".
 
-## Posicao no menu
+## Mudancas
+
+### Arquivo: `src/pages/EnvironmentPage.tsx`
+
+**1. Atualizar a query para incluir dados de agent**
+
+- Firewalls: fazer join com `agents` via `agent_id` para trazer `agents.name`
+- External Domains: fazer join com `agents` via `agent_id` para trazer `agents.name`
+- M365 Tenants: fazer join com `m365_tenant_agents` e `agents` para trazer nome do agent vinculado
+
+Adicionar campo `agentName: string | null` ao `UnifiedAsset`.
+
+**2. Separar assets filtrados por tipo**
+
+Em vez de renderizar uma unica tabela com `filtered`, criar 3 agrupamentos:
+- `filteredFirewalls = filtered.filter(a => a.type === 'firewall')`
+- `filteredDomains = filtered.filter(a => a.type === 'external_domain')`
+- `filteredTenants = filtered.filter(a => a.type === 'm365_tenant')`
+
+**3. Criar componente de secao reutilizavel**
+
+Cada secao tera:
+- Titulo com icone e badge de contagem (ex: "Firewalls (3)")
+- Tabela com colunas: Nome, Agent, Workspace, Score, Status, Acoes
+- A coluna "Tipo" deixa de existir (ja esta implicita na secao)
+- Se a secao nao tiver itens (apos filtro), exibir mensagem "Nenhum ativo encontrado"
+
+**4. Layout das secoes**
 
 ```text
-Dashboard
-[Modulos em ordem alfabetica]
---- divisor ---
-Ambiente        <-- NOVO
-Usuarios
-Agents
---- divisor ---
-Administracao
+[Stats Cards]
+[Search]
+--- Firewalls (icon Shield, cor orange) ---
+  [Tabela: Nome | Agent | Workspace | Score | Status | Acoes]
+--- Dominios Externos (icon Globe, cor teal) ---
+  [Tabela: Nome | Agent | Workspace | Score | Status | Acoes]
+--- Tenants M365 (icon Cloud, cor blue) ---
+  [Tabela: Nome | Agent | Workspace | Score | Status | Acoes]
 ```
 
-## Estrutura da tela
+Cada secao so aparece se houver ativos daquele tipo no workspace (antes do filtro de busca). Se apos o filtro a secao ficar vazia, mostrar mensagem inline.
 
-A tela "Ambiente" tera:
-- Breadcrumb: Ambiente
-- Titulo + subtitulo
-- Seletor de Workspace no cabecalho (Super Admin / Super Suporte)
-- Stats cards (glass-card): Total de ativos, Firewalls, Dominios Externos, Tenants M365
-- Campo de busca (input solto, sem card wrapper)
-- Tabela unificada com colunas: Nome, Tipo (badge colorida por modulo), Workspace, Score, Status, Acoes
-- Cada linha tera um botao para navegar ao detalhe do item no modulo respectivo
+**5. Detalhes da coluna Agent**
 
-## Detalhes tecnicos
-
-### 1. Novo arquivo: `src/pages/EnvironmentPage.tsx`
-
-- Seguir padrao de ExternalDomainListPage (useEffectiveAuth, workspace selector, glass-card stats, tabela em Card sem CardHeader)
-- Buscar dados de 3 tabelas: `firewalls`, `external_domains`, `m365_tenants`
-- Unificar em um array com campos normalizados (id, name, type, workspace, score, status)
-- Filtro de busca por nome/tipo/workspace
-- Botao de acao por tipo para navegar a pagina de edicao/detalhe do respectivo modulo
-- Icone do menu: `Monitor` (de lucide-react)
-
-### 2. Rota em `src/App.tsx`
-
-- Adicionar: `<Route path="/environment" element={<EnvironmentPage />} />`
-- Lazy load como as demais paginas
-
-### 3. Menu lateral em `src/components/layout/AppLayout.tsx`
-
-- Adicionar `SidebarLink` para "/environment" com icone `Monitor` e label "Ambiente"
-- Posicionar apos o divisor dos modulos e antes de "Usuarios"
-- Visivel para todos os roles que tem acesso (mesmo criterio de `canAccessUsers` -- workspace_admin e super_admin)
-- Adicionar "/environment" na deteccao de rotas ativas (useEffect do pathname)
-
-### 4. Tabela de tipos por badge
-
-| Tipo | Label | Cor |
-|------|-------|-----|
-| firewall | Firewall | orange |
-| external_domain | Dominio Externo | teal |
-| m365_tenant | Tenant M365 | blue |
-
-### 5. Navegacao por tipo
-
-- Firewall: `/scope-firewall/firewalls/{id}/edit`
-- Dominio Externo: `/scope-external-domain/domains/{id}/edit`
-- Tenant M365: `/scope-m365/tenant-connection` (nao tem pagina de edicao individual por enquanto)
+- Se o ativo tiver agent vinculado: exibir nome do agent
+- Se nao tiver: exibir "—" em texto muted
