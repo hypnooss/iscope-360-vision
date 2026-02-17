@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { AssetCategorySection } from '@/components/environment/AssetCategorySection';
+import { AddAssetWizardDialog } from '@/components/environment/AddAssetWizardDialog';
 import {
   Monitor, Search, Building2, Globe, Shield, Cloud,
 } from 'lucide-react';
@@ -193,6 +194,7 @@ export default function EnvironmentPage() {
                 </SelectContent>
               </Select>
             )}
+            <AddAssetWizardDialog />
           </div>
         </div>
 
