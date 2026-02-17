@@ -1,59 +1,67 @@
 
+# Criar menu "Ambiente" e tela unificada de gestao de ativos
 
-# Extrair produto/fabricante dos dados httpx para tech badges
+## Objetivo
 
-## Contexto
+Adicionar um novo item "Ambiente" no menu lateral, posicionado acima de "Usuarios" (e apos os modulos + divisor). A tela correspondente listara todos os itens monitorados do workspace (Firewalls, Dominios Externos e Tenants M365) numa unica interface, seguindo o padrao visual ja utilizado nas telas de Dominio Externo.
 
-O scan do IP 201.28.184.186 (acessovpn.expansioneroma.com.br) coletou via httpx na porta 40443:
-- **title**: "FortiGate"
-- **subject_cn**: "FortiGate"
-- **issuer**: "Fortinet Ltd."
-
-Porem o bloco de construcao do `techSet` (linhas 411-451) so extrai `server` e `technologies[]` dos web_services httpx. Os campos `title` e `tls` sao completamente ignorados, mesmo contendo informacoes ricas sobre o produto.
-
-## Solucao
-
-Expandir a extracao de tecnologias do httpx (linhas 416-419) para incluir:
-
-1. **title** -- se o titulo da pagina nao for generico (ex: nao for o proprio dominio), adicionar como tech. Isso captura "FortiGate", "pfSense", "MikroTik", etc.
-2. **tls.subject_cn** -- se o CN do certificado nao for o hostname/dominio (ex: "FortiGate" vs "acessovpn.expansioneroma.com.br"), adicionar como tech de produto.
-
-**Nao** adicionaremos o `tls.issuer` como tech separada, pois o `subject_cn` ja identifica o produto de forma mais precisa ("FortiGate" e mais util que "Fortinet Ltd.").
-
-## Mudanca
-
-**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linhas 416-419)
-
-Adicionar apos o loop existente de `technologies`:
+## Posicao no menu
 
 ```text
-for (const ws of result.web_services || []) {
-  if (ws.server) techSet.add(ws.server);
-  for (const t of ws.technologies || []) techSet.add(t);
-
-  // [NOVO] Extrair produto do titulo da pagina (ex: "FortiGate", "pfSense")
-  if (ws.title && !ws.url?.includes(ws.title.toLowerCase())) {
-    techSet.add(ws.title);
-  }
-
-  // [NOVO] Extrair produto do CN do certificado TLS
-  //   quando diferente do hostname (ex: CN="FortiGate" != hostname)
-  if (ws.tls?.subject_cn) {
-    const cn = ws.tls.subject_cn;
-    const urlHost = ws.url ? new URL(ws.url).hostname : '';
-    if (cn !== urlHost && !cn.includes('.') && !cn.includes('*')) {
-      techSet.add(cn);
-    }
-  }
-}
+Dashboard
+[Modulos em ordem alfabetica]
+--- divisor ---
+Ambiente        <-- NOVO
+Usuarios
+Agents
+--- divisor ---
+Administracao
 ```
 
-### Logica dos filtros
+## Estrutura da tela
 
-- **title**: Ignora titulos que sao o proprio dominio (ex: URL contem o titulo) para evitar ruido.
-- **subject_cn**: Adiciona apenas quando o CN nao e um hostname (sem pontos, sem wildcard). Isso captura nomes de produto como "FortiGate", "Sophos", "PAN-OS" mas ignora CNs como "acessovpn.expansioneroma.com.br" ou "*.example.com".
+A tela "Ambiente" tera:
+- Breadcrumb: Ambiente
+- Titulo + subtitulo
+- Seletor de Workspace no cabecalho (Super Admin / Super Suporte)
+- Stats cards (glass-card): Total de ativos, Firewalls, Dominios Externos, Tenants M365
+- Campo de busca (input solto, sem card wrapper)
+- Tabela unificada com colunas: Nome, Tipo (badge colorida por modulo), Workspace, Score, Status, Acoes
+- Cada linha tera um botao para navegar ao detalhe do item no modulo respectivo
 
-### Resultado esperado
+## Detalhes tecnicos
 
-No card do IP 201.28.184.186, as badges passarao a exibir "FortiGate" alem de "HSTS" e "Let's Encrypt", identificando o produto automaticamente a partir dos dados coletados.
+### 1. Novo arquivo: `src/pages/EnvironmentPage.tsx`
 
+- Seguir padrao de ExternalDomainListPage (useEffectiveAuth, workspace selector, glass-card stats, tabela em Card sem CardHeader)
+- Buscar dados de 3 tabelas: `firewalls`, `external_domains`, `m365_tenants`
+- Unificar em um array com campos normalizados (id, name, type, workspace, score, status)
+- Filtro de busca por nome/tipo/workspace
+- Botao de acao por tipo para navegar a pagina de edicao/detalhe do respectivo modulo
+- Icone do menu: `Monitor` (de lucide-react)
+
+### 2. Rota em `src/App.tsx`
+
+- Adicionar: `<Route path="/environment" element={<EnvironmentPage />} />`
+- Lazy load como as demais paginas
+
+### 3. Menu lateral em `src/components/layout/AppLayout.tsx`
+
+- Adicionar `SidebarLink` para "/environment" com icone `Monitor` e label "Ambiente"
+- Posicionar apos o divisor dos modulos e antes de "Usuarios"
+- Visivel para todos os roles que tem acesso (mesmo criterio de `canAccessUsers` -- workspace_admin e super_admin)
+- Adicionar "/environment" na deteccao de rotas ativas (useEffect do pathname)
+
+### 4. Tabela de tipos por badge
+
+| Tipo | Label | Cor |
+|------|-------|-----|
+| firewall | Firewall | orange |
+| external_domain | Dominio Externo | teal |
+| m365_tenant | Tenant M365 | blue |
+
+### 5. Navegacao por tipo
+
+- Firewall: `/scope-firewall/firewalls/{id}/edit`
+- Dominio Externo: `/scope-external-domain/domains/{id}/edit`
+- Tenant M365: `/scope-m365/tenant-connection` (nao tem pagina de edicao individual por enquanto)
