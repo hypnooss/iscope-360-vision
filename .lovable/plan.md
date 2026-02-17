@@ -1,37 +1,45 @@
 
-# Adicionar botao "Novo Item" com Wizard na pagina Ambiente
+# Transformar modal "Novo Item" em pagina dedicada
 
-## Objetivo
+## Resumo
 
-Adicionar um botao "Novo Item" ao lado do seletor de Workspace no header da pagina Ambiente. Ao clicar, abre um Dialog (wizard) onde o usuario primeiro seleciona o tipo de ativo (Dominio Externo, Firewall ou Microsoft 365), e depois e redirecionado para a pagina de criacao correspondente.
-
-## Abordagem
-
-Como cada tipo de ativo ja possui sua propria pagina/dialog de criacao com logica complexa (credenciais, agendamento, OAuth, etc.), o wizard na pagina Ambiente sera um **seletor de tipo** que redireciona o usuario para o fluxo correto. Isso evita duplicar formularios e mantem consistencia.
+Converter o dialog/modal `AddAssetWizardDialog` em uma pagina completa (`/environment/new`), seguindo o mesmo padrao visual da tela "Fontes de CVE": breadcrumb, botao de voltar ao lado do titulo, e layout consistente com o resto do sistema.
 
 ## Mudancas
 
-### 1. Novo componente: `src/components/environment/AddAssetWizardDialog.tsx`
+### 1. Nova pagina: `src/pages/AddAssetPage.tsx`
 
-Um Dialog com:
-- **Tela 1 (selecao de tipo)**: 3 cards clicaveis, cada um representando um tipo de ativo:
-  - Dominio Externo (icone Globe, cor teal) -- redireciona para `/scope-external-domain/domains` (onde ja existe o dialog de adicionar dominio)
-  - Firewall (icone Shield, cor orange) -- redireciona para `/scope-firewall/firewalls/new`
-  - Microsoft 365 (icone Cloud, cor blue) -- redireciona para `/scope-m365/tenant-connection` (onde ja existe o wizard de conexao)
+Criar uma pagina dedicada com:
+- `AppLayout` como wrapper
+- `PageBreadcrumb` com itens: Ambiente > Novo Item
+- Botao de voltar (ArrowLeft, ghost, navega para `/environment`) ao lado do titulo
+- Titulo: "Adicionar Novo Item"
+- Subtitulo: "Selecione o tipo de ativo que deseja adicionar ao ambiente."
+- Os 3 cards de selecao (Dominio Externo, Firewall, Microsoft 365) reutilizando a mesma logica e visual do dialog atual
 
-- Visual: cards com icone grande, titulo e descricao curta. Ao clicar, o dialog fecha e o usuario e levado para a pagina correspondente.
+O layout seguira exatamente o padrao do `CVESourcesPage.tsx` (linhas 185-208).
 
-- O botao trigger sera: `<Button className="gap-2"><Plus className="w-4 h-4" /> Novo Item</Button>` -- seguindo o mesmo padrao do `AddExternalDomainDialog`.
+### 2. Alterar: `src/App.tsx`
 
-### 2. Alterar: `src/pages/EnvironmentPage.tsx`
+Adicionar rota `/environment/new` apontando para o novo `AddAssetPage`.
 
-- Importar o `AddAssetWizardDialog`
-- Adicionar o componente ao lado do seletor de workspace no header (dentro da `div className="flex items-center gap-3"`)
-- O botao sera visivel para usuarios com permissao de edicao
+### 3. Alterar: `src/pages/EnvironmentPage.tsx`
+
+Trocar o `<AddAssetWizardDialog />` por um `<Button>` que navega para `/environment/new`:
+
+```text
+<Button className="gap-2" onClick={() => navigate('/environment/new')}>
+  <Plus className="w-4 h-4" />
+  Novo Item
+</Button>
+```
+
+### 4. Remover: `src/components/environment/AddAssetWizardDialog.tsx`
+
+O componente de dialog nao sera mais necessario e sera removido.
 
 ### Detalhes tecnicos
 
-- O componente usara `Dialog` do Radix (mesmo padrao do projeto)
-- Cards de selecao usarao `Card` com `hover:border-primary` para feedback visual
-- Navegacao via `useNavigate()` do react-router-dom
-- Nao ha mudanca no banco de dados
+- A pagina usa `useNavigate` para o botao voltar e para os cards de selecao
+- Nenhuma mudanca no banco de dados
+- Os cards de selecao mantem as mesmas rotas de destino (`/scope-external-domain/domains`, `/scope-firewall/firewalls/new`, `/scope-m365/tenant-connection`)
