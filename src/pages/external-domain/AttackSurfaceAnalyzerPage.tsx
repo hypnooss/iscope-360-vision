@@ -995,6 +995,9 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   'aws_cloudfront': 'aws.com', 'aws': 'aws.com', 'azure': 'microsoft.com',
                   'google_cloud': 'google.com', 'incapsula': 'imperva.com', 'sucuri': 'sucuri.net',
                   'stackpath': 'stackpath.com', 'limelight': 'edgecast.com', 'ovh': 'ovh.com',
+                  'oracle': 'oracle.com', 'digitalocean': 'digitalocean.com', 'linode': 'linode.com',
+                  'hetzner': 'hetzner.com', 'vultr': 'vultr.com', 'ibm': 'ibm.com',
+                  'alibaba': 'alibaba.com', 'tencent': 'tencent.com', 'huawei': 'huawei.com',
                 };
                 const asnNum = asset.asn.asn || '';
                 const raw = asset.asn.provider && asset.asn.provider !== 'unknown' ? asset.asn.provider : '';
@@ -1006,7 +1009,7 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   ? `${asnNum} (${providerLabel})`
                   : asnNum || providerLabel;
                 return (
-                  <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
                     {display}
                   </Badge>
                 );
