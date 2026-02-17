@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import {
   Globe,
+  Network,
   Server,
   ChevronDown,
   ChevronRight,
@@ -973,9 +974,10 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <TooltipTrigger asChild>
                     <span className="inline-flex cursor-help">
                       <Badge variant="outline" className={cn(
-                        "font-mono bg-muted/30 text-muted-foreground border-border/50",
+                        "font-mono bg-muted/30 text-muted-foreground border-border/50 gap-1 inline-flex items-center",
                         asset.hostname === asset.ip ? "text-sm px-2 py-0.5" : "text-[10px] px-1.5"
                       )}>
+                        <Network className="w-3 h-3" />
                         {asset.ip}
                       </Badge>
                     </span>
@@ -990,7 +992,9 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
               {asset.asn?.asn && (
                 <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
                   {asset.asn.asn}
-                  {asset.asn.provider !== 'unknown' && ` (${asset.asn.provider})`}
+                  {asset.asn.provider && asset.asn.provider !== 'unknown'
+                    ? ` (${asset.asn.provider})`
+                    : asset.asn.org ? ` (${asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '…' : asset.asn.org})` : ''}
                 </Badge>
               )}
               {asset.asn?.country && (
