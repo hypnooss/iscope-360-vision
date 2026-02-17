@@ -416,6 +416,20 @@ cachedCVEs?: CachedCVERecord[])
     for (const ws of result.web_services || []) {
       if (ws.server) techSet.add(ws.server);
       for (const t of ws.technologies || []) techSet.add(t);
+
+      // Extrair produto do título da página (ex: "FortiGate", "pfSense")
+      if (ws.title && !ws.url?.includes(ws.title.toLowerCase())) {
+        techSet.add(ws.title);
+      }
+
+      // Extrair produto do CN do certificado TLS quando diferente do hostname
+      if (ws.tls?.subject_cn) {
+        const cn = typeof ws.tls.subject_cn === 'string' ? ws.tls.subject_cn : '';
+        const urlHost = ws.url ? new URL(ws.url).hostname : '';
+        if (cn && cn !== urlHost && !cn.includes('.') && !cn.includes('*')) {
+          techSet.add(cn);
+        }
+      }
     }
 
     // Extract tech from NSE scripts
