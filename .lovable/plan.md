@@ -1,34 +1,39 @@
 
 
-# Exibir IP como badge + bandeira do pais na linha do asset
+# Corrigir exibicao da ASN badge + bandeira + estilo do IP badge
 
-## O que muda
+## Problemas identificados
 
-Na primeira linha do `AssetCard` (hostname + IP + ASN), atualmente o IP aparece como texto simples com tooltip. A alteracao transforma essa linha para exibir:
+1. **ASN badge nao mostra o provider**: A condicao `asset.asn.provider !== 'unknown'` esconde o nome quando o provider e "unknown". Mas o campo `org` contem o nome da organizacao (ex: "CLOUDFLARENET", "MICROSOFT-CORP"). Precisamos exibir o `org` como fallback.
+2. **Bandeira do pais nao aparece**: O campo `country` vem do RDAP (novo). Snapshots antigos nao tem esse dado. Para snapshots novos vai funcionar, mas precisamos verificar se o dado esta chegando.
+3. **Estilo do IP badge**: Deve seguir o mesmo padrao visual dos badges da Row 2 (como `[Lock] Certificado Valido`), ou seja, com icone inline + texto.
 
-1. **Hostname** (texto, como esta hoje)
-2. **IP em badge** - estilo similar ao badge de ASN, com fundo neutro/cinza e fonte mono
-3. **ASN badge** (ja existe, mantem)
-4. **Bandeira do pais** - usando `flag-icons` (ja instalado), exibida como um pequeno icone inline ao lado do IP ou ASN
-5. **Risk badge** (ja existe, mantem no `ml-auto`)
-
-O tooltip rico no IP continua funcionando - o badge do IP sera o trigger do tooltip.
-
-Quando o hostname for igual ao IP, o badge do IP assume o papel de titulo (fonte um pouco maior).
-
-## Detalhes tecnicos
+## Alteracoes
 
 **Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-Alteracao na Row 1 do `AssetCard` (linhas 967-1007):
+### 1. IP badge com icone (estilo cert badge)
 
-- Transformar o `<span>` do IP em um `<Badge>` com estilo neutro (ex: `bg-muted/50 text-muted-foreground border-border/50 font-mono`)
-- Adicionar a bandeira do pais logo apos o badge de ASN: `<span className="fi fi-{country}" />` usando o campo `asset.asn?.country`
-- Manter o `TooltipTrigger asChild` envolvendo o badge do IP com `<span className="inline-flex cursor-help">`
-- Quando `hostname === ip`, exibir apenas o badge do IP (sem duplicar)
-
-Exemplo visual da linha resultante:
+Trocar o badge simples do IP por um badge com icone `Globe` ou `Network` inline, seguindo o mesmo padrao do `CertStatusBadge`:
 
 ```text
-painelhcm.estrela.com.br  [186.201.152.82]  [AS10429]  [BR flag]  .... [Critical]
+[Network icon] 104.26.8.239
 ```
+
+Usar classe similar: `text-[10px] px-1.5 bg-muted/30 text-muted-foreground border-border/50 font-mono`
+
+### 2. ASN badge mostra org quando provider e unknown
+
+Alterar a logica para exibir `org` como fallback do `provider`:
+
+```text
+Antes:  AS13335 (apenas se provider !== 'unknown')
+Depois: AS13335 (cloudflare.com)  -- usa org se provider for 'unknown'
+```
+
+A logica fica: mostrar `provider` se nao for 'unknown', senao mostrar `org` (truncado se muito longo).
+
+### 3. Bandeira do pais
+
+Manter o codigo atual que renderiza a bandeira via `flag-icons`. Se o campo `country` nao existir no snapshot, a bandeira simplesmente nao aparece (retrocompativel). Novos scans com RDAP trarao o campo.
+
