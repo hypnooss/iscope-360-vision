@@ -1,23 +1,41 @@
 
-# Alinhar colunas das tabelas de ativos
 
-## Problema
-As colunas "Nome", "Agent", "Workspace", "Score", "Status" e "Acoes" nao estao alinhadas entre as 3 tabelas porque o conteudo de cada uma tem tamanhos diferentes, fazendo o navegador calcular larguras distintas.
+# Traduzir status para PT-BR e reordenar seções
 
-## Solucao
-Adicionar larguras fixas (via classes Tailwind `w-[]`) nos `TableHead` e `TableCell` do componente `AssetCategorySection.tsx`, garantindo que todas as tabelas usem a mesma distribuicao de colunas.
+## Mudanças
 
-### Arquivo: `src/components/environment/AssetCategorySection.tsx`
+### 1. Traduzir status para português (`AssetCategorySection.tsx`)
 
-Aplicar as seguintes larguras nas colunas:
+Criar um mapa de tradução de status para exibição em português:
 
-| Coluna | Largura |
-|--------|---------|
-| Nome | w-[25%] |
-| Agent | w-[18%] |
-| Workspace | w-[22%] |
-| Score | w-[12%] |
-| Status | w-[12%] |
-| Acoes | w-[11%] text-right |
+| Status original | Tradução |
+|----------------|----------|
+| analyzed | Analisado |
+| pending | Pendente |
+| partial | Parcial |
+| connected | Conectado |
+| disconnected | Desconectado |
+| error | Erro |
+| active | Ativo |
 
-Isso sera aplicado tanto nos `TableHead` quanto nos `TableCell` correspondentes, forcando alinhamento identico entre as 3 tabelas independentemente do conteudo.
+O Badge de status usará o valor traduzido em vez do valor cru do banco.
+
+### 2. Status "Pendente" nos Domínios Externos
+
+Os domínios externos realmente possuem status `pending` no banco de dados. Isso é correto -- significa que ainda não foram analisados. A tradução para "Pendente" refletirá isso corretamente. Porém, como eles possuem score (89%, 83%), faz sentido que domínios com score sejam exibidos como "Analisado". Será aplicada a mesma lógica usada nos firewalls: se `last_score` não é nulo, o status será `analyzed` independente do campo `status` da tabela.
+
+### 3. Reordenar seções (`EnvironmentPage.tsx`)
+
+Trocar a ordem das seções para seguir o menu:
+1. Domínios Externos
+2. Firewalls
+3. Tenants M365
+
+Também reordenar os stats cards na mesma sequência.
+
+### Detalhes técnicos
+
+- **`AssetCategorySection.tsx`**: Adicionar função `translateStatus(status: string): string` com o mapa de traduções
+- **`EnvironmentPage.tsx`** (linha 120): Alterar lógica de status dos external_domains para usar `ed.last_score !== null ? 'analyzed' : ed.status`
+- **`EnvironmentPage.tsx`** (linhas 260-285): Reordenar os 3 `AssetCategorySection` para Domínios Externos, Firewalls, M365
+- **`EnvironmentPage.tsx`** (stats cards): Reordenar para Domínios Externos, Firewalls, M365
