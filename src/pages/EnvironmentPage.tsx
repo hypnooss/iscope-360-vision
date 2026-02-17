@@ -187,7 +187,7 @@ export default function EnvironmentPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Gerenciamento do Ambiente</h1>
-            <p className="text-muted-foreground">Visão unificada dos ativos monitorados</p>
+            <p className="text-muted-foreground">Gerencie todos os sistemas monitorados</p>
           </div>
           <div className="flex items-center gap-3">
             {isSuperRole && !isPreviewMode && allWorkspaces && allWorkspaces.length > 0 && (
