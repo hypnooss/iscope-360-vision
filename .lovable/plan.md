@@ -1,30 +1,20 @@
 
 
-# Adicionar tuning de conntrack no instalador do Super Agent
+# Adicionar tooltip no badge "+N" de servicos/tecnologias
 
 ## Problema
-O nmap Phase 2 (full-range, 65535 portas) satura a tabela `nf_conntrack` do kernel, causando `Operation not permitted`. Isso precisa ser configurado automaticamente durante a instalacao.
+O badge "+7" (overflow de tecnologias) no card do Asset nao exibe tooltip ao passar o mouse. O usuario espera ver a lista completa dos servicos ocultos.
 
 ## Mudanca
 
-Adicionar uma funcao `tune_conntrack()` no script de instalacao (`supabase/functions/super-agent-install/index.ts`) que:
+**Arquivo:** `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
 
-1. Cria `/etc/sysctl.d/99-iscope-conntrack.conf` com:
-   - `nf_conntrack_max=262144` (4x o default de 65536)
-   - `nf_conntrack_tcp_timeout_syn_sent=30` (reduz de 120s)
-   - `nf_conntrack_tcp_timeout_time_wait=30` (reduz de 120s)
-2. Aplica imediatamente com `sysctl -p`
-3. Verifica se o modulo `nf_conntrack` esta carregado antes de aplicar (evita erro em sistemas sem conntrack)
+Envolver o badge `+{overflowTechs}` (linha ~1060) com um `Tooltip` que exibe a lista dos servicos ocultos (`asset.allTechs.slice(MAX_TECHS)`), separados por virgula ou em lista vertical.
 
-## Onde inserir no fluxo
+### Detalhes tecnicos
 
-A funcao sera chamada em `main()` logo apos `install_scanner_tools` e antes de `ensure_user`, pois e uma configuracao de sistema relacionada aos scanners.
-
-## Detalhes tecnicos
-
-- Arquivo: `supabase/functions/super-agent-install/index.ts`
-- Nova funcao bash `tune_conntrack()` (~20 linhas) inserida apos `install_scanner_tools()`
-- Chamada adicionada na funcao `main()` na linha de sequencia entre `install_scanner_tools` e `ensure_user`
-- A funcao e idempotente: sobrescreve o arquivo conf se ja existir
-- Log informativo sobre o que foi configurado
+- O componente `AssetCard` ja importa `Tooltip`, `TooltipTrigger`, `TooltipContent` e `TooltipProvider` (usado no IP badge acima)
+- A lista oculta sera: `asset.allTechs.slice(MAX_TECHS)`
+- O tooltip exibira os nomes em lista vertical para melhor legibilidade
+- O badge recebera `cursor-help` para indicar interatividade
 
