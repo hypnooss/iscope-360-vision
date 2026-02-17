@@ -1,41 +1,37 @@
 
+# Adicionar botao "Novo Item" com Wizard na pagina Ambiente
 
-# Traduzir status para PT-BR e reordenar seções
+## Objetivo
 
-## Mudanças
+Adicionar um botao "Novo Item" ao lado do seletor de Workspace no header da pagina Ambiente. Ao clicar, abre um Dialog (wizard) onde o usuario primeiro seleciona o tipo de ativo (Dominio Externo, Firewall ou Microsoft 365), e depois e redirecionado para a pagina de criacao correspondente.
 
-### 1. Traduzir status para português (`AssetCategorySection.tsx`)
+## Abordagem
 
-Criar um mapa de tradução de status para exibição em português:
+Como cada tipo de ativo ja possui sua propria pagina/dialog de criacao com logica complexa (credenciais, agendamento, OAuth, etc.), o wizard na pagina Ambiente sera um **seletor de tipo** que redireciona o usuario para o fluxo correto. Isso evita duplicar formularios e mantem consistencia.
 
-| Status original | Tradução |
-|----------------|----------|
-| analyzed | Analisado |
-| pending | Pendente |
-| partial | Parcial |
-| connected | Conectado |
-| disconnected | Desconectado |
-| error | Erro |
-| active | Ativo |
+## Mudancas
 
-O Badge de status usará o valor traduzido em vez do valor cru do banco.
+### 1. Novo componente: `src/components/environment/AddAssetWizardDialog.tsx`
 
-### 2. Status "Pendente" nos Domínios Externos
+Um Dialog com:
+- **Tela 1 (selecao de tipo)**: 3 cards clicaveis, cada um representando um tipo de ativo:
+  - Dominio Externo (icone Globe, cor teal) -- redireciona para `/scope-external-domain/domains` (onde ja existe o dialog de adicionar dominio)
+  - Firewall (icone Shield, cor orange) -- redireciona para `/scope-firewall/firewalls/new`
+  - Microsoft 365 (icone Cloud, cor blue) -- redireciona para `/scope-m365/tenant-connection` (onde ja existe o wizard de conexao)
 
-Os domínios externos realmente possuem status `pending` no banco de dados. Isso é correto -- significa que ainda não foram analisados. A tradução para "Pendente" refletirá isso corretamente. Porém, como eles possuem score (89%, 83%), faz sentido que domínios com score sejam exibidos como "Analisado". Será aplicada a mesma lógica usada nos firewalls: se `last_score` não é nulo, o status será `analyzed` independente do campo `status` da tabela.
+- Visual: cards com icone grande, titulo e descricao curta. Ao clicar, o dialog fecha e o usuario e levado para a pagina correspondente.
 
-### 3. Reordenar seções (`EnvironmentPage.tsx`)
+- O botao trigger sera: `<Button className="gap-2"><Plus className="w-4 h-4" /> Novo Item</Button>` -- seguindo o mesmo padrao do `AddExternalDomainDialog`.
 
-Trocar a ordem das seções para seguir o menu:
-1. Domínios Externos
-2. Firewalls
-3. Tenants M365
+### 2. Alterar: `src/pages/EnvironmentPage.tsx`
 
-Também reordenar os stats cards na mesma sequência.
+- Importar o `AddAssetWizardDialog`
+- Adicionar o componente ao lado do seletor de workspace no header (dentro da `div className="flex items-center gap-3"`)
+- O botao sera visivel para usuarios com permissao de edicao
 
-### Detalhes técnicos
+### Detalhes tecnicos
 
-- **`AssetCategorySection.tsx`**: Adicionar função `translateStatus(status: string): string` com o mapa de traduções
-- **`EnvironmentPage.tsx`** (linha 120): Alterar lógica de status dos external_domains para usar `ed.last_score !== null ? 'analyzed' : ed.status`
-- **`EnvironmentPage.tsx`** (linhas 260-285): Reordenar os 3 `AssetCategorySection` para Domínios Externos, Firewalls, M365
-- **`EnvironmentPage.tsx`** (stats cards): Reordenar para Domínios Externos, Firewalls, M365
+- O componente usara `Dialog` do Radix (mesmo padrao do projeto)
+- Cards de selecao usarao `Card` com `hover:border-primary` para feedback visual
+- Navegacao via `useNavigate()` do react-router-dom
+- Nao ha mudanca no banco de dados
