@@ -1,46 +1,32 @@
 
 
-# Corrigir badge ASN para IPs de CDN/Cloud sem numero AS
+# Igualar estilo da badge IP ao da badge "Sem Certificado"
 
 ## Problema
 
-A badge de ASN so aparece quando `asset.asn?.asn` existe (o numero do AS, ex: "AS13335"). Para alguns IPs de CDN como CloudFront/AWS, o objeto `asn` existe com dados de `provider`, `org`, emails e range, mas o campo `asn` (numero) pode estar vazio. Resultado: nenhuma badge aparece.
+A badge do IP tem estilo diferente da badge "Sem Certificado" (`CertStatusBadge`). Ela usa `bg-muted/30`, `border-border/50`, `gap-1`, `px-1.5`/`px-2 py-0.5` enquanto a badge de certificado usa apenas `text-[10px] text-muted-foreground border-border` com `mr-1` no icone.
 
-## Solucao
+## Alteracao
 
-**Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+**Arquivo**: `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` (linhas 976-982)
 
-Alterar a condicao de renderizacao da badge ASN (linha 992) de:
+Trocar o estilo da badge IP de:
 
-```
-asset.asn?.asn && (...)
-```
-
-Para:
-
-```
-asset.asn && (asset.asn.asn || asset.asn.provider || asset.asn.org) && (...)
+```text
+font-mono bg-muted/30 text-muted-foreground border-border/50 gap-1 inline-flex items-center
+text-sm px-2 py-0.5  (quando hostname === ip)
+text-[10px] px-1.5   (quando hostname !== ip)
 ```
 
-E ajustar o conteudo da badge para exibir o que estiver disponivel:
-- Se tiver `asn.asn` + provider/org: `AS13335 (cloudflare.com)`
-- Se tiver apenas provider/org (sem numero): `cloudflare.com` ou `CLOUDFLARENET`
-- Se tiver apenas `asn.asn`: `AS13335`
+Para o mesmo padrao do `CertStatusBadge`:
 
-A logica de label fica:
-
-```tsx
-const asnLabel = asset.asn.asn || '';
-const providerLabel = asset.asn.provider && asset.asn.provider !== 'unknown'
-  ? asset.asn.provider
-  : asset.asn.org
-    ? (asset.asn.org.length > 20 ? asset.asn.org.slice(0, 20) + '...' : asset.asn.org)
-    : '';
-
-// Se ambos existem: "AS13335 (cloudflare.com)"
-// Se so provider: "cloudflare.com"
-// Se so asn: "AS13335"
+```text
+font-mono text-muted-foreground border-border
+text-sm    (quando hostname === ip)
+text-[10px] (quando hostname !== ip)
 ```
 
-Isso garante que qualquer IP com dados de ASN/provider/org tera a badge visivel.
+E trocar `className="w-3 h-3"` do icone `Network` para `className="w-3 h-3 mr-1"` (mesmo espacamento do icone `Lock` na badge de certificado).
+
+Resultado: ambas as badges ficam visualmente identicas em estilo, diferindo apenas no conteudo (icone + texto).
 
