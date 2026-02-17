@@ -1057,7 +1057,18 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
                   )}
                     {overflowTechs > 0 &&
-                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground cursor-help">+{overflowTechs}</Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        {asset.allTechs.slice(MAX_TECHS).map((t, i) => (
+                          <span key={i}>{t}</span>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
                   }
                   </div>
                 </>
