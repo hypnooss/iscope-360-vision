@@ -65,6 +65,7 @@ const ExchangeOnlinePage = lazy(() => import("./pages/m365/ExchangeOnlinePage"))
 const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
 
 // Preview pages (temporary)
+const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 
@@ -142,6 +143,9 @@ const App = () => (
                   <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
                   <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
                   <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
+
+                  {/* Environment */}
+                  <Route path="/environment" element={<EnvironmentPage />} />
 
                   {/* Admin */}
                   <Route path="/users" element={<UsersPage />} />

@@ -212,6 +212,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setActiveModule('scope_cloud');
       setExpandedModules({ scope_cloud: true });
       setAdminMenuOpen(false);
+    } else if (path === '/environment') {
+      // Environment page: close all modules and admin
+      setExpandedModules({});
+      setAdminMenuOpen(false);
     } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents') {
       // Admin routes: expand admin menu, close all modules
       setAdminMenuOpen(true);
@@ -654,6 +658,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Divider */}
       {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
+
+      {/* Ambiente */}
+      {canAccessUsers && (
+        <SidebarLink 
+          to="/environment" 
+          icon={Monitor} 
+          label="Ambiente" 
+          isActive={location.pathname === '/environment'} 
+        />
+      )}
 
       {/* Users */}
       {canAccessUsers && (
