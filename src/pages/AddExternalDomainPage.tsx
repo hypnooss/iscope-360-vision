@@ -304,6 +304,7 @@ export default function AddExternalDomainPage() {
             </div>
 
             {/* Agent */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Agent *</Label>
               <Select
@@ -323,6 +324,7 @@ export default function AddExternalDomainPage() {
               {formData.client_id && agents.length === 0 && (
                 <p className="text-xs text-muted-foreground">Nenhum agent disponível para este workspace</p>
               )}
+            </div>
             </div>
 
             {/* Aviso legal */}
@@ -348,6 +350,7 @@ export default function AddExternalDomainPage() {
             <p className="text-sm text-muted-foreground">Configure a frequência de execução das análises</p>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Frequência</Label>
               <Select
@@ -364,6 +367,7 @@ export default function AddExternalDomainPage() {
                   <SelectItem value="monthly">Mensal</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
             </div>
 
             {formData.schedule !== 'manual' && (
