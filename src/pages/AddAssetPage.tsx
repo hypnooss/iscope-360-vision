@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Globe, Shield, Cloud } from 'lucide-react';
+import { ArrowLeft, Globe, Shield, Cloud } from 'lucide-react';
 
 const assetTypes = [
   {
@@ -35,34 +35,30 @@ const assetTypes = [
   },
 ];
 
-export function AddAssetWizardDialog() {
-  const [open, setOpen] = useState(false);
+export default function AddAssetPage() {
   const navigate = useNavigate();
 
-  const handleSelect = (route: string) => {
-    setOpen(false);
-    navigate(route);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="gap-2">
-          <Plus className="w-4 h-4" />
-          Novo Item
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Adicionar Novo Item</DialogTitle>
-          <DialogDescription>Selecione o tipo de ativo que deseja adicionar ao ambiente.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-3 mt-2">
+    <AppLayout>
+      <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Ambiente', href: '/environment' }, { label: 'Novo Item' }]} />
+
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Adicionar Novo Item</h1>
+            <p className="text-muted-foreground">Selecione o tipo de ativo que deseja adicionar ao ambiente.</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 max-w-lg">
           {assetTypes.map((asset) => (
             <Card
               key={asset.type}
               className="cursor-pointer transition-all hover:border-primary hover:shadow-md"
-              onClick={() => handleSelect(asset.route)}
+              onClick={() => navigate(asset.route)}
             >
               <CardContent className="flex items-center gap-4 p-4">
                 <div className={`rounded-lg p-3 ${asset.bgColor}`}>
@@ -76,7 +72,7 @@ export function AddAssetWizardDialog() {
             </Card>
           ))}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </AppLayout>
   );
 }

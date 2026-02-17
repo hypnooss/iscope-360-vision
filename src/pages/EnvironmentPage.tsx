@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { AssetCategorySection } from '@/components/environment/AssetCategorySection';
-import { AddAssetWizardDialog } from '@/components/environment/AddAssetWizardDialog';
+import { Button } from '@/components/ui/button';
 import {
-  Monitor, Search, Building2, Globe, Shield, Cloud,
+  Monitor, Search, Building2, Globe, Shield, Cloud, Plus,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -194,7 +194,10 @@ export default function EnvironmentPage() {
                 </SelectContent>
               </Select>
             )}
-            <AddAssetWizardDialog />
+            <Button className="gap-2" onClick={() => navigate('/environment/new')}>
+              <Plus className="w-4 h-4" />
+              Novo Item
+            </Button>
           </div>
         </div>
 
