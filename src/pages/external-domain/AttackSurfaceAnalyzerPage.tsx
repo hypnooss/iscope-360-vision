@@ -577,7 +577,7 @@ function CVESummaryBadges({ cves }: {cves: AttackSurfaceCVE[];}) {
       {order.filter((s) => counts[s]).map((s, idx, arr) =>
       <React.Fragment key={s}>
           {idx > 0 && <span className="text-border">•</span>}
-          <Badge variant="outline" className={cn("text-[10px] px-1.5", sevColors[s])}>
+          <Badge variant="outline" className={cn("text-[11px] px-2 py-0.5", sevColors[s])}>
             {counts[s]} {s.charAt(0).toUpperCase() + s.slice(1)}
           </Badge>
         </React.Fragment>
@@ -588,7 +588,7 @@ function CVESummaryBadges({ cves }: {cves: AttackSurfaceCVE[];}) {
 
 function CertStatusBadge({ asset }: {asset: ExposedAsset;}) {
   if (asset.tlsCerts.length === 0) return (
-    <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
+    <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground border-border">
       <Lock className="w-3 h-3 mr-1" /> Sem Certificado
     </Badge>);
 
@@ -597,7 +597,7 @@ function CertStatusBadge({ asset }: {asset: ExposedAsset;}) {
     (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b
     );
     return (
-      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">
+      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[11px] px-2 py-0.5">
         <Lock className="w-3 h-3 mr-1" /> Certificado Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
       </Badge>);
 
@@ -607,13 +607,13 @@ function CertStatusBadge({ asset }: {asset: ExposedAsset;}) {
     (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b
     );
     return (
-      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">
+      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[11px] px-2 py-0.5">
         <Lock className="w-3 h-3 mr-1" /> Certificado Expira em {worst.daysRemaining}d
       </Badge>);
 
   }
   return (
-    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] px-2 py-0.5">
       <Lock className="w-3 h-3 mr-1" /> Certificado Válido
     </Badge>);
 
@@ -974,8 +974,8 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <TooltipTrigger asChild>
                     <span className="inline-flex cursor-help">
                       <Badge variant="outline" className={cn(
-                        "font-mono text-muted-foreground border-border inline-flex items-center px-1.5",
-                        asset.hostname === asset.ip ? "text-sm" : "text-[10px]"
+                        "font-mono text-muted-foreground border-border inline-flex items-center px-2 py-0.5",
+                        asset.hostname === asset.ip ? "text-sm" : "text-[11px]"
                       )}>
                         <Network className="w-3 h-3 mr-1" />
                         {asset.ip}
@@ -1009,7 +1009,7 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   ? `${asnNum} (${providerLabel})`
                   : asnNum || providerLabel;
                 return (
-                  <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground border-border">
                     {display}
                   </Badge>
                 );
@@ -1017,16 +1017,16 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
               {asset.asn?.country && (
                 <span className={`fi fi-${asset.asn.country.toLowerCase()} text-sm shadow-sm`} title={asset.asn.country} />
               )}
-              <Badge variant="outline" className={cn("text-[10px] ml-auto shrink-0", rc.badge)}>
+              <Badge variant="outline" className={cn("text-[11px] px-2 py-0.5 ml-auto shrink-0", rc.badge)}>
                 {asset.riskLevel}
               </Badge>
             </div>
 
             {/* Row 2: ports + techs */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <Badge variant="outline" className="text-[10px] px-1.5 bg-orange-500/10 text-orange-400 border-orange-500/30">{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-orange-500/10 text-orange-400 border-orange-500/30">{asset.ports.length} porta{asset.ports.length !== 1 ? 's' : ''}</Badge>
               <span className="text-border">•</span>
-              <Badge variant="outline" className="text-[10px] px-1.5 bg-blue-500/10 text-blue-400 border-blue-500/30">{asset.services.length + asset.webServices.length} serviço{asset.services.length + asset.webServices.length !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border-blue-500/30">{asset.services.length + asset.webServices.length} serviço{asset.services.length + asset.webServices.length !== 1 ? 's' : ''}</Badge>
               <span className="text-border">•</span>
               <CertStatusBadge asset={asset} />
               {visibleTechs.length > 0 &&
@@ -1034,10 +1034,10 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <span className="text-border">•</span>
                   <div className="flex flex-wrap gap-1">
                     {visibleTechs.map((t, i) =>
-                  <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5", getTechBadgeColor(t))}>{t}</Badge>
+                  <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
                   )}
                     {overflowTechs > 0 &&
-                  <Badge variant="outline" className="text-[10px] px-1.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
                   }
                   </div>
                 </>
@@ -1049,7 +1049,7 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
               {asset.cves.length > 0 ?
               <CVESummaryBadges cves={asset.cves} /> :
 
-              <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground border-border">0 CVEs</Badge>
+              <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground border-border">0 CVEs</Badge>
               }
               {isSuperRole &&
               <Button
