@@ -1,45 +1,16 @@
 
-# Transformar modal "Novo Item" em pagina dedicada
 
-## Resumo
+# Centralizar cards e renomear título na página "Novo Item"
 
-Converter o dialog/modal `AddAssetWizardDialog` em uma pagina completa (`/environment/new`), seguindo o mesmo padrao visual da tela "Fontes de CVE": breadcrumb, botao de voltar ao lado do titulo, e layout consistente com o resto do sistema.
+## Mudanças em `src/pages/AddAssetPage.tsx`
 
-## Mudancas
+1. **Título**: Alterar de "Adicionar Novo Item" para "Novo Item"
+2. **Centralização**: Envolver o conteúdo (título + cards) em um container flex centralizado horizontal e verticalmente, ocupando o espaço disponível da página
 
-### 1. Nova pagina: `src/pages/AddAssetPage.tsx`
+### Detalhes técnicos
 
-Criar uma pagina dedicada com:
-- `AppLayout` como wrapper
-- `PageBreadcrumb` com itens: Ambiente > Novo Item
-- Botao de voltar (ArrowLeft, ghost, navega para `/environment`) ao lado do titulo
-- Titulo: "Adicionar Novo Item"
-- Subtitulo: "Selecione o tipo de ativo que deseja adicionar ao ambiente."
-- Os 3 cards de selecao (Dominio Externo, Firewall, Microsoft 365) reutilizando a mesma logica e visual do dialog atual
+- Usar `flex flex-col items-center justify-center min-h-[calc(100vh-200px)]` no container principal para centralizar verticalmente (descontando header/breadcrumb)
+- Manter o breadcrumb no topo (fora do container centralizado)
+- Centralizar o bloco de título + botão voltar junto com os cards
+- Alterar o texto `h1` de "Adicionar Novo Item" para "Novo Item"
 
-O layout seguira exatamente o padrao do `CVESourcesPage.tsx` (linhas 185-208).
-
-### 2. Alterar: `src/App.tsx`
-
-Adicionar rota `/environment/new` apontando para o novo `AddAssetPage`.
-
-### 3. Alterar: `src/pages/EnvironmentPage.tsx`
-
-Trocar o `<AddAssetWizardDialog />` por um `<Button>` que navega para `/environment/new`:
-
-```text
-<Button className="gap-2" onClick={() => navigate('/environment/new')}>
-  <Plus className="w-4 h-4" />
-  Novo Item
-</Button>
-```
-
-### 4. Remover: `src/components/environment/AddAssetWizardDialog.tsx`
-
-O componente de dialog nao sera mais necessario e sera removido.
-
-### Detalhes tecnicos
-
-- A pagina usa `useNavigate` para o botao voltar e para os cards de selecao
-- Nenhuma mudanca no banco de dados
-- Os cards de selecao mantem as mesmas rotas de destino (`/scope-external-domain/domains`, `/scope-firewall/firewalls/new`, `/scope-m365/tenant-connection`)
