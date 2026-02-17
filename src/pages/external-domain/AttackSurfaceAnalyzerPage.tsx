@@ -965,42 +965,37 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
           <div className="flex-1 min-w-0 space-y-2">
             {/* Row 1: hostname + IP + ASN + risk badge */}
             <div className="flex items-center gap-3 flex-wrap">
-              {asset.hostname !== asset.ip ? (
-                <>
-                  <span className="text-base font-semibold truncate">{asset.hostname}</span>
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-sm text-muted-foreground font-mono cursor-default underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">{asset.ip}</span>
-                      </TooltipTrigger>
-                      {asset.asn && (
-                        <TooltipContent side="top" className="max-w-sm p-3 space-y-1.5">
-                          <IpTooltipBody asn={asset.asn} />
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TooltipProvider>
-                </>
-              ) : (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className={cn("text-base font-semibold truncate font-mono", asset.asn ? "cursor-default underline decoration-dotted decoration-muted-foreground/40 underline-offset-2" : "")}>{asset.ip}</span>
-                    </TooltipTrigger>
-                    {asset.asn && (
-                      <TooltipContent side="top" className="max-w-sm p-3 space-y-1.5">
-                        <IpTooltipBody asn={asset.asn} />
-                      </TooltipContent>
-                    )}
-                  </Tooltip>
-                </TooltipProvider>
+              {asset.hostname !== asset.ip && (
+                <span className="text-base font-semibold truncate">{asset.hostname}</span>
               )}
-              {asset.asn?.asn &&
-              <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-help">
+                      <Badge variant="outline" className={cn(
+                        "font-mono bg-muted/30 text-muted-foreground border-border/50",
+                        asset.hostname === asset.ip ? "text-sm px-2 py-0.5" : "text-[10px] px-1.5"
+                      )}>
+                        {asset.ip}
+                      </Badge>
+                    </span>
+                  </TooltipTrigger>
+                  {asset.asn && (
+                    <TooltipContent side="top" className="max-w-sm p-3 space-y-1.5">
+                      <IpTooltipBody asn={asset.asn} />
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+              {asset.asn?.asn && (
+                <Badge variant="outline" className="text-[10px] px-1.5 bg-violet-500/10 text-violet-400 border-violet-500/30 font-mono">
                   {asset.asn.asn}
                   {asset.asn.provider !== 'unknown' && ` (${asset.asn.provider})`}
                 </Badge>
-              }
+              )}
+              {asset.asn?.country && (
+                <span className={`fi fi-${asset.asn.country.toLowerCase()} text-sm shadow-sm`} title={asset.asn.country} />
+              )}
               <Badge variant="outline" className={cn("text-[10px] ml-auto shrink-0", rc.badge)}>
                 {asset.riskLevel}
               </Badge>
