@@ -43,15 +43,6 @@ export default function AddAssetPage() {
       <div className="p-6 lg:p-8 flex flex-col flex-1 min-h-0">
         <PageBreadcrumb items={[{ label: 'Ambiente', href: '/environment' }, { label: 'Novo Item' }]} />
 
-        <div className="flex items-center gap-4 mt-6">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Novo Item</h1>
-            <p className="text-muted-foreground">Selecione o tipo de ativo que deseja adicionar ao ambiente.</p>
-          </div>
-        </div>
 
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-lg grid gap-3">
