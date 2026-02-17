@@ -186,7 +186,7 @@ export default function EnvironmentPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Ambiente</h1>
+            <h1 className="text-2xl font-bold text-foreground">Gerenciamento do Ambiente</h1>
             <p className="text-muted-foreground">Visão unificada dos ativos monitorados</p>
           </div>
           <div className="flex items-center gap-3">
