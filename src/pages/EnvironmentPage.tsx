@@ -7,15 +7,12 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
+import { AssetCategorySection } from '@/components/environment/AssetCategorySection';
 import {
-  Monitor, Search, Building2, Globe, Shield, Cloud, ExternalLink,
-  Server, TrendingUp, AlertTriangle
+  Monitor, Search, Building2, Globe, Shield, Cloud,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -29,28 +26,9 @@ interface UnifiedAsset {
   workspaceName: string;
   score: number | null;
   status: string;
+  agentName: string | null;
+  navigationUrl: string;
 }
-
-const TYPE_CONFIG: Record<AssetType, { label: string; color: string; icon: typeof Shield }> = {
-  firewall: { label: 'Firewall', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', icon: Shield },
-  external_domain: { label: 'Domínio Externo', color: 'bg-teal-500/15 text-teal-400 border-teal-500/30', icon: Globe },
-  m365_tenant: { label: 'Tenant M365', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30', icon: Cloud },
-};
-
-const getScoreColor = (score: number | null) => {
-  if (score === null) return 'bg-muted text-muted-foreground';
-  if (score >= 75) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
-  if (score >= 50) return 'bg-warning/20 text-warning border-warning/30';
-  return 'bg-destructive/20 text-destructive border-destructive/30';
-};
-
-const getNavigationUrl = (asset: UnifiedAsset) => {
-  switch (asset.type) {
-    case 'firewall': return `/scope-firewall/firewalls/${asset.id}/edit`;
-    case 'external_domain': return `/scope-external-domain/domains/${asset.id}/edit`;
-    case 'm365_tenant': return `/scope-m365/tenant-connection`;
-  }
-};
 
 export default function EnvironmentPage() {
   const { user, loading: authLoading } = useAuth();
@@ -95,14 +73,13 @@ export default function EnvironmentPage() {
     return null;
   }, [isPreviewMode, previewTarget, isSuperRole, selectedWorkspaceId]);
 
-  // Fetch all assets
+  // Fetch all assets with agent info
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['environment-assets', workspaceFilter],
     queryFn: async () => {
-      // Build queries
-      let fwQuery = supabase.from('firewalls').select('id, name, client_id, last_score');
-      let edQuery = supabase.from('external_domains').select('id, name, domain, client_id, last_score, status');
-      let m365Query = supabase.from('m365_tenants').select('id, display_name, tenant_domain, client_id, connection_status');
+      let fwQuery = supabase.from('firewalls').select('id, name, client_id, last_score, agent_id, agents(name)');
+      let edQuery = supabase.from('external_domains').select('id, name, domain, client_id, last_score, status, agent_id, agents(name)');
+      let m365Query = supabase.from('m365_tenants').select('id, display_name, tenant_domain, client_id, connection_status, m365_tenant_agents(agent_id, agents(name))');
       let clientsQuery = supabase.from('clients').select('id, name');
 
       if (workspaceFilter && workspaceFilter.length > 0) {
@@ -122,7 +99,7 @@ export default function EnvironmentPage() {
       const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c.name]));
 
       const unified: UnifiedAsset[] = [
-        ...(fwRes.data || []).map(fw => ({
+        ...(fwRes.data || []).map((fw: any) => ({
           id: fw.id,
           name: fw.name,
           type: 'firewall' as AssetType,
@@ -130,8 +107,10 @@ export default function EnvironmentPage() {
           workspaceName: clientMap.get(fw.client_id) || '—',
           score: fw.last_score,
           status: fw.last_score !== null ? 'analyzed' : 'pending',
+          agentName: fw.agents?.name || null,
+          navigationUrl: `/scope-firewall/firewalls/${fw.id}/edit`,
         })),
-        ...(edRes.data || []).map(ed => ({
+        ...(edRes.data || []).map((ed: any) => ({
           id: ed.id,
           name: ed.name || ed.domain,
           type: 'external_domain' as AssetType,
@@ -139,16 +118,23 @@ export default function EnvironmentPage() {
           workspaceName: clientMap.get(ed.client_id) || '—',
           score: ed.last_score,
           status: ed.status,
+          agentName: ed.agents?.name || null,
+          navigationUrl: `/scope-external-domain/domains/${ed.id}/edit`,
         })),
-        ...(m365Res.data || []).map(t => ({
-          id: t.id,
-          name: t.display_name || t.tenant_domain || t.id,
-          type: 'm365_tenant' as AssetType,
-          workspaceId: t.client_id,
-          workspaceName: clientMap.get(t.client_id) || '—',
-          score: null,
-          status: t.connection_status,
-        })),
+        ...(m365Res.data || []).map((t: any) => {
+          const tenantAgent = t.m365_tenant_agents?.[0];
+          return {
+            id: t.id,
+            name: t.display_name || t.tenant_domain || t.id,
+            type: 'm365_tenant' as AssetType,
+            workspaceId: t.client_id,
+            workspaceName: clientMap.get(t.client_id) || '—',
+            score: null,
+            status: t.connection_status,
+            agentName: tenantAgent?.agents?.name || null,
+            navigationUrl: `/scope-m365/tenant-connection`,
+          };
+        }),
       ];
 
       return unified;
@@ -165,16 +151,20 @@ export default function EnvironmentPage() {
     return { total: assets.length, firewalls, domains, tenants };
   }, [assets]);
 
-  // Filtered
+  // Filtered by search
   const filtered = useMemo(() => {
     if (!search) return assets;
     const q = search.toLowerCase();
     return assets.filter(a =>
       a.name.toLowerCase().includes(q) ||
-      TYPE_CONFIG[a.type].label.toLowerCase().includes(q) ||
-      a.workspaceName.toLowerCase().includes(q)
+      a.workspaceName.toLowerCase().includes(q) ||
+      (a.agentName && a.agentName.toLowerCase().includes(q))
     );
   }, [assets, search]);
+
+  const filteredFirewalls = useMemo(() => filtered.filter(a => a.type === 'firewall'), [filtered]);
+  const filteredDomains = useMemo(() => filtered.filter(a => a.type === 'external_domain'), [filtered]);
+  const filteredTenants = useMemo(() => filtered.filter(a => a.type === 'm365_tenant'), [filtered]);
 
   if (authLoading) return null;
 
@@ -267,77 +257,33 @@ export default function EnvironmentPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-6 space-y-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="p-12 text-center text-muted-foreground">
-                <Monitor className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhum ativo encontrado</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Workspace</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map(asset => {
-                    const config = TYPE_CONFIG[asset.type];
-                    return (
-                      <TableRow key={`${asset.type}-${asset.id}`}>
-                        <TableCell className="font-medium text-foreground">{asset.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={config.color}>
-                            <config.icon className="w-3 h-3 mr-1" />
-                            {config.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{asset.workspaceName}</TableCell>
-                        <TableCell>
-                          {asset.score !== null ? (
-                            <Badge variant="outline" className={getScoreColor(asset.score)}>
-                              {asset.score}%
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {asset.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(getNavigationUrl(asset))}
-                          >
-                            <ExternalLink className="w-4 h-4 mr-1" />
-                            Abrir
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {/* Category Sections */}
+        <div className="space-y-8">
+          <AssetCategorySection
+            title="Firewalls"
+            icon={Shield}
+            iconColor="text-orange-400"
+            items={filteredFirewalls}
+            totalCount={stats.firewalls}
+            isLoading={isLoading}
+          />
+          <AssetCategorySection
+            title="Domínios Externos"
+            icon={Globe}
+            iconColor="text-teal-400"
+            items={filteredDomains}
+            totalCount={stats.domains}
+            isLoading={isLoading}
+          />
+          <AssetCategorySection
+            title="Tenants M365"
+            icon={Cloud}
+            iconColor="text-blue-400"
+            items={filteredTenants}
+            totalCount={stats.tenants}
+            isLoading={isLoading}
+          />
+        </div>
       </div>
     </AppLayout>
   );
