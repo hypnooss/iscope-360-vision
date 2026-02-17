@@ -61,23 +61,23 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Workspace</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="w-[25%]">Nome</TableHead>
+                  <TableHead className="w-[18%]">Agent</TableHead>
+                  <TableHead className="w-[22%]">Workspace</TableHead>
+                  <TableHead className="w-[12%]">Score</TableHead>
+                  <TableHead className="w-[12%]">Status</TableHead>
+                  <TableHead className="w-[11%] text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map(asset => (
                   <TableRow key={asset.id}>
-                    <TableCell className="font-medium text-foreground">{asset.name}</TableCell>
-                    <TableCell className={asset.agentName ? 'text-foreground' : 'text-muted-foreground'}>
+                    <TableCell className="w-[25%] font-medium text-foreground">{asset.name}</TableCell>
+                    <TableCell className={`w-[18%] ${asset.agentName ? 'text-foreground' : 'text-muted-foreground'}`}>
                       {asset.agentName || '—'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{asset.workspaceName}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-[22%] text-muted-foreground">{asset.workspaceName}</TableCell>
+                    <TableCell className="w-[12%]">
                       {asset.score !== null ? (
                         <Badge variant="outline" className={getScoreColor(asset.score)}>
                           {asset.score}%
@@ -86,10 +86,10 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                         <span className="text-muted-foreground text-sm">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-[12%]">
                       <Badge variant="outline" className="capitalize">{asset.status}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="w-[11%] text-right">
                       <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
                         <ExternalLink className="w-4 h-4 mr-1" />
                         Abrir
