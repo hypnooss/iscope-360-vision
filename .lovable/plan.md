@@ -1,14 +1,39 @@
 
+# Nova tela wizard para adicionar Dominio Externo
 
-# Centralizar verticalmente os 3 cards no espaco restante
+## Resumo
 
-## Mudanca em `src/pages/AddAssetPage.tsx`
+Criar uma nova pagina `/environment/new/external-domain` com um formulario completo (wizard) para adicionar um dominio externo, incluindo um aviso legal sobre propriedade do dominio. O card "Dominio Externo" em `/environment/new` passara a navegar para essa nova rota.
 
-Envolver o grid dos cards em um container flex que ocupe todo o espaco restante abaixo do header (breadcrumb + titulo), centralizando verticalmente os cards dentro dele.
+## O que sera feito
 
-### Detalhes tecnicos
+### 1. Criar a pagina `src/pages/AddExternalDomainPage.tsx`
 
-- Adicionar `flex flex-col` e `flex-1` no container pai (`div.p-6`) para que ele ocupe toda a altura disponivel
-- Envolver o grid de cards em um `div` com `flex-1 flex items-center justify-center` para centralizar verticalmente no espaco restante
-- Manter `max-w-lg` e `mx-auto` nos cards para centralizar horizontalmente
+Pagina full-page (nao dialog) com:
+- Breadcrumb: Ambiente > Novo Item > Dominio Externo
+- Card centralizado (max-w-lg) com o formulario
+- Campos reutilizados do `AddExternalDomainDialog`:
+  - **Workspace** (select, carregado do Supabase)
+  - **Agent** (select, filtrado pelo workspace selecionado)
+  - **Dominio Externo** (input com validacao existente via `getExternalDomainError`)
+  - **Frequencia de Analise** (select: Manual, Diario, Semanal, Mensal)
+- **Aviso legal** (Alert/banner amarelo) com texto do tipo:
+  > "Ao adicionar um dominio, voce declara ser o proprietario ou ter autorizacao explicita para realizar varreduras e analises neste dominio. Varreduras em dominios sem autorizacao podem violar leis e regulamentos."
+- Botoes: Cancelar (volta para `/environment/new`) e Adicionar
+- Logica de submit replicada do `handleAddDomain` da `ExternalDomainListPage` (insert em `external_domains` + `external_domain_schedules`)
+- Apos sucesso, redireciona para `/scope-external-domain/domains`
 
+### 2. Atualizar `src/pages/AddAssetPage.tsx`
+
+Alterar a rota do card "Dominio Externo" de `/scope-external-domain/domains` para `/environment/new/external-domain`.
+
+### 3. Atualizar `src/App.tsx`
+
+Adicionar a rota `/environment/new/external-domain` com lazy load da nova pagina.
+
+## Detalhes tecnicos
+
+- A nova pagina buscara clientes (workspaces) e agents diretamente do Supabase, seguindo o mesmo padrao do `AddExternalDomainDialog`
+- Validacao de dominio usa `getExternalDomainError` e `normalizeExternalDomain` de `@/lib/urlValidation` (normalizeExternalDomain sera movida/exportada)
+- O aviso legal sera um componente `Alert` com icone `AlertTriangle` e variante warning
+- Layout segue o mesmo padrao visual da pagina `/environment/new` (centralizado, card com padding)
