@@ -1060,7 +1060,9 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground cursor-help">+{overflowTechs}</Badge>
+                        <span className="inline-flex cursor-help">
+                          <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-sm p-2">
                         <div className="flex flex-wrap gap-1">
