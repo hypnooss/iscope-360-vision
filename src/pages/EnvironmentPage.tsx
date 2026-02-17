@@ -117,7 +117,7 @@ export default function EnvironmentPage() {
           workspaceId: ed.client_id,
           workspaceName: clientMap.get(ed.client_id) || '—',
           score: ed.last_score,
-          status: ed.status,
+          status: ed.last_score !== null ? 'analyzed' : ed.status,
           agentName: ed.agents?.name || null,
           navigationUrl: `/scope-external-domain/domains/${ed.id}/edit`,
         })),
@@ -212,10 +212,10 @@ export default function EnvironmentPage() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <Shield className="w-8 h-8 text-orange-400" />
+                <Globe className="w-8 h-8 text-teal-400" />
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.firewalls}</p>
-                  <p className="text-xs text-muted-foreground">Firewalls</p>
+                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.domains}</p>
+                  <p className="text-xs text-muted-foreground">Domínios Externos</p>
                 </div>
               </div>
             </CardContent>
@@ -223,10 +223,10 @@ export default function EnvironmentPage() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <Globe className="w-8 h-8 text-teal-400" />
+                <Shield className="w-8 h-8 text-orange-400" />
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.domains}</p>
-                  <p className="text-xs text-muted-foreground">Domínios Externos</p>
+                  <p className="text-2xl font-bold text-foreground">{isLoading ? '—' : stats.firewalls}</p>
+                  <p className="text-xs text-muted-foreground">Firewalls</p>
                 </div>
               </div>
             </CardContent>
@@ -260,19 +260,19 @@ export default function EnvironmentPage() {
         {/* Category Sections */}
         <div className="space-y-8">
           <AssetCategorySection
-            title="Firewalls"
-            icon={Shield}
-            iconColor="text-orange-400"
-            items={filteredFirewalls}
-            totalCount={stats.firewalls}
-            isLoading={isLoading}
-          />
-          <AssetCategorySection
             title="Domínios Externos"
             icon={Globe}
             iconColor="text-teal-400"
             items={filteredDomains}
             totalCount={stats.domains}
+            isLoading={isLoading}
+          />
+          <AssetCategorySection
+            title="Firewalls"
+            icon={Shield}
+            iconColor="text-orange-400"
+            items={filteredFirewalls}
+            totalCount={stats.firewalls}
             isLoading={isLoading}
           />
           <AssetCategorySection

@@ -25,6 +25,19 @@ interface AssetCategorySectionProps {
   isLoading: boolean;
 }
 
+const translateStatus = (status: string): string => {
+  const map: Record<string, string> = {
+    analyzed: 'Analisado',
+    pending: 'Pendente',
+    partial: 'Parcial',
+    connected: 'Conectado',
+    disconnected: 'Desconectado',
+    error: 'Erro',
+    active: 'Ativo',
+  };
+  return map[status.toLowerCase()] || status;
+};
+
 const getScoreColor = (score: number | null) => {
   if (score === null) return 'bg-muted text-muted-foreground';
   if (score >= 75) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
@@ -87,7 +100,7 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                       )}
                     </TableCell>
                     <TableCell className="w-[12%]">
-                      <Badge variant="outline" className="capitalize">{asset.status}</Badge>
+                      <Badge variant="outline" className="capitalize">{translateStatus(asset.status)}</Badge>
                     </TableCell>
                     <TableCell className="w-[11%] text-right">
                       <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
