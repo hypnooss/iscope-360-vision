@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, Building2, Activity, Clock, CheckCircle2, XCircle, Play } from 'lucide-react';
+import { Eye, Loader2, AlertTriangle, CheckCircle, Globe, Search, Building2, Activity, Clock, CheckCircle2, XCircle, Play, Download } from 'lucide-react';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -31,6 +33,13 @@ interface DomainReport {
   completed_at: string | null;
 }
 
+const FREQUENCY_LABELS: Record<string, string> = {
+  daily: 'Diário',
+  weekly: 'Semanal',
+  monthly: 'Mensal',
+  manual: 'Manual',
+};
+
 interface GroupedDomain {
   domain_id: string;
   domain_name: string;
@@ -38,6 +47,7 @@ interface GroupedDomain {
   client_id: string;
   client_name: string;
   agent_id: string | null;
+  schedule_frequency: string;
   analyses: {
     id: string;
     score: number;
@@ -55,9 +65,11 @@ export default function ExternalDomainReportsPage() {
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
-  const [domainsMeta, setDomainsMeta] = useState<{id: string;name: string;domain: string;client_id: string;agent_id: string | null;client_name: string;}[]>([]);
+  const [domainsMeta, setDomainsMeta] = useState<{id: string;name: string;domain: string;client_id: string;agent_id: string | null;client_name: string;schedule_frequency: string;}[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { downloadPDF } = usePDFDownload();
 
   const [search, setSearch] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
@@ -126,23 +138,32 @@ export default function ExternalDomainReportsPage() {
 
       const domainIds = domainsData.map((d) => d.id);
 
-      // 2. Fetch history for those domains
-      const { data: historyData } = await supabase.
-      from('external_domain_analysis_history').
-      select('id, domain_id, score, created_at, status, completed_at').
-      in('domain_id', domainIds).
-      eq('source', 'agent').
-      order('created_at', { ascending: false });
+      // 2. Fetch history + schedules in parallel
+      const [historyResult, schedulesResult, clientsResult] = await Promise.all([
+        supabase
+          .from('external_domain_analysis_history')
+          .select('id, domain_id, score, created_at, status, completed_at')
+          .in('domain_id', domainIds)
+          .eq('source', 'agent')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('external_domain_schedules')
+          .select('domain_id, frequency')
+          .in('domain_id', domainIds)
+          .eq('is_active', true),
+        supabase
+          .from('clients')
+          .select('id, name')
+          .in('id', [...new Set(domainsData.map((d) => d.client_id))]),
+      ]);
 
-      // 3. Fetch client names
-      const clientIds = [...new Set(domainsData.map((d) => d.client_id))];
-      const { data: clientsData } = await supabase.
-      from('clients').
-      select('id, name').
-      in('id', clientIds);
+      const historyData = historyResult.data;
+      const schedulesData = schedulesResult.data;
+      const clientsData = clientsResult.data;
 
       const domainMap = new Map(domainsData.map((d) => [d.id, d]));
       const clientMap = new Map((clientsData || []).map((c) => [c.id, c]));
+      const scheduleMap = new Map((schedulesData || []).map((s) => [s.domain_id, s.frequency]));
 
       // Build reports from history
       const formattedReports: DomainReport[] = (historyData || []).map((h) => {
@@ -164,14 +185,15 @@ export default function ExternalDomainReportsPage() {
 
       setReports(formattedReports);
 
-      // Store domain metadata for domains without history
+      // Store domain metadata including schedule frequency
       setDomainsMeta(domainsData.map((d) => ({
         id: d.id,
         name: d.name,
         domain: d.domain,
         client_id: d.client_id,
         agent_id: d.agent_id,
-        client_name: clientMap.get(d.client_id)?.name || 'N/A'
+        client_name: clientMap.get(d.client_id)?.name || 'N/A',
+        schedule_frequency: scheduleMap.get(d.id) || 'manual',
       })));
     } catch (error) {
       console.error('Error fetching external domain reports:', error);
@@ -205,6 +227,7 @@ export default function ExternalDomainReportsPage() {
           client_id: d.client_id,
           client_name: d.client_name,
           agent_id: d.agent_id,
+          schedule_frequency: d.schedule_frequency,
           analyses: []
         });
       }
@@ -213,6 +236,7 @@ export default function ExternalDomainReportsPage() {
     // Then add analyses
     workspaceFiltered.forEach((report) => {
       if (!groups.has(report.domain_id)) {
+        const meta = domainsMeta.find(d => d.id === report.domain_id);
         groups.set(report.domain_id, {
           domain_id: report.domain_id,
           domain_name: report.domain_name,
@@ -220,6 +244,7 @@ export default function ExternalDomainReportsPage() {
           client_id: report.client_id,
           client_name: report.client_name,
           agent_id: null,
+          schedule_frequency: meta?.schedule_frequency || 'manual',
           analyses: []
         });
       }
@@ -386,6 +411,68 @@ export default function ExternalDomainReportsPage() {
       });
     } finally {
       setLoadingReportId(null);
+    }
+  };
+
+  const handleDownloadPDF = async (group: GroupedDomain) => {
+    const analysis = getSelectedAnalysis(group);
+    if (!analysis) return;
+
+    setDownloadingId(analysis.id);
+    try {
+      const loaded = await fetchReportData(analysis.id);
+      if (!loaded) return;
+
+      const report = loaded.reportData as any;
+
+      let logoBase64: string | undefined;
+      try {
+        const logoModule = await import('@/assets/logo-iscope.png');
+        const logoUrl = logoModule.default;
+        const response = await fetch(logoUrl);
+        const blob = await response.blob();
+        logoBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch (logoErr) {
+        console.warn('Could not load logo for PDF:', logoErr);
+      }
+
+      const filename = `iscope360-${sanitizePDFFilename(group.domain_url || 'domain')}-${getPDFDateString()}.pdf`;
+
+      await downloadPDF(
+        <ExternalDomainPDF
+          report={{
+            overallScore: report.overallScore ?? 0,
+            totalChecks: report.totalChecks ?? 0,
+            passed: report.passed ?? 0,
+            failed: report.failed ?? 0,
+            warnings: report.warnings ?? 0,
+            categories: report.categories ?? [],
+            generatedAt: loaded.createdAt,
+          }}
+          domainInfo={{
+            name: group.domain_name,
+            domain: group.domain_url,
+            clientName: group.client_name,
+          }}
+          dnsSummary={report.dnsSummary}
+          emailAuth={report.emailAuth}
+          subdomainSummary={report.subdomainSummary}
+          logoBase64={logoBase64}
+          correctionGuides={[]}
+        />,
+        filename
+      );
+      toast.success('PDF exportado com sucesso!');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Erro ao exportar PDF');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -567,10 +654,10 @@ export default function ExternalDomainReportsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Domínio</TableHead>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead>Workspace</TableHead>
+                    <TableHead>Frequência</TableHead>
                     <TableHead>Último Score</TableHead>
-                    <TableHead>Status Execução</TableHead>
-                    <TableHead>Data</TableHead>
+                    <TableHead>Última Execução</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -592,6 +679,11 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
+                          <Badge variant="secondary">
+                            {FREQUENCY_LABELS[group.schedule_frequency] || 'Manual'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
                           {currentAnalysis && currentAnalysis.score != null &&
                         <Badge variant="outline" className={getScoreBadgeClass(currentAnalysis.score)}>
                               <span className="flex items-center gap-1">
@@ -603,12 +695,6 @@ export default function ExternalDomainReportsPage() {
                                 {currentAnalysis.score}%
                               </span>
                             </Badge>
-                        }
-                        </TableCell>
-                        <TableCell>
-                          {renderStatusBadge(currentAnalysis)}
-                          {!currentAnalysis &&
-                        <Badge variant="outline" className="bg-muted/20 text-muted-foreground border-muted/30">Sem análise</Badge>
                         }
                         </TableCell>
                         <TableCell>
@@ -650,21 +736,32 @@ export default function ExternalDomainReportsPage() {
                             <Play className="w-4 h-4" />
                             }
                              </Button>
-                             {currentAnalysis?.status === 'completed' &&
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleViewReport(group)}
-                            disabled={loadingReportId === currentAnalysis?.id}
-                            title="Visualizar">
-
-                                 {loadingReportId === currentAnalysis?.id ?
-                            <Loader2 className="w-4 h-4 animate-spin" /> :
-
-                            <Eye className="w-4 h-4" />
-                            }
-                               </Button>
-                          }
+                             {currentAnalysis?.status === 'completed' && (
+                               <>
+                                 <Button
+                                   variant="ghost"
+                                   size="icon"
+                                   onClick={() => handleViewReport(group)}
+                                   disabled={loadingReportId === currentAnalysis?.id}
+                                   title="Visualizar">
+                                   {loadingReportId === currentAnalysis?.id ?
+                                     <Loader2 className="w-4 h-4 animate-spin" /> :
+                                     <Eye className="w-4 h-4" />
+                                   }
+                                 </Button>
+                                 <Button
+                                   variant="ghost"
+                                   size="icon"
+                                   onClick={() => handleDownloadPDF(group)}
+                                   disabled={downloadingId === currentAnalysis?.id}
+                                   title="Baixar PDF">
+                                   {downloadingId === currentAnalysis?.id ?
+                                     <Loader2 className="w-4 h-4 animate-spin" /> :
+                                     <Download className="w-4 h-4" />
+                                   }
+                                 </Button>
+                               </>
+                             )}
                           </div>
                         </TableCell>
                       </TableRow>);
