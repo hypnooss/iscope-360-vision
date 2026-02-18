@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -87,7 +88,6 @@ export default function ExternalDomainReportsPage() {
   const { downloadPDF } = usePDFDownload();
 
   const [search, setSearch] = useState('');
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
 
   // State for selected analysis per domain
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
@@ -107,6 +107,8 @@ export default function ExternalDomainReportsPage() {
     },
     enabled: isSuperRole
   });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces, isSuperRole);
 
   useEffect(() => {
     if (authLoading || moduleLoading) return;
@@ -300,12 +302,6 @@ export default function ExternalDomainReportsPage() {
     );
   }, [reports, domainsMeta, search, selectedWorkspaceId]);
 
-  // Auto-select first workspace when list loads
-  useEffect(() => {
-    if (isSuperRole && workspaces.length > 0 && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(workspaces[0].id);
-    }
-  }, [workspaces, isSuperRole, selectedWorkspaceId]);
 
   // Stats cards data - based on latest analysis status per domain
   const stats = useMemo(() => {
@@ -566,7 +562,7 @@ export default function ExternalDomainReportsPage() {
             <p className="text-muted-foreground">Visão consolidada das análises de compliance</p>
           </div>
           {isSuperRole && workspaces.length > 0 &&
-          <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+          <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
                   <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Todos os workspaces" />

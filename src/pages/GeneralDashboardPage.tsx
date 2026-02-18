@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -276,8 +277,9 @@ export default function GeneralDashboardPage() {
   const navigate = useNavigate();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces.length > 0 ? workspaces : undefined, isSuperRole);
 
   const { stats, loading } = useDashboardStats(selectedWorkspaceId);
   const topCvesByModule = useTopCVEs(selectedWorkspaceId ? [selectedWorkspaceId] : undefined);
@@ -292,7 +294,6 @@ export default function GeneralDashboardPage() {
         .order('name');
       if (data && data.length > 0) {
         setWorkspaces(data);
-        setSelectedWorkspaceId(data[0].id);
       }
     };
     fetchWorkspaces();

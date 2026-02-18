@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AttackSurfaceScanDialog } from '@/components/external-domain/AttackSurfaceScanDialog';
@@ -1271,7 +1272,6 @@ export default function AttackSurfaceAnalyzerPage() {
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const { data: workspaces } = useQuery({
     queryKey: ['clients-list'],
     queryFn: async () => {
@@ -1280,14 +1280,10 @@ export default function AttackSurfaceAnalyzerPage() {
       return data ?? [];
     },
     enabled: isSuperRole,
-    staleTime: 1000 * 60 * 5
+    staleTime: 1000 * 60 * 5,
   });
 
-  useEffect(() => {
-    if (isSuperRole && workspaces?.length && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(workspaces[0].id);
-    }
-  }, [isSuperRole, workspaces, selectedWorkspaceId]);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces, isSuperRole);
 
   const selectedClientId = isSuperRole ? selectedWorkspaceId : userClientId;
 

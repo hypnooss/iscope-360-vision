@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -153,7 +154,6 @@ export default function AnalyzerDashboardPage() {
 
   // Workspace selector for super roles
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
   const { data: allWorkspaces } = useQuery({
     queryKey: ['clients-list'],
@@ -169,12 +169,7 @@ export default function AnalyzerDashboardPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // Auto-select first workspace
-  useEffect(() => {
-    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(allWorkspaces[0].id);
-    }
-  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   // Fetch firewalls filtered by workspace
   const { data: firewalls = [] } = useQuery({

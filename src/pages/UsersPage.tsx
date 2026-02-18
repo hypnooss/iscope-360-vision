@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { useWorkspaceSelector } from "@/hooks/useWorkspaceSelector";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreview } from "@/contexts/PreviewContext";
@@ -89,26 +90,21 @@ export default function UsersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewUser, setPreviewUser] = useState<UserProfile | null>(null);
   const [search, setSearch] = useState('');
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-  const canAccessPage = isSuperAdmin() || isAdmin();
-
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const canAccessPage = isSuperAdmin() || isAdmin();
 
   const { data: allWorkspaces } = useQuery({
     queryKey: ['clients-list'],
     queryFn: async () => {
-      const { data } = await supabase.from('clients').select('id, name').order('name');
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
       return data ?? [];
     },
     enabled: isSuperRole && !isPreviewMode,
     staleTime: 1000 * 60 * 5,
   });
 
-  useEffect(() => {
-    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(allWorkspaces[0].id);
-    }
-  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   useEffect(() => {
     if (!authLoading && !user) {
