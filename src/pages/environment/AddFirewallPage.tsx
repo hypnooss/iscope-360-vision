@@ -778,6 +778,13 @@ export default function AddFirewallPage() {
                       placeholder="Longitude"
                       className="flex-1"
                     />
+                    <div className="relative inline-flex shrink-0">
+                      {!geoLoading && formData.fortigate_url && formData.agent_id && (
+                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
+                        </span>
+                      )}
                     <Button
                       type="button"
                       variant="outline"
@@ -897,6 +904,10 @@ export default function AddFirewallPage() {
                               else if (wanNamePatterns.test(iface.name)) isWan = true;
                               if (!isWan) continue;
 
+                              // Skip tunnel/loopback interfaces — VPN overlays (IPSec, GRE, IPIP)
+                              // never represent the real physical WAN egress point
+                              if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
+
                               const ipField: string = iface.ip || '';
                               const ip = ipField.split(' ')[0];
                               if (looksLikeIP(ip) && !isPrivateIP(ip) && ip !== '0.0.0.0') {
@@ -958,11 +969,11 @@ export default function AddFirewallPage() {
                         }
                       }}
                       disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
-                      className={(!geoLoading && formData.fortigate_url && formData.agent_id) ? "animate-pulse-glow" : ""}
                     >
                       {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
                       Buscar
                     </Button>
+                    </div>
                   </div>
                   {formData.geo_latitude && formData.geo_longitude && (
                     <p className="text-xs text-muted-foreground">📍 {formData.geo_latitude}, {formData.geo_longitude}</p>
