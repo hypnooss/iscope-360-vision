@@ -264,7 +264,7 @@ export default function AddExternalDomainPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Workspace */}
-              {isSuperUser ? (
+              {isSuperUser && (
                 <div className="space-y-2">
                   <Label>Workspace *</Label>
                   <Select
@@ -280,11 +280,6 @@ export default function AddExternalDomainPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label>Workspace</Label>
-                  <Input value={clients.length === 1 ? clients[0].name : 'Carregando...'} disabled />
                 </div>
               )}
 
