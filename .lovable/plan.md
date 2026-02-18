@@ -1,73 +1,75 @@
 
-# Adicionar Instrução de Trusted Hosts — Hardening do REST API Admin
+# Adicionar Passo 3 — Habilitar Acesso a Logs via REST API
 
-## Contexto de Segurança
+## Contexto
 
-O campo **Trusted Hosts** visível na tela de configuração do FortiGate permite restringir de quais endereços IP o token da REST API pode ser usado. Sem isso, qualquer pessoa que obtiver o API Token pode consultar a API do FortiGate de qualquer lugar da internet.
+O iScope coleta logs do FortiGate (tráfego, IPS, eventos de sistema, VPN) via REST API para alimentar o módulo de Security Intelligence (Analyzer). Para que isso funcione, é necessário habilitar especificamente o acesso a logs pela REST API no FortiGate, o que não é ativo por padrão.
 
-Para um software de compliance e segurança, omitir essa instrução seria uma falha grave. O cliente precisa ser orientado a:
-1. Habilitar o toggle **Trusted Hosts** no formulário do REST API Admin
-2. Cadastrar o IP do host onde o agente iScope está instalado como único host autorizado
-
-## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
-
-### 1. Adicionar sub-item ao passo "c" (formulário do REST API Admin) — linhas 162–180
-
-Dentro da lista de campos do formulário (sub-itens do passo c), adicionar dois novos itens antes do "Clique em OK":
+O comando necessário é:
 
 ```
-– Trusted Hosts: ative o toggle
-– Trusted Hosts → Host 1: insira o IP do servidor do agente iScope (ex: 192.168.1.50/32)
-```
-
-Isso garante que o usuário configure o campo enquanto ainda está no formulário, antes de clicar em OK.
-
-### 2. Atualizar o snippet CLI do Passo 2 — linha 196
-
-Adicionar a linha `set trusthost1 <IP-do-agente>/32` ao snippet, para que administradores que preferirem configurar via CLI também saibam o comando correto:
-
-```
-config system api-user
-    edit "iscope360"
-        set accprofile "super_admin_readonly"
-        set vdom "root"
-        set trusthost1 <IP-do-agente>/32
-    next
+config log setting
+    set rest-api-get enable
+    set rest-api-performance enable
 end
 ```
 
-### 3. Adicionar bloco de aviso de segurança dedicado (após os passos e antes da nota sobre SSL)
+Sem esse passo, o token da API consegue consultar configurações (compliance), mas não consegue ler os logs — o que impede o funcionamento do módulo Analyzer.
 
-Um bloco novo com bordas vermelhas/amber sinalizando que Trusted Hosts é **obrigatório por boas práticas**, explicando o risco de não configurá-lo:
-
-```
-🔒 Segurança: Restrição por IP (Trusted Hosts)
-
-Habilitar Trusted Hosts é essencial. Sem essa restrição, o API Token 
-pode ser usado de qualquer origem na internet caso seja comprometido.
-
-Ao ativar Trusted Hosts, somente requisições originadas do IP do agente 
-iScope serão aceitas pelo FortiGate — o token se torna inútil fora desse contexto.
-```
-
-## Estrutura final do Passo 1 (formulário)
+## Estrutura atual dos passos (FortiGateInstructions)
 
 ```
-a – Vá em System > Administrators
-b – Clique em Create New > REST API Admin
-c – Preencha o formulário:
-      – Username: iscope360
-      – Administrator Profile: super_admin_readonly
-      – PKI Group: desmarque (deixe desabilitado)
-      – Trusted Hosts: ative o toggle         ← NOVO
-      – Host 1: IP do agente iScope/32        ← NOVO
-      – Clique em OK
-d – Anote o API Token gerado
+Passo 1 — Criar REST API Admin       (linhas 144–195)
+Passo 2 — Habilitar acesso via CLI   (linhas 197–212)
+[Bloco segurança - Trusted Hosts]    (linhas 214–224)
+[Info - super_admin_readonly]        (linhas 226–233)
+[Aviso SSL]                          (linhas 235–240)
+```
+
+## Mudança no arquivo `src/pages/environment/AddFirewallPage.tsx`
+
+### Inserir novo bloco entre o Passo 2 e o bloco de segurança (após linha 212)
+
+Novo **Passo 3 — Habilitar acesso a logs via REST API**:
+
+- Título com badge numerado `3`
+- Breve explicação: sem essa config, os logs do firewall não ficam disponíveis para a API, impedindo o módulo de análise
+- Snippet CLI:
+```
+config log setting
+    set rest-api-get enable
+    set rest-api-performance enable
+end
+```
+- Nota inline: esse comando habilita leitura de logs em memória e métricas de performance via REST
+
+### Bloco visual final (entre Passo 2 e aviso de segurança)
+
+```tsx
+<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+  <h3>
+    <span badge>3</span>
+    Habilitar acesso a logs via REST API
+  </h3>
+  <div className="ml-8 space-y-2">
+    <p className="text-sm text-muted-foreground">
+      Por padrão, o FortiGate não expõe logs para a REST API.
+      Execute o comando abaixo para habilitar a leitura de logs e métricas de performance:
+    </p>
+    <pre>
+{`config log setting
+    set rest-api-get enable
+    set rest-api-performance enable
+end`}
+    </pre>
+    <p className="text-xs text-muted-foreground">
+      <strong>rest-api-get</strong> — permite consulta de logs de tráfego, IPS e eventos via API.<br/>
+      <strong>rest-api-performance</strong> — expõe métricas de CPU, memória e sessões ativas.
+    </p>
+  </div>
+</div>
 ```
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions`:
-  - Sub-lista do passo `c` (linhas 162–180): adicionar itens Trusted Hosts
-  - Snippet CLI do Passo 2 (linha 196): adicionar `set trusthost1`
-  - Novo bloco de aviso de segurança entre o bloco de passos e a nota de SSL
+- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions`: inserir novo bloco "Passo 3" após a linha 212 (fechamento do bloco do Passo 2), antes do bloco de aviso de segurança existente.
