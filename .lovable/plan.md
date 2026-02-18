@@ -1,65 +1,78 @@
 
-# Melhoria Visual do WAN Selector Dialog
+# Fix: Pontos do Mapa de Ataques Posicionados Incorretamente
 
-## Situação atual
+## Causa Raiz
 
-O dialog exibe os cards de IP WAN com um layout funcional porém básico:
-- Fundo `bg-muted/20` plano sem profundidade
-- Interface (`wan1`, `wan2`) em fonte mono pequena sem destaque
-- IP, Local e Coords listados com texto simples em `text-sm`
-- Botão "Selecionar" padrão sem diferenciação visual
-- Sem separação visual entre o nome da interface e os detalhes
-- Coordenadas visíveis mas irrelevantes para o usuário final
+O mapa está incorretamente alinhado devido a dois problemas combinados:
 
-## Melhorias propostas
+### Problema 1 — Conflito de `preserveAspectRatio`
+- O SVG usa `preserveAspectRatio="xMidYMid meet"` (mantém proporção, adiciona letterbox)
+- A `<image>` interna usa `preserveAspectRatio="xMidYMid slice"` (recorta para preencher)
+- Isso cria duas áreas de renderização **diferentes**: a imagem é recortada de um jeito, mas a projeção matemática calcula posições em outro.
 
-### Layout geral do Dialog
-- Aumentar para `max-w-md` com padding mais generoso
-- Adicionar ícone `MapPin` no título para contexto visual imediato
+### Problema 2 — Mapa não é equiretangular puro
+A imagem `world-map-dark.png` tem margens internas: as bordas laterais (Antártica, Ártico extremo) e os lados (±180°) não chegam exatamente às bordas do canvas da imagem. A fórmula `project()` assume que o viewBox 0,0→1000,500 coincide exatamente com lng=-180 a +180 e lat=90 a -90, o que não é verdade para esta imagem.
 
-### Cards de cada IP WAN
-Redesenho completo de cada card com 3 zonas:
+### Resultado observado
+- Brasil (lat=-14, lng=-51) fica deslocado para o Atlântico
+- Marrocos (lat=32, lng=-5) aparece sobre a Itália (lat=43, lng=12) — offset de ~17° de longitude
 
+## Solução
+
+### Parte 1 — Corrigir `preserveAspectRatio` da imagem
+
+Unificar os dois `preserveAspectRatio` para a mesma política, garantindo que imagem e projeção compartilhem o mesmo sistema de coordenadas. O correto é usar `none` na imagem para que ela sempre preencha exatamente o viewBox 0,0→1000,500 sem recorte nem letterbox:
+
+```tsx
+// ANTES
+<image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
+
+// DEPOIS
+<image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="none" />
 ```
-┌─────────────────────────────────────────────┐
-│  🇧🇷  wan1  ·  Interface WAN                 │   ← header do card com badge
-│─────────────────────────────────────────────│
-│  🖧  186.233.96.14                           │   ← IP destacado
-│  📍 Palmas, Tocantins, Brazil               │   ← localização
-│─────────────────────────────────────────────│
-│                          [✓ Selecionar]      │   ← botão no footer
-└─────────────────────────────────────────────┘
+
+Com `none`, a imagem é esticada para preencher exatamente o viewBox. A fórmula matemática e a imagem agora compartilham exatamente o mesmo espaço.
+
+### Parte 2 — Aplicar offsets de calibração na função `project()`
+
+Mapas-múndi populares geralmente não mostram as latitudes extremas (>85°S/N). A imagem tipicamente cobre de ~-60° a +80° de latitude e de -180° a +180° de longitude, mas com pequenas margens. Precisamos calibrar os offsets para que os continentes visíveis coincidam com os pontos.
+
+Com base nos erros observados (Marrocos aparece sobre a Itália = ~17° a mais para leste; Brasil quase no oceano = ~10° para direita), os offsets de calibração são:
+
+```typescript
+// Calibration offsets for the world-map-dark.png image
+// These compensate for the image's internal margins and latitude crop
+const MAP_LEFT_LNG = -180;    // leftmost longitude in image
+const MAP_RIGHT_LNG = 180;    // rightmost longitude in image
+const MAP_TOP_LAT = 85;       // topmost latitude in image (not 90)
+const MAP_BOT_LAT = -60;      // bottommost latitude in image (not -90)
+
+function project(lat: number, lng: number): [number, number] {
+  const x = ((lng - MAP_LEFT_LNG) / (MAP_RIGHT_LNG - MAP_LEFT_LNG)) * 1000;
+  const y = ((MAP_TOP_LAT - lat) / (MAP_TOP_LAT - MAP_BOT_LAT)) * 500;
+  return [x, y];
+}
 ```
 
-**Header do card:**
-- Background `bg-muted/30` com `border-b border-border/50`
-- Bandeira grande (`text-2xl`) + nome da interface em `font-semibold` + badge `WAN` com cor `teal`
-- Padding `px-4 py-3`
+Isso recalibra a projeção para os limites reais da imagem em vez de assumir ±90° de latitude.
 
-**Body do card:**
-- IP com ícone `Globe` e tamanho maior (`text-base font-mono font-bold`)
-- Localização com ícone `MapPin` em `text-muted-foreground`
-- **Remover as coordenadas** — são irrelevantes para o usuário
+### Parte 3 — Ajustar também as linhas de grade e equador/meridiano
 
-**Footer do card:**
-- Fundo ligeiramente diferente (`bg-muted/10`)
-- Botão `Selecionar` com ícone `Check`, variante `default`, tamanho `sm`, alinhado à direita
-- Hover: borda do card fica `border-primary/50` (indicação visual de seleção)
+As linhas decorativas (equador, meridiano principal) também usam a função `project()`, então serão automaticamente corrigidas após o ajuste. Apenas a posição Y do equador e X do meridiano no SVG precisam usar a nova fórmula — o que já acontecerá automaticamente.
 
-### Estados de hover
-- `group` no card root
-- `group-hover:border-primary/40 group-hover:bg-muted/30` no card
+## Arquivos Modificados
 
-## Arquivo a modificar
+| Arquivo | Mudança |
+|---|---|
+| `src/components/firewall/AttackMap.tsx` | Corrigir `preserveAspectRatio` da imagem + recalibrar `project()` com limites reais do mapa |
 
-| Arquivo | Linhas | Operação |
+## Resultado Esperado
+
+| País | Antes | Depois |
 |---|---|---|
-| `src/pages/environment/AddFirewallPage.tsx` | 1113–1164 | Redesenho completo do WAN Selector Dialog |
+| Brasil | Atlântico (quase no oceano) | Centro da América do Sul ✓ |
+| Marrocos | Sobreposto à Itália | Noroeste da África ✓ |
+| EUA | Ligeiramente deslocado E | Centro-Norte da América ✓ |
+| China | Levemente deslocado | Centro da Ásia ✓ |
 
-## Resultado esperado
-
-Um dialog limpo, moderno e legível com:
-- Hierarquia visual clara: interface → IP → localização
-- Cards com cabeçalho destacado, seção de dados e ação bem separados
-- Coordenadas removidas (ruído para o usuário)
-- Hover interativo que indica qual card está sendo considerado
+Os projéteis animados e o ponto do firewall também ficarão corretamente posicionados sobre os países de origem.
