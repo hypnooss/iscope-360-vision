@@ -278,7 +278,7 @@ export default function FirewallAnalysis() {
         <PageBreadcrumb
           items={[
             { label: 'Firewall', href: '/scope-firewall/firewalls' },
-            { label: 'Relatórios', href: '/scope-firewall/reports' },
+    { label: 'Compliance', href: '/scope-firewall/reports' },
             { label: firewall?.name || 'Análise' },
           ]}
         />
@@ -301,7 +301,7 @@ export default function FirewallAnalysis() {
         <PageBreadcrumb
           items={[
             { label: 'Firewall', href: '/scope-firewall/firewalls' },
-            { label: 'Relatórios', href: '/scope-firewall/reports' },
+    { label: 'Compliance', href: '/scope-firewall/reports' },
             { label: firewall?.name || 'Análise de Compliance' },
           ]}
         />
