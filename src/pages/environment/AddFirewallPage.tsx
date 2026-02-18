@@ -146,9 +146,44 @@ function FortiGateInstructions() {
           <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">1</span>
           Criar REST API Admin
         </h3>
-        <p className="text-sm text-muted-foreground ml-8">
-          Vá em <span className="font-mono bg-muted px-1 rounded text-foreground">System &gt; Administrators</span>, clique em <strong>Create New &gt; REST API Admin</strong>. No campo <strong>Administrator Profile</strong>, selecione o perfil nativo <span className="font-mono bg-muted px-1 rounded text-foreground">super_admin_readonly</span> (já existente no FortiGate — não é necessário criá-lo). Anote o <strong>API Token</strong> gerado.
-        </p>
+        <ol className="ml-8 space-y-2 text-sm text-muted-foreground list-none">
+          <li className="flex items-start gap-2">
+            <span className="font-mono text-primary text-xs mt-0.5 w-3 shrink-0">a</span>
+            <span>Vá em <span className="font-mono bg-muted px-1 rounded text-foreground">System &gt; Administrators</span></span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="font-mono text-primary text-xs mt-0.5 w-3 shrink-0">b</span>
+            <span>Clique em <strong>Create New &gt; REST API Admin</strong></span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="font-mono text-primary text-xs mt-0.5 w-3 shrink-0">c</span>
+            <span>
+              Preencha o formulário:
+              <ul className="mt-1.5 space-y-1 list-none text-xs">
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
+                  <span><strong>Username:</strong> <span className="font-mono bg-muted px-1 rounded text-foreground">iscope360</span></span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
+                  <span><strong>Administrator Profile:</strong> <span className="font-mono bg-muted px-1 rounded text-foreground">super_admin_readonly</span></span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
+                  <span><strong>PKI Group:</strong> desmarque (deixe desabilitado)</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
+                  <span>Clique em <strong>OK</strong></span>
+                </li>
+              </ul>
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="font-mono text-primary text-xs mt-0.5 w-3 shrink-0">d</span>
+            <span>Anote o <strong>API Token</strong> gerado — ele será solicitado na próxima etapa</span>
+          </li>
+        </ol>
       </div>
 
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
