@@ -12,10 +12,16 @@ interface AttackMapProps {
   fullscreen?: boolean;
 }
 
-// Equirectangular projection for 1000x500 viewBox
+// Calibrated projection for world-map-dark.png
+// The image crops extreme latitudes (~85°N to ~60°S) so we adjust accordingly
+const MAP_LEFT_LNG = -180;
+const MAP_RIGHT_LNG = 180;
+const MAP_TOP_LAT = 83;
+const MAP_BOT_LAT = -58;
+
 function project(lat: number, lng: number): [number, number] {
-  const x = ((lng + 180) / 360) * 1000;
-  const y = ((90 - lat) / 180) * 500;
+  const x = ((lng - MAP_LEFT_LNG) / (MAP_RIGHT_LNG - MAP_LEFT_LNG)) * 1000;
+  const y = ((MAP_TOP_LAT - lat) / (MAP_TOP_LAT - MAP_BOT_LAT)) * 500;
   return [x, y];
 }
 
@@ -66,7 +72,7 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
           preserveAspectRatio="xMidYMid meet"
         >
           {/* Map image inside SVG for perfect alignment */}
-          <image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
+          <image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="none" />
 
           {/* SVG Filters for glow effects */}
           <defs>
@@ -100,9 +106,9 @@ export function AttackMap({ deniedCountries, authFailedCountries, authSuccessCou
             <line key={`v${i}`} x1={i * 50} y1={0} x2={i * 50} y2={500} stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
           ))}
 
-          {/* Equator & prime meridian */}
-          <line x1={0} y1={250} x2={1000} y2={250} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" strokeDasharray="8 4" />
-          <line x1={500} y1={0} x2={500} y2={500} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" strokeDasharray="8 4" />
+          {/* Equator & prime meridian — calibrated to match project() */}
+          <line x1={0} y1={project(0, 0)[1]} x2={1000} y2={project(0, 0)[1]} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" strokeDasharray="8 4" />
+          <line x1={project(0, 0)[0]} y1={0} x2={project(0, 0)[0]} y2={500} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" strokeDasharray="8 4" />
 
           {/* Projectile paths and animated projectiles */}
           {firewallPoint && points.map((p, i) => {
