@@ -18,10 +18,19 @@ const COLORS = {
   firewall: '#06b6d4',
 };
 
-// Equirectangular projection: lat/lng → canvas pixel
+// Offsets calibrados para world-map-dark.png
+// O conteúdo geográfico não começa em pixel 0 — há padding interno na imagem
+const IMG_LEFT   = 0.038;  // % da largura até lng=-180°
+const IMG_RIGHT  = 0.038;  // % da largura de lng=+180° até a borda direita
+const IMG_TOP    = 0.020;  // % da altura até lat=+90°
+const IMG_BOTTOM = 0.060;  // % da altura de lat=-90° até a borda inferior
+
+// Equirectangular projection calibrada: lat/lng → canvas pixel
 function project(lat: number, lng: number, w: number, h: number): [number, number] {
-  const x = ((lng + 180) / 360) * w;
-  const y = ((90 - lat) / 180) * h;
+  const usableW = w * (1 - IMG_LEFT - IMG_RIGHT);
+  const usableH = h * (1 - IMG_TOP - IMG_BOTTOM);
+  const x = w * IMG_LEFT + ((lng + 180) / 360) * usableW;
+  const y = h * IMG_TOP + ((90 - lat) / 180) * usableH;
   return [x, y];
 }
 
