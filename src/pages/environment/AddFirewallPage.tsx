@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Check,
   Clock,
+  Globe,
   Loader2,
   MapPin,
   Settings,
@@ -1111,9 +1112,12 @@ export default function AddFirewallPage() {
 
     {/* WAN IP Selector Dialog */}
     <Dialog open={showWanDialog} onOpenChange={setShowWanDialog}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Múltiplos IPs WAN encontrados</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-primary" />
+            Múltiplos IPs WAN encontrados
+          </DialogTitle>
           <DialogDescription>
             Selecione o IP que representa a localização física deste firewall.
           </DialogDescription>
@@ -1124,18 +1128,40 @@ export default function AddFirewallPage() {
             return (
               <div
                 key={c.ip}
-                className="border border-border rounded-lg p-4 space-y-2 bg-muted/20"
+                className="group border border-border rounded-lg overflow-hidden transition-all duration-200 hover:border-primary/40 hover:shadow-md"
               >
-                <div className="flex items-center justify-between gap-2">
+                {/* Card Header */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-muted/30 border-b border-border/50">
+                  {c.country_code ? (
+                    <span
+                      className={`fi fi-${c.country_code.toLowerCase()} text-2xl flex-shrink-0`}
+                      title={c.country}
+                    />
+                  ) : (
+                    <Globe className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  )}
+                  <span className="font-semibold text-foreground">{c.interface}</span>
+                  <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full border border-primary/30 text-primary bg-primary/10">
+                    WAN
+                  </span>
+                </div>
+
+                {/* Card Body */}
+                <div className="px-4 py-3 space-y-1.5 group-hover:bg-muted/20 transition-colors">
                   <div className="flex items-center gap-2">
-                    {c.country_code && (
-                      <span
-                        className={`fi fi-${c.country_code.toLowerCase()} text-xl`}
-                        title={c.country}
-                      />
-                    )}
-                    <span className="font-mono text-sm font-semibold text-foreground">{c.interface}</span>
+                    <Globe className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="font-mono font-bold text-base text-foreground">{c.ip}</span>
                   </div>
+                  {location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm text-muted-foreground">{location}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Footer */}
+                <div className="flex justify-end px-4 py-2.5 bg-muted/10 border-t border-border/50">
                   <Button
                     size="sm"
                     onClick={() => {
@@ -1148,13 +1174,9 @@ export default function AddFirewallPage() {
                       toast.success(`📍 ${c.interface} — ${c.ip}${location ? ` (${location})` : ''} selecionado`);
                     }}
                   >
+                    <Check className="w-3.5 h-3.5" />
                     Selecionar
                   </Button>
-                </div>
-                <div className="text-sm text-muted-foreground space-y-0.5">
-                  <p><span className="font-medium text-foreground">IP:</span> {c.ip}</p>
-                  {location && <p><span className="font-medium text-foreground">Local:</span> {location}</p>}
-                  <p className="text-xs text-muted-foreground/70">Coords: {c.lat.toFixed(4)}, {c.lng.toFixed(4)}</p>
                 </div>
               </div>
             );
