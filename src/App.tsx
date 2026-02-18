@@ -43,7 +43,6 @@ const AnalyzerCriticalPage = lazy(() => import("./pages/firewall/AnalyzerCritica
 const AnalyzerConfigChangesPage = lazy(() => import("./pages/firewall/AnalyzerConfigChangesPage"));
 
 // External Domain Module Pages - lazy loaded
-const ExternalDomainListPage = lazy(() => import("./pages/external-domain/ExternalDomainListPage"));
 const ExternalDomainExecutionsPage = lazy(() => import("./pages/external-domain/ExternalDomainExecutionsPage"));
 const ExternalDomainReportsPage = lazy(() => import("./pages/external-domain/ExternalDomainReportsPage"));
 const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-domain/ExternalDomainAnalysisReportPage"));
@@ -116,7 +115,6 @@ const App = () => (
                   <Route path="/scope-firewall/analyzer/config-changes" element={<AnalyzerConfigChangesPage />} />
 
                   {/* External Domain Module */}
-                  <Route path="/scope-external-domain/domains" element={<ExternalDomainListPage />} />
                   <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
                   <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
                   <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />

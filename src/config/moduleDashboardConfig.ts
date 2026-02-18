@@ -24,7 +24,7 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
   },
   scope_external_domain: {
     statsKey: 'externalDomain',
-    path: '/scope-external-domain/domains',
+    path: '/environment',
     infraLabel: 'Domínios',
   },
   scope_network: {

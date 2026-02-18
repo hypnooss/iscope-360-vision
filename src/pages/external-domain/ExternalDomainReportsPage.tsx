@@ -556,7 +556,7 @@ export default function ExternalDomainReportsPage() {
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => navigate('/scope-external-domain/domains')}>
+                onClick={() => navigate('/environment')}>
 
                     Verificar Domínio
                   </Button>
