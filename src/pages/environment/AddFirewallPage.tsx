@@ -958,7 +958,7 @@ export default function AddFirewallPage() {
                         }
                       }}
                       disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
-                      className={(!geoLoading && formData.fortigate_url && formData.agent_id) ? "pulse" : ""}
+                      className={(!geoLoading && formData.fortigate_url && formData.agent_id) ? "animate-pulse-glow" : ""}
                     >
                       {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
                       Buscar
@@ -982,7 +982,7 @@ export default function AddFirewallPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-between">
+            <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleBack}>
                 <ArrowLeft className="w-4 h-4" />
                 Voltar
