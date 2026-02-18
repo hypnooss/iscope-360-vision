@@ -453,7 +453,7 @@ export default function AddFirewallPage() {
         />
 
         {/* Step Indicator */}
-        <div className="mt-10">
+        <div className="pt-10">
           <StepIndicator current={step} />
         </div>
 
