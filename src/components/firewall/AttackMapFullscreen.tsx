@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AttackMapCanvas } from './AttackMapCanvas';
+import { AttackMap } from './AttackMap';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
@@ -58,7 +58,7 @@ export function AttackMapFullscreen({
     .slice(0, 5);
 
   return (
-    <div className="fixed inset-0 z-50 animate-fade-in flex flex-col" style={{ background: '#0a0e1a' }}>
+    <div className="fixed inset-0 z-50 animate-fade-in flex flex-col" style={{ background: '#121726' }}>
       {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
         <Button
@@ -81,13 +81,14 @@ export function AttackMapFullscreen({
         </div>
       </div>
 
-      {/* Map fills the screen — Canvas (no Leaflet, no tile gaps) */}
+      {/* Map fills the screen — Leaflet with accurate coordinate projection */}
       <div className="flex-1 w-full min-h-0">
-        <AttackMapCanvas
+        <AttackMap
           deniedCountries={deniedCountries}
           authFailedCountries={authFailedCountries}
           authSuccessCountries={authSuccessCountries}
           firewallLocation={firewallLocation}
+          fullscreen={true}
         />
       </div>
 
