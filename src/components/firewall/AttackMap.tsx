@@ -105,7 +105,7 @@ function ProjectileOverlay({
 function FitWorldBounds() {
   const map = useMap();
   useEffect(() => {
-    map.setView([20, 0], 3, { animate: false });
+    map.setView([20, 0], 2.5, { animate: false });
   }, [map]);
   return null;
 }
@@ -116,7 +116,7 @@ function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
   useEffect(() => {
     setTimeout(() => {
       map.invalidateSize({ animate: false });
-      map.setView([20, 0], 3, { animate: false });
+      map.setView([20, 0], 2.5, { animate: false });
     }, 200);
   }, [fullscreen, map]);
   return null;
@@ -173,7 +173,8 @@ export function AttackMap({
     <div className={fullscreen ? 'w-full h-full' : 'relative w-full'}>
       <MapContainer
         center={[20, 0]}
-        zoom={3}
+        zoom={2.5}
+        zoomSnap={0.5}
         minZoom={1}
         maxZoom={fullscreen ? 8 : 4}
         worldCopyJump={false}
