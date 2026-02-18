@@ -1,47 +1,62 @@
 
-# Atualizar Instruções FortiGate — Usar perfil super_admin_readonly nativo
+# Detalhar Passo 1 — Criar REST API Admin com Subpassos
 
-## O que muda
+## Objetivo
 
-As instruções do Step 2 (FortiGateInstructions) atualmente guiam o usuário a:
-1. Criar um perfil de administrador Read-Only customizado (System > Admin Profiles)
-2. Criar o REST API Admin associando esse perfil
-3. Opcionalmente configurar via CLI
+Substituir o parágrafo único do Passo 1 por uma lista de subpassos numerados (a, b, c, d), refletindo exatamente o fluxo real dentro do FortiGate conforme o print compartilhado.
 
-Com a mudança, o **Passo 1 (criar perfil)** é eliminado, pois o FortiGate já possui o perfil nativo `super_admin_readonly`. A instrução passa a ser:
-1. Criar o REST API Admin diretamente, selecionando o perfil existente `super_admin_readonly`
-2. Opcionalmente ajustar via CLI (já referenciando o nome correto do perfil)
+## Mudança no arquivo `src/pages/environment/AddFirewallPage.tsx`
 
-## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
+### Bloco atual (linhas 144–152)
 
-### Função `FortiGateInstructions` (linhas 141–188)
-
-**Passo 1 — Criar REST API Admin** (era passo 2, agora é passo 1):
-- Instrução: Ir em `System > Administrators`, clicar em **Create New > REST API Admin**
-- Selecionar o perfil existente **`super_admin_readonly`** (nativo do FortiGate, não é preciso criá-lo)
-- Anotar o **API Token** gerado
-
-**Passo 2 — Habilitar acesso via CLI** (era passo 3, agora é passo 2):
-- Atualizar o snippet CLI para referenciar `"super_admin_readonly"` em vez de `"read-only"`:
-```
-config system api-user
-    edit "<nome-do-api-user>"
-        set accprofile "super_admin_readonly"
-        set vdom "root"
-    next
-end
+```tsx
+<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+  <h3>1 — Criar REST API Admin</h3>
+  <p className="text-sm text-muted-foreground ml-8">
+    Vá em System > Administrators, clique em Create New > REST API Admin.
+    No campo Administrator Profile, selecione o perfil nativo super_admin_readonly...
+    Anote o API Token gerado.
+  </p>
+</div>
 ```
 
-**Remover** o bloco antigo "Passo 1: Criar Perfil de Administrador REST API" inteiramente.
+### Bloco novo — lista de subpassos
 
-**Adicionar nota informativa** após os passos explicando por que `super_admin_readonly` é seguro para este uso:
-- É um perfil nativo do FortiGate (somente-leitura)
-- Não permite alterações de configuração
-- Garante visibilidade completa para coleta de dados de compliance
+```tsx
+<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+  <h3>1 — Criar REST API Admin</h3>
+  <ol className="ml-8 space-y-2 text-sm text-muted-foreground list-none">
 
-### Observação sobre SSL (manter sem alteração)
-O aviso sobre porta 8443 e SSL permanece igual.
+    <li className="flex items-start gap-2">
+      <span className="font-mono text-primary text-xs mt-0.5">a</span>
+      Vá em <code>System &gt; Administrators</code>
+    </li>
+
+    <li className="flex items-start gap-2">
+      <span className="font-mono text-primary text-xs mt-0.5">b</span>
+      Clique em <strong>Create New &gt; REST API Admin</strong>
+    </li>
+
+    <li className="flex items-start gap-2">
+      <span className="font-mono text-primary text-xs mt-0.5">c</span>
+      Preencha o formulário:
+      <ul className="mt-1 space-y-1 list-disc list-inside text-xs">
+        <li>Username: <code>iscope360</code></li>
+        <li>Administrator Profile: <code>super_admin_readonly</code></li>
+        <li>PKI Group: <strong>desmarque</strong> (desabilitado)</li>
+        <li>Clique em <strong>OK</strong></li>
+      </ul>
+    </li>
+
+    <li className="flex items-start gap-2">
+      <span className="font-mono text-primary text-xs mt-0.5">d</span>
+      Anote o <strong>API Token</strong> gerado — ele será solicitado na próxima etapa
+    </li>
+
+  </ol>
+</div>
+```
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions` (linhas 141–188): reduzir de 3 para 2 passos, remover criação de perfil customizado, referenciar `super_admin_readonly` no texto e no snippet CLI, adicionar nota informativa sobre o perfil nativo.
+- `src/pages/environment/AddFirewallPage.tsx` — linhas 144–152: substituir parágrafo único por lista de subpassos a→d dentro do bloco do Passo 1.
