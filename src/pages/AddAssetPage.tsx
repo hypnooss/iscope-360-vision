@@ -22,7 +22,7 @@ const assetTypes = [
     icon: Shield,
     iconColor: 'text-orange-400',
     bgColor: 'bg-orange-400/10',
-    route: '/scope-firewall/firewalls/new',
+    route: '/environment/new/firewall',
   },
   {
     type: 'm365',
