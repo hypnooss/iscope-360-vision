@@ -1,60 +1,47 @@
 
-# Reordenar Steps do Wizard — Instruções antes de Configuração
+# Atualizar Instruções FortiGate — Usar perfil super_admin_readonly nativo
 
-## Problema
+## O que muda
 
-A sequência atual é:
-1. Fabricante → 2. Configuração → 3. Instruções → 4. Agendamento
+As instruções do Step 2 (FortiGateInstructions) atualmente guiam o usuário a:
+1. Criar um perfil de administrador Read-Only customizado (System > Admin Profiles)
+2. Criar o REST API Admin associando esse perfil
+3. Opcionalmente configurar via CLI
 
-O usuário chega no step 2 e é solicitado a fornecer a API Key, mas ainda não sabe como gerá-la. As instruções de como fazer isso só aparecem no step 3.
-
-## Solução
-
-Inverter a ordem dos steps 2 e 3:
-1. Fabricante → 2. Instruções → 3. Configuração → 4. Agendamento
-
-Assim o fluxo fica: escolha o fabricante → veja como configurar o dispositivo e gerar as credenciais → insira as credenciais e dados do firewall → defina o agendamento.
+Com a mudança, o **Passo 1 (criar perfil)** é eliminado, pois o FortiGate já possui o perfil nativo `super_admin_readonly`. A instrução passa a ser:
+1. Criar o REST API Admin diretamente, selecionando o perfil existente `super_admin_readonly`
+2. Opcionalmente ajustar via CLI (já referenciando o nome correto do perfil)
 
 ## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
 
-### 1. Atualizar o array `STEPS` (linha 65)
+### Função `FortiGateInstructions` (linhas 141–188)
 
-```tsx
-// Antes:
-const STEPS = [
-  { id: 1, label: 'Fabricante' },
-  { id: 2, label: 'Configuração' },
-  { id: 3, label: 'Instruções' },
-  { id: 4, label: 'Agendamento' },
-];
+**Passo 1 — Criar REST API Admin** (era passo 2, agora é passo 1):
+- Instrução: Ir em `System > Administrators`, clicar em **Create New > REST API Admin**
+- Selecionar o perfil existente **`super_admin_readonly`** (nativo do FortiGate, não é preciso criá-lo)
+- Anotar o **API Token** gerado
 
-// Depois:
-const STEPS = [
-  { id: 1, label: 'Fabricante' },
-  { id: 2, label: 'Instruções' },
-  { id: 3, label: 'Configuração' },
-  { id: 4, label: 'Agendamento' },
-];
+**Passo 2 — Habilitar acesso via CLI** (era passo 3, agora é passo 2):
+- Atualizar o snippet CLI para referenciar `"super_admin_readonly"` em vez de `"read-only"`:
+```
+config system api-user
+    edit "<nome-do-api-user>"
+        set accprofile "super_admin_readonly"
+        set vdom "root"
+    next
+end
 ```
 
-### 2. Trocar a ordem de renderização dos steps no JSX
+**Remover** o bloco antigo "Passo 1: Criar Perfil de Administrador REST API" inteiramente.
 
-No bloco de renderização condicional dos steps, trocar os blocos do step 2 e step 3:
+**Adicionar nota informativa** após os passos explicando por que `super_admin_readonly` é seguro para este uso:
+- É um perfil nativo do FortiGate (somente-leitura)
+- Não permite alterações de configuração
+- Garante visibilidade completa para coleta de dados de compliance
 
-- O que era renderizado quando `step === 2` (Configuração) passa a ser renderizado quando `step === 3`
-- O que era renderizado quando `step === 3` (Instruções) passa a ser renderizado quando `step === 2`
-
-### 3. Atualizar a lógica de `canAdvanceStep`
-
-A validação `canAdvanceStep2` (que verifica nome, URL, credenciais e agent) atualmente guarda o step 2. Após a troca, ela precisa guardar o step 3 (novo step de Configuração).
-
-- `canAdvanceStep2` → mover para proteger o novo step 3 (Configuração)
-- O step 2 (Instruções) não tem validação — o usuário avança livremente após ler as instruções
-
-### 4. Nenhuma mudança na lógica de submit ou dados
-
-Os dados do formulário, a lógica de autenticação condicional, geolocalização e agendamento permanecem idênticos — apenas a ordem de exibição muda.
+### Observação sobre SSL (manter sem alteração)
+O aviso sobre porta 8443 e SSL permanece igual.
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — array `STEPS`, bloco de renderização condicional dos steps e referências a `canAdvanceStep2`/`canAdvanceStep3`
+- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions` (linhas 141–188): reduzir de 3 para 2 passos, remover criação de perfil customizado, referenciar `super_admin_readonly` no texto e no snippet CLI, adicionar nota informativa sobre o perfil nativo.
