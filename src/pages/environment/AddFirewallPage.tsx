@@ -271,12 +271,6 @@ end`}</pre>
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-        <p className="text-sm text-amber-400 font-medium">⚠️ Observação sobre portas e SSL</p>
-        <p className="text-xs text-amber-300/80 mt-1">
-          A porta padrão da API HTTPS do FortiGate é <span className="font-mono">8443</span>. Certifique-se de que o certificado SSL está configurado corretamente ou desabilite a verificação SSL no perfil. A URL deve incluir porta e protocolo HTTPS.
-        </p>
-      </div>
     </div>
   );
 }
