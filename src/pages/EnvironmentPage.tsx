@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -8,14 +8,15 @@ import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { AssetCategorySection } from '@/components/environment/AssetCategorySection';
+import { DeleteEnvironmentDomainDialog } from '@/components/environment/DeleteEnvironmentDomainDialog';
 import { Button } from '@/components/ui/button';
 import {
-  Monitor, Search, Building2, Globe, Shield, Cloud, Plus,
+  Monitor, Search, Building2, Globe, Shield, Cloud, Plus, Pencil, Trash2,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 type AssetType = 'firewall' | 'external_domain' | 'm365_tenant';
 
@@ -36,10 +37,13 @@ export default function EnvironmentPage() {
   const { isPreviewMode, previewTarget } = usePreview();
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Fetch workspaces
   const { data: allWorkspaces } = useQuery({
@@ -167,6 +171,25 @@ export default function EnvironmentPage() {
   const filteredDomains = useMemo(() => filtered.filter(a => a.type === 'external_domain'), [filtered]);
   const filteredTenants = useMemo(() => filtered.filter(a => a.type === 'm365_tenant'), [filtered]);
 
+  const handleDeleteDomain = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await supabase.from('external_domain_schedules').delete().eq('domain_id', deleteTarget.id);
+      await supabase.from('external_domain_analysis_history').delete().eq('domain_id', deleteTarget.id);
+      await supabase.from('agent_tasks').delete().eq('target_id', deleteTarget.id).eq('target_type', 'external_domain');
+      const { error } = await supabase.from('external_domains').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
+      toast.success('Domínio excluído com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['environment-assets'] });
+      setDeleteTarget(null);
+    } catch (err: any) {
+      toast.error('Erro ao excluir domínio: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [deleteTarget, queryClient]);
+
   if (authLoading) return null;
 
   return (
@@ -271,6 +294,16 @@ export default function EnvironmentPage() {
             items={filteredDomains}
             totalCount={stats.domains}
             isLoading={isLoading}
+            renderActions={(asset) => (
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/scope-external-domain/domains/${asset.id}/edit`)}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget({ id: asset.id, name: asset.name })}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           />
           <AssetCategorySection
             title="Firewalls"
@@ -290,6 +323,14 @@ export default function EnvironmentPage() {
           />
         </div>
       </div>
+
+      <DeleteEnvironmentDomainDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        domainName={deleteTarget?.name || ''}
+        onConfirm={handleDeleteDomain}
+        loading={deleteLoading}
+      />
     </AppLayout>
   );
 }
