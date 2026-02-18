@@ -1,18 +1,31 @@
 
-# Reverter Zoom para 3
+# Remover o Aviso "Observação sobre portas e SSL"
 
-## O que está errado
+## Análise do Estado Atual
 
-A imagem mostra o mapa em modo fullscreen com os tiles não renderizando — só fundo escuro com marcadores flutuando sem os contornos dos países. Isso é um problema de renderização que apareceu após a mudança para 2.5.
+Após verificar o código em `src/pages/environment/AddFirewallPage.tsx`:
 
-## Correção
+- **Step 1 (Fabricante)**: botão "Voltar" já existe ao lado de "Próximo" (linha 603) — nenhuma mudança necessária.
+- **Step 2 (Instruções)**: botão "Voltar" já existe ao lado de "Próximo" (linha 640) — nenhuma mudança necessária.
+- **Aviso amber "Observação sobre portas e SSL"**: existe nas linhas 274-279 dentro da função `FortiGateInstructions()` e precisa ser removido.
 
-Reverter as 3 ocorrências do valor `2.5` de volta para `3` em `src/components/firewall/AttackMap.tsx`:
+## Única Mudança Necessária
 
-| Onde | Mudança |
+Remover o bloco `<div>` com o aviso amber em `src/pages/environment/AddFirewallPage.tsx` (linhas 274-279):
+
+```
+<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+  <p className="text-sm text-amber-400 font-medium">⚠️ Observação sobre portas e SSL</p>
+  <p className="text-xs text-amber-300/80 mt-1">
+    A porta padrão da API HTTPS do FortiGate é 8443...
+  </p>
+</div>
+```
+
+## Resumo
+
+| Item | Ação |
 |---|---|
-| `<MapContainer zoom={2.5}>` | `zoom={3}` |
-| `FitWorldBounds` → `setView([20, 0], 2.5)` | `setView([20, 0], 3)` |
-| `MapResizer` → `setView([20, 0], 2.5)` | `setView([20, 0], 3)` |
-
-O `zoomSnap={0.5}` pode permanecer — não causa dano e permite que o usuário ajuste em incrementos de 0.5 manualmente no fullscreen.
+| Botão "Voltar" no Step 1 | Sem alteração — já existe |
+| Botão "Voltar" no Step 2 | Sem alteração — já existe |
+| Aviso amber SSL/Portas | Remover da função `FortiGateInstructions` |
