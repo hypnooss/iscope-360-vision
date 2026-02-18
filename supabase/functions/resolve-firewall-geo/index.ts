@@ -10,22 +10,29 @@ const isPrivateIP = (ip: string): boolean =>
 
 const looksLikeIP = (s: string): boolean => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
 
-async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
-  const { hostname } = new URL(url);
-
-  // @ts-ignore - Deno.createHttpClient accepts this option
+async function fetchWithoutSSLVerification(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 15000
+): Promise<Response> {
+  // @ts-ignore - Deno-specific API
   const client = Deno.createHttpClient({
-    // @ts-ignore - Valid Deno option for ignoring SSL
-    dangerouslyIgnoreCertificateErrors: [hostname],
+    // @ts-ignore - true ignora todos os erros de certificado (necessário para FortiGates com cert auto-assinado)
+    dangerouslyIgnoreCertificateErrors: true,
   });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(url, {
       ...options,
+      signal: controller.signal,
       // @ts-ignore - Deno permite passar client
       client,
     });
   } finally {
+    clearTimeout(timer);
     client.close();
   }
 }
@@ -40,7 +47,6 @@ async function fortigateRequest(baseUrl: string, apiKey: string, endpoint: strin
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    signal: AbortSignal.timeout(10000),
   });
 
   if (!response.ok) {
