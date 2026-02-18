@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -84,7 +85,6 @@ export default function FirewallReportsPage() {
   const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   const [selectedAnalyses, setSelectedAnalyses] = useState<Record<string, string>>({});
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -103,11 +103,7 @@ export default function FirewallReportsPage() {
     enabled: isSuperRole,
   });
 
-  useEffect(() => {
-    if (authLoading || moduleLoading) return;
-    if (!user) { navigate('/auth'); return; }
-    if (!hasModuleAccess('scope_firewall')) { navigate('/modules'); }
-  }, [user, authLoading, moduleLoading, navigate, hasModuleAccess]);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces, isSuperRole);
 
   useEffect(() => {
     if (!authLoading && !moduleLoading && user && hasModuleAccess('scope_firewall')) {
@@ -115,12 +111,6 @@ export default function FirewallReportsPage() {
     }
   }, [user, authLoading, moduleLoading, hasModuleAccess, isPreviewMode, previewTarget]);
 
-  // Auto-select first workspace for super roles
-  useEffect(() => {
-    if (isSuperRole && workspaces.length > 0 && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(workspaces[0].id);
-    }
-  }, [workspaces, isSuperRole, selectedWorkspaceId]);
 
   const fetchReports = async () => {
     try {
@@ -494,7 +484,7 @@ export default function FirewallReportsPage() {
             <p className="text-muted-foreground">Visão consolidada das análises de compliance</p>
           </div>
           {isSuperRole && workspaces.length > 0 && (
-            <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+            <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
               <SelectTrigger className="w-[220px]">
                 <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Selecionar workspace" />

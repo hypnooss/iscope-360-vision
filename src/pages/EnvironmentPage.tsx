@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -44,7 +45,6 @@ export default function EnvironmentPage() {
   const queryClient = useQueryClient();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -63,11 +63,7 @@ export default function EnvironmentPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  useEffect(() => {
-    if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(allWorkspaces[0].id);
-    }
-  }, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
