@@ -221,7 +221,7 @@ export default function AddExternalDomainPage() {
       }
 
       toast.success('Domínio adicionado com sucesso!');
-      navigate('/scope-external-domain/domains');
+      navigate('/environment');
     } catch (error: any) {
       toast.error('Erro inesperado', { description: error?.message });
     } finally {
