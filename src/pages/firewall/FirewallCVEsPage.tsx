@@ -207,7 +207,7 @@ export default function FirewallCVEsPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
         <PageBreadcrumb items={[
-          { label: 'Firewall', href: '/scope-firewall/firewalls' },
+          { label: 'Compliance', href: '/scope-firewall/reports' },
           { label: 'CVEs' },
         ]} />
 

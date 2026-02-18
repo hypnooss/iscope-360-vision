@@ -549,15 +549,6 @@ export default function FirewallReportsPage() {
               <div className="text-center py-12 text-muted-foreground">
                 <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>{firewallsMeta.length === 0 ? 'Nenhum firewall disponível' : 'Nenhum firewall encontrado com os filtros selecionados'}</p>
-                {firewallsMeta.length === 0 && (
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() => navigate('/scope-firewall/firewalls')}
-                  >
-                    Ver Firewalls
-                  </Button>
-                )}
               </div>
             ) : (
               <Table>

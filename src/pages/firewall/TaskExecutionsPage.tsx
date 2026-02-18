@@ -306,7 +306,7 @@ export default function TaskExecutionsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb
           items={[
-            { label: 'Firewall', href: '/scope-firewall/firewalls' },
+            { label: 'Compliance', href: '/scope-firewall/reports' },
             { label: 'Execuções' },
           ]}
         />
