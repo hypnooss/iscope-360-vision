@@ -211,6 +211,26 @@ end`}</pre>
         </div>
       </div>
 
+      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+        <h3 className="font-semibold text-foreground flex items-center gap-2">
+          <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">3</span>
+          Habilitar acesso a logs via REST API
+        </h3>
+        <div className="ml-8 space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Por padrão, o FortiGate não expõe logs para a REST API. Execute o comando abaixo para habilitar a leitura de logs e métricas de performance — necessário para o módulo <strong>Security Intelligence (Analyzer)</strong>:
+          </p>
+          <pre className="text-xs bg-muted font-mono p-3 rounded border border-border overflow-x-auto text-foreground">{`config log setting
+    set rest-api-get enable
+    set rest-api-performance enable
+end`}</pre>
+          <p className="text-xs text-muted-foreground">
+            <strong className="text-foreground">rest-api-get</strong> — permite consulta de logs de tráfego, IPS e eventos via API.<br/>
+            <strong className="text-foreground">rest-api-performance</strong> — expõe métricas de CPU, memória e sessões ativas.
+          </p>
+        </div>
+      </div>
+
       <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
         <p className="text-sm font-semibold text-destructive flex items-center gap-2">
           🔒 Segurança: Restrição por IP (Trusted Hosts)
