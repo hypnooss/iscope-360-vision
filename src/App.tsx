@@ -67,6 +67,7 @@ const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
 const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
 const AddAssetPage = lazy(() => import("./pages/AddAssetPage"));
 const AddExternalDomainPage = lazy(() => import("./pages/AddExternalDomainPage"));
+const AddFirewallPage = lazy(() => import("./pages/environment/AddFirewallPage"));
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 
@@ -148,6 +149,7 @@ const App = () => (
                   <Route path="/environment" element={<EnvironmentPage />} />
                   <Route path="/environment/new" element={<AddAssetPage />} />
                   <Route path="/environment/new/external-domain" element={<AddExternalDomainPage />} />
+                  <Route path="/environment/new/firewall" element={<AddFirewallPage />} />
 
                   {/* Admin */}
                   <Route path="/users" element={<UsersPage />} />
