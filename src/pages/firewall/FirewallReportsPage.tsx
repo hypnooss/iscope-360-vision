@@ -563,7 +563,7 @@ export default function FirewallReportsPage() {
                     <TableHead>Agent</TableHead>
                     <TableHead>Frequência</TableHead>
                     <TableHead>Último Score</TableHead>
-                    <TableHead>Data</TableHead>
+                    <TableHead>Última Execução</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
