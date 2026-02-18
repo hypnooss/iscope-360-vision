@@ -12,16 +12,11 @@ interface AttackMapProps {
   fullscreen?: boolean;
 }
 
-// Calibrated projection for world-map-dark.png
-// The image crops extreme latitudes (~85°N to ~60°S) so we adjust accordingly
-const MAP_LEFT_LNG = -180;
-const MAP_RIGHT_LNG = 180;
-const MAP_TOP_LAT = 83;
-const MAP_BOT_LAT = -58;
-
+// Pure equirectangular projection for world-map-dark.png
+// Image covers full ±180° longitude and ±90° latitude
 function project(lat: number, lng: number): [number, number] {
-  const x = ((lng - MAP_LEFT_LNG) / (MAP_RIGHT_LNG - MAP_LEFT_LNG)) * 1000;
-  const y = ((MAP_TOP_LAT - lat) / (MAP_TOP_LAT - MAP_BOT_LAT)) * 500;
+  const x = ((lng + 180) / 360) * 1000;
+  const y = ((90 - lat) / 180) * 500;
   return [x, y];
 }
 
