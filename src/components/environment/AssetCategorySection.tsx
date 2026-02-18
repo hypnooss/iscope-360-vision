@@ -6,9 +6,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, Monitor } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-interface AssetItem {
+export interface AssetItem {
   id: string;
   name: string;
+  type?: string;
   agentName: string | null;
   workspaceName: string;
   score: number | null;
@@ -23,6 +24,7 @@ interface AssetCategorySectionProps {
   items: AssetItem[];
   totalCount: number;
   isLoading: boolean;
+  renderActions?: (asset: AssetItem) => React.ReactNode;
 }
 
 const translateStatus = (status: string): string => {
@@ -45,7 +47,7 @@ const getScoreColor = (score: number | null) => {
   return 'bg-destructive/20 text-destructive border-destructive/30';
 };
 
-export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading }: AssetCategorySectionProps) {
+export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, renderActions }: AssetCategorySectionProps) {
   const navigate = useNavigate();
 
   if (!isLoading && totalCount === 0) return null;
@@ -103,10 +105,12 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                       <Badge variant="outline" className="capitalize">{translateStatus(asset.status)}</Badge>
                     </TableCell>
                     <TableCell className="w-[11%] text-right">
-                      <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        Abrir
-                      </Button>
+                      {renderActions ? renderActions(asset) : (
+                        <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
+                          <ExternalLink className="w-4 h-4 mr-1" />
+                          Abrir
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
