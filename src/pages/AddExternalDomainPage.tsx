@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeft, Clock, Globe } from 'lucide-react';
 import { getExternalDomainError } from '@/lib/urlValidation';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -90,9 +91,10 @@ function calculateNextRunAt(
 
 export default function AddExternalDomainPage() {
   const navigate = useNavigate();
-  const { user, isSuperAdmin, role } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
+  const { effectiveRole } = useEffectiveAuth();
 
-  const isSuperUser = isSuperAdmin() || role === 'super_suporte';
+  const isSuperUser = isSuperAdmin() || effectiveRole === 'super_suporte';
 
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
