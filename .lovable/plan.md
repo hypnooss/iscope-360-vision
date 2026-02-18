@@ -1,62 +1,73 @@
 
-# Detalhar Passo 1 — Criar REST API Admin com Subpassos
+# Adicionar Instrução de Trusted Hosts — Hardening do REST API Admin
 
-## Objetivo
+## Contexto de Segurança
 
-Substituir o parágrafo único do Passo 1 por uma lista de subpassos numerados (a, b, c, d), refletindo exatamente o fluxo real dentro do FortiGate conforme o print compartilhado.
+O campo **Trusted Hosts** visível na tela de configuração do FortiGate permite restringir de quais endereços IP o token da REST API pode ser usado. Sem isso, qualquer pessoa que obtiver o API Token pode consultar a API do FortiGate de qualquer lugar da internet.
 
-## Mudança no arquivo `src/pages/environment/AddFirewallPage.tsx`
+Para um software de compliance e segurança, omitir essa instrução seria uma falha grave. O cliente precisa ser orientado a:
+1. Habilitar o toggle **Trusted Hosts** no formulário do REST API Admin
+2. Cadastrar o IP do host onde o agente iScope está instalado como único host autorizado
 
-### Bloco atual (linhas 144–152)
+## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
 
-```tsx
-<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-  <h3>1 — Criar REST API Admin</h3>
-  <p className="text-sm text-muted-foreground ml-8">
-    Vá em System > Administrators, clique em Create New > REST API Admin.
-    No campo Administrator Profile, selecione o perfil nativo super_admin_readonly...
-    Anote o API Token gerado.
-  </p>
-</div>
+### 1. Adicionar sub-item ao passo "c" (formulário do REST API Admin) — linhas 162–180
+
+Dentro da lista de campos do formulário (sub-itens do passo c), adicionar dois novos itens antes do "Clique em OK":
+
+```
+– Trusted Hosts: ative o toggle
+– Trusted Hosts → Host 1: insira o IP do servidor do agente iScope (ex: 192.168.1.50/32)
 ```
 
-### Bloco novo — lista de subpassos
+Isso garante que o usuário configure o campo enquanto ainda está no formulário, antes de clicar em OK.
 
-```tsx
-<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-  <h3>1 — Criar REST API Admin</h3>
-  <ol className="ml-8 space-y-2 text-sm text-muted-foreground list-none">
+### 2. Atualizar o snippet CLI do Passo 2 — linha 196
 
-    <li className="flex items-start gap-2">
-      <span className="font-mono text-primary text-xs mt-0.5">a</span>
-      Vá em <code>System &gt; Administrators</code>
-    </li>
+Adicionar a linha `set trusthost1 <IP-do-agente>/32` ao snippet, para que administradores que preferirem configurar via CLI também saibam o comando correto:
 
-    <li className="flex items-start gap-2">
-      <span className="font-mono text-primary text-xs mt-0.5">b</span>
-      Clique em <strong>Create New &gt; REST API Admin</strong>
-    </li>
+```
+config system api-user
+    edit "iscope360"
+        set accprofile "super_admin_readonly"
+        set vdom "root"
+        set trusthost1 <IP-do-agente>/32
+    next
+end
+```
 
-    <li className="flex items-start gap-2">
-      <span className="font-mono text-primary text-xs mt-0.5">c</span>
-      Preencha o formulário:
-      <ul className="mt-1 space-y-1 list-disc list-inside text-xs">
-        <li>Username: <code>iscope360</code></li>
-        <li>Administrator Profile: <code>super_admin_readonly</code></li>
-        <li>PKI Group: <strong>desmarque</strong> (desabilitado)</li>
-        <li>Clique em <strong>OK</strong></li>
-      </ul>
-    </li>
+### 3. Adicionar bloco de aviso de segurança dedicado (após os passos e antes da nota sobre SSL)
 
-    <li className="flex items-start gap-2">
-      <span className="font-mono text-primary text-xs mt-0.5">d</span>
-      Anote o <strong>API Token</strong> gerado — ele será solicitado na próxima etapa
-    </li>
+Um bloco novo com bordas vermelhas/amber sinalizando que Trusted Hosts é **obrigatório por boas práticas**, explicando o risco de não configurá-lo:
 
-  </ol>
-</div>
+```
+🔒 Segurança: Restrição por IP (Trusted Hosts)
+
+Habilitar Trusted Hosts é essencial. Sem essa restrição, o API Token 
+pode ser usado de qualquer origem na internet caso seja comprometido.
+
+Ao ativar Trusted Hosts, somente requisições originadas do IP do agente 
+iScope serão aceitas pelo FortiGate — o token se torna inútil fora desse contexto.
+```
+
+## Estrutura final do Passo 1 (formulário)
+
+```
+a – Vá em System > Administrators
+b – Clique em Create New > REST API Admin
+c – Preencha o formulário:
+      – Username: iscope360
+      – Administrator Profile: super_admin_readonly
+      – PKI Group: desmarque (deixe desabilitado)
+      – Trusted Hosts: ative o toggle         ← NOVO
+      – Host 1: IP do agente iScope/32        ← NOVO
+      – Clique em OK
+d – Anote o API Token gerado
 ```
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — linhas 144–152: substituir parágrafo único por lista de subpassos a→d dentro do bloco do Passo 1.
+- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions`:
+  - Sub-lista do passo `c` (linhas 162–180): adicionar itens Trusted Hosts
+  - Snippet CLI do Passo 2 (linha 196): adicionar `set trusthost1`
+  - Novo bloco de aviso de segurança entre o bloco de passos e a nota de SSL
