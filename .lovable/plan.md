@@ -1,103 +1,65 @@
 
-# Fix Definitivo: Geolocalização server-side via Edge Function
+# Melhoria Visual do WAN Selector Dialog
 
-## Causa Raiz
+## Situação atual
 
-O diagnóstico via network logs foi conclusivo:
+O dialog exibe os cards de IP WAN com um layout funcional porém básico:
+- Fundo `bg-muted/20` plano sem profundidade
+- Interface (`wan1`, `wan2`) em fonte mono pequena sem destaque
+- IP, Local e Coords listados com texto simples em `text-sm`
+- Botão "Selecionar" padrão sem diferenciação visual
+- Sem separação visual entre o nome da interface e os detalhes
+- Coordenadas visíveis mas irrelevantes para o usuário final
+
+## Melhorias propostas
+
+### Layout geral do Dialog
+- Aumentar para `max-w-md` com padding mais generoso
+- Adicionar ícone `MapPin` no título para contexto visual imediato
+
+### Cards de cada IP WAN
+Redesenho completo de cada card com 3 zonas:
 
 ```
-GET https://ipwho.is/186.233.96.14
-Status: 403
-Response: {"success":false,"message":"CORS is not supported on the Free plan"}
+┌─────────────────────────────────────────────┐
+│  🇧🇷  wan1  ·  Interface WAN                 │   ← header do card com badge
+│─────────────────────────────────────────────│
+│  🖧  186.233.96.14                           │   ← IP destacado
+│  📍 Palmas, Tocantins, Brazil               │   ← localização
+│─────────────────────────────────────────────│
+│                          [✓ Selecionar]      │   ← botão no footer
+└─────────────────────────────────────────────┘
 ```
 
-Tanto `ipapi.co` quanto `ipwho.is` **bloqueiam chamadas CORS do browser no plano gratuito**. Qualquer API de GeoIP chamada diretamente do frontend terá o mesmo problema — não é uma questão de provedor, mas de arquitetura.
+**Header do card:**
+- Background `bg-muted/30` com `border-b border-border/50`
+- Bandeira grande (`text-2xl`) + nome da interface em `font-semibold` + badge `WAN` com cor `teal`
+- Padding `px-4 py-3`
 
-## Solução: Mover a geolocalização para a Edge Function existente
+**Body do card:**
+- IP com ícone `Globe` e tamanho maior (`text-base font-mono font-bold`)
+- Localização com ícone `MapPin` em `text-muted-foreground`
+- **Remover as coordenadas** — são irrelevantes para o usuário
 
-Já existe a Edge Function `resolve-firewall-geo` que faz tudo server-side. A edge function já usa `ip-api.com/batch` nas outras funções do projeto (`firewall-analyzer`), que é uma API gratuita sem restrições de CORS quando chamada do servidor.
+**Footer do card:**
+- Fundo ligeiramente diferente (`bg-muted/10`)
+- Botão `Selecionar` com ícone `Check`, variante `default`, tamanho `sm`, alinhado à direita
+- Hover: borda do card fica `border-primary/50` (indicação visual de seleção)
 
-### Fluxo atual (quebrado)
-```text
-Browser → resolve-firewall-geo (cria task) → Agent (coleta IPs WAN)
-Browser ← polling: IPs WAN
-Browser → ipwho.is (CORS BLOQUEADO) ❌
-```
+### Estados de hover
+- `group` no card root
+- `group-hover:border-primary/40 group-hover:bg-muted/30` no card
 
-### Fluxo corrigido
-```text
-Browser → resolve-firewall-geo (cria task) → Agent (coleta IPs WAN)
-Browser ← polling: IPs WAN
-Browser → resolve-firewall-geo/geolocate (lista de IPs) → ip-api.com (server-side)
-Browser ← candidatos com lat/lng, país, cidade ✅
-```
+## Arquivo a modificar
 
-## Mudanças necessárias
-
-### 1. Edge Function `resolve-firewall-geo` — novo endpoint `POST /geolocate`
-
-A função já existe. Adicionar suporte a uma segunda operação: quando o body contém `ips` (array de strings), faz a geolocalização server-side usando `ip-api.com/batch` (já usado no `firewall-analyzer`).
-
-```typescript
-// Novo bloco na edge function
-const { ips } = await req.json();
-
-if (ips && Array.isArray(ips)) {
-  // Geolocalizar via ip-api.com (server-side, sem CORS)
-  const response = await fetch('http://ip-api.com/batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(ips.map(ip => ({ query: ip, fields: 'status,lat,lon,country,countryCode,regionName,city' }))),
-  });
-  const results = await response.json();
-  return results;
-}
-```
-
-### 2. `AddFirewallPage.tsx` — remover fetch ao ipwho.is, chamar a edge function
-
-Em vez de:
-```typescript
-// ANTES (CORS bloqueado)
-const res = await fetch(`https://ipwho.is/${w.ip}`);
-```
-
-Passar para:
-```typescript
-// DEPOIS — server-side via edge function
-const { data } = await supabase.functions.invoke('resolve-firewall-geo', {
-  body: { ips: wanIPs.map(w => w.ip) }
-});
-// data = array de { query, status, lat, lon, country, countryCode, regionName, city }
-```
-
-### 3. Remover a geolocalização do `src/lib/geolocation.ts` para o contexto browser
-
-A função `tryGeolocate` em `geolocation.ts` tem o mesmo problema — ela é chamada indiretamente via browser também. Ela deve ser ajustada para usar a edge function ou apenas marcar que não é adequada para uso browser-side direto com IPs externos.
-
-## Arquivos modificados
-
-| Arquivo | Operação |
-|---|---|
-| `supabase/functions/resolve-firewall-geo/index.ts` | Adicionar suporte ao payload `{ ips: string[] }` para geolocalização server-side via `ip-api.com/batch` |
-| `src/pages/environment/AddFirewallPage.tsx` | Substituir fetch ao `ipwho.is` por `supabase.functions.invoke('resolve-firewall-geo', { body: { ips } })` |
-
-## Mapeamento de campos ip-api.com
-
-| Campo ip-api.com | Uso no sistema |
-|---|---|
-| `lat` | `geo_latitude` |
-| `lon` | `geo_longitude` |
-| `country` | Nome do país |
-| `countryCode` | Código 2 letras (para bandeira) |
-| `regionName` | Estado/Região |
-| `city` | Cidade |
-| `status` | `"success"` ou `"fail"` |
+| Arquivo | Linhas | Operação |
+|---|---|---|
+| `src/pages/environment/AddFirewallPage.tsx` | 1113–1164 | Redesenho completo do WAN Selector Dialog |
 
 ## Resultado esperado
 
-Ao clicar em "Buscar" com o BR-PNC-FW-001:
-1. Agent executa e retorna `wan1: 186.233.96.14`, `wan2: 170.150.137.198`
-2. Frontend chama `resolve-firewall-geo` com `{ ips: ["186.233.96.14", "170.150.137.198"] }`
-3. Edge Function chama `ip-api.com/batch` server-side — sem CORS
-4. Dialog de seleção abre com os dois IPs geolocalizados com bandeiras e cidade
+Um dialog limpo, moderno e legível com:
+- Hierarquia visual clara: interface → IP → localização
+- Cards com cabeçalho destacado, seção de dados e ação bem separados
+- Coordenadas removidas (ruído para o usuário)
+- Hover interativo que indica qual card está sendo considerado
