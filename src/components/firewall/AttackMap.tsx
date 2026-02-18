@@ -5,6 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import { getCountryCoords } from '@/lib/countryUtils';
 import type { TopCountry } from '@/types/analyzerInsights';
 
+const WORLD_BOUNDS = new LatLngBounds([-90, -180], [90, 180]);
+
 interface AttackMapProps {
   deniedCountries: TopCountry[];
   authFailedCountries: TopCountry[];
@@ -99,6 +101,15 @@ function ProjectileOverlay({
   );
 }
 
+// Fit world bounds to container on mount — eliminates repeated world copies
+function FitWorldBounds() {
+  const map = useMap();
+  useEffect(() => {
+    map.fitBounds([[-75, -180], [85, 180]], { animate: false });
+  }, [map]);
+  return null;
+}
+
 // Force map to invalidate size when fullscreen changes
 function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
   const map = useMap();
@@ -144,10 +155,13 @@ export function AttackMap({
   return (
     <div className={fullscreen ? 'w-full h-full' : 'relative w-full'}>
       <MapContainer
-        center={[20, 10]}
+        center={[20, 0]}
         zoom={2}
         minZoom={1}
-        maxZoom={fullscreen ? 8 : 2}
+        maxZoom={fullscreen ? 8 : 4}
+        maxBounds={WORLD_BOUNDS}
+        maxBoundsViscosity={1.0}
+        worldCopyJump={false}
         zoomControl={false}
         dragging={!!fullscreen}
         scrollWheelZoom={false}
@@ -155,9 +169,10 @@ export function AttackMap({
         attributionControl={false}
         style={mapStyle}
       >
+        <FitWorldBounds />
         <MapResizer fullscreen={fullscreen} />
 
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} noWrap={true} />
 
         {/* Trail lines */}
         {firewallLocation && points.map((p, i) => (
