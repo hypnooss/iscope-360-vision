@@ -1,9 +1,10 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap, SVGOverlay } from 'react-leaflet';
 import { LatLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getCountryCoords } from '@/lib/countryUtils';
 import type { TopCountry } from '@/types/analyzerInsights';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AttackMapProps {
   deniedCountries: TopCountry[];
@@ -13,8 +14,9 @@ interface AttackMapProps {
   fullscreen?: boolean;
 }
 
-const TILE_URL = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
-const TILE_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const FALLBACK_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const STADIA_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
 // SVG overlay with animated projectiles — synced to Leaflet's projection
 function ProjectileOverlay({
@@ -127,6 +129,20 @@ export function AttackMap({
   firewallLocation,
   fullscreen,
 }: AttackMapProps) {
+  const [tileUrl, setTileUrl] = useState(FALLBACK_TILE_URL);
+  const [tileAttribution, setTileAttribution] = useState(FALLBACK_ATTRIBUTION);
+
+  useEffect(() => {
+    supabase.functions.invoke('get-map-config').then(({ data }) => {
+      if (data?.stadia_api_key) {
+        setTileUrl(`https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=${data.stadia_api_key}`);
+        setTileAttribution(STADIA_ATTRIBUTION);
+      }
+    }).catch(() => {
+      // keep fallback
+    });
+  }, []);
+
   const points = useMemo(() => {
     const result: { lat: number; lng: number; r: number; color: string; label: string; count: number; type: string }[] = [];
 
@@ -171,7 +187,7 @@ export function AttackMap({
         <FitWorldBounds />
         <MapResizer fullscreen={fullscreen} />
 
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} noWrap={true} />
+        <TileLayer url={tileUrl} attribution={tileAttribution} noWrap={true} />
 
         {/* Trail lines */}
         {firewallLocation && points.map((p, i) => (

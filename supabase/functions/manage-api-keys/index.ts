@@ -34,6 +34,11 @@ const MANAGED_KEYS = [
     label: "Have I Been Pwned",
     description: "API Key do HIBP para consulta de credenciais vazadas por domínio (haveibeenpwned.com/API/Key)",
   },
+  {
+    name: "STADIA_MAPS_API_KEY",
+    label: "Stadia Maps",
+    description: "API Key do Stadia Maps para exibição do mapa de ataques (tiles do mapa escuro). Obtenha em client.stadiamaps.com",
+  },
 ];
 
 function fromHex(hex: string): Uint8Array {
