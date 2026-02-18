@@ -1,81 +1,103 @@
 
-# Fix: Geolocalização falha com ipapi.co — Trocar por ipwho.is
+# Fix Definitivo: Geolocalização server-side via Edge Function
 
-## Diagnóstico
+## Causa Raiz
 
-Os IPs WAN `186.233.96.14` e `170.150.137.198` estão sendo detectados **corretamente** — o filtro de interfaces funcionou. O problema é na **etapa de geolocalização**, que chama `ipapi.co` diretamente do browser.
+O diagnóstico via network logs foi conclusivo:
 
-O `ipapi.co` na versão gratuita:
-- Limita 1.000 requests/dia por IP de origem
-- Bloqueia requests vindas de IPs de datacenter ou CDN (como os usados pelos previews do Lovable)
-- Pode retornar `{"error": true, "reason": "RateLimited"}` — o código trata isso como falha silenciosa (retorna `null`)
+```
+GET https://ipwho.is/186.233.96.14
+Status: 403
+Response: {"success":false,"message":"CORS is not supported on the Free plan"}
+```
 
-Por isso `candidates.length === 0` e a mensagem de erro aparece, mesmo com os IPs válidos.
+Tanto `ipapi.co` quanto `ipwho.is` **bloqueiam chamadas CORS do browser no plano gratuito**. Qualquer API de GeoIP chamada diretamente do frontend terá o mesmo problema — não é uma questão de provedor, mas de arquitetura.
 
-## Solução: Substituir ipapi.co por ipwho.is
+## Solução: Mover a geolocalização para a Edge Function existente
 
-`ipwho.is` é gratuito, sem chave, suporta HTTPS e CORS sem restrições de datacenter.
+Já existe a Edge Function `resolve-firewall-geo` que faz tudo server-side. A edge function já usa `ip-api.com/batch` nas outras funções do projeto (`firewall-analyzer`), que é uma API gratuita sem restrições de CORS quando chamada do servidor.
 
-Formato de resposta do `ipwho.is`:
-```json
-{
-  "ip": "186.233.96.14",
-  "success": true,
-  "latitude": -23.5,
-  "longitude": -46.6,
-  "country": "Brazil",
-  "country_code": "BR",
-  "region": "São Paulo",
-  "city": "São Paulo"
+### Fluxo atual (quebrado)
+```text
+Browser → resolve-firewall-geo (cria task) → Agent (coleta IPs WAN)
+Browser ← polling: IPs WAN
+Browser → ipwho.is (CORS BLOQUEADO) ❌
+```
+
+### Fluxo corrigido
+```text
+Browser → resolve-firewall-geo (cria task) → Agent (coleta IPs WAN)
+Browser ← polling: IPs WAN
+Browser → resolve-firewall-geo/geolocate (lista de IPs) → ip-api.com (server-side)
+Browser ← candidatos com lat/lng, país, cidade ✅
+```
+
+## Mudanças necessárias
+
+### 1. Edge Function `resolve-firewall-geo` — novo endpoint `POST /geolocate`
+
+A função já existe. Adicionar suporte a uma segunda operação: quando o body contém `ips` (array de strings), faz a geolocalização server-side usando `ip-api.com/batch` (já usado no `firewall-analyzer`).
+
+```typescript
+// Novo bloco na edge function
+const { ips } = await req.json();
+
+if (ips && Array.isArray(ips)) {
+  // Geolocalizar via ip-api.com (server-side, sem CORS)
+  const response = await fetch('http://ip-api.com/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ips.map(ip => ({ query: ip, fields: 'status,lat,lon,country,countryCode,regionName,city' }))),
+  });
+  const results = await response.json();
+  return results;
 }
 ```
 
-## Arquivos Modificados
+### 2. `AddFirewallPage.tsx` — remover fetch ao ipwho.is, chamar a edge function
 
-| Arquivo | Mudança |
-|---|---|
-| `src/lib/geolocation.ts` | Trocar `ipapi.co` por `ipwho.is` (campos: `latitude`, `longitude`) |
-| `src/pages/environment/AddFirewallPage.tsx` | Trocar `ipapi.co` por `ipwho.is` no Step 4 de geolocalização |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Trocar `ipapi.co` por `ipwho.is` para consistência |
-
-## Detalhes Técnicos
-
-### Mudança em geolocation.ts
-
+Em vez de:
 ```typescript
-// ANTES
-const res = await fetch(`https://ipapi.co/${target}/json/`);
-if (json.error || !json.latitude || !json.longitude) return null;
-return { lat: json.latitude, lng: json.longitude };
-
-// DEPOIS
-const res = await fetch(`https://ipwho.is/${target}`);
-if (!json.success || !json.latitude || !json.longitude) return null;
-return { lat: json.latitude, lng: json.longitude };
-```
-
-### Mudança em AddFirewallPage.tsx (Step 4)
-
-```typescript
-// ANTES
-const res = await fetch(`https://ipapi.co/${w.ip}/json/`);
-if (json.error || !json.latitude || !json.longitude) return null;
-return { ..., country: json.country_name, country_code: json.country_code.toLowerCase() };
-
-// DEPOIS
+// ANTES (CORS bloqueado)
 const res = await fetch(`https://ipwho.is/${w.ip}`);
-if (!json.success || !json.latitude || !json.longitude) return null;
-return { ..., country: json.country, country_code: (json.country_code || '').toLowerCase() };
 ```
 
-A diferença de campos:
-- `country_name` (ipapi.co) → `country` (ipwho.is)
-- `json.error` (ipapi.co) → `!json.success` (ipwho.is)
-- Resto igual: `latitude`, `longitude`, `region`, `city`, `country_code`
+Passar para:
+```typescript
+// DEPOIS — server-side via edge function
+const { data } = await supabase.functions.invoke('resolve-firewall-geo', {
+  body: { ips: wanIPs.map(w => w.ip) }
+});
+// data = array de { query, status, lat, lon, country, countryCode, regionName, city }
+```
 
-## Resultado Esperado
+### 3. Remover a geolocalização do `src/lib/geolocation.ts` para o contexto browser
 
-Após a mudança, o clique em "Buscar" com o firewall BR-PNC-FW-001 deve:
-1. Detectar `wan1` (`186.233.96.14`) e `wan2` (`170.150.137.198`)
-2. Geolocalizar ambos via `ipwho.is` com sucesso
-3. Abrir o dialog de seleção com as duas opções, bandeiras do Brasil e dados de localização
+A função `tryGeolocate` em `geolocation.ts` tem o mesmo problema — ela é chamada indiretamente via browser também. Ela deve ser ajustada para usar a edge function ou apenas marcar que não é adequada para uso browser-side direto com IPs externos.
+
+## Arquivos modificados
+
+| Arquivo | Operação |
+|---|---|
+| `supabase/functions/resolve-firewall-geo/index.ts` | Adicionar suporte ao payload `{ ips: string[] }` para geolocalização server-side via `ip-api.com/batch` |
+| `src/pages/environment/AddFirewallPage.tsx` | Substituir fetch ao `ipwho.is` por `supabase.functions.invoke('resolve-firewall-geo', { body: { ips } })` |
+
+## Mapeamento de campos ip-api.com
+
+| Campo ip-api.com | Uso no sistema |
+|---|---|
+| `lat` | `geo_latitude` |
+| `lon` | `geo_longitude` |
+| `country` | Nome do país |
+| `countryCode` | Código 2 letras (para bandeira) |
+| `regionName` | Estado/Região |
+| `city` | Cidade |
+| `status` | `"success"` ou `"fail"` |
+
+## Resultado esperado
+
+Ao clicar em "Buscar" com o BR-PNC-FW-001:
+1. Agent executa e retorna `wan1: 186.233.96.14`, `wan2: 170.150.137.198`
+2. Frontend chama `resolve-firewall-geo` com `{ ips: ["186.233.96.14", "170.150.137.198"] }`
+3. Edge Function chama `ip-api.com/batch` server-side — sem CORS
+4. Dialog de seleção abre com os dois IPs geolocalizados com bandeiras e cidade
