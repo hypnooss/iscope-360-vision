@@ -144,37 +144,36 @@ function FortiGateInstructions() {
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">1</span>
-          Criar Perfil de Administrador REST API
+          Criar REST API Admin
         </h3>
         <p className="text-sm text-muted-foreground ml-8">
-          Acesse <span className="font-mono bg-muted px-1 rounded text-foreground">System &gt; Admin Profiles</span> e crie um novo perfil com acesso somente-leitura (<strong>Read-Only</strong>).
+          Vá em <span className="font-mono bg-muted px-1 rounded text-foreground">System &gt; Administrators</span>, clique em <strong>Create New &gt; REST API Admin</strong>. No campo <strong>Administrator Profile</strong>, selecione o perfil nativo <span className="font-mono bg-muted px-1 rounded text-foreground">super_admin_readonly</span> (já existente no FortiGate — não é necessário criá-lo). Anote o <strong>API Token</strong> gerado.
         </p>
       </div>
 
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">2</span>
-          Criar REST API Admin
-        </h3>
-        <p className="text-sm text-muted-foreground ml-8">
-          Vá em <span className="font-mono bg-muted px-1 rounded text-foreground">System &gt; Administrators</span>, clique em <strong>Create New &gt; REST API Admin</strong>. Associe o perfil criado no passo anterior e anote o <strong>API Token</strong> gerado.
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-        <h3 className="font-semibold text-foreground flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">3</span>
           Habilitar acesso à API via CLI (se necessário)
         </h3>
         <div className="ml-8 space-y-2">
           <p className="text-sm text-muted-foreground">Execute os seguintes comandos no CLI do FortiGate:</p>
           <pre className="text-xs bg-muted font-mono p-3 rounded border border-border overflow-x-auto text-foreground">{`config system api-user
     edit "<nome-do-api-user>"
-        set accprofile "read-only"
+        set accprofile "super_admin_readonly"
         set vdom "root"
     next
 end`}</pre>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+        <p className="text-sm text-blue-400 font-medium">ℹ️ Por que usar o perfil <span className="font-mono">super_admin_readonly</span>?</p>
+        <ul className="text-xs text-blue-300/80 mt-1 space-y-1 list-disc list-inside">
+          <li>Perfil nativo do FortiGate — não requer criação manual</li>
+          <li>Acesso somente-leitura: não permite alterações de configuração</li>
+          <li>Visibilidade completa para coleta de dados de compliance</li>
+        </ul>
       </div>
 
       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
