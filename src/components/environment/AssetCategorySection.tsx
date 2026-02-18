@@ -90,7 +90,16 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
               <p>Nenhum ativo encontrado</p>
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed w-full">
+              <colgroup>
+                <col />                                    {/* Nome — fluido */}
+                <col style={{ width: '140px' }} />         {/* Agent */}
+                <col style={{ width: '180px' }} />         {/* Workspace */}
+                <col style={{ width: '200px' }} />         {/* Frequência */}
+                <col style={{ width: '80px' }} />          {/* Score */}
+                <col style={{ width: '110px' }} />         {/* Status */}
+                <col style={{ width: '100px' }} />         {/* Ações */}
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>
@@ -107,11 +116,11 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                   const freq = asset.scheduleFrequency || null;
                   return (
                     <TableRow key={asset.id}>
-                      <TableCell className="font-medium text-foreground">{asset.name}</TableCell>
-                      <TableCell className={asset.agentName ? 'text-foreground' : 'text-muted-foreground'}>
+                      <TableCell className="font-medium text-foreground max-w-0 truncate">{asset.name}</TableCell>
+                      <TableCell className={asset.agentName ? 'text-foreground truncate' : 'text-muted-foreground truncate'}>
                         {asset.agentName || '—'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{asset.workspaceName}</TableCell>
+                      <TableCell className="text-muted-foreground truncate">{asset.workspaceName}</TableCell>
                       <TableCell>
                         {freq ? (
                           <div className="flex flex-row flex-wrap items-center gap-1">
