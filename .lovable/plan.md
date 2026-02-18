@@ -1,106 +1,81 @@
 
-# Fix: Botão "Buscar" não funciona — Dois Problemas
+# Dois Fixes: Pulse Discreto + Filtro de Interfaces Tunnel
 
-## Diagnóstico Completo
+## Diagnóstico via Banco de Dados
 
-### Causa Real #1 — Blueprint usa campo `url` mas o executor espera `path`
+Consultando os `task_step_results` da última tarefa `geo_query` do firewall BR-PNC-FW-001, o problema ficou claro:
 
-O `HTTPRequestExecutor` do Agent Python lê `config.path` para construir a URL:
-```python
-# http_request.py linha 44
-path = config.get('path', '/')
-url = f"{base_url}{path}"
-```
-
-Mas a Edge Function `resolve-firewall-geo` gera a blueprint com o campo `url` (URL absoluta):
-```json
-{
-  "config": {
-    "url": "https://10.11.70.1:3443/api/v2/cmdb/system/interface"
-  }
-}
-```
-
-O executor ignora o campo `url` e usa `path = '/'` (valor padrão), fazendo GET na raiz do servidor. O FortiGate responde com HTTP 200 + HTML da página de login — que o Agent considera "sucesso" (sem erro HTTP). Por isso o log mostra `status=completed, completed=2, failed=0`, mas os dados são HTML inútil.
-
-**A correção é adaptar a blueprint para usar `path` e passar a URL base no contexto,** OU adaptar o executor para aceitar `url` absoluta quando presente.
-
-A solução mais simples e sem alterar o Python agent é: na blueprint, separar o `base_url` do `path`, passando-os como contexto. Mas o blueprint inline não tem contexto separado.
-
-**A solução correta** é modificar o `HTTPRequestExecutor` para verificar se existe o campo `url` no config (URL absoluta) e usá-lo diretamente, ignorando o `base_url` do contexto. Isso é retrocompatível: blueprints existentes continuam usando `path`, e a nova `geo_query` passa `url` completa.
-
-### Causa Real #2 — Frontend lê coluna errada
-
-O frontend faz polling em:
-```typescript
-supabase.from('agent_tasks').select('status, result, step_results, ...')
-```
-
-Mas os step results são salvos em uma **tabela separada** `task_step_results`, não na coluna `step_results` de `agent_tasks`. A coluna `step_results` fica nula (`<nil>` confirmado no banco). O frontend precisa buscar de `task_step_results` após a task completar.
-
-## Confirmação dos Dados
-
-Consultando o banco com o task_id real (`98f80d1b-20c7-4600-910c-f865c875199c`):
-- `agent_tasks.step_results`: **null**
-- `task_step_results`: **2 rows**, ambas com `data.raw_text` = HTML da página de login do FortiGate
-
-## Solução
-
-### Mudança 1 — Python Agent: `http_request.py`
-
-Adicionar suporte ao campo `url` absoluta no config. Se `config.url` estiver presente, usar diretamente sem concatenar `base_url`:
-
-```python
-# Prioriza URL absoluta se fornecida no config
-absolute_url = config.get('url')
-if absolute_url:
-    url = self._interpolate(absolute_url, context)
-else:
-    path = config.get('path', '/')
-    path = self._interpolate(path, context)
-    url = f"{base_url}{path}"
-```
-
-### Mudança 2 — Frontend: `AddFirewallPage.tsx`
-
-Após a task completar, buscar step results da tabela `task_step_results`:
-
-```typescript
-const { data: stepRows } = await supabase
-  .from('task_step_results')
-  .select('step_id, status, data')
-  .eq('task_id', taskId);
-
-// Montar objeto { get_interfaces: ..., get_sdwan: ... }
-const stepResultsMap = Object.fromEntries(
-  (stepRows || []).map(r => [r.step_id, r.data])
-);
-const interfacesData = stepResultsMap['get_interfaces'];
-```
-
-Além disso, adicionar validação para detectar HTML (resposta de login) e mostrar mensagem de erro clara:
-```typescript
-// Detectar se a resposta é HTML em vez de JSON
-const isHtmlResponse = (data: any) => 
-  data?.raw_text && typeof data.raw_text === 'string' && data.raw_text.trim().startsWith('<!DOCTYPE');
-
-if (isHtmlResponse(interfacesData)) {
-  toast.error('O FortiGate retornou página de login. Verifique a API Key e se o token tem permissão de acesso via REST API.');
-  return;
-}
-```
-
-## Arquivos Modificados
-
-| Arquivo | Operação | Descrição |
+**Interfaces com `role: wan`:**
+| Interface | Type | IP |
 |---|---|---|
-| `python-agent/agent/executors/http_request.py` | Modificar | Suporte ao campo `url` absoluta no config do step |
-| `src/pages/environment/AddFirewallPage.tsx` | Modificar | Polling correto via `task_step_results` + detecção de HTML |
+| `wan1` (SIM) | physical | `186.233.96.14 255.255.255.252` ✅ |
+| `wan2` (Infotel) | physical | `170.150.137.198 255.255.255.252` ✅ |
+| `To_Azure-1` | **tunnel** | `0.0.0.0` ❌ |
+| `To_Cambe-1` ... | **tunnel** | `0.0.0.0` ❌ |
+| (26 mais túneis VPN) | **tunnel** | `0.0.0.0` ❌ |
+
+O código atual filtra por `role === 'wan'`, `ip !== '0.0.0.0'` e `!isPrivateIP` — mas não exclui explicitamente `type === 'tunnel'`. As interfaces `wan1` e `wan2` **são** capturadas corretamente pelo filtro de IP.
+
+O erro real foi na tarefa anterior (BR-LRV), que genuinamente não tem IPs públicos WAN. Para o BR-PNC, a task mais recente (`0f8d3ee8`) ainda era do LRV. O usuário clicou em "Buscar" para um **novo** firewall (BR-PNC) mas a task criada pode ter sido bloqueada por timeout/polling.
+
+**Melhoria defensiva**: adicionar o filtro `type !== 'tunnel'` explicitamente para não depender do IP `0.0.0.0` como único excludente — afinal, um túnel IPIP ou GRE poderia ter IP público mas não ser a saída WAN real.
+
+---
+
+## Fix 1 — Pulse discreto no botão "Buscar"
+
+### Problema
+`animate-pulse-glow` aplica `box-shadow` pulsante ao redor do botão inteiro — visualmente muito agressivo.
+
+### Solução
+Substituir por um pequeno **ponto de notificação** (`animate-ping`) no canto superior direito do botão, sem nenhuma animação no botão em si. É o padrão de badge de notificação usado em apps modernos.
+
+```tsx
+<div className="relative inline-flex">
+  {!geoLoading && formData.fortigate_url && formData.agent_id && (
+    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
+    </span>
+  )}
+  <Button
+    disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
+    // sem className de animação
+  >
+    ...Buscar
+  </Button>
+</div>
+```
+
+O botão fica estático; apenas um pequeno ponto verde pisca suavemente no canto. Muito mais elegante.
+
+---
+
+## Fix 2 — Filtro de interfaces tunnel
+
+### Adição defensiva na extração de IPs WAN
+
+```typescript
+// ANTES
+if (!isWan) continue;
+
+// DEPOIS — pular túneis (VPN overlay, GRE, IPIP) que nunca têm o IP WAN real
+if (!isWan) continue;
+if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
+```
+
+Isso garante que somente interfaces `physical`, `vlan`, `aggregate` (e similares) sejam consideradas para geolocalização — exatamente o que o FortiGate mostra na UI com as interfaces `SIM (wan1)` e `Infotel (wan2)`.
+
+---
+
+## Arquivo Modificado
+
+| Arquivo | Operação |
+|---|---|
+| `src/pages/environment/AddFirewallPage.tsx` | Substituir `animate-pulse-glow` por dot indicator + adicionar filtro `type !== 'tunnel'` |
 
 ## Resultado Esperado
 
-1. Agent faz GET para `https://10.11.70.1:3443/api/v2/cmdb/system/interface` com a API key correta
-2. FortiGate retorna JSON com as interfaces (se a API key for válida)
-3. Frontend lê os dados de `task_step_results` corretamente
-4. Frontend detecta se a resposta é HTML (API key inválida) e exibe erro claro
-5. Se os dados forem válidos, filtra interfaces WAN e geolocaliza via ipapi.co
+1. Botão "Buscar" com ponto de notificação verde discreto no canto
+2. Interfaces `wan1` (`186.233.96.14`) e `wan2` (`170.150.137.198`) detectadas corretamente
+3. Dialog de seleção de IPs WAN abre com as duas opções para escolha
