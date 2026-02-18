@@ -1,52 +1,28 @@
 
-# Ajustes no Wizard de Adição de Firewall — Header e Botão Voltar
+# Ajuste de Espaçamento — Breadcrumb → Step Indicator
 
-## O que o usuário pediu
+## Causa
 
-1. **Remover o bloco de título** ("Adicionar Firewall" + subtítulo "Configure um novo dispositivo de segurança") que aparece entre a breadcrumb e o step indicator.
-2. **Manter o espaçamento** entre a breadcrumb e o step indicator (sem colapsar o espaço).
-3. **Adicionar um botão "Voltar"** na área de ações do rodapé, à esquerda do botão "Próximo" — em todos os steps, não apenas o step 1.
+O header removido anteriormente ocupava espaço visual entre a breadcrumb e o step indicator. Sem ele, o `space-y-6` do container pai gera apenas 24px de gap — pouco para separar adequadamente os dois elementos.
 
-## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
+## Correção
 
-### 1. Remover o bloco de header (linhas 455–464)
+No arquivo `src/pages/environment/AddFirewallPage.tsx`, linha 455, adicionar `mt-8` ao wrapper do `StepIndicator` para criar ~32px de espaçamento adicional entre a breadcrumb e o indicador de passos:
 
 ```tsx
-// REMOVER todo este bloco:
-{/* Header */}
-<div className="flex items-center gap-4">
-  <Button variant="ghost" size="icon" onClick={handleBack}>
-    <ArrowLeft className="h-5 w-5" />
-  </Button>
-  <div>
-    <h1 className="text-2xl font-bold">Adicionar Firewall</h1>
-    <p className="text-sm text-muted-foreground">Configure um novo dispositivo de segurança</p>
-  </div>
+// Antes:
+{/* Step Indicator */}
+<StepIndicator current={step} />
+
+// Depois:
+{/* Step Indicator */}
+<div className="mt-8">
+  <StepIndicator current={step} />
 </div>
 ```
 
-### 2. Ajustar espaçamento
+Isso aplica `margin-top: 2rem` (32px) **além** do `space-y-6` já existente, totalizando ~56px de separação — visualmente equivalente ao espaçamento que o header proporcionava antes de ser removido.
 
-O `space-y-6` do container já cuida do espaçamento entre a breadcrumb e o `StepIndicator`. Com a remoção do header, o espaço natural de `space-y-6` entre os dois elementos será mantido — sem necessidade de ajuste adicional.
+## Arquivo modificado
 
-### 3. Adicionar botão "Voltar" nos rodapés de cada step
-
-**Step 1** — rodapé atual só tem "Próximo", mudar para:
-```tsx
-<div className="flex justify-between">
-  <Button variant="outline" onClick={handleBack}>
-    <ArrowLeft className="w-4 h-4" />
-    Voltar
-  </Button>
-  <Button onClick={handleNext} disabled={!canAdvanceStep1}>
-    Próximo
-    <ArrowRight className="w-4 h-4" />
-  </Button>
-</div>
-```
-
-**Steps 2, 3 e 4** — já possuem `flex justify-between` com botão Voltar e Próximo/Adicionar, portanto não precisam de alteração de layout — apenas verificar que o botão Voltar está presente.
-
-## Arquivos modificados
-
-- **`src/pages/environment/AddFirewallPage.tsx`**: remoção do bloco de header (h1 + p + botão ArrowLeft inline) e adição de botão "Voltar" no rodapé do step 1.
+- `src/pages/environment/AddFirewallPage.tsx` — linha 455, wrap do `StepIndicator` com `<div className="mt-8">`
