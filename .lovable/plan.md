@@ -1,73 +1,111 @@
 
-# Fix: Mapa Extravasando para os Lados (Cópias do Mundo)
+# Fix: Layout do AttackMap Fullscreen — z-index, Bordas e Sobreposição
 
-## Diagnóstico
+## Diagnóstico dos 3 Problemas
 
-No print, o mapa está mostrando **3 cópias do mundo** lado a lado — uma à esquerda, uma ao centro, uma à direita. Isso é comportamento padrão do Leaflet quando o zoom está baixo o suficiente para que o mundo inteiro caiba menos que a largura do container, e a opção `maxBounds` não está definida.
+### Problema 1: Elementos ficando atrás do mapa (legenda, firewall name)
+O Leaflet define z-index interno nos seus panes via CSS:
+- `.leaflet-map-pane` → z-index: 400
+- `.leaflet-tile-pane` → z-index: 200
+- `.leaflet-overlay-pane` → z-index: 400
+- `.leaflet-marker-pane` → z-index: 600
 
-O problema específico:
-- `zoom={2}` num container largo exibe o planisfério completo e ainda sobra espaço para cópias repetidas
-- Sem `maxBounds`, o Leaflet preenche as bordas com repetições do mapa
-- Sem `maxBoundsViscosity`, o usuário (no fullscreen) pode arrastar para fora dos limites
+O `AttackMapFullscreen` usa `z-20` (Tailwind = z-index: 20) nos overlays. Como o Leaflet já tem z-index 400+, os painéis "Top Origens de Ataque", "Voltar", nome do firewall e barra inferior ficam **atrás** do mapa.
 
-## Solução
+**Fix**: Mudar os overlays do `AttackMapFullscreen` de `z-20` → `z-[1000]` (acima do z-index máximo do Leaflet que é 650 para popups).
 
-### 1. Adicionar `maxBounds` para limitar a uma cópia do mundo
-
-```tsx
-const WORLD_BOUNDS = new LatLngBounds([-90, -180], [90, 180]);
-
-<MapContainer
-  maxBounds={WORLD_BOUNDS}
-  maxBoundsViscosity={1.0}   // impede arrastar além dos limites
-  ...
->
+### Problema 2: Bordas azuis nas laterais
+O CSS padrão do Leaflet injeta:
+```css
+.leaflet-container {
+  outline: none; /* às vezes não funciona em todos os browsers */
+}
+.leaflet-container:focus {
+  outline: 2px solid #0078d7; /* ou similar */
+}
 ```
+Além disso, o próprio div container pode ter border/outline azul de foco do browser.
 
-### 2. Ajustar `minZoom` para evitar encolher demais
-
-Com `maxBounds` definido, o Leaflet calcula automaticamente o zoom mínimo para que o mundo preencha o container sem deixar espaço para repetições. Mas precisamos garantir que `minZoom` não seja menor que esse valor calculado.
-
-A solução mais robusta é usar o hook `useMap()` dentro de um componente filho para chamar `map.fitBounds(WORLD_BOUNDS)` ao inicializar — isso garante que o zoom inicial mostre exatamente o mundo inteiro sem repetições, independente do tamanho do container.
-
-```tsx
-function FitWorldBounds() {
-  const map = useMap();
-  useEffect(() => {
-    map.fitBounds([[-75, -180], [85, 180]], { animate: false });
-  }, [map]);
-  return null;
+**Fix**: Adicionar CSS global para remover outline/border do container Leaflet:
+```css
+.leaflet-container {
+  outline: none !important;
+  border: none !important;
+}
+.leaflet-container:focus {
+  outline: none !important;
 }
 ```
 
-### 3. Desativar `worldCopyJump` (modo inline)
-
-No modo inline (não fullscreen), também desativar o `worldCopyJump` que contribui para as repetições laterais.
-
-```tsx
-<MapContainer
-  worldCopyJump={false}
-  noWrap={true}   // nos tiles
-  ...
->
-  <TileLayer noWrap={true} ... />
+### Problema 3: Mapa não preenchendo corretamente o fullscreen
+A estrutura atual:
+```
+div.fixed.flex-col         ← sem height explícito além do inset-0
+  div.absolute (top bar)   ← ok
+  div.flex-1.h-full        ← flex-1 + h-full conflita
+    AttackMap (h-full)     ← não sabe qual é o pai
 ```
 
-### 4. Centro e zoom inicial
+O `flex-1` já distribui o espaço restante corretamente, mas `h-full` dentro de `flex-1` é redundante e pode causar comportamento inesperado. O container pai precisa ter `h-full` explicitamente.
 
-Atualizar o centro inicial para `[20, 0]` (mais centralizado no planisfério) e remover o `zoom={2}` fixo — deixar o `FitWorldBounds` calcular o zoom correto automaticamente para o tamanho do container.
+**Fix**: Remover `h-full` do wrapper do mapa (deixar só `flex-1`), garantir que o container pai `fixed inset-0` tenha altura implícita (`inset-0` = top/right/bottom/left: 0, o que já define a altura).
 
 ## Arquivos Modificados
 
 | Arquivo | Mudança |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Adicionar `maxBounds`, `FitWorldBounds`, `noWrap` nos tiles, desativar `worldCopyJump` |
+| `src/components/firewall/AttackMapFullscreen.tsx` | z-index de `z-20` → `z-[1000]` nos overlays, corrigir estrutura do wrapper do mapa |
+| `src/index.css` | CSS global para remover outline/border do Leaflet |
+
+## Mudanças Específicas
+
+### `AttackMapFullscreen.tsx`
+
+**Top bar** (linha 63): `z-20` → `z-[1000]`
+```tsx
+<div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
+```
+
+**Right panel** (linha 96): `z-20` → `z-[1000]`
+```tsx
+<div className="absolute top-20 right-4 z-[1000] w-56 bg-black/70 ...">
+```
+
+**Bottom stats bar** (linha 134): `z-20` → `z-[1000]`
+```tsx
+<div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 ...">
+```
+
+**Wrapper do mapa** (linha 85): remover `h-full`, manter só `flex-1 w-full`
+```tsx
+<div className="flex-1 w-full min-h-0">
+```
+O `min-h-0` é necessário para que o flex-1 não estoure quando o filho tem altura maior que o esperado.
+
+### `src/index.css`
+
+Adicionar após as importações existentes do Leaflet:
+```css
+/* Fix Leaflet container focus outline / blue borders */
+.leaflet-container {
+  outline: none !important;
+  border: none !important;
+}
+.leaflet-container:focus,
+.leaflet-container:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+```
 
 ## Resultado Esperado
 
-| Situação | Antes | Depois |
+| Problema | Antes | Depois |
 |---|---|---|
-| Modo inline (dashboard) | 3 cópias do mundo visíveis | 1 cópia ajustada à largura do card ✓ |
-| Modo fullscreen | Cópias nas laterais | Mundo limitado a uma instância ✓ |
-| Arrastar (fullscreen) | Pode sair dos limites | Limitado a ±180° de longitude ✓ |
-| Zoom inicial | Fixo em 2 (pode ser grande/pequeno demais) | Calculado para preencher o container ✓ |
+| "Top Origens de Ataque" sumindo | Atrás do mapa (z-index 400) | Visível na frente (z-index 1000) |
+| Nome do firewall sumindo | Atrás do mapa | Visível no topo direito |
+| Barra de legenda (Auth/Denied) | Atrás do mapa | Visível na base |
+| Botão "Voltar" | Possivelmente atrás | Visível no topo esquerdo |
+| Bordas azuis laterais | Visíveis | Removidas via CSS |
+| Altura do mapa no fullscreen | Pode não preencher tudo | `flex-1 min-h-0` preenche corretamente |
