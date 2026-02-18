@@ -30,6 +30,10 @@ interface UnifiedAsset {
   status: string;
   agentName: string | null;
   navigationUrl: string;
+  scheduleFrequency?: string | null;
+  scheduleHour?: number;
+  scheduleDayOfWeek?: number;
+  scheduleDayOfMonth?: number;
 }
 
 export default function EnvironmentPage() {
@@ -88,6 +92,8 @@ export default function EnvironmentPage() {
       let edQuery = supabase.from('external_domains').select('id, name, domain, client_id, last_score, status, agent_id, agents(name)');
       let m365Query = supabase.from('m365_tenants').select('id, display_name, tenant_domain, client_id, connection_status, m365_tenant_agents(agent_id, agents(name))');
       let clientsQuery = supabase.from('clients').select('id, name');
+      let fwScheduleQuery = supabase.from('analysis_schedules').select('firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
+      let edScheduleQuery = supabase.from('external_domain_schedules').select('domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
 
       if (workspaceFilter && workspaceFilter.length > 0) {
         fwQuery = fwQuery.in('client_id', workspaceFilter);
@@ -96,7 +102,9 @@ export default function EnvironmentPage() {
         clientsQuery = clientsQuery.in('id', workspaceFilter);
       }
 
-      const [fwRes, edRes, m365Res, clientsRes] = await Promise.all([fwQuery, edQuery, m365Query, clientsQuery]);
+      const [fwRes, edRes, m365Res, clientsRes, fwScheduleRes, edScheduleRes] = await Promise.all([
+        fwQuery, edQuery, m365Query, clientsQuery, fwScheduleQuery, edScheduleQuery,
+      ]);
 
       if (fwRes.error) throw fwRes.error;
       if (edRes.error) throw edRes.error;
@@ -104,6 +112,8 @@ export default function EnvironmentPage() {
       if (clientsRes.error) throw clientsRes.error;
 
       const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c.name]));
+      const fwScheduleMap = new Map((fwScheduleRes.data || []).map((s: any) => [s.firewall_id, s]));
+      const edScheduleMap = new Map((edScheduleRes.data || []).map((s: any) => [s.domain_id, s]));
 
       const unified: UnifiedAsset[] = [
         ...(fwRes.data || []).map((fw: any) => ({
@@ -116,6 +126,10 @@ export default function EnvironmentPage() {
           status: fw.last_score !== null ? 'analyzed' : 'pending',
           agentName: fw.agents?.name || null,
           navigationUrl: `/environment/firewall/${fw.id}/edit`,
+          scheduleFrequency: fwScheduleMap.get(fw.id)?.frequency ?? null,
+          scheduleHour: fwScheduleMap.get(fw.id)?.scheduled_hour ?? 0,
+          scheduleDayOfWeek: fwScheduleMap.get(fw.id)?.scheduled_day_of_week ?? 1,
+          scheduleDayOfMonth: fwScheduleMap.get(fw.id)?.scheduled_day_of_month ?? 1,
         })),
         ...(edRes.data || []).map((ed: any) => ({
           id: ed.id,
@@ -127,6 +141,10 @@ export default function EnvironmentPage() {
           status: ed.last_score !== null ? 'analyzed' : ed.status,
           agentName: ed.agents?.name || null,
           navigationUrl: `/environment/external-domain/${ed.id}/edit`,
+          scheduleFrequency: edScheduleMap.get(ed.id)?.frequency ?? null,
+          scheduleHour: edScheduleMap.get(ed.id)?.scheduled_hour ?? 0,
+          scheduleDayOfWeek: edScheduleMap.get(ed.id)?.scheduled_day_of_week ?? 1,
+          scheduleDayOfMonth: edScheduleMap.get(ed.id)?.scheduled_day_of_month ?? 1,
         })),
         ...(m365Res.data || []).map((t: any) => {
           const tenantAgent = t.m365_tenant_agents?.[0];
@@ -312,6 +330,7 @@ export default function EnvironmentPage() {
             items={filteredDomains}
             totalCount={stats.domains}
             isLoading={isLoading}
+            showFrequency
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/external-domain/${asset.id}/edit`)}>
@@ -330,6 +349,7 @@ export default function EnvironmentPage() {
             items={filteredFirewalls}
             totalCount={stats.firewalls}
             isLoading={isLoading}
+            showFrequency
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/firewall/${asset.id}/edit`)}>
