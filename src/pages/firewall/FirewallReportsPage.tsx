@@ -43,6 +43,9 @@ interface GroupedFirewall {
   vendor_name: string | null;
   agent_name: string | null;
   schedule_frequency: string | null;
+  schedule_hour: number;
+  schedule_day_of_week: number;
+  schedule_day_of_month: number;
   analyses: {
     id: string;
     score: number;
@@ -72,6 +75,9 @@ export default function FirewallReportsPage() {
     vendor_name: string | null;
     agent_name: string | null;
     schedule_frequency: string | null;
+    schedule_hour: number;
+    schedule_day_of_week: number;
+    schedule_day_of_month: number;
   }[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
@@ -166,7 +172,7 @@ export default function FirewallReportsPage() {
           : Promise.resolve({ data: [] }),
         supabase
           .from('analysis_schedules')
-          .select('firewall_id, frequency')
+          .select('firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
           .in('firewall_id', firewallIds)
           .eq('is_active', true),
       ]);
@@ -206,6 +212,9 @@ export default function FirewallReportsPage() {
         vendor_name: f.device_type_id ? (deviceTypeMap.get(f.device_type_id)?.vendor || null) : null,
         agent_name: f.agent_id ? (agentMap.get(f.agent_id)?.name || null) : null,
         schedule_frequency: scheduleMap.get(f.id)?.frequency || null,
+        schedule_hour: scheduleMap.get(f.id)?.scheduled_hour ?? 0,
+        schedule_day_of_week: scheduleMap.get(f.id)?.scheduled_day_of_week ?? 1,
+        schedule_day_of_month: scheduleMap.get(f.id)?.scheduled_day_of_month ?? 1,
       })));
     } catch (error) {
       console.error('Error fetching firewall compliance reports:', error);
@@ -240,6 +249,9 @@ export default function FirewallReportsPage() {
           vendor_name: f.vendor_name,
           agent_name: f.agent_name,
           schedule_frequency: f.schedule_frequency,
+          schedule_hour: f.schedule_hour,
+          schedule_day_of_week: f.schedule_day_of_week,
+          schedule_day_of_month: f.schedule_day_of_month,
           analyses: [],
         });
       }
@@ -258,6 +270,9 @@ export default function FirewallReportsPage() {
           vendor_name: null,
           agent_name: null,
           schedule_frequency: null,
+          schedule_hour: 0,
+          schedule_day_of_week: 1,
+          schedule_day_of_month: 1,
           analyses: [],
         });
       }
@@ -432,6 +447,11 @@ export default function FirewallReportsPage() {
     monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
   };
 
+  const DAYS_OF_WEEK_SHORT: Record<number, string> = {
+    0: 'Dom', 1: 'Seg', 2: 'Ter',
+    3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb',
+  };
+
   const frequencyLabel = (freq: string) => {
     const map: Record<string, string> = {
       daily: 'Diário',
@@ -596,9 +616,26 @@ export default function FirewallReportsPage() {
                           {(() => {
                             const freq = group.schedule_frequency || 'manual';
                             return (
-                              <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS[freq] || ''}`}>
-                                {frequencyLabel(freq)}
-                              </Badge>
+                              <div className="flex flex-row flex-wrap items-center gap-1">
+                                <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS[freq] || ''}`}>
+                                  {frequencyLabel(freq)}
+                                </Badge>
+                                {freq === 'daily' && (
+                                  <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS.daily}`}>
+                                    {String(group.schedule_hour).padStart(2, '0')}:00
+                                  </Badge>
+                                )}
+                                {freq === 'weekly' && (
+                                  <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS.weekly}`}>
+                                    {DAYS_OF_WEEK_SHORT[group.schedule_day_of_week]} · {String(group.schedule_hour).padStart(2, '0')}:00
+                                  </Badge>
+                                )}
+                                {freq === 'monthly' && (
+                                  <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS.monthly}`}>
+                                    Dia {group.schedule_day_of_month} · {String(group.schedule_hour).padStart(2, '0')}:00
+                                  </Badge>
+                                )}
+                              </div>
                             );
                           })()}
                         </TableCell>
