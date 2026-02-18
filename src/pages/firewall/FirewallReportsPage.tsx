@@ -334,12 +334,12 @@ export default function FirewallReportsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Firewall', href: '/scope-firewall/dashboard' },
-          { label: 'Relatórios' },
+          { label: 'Compliance' },
         ]} />
         
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
+          <h1 className="text-2xl font-bold text-foreground">Compliance</h1>
           <p className="text-muted-foreground">Histórico de análises de compliance</p>
         </div>
 
