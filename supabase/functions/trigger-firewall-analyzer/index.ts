@@ -87,8 +87,8 @@ Deno.serve(async (req) => {
 
     if (existing) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Análise já em andamento', task_id: existing.id }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Análise já em andamento', task_id: existing.id, code: 'ALREADY_RUNNING' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
