@@ -1,152 +1,73 @@
 
-# Migração para Leaflet: Mapa de Ataques com Tiles Reais
+# Fix: Mapa Extravasando para os Lados (Cópias do Mundo)
 
-## Por que o PNG estático nunca vai funcionar corretamente
+## Diagnóstico
 
-O problema não é calibração — é arquitetura. Uma imagem PNG fixa tem dois problemas intransponíveis:
+No print, o mapa está mostrando **3 cópias do mundo** lado a lado — uma à esquerda, uma ao centro, uma à direita. Isso é comportamento padrão do Leaflet quando o zoom está baixo o suficiente para que o mundo inteiro caiba menos que a largura do container, e a opção `maxBounds` não está definida.
 
-1. **Nenhuma projeção é perfeita para uma imagem arbitrária**: não há como saber exatamente onde os pixels da imagem correspondem a lat/lng sem metadados geográficos (GeoTIFF, etc.)
-2. **A projeção matemática e o pixel visual nunca coincidem 100%**: qualquer fórmula `project()` é uma aproximação que vai errar em algumas regiões
+O problema específico:
+- `zoom={2}` num container largo exibe o planisfério completo e ainda sobra espaço para cópias repetidas
+- Sem `maxBounds`, o Leaflet preenche as bordas com repetições do mapa
+- Sem `maxBoundsViscosity`, o usuário (no fullscreen) pode arrastar para fora dos limites
 
-O Zabbix (e qualquer ferramenta profissional) usa **tile servers** exatamente por isso: o engine converte lat/lng para pixel com precisão matemática absoluta, sem aproximações.
+## Solução
 
-## Solução: react-leaflet + CartoDB Dark Matter
-
-**Leaflet** é a biblioteca de mapas mais usada do mundo (GitHub stars: ~41k). Com `react-leaflet` (wrapper React oficial) e tiles do **CartoDB Dark Matter** (gratuito, sem API key, visual escuro idêntico ao atual), o mapa ficará:
-
-- Visualmente idêntico ao atual (fundo escuro com continentes cinza)
-- Geograficamente preciso por definição — lat/lng é convertido pelo engine do Leaflet
-- Sem dependência de API key ou serviço externo pago
-
-**Provider de tiles**: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`
-- Gratuito para uso razoável
-- Visual dark idêntico ao mapa atual
-- Atribuição: CartoDB / OpenStreetMap
-
-## Animações: como manter os projéteis?
-
-Como Leaflet renderiza o mapa em canvas/HTML mas os overlays em SVG separado, vamos usar **Leaflet SVG Overlay** para manter as animações de projéteis exatamente como estão. A estratégia:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Leaflet Map Container (div, posicionado absolutamente)       │
-│  ├─ TileLayer (CartoDB Dark Matter tiles)                   │
-│  ├─ CircleMarker por país (com raio proporcional ao count)  │
-│  ├─ Polyline (trail line do país → firewall)                │
-│  └─ SVGOverlay (animações de projéteis CSS/SVG)             │
-│       ├─ <animateMotion> dos círculos voadores              │
-│       └─ impact flash no ponto do firewall                  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Para o modo **inline** (preview no dashboard, 200px de altura), o mapa será desabilitado para zoom/pan e mostrará uma visão estática da área. Para o modo **fullscreen**, zoom e pan ficam habilitados.
-
-## Arquivos modificados
-
-| Arquivo | Operação |
-|---|---|
-| `package.json` | Adicionar `leaflet`, `react-leaflet`, `@types/leaflet` |
-| `src/components/firewall/AttackMap.tsx` | Reescrever usando react-leaflet |
-| `src/index.css` | Importar `leaflet/dist/leaflet.css` |
-
-O `AttackMapFullscreen.tsx` **não precisa ser modificado** pois apenas passa props para `AttackMap`.
-
-## Detalhes técnicos da implementação
-
-### Instalação de dependências
-```
-leaflet ^1.9.4
-react-leaflet ^4.2.1
-@types/leaflet ^1.9.x
-```
-
-### Estrutura do novo AttackMap
+### 1. Adicionar `maxBounds` para limitar a uma cópia do mundo
 
 ```tsx
-import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+const WORLD_BOUNDS = new LatLngBounds([-90, -180], [90, 180]);
 
-// Tiles escuros gratuitos (sem API key)
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+<MapContainer
+  maxBounds={WORLD_BOUNDS}
+  maxBoundsViscosity={1.0}   // impede arrastar além dos limites
+  ...
+>
+```
 
-export function AttackMap({ deniedCountries, ... }) {
-  const points = useMemo(() => { /* mesmo cálculo de antes, mas usando lat/lng direto */ }, [...]);
+### 2. Ajustar `minZoom` para evitar encolher demais
 
-  return (
-    <MapContainer
-      center={[20, 10]}
-      zoom={2}
-      zoomControl={false}
-      dragging={!fullscreen ? false : true}
-      scrollWheelZoom={false}
-      style={{ height: fullscreen ? '100%' : '200px', width: '100%', background: '#0f1117' }}
-    >
-      <TileLayer url={TILE_URL} attribution="CartoDB/OSM" />
+Com `maxBounds` definido, o Leaflet calcula automaticamente o zoom mínimo para que o mundo preencha o container sem deixar espaço para repetições. Mas precisamos garantir que `minZoom` não seja menor que esse valor calculado.
 
-      {/* Círculos por país com tooltip */}
-      {points.map((p, i) => (
-        <CircleMarker
-          key={i}
-          center={[p.lat, p.lng]}
-          radius={p.r}
-          pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.7 }}
-        >
-          <Tooltip>{p.label}: {p.count} eventos</Tooltip>
-        </CircleMarker>
-      ))}
+A solução mais robusta é usar o hook `useMap()` dentro de um componente filho para chamar `map.fitBounds(WORLD_BOUNDS)` ao inicializar — isso garante que o zoom inicial mostre exatamente o mundo inteiro sem repetições, independente do tamanho do container.
 
-      {/* Linhas de trajeto */}
-      {firewallLocation && points.map((p, i) => (
-        <Polyline
-          key={`line-${i}`}
-          positions={[[p.lat, p.lng], [firewallLocation.lat, firewallLocation.lng]]}
-          pathOptions={{ color: p.color, weight: 0.8, opacity: 0.2 }}
-        />
-      ))}
-
-      {/* Marcador do firewall */}
-      {firewallLocation && (
-        <CircleMarker
-          center={[firewallLocation.lat, firewallLocation.lng]}
-          radius={10}
-          pathOptions={{ color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.8 }}
-        >
-          <Tooltip permanent>Firewall</Tooltip>
-        </CircleMarker>
-      )}
-    </MapContainer>
-  );
+```tsx
+function FitWorldBounds() {
+  const map = useMap();
+  useEffect(() => {
+    map.fitBounds([[-75, -180], [85, 180]], { animate: false });
+  }, [map]);
+  return null;
 }
 ```
 
-### Animações de projéteis
+### 3. Desativar `worldCopyJump` (modo inline)
 
-Para manter as animações de projéteis, usaremos um `SVGOverlay` do Leaflet que sincroniza as coordenadas com o sistema de projeção do mapa. O hook `useMap()` do react-leaflet fornece `map.latLngToLayerPoint()` para converter lat/lng em pixels SVG em tempo real. Isso garante que os projéteis sigam os trilhos corretos mesmo com zoom/pan.
+No modo inline (não fullscreen), também desativar o `worldCopyJump` que contribui para as repetições laterais.
 
-### CSS necessário
-
-No `src/index.css`, adicionar:
-```css
-@import 'leaflet/dist/leaflet.css';
-
-/* Remover controles do Leaflet que não usamos */
-.leaflet-control-attribution { display: none !important; }
+```tsx
+<MapContainer
+  worldCopyJump={false}
+  noWrap={true}   // nos tiles
+  ...
+>
+  <TileLayer noWrap={true} ... />
 ```
 
-## Resultado esperado
+### 4. Centro e zoom inicial
 
-| Aspecto | Antes (PNG) | Depois (Leaflet) |
+Atualizar o centro inicial para `[20, 0]` (mais centralizado no planisfério) e remover o `zoom={2}` fixo — deixar o `FitWorldBounds` calcular o zoom correto automaticamente para o tamanho do container.
+
+## Arquivos Modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `src/components/firewall/AttackMap.tsx` | Adicionar `maxBounds`, `FitWorldBounds`, `noWrap` nos tiles, desativar `worldCopyJump` |
+
+## Resultado Esperado
+
+| Situação | Antes | Depois |
 |---|---|---|
-| Precisão geográfica | ~±500km de erro | Precisão de metros |
-| EUA (Kansas) | Na fronteira Canada | Centro-norte dos EUA ✓ |
-| Brasil (Tocantins) | Bahia | Estado do Tocantins ✓ |
-| Marrocos | Sobre Itália | Noroeste da África ✓ |
-| Zoom/pan | Não suportado | Suportado no fullscreen |
-| Tiles | PNG estático local | Tiles online atualizados |
-| API key | Não necessário | Não necessário (CartoDB grátis) |
-
-## Riscos e mitigações
-
-- **Leaflet carrega tiles da internet**: o mapa requer conectividade. Em redes sem acesso externo, os tiles não carregarão (mas as marcas e animações continuarão funcionando sobre fundo escuro).
-- **CSS do Leaflet**: precisa ser importado globalmente para não quebrar o layout dos controles internos.
-- **SSR**: não aplicável (projeto Vite/React SPA puro).
+| Modo inline (dashboard) | 3 cópias do mundo visíveis | 1 cópia ajustada à largura do card ✓ |
+| Modo fullscreen | Cópias nas laterais | Mundo limitado a uma instância ✓ |
+| Arrastar (fullscreen) | Pode sair dos limites | Limitado a ±180° de longitude ✓ |
+| Zoom inicial | Fixo em 2 (pode ser grande/pequeno demais) | Calculado para preencher o container ✓ |
