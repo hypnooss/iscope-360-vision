@@ -1,98 +1,122 @@
 
-# Adicionar Cores às Badges de Fabricante, Agent e Frequência
+# Remover Menu e Tela "Firewall > Firewalls"
 
-## Problema
+## O que será removido
 
-O plano anterior foi aprovado mas não foi implementado. As badges das colunas **Fabricante**, **Agent** e **Frequência** na página Firewall > Compliance ainda estão sem cor (texto neutro/cinza).
+1. **Item de menu** "Firewalls" no sidebar (AppLayout.tsx)
+2. **Rota** `/scope-firewall/firewalls` e página `FirewallListPage`
+3. **Rotas filhas** relacionadas: `/scope-firewall/firewalls/new` e `/scope-firewall/firewalls/:id/edit`
 
-## Arquivo a modificar
+## Impactos e redirecionamentos necessários
 
-`src/pages/firewall/FirewallReportsPage.tsx`
+Vários outros arquivos referenciam `/scope-firewall/firewalls` como destino de navegação (botões "Voltar", breadcrumbs, redirects pós-save). Todos precisam ser atualizados para apontar a uma rota ainda existente.
 
----
+Destino substituto: **`/scope-firewall/reports`** (Compliance), que é a tela principal do módulo de Firewall.
 
-## Mudança 1 — Adicionar constante `FREQUENCY_COLORS` (linha 429)
+## Arquivos a modificar
 
-Inserir antes da função `frequencyLabel`:
+### 1. `src/components/layout/AppLayout.tsx` — linha 118
+Remover o item "Firewalls" do array `items` de `scope_firewall`:
 
+**Antes:**
 ```ts
-const FREQUENCY_COLORS: Record<string, string> = {
-  daily: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  weekly: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-  monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-};
-```
-
----
-
-## Mudança 2 — Badge Fabricante (linha 586)
-
-**Antes:**
-```tsx
-<Badge variant="outline" className="text-xs">{group.vendor_name}</Badge>
+items: [
+  { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
+  { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
+  ...
+]
 ```
 
 **Depois:**
-```tsx
-<Badge variant="outline" className="text-xs bg-orange-500/15 text-orange-400 border-orange-500/30">
-  {group.vendor_name}
-</Badge>
+```ts
+items: [
+  { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
+  ...
+]
 ```
 
 ---
 
-## Mudança 3 — Badge Agent (linha 593)
-
-**Antes:**
+### 2. `src/App.tsx` — remover 4 rotas
 ```tsx
-<Badge variant="outline" className="text-xs font-mono">{group.agent_name}</Badge>
+// Remover:
+<Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
+<Route path="/scope-firewall/firewalls/new" element={<FirewallCreatePage />} />
+<Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
+<Route path="/scope-firewall/firewalls/:id/edit" element={<FirewallEditPage />} />
 ```
 
-**Depois:**
-```tsx
-<Badge variant="outline" className="text-xs font-mono bg-cyan-500/15 text-cyan-400 border-cyan-500/30">
-  {group.agent_name}
-</Badge>
-```
+E também remover as lazy imports de `FirewallListPage`, `FirewallCreatePage`, `FirewallEditPage`.
+
+**Atenção:** A rota `/:id/analysis` é usada para abrir o relatório a partir do Compliance. Ela deve ser **mantida** — apenas as rotas de lista, criação e edição são removidas.
 
 ---
 
-## Mudança 4 — Badge Frequência (linhas 599–606)
-
-**Antes:**
-```tsx
-{group.schedule_frequency ? (
-  <Badge variant="secondary" className="text-xs capitalize">
-    {frequencyLabel(group.schedule_frequency)}
-  </Badge>
-) : (
-  <span className="text-muted-foreground text-sm">Manual</span>
-)}
-```
-
-**Depois** (badge colorida para todos os casos, incluindo "Manual"):
-```tsx
-{(() => {
-  const freq = group.schedule_frequency || 'manual';
-  return (
-    <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS[freq] || ''}`}>
-      {frequencyLabel(freq)}
-    </Badge>
-  );
-})()}
-```
+### 3. `src/pages/FirewallAnalysis.tsx`
+- Breadcrumb: `{ label: 'Firewall', href: '/scope-firewall/firewalls' }` → `href: '/scope-firewall/reports'`
+- Botão "Voltar": `navigate('/scope-firewall/firewalls')` → `navigate('/scope-firewall/reports')`
 
 ---
 
-## Paleta de cores
+### 4. `src/pages/firewall/FirewallReportsPage.tsx` — linha 556
+Botão "Ver Firewalls":
+```tsx
+onClick={() => navigate('/scope-firewall/firewalls')}
+```
+→ remover o botão ou redirecionar para `/scope-firewall/reports`.
 
-| Coluna | Cor |
+---
+
+### 5. `src/pages/firewall/FirewallCVEsPage.tsx` — breadcrumb
+```tsx
+{ label: 'Firewall', href: '/scope-firewall/firewalls' }
+```
+→ `href: '/scope-firewall/reports'`
+
+---
+
+### 6. `src/pages/firewall/TaskExecutionsPage.tsx` — breadcrumb
+Mesma correção: `href: '/scope-firewall/firewalls'` → `href: '/scope-firewall/reports'`
+
+---
+
+### 7. `src/pages/firewall/AnalyzerInsightsPage.tsx` — breadcrumb
+Mesma correção.
+
+---
+
+### 8. `src/pages/firewall/FirewallEditPage.tsx`
+- Breadcrumb `Firewalls` → remover item ou apontar para `/scope-firewall/reports`
+- `navigate('/scope-firewall/firewalls')` (após salvar e ao cancelar) → `/scope-firewall/reports`
+
+---
+
+### 9. `src/pages/firewall/FirewallCreatePage.tsx`
+- Breadcrumb e botões "Cancelar" / "Voltar" → `/scope-firewall/reports`
+- `navigate('/scope-firewall/firewalls')` após criar → `/scope-firewall/reports`
+
+---
+
+### 10. `src/pages/EnvironmentPage.tsx` — linha 118 e 335
+Referências de navegação para `/scope-firewall/firewalls/:id/edit` podem ser mantidas caso a rota de edição continue existindo acessível por outros meios. Caso contrário, apontar para `/scope-firewall/reports`.
+
+## Resumo das rotas — Antes × Depois
+
+| Rota | Ação |
 |---|---|
-| Fabricante | Laranja (`orange-400`) |
-| Agent | Ciano (`cyan-400`) |
-| Frequência — Diário | Azul (`blue-400`) |
-| Frequência — Semanal | Roxo (`purple-400`) |
-| Frequência — Mensal | Âmbar (`amber-400`) |
-| Frequência — Manual | Neutro (sem cor extra) |
+| `/scope-firewall/firewalls` | **Remover** |
+| `/scope-firewall/firewalls/new` | Avaliar: remover ou manter acessível via URL direta |
+| `/scope-firewall/firewalls/:id/edit` | Avaliar: manter ou remover |
+| `/scope-firewall/firewalls/:id/analysis` | **Manter** (usado pelo Compliance) |
 
-Estas cores são as mesmas usadas na página Firewall > Firewalls.
+## Arquivos afetados
+
+- `src/components/layout/AppLayout.tsx`
+- `src/App.tsx`
+- `src/pages/FirewallAnalysis.tsx`
+- `src/pages/firewall/FirewallReportsPage.tsx`
+- `src/pages/firewall/FirewallCVEsPage.tsx`
+- `src/pages/firewall/TaskExecutionsPage.tsx`
+- `src/pages/firewall/AnalyzerInsightsPage.tsx`
+- `src/pages/firewall/FirewallEditPage.tsx`
+- `src/pages/firewall/FirewallCreatePage.tsx`
