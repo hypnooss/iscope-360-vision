@@ -1,73 +1,152 @@
 
-# Fix Definitivo: Calibração Precisa da Projeção do Mapa
+# Migração para Leaflet: Mapa de Ataques com Tiles Reais
 
-## Análise Real da Imagem
+## Por que o PNG estático nunca vai funcionar corretamente
 
-Ao visualizar `world-map-dark.png` diretamente, confirmei que esta é uma imagem **equiretangular pura** que cobre **-180° a +180° de longitude** e **-90° a +90° de latitude**, com margens pretas nas bordas polares (Ártico e Antártica são áreas pretas sem continentes relevantes).
+O problema não é calibração — é arquitetura. Uma imagem PNG fixa tem dois problemas intransponíveis:
 
-Isso significa que a fórmula equiretangular pura é a correta:
+1. **Nenhuma projeção é perfeita para uma imagem arbitrária**: não há como saber exatamente onde os pixels da imagem correspondem a lat/lng sem metadados geográficos (GeoTIFF, etc.)
+2. **A projeção matemática e o pixel visual nunca coincidem 100%**: qualquer fórmula `project()` é uma aproximação que vai errar em algumas regiões
+
+O Zabbix (e qualquer ferramenta profissional) usa **tile servers** exatamente por isso: o engine converte lat/lng para pixel com precisão matemática absoluta, sem aproximações.
+
+## Solução: react-leaflet + CartoDB Dark Matter
+
+**Leaflet** é a biblioteca de mapas mais usada do mundo (GitHub stars: ~41k). Com `react-leaflet` (wrapper React oficial) e tiles do **CartoDB Dark Matter** (gratuito, sem API key, visual escuro idêntico ao atual), o mapa ficará:
+
+- Visualmente idêntico ao atual (fundo escuro com continentes cinza)
+- Geograficamente preciso por definição — lat/lng é convertido pelo engine do Leaflet
+- Sem dependência de API key ou serviço externo pago
+
+**Provider de tiles**: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`
+- Gratuito para uso razoável
+- Visual dark idêntico ao mapa atual
+- Atribuição: CartoDB / OpenStreetMap
+
+## Animações: como manter os projéteis?
+
+Como Leaflet renderiza o mapa em canvas/HTML mas os overlays em SVG separado, vamos usar **Leaflet SVG Overlay** para manter as animações de projéteis exatamente como estão. A estratégia:
+
 ```
-x = (lng + 180) / 360 * 1000
-y = (90 - lat) / 180 * 500
-```
-
-## Por que os pontos ainda estão errados?
-
-As calibrações anteriores (`MAP_TOP_LAT=83`, `MAP_BOT_LAT=-58`) foram inseridas com base em suposições incorretas — elas **distorcem** a projeção em vez de corrigí-la, comprimindo o espaço de coordenadas e deslocando os pontos para baixo e para os lados.
-
-**Verificação matemática dos erros observados:**
-
-Com os valores atuais (`TOP=83`, `BOT=-58`, range=141°):
-- **EUA** (lat=39): y = (83-39)/141 × 500 = **155.9** → aparece muito alto (fronteira Canada)
-- **Tocantins** (lat=-10): y = (83-(-10))/141 × 500 = **329.8** → aparece na Bahia (mais ao sul)
-
-Com a projeção pura (range=180°):
-- **EUA** (lat=39): y = (90-39)/180 × 500 = **141.7** → ainda alto? Não — na imagem, o centro dos EUA está a ~28% do topo (lat 39° = 51° abaixo do polo), o que equivale a 51/180 × 500 = **141.7px**, posição correta no mapa completo ±90°.
-- **Tocantins** (lat=-10): y = (90-(-10))/180 × 500 = **277.8** → centro da América do Sul, correto.
-
-**O problema real com as coordenadas do EUA:**
-
-O código usa `'us': [39, -98]` que é o centróide geográfico dos EUA (Kansas/Nebraska). Na projeção pura, lat=39° cai em y=141, que visualmente é a fronteira norte dos EUA contínuo, não o Canada. O usuário viu "divisa com Canada" porque o ponto estava mais alto com o MAP_TOP_LAT=83 causando compressão.
-
-## Solução: Reverter para Projeção Equiretangular Pura
-
-Remover os offsets de calibração incorretos e usar a fórmula padrão para mapas ±90°:
-
-```typescript
-// REMOVER estas constantes
-const MAP_LEFT_LNG = -180;
-const MAP_RIGHT_LNG = 180;
-const MAP_TOP_LAT = 83;
-const MAP_BOT_LAT = -58;
-
-// NOVA função — projeção equiretangular pura para imagem ±90°/±180°
-function project(lat: number, lng: number): [number, number] {
-  const x = ((lng + 180) / 360) * 1000;
-  const y = ((90 - lat) / 180) * 500;
-  return [x, y];
-}
+┌─────────────────────────────────────────────────────────────┐
+│ Leaflet Map Container (div, posicionado absolutamente)       │
+│  ├─ TileLayer (CartoDB Dark Matter tiles)                   │
+│  ├─ CircleMarker por país (com raio proporcional ao count)  │
+│  ├─ Polyline (trail line do país → firewall)                │
+│  └─ SVGOverlay (animações de projéteis CSS/SVG)             │
+│       ├─ <animateMotion> dos círculos voadores              │
+│       └─ impact flash no ponto do firewall                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Verificação dos Pontos Críticos
+Para o modo **inline** (preview no dashboard, 200px de altura), o mapa será desabilitado para zoom/pan e mostrará uma visão estática da área. Para o modo **fullscreen**, zoom e pan ficam habilitados.
 
-| País | Lat/Lng | x (novo) | y (novo) | Posição esperada na imagem |
-|---|---|---|---|---|
-| EUA centro (Kansas) | 39°N, -98° | 228 | 141 | Norte dos EUA continental ✓ |
-| Brasil | -14°S, -51° | 365 | 289 | Centro do Brasil ✓ |
-| Tocantins (FW) | -10°S, -48° | 367 | 277 | Norte do Brasil central ✓ |
-| Marrocos | 32°N, -5° | 486 | 161 | NW África ✓ |
-| Romênia | 46°N, 25° | 569 | 122 | SE Europa ✓ |
-| China | 35°N, 104° | 789 | 152 | China central ✓ |
-
-## Arquivo Modificado
+## Arquivos modificados
 
 | Arquivo | Operação |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Remover constantes de offset, restaurar projeção equiretangular pura |
+| `package.json` | Adicionar `leaflet`, `react-leaflet`, `@types/leaflet` |
+| `src/components/firewall/AttackMap.tsx` | Reescrever usando react-leaflet |
+| `src/index.css` | Importar `leaflet/dist/leaflet.css` |
 
-## Resultado Esperado
+O `AttackMapFullscreen.tsx` **não precisa ser modificado** pois apenas passa props para `AttackMap`.
 
-- Firewall em Tocantins (lat=-10, lng=-48) aparecerá no norte do Brasil, interior do país
-- EUA aparecerá no centro dos estados contíguos (Kansas/Nebraska), não na fronteira canadense
-- Marrocos aparecerá no noroeste da África, não sobre a Europa
-- Todos os outros pontos ficarão geograficamente precisos
+## Detalhes técnicos da implementação
+
+### Instalação de dependências
+```
+leaflet ^1.9.4
+react-leaflet ^4.2.1
+@types/leaflet ^1.9.x
+```
+
+### Estrutura do novo AttackMap
+
+```tsx
+import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Tiles escuros gratuitos (sem API key)
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+export function AttackMap({ deniedCountries, ... }) {
+  const points = useMemo(() => { /* mesmo cálculo de antes, mas usando lat/lng direto */ }, [...]);
+
+  return (
+    <MapContainer
+      center={[20, 10]}
+      zoom={2}
+      zoomControl={false}
+      dragging={!fullscreen ? false : true}
+      scrollWheelZoom={false}
+      style={{ height: fullscreen ? '100%' : '200px', width: '100%', background: '#0f1117' }}
+    >
+      <TileLayer url={TILE_URL} attribution="CartoDB/OSM" />
+
+      {/* Círculos por país com tooltip */}
+      {points.map((p, i) => (
+        <CircleMarker
+          key={i}
+          center={[p.lat, p.lng]}
+          radius={p.r}
+          pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.7 }}
+        >
+          <Tooltip>{p.label}: {p.count} eventos</Tooltip>
+        </CircleMarker>
+      ))}
+
+      {/* Linhas de trajeto */}
+      {firewallLocation && points.map((p, i) => (
+        <Polyline
+          key={`line-${i}`}
+          positions={[[p.lat, p.lng], [firewallLocation.lat, firewallLocation.lng]]}
+          pathOptions={{ color: p.color, weight: 0.8, opacity: 0.2 }}
+        />
+      ))}
+
+      {/* Marcador do firewall */}
+      {firewallLocation && (
+        <CircleMarker
+          center={[firewallLocation.lat, firewallLocation.lng]}
+          radius={10}
+          pathOptions={{ color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.8 }}
+        >
+          <Tooltip permanent>Firewall</Tooltip>
+        </CircleMarker>
+      )}
+    </MapContainer>
+  );
+}
+```
+
+### Animações de projéteis
+
+Para manter as animações de projéteis, usaremos um `SVGOverlay` do Leaflet que sincroniza as coordenadas com o sistema de projeção do mapa. O hook `useMap()` do react-leaflet fornece `map.latLngToLayerPoint()` para converter lat/lng em pixels SVG em tempo real. Isso garante que os projéteis sigam os trilhos corretos mesmo com zoom/pan.
+
+### CSS necessário
+
+No `src/index.css`, adicionar:
+```css
+@import 'leaflet/dist/leaflet.css';
+
+/* Remover controles do Leaflet que não usamos */
+.leaflet-control-attribution { display: none !important; }
+```
+
+## Resultado esperado
+
+| Aspecto | Antes (PNG) | Depois (Leaflet) |
+|---|---|---|
+| Precisão geográfica | ~±500km de erro | Precisão de metros |
+| EUA (Kansas) | Na fronteira Canada | Centro-norte dos EUA ✓ |
+| Brasil (Tocantins) | Bahia | Estado do Tocantins ✓ |
+| Marrocos | Sobre Itália | Noroeste da África ✓ |
+| Zoom/pan | Não suportado | Suportado no fullscreen |
+| Tiles | PNG estático local | Tiles online atualizados |
+| API key | Não necessário | Não necessário (CartoDB grátis) |
+
+## Riscos e mitigações
+
+- **Leaflet carrega tiles da internet**: o mapa requer conectividade. Em redes sem acesso externo, os tiles não carregarão (mas as marcas e animações continuarão funcionando sobre fundo escuro).
+- **CSS do Leaflet**: precisa ser importado globalmente para não quebrar o layout dos controles internos.
+- **SSR**: não aplicável (projeto Vite/React SPA puro).
