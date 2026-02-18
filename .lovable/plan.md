@@ -1,28 +1,60 @@
 
-# Ajuste de Espaçamento — Breadcrumb → Step Indicator
+# Reordenar Steps do Wizard — Instruções antes de Configuração
 
-## Causa
+## Problema
 
-O header removido anteriormente ocupava espaço visual entre a breadcrumb e o step indicator. Sem ele, o `space-y-6` do container pai gera apenas 24px de gap — pouco para separar adequadamente os dois elementos.
+A sequência atual é:
+1. Fabricante → 2. Configuração → 3. Instruções → 4. Agendamento
 
-## Correção
+O usuário chega no step 2 e é solicitado a fornecer a API Key, mas ainda não sabe como gerá-la. As instruções de como fazer isso só aparecem no step 3.
 
-No arquivo `src/pages/environment/AddFirewallPage.tsx`, linha 455, adicionar `mt-8` ao wrapper do `StepIndicator` para criar ~32px de espaçamento adicional entre a breadcrumb e o indicador de passos:
+## Solução
+
+Inverter a ordem dos steps 2 e 3:
+1. Fabricante → 2. Instruções → 3. Configuração → 4. Agendamento
+
+Assim o fluxo fica: escolha o fabricante → veja como configurar o dispositivo e gerar as credenciais → insira as credenciais e dados do firewall → defina o agendamento.
+
+## Mudanças no arquivo `src/pages/environment/AddFirewallPage.tsx`
+
+### 1. Atualizar o array `STEPS` (linha 65)
 
 ```tsx
 // Antes:
-{/* Step Indicator */}
-<StepIndicator current={step} />
+const STEPS = [
+  { id: 1, label: 'Fabricante' },
+  { id: 2, label: 'Configuração' },
+  { id: 3, label: 'Instruções' },
+  { id: 4, label: 'Agendamento' },
+];
 
 // Depois:
-{/* Step Indicator */}
-<div className="mt-8">
-  <StepIndicator current={step} />
-</div>
+const STEPS = [
+  { id: 1, label: 'Fabricante' },
+  { id: 2, label: 'Instruções' },
+  { id: 3, label: 'Configuração' },
+  { id: 4, label: 'Agendamento' },
+];
 ```
 
-Isso aplica `margin-top: 2rem` (32px) **além** do `space-y-6` já existente, totalizando ~56px de separação — visualmente equivalente ao espaçamento que o header proporcionava antes de ser removido.
+### 2. Trocar a ordem de renderização dos steps no JSX
+
+No bloco de renderização condicional dos steps, trocar os blocos do step 2 e step 3:
+
+- O que era renderizado quando `step === 2` (Configuração) passa a ser renderizado quando `step === 3`
+- O que era renderizado quando `step === 3` (Instruções) passa a ser renderizado quando `step === 2`
+
+### 3. Atualizar a lógica de `canAdvanceStep`
+
+A validação `canAdvanceStep2` (que verifica nome, URL, credenciais e agent) atualmente guarda o step 2. Após a troca, ela precisa guardar o step 3 (novo step de Configuração).
+
+- `canAdvanceStep2` → mover para proteger o novo step 3 (Configuração)
+- O step 2 (Instruções) não tem validação — o usuário avança livremente após ler as instruções
+
+### 4. Nenhuma mudança na lógica de submit ou dados
+
+Os dados do formulário, a lógica de autenticação condicional, geolocalização e agendamento permanecem idênticos — apenas a ordem de exibição muda.
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — linha 455, wrap do `StepIndicator` com `<div className="mt-8">`
+- `src/pages/environment/AddFirewallPage.tsx` — array `STEPS`, bloco de renderização condicional dos steps e referências a `canAdvanceStep2`/`canAdvanceStep3`
