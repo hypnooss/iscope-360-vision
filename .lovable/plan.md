@@ -1,75 +1,69 @@
 
-# Adicionar Passo 3 — Habilitar Acesso a Logs via REST API
+# Reposicionar Blocos Informativos na Tela de Instruções FortiGate
 
-## Contexto
+## Objetivo
 
-O iScope coleta logs do FortiGate (tráfego, IPS, eventos de sistema, VPN) via REST API para alimentar o módulo de Security Intelligence (Analyzer). Para que isso funcione, é necessário habilitar especificamente o acesso a logs pela REST API no FortiGate, o que não é ativo por padrão.
+Mover dois blocos de aviso/informação existentes para posições mais adequadas pedagogicamente, sem alterar o conteúdo de nenhum deles.
 
-O comando necessário é:
+## Estrutura atual
 
-```
-config log setting
-    set rest-api-get enable
-    set rest-api-performance enable
-end
-```
-
-Sem esse passo, o token da API consegue consultar configurações (compliance), mas não consegue ler os logs — o que impede o funcionamento do módulo Analyzer.
-
-## Estrutura atual dos passos (FortiGateInstructions)
-
-```
-Passo 1 — Criar REST API Admin       (linhas 144–195)
-Passo 2 — Habilitar acesso via CLI   (linhas 197–212)
-[Bloco segurança - Trusted Hosts]    (linhas 214–224)
-[Info - super_admin_readonly]        (linhas 226–233)
-[Aviso SSL]                          (linhas 235–240)
+```text
+[Passo 1 — Criar REST API Admin]        (linhas 144–195)
+[Passo 2 — Habilitar acesso via CLI]    (linhas 197–212)
+[Passo 3 — Habilitar logs via REST API] (linhas 214–232)
+[Bloco 🔒 Trusted Hosts]               (linhas 234–244)   ← fora de lugar
+[Bloco ℹ️ super_admin_readonly]         (linhas 246–253)   ← fora de lugar
+[Aviso SSL]                             (linhas 255–260)
 ```
 
-## Mudança no arquivo `src/pages/environment/AddFirewallPage.tsx`
+## Estrutura desejada
 
-### Inserir novo bloco entre o Passo 2 e o bloco de segurança (após linha 212)
-
-Novo **Passo 3 — Habilitar acesso a logs via REST API**:
-
-- Título com badge numerado `3`
-- Breve explicação: sem essa config, os logs do firewall não ficam disponíveis para a API, impedindo o módulo de análise
-- Snippet CLI:
+```text
+[Bloco ℹ️ super_admin_readonly]         ← antes do Passo 1
+[Passo 1 — Criar REST API Admin]
+[Bloco 🔒 Trusted Hosts]               ← entre Passo 1 e Passo 2
+[Passo 2 — Habilitar acesso via CLI]
+[Passo 3 — Habilitar logs via REST API]
+[Aviso SSL]
 ```
-config log setting
-    set rest-api-get enable
-    set rest-api-performance enable
-end
-```
-- Nota inline: esse comando habilita leitura de logs em memória e métricas de performance via REST
 
-### Bloco visual final (entre Passo 2 e aviso de segurança)
+## Mudanças técnicas no arquivo `src/pages/environment/AddFirewallPage.tsx`
 
+Tudo ocorre dentro da função `FortiGateInstructions` (linhas 141–263). Serão feitas apenas movimentações de blocos JSX já existentes — nenhum conteúdo será alterado.
+
+### Operação 1 — Remover bloco ℹ️ das linhas 246–253 e inserir antes da linha 144
+
+O bloco:
 ```tsx
-<div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-  <h3>
-    <span badge>3</span>
-    Habilitar acesso a logs via REST API
-  </h3>
-  <div className="ml-8 space-y-2">
-    <p className="text-sm text-muted-foreground">
-      Por padrão, o FortiGate não expõe logs para a REST API.
-      Execute o comando abaixo para habilitar a leitura de logs e métricas de performance:
-    </p>
-    <pre>
-{`config log setting
-    set rest-api-get enable
-    set rest-api-performance enable
-end`}
-    </pre>
-    <p className="text-xs text-muted-foreground">
-      <strong>rest-api-get</strong> — permite consulta de logs de tráfego, IPS e eventos via API.<br/>
-      <strong>rest-api-performance</strong> — expõe métricas de CPU, memória e sessões ativas.
-    </p>
-  </div>
+<div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+  <p className="text-sm text-blue-400 font-medium">ℹ️ Por que usar o perfil super_admin_readonly?</p>
+  <ul className="text-xs text-blue-300/80 mt-1 space-y-1 list-disc list-inside">
+    <li>Perfil nativo do FortiGate — não requer criação manual</li>
+    <li>Acesso somente-leitura: não permite alterações de configuração</li>
+    <li>Visibilidade completa para coleta de dados de compliance</li>
+  </ul>
 </div>
 ```
+Passa a ser o **primeiro elemento** dentro de `<div className="space-y-4">`, antes do Passo 1.
+
+### Operação 2 — Remover bloco 🔒 das linhas 234–244 e inserir após a linha 195 (fechamento do Passo 1)
+
+O bloco:
+```tsx
+<div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
+  <p className="text-sm font-semibold text-destructive flex items-center gap-2">
+    🔒 Segurança: Restrição por IP (Trusted Hosts)
+  </p>
+  <p className="text-xs text-destructive/80">
+    Habilitar Trusted Hosts é essencial. Sem essa restrição...
+  </p>
+  <p className="text-xs text-destructive/80">
+    Ao ativar Trusted Hosts e informar o IP...
+  </p>
+</div>
+```
+Passa a ficar **entre o fechamento do Passo 1 (linha 195) e o início do Passo 2 (linha 197)**.
 
 ## Arquivo modificado
 
-- `src/pages/environment/AddFirewallPage.tsx` — função `FortiGateInstructions`: inserir novo bloco "Passo 3" após a linha 212 (fechamento do bloco do Passo 2), antes do bloco de aviso de segurança existente.
+- `src/pages/environment/AddFirewallPage.tsx` — apenas reposicionamento de blocos JSX dentro de `FortiGateInstructions`, sem alteração de conteúdo ou estilos.
