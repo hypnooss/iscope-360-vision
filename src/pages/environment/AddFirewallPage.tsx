@@ -29,6 +29,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +44,17 @@ interface Agent { id: string; name: string; client_id: string | null; }
 interface DeviceType { id: string; name: string; vendor: string; code: string; }
 
 type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
+
+interface WanCandidate {
+  ip: string;
+  interface: string;
+  lat: number;
+  lng: number;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -340,6 +358,8 @@ export default function AddFirewallPage() {
   // Step 2
   const [urlError, setUrlError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [wanCandidates, setWanCandidates] = useState<WanCandidate[]>([]);
+  const [showWanDialog, setShowWanDialog] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -517,6 +537,7 @@ export default function AddFirewallPage() {
   }
 
   return (
+    <>
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb
@@ -772,8 +793,16 @@ export default function AddFirewallPage() {
                             });
 
                             if (!error && data?.success) {
+                              if (data.multiple) {
+                                // Multiple IPs → show selection dialog
+                                setWanCandidates(data.candidates);
+                                setShowWanDialog(true);
+                                return;
+                              }
+                              // Single IP → apply directly
                               setFormData(prev => ({ ...prev, geo_latitude: String(data.lat), geo_longitude: String(data.lng) }));
-                              toast.success(`📍 IP WAN encontrado: ${data.ip} (${data.interface}) → ${data.lat}, ${data.lng}`);
+                              const loc = [data.city, data.region, data.country].filter(Boolean).join(', ');
+                              toast.success(`📍 ${data.interface} — ${data.ip}${loc ? ` (${loc})` : ''}`);
                               return;
                             }
 
@@ -934,5 +963,60 @@ export default function AddFirewallPage() {
         )}
       </div>
     </AppLayout>
+
+    {/* WAN IP Selector Dialog */}
+    <Dialog open={showWanDialog} onOpenChange={setShowWanDialog}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Múltiplos IPs WAN encontrados</DialogTitle>
+          <DialogDescription>
+            Selecione o IP que representa a localização física deste firewall.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 mt-2">
+          {wanCandidates.map((c) => {
+            const location = [c.city, c.region, c.country].filter(Boolean).join(', ');
+            return (
+              <div
+                key={c.ip}
+                className="border border-border rounded-lg p-4 space-y-2 bg-muted/20"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {c.country_code && (
+                      <span
+                        className={`fi fi-${c.country_code.toLowerCase()} text-xl`}
+                        title={c.country}
+                      />
+                    )}
+                    <span className="font-mono text-sm font-semibold text-foreground">{c.interface}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        geo_latitude: String(c.lat),
+                        geo_longitude: String(c.lng),
+                      }));
+                      setShowWanDialog(false);
+                      toast.success(`📍 ${c.interface} — ${c.ip}${location ? ` (${location})` : ''} selecionado`);
+                    }}
+                  >
+                    Selecionar
+                  </Button>
+                </div>
+                <div className="text-sm text-muted-foreground space-y-0.5">
+                  <p><span className="font-medium text-foreground">IP:</span> {c.ip}</p>
+                  {location && <p><span className="font-medium text-foreground">Local:</span> {location}</p>}
+                  <p className="text-xs text-muted-foreground/70">Coords: {c.lat.toFixed(4)}, {c.lng.toFixed(4)}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
