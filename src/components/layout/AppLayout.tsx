@@ -478,12 +478,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-0.5">
               {[
                 { href: '/administrators', icon: ShieldCheck, label: 'Administradores' },
-                { href: '/workspaces', icon: Building, label: 'Workspaces' },
-                { href: '/settings', icon: Settings, label: 'Configurações' },
-                { href: '/templates', icon: ClipboardList, label: 'Templates' },
                 { href: '/schedules', icon: Clock, label: 'Agendamentos' },
+                { href: '/settings', icon: Settings, label: 'Configurações' },
                 { href: '/cves', icon: Bug, label: 'CVEs' },
                 { href: '/super-agents', icon: Cpu, label: 'Super Agents' },
+                { href: '/templates', icon: ClipboardList, label: 'Templates' },
+                { href: '/workspaces', icon: Building, label: 'Workspaces' },
               ].map((item) => (
                 <Link
                   key={item.href}
@@ -549,17 +549,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             Administradores
           </Link>
           <Link
-            to="/workspaces"
+            to="/schedules"
             onClick={() => setMobileMenuOpen(false)}
             className={cn(
               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              location.pathname === '/workspaces'
+              location.pathname === '/schedules'
                 ? 'bg-warning/20 text-warning font-medium'
                 : 'text-warning/80 hover:bg-warning/10'
             )}
           >
-            <Building className="w-4 h-4" />
-            Workspaces
+            <Clock className="w-4 h-4" />
+            Agendamentos
           </Link>
           <Link
             to="/settings"
@@ -573,32 +573,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Settings className="w-4 h-4" />
             Configurações
-          </Link>
-          <Link
-            to="/templates"
-            onClick={() => setMobileMenuOpen(false)}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              location.pathname === '/templates'
-                ? 'bg-warning/20 text-warning font-medium'
-                : 'text-warning/80 hover:bg-warning/10'
-            )}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Templates
-          </Link>
-          <Link
-            to="/schedules"
-            onClick={() => setMobileMenuOpen(false)}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              location.pathname === '/schedules'
-                ? 'bg-warning/20 text-warning font-medium'
-                : 'text-warning/80 hover:bg-warning/10'
-            )}
-          >
-            <Clock className="w-4 h-4" />
-            Agendamentos
           </Link>
           <Link
             to="/cves"
@@ -625,6 +599,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Cpu className="w-4 h-4" />
             Super Agents
+          </Link>
+          <Link
+            to="/templates"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/templates'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <ClipboardList className="w-4 h-4" />
+            Templates
+          </Link>
+          <Link
+            to="/workspaces"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/workspaces'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <Building className="w-4 h-4" />
+            Workspaces
           </Link>
         </CollapsibleContent>
       </Collapsible>
