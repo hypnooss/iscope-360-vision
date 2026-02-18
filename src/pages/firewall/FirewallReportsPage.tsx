@@ -583,7 +583,7 @@ export default function FirewallReportsPage() {
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
                           {group.vendor_name ? (
-                            <span className="text-sm text-foreground">{group.vendor_name}</span>
+                            <Badge variant="outline" className="text-xs">{group.vendor_name}</Badge>
                           ) : (
                             <span className="text-muted-foreground text-sm">—</span>
                           )}
