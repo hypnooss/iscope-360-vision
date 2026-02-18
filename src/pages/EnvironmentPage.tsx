@@ -332,7 +332,7 @@ export default function EnvironmentPage() {
             isLoading={isLoading}
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/scope-firewall/firewalls/${asset.id}/edit`)}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/firewall/${asset.id}/edit`)}>
                   <Pencil className="w-4 h-4" />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteFirewallTarget({ id: asset.id, name: asset.name })}>
