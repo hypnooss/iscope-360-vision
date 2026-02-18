@@ -703,7 +703,7 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-row flex-wrap items-center gap-1">
                             <Badge
                               variant="outline"
                               className={FREQUENCY_BADGE_STYLES[group.schedule_frequency] || FREQUENCY_BADGE_STYLES.manual}
@@ -711,19 +711,19 @@ export default function ExternalDomainReportsPage() {
                               {FREQUENCY_LABELS[group.schedule_frequency] || 'Manual'}
                             </Badge>
                             {group.schedule_frequency === 'daily' && (
-                              <span className="text-xs text-muted-foreground">
-                                às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
-                              </span>
+                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                                {String(group.schedule_hour).padStart(2, '0')}:00
+                              </Badge>
                             )}
                             {group.schedule_frequency === 'weekly' && (
-                              <span className="text-xs text-muted-foreground">
-                                {DAYS_OF_WEEK_LABELS[group.schedule_day_of_week]} às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
-                              </span>
+                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                                {DAYS_OF_WEEK_LABELS[group.schedule_day_of_week]} · {String(group.schedule_hour).padStart(2, '0')}:00
+                              </Badge>
                             )}
                             {group.schedule_frequency === 'monthly' && (
-                              <span className="text-xs text-muted-foreground">
-                                Dia {group.schedule_day_of_month} às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
-                              </span>
+                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                                Dia {group.schedule_day_of_month} · {String(group.schedule_hour).padStart(2, '0')}:00
+                              </Badge>
                             )}
                           </div>
                         </TableCell>
