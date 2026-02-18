@@ -920,20 +920,20 @@ export default function AddFirewallPage() {
                               return;
                             }
 
-                            // Step 4: Geolocate IPs via ipapi.co from the browser
+                            // Step 4: Geolocate IPs via ipwho.is from the browser
                             const geoResults = await Promise.all(
                               wanIPs.map(async (w) => {
                                 try {
-                                  const res = await fetch(`https://ipapi.co/${w.ip}/json/`);
+                                  const res = await fetch(`https://ipwho.is/${w.ip}`);
                                   if (!res.ok) return null;
                                   const json = await res.json();
-                                  if (json.error || !json.latitude || !json.longitude) return null;
+                                  if (!json.success || !json.latitude || !json.longitude) return null;
                                   return {
                                     ip: w.ip,
                                     interface: w.interfaceName,
                                     lat: json.latitude as number,
                                     lng: json.longitude as number,
-                                    country: json.country_name || '',
+                                    country: json.country || '',
                                     country_code: (json.country_code || '').toLowerCase(),
                                     region: json.region || '',
                                     city: json.city || '',

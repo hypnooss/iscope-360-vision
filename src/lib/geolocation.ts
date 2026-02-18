@@ -14,10 +14,10 @@ interface GeoResult {
 
 async function tryGeolocate(target: string): Promise<GeoResult | null> {
   try {
-    const res = await fetch(`https://ipapi.co/${target}/json/`);
+    const res = await fetch(`https://ipwho.is/${target}`);
     if (!res.ok) return null;
     const json = await res.json();
-    if (json.error || !json.latitude || !json.longitude) return null;
+    if (!json.success || !json.latitude || !json.longitude) return null;
     return { lat: json.latitude as number, lng: json.longitude as number };
   } catch {
     return null;
