@@ -1,91 +1,82 @@
 
-# Voltar ao Leaflet no Fullscreen — com Mapa Melhor e Sem Bordas Brancas
+# Integrar Stadia Maps API Key — Configurações + Mapa
 
-## Diagnóstico: Por que as bordas aparecem no Leaflet
+## Contexto
 
-O problema das bordas brancas no Leaflet em modo fullscreen é causado por uma limitação matemática da projeção Mercator: em `zoom=2`, o tile world tem `2^2 × 256 = 1024px` de largura. Em telas widescreen (1920px, 2560px), o mapa simplesmente não tem tiles suficientes para cobrir toda a largura — o Leaflet preenche o espaço com a cor de fundo.
+A Stadia Maps API key é uma **publishable key** (igual ao Mapbox/Google Maps) — ela é vinculada ao domínio e pode aparecer no frontend sem risco. O Stadia Maps explicitamente permite isso. Portanto, o fluxo é:
 
-**A solução definitiva:** definir o `background` do `MapContainer` com a **mesma cor do tile do mapa**. Para o CartoDB Dark Matter, é `#0e0e10`. Para o Stadia Alidade Smooth Dark, é `#121726`. Assim, o espaço "vazio" é invisível — parece que o mapa se estende infinitamente.
+1. Admin salva a key em Configurações > Chaves de API
+2. Key fica armazenada criptografada no banco (padrão já existente)
+3. Frontend busca a key via edge function e monta a URL do tile dinamicamente
 
-Além disso, usaremos `noWrap={true}` no `TileLayer` para impedir repetição lateral do mapa.
+## Arquitetura
 
-## Novo Tile: Stadia Maps — Alidade Smooth Dark
+O projeto já tem toda a infraestrutura pronta:
+- **`manage-api-keys`** — edge function que gerencia keys (GET lista, POST salva)
+- **`system_settings`** — tabela onde as keys ficam salvas (criptografadas)
+- **SettingsPage** — UI que já renderiza todas as keys de `MANAGED_KEYS` automaticamente
 
-O **Stadia Alidade Smooth Dark** é visualmente superior ao CartoDB Dark Matter:
-- Cores mais profundas e contrastantes
-- Fronteiras de países com linhas finas mais elegantes
-- Oceanos em `#121726` (quase preto-azulado) — cor de fundo perfeita para disfarçar as bordas
-- Uso gratuito sem API key para projetos razoáveis
-
-URL do tile:
-```
-https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png
-```
+Basta adicionar `STADIA_MAPS_API_KEY` em dois lugares e fazer o `AttackMap` usar a key.
 
 ## Mudanças por Arquivo
 
-### 1. `src/components/firewall/AttackMap.tsx` (modo inline — dashboard)
+### 1. `supabase/functions/manage-api-keys/index.ts`
 
-- Trocar `TILE_URL` de CartoDB para Stadia Alidade Smooth Dark
-- Adicionar `noWrap={true}` no `<TileLayer>`
-- Ajustar o `background` do `mapStyle` para `#121726` (cor dos oceanos do novo tile)
-
-### 2. `src/components/firewall/AttackMapFullscreen.tsx`
-
-- Substituir `<AttackMapCanvas>` de volta para `<AttackMap fullscreen={true}>`
-- Ajustar o `background` do container de `#0a0e1a` para `#121726`
-- O `<AttackMap>` já tem toda a lógica de projéteis SVG, marcadores, trails e firewall marker
-
-### 3. `src/components/firewall/AttackMapCanvas.tsx`
-
-- Manter o arquivo (não deletar), mas ele fica sem uso por ora
-
-## Por que isso resolve o problema das bordas
-
-```text
-┌─────────────────────────────────────────────────────┐
-│                   Tela 1920px                       │
-│  ┌──────────────────────────────────────────────┐   │
-│  │         Tiles Leaflet (1024px)               │   │
-│  │        [mapa propriamente dito]              │   │
-│  └──────────────────────────────────────────────┘   │
-│  [espaço vazio]                     [espaço vazio]  │
-└─────────────────────────────────────────────────────┘
-
-SEM FIX: espaço vazio aparece branco/cinza
-COM FIX: espaço vazio tem background: '#121726'
-         = mesma cor dos oceanos do tile = invisível
-```
-
-## Configurações do MapContainer no fullscreen
+Adicionar a entry na lista `MANAGED_KEYS`:
 
 ```typescript
-<MapContainer
-  center={[20, 0]}
-  zoom={2}
-  minZoom={1}
-  maxZoom={8}
-  worldCopyJump={false}
-  noWrap={true}          // sem repetição lateral
-  zoomControl={true}     // permitir zoom no fullscreen
-  dragging={true}
-  scrollWheelZoom={true}
-  doubleClickZoom={true}
-  attributionControl={false}
-  style={{ height: '100%', width: '100%', background: '#121726' }}
->
-  <TileLayer
-    url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
-    noWrap={true}
-    attribution="..."
-  />
+{
+  name: "STADIA_MAPS_API_KEY",
+  label: "Stadia Maps",
+  description: "API Key do Stadia Maps para exibição do mapa de ataques (tiles do mapa escuro). Obtenha em client.stadiamaps.com",
+},
 ```
 
-## Resumo dos Arquivos
+A aba "Chaves de API" em Configurações renderiza automaticamente todos os itens de `MANAGED_KEYS` — não há nenhuma mudança necessária na UI de settings.
+
+### 2. Nova edge function `get-map-config/index.ts`
+
+Uma edge function leve e pública (sem auth obrigatória, já que a key é publishable) que retorna a Stadia key descriptografada para o frontend montar a URL do tile:
+
+```typescript
+// Busca api_key_STADIA_MAPS_API_KEY em system_settings
+// Descriptografa
+// Retorna { stadia_api_key: "..." }
+```
+
+Por que uma edge function separada e não reutilizar `manage-api-keys`? Porque `manage-api-keys` exige `super_admin` — e o mapa de ataques é visível para usuários comuns. A nova função retorna **apenas** a key do mapa, sem expor as outras.
+
+### 3. `src/components/firewall/AttackMap.tsx`
+
+- Adicionar `useState` + `useEffect` para buscar a key via `supabase.functions.invoke('get-map-config')`
+- Montar a `tileUrl` dinamicamente:
+  - Se key disponível: `https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=KEY`
+  - Fallback: CartoDB Dark Matter (sem key, sempre funciona)
+- Passar `tileUrl` para o `<TileLayer>`
+
+### 4. Fallback visual
+
+Se a key ainda não estiver configurada, o mapa cai automaticamente para CartoDB Dark Matter — o mapa continua funcionando.
+
+## Fluxo Completo
+
+```
+Admin acessa Configurações > Chaves de API
+  → Vê "Stadia Maps" na lista
+  → Cola a API key e salva
+  → manage-api-keys criptografa e salva em system_settings
+
+Usuário abre o mapa de ataques
+  → AttackMap chama get-map-config
+  → get-map-config lê e descriptografa a key
+  → AttackMap monta URL: ...alidade_smooth_dark/...?api_key=KEY
+  → Tiles do Stadia Maps carregam corretamente
+```
+
+## Arquivos
 
 | Arquivo | Ação |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Trocar tile URL + `noWrap` + ajustar cor de fundo |
-| `src/components/firewall/AttackMapFullscreen.tsx` | Voltar a usar `<AttackMap fullscreen>` em vez de Canvas |
-
-Resultado: coordenadas **sempre** corretas (Leaflet projeta lat/lng nativamente), mapa mais bonito, bordas invisíveis, sem Canvas, sem calibração manual.
+| `supabase/functions/manage-api-keys/index.ts` | Adicionar `STADIA_MAPS_API_KEY` em `MANAGED_KEYS` |
+| `supabase/functions/get-map-config/index.ts` | Criar — retorna a Stadia key descriptografada |
+| `src/components/firewall/AttackMap.tsx` | Buscar key dinamicamente, montar URL, fallback para CartoDB |
