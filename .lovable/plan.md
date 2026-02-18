@@ -1,50 +1,37 @@
 
-# Ajuste na coluna "Domínio" e badge "Tipo" para execuções Surface Scanner
+# Corrigir borda branca nas tabelas — aplicar `glass-card` de forma consistente
 
-## O que precisa mudar
+## Causa Raiz
 
-Na tabela de execuções (linhas 654–697 do arquivo `ExternalDomainExecutionsPage.tsx`), as linhas do tipo `attack_surface` atualmente exibem:
+O tema escuro usa a variável `--border: 220 15% 18%` (cinza-escuro). A classe `glass-card` aplica `border border-border/50`, que com 50% de opacidade sobre o fundo escuro fica quase invisível — o visual correto e intencional do design.
 
-- **Domínio**: `"Attack Surface Scan"` (retornado pela função `getDomainLabel('')`)
-- **Agent**: `-` (já correto)
-- **Tipo**: badge com label `"Attack Surface"` (precisa ser `"Surface Scanner"`)
+Quando um `<Card>` **não** tem `glass-card`, ele usa o estilo padrão do shadcn que aplica apenas `border-border` (sem `/50`), resultando na borda branca visível na screenshot.
 
-## Mudanças
+## Arquivos afetados
 
-### 1. Coluna Domínio — exibir traço `-` para attack_surface
+Todos os `<Card>` que envolvem tabelas e que estão **sem** `glass-card`:
 
-**Linha 655–657** — trocar `getDomainLabel(item.domainId)` por lógica condicional:
+| Arquivo | Linha(s) |
+|---|---|
+| `src/pages/external-domain/ExternalDomainExecutionsPage.tsx` | 624 |
+| `src/pages/external-domain/ExternalDomainListPage.tsx` | 430 |
+| `src/pages/AgentsPage.tsx` | 574 |
+| `src/pages/AdministratorsPage.tsx` | 464 |
+| `src/pages/UsersPage.tsx` | 542 |
+| `src/pages/firewall/FirewallListPage.tsx` | 586 |
+| `src/pages/admin/SchedulesPage.tsx` | 492 e 625 |
+| `src/pages/admin/TemplatesPage.tsx` | 333 |
+| `src/pages/admin/SuperAgentsPage.tsx` | 408 |
+| `src/pages/ClientsPage.tsx` | 460 |
 
-```tsx
-// Antes
-<TableCell className="font-medium">
-  {getDomainLabel(item.domainId)}
-</TableCell>
+Já corretos (com `glass-card`): `ExternalDomainReportsPage`, `TaskExecutionsPage`, `M365ExecutionsPage`, `FirewallsPage`, `ReportsPage`.
 
-// Depois
-<TableCell className="font-medium">
-  {item.type === 'attack_surface' ? '-' : getDomainLabel(item.domainId)}
-</TableCell>
-```
+## Correção
 
-### 2. Badge Tipo — label `"Surface Scanner"` em vez de `"Attack Surface"`
+Em todos os arquivos listados, substituir `<Card>` por `<Card className="glass-card">` no wrapper da tabela.
 
-**Linha 133** — atualizar o `typeConfig`:
+A mudança é pontual e idêntica em todos os arquivos — apenas uma classe CSS adicionada em cada Card de tabela.
 
-```tsx
-// Antes
-attack_surface: {
-  label: 'Attack Surface',
-  ...
-}
+## Resultado esperado
 
-// Depois
-attack_surface: {
-  label: 'Surface Scanner',
-  ...
-}
-```
-
-## Arquivos modificados
-
-- **`src/pages/external-domain/ExternalDomainExecutionsPage.tsx`**: dois ajustes pontuais — label do tipo e lógica do domínio para linhas `attack_surface`.
+Bordas das tabelas ficam sutis (quase invisíveis), consistentes com o design do tema escuro usado em toda a aplicação, igual ao padrão já correto nas páginas `ExternalDomainReportsPage`, `M365ExecutionsPage`, etc.
