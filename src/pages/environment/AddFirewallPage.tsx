@@ -765,12 +765,35 @@ export default function AddFirewallPage() {
                         if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
                         setGeoLoading(true);
                         try {
+                          // Primary: query FortiGate API via edge function (requires api_key)
+                          if (formData.api_key) {
+                            const { data, error } = await supabase.functions.invoke('resolve-firewall-geo', {
+                              body: { url: formData.fortigate_url, api_key: formData.api_key },
+                            });
+
+                            if (!error && data?.success) {
+                              setFormData(prev => ({ ...prev, geo_latitude: String(data.lat), geo_longitude: String(data.lng) }));
+                              toast.success(`📍 IP WAN encontrado: ${data.ip} (${data.interface}) → ${data.lat}, ${data.lng}`);
+                              return;
+                            }
+
+                            // FortiGate unreachable or auth failed → fallback
+                            if (data?.error === 'connection_failed' || data?.error === 'auth_failed') {
+                              console.warn('resolve-firewall-geo fallback:', data?.message);
+                              // fall through to DNS fallback below
+                            } else if (data?.error === 'no_public_ip' || data?.error === 'geo_failed') {
+                              toast.warning(`⚠️ ${data.message}${data.ip ? ` (IP: ${data.ip})` : ''}`);
+                              return;
+                            }
+                          }
+
+                          // Fallback: DNS-based geolocation from URL
                           const geo = await resolveGeoFromUrl(formData.fortigate_url);
                           if (geo) {
                             setFormData(prev => ({ ...prev, geo_latitude: String(geo.lat), geo_longitude: String(geo.lng) }));
-                            toast.success('Localização encontrada');
+                            toast.success('📍 Localização estimada pela URL (IP interno detectado)');
                           } else {
-                            toast.error('Não foi possível determinar a localização');
+                            toast.error('Não foi possível determinar a localização. Verifique a URL e a API Key.');
                           }
                         } catch { toast.error('Erro ao buscar localização'); }
                         finally { setGeoLoading(false); }
