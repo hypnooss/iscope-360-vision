@@ -15,6 +15,10 @@ export interface AssetItem {
   score: number | null;
   status: string;
   navigationUrl: string;
+  scheduleFrequency?: string | null;
+  scheduleHour?: number;
+  scheduleDayOfWeek?: number;
+  scheduleDayOfMonth?: number;
 }
 
 interface AssetCategorySectionProps {
@@ -24,8 +28,22 @@ interface AssetCategorySectionProps {
   items: AssetItem[];
   totalCount: number;
   isLoading: boolean;
+  showFrequency?: boolean;
   renderActions?: (asset: AssetItem) => React.ReactNode;
 }
+
+const FREQUENCY_BADGE_STYLES: Record<string, string> = {
+  daily:   'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  weekly:  'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  monthly: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  manual:  'bg-muted text-muted-foreground border-border',
+};
+const FREQUENCY_LABELS: Record<string, string> = {
+  daily: 'Diário', weekly: 'Semanal', monthly: 'Mensal', manual: 'Manual',
+};
+const DAYS_OF_WEEK_SHORT: Record<number, string> = {
+  0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb',
+};
 
 const translateStatus = (status: string): string => {
   const map: Record<string, string> = {
@@ -47,7 +65,7 @@ const getScoreColor = (score: number | null) => {
   return 'bg-destructive/20 text-destructive border-destructive/30';
 };
 
-export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, renderActions }: AssetCategorySectionProps) {
+export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, showFrequency, renderActions }: AssetCategorySectionProps) {
   const navigate = useNavigate();
 
   if (!isLoading && totalCount === 0) return null;
@@ -76,44 +94,72 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[25%]">Nome</TableHead>
-                  <TableHead className="w-[18%]">Agent</TableHead>
-                  <TableHead className="w-[22%]">Workspace</TableHead>
-                  <TableHead className="w-[12%]">Score</TableHead>
-                  <TableHead className="w-[12%]">Status</TableHead>
-                  <TableHead className="w-[11%] text-right">Ações</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Workspace</TableHead>
+                  {showFrequency && <TableHead>Frequência</TableHead>}
+                  <TableHead>Score</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map(asset => (
-                  <TableRow key={asset.id}>
-                    <TableCell className="w-[25%] font-medium text-foreground">{asset.name}</TableCell>
-                    <TableCell className={`w-[18%] ${asset.agentName ? 'text-foreground' : 'text-muted-foreground'}`}>
-                      {asset.agentName || '—'}
-                    </TableCell>
-                    <TableCell className="w-[22%] text-muted-foreground">{asset.workspaceName}</TableCell>
-                    <TableCell className="w-[12%]">
-                      {asset.score !== null ? (
-                        <Badge variant="outline" className={getScoreColor(asset.score)}>
-                          {asset.score}%
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
+                {items.map(asset => {
+                  const freq = asset.scheduleFrequency || 'manual';
+                  return (
+                    <TableRow key={asset.id}>
+                      <TableCell className="font-medium text-foreground">{asset.name}</TableCell>
+                      <TableCell className={asset.agentName ? 'text-foreground' : 'text-muted-foreground'}>
+                        {asset.agentName || '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{asset.workspaceName}</TableCell>
+                      {showFrequency && (
+                        <TableCell>
+                          <div className="flex flex-row flex-wrap items-center gap-1">
+                            <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES[freq] || FREQUENCY_BADGE_STYLES.manual}`}>
+                              {FREQUENCY_LABELS[freq] || freq}
+                            </Badge>
+                            {freq === 'daily' && (
+                              <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.daily}`}>
+                                {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
+                              </Badge>
+                            )}
+                            {freq === 'weekly' && (
+                              <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.weekly}`}>
+                                {DAYS_OF_WEEK_SHORT[asset.scheduleDayOfWeek ?? 1]} · {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
+                              </Badge>
+                            )}
+                            {freq === 'monthly' && (
+                              <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.monthly}`}>
+                                Dia {asset.scheduleDayOfMonth ?? 1} · {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                       )}
-                    </TableCell>
-                    <TableCell className="w-[12%]">
-                      <Badge variant="outline" className="capitalize">{translateStatus(asset.status)}</Badge>
-                    </TableCell>
-                    <TableCell className="w-[11%] text-right">
-                      {renderActions ? renderActions(asset) : (
-                        <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
-                          <ExternalLink className="w-4 h-4 mr-1" />
-                          Abrir
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      <TableCell>
+                        {asset.score !== null ? (
+                          <Badge variant="outline" className={getScoreColor(asset.score)}>
+                            {asset.score}%
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize">{translateStatus(asset.status)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {renderActions ? renderActions(asset) : (
+                          <Button variant="ghost" size="sm" onClick={() => navigate(asset.navigationUrl)}>
+                            <ExternalLink className="w-4 h-4 mr-1" />
+                            Abrir
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
