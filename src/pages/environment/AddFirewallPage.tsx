@@ -141,6 +141,15 @@ function StepIndicator({ current }: { current: number }) {
 function FortiGateInstructions() {
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+        <p className="text-sm text-blue-400 font-medium">ℹ️ Por que usar o perfil <span className="font-mono">super_admin_readonly</span>?</p>
+        <ul className="text-xs text-blue-300/80 mt-1 space-y-1 list-disc list-inside">
+          <li>Perfil nativo do FortiGate — não requer criação manual</li>
+          <li>Acesso somente-leitura: não permite alterações de configuração</li>
+          <li>Visibilidade completa para coleta de dados de compliance</li>
+        </ul>
+      </div>
+
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">1</span>
@@ -194,6 +203,18 @@ function FortiGateInstructions() {
         </ol>
       </div>
 
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
+        <p className="text-sm font-semibold text-destructive flex items-center gap-2">
+          🔒 Segurança: Restrição por IP (Trusted Hosts)
+        </p>
+        <p className="text-xs text-destructive/80">
+          Habilitar <strong>Trusted Hosts</strong> é essencial. Sem essa restrição, o API Token pode ser usado de qualquer origem na internet caso seja comprometido.
+        </p>
+        <p className="text-xs text-destructive/80">
+          Ao ativar Trusted Hosts e informar o IP do agente iScope, somente requisições originadas desse endereço serão aceitas pelo FortiGate — o token se torna inútil fora desse contexto.
+        </p>
+      </div>
+
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">2</span>
@@ -229,27 +250,6 @@ end`}</pre>
             <strong className="text-foreground">rest-api-performance</strong> — expõe métricas de CPU, memória e sessões ativas.
           </p>
         </div>
-      </div>
-
-      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
-        <p className="text-sm font-semibold text-destructive flex items-center gap-2">
-          🔒 Segurança: Restrição por IP (Trusted Hosts)
-        </p>
-        <p className="text-xs text-destructive/80">
-          Habilitar <strong>Trusted Hosts</strong> é essencial. Sem essa restrição, o API Token pode ser usado de qualquer origem na internet caso seja comprometido.
-        </p>
-        <p className="text-xs text-destructive/80">
-          Ao ativar Trusted Hosts e informar o IP do agente iScope, somente requisições originadas desse endereço serão aceitas pelo FortiGate — o token se torna inútil fora desse contexto.
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
-        <p className="text-sm text-blue-400 font-medium">ℹ️ Por que usar o perfil <span className="font-mono">super_admin_readonly</span>?</p>
-        <ul className="text-xs text-blue-300/80 mt-1 space-y-1 list-disc list-inside">
-          <li>Perfil nativo do FortiGate — não requer criação manual</li>
-          <li>Acesso somente-leitura: não permite alterações de configuração</li>
-          <li>Visibilidade completa para coleta de dados de compliance</li>
-        </ul>
       </div>
 
       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
