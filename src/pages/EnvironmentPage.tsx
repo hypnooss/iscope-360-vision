@@ -44,6 +44,8 @@ export default function EnvironmentPage() {
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteFirewallTarget, setDeleteFirewallTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteFirewallLoading, setDeleteFirewallLoading] = useState(false);
 
   // Fetch workspaces
   const { data: allWorkspaces } = useQuery({
@@ -170,6 +172,22 @@ export default function EnvironmentPage() {
   const filteredFirewalls = useMemo(() => filtered.filter(a => a.type === 'firewall'), [filtered]);
   const filteredDomains = useMemo(() => filtered.filter(a => a.type === 'external_domain'), [filtered]);
   const filteredTenants = useMemo(() => filtered.filter(a => a.type === 'm365_tenant'), [filtered]);
+
+  const handleDeleteFirewall = useCallback(async () => {
+    if (!deleteFirewallTarget) return;
+    setDeleteFirewallLoading(true);
+    try {
+      const { error } = await supabase.from('firewalls').delete().eq('id', deleteFirewallTarget.id);
+      if (error) throw error;
+      toast.success('Firewall excluído com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['environment-assets'] });
+      setDeleteFirewallTarget(null);
+    } catch (err: any) {
+      toast.error('Erro ao excluir firewall: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setDeleteFirewallLoading(false);
+    }
+  }, [deleteFirewallTarget, queryClient]);
 
   const handleDeleteDomain = useCallback(async () => {
     if (!deleteTarget) return;
@@ -312,6 +330,16 @@ export default function EnvironmentPage() {
             items={filteredFirewalls}
             totalCount={stats.firewalls}
             isLoading={isLoading}
+            renderActions={(asset) => (
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/scope-firewall/firewalls/${asset.id}/edit`)}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteFirewallTarget({ id: asset.id, name: asset.name })}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           />
           <AssetCategorySection
             title="Tenants M365"
@@ -330,6 +358,13 @@ export default function EnvironmentPage() {
         domainName={deleteTarget?.name || ''}
         onConfirm={handleDeleteDomain}
         loading={deleteLoading}
+      />
+      <DeleteEnvironmentDomainDialog
+        open={!!deleteFirewallTarget}
+        onOpenChange={(open) => { if (!open) setDeleteFirewallTarget(null); }}
+        domainName={deleteFirewallTarget?.name || ''}
+        onConfirm={handleDeleteFirewall}
+        loading={deleteFirewallLoading}
       />
     </AppLayout>
   );
