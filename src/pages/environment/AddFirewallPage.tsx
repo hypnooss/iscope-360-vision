@@ -942,6 +942,7 @@ export default function AddFirewallPage() {
                         }
                       }}
                       disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
+                      className={(!geoLoading && formData.fortigate_url && formData.agent_id) ? "pulse" : ""}
                     >
                       {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
                       Buscar
