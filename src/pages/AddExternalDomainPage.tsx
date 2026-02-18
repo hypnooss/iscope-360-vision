@@ -91,10 +91,10 @@ function calculateNextRunAt(
 
 export default function AddExternalDomainPage() {
   const navigate = useNavigate();
-  const { user, isSuperAdmin } = useAuth();
+  const { user } = useAuth();
   const { effectiveRole } = useEffectiveAuth();
 
-  const isSuperUser = isSuperAdmin() || effectiveRole === 'super_suporte';
+  const isSuperUser = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
