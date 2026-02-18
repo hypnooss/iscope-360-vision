@@ -1,44 +1,70 @@
 
+# Ocultar completamente o campo Workspace para não-super usuários
 
-# Remover submenu e pagina "Dominios Externos"
+## Problema
 
-## Justificativa
+No arquivo `AddExternalDomainPage.tsx`, a lógica atual tem:
 
-A pagina `ExternalDomainListPage` (`/scope-external-domain/domains`) e redundante porque:
-- A listagem de dominios ja esta em **Ambiente** (`/environment`)
-- A edicao ja redireciona para `/environment/external-domain/:id/edit`
-- A exclusao ja funciona via modal em Ambiente
-- A criacao ja usa `/environment/new/external-domain`
+```tsx
+{isSuperUser ? (
+  <div> {/* Select de Workspace */} </div>
+) : (
+  <div>
+    <Label>Workspace</Label>
+    <Input value={clients.length === 1 ? clients[0].name : 'Carregando...'} disabled />
+  </div>
+)}
+```
 
-## O que sera feito
+Mesmo quando `isSuperUser` é `false` (como quando se está em preview mode de um admin), o campo **continua sendo renderizado** com label "Workspace" e o texto "Carregando...". Isso porque o `client_id` é auto-preenchido via `useEffect`, mas o campo visível nunca some.
 
-### 1. Remover o item "Dominios Externos" do submenu
+## Solução
 
-No `AppLayout.tsx`, remover a linha `{ label: 'Dominios Externos', href: '/scope-external-domain/domains', icon: Globe }` do grupo `scope_external_domain`. O submenu ficara apenas com Compliance, Analyzer e Execucoes.
+Remover o bloco `else` inteiro (linhas 284-289). Para usuários não-super, o Workspace é auto-preenchido silenciosamente via `useEffect` — não precisa de nenhum campo visual.
 
-### 2. Remover a rota e o import do `ExternalDomainListPage`
+O grid de 2 colunas que envolve o campo Workspace e o campo Domínio também precisa ser ajustado: quando `isSuperUser` é `false`, o campo Domínio deve ocupar a linha inteira (sem a coluna do Workspace ao lado).
 
-No `App.tsx`:
-- Remover o lazy import de `ExternalDomainListPage`
-- Remover a rota `/scope-external-domain/domains`
+## Detalhes técnicos
 
-### 3. Redirecionar referencias para `/environment`
+### Arquivo modificado
 
-- **`moduleDashboardConfig.ts`**: alterar `path` de `scope_external_domain` de `/scope-external-domain/domains` para `/environment`
-- **`AddExternalDomainPage.tsx`**: alterar o `navigate('/scope-external-domain/domains')` pos-criacao para `navigate('/environment')`
-- **`ExternalDomainReportsPage.tsx`**: alterar o botao "Verificar Dominio" de `/scope-external-domain/domains` para `/environment`
+**`src/pages/AddExternalDomainPage.tsx`** — linhas 265-306:
 
-### 4. Manter o arquivo `ExternalDomainListPage.tsx`
+**Antes:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {isSuperUser ? (
+    <div className="space-y-2">
+      <Label>Workspace *</Label>
+      <Select ...>...</Select>
+    </div>
+  ) : (
+    <div className="space-y-2">
+      <Label>Workspace</Label>
+      <Input value={clients.length === 1 ? clients[0].name : 'Carregando...'} disabled />
+    </div>
+  )}
+  <div className="space-y-2">
+    <Label>Domínio Externo *</Label>
+    <Input ... />
+  </div>
+</div>
+```
 
-O arquivo nao sera apagado neste momento por seguranca, mas ficara sem uso (dead code). Pode ser removido numa limpeza futura.
+**Depois:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {isSuperUser && (
+    <div className="space-y-2">
+      <Label>Workspace *</Label>
+      <Select ...>...</Select>
+    </div>
+  )}
+  <div className="space-y-2">
+    <Label>Domínio Externo *</Label>
+    <Input ... />
+  </div>
+</div>
+```
 
-## Detalhes tecnicos
-
-### Arquivos modificados
-
-- **`src/components/layout/AppLayout.tsx`**: Remover item do menu
-- **`src/App.tsx`**: Remover import e rota
-- **`src/config/moduleDashboardConfig.ts`**: Alterar path para `/environment`
-- **`src/pages/AddExternalDomainPage.tsx`**: Alterar redirect pos-criacao
-- **`src/pages/external-domain/ExternalDomainReportsPage.tsx`**: Alterar link do botao
-
+Trocar o ternário por um `&&` simples, eliminando completamente o bloco `else` com o Input de "Carregando...".
