@@ -123,3 +123,6 @@ verify_jwt = false
 [functions.resolve-firewall-geo]
 verify_jwt = false
 
+[functions.get-map-config]
+verify_jwt = false
+
