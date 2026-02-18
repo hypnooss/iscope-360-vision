@@ -1,38 +1,48 @@
 
-# Exibir Fabricante como Badge
+# Corrigir Breadcrumb na Página de Análise de Firewall
 
-## Diagnóstico
+## Problema
 
-Analisando o arquivo `src/pages/firewall/FirewallReportsPage.tsx` (linhas 584-590), a situação atual das três colunas é:
+No arquivo `src/pages/FirewallAnalysis.tsx`, o breadcrumb exibe:
 
-| Coluna | Situação atual |
-|---|---|
-| **Fabricante** | `<span className="text-sm text-foreground">` — simples texto |
-| **Agent** | `<Badge variant="outline">` — já é badge |
-| **Frequência** | `<Badge variant="secondary">` — já é badge |
-
-Apenas a coluna **Fabricante** precisa ser convertida para `Badge`.
-
-## Mudança
-
-**Arquivo:** `src/pages/firewall/FirewallReportsPage.tsx` — linhas 585-589
-
-**Antes:**
-```tsx
-{group.vendor_name ? (
-  <span className="text-sm text-foreground">{group.vendor_name}</span>
-) : (
-  <span className="text-muted-foreground text-sm">—</span>
-)}
+```
+Firewall > Relatórios > [Nome do Firewall]
 ```
 
-**Depois:**
-```tsx
-{group.vendor_name ? (
-  <Badge variant="outline" className="text-xs">{group.vendor_name}</Badge>
-) : (
-  <span className="text-muted-foreground text-sm">—</span>
-)}
+Mas deveria exibir:
+
+```
+Firewall > Compliance > [Nome do Firewall]
 ```
 
-Usando `variant="outline"` para consistência com a coluna Agent (mesma família visual).
+## Ocorrências a corrigir
+
+Há **duas** instâncias do breadcrumb no arquivo — uma no estado de "sem relatório" e outra no estado normal de exibição:
+
+**Linhas ~242-247 (estado sem relatório):**
+```tsx
+<PageBreadcrumb
+  items={[
+    { label: 'Firewall', href: '/scope-firewall/firewalls' },
+    { label: 'Relatórios', href: '/scope-firewall/reports' },  // ← ERRADO
+    { label: firewall?.name || 'Análise' },
+  ]}
+/>
+```
+
+**Linhas ~268-273 (estado normal):**
+```tsx
+<PageBreadcrumb
+  items={[
+    { label: 'Firewall', href: '/scope-firewall/firewalls' },
+    { label: 'Relatórios', href: '/scope-firewall/reports' },  // ← ERRADO
+    { label: firewall?.name || 'Análise de Compliance' },
+  ]}
+/>
+```
+
+## Correção
+
+Substituir `'Relatórios'` por `'Compliance'` em ambas as ocorrências. O href `/scope-firewall/reports` permanece o mesmo pois é a rota da página de Compliance.
+
+**Arquivo alterado:** `src/pages/FirewallAnalysis.tsx` — duas linhas modificadas.
