@@ -120,3 +120,6 @@ verify_jwt = false
 [functions.dehashed-search]
 verify_jwt = false
 
+[functions.resolve-firewall-geo]
+verify_jwt = false
+
