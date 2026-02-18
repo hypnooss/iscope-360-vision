@@ -271,7 +271,7 @@ export default function ExternalDomainListPage() {
   };
 
   const openEditPage = (domain: ExternalDomainRow) => {
-    navigate(`/scope-external-domain/domains/${domain.id}/edit`);
+    navigate(`/environment/external-domain/${domain.id}/edit`);
   };
 
   const handleDeleteDomain = async (domain: ExternalDomainRow) => {

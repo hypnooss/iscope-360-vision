@@ -124,7 +124,7 @@ export default function EnvironmentPage() {
           score: ed.last_score,
           status: ed.last_score !== null ? 'analyzed' : ed.status,
           agentName: ed.agents?.name || null,
-          navigationUrl: `/scope-external-domain/domains/${ed.id}/edit`,
+          navigationUrl: `/environment/external-domain/${ed.id}/edit`,
         })),
         ...(m365Res.data || []).map((t: any) => {
           const tenantAgent = t.m365_tenant_agents?.[0];
@@ -296,7 +296,7 @@ export default function EnvironmentPage() {
             isLoading={isLoading}
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/scope-external-domain/domains/${asset.id}/edit`)}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/external-domain/${asset.id}/edit`)}>
                   <Pencil className="w-4 h-4" />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget({ id: asset.id, name: asset.name })}>
