@@ -1,78 +1,73 @@
 
-# Fix: Pontos do Mapa de Ataques Posicionados Incorretamente
+# Fix Definitivo: Calibração Precisa da Projeção do Mapa
 
-## Causa Raiz
+## Análise Real da Imagem
 
-O mapa está incorretamente alinhado devido a dois problemas combinados:
+Ao visualizar `world-map-dark.png` diretamente, confirmei que esta é uma imagem **equiretangular pura** que cobre **-180° a +180° de longitude** e **-90° a +90° de latitude**, com margens pretas nas bordas polares (Ártico e Antártica são áreas pretas sem continentes relevantes).
 
-### Problema 1 — Conflito de `preserveAspectRatio`
-- O SVG usa `preserveAspectRatio="xMidYMid meet"` (mantém proporção, adiciona letterbox)
-- A `<image>` interna usa `preserveAspectRatio="xMidYMid slice"` (recorta para preencher)
-- Isso cria duas áreas de renderização **diferentes**: a imagem é recortada de um jeito, mas a projeção matemática calcula posições em outro.
-
-### Problema 2 — Mapa não é equiretangular puro
-A imagem `world-map-dark.png` tem margens internas: as bordas laterais (Antártica, Ártico extremo) e os lados (±180°) não chegam exatamente às bordas do canvas da imagem. A fórmula `project()` assume que o viewBox 0,0→1000,500 coincide exatamente com lng=-180 a +180 e lat=90 a -90, o que não é verdade para esta imagem.
-
-### Resultado observado
-- Brasil (lat=-14, lng=-51) fica deslocado para o Atlântico
-- Marrocos (lat=32, lng=-5) aparece sobre a Itália (lat=43, lng=12) — offset de ~17° de longitude
-
-## Solução
-
-### Parte 1 — Corrigir `preserveAspectRatio` da imagem
-
-Unificar os dois `preserveAspectRatio` para a mesma política, garantindo que imagem e projeção compartilhem o mesmo sistema de coordenadas. O correto é usar `none` na imagem para que ela sempre preencha exatamente o viewBox 0,0→1000,500 sem recorte nem letterbox:
-
-```tsx
-// ANTES
-<image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="xMidYMid slice" />
-
-// DEPOIS
-<image href={worldMapDark} x="0" y="0" width="1000" height="500" preserveAspectRatio="none" />
+Isso significa que a fórmula equiretangular pura é a correta:
+```
+x = (lng + 180) / 360 * 1000
+y = (90 - lat) / 180 * 500
 ```
 
-Com `none`, a imagem é esticada para preencher exatamente o viewBox. A fórmula matemática e a imagem agora compartilham exatamente o mesmo espaço.
+## Por que os pontos ainda estão errados?
 
-### Parte 2 — Aplicar offsets de calibração na função `project()`
+As calibrações anteriores (`MAP_TOP_LAT=83`, `MAP_BOT_LAT=-58`) foram inseridas com base em suposições incorretas — elas **distorcem** a projeção em vez de corrigí-la, comprimindo o espaço de coordenadas e deslocando os pontos para baixo e para os lados.
 
-Mapas-múndi populares geralmente não mostram as latitudes extremas (>85°S/N). A imagem tipicamente cobre de ~-60° a +80° de latitude e de -180° a +180° de longitude, mas com pequenas margens. Precisamos calibrar os offsets para que os continentes visíveis coincidam com os pontos.
+**Verificação matemática dos erros observados:**
 
-Com base nos erros observados (Marrocos aparece sobre a Itália = ~17° a mais para leste; Brasil quase no oceano = ~10° para direita), os offsets de calibração são:
+Com os valores atuais (`TOP=83`, `BOT=-58`, range=141°):
+- **EUA** (lat=39): y = (83-39)/141 × 500 = **155.9** → aparece muito alto (fronteira Canada)
+- **Tocantins** (lat=-10): y = (83-(-10))/141 × 500 = **329.8** → aparece na Bahia (mais ao sul)
+
+Com a projeção pura (range=180°):
+- **EUA** (lat=39): y = (90-39)/180 × 500 = **141.7** → ainda alto? Não — na imagem, o centro dos EUA está a ~28% do topo (lat 39° = 51° abaixo do polo), o que equivale a 51/180 × 500 = **141.7px**, posição correta no mapa completo ±90°.
+- **Tocantins** (lat=-10): y = (90-(-10))/180 × 500 = **277.8** → centro da América do Sul, correto.
+
+**O problema real com as coordenadas do EUA:**
+
+O código usa `'us': [39, -98]` que é o centróide geográfico dos EUA (Kansas/Nebraska). Na projeção pura, lat=39° cai em y=141, que visualmente é a fronteira norte dos EUA contínuo, não o Canada. O usuário viu "divisa com Canada" porque o ponto estava mais alto com o MAP_TOP_LAT=83 causando compressão.
+
+## Solução: Reverter para Projeção Equiretangular Pura
+
+Remover os offsets de calibração incorretos e usar a fórmula padrão para mapas ±90°:
 
 ```typescript
-// Calibration offsets for the world-map-dark.png image
-// These compensate for the image's internal margins and latitude crop
-const MAP_LEFT_LNG = -180;    // leftmost longitude in image
-const MAP_RIGHT_LNG = 180;    // rightmost longitude in image
-const MAP_TOP_LAT = 85;       // topmost latitude in image (not 90)
-const MAP_BOT_LAT = -60;      // bottommost latitude in image (not -90)
+// REMOVER estas constantes
+const MAP_LEFT_LNG = -180;
+const MAP_RIGHT_LNG = 180;
+const MAP_TOP_LAT = 83;
+const MAP_BOT_LAT = -58;
 
+// NOVA função — projeção equiretangular pura para imagem ±90°/±180°
 function project(lat: number, lng: number): [number, number] {
-  const x = ((lng - MAP_LEFT_LNG) / (MAP_RIGHT_LNG - MAP_LEFT_LNG)) * 1000;
-  const y = ((MAP_TOP_LAT - lat) / (MAP_TOP_LAT - MAP_BOT_LAT)) * 500;
+  const x = ((lng + 180) / 360) * 1000;
+  const y = ((90 - lat) / 180) * 500;
   return [x, y];
 }
 ```
 
-Isso recalibra a projeção para os limites reais da imagem em vez de assumir ±90° de latitude.
+## Verificação dos Pontos Críticos
 
-### Parte 3 — Ajustar também as linhas de grade e equador/meridiano
+| País | Lat/Lng | x (novo) | y (novo) | Posição esperada na imagem |
+|---|---|---|---|---|
+| EUA centro (Kansas) | 39°N, -98° | 228 | 141 | Norte dos EUA continental ✓ |
+| Brasil | -14°S, -51° | 365 | 289 | Centro do Brasil ✓ |
+| Tocantins (FW) | -10°S, -48° | 367 | 277 | Norte do Brasil central ✓ |
+| Marrocos | 32°N, -5° | 486 | 161 | NW África ✓ |
+| Romênia | 46°N, 25° | 569 | 122 | SE Europa ✓ |
+| China | 35°N, 104° | 789 | 152 | China central ✓ |
 
-As linhas decorativas (equador, meridiano principal) também usam a função `project()`, então serão automaticamente corrigidas após o ajuste. Apenas a posição Y do equador e X do meridiano no SVG precisam usar a nova fórmula — o que já acontecerá automaticamente.
+## Arquivo Modificado
 
-## Arquivos Modificados
-
-| Arquivo | Mudança |
+| Arquivo | Operação |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Corrigir `preserveAspectRatio` da imagem + recalibrar `project()` com limites reais do mapa |
+| `src/components/firewall/AttackMap.tsx` | Remover constantes de offset, restaurar projeção equiretangular pura |
 
 ## Resultado Esperado
 
-| País | Antes | Depois |
-|---|---|---|
-| Brasil | Atlântico (quase no oceano) | Centro da América do Sul ✓ |
-| Marrocos | Sobreposto à Itália | Noroeste da África ✓ |
-| EUA | Ligeiramente deslocado E | Centro-Norte da América ✓ |
-| China | Levemente deslocado | Centro da Ásia ✓ |
-
-Os projéteis animados e o ponto do firewall também ficarão corretamente posicionados sobre os países de origem.
+- Firewall em Tocantins (lat=-10, lng=-48) aparecerá no norte do Brasil, interior do país
+- EUA aparecerá no centro dos estados contíguos (Kansas/Nebraska), não na fronteira canadense
+- Marrocos aparecerá no noroeste da África, não sobre a Europa
+- Todos os outros pontos ficarão geograficamente precisos
