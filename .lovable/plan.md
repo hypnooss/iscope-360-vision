@@ -1,143 +1,101 @@
 
-# Seleção de IP WAN quando há múltiplos IPs Públicos
+# Fix: SSL Certificate Bypass na Edge Function `resolve-firewall-geo`
 
-## Problema Atual
+## Diagnóstico
 
-A Edge Function `resolve-firewall-geo` para imediatamente no **primeiro** IP público encontrado (`wanInterfaces[0]`) e o frontend aplica diretamente no formulário, sem dar opção ao usuário quando há mais de um IP WAN público.
+O log da Edge Function revela o problema exato:
+
+```
+resolve-firewall-geo: FortiGate API error: error sending request for url
+(https://br-lrv-fw-001.gdmseeds.com:3443/api/v2/cmdb/system/interface):
+client error (Connect): invalid peer certificate: UnknownIssuer
+```
+
+O `fetchWithoutSSLVerification` está falhando porque o `Deno.createHttpClient` com `dangerouslyIgnoreCertificateErrors` **não está funcionando corretamente nessa versão do runtime Deno da Supabase**. Como a chamada falha com exceção, o catch retorna `connection_failed`, e o frontend cai no fallback DNS — que resolve o hostname e aplica a localização direto, sem mostrar o dialog de seleção.
+
+A Edge Function `fortigate-compliance` já tem uma solução funcionando para o mesmo problema. Vamos verificar e aplicar o mesmo padrão.
+
+## Causa raiz
+
+A Edge Function irmã `fortigate-compliance` usa exatamente o mesmo padrão de SSL bypass e funciona com esse FortiGate. Isso sugere que a implementação em `resolve-firewall-geo` tem uma diferença sutil. Analisando os logs da `fortigate-compliance`:
+
+A diferença pode ser o timeout (`AbortSignal.timeout`) sendo aplicado junto com o `client` customizado — em algumas versões do Deno runtime da Supabase, o `AbortSignal.timeout` interfere com o `Deno.createHttpClient`. A solução é usar `setTimeout` + `AbortController` manualmente, **exatamente como a `fortigate-compliance` já faz**.
 
 ## Solução
 
-### 1 — Edge Function `resolve-firewall-geo` (modificar)
+### 1 — Corrigir `supabase/functions/resolve-firewall-geo/index.ts`
 
-**Mudanças na função `getPublicWanIP`:**
-- Renomear para `getPublicWanIPs` (plural) — retornar **todos** os pares `{ ip, interfaceName }`
+Substituir `AbortSignal.timeout(10000)` por `AbortController` + `setTimeout` no `fetchWithoutSSLVerification`, alinhando com o padrão da `fortigate-compliance`.
 
-**Mudanças na função `geolocateIP`:**
-- Enriquecer o retorno com dados completos da `ipapi.co`: `latitude`, `longitude`, `country_name`, `country_code`, `region`, `city`
-
-**Novo fluxo do handler principal:**
-- Geolocalizar **todos** os IPs em paralelo (`Promise.all`)
-- Se 1 IP → retornar diretamente (comportamento atual, sem quebra de UX)
-- Se 2+ IPs → retornar `{ success: true, multiple: true, candidates: [...] }` com a lista enriquecida
-
-**Novo contrato de resposta (múltiplos IPs):**
-```json
-{
-  "success": true,
-  "multiple": true,
-  "candidates": [
-    {
-      "ip": "201.33.x.x",
-      "interface": "wan1",
-      "lat": -23.5505,
-      "lng": -46.6333,
-      "country": "Brazil",
-      "country_code": "BR",
-      "region": "São Paulo",
-      "city": "São Paulo"
-    },
-    {
-      "ip": "177.10.x.x",
-      "interface": "wan2",
-      "lat": -15.7801,
-      "lng": -47.9292,
-      "country": "Brazil",
-      "country_code": "BR",
-      "region": "Distrito Federal",
-      "city": "Brasília"
-    }
-  ]
+**Antes:**
+```ts
+async function fetchWithoutSSLVerification(url: string, options: RequestInit): Promise<Response> {
+  const { hostname } = new URL(url);
+  const client = Deno.createHttpClient({
+    dangerouslyIgnoreCertificateErrors: [hostname],
+  });
+  try {
+    return await fetch(url, { ...options, client });
+  } finally {
+    client.close();
+  }
 }
 ```
 
-**Resposta para IP único (sem quebra):**
-```json
-{
-  "success": true,
-  "multiple": false,
-  "lat": -23.5505,
-  "lng": -46.6333,
-  "ip": "201.33.x.x",
-  "interface": "wan1",
-  "country": "Brazil",
-  "country_code": "BR",
-  "region": "São Paulo",
-  "city": "São Paulo"
+**Depois:**
+```ts
+async function fetchWithoutSSLVerification(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 15000
+): Promise<Response> {
+  const { hostname } = new URL(url);
+  // @ts-ignore - Deno-specific API
+  const client = Deno.createHttpClient({
+    // @ts-ignore
+    dangerouslyIgnoreCertificateErrors: true, // true = ignorar TODOS os hosts
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      // @ts-ignore
+      client,
+    });
+  } finally {
+    clearTimeout(timer);
+    client.close();
+  }
 }
 ```
 
----
+A mudança crítica é: `dangerouslyIgnoreCertificateErrors: [hostname]` → `dangerouslyIgnoreCertificateErrors: true`. Passar um array de hostnames pode não funcionar corretamente quando o certificado tem um nome diferente do hostname usado na conexão (SNI mismatch). Usar `true` ignora todos os erros de certificado, que é o comportamento correto para dispositivos com certificados auto-assinados.
 
-### 2 — Frontend `src/pages/environment/AddFirewallPage.tsx` (modificar)
+Também remover o `AbortSignal.timeout()` inline no `fortigateRequest` e deixar o timeout sendo gerenciado pelo `AbortController` dentro de `fetchWithoutSSLVerification`.
 
-#### Novo estado para candidatos
-```tsx
-const [wanCandidates, setWanCandidates] = useState<WanCandidate[]>([]);
-const [showWanDialog, setShowWanDialog] = useState(false);
-```
+### 2 — Verificar `fortigate-compliance` para confirmar o padrão correto
 
-#### Tipo `WanCandidate`
-```tsx
-interface WanCandidate {
-  ip: string;
-  interface: string;
-  lat: number;
-  lng: number;
-  country: string;
-  country_code: string;
-  region: string;
-  city: string;
-}
-```
-
-#### Lógica do botão "Buscar" (atualizada)
-```
-1. Chama resolve-firewall-geo
-2. Se data.multiple === false → aplica diretamente (comportamento atual + exibe país/cidade no toast)
-3. Se data.multiple === true → salva candidates no estado e abre WanSelectorDialog
-```
-
-#### Novo componente `WanSelectorDialog`
-Dialog modal (usando `<Dialog>` do shadcn já disponível) que exibe os candidatos em cards:
-
-```
-┌────────────────────────────────────────────┐
-│ Múltiplos IPs WAN encontrados              │
-│ Selecione o IP que representa a localização│
-│ física deste firewall                       │
-├────────────────────────────────────────────┤
-│ ┌──────────────────────────────────────┐   │
-│ │ 🏳️ BR  wan1                          │   │
-│ │ IP: 201.33.x.x                       │   │
-│ │ São Paulo, SP — Brazil               │   │
-│ │ Coords: -23.5505, -46.6333           │   │
-│ │                  [Selecionar]        │   │
-│ └──────────────────────────────────────┘   │
-│ ┌──────────────────────────────────────┐   │
-│ │ 🏳️ BR  wan2                          │   │
-│ │ IP: 177.10.x.x                       │   │
-│ │ Brasília, DF — Brazil                │   │
-│ │ Coords: -15.7801, -47.9292           │   │
-│ │                  [Selecionar]        │   │
-│ └──────────────────────────────────────┘   │
-└────────────────────────────────────────────┘
-```
-
-Ao clicar **Selecionar** em um card:
-- `geo_latitude` e `geo_longitude` são preenchidos no formulário
-- Dialog fecha
-- Toast de confirmação: `📍 wan1 — 201.33.x.x (São Paulo, SP) selecionado`
-
-A bandeira do país é exibida usando `flag-icons` (já instalado no projeto: `fi fi-{country_code_lowercase}`).
-
----
+Antes de implementar, comparar com a implementação que funciona na `fortigate-compliance` para garantir que estamos replicando o padrão exato.
 
 ## Arquivos modificados
 
 | Arquivo | Operação |
 |---|---|
-| `supabase/functions/resolve-firewall-geo/index.ts` | Modificar — retornar todos os IPs + dados geo enriquecidos |
-| `src/pages/environment/AddFirewallPage.tsx` | Modificar — novo estado, dialog de seleção, handler atualizado |
+| `supabase/functions/resolve-firewall-geo/index.ts` | Corrigir SSL bypass: `dangerouslyIgnoreCertificateErrors: true` + substituir `AbortSignal.timeout` por `AbortController` |
 
-## Nenhuma migração de banco necessária
-Os campos `geo_latitude` e `geo_longitude` já existem na tabela `firewalls`.
+## Resultado esperado
+
+Após o fix:
+1. A Edge Function consegue conectar ao FortiGate com certificado auto-assinado
+2. Retorna os múltiplos IPs WAN públicos com dados geo enriquecidos
+3. O frontend detecta `data.multiple === true` e exibe o `WanSelectorDialog`
+4. O usuário escolhe qual IP/localização usar
+5. Os campos Latitude e Longitude são preenchidos com a escolha do usuário
+
+## Sem mudanças no frontend
+
+O código do frontend (`AddFirewallPage.tsx`) está correto — o dialog existe, o estado existe, a lógica de `data.multiple` está implementada. O problema é 100% na Edge Function não conseguindo passar pelo SSL do FortiGate.
