@@ -1,44 +1,44 @@
 
-# Corrigir breadcrumb e menu da tela de edicao de dominio externo
 
-## Problema
+# Remover submenu e pagina "Dominios Externos"
 
-A pagina de edicao (`/scope-external-domain/domains/:id/edit`) esta com:
-1. **Breadcrumb** apontando para "Dominio Externo > Dominios > Editar" - deveria referenciar "Ambiente"
-2. **Menu lateral** destacando "Dominio Externo > Dominios Externos" - deveria destacar "Ambiente"
+## Justificativa
 
-## Solucao
+A pagina `ExternalDomainListPage` (`/scope-external-domain/domains`) e redundante porque:
+- A listagem de dominios ja esta em **Ambiente** (`/environment`)
+- A edicao ja redireciona para `/environment/external-domain/:id/edit`
+- A exclusao ja funciona via modal em Ambiente
+- A criacao ja usa `/environment/new/external-domain`
 
-### 1. Mover a rota de edicao para debaixo de `/environment`
+## O que sera feito
 
-Alterar a rota de `/scope-external-domain/domains/:id/edit` para `/environment/external-domain/:id/edit` no `App.tsx`. Isso fara o menu lateral destacar "Ambiente" automaticamente, ja que o path comeca com `/environment`.
+### 1. Remover o item "Dominios Externos" do submenu
 
-### 2. Atualizar o breadcrumb
+No `AppLayout.tsx`, remover a linha `{ label: 'Dominios Externos', href: '/scope-external-domain/domains', icon: Globe }` do grupo `scope_external_domain`. O submenu ficara apenas com Compliance, Analyzer e Execucoes.
 
-No `ExternalDomainEditPage.tsx`, alterar o breadcrumb de:
-- "Dominio Externo > Dominios > Editar"
+### 2. Remover a rota e o import do `ExternalDomainListPage`
 
-Para:
-- "Ambiente > Dominios Externos > Editar"
+No `App.tsx`:
+- Remover o lazy import de `ExternalDomainListPage`
+- Remover a rota `/scope-external-domain/domains`
 
-Com o link de "Ambiente" apontando para `/environment`.
+### 3. Redirecionar referencias para `/environment`
 
-### 3. Atualizar todas as referencias a rota antiga
+- **`moduleDashboardConfig.ts`**: alterar `path` de `scope_external_domain` de `/scope-external-domain/domains` para `/environment`
+- **`AddExternalDomainPage.tsx`**: alterar o `navigate('/scope-external-domain/domains')` pos-criacao para `navigate('/environment')`
+- **`ExternalDomainReportsPage.tsx`**: alterar o botao "Verificar Dominio" de `/scope-external-domain/domains` para `/environment`
 
-Atualizar os `navigate()` e `href` nos seguintes arquivos:
-- `src/pages/EnvironmentPage.tsx` - links de navegacao e o botao Editar
-- `src/pages/external-domain/ExternalDomainListPage.tsx` - funcao `openEditPage`
-- `src/pages/external-domain/ExternalDomainEditPage.tsx` - botao voltar e navegacao pos-salvar (apontarao para `/environment`)
+### 4. Manter o arquivo `ExternalDomainListPage.tsx`
 
-### 4. Atualizar botao voltar e navegacao pos-salvar
-
-Os botoes "Cancelar" e a seta de voltar na pagina de edicao devem navegar para `/environment` em vez de `/scope-external-domain/domains`.
+O arquivo nao sera apagado neste momento por seguranca, mas ficara sem uso (dead code). Pode ser removido numa limpeza futura.
 
 ## Detalhes tecnicos
 
 ### Arquivos modificados
 
-- **`src/App.tsx`**: Trocar rota de `/scope-external-domain/domains/:id/edit` para `/environment/external-domain/:id/edit`
-- **`src/pages/external-domain/ExternalDomainEditPage.tsx`**: Atualizar breadcrumb, botao voltar e navegacao pos-salvar para referenciar `/environment`
-- **`src/pages/EnvironmentPage.tsx`**: Atualizar URLs de navegacao do botao Editar para a nova rota
-- **`src/pages/external-domain/ExternalDomainListPage.tsx`**: Atualizar `openEditPage` para a nova rota
+- **`src/components/layout/AppLayout.tsx`**: Remover item do menu
+- **`src/App.tsx`**: Remover import e rota
+- **`src/config/moduleDashboardConfig.ts`**: Alterar path para `/environment`
+- **`src/pages/AddExternalDomainPage.tsx`**: Alterar redirect pos-criacao
+- **`src/pages/external-domain/ExternalDomainReportsPage.tsx`**: Alterar link do botao
+
