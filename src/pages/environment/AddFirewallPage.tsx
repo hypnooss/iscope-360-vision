@@ -64,8 +64,8 @@ const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
 
 const STEPS = [
   { id: 1, label: 'Fabricante' },
-  { id: 2, label: 'Configuração' },
-  { id: 3, label: 'Instruções' },
+  { id: 2, label: 'Instruções' },
+  { id: 3, label: 'Configuração' },
   { id: 4, label: 'Agendamento' },
 ];
 
@@ -515,8 +515,45 @@ export default function AddFirewallPage() {
           </div>
         )}
 
-        {/* ── STEP 2: Configuração ──────────────────────────────────────────── */}
+        {/* ── STEP 2: Instruções ────────────────────────────────────────────── */}
         {step === 2 && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Terminal className="w-5 h-5 text-orange-400" />
+                  Instruções de Configuração — {selectedDeviceType?.vendor}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Siga os passos abaixo para configurar o acesso à API no seu dispositivo.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {selectedDeviceType?.vendor?.toLowerCase().includes('fortigate') || selectedDeviceType?.code?.toLowerCase().includes('fortigate') ? (
+                  <FortiGateInstructions />
+                ) : selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall') || selectedDeviceType?.code?.toLowerCase().includes('sonicwall') ? (
+                  <SonicWallInstructions />
+                ) : (
+                  <GenericInstructions vendorName={selectedDeviceType?.vendor || ''} />
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={handleBack}>
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </Button>
+              <Button onClick={handleNext}>
+                Próximo
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3: Configuração ──────────────────────────────────────────── */}
+        {step === 3 && (
           <div className="space-y-4">
             <Card>
               <CardHeader>
@@ -693,43 +730,6 @@ export default function AddFirewallPage() {
                 Voltar
               </Button>
               <Button onClick={handleNext} disabled={!canAdvanceStep2}>
-                Próximo
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ── STEP 3: Instruções ────────────────────────────────────────────── */}
-        {step === 3 && (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Terminal className="w-5 h-5 text-orange-400" />
-                  Instruções de Configuração — {selectedDeviceType?.vendor}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Siga os passos abaixo para configurar o acesso à API no seu dispositivo.
-                </p>
-              </CardHeader>
-              <CardContent>
-                {selectedDeviceType?.vendor?.toLowerCase().includes('fortigate') || selectedDeviceType?.code?.toLowerCase().includes('fortigate') ? (
-                  <FortiGateInstructions />
-                ) : selectedDeviceType?.vendor?.toLowerCase().includes('sonicwall') || selectedDeviceType?.code?.toLowerCase().includes('sonicwall') ? (
-                  <SonicWallInstructions />
-                ) : (
-                  <GenericInstructions vendorName={selectedDeviceType?.vendor || ''} />
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={handleBack}>
-                <ArrowLeft className="w-4 h-4" />
-                Voltar
-              </Button>
-              <Button onClick={handleNext}>
                 Próximo
                 <ArrowRight className="w-4 h-4" />
               </Button>
