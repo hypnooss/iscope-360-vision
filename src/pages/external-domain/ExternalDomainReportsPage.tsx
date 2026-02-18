@@ -40,6 +40,18 @@ const FREQUENCY_LABELS: Record<string, string> = {
   manual: 'Manual',
 };
 
+const DAYS_OF_WEEK_LABELS: Record<number, string> = {
+  0: 'Domingo', 1: 'Segunda-feira', 2: 'Terça-feira',
+  3: 'Quarta-feira', 4: 'Quinta-feira', 5: 'Sexta-feira', 6: 'Sábado',
+};
+
+const FREQUENCY_BADGE_STYLES: Record<string, string> = {
+  daily:   'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  weekly:  'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  monthly: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  manual:  'bg-muted text-muted-foreground border-border',
+};
+
 interface GroupedDomain {
   domain_id: string;
   domain_name: string;
@@ -48,6 +60,9 @@ interface GroupedDomain {
   client_name: string;
   agent_id: string | null;
   schedule_frequency: string;
+  schedule_hour: number;
+  schedule_day_of_week: number;
+  schedule_day_of_month: number;
   analyses: {
     id: string;
     score: number;
@@ -65,7 +80,7 @@ export default function ExternalDomainReportsPage() {
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState<DomainReport[]>([]);
-  const [domainsMeta, setDomainsMeta] = useState<{id: string;name: string;domain: string;client_id: string;agent_id: string | null;client_name: string;schedule_frequency: string;}[]>([]);
+  const [domainsMeta, setDomainsMeta] = useState<{id: string;name: string;domain: string;client_id: string;agent_id: string | null;client_name: string;schedule_frequency: string;schedule_hour: number;schedule_day_of_week: number;schedule_day_of_month: number;}[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -148,7 +163,7 @@ export default function ExternalDomainReportsPage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('external_domain_schedules')
-          .select('domain_id, frequency')
+          .select('domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
           .in('domain_id', domainIds)
           .eq('is_active', true),
         supabase
@@ -163,7 +178,7 @@ export default function ExternalDomainReportsPage() {
 
       const domainMap = new Map(domainsData.map((d) => [d.id, d]));
       const clientMap = new Map((clientsData || []).map((c) => [c.id, c]));
-      const scheduleMap = new Map((schedulesData || []).map((s) => [s.domain_id, s.frequency]));
+      const scheduleMap = new Map((schedulesData || []).map((s) => [s.domain_id, s]));
 
       // Build reports from history
       const formattedReports: DomainReport[] = (historyData || []).map((h) => {
@@ -193,7 +208,10 @@ export default function ExternalDomainReportsPage() {
         client_id: d.client_id,
         agent_id: d.agent_id,
         client_name: clientMap.get(d.client_id)?.name || 'N/A',
-        schedule_frequency: scheduleMap.get(d.id) || 'manual',
+        schedule_frequency: scheduleMap.get(d.id)?.frequency || 'manual',
+        schedule_hour: scheduleMap.get(d.id)?.scheduled_hour ?? 2,
+        schedule_day_of_week: scheduleMap.get(d.id)?.scheduled_day_of_week ?? 1,
+        schedule_day_of_month: scheduleMap.get(d.id)?.scheduled_day_of_month ?? 1,
       })));
     } catch (error) {
       console.error('Error fetching external domain reports:', error);
@@ -228,6 +246,9 @@ export default function ExternalDomainReportsPage() {
           client_name: d.client_name,
           agent_id: d.agent_id,
           schedule_frequency: d.schedule_frequency,
+          schedule_hour: d.schedule_hour,
+          schedule_day_of_week: d.schedule_day_of_week,
+          schedule_day_of_month: d.schedule_day_of_month,
           analyses: []
         });
       }
@@ -245,6 +266,9 @@ export default function ExternalDomainReportsPage() {
           client_name: report.client_name,
           agent_id: null,
           schedule_frequency: meta?.schedule_frequency || 'manual',
+          schedule_hour: meta?.schedule_hour ?? 2,
+          schedule_day_of_week: meta?.schedule_day_of_week ?? 1,
+          schedule_day_of_month: meta?.schedule_day_of_month ?? 1,
           analyses: []
         });
       }
@@ -679,9 +703,29 @@ export default function ExternalDomainReportsPage() {
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">
-                            {FREQUENCY_LABELS[group.schedule_frequency] || 'Manual'}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant="outline"
+                              className={FREQUENCY_BADGE_STYLES[group.schedule_frequency] || FREQUENCY_BADGE_STYLES.manual}
+                            >
+                              {FREQUENCY_LABELS[group.schedule_frequency] || 'Manual'}
+                            </Badge>
+                            {group.schedule_frequency === 'daily' && (
+                              <span className="text-xs text-muted-foreground">
+                                às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
+                              </span>
+                            )}
+                            {group.schedule_frequency === 'weekly' && (
+                              <span className="text-xs text-muted-foreground">
+                                {DAYS_OF_WEEK_LABELS[group.schedule_day_of_week]} às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
+                              </span>
+                            )}
+                            {group.schedule_frequency === 'monthly' && (
+                              <span className="text-xs text-muted-foreground">
+                                Dia {group.schedule_day_of_month} às {String(group.schedule_hour).padStart(2, '0')}:00 UTC
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {currentAnalysis && currentAnalysis.score != null &&
