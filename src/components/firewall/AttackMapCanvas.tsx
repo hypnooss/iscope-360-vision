@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import worldMapDark from '@/assets/world-map-dark.png';
-import { getCountryCoords } from '@/lib/countryUtils';
-import type { TopCountry } from '@/types/analyzerInsights';
+import { useEffect, useRef } from "react";
+import worldMapDark from "@/assets/world-map-dark.png";
+import { getCountryCoords } from "@/lib/countryUtils";
+import type { TopCountry } from "@/types/analyzerInsights";
 
 interface AttackMapCanvasProps {
   deniedCountries: TopCountry[];
@@ -12,18 +12,18 @@ interface AttackMapCanvasProps {
 
 // Color per traffic type
 const COLORS = {
-  denied: '#ef4444',
-  authFailed: '#f97316',
-  authSuccess: '#22c55e',
-  firewall: '#06b6d4',
+  denied: "#ef4444",
+  authFailed: "#f97316",
+  authSuccess: "#22c55e",
+  firewall: "#06b6d4",
 };
 
 // Offsets calibrados para world-map-dark.png
 // O conteúdo geográfico não começa em pixel 0 — há padding interno na imagem
-const IMG_LEFT   = 0.069;  // medido: conteúdo geográfico começa em ~6.9% da esquerda
-const IMG_RIGHT  = 0.059;  // medido: conteúdo geográfico termina a ~5.9% da direita
-const IMG_TOP    = 0.079;  // medido: Ártico começa em ~7.9% do topo
-const IMG_BOTTOM = 0.079;  // medido: Antártica começa em ~7.9% do rodapé
+const IMG_LEFT = 0.0; // medido: conteúdo geográfico começa em ~6.9% da esquerda
+const IMG_RIGHT = 0.059; // medido: conteúdo geográfico termina a ~5.9% da direita
+const IMG_TOP = 0.079; // medido: Ártico começa em ~7.9% do topo
+const IMG_BOTTOM = 0.079; // medido: Antártica começa em ~7.9% do rodapé
 
 // Equirectangular projection calibrada: lat/lng → canvas pixel
 function project(lat: number, lng: number, w: number, h: number): [number, number] {
@@ -45,7 +45,7 @@ interface Route {
 interface Projectile {
   routeIdx: number;
   progress: number; // 0..1
-  delay: number;    // 0..1 initial offset
+  delay: number; // 0..1 initial offset
 }
 
 export function AttackMapCanvas({
@@ -67,14 +67,14 @@ export function AttackMapCanvas({
     const routes: Route[] = [];
 
     const maxCount = Math.max(
-      ...deniedCountries.map(c => c.count),
-      ...authFailedCountries.map(c => c.count),
-      ...authSuccessCountries.map(c => c.count),
-      1
+      ...deniedCountries.map((c) => c.count),
+      ...authFailedCountries.map((c) => c.count),
+      ...authSuccessCountries.map((c) => c.count),
+      1,
     );
 
     const addRoutes = (countries: TopCountry[], color: string) => {
-      countries.forEach(c => {
+      countries.forEach((c) => {
         const coords = getCountryCoords(c.country);
         if (!coords) return;
         const [lat, lng] = coords;
@@ -133,7 +133,7 @@ export function AttackMapCanvas({
       const dt = lastTimeRef.current ? (timestamp - lastTimeRef.current) / 1000 : 0.016;
       lastTimeRef.current = timestamp;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       const W = canvas.width;
@@ -146,7 +146,7 @@ export function AttackMapCanvas({
       if (imgLoadedRef.current && imgRef.current) {
         ctx.drawImage(imgRef.current, 0, 0, W, H);
       } else {
-        ctx.fillStyle = '#0a0e1a';
+        ctx.fillStyle = "#0a0e1a";
         ctx.fillRect(0, 0, W, H);
       }
 
@@ -159,13 +159,13 @@ export function AttackMapCanvas({
       const [fwX, fwY] = project(fwLat, fwLng, W, H);
 
       // Draw trail lines
-      routes.forEach(route => {
+      routes.forEach((route) => {
         const [ox, oy] = project(route.lat, route.lng, W, H);
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(ox, oy);
         ctx.lineTo(fwX, fwY);
-        ctx.strokeStyle = route.color + '28';
+        ctx.strokeStyle = route.color + "28";
         ctx.lineWidth = 0.8;
         ctx.setLineDash([4, 8]);
         ctx.stroke();
@@ -173,7 +173,7 @@ export function AttackMapCanvas({
       });
 
       // Update & draw projectiles
-      projectiles.forEach(proj => {
+      projectiles.forEach((proj) => {
         const route = routes[proj.routeIdx];
         if (!route) return;
 
@@ -197,18 +197,18 @@ export function AttackMapCanvas({
       });
 
       // Draw country markers
-      routes.forEach(route => {
+      routes.forEach((route) => {
         const [ox, oy] = project(route.lat, route.lng, W, H);
         ctx.save();
         ctx.shadowColor = route.color;
         ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(ox, oy, route.radius, 0, Math.PI * 2);
-        ctx.fillStyle = route.color + '55';
+        ctx.fillStyle = route.color + "55";
         ctx.fill();
         ctx.beginPath();
         ctx.arc(ox, oy, route.radius * 0.5, 0, Math.PI * 2);
-        ctx.fillStyle = route.color + 'cc';
+        ctx.fillStyle = route.color + "cc";
         ctx.fill();
         ctx.restore();
       });
@@ -221,7 +221,7 @@ export function AttackMapCanvas({
       // Outer ring pulse
       ctx.beginPath();
       ctx.arc(fwX, fwY, 10 + pulse * 6, 0, Math.PI * 2);
-      ctx.strokeStyle = COLORS.firewall + '55';
+      ctx.strokeStyle = COLORS.firewall + "55";
       ctx.lineWidth = 1.5;
       ctx.stroke();
       // Inner solid
@@ -234,9 +234,9 @@ export function AttackMapCanvas({
       // Firewall label
       if (firewallLocation?.label) {
         ctx.save();
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
+        ctx.font = "bold 11px sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
         ctx.fillText(firewallLocation.label, fwX, fwY - 16);
         ctx.restore();
       }
@@ -252,10 +252,5 @@ export function AttackMapCanvas({
     };
   }, [firewallLocation]);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ display: 'block', width: '100%', height: '100%', background: '#0a0e1a' }}
-    />
-  );
+  return <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%", background: "#0a0e1a" }} />;
 }
