@@ -58,7 +58,7 @@ export function AttackMapFullscreen({
     .slice(0, 5);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black animate-fade-in flex flex-col">
+    <div className="fixed inset-0 z-50 animate-fade-in flex flex-col" style={{ background: '#0a0e1a' }}>
       {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
         <Button

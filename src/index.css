@@ -12,6 +12,7 @@
 .leaflet-container {
   outline: none !important;
   border: none !important;
+  background: #0a0e1a !important;
 }
 .leaflet-container:focus,
 .leaflet-container:focus-visible {
@@ -19,6 +20,11 @@
   border: none !important;
   box-shadow: none !important;
 }
+/* Ensure tiles area background matches map theme */
+.leaflet-tile-pane {
+  background: #0a0e1a;
+}
+
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
 
