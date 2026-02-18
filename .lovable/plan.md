@@ -1,19 +1,15 @@
 
-# Alinhamento de colunas — todas as tabelas com Frequência
+# Colunas com largura fixa — AssetCategorySection
 
 ## Problema
 
-Cada `AssetCategorySection` é uma tabela HTML independente. Como Domínios Externos e Firewalls têm 7 colunas (com Frequência) e M365 tem 6 (sem Frequência), as colunas ficam visivelmente desalinhadas entre as seções.
+Cada seção (Domínios Externos, Firewalls, Tenants M365) renderiza uma `<Table>` HTML independente. O browser calcula a largura de cada coluna com base no conteúdo daquela tabela específica, causando desalinhamento visual entre as seções.
 
 ## Solução
 
-Remover a lógica condicional `showFrequency` e tornar a coluna **Frequência fixa em todas as tabelas**, com o mesmo conjunto de colunas:
+Usar `<colgroup>` + `<col>` com `table-layout: fixed` para definir larguras fixas em pixels para todas as colunas exceto "Nome", que recebe `width: auto` e se expande para preencher o espaço restante.
 
-```
-Nome | Agent | Workspace | Frequência | Score | Status | Ações
-```
-
-Para Tenants M365, que não possuem agenda configurável, a célula exibe `—` (traço).
+Com `table-layout: fixed`, o browser respeita as larguras declaradas e distribui o espaço restante apenas para a coluna sem largura definida (Nome).
 
 ---
 
@@ -21,64 +17,53 @@ Para Tenants M365, que não possuem agenda configurável, a célula exibe `—` 
 
 ### `src/components/environment/AssetCategorySection.tsx`
 
-**a) Remover a prop `showFrequency`** de `AssetCategorySectionProps`:
-```ts
-// REMOVER:
-showFrequency?: boolean;
-```
+**a) Adicionar `className="table-fixed w-full"` na `<Table>`:**
 
-**b) A coluna Frequência passa a ser sempre renderizada** — sem `{showFrequency && ...}`:
+A classe `table-fixed` ativa o algoritmo `table-layout: fixed` do CSS, que é necessário para que o `<colgroup>` funcione corretamente.
+
+**b) Adicionar `<colgroup>` logo após `<Table>` com as larguras:**
+
 ```tsx
-<TableHead>Frequência</TableHead>
+<Table className="table-fixed w-full">
+  <colgroup>
+    <col />                          {/* Nome — fluido */}
+    <col style={{ width: '140px' }} /> {/* Agent */}
+    <col style={{ width: '180px' }} /> {/* Workspace */}
+    <col style={{ width: '200px' }} /> {/* Frequência (dois badges) */}
+    <col style={{ width: '80px' }} />  {/* Score */}
+    <col style={{ width: '110px' }} /> {/* Status */}
+    <col style={{ width: '100px' }} /> {/* Ações */}
+  </colgroup>
+  <TableHeader>
+    ...
+  </TableHeader>
 ```
 
-**c) Na célula da linha**, exibir os badges quando há schedule, ou `—` quando não há:
+**c) Adicionar `truncate` nas células de texto longo** para evitar overflow no "Nome" e "Workspace":
+
 ```tsx
-<TableCell>
-  {asset.scheduleFrequency ? (
-    <div className="flex flex-row flex-wrap items-center gap-1">
-      <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES[freq]}`}>
-        {FREQUENCY_LABELS[freq] || freq}
-      </Badge>
-      {freq === 'daily' && (
-        <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.daily}`}>
-          {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
-        </Badge>
-      )}
-      {freq === 'weekly' && (
-        <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.weekly}`}>
-          {DAYS_OF_WEEK_SHORT[asset.scheduleDayOfWeek ?? 1]} · {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
-        </Badge>
-      )}
-      {freq === 'monthly' && (
-        <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES.monthly}`}>
-          Dia {asset.scheduleDayOfMonth ?? 1} · {String(asset.scheduleHour ?? 0).padStart(2, '0')}:00
-        </Badge>
-      )}
-    </div>
-  ) : (
-    <span className="text-muted-foreground text-sm">—</span>
-  )}
-</TableCell>
+<TableCell className="font-medium text-foreground max-w-0 truncate">{asset.name}</TableCell>
+<TableCell className="text-muted-foreground truncate">{asset.workspaceName}</TableCell>
 ```
 
-### `src/pages/EnvironmentPage.tsx`
-
-Remover a prop `showFrequency` das chamadas `<AssetCategorySection>` (Domínios Externos e Firewalls), já que não é mais necessária.
+O `max-w-0` na coluna Nome junto com `truncate` garante que textos muito longos não forcem a coluna a crescer além do espaço disponível.
 
 ---
 
-## Resultado visual esperado
+## Larguras propostas
 
-Todas as três tabelas terão as mesmas 7 colunas, alinhadas:
+| Coluna     | Largura   | Justificativa |
+|------------|-----------|---------------|
+| Nome       | fluido    | Cresce com a tela |
+| Agent      | 140 px    | Nomes curtos como `ESTRELA-SAO` |
+| Workspace  | 180 px    | Nomes médios como `BRINQUEDOS ESTRELA` |
+| Frequência | 200 px    | Acomoda dois badges (`Diário` + `20:00`) |
+| Score      | 80 px     | Badge pequeno (`89%`) |
+| Status     | 110 px    | Badge médio (`Analisado`) |
+| Ações      | 100 px    | Ícones ou botão "Abrir" |
 
-| Nome | Agent | Workspace | Frequência | Score | Status | Ações |
-|---|---|---|---|---|---|---|
-| estrela.com.br | ESTRELA-SAO | ... | 🔵 Diário `20:00` | 89% | Analisado | ✏️ 🗑️ |
-| SONICWALL | ESTRELA-SAO | ... | ⬜ Manual | 59% | Analisado | ✏️ 🗑️ |
-| ESTRELA (M365) | ESTRELA-ITP | ... | — | — | Parcial | Abrir |
+---
 
-## Arquivos modificados
+## Arquivo modificado
 
 - `src/components/environment/AssetCategorySection.tsx`
-- `src/pages/EnvironmentPage.tsx`
