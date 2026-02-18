@@ -13,8 +13,8 @@ interface AttackMapProps {
   fullscreen?: boolean;
 }
 
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const TILE_URL = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
+const TILE_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
 // SVG overlay with animated projectiles — synced to Leaflet's projection
 function ProjectileOverlay({
@@ -149,7 +149,7 @@ export function AttackMap({
   const mapStyle: React.CSSProperties = {
     height: fullscreen ? '100%' : '240px',
     width: '100%',
-    background: '#0a0e1a',
+    background: '#121726',
     borderRadius: fullscreen ? '0' : '8px',
   };
 
@@ -161,9 +161,9 @@ export function AttackMap({
         minZoom={1}
         maxZoom={fullscreen ? 8 : 4}
         worldCopyJump={false}
-        zoomControl={false}
+        zoomControl={!!fullscreen}
         dragging={!!fullscreen}
-        scrollWheelZoom={false}
+        scrollWheelZoom={!!fullscreen}
         doubleClickZoom={!!fullscreen}
         attributionControl={false}
         style={mapStyle}
@@ -171,7 +171,7 @@ export function AttackMap({
         <FitWorldBounds />
         <MapResizer fullscreen={fullscreen} />
 
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} noWrap={true} />
 
         {/* Trail lines */}
         {firewallLocation && points.map((p, i) => (
