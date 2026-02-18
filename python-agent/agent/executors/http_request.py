@@ -48,32 +48,32 @@ class HTTPRequestExecutor(BaseExecutor):
         step_id = step.get('id', 'unknown')
         
         method = config.get('method', 'GET').upper()
-        path = config.get('path', '/')
         headers = config.get('headers', {})
         body = config.get('body')
         verify_ssl = config.get('verify_ssl', False)
         timeout = config.get('timeout', 30)
-        
-        # Get base URL
-        base_url = context.get('base_url', '').rstrip('/')
-        if not base_url:
-            self.logger.error(f"Step {step_id}: No base_url in context")
-            return {
-                'status_code': 0,
-                'data': None,
-                'error': 'No base_url provided in context'
-            }
-        
-        # Interpolate variables in path
-        path = self._interpolate(path, context)
-        
+
         # Interpolate variables in headers
         interpolated_headers = {}
         for key, value in headers.items():
             interpolated_headers[key] = self._interpolate(str(value), context)
-        
-        # Build full URL
-        url = f"{base_url}{path}"
+
+        # Build URL: prioritize absolute 'url' in config over base_url + path
+        absolute_url = config.get('url')
+        if absolute_url:
+            url = self._interpolate(absolute_url, context)
+        else:
+            base_url = context.get('base_url', '').rstrip('/')
+            if not base_url:
+                self.logger.error(f"Step {step_id}: No base_url in context")
+                return {
+                    'status_code': 0,
+                    'data': None,
+                    'error': 'No base_url provided in context'
+                }
+            path = config.get('path', '/')
+            path = self._interpolate(path, context)
+            url = f"{base_url}{path}"
         
         self.logger.debug(f"Step {step_id}: {method} {url}")
         
