@@ -452,17 +452,6 @@ export default function AddFirewallPage() {
           ]}
         />
 
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Adicionar Firewall</h1>
-            <p className="text-sm text-muted-foreground">Configure um novo dispositivo de segurança</p>
-          </div>
-        </div>
-
         {/* Step Indicator */}
         <StepIndicator current={step} />
 
@@ -511,7 +500,11 @@ export default function AddFirewallPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={handleBack}>
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </Button>
               <Button onClick={handleNext} disabled={!canAdvanceStep1}>
                 Próximo
                 <ArrowRight className="w-4 h-4" />
