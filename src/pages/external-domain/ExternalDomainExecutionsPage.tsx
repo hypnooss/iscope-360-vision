@@ -131,7 +131,7 @@ const typeConfig: Record<string, {label: string;color: string;icon: React.ReactN
     icon: <Terminal className="w-3 h-3" />
   },
   attack_surface: {
-    label: 'Attack Surface',
+    label: 'Surface Scanner',
     color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
     icon: <Radar className="w-3 h-3" />
   }
@@ -653,7 +653,7 @@ export default function ExternalDomainExecutionsPage() {
                   return (
                     <TableRow key={`${item.source}-${item.id}`}>
                         <TableCell className="font-medium">
-                          {getDomainLabel(item.domainId)}
+                          {item.type === 'attack_surface' ? '-' : getDomainLabel(item.domainId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {item.type === 'api' ? 'Edge Function' : item.agentId ? getAgentName(item.agentId) : '-'}
