@@ -1,116 +1,143 @@
 
-# Botão "Buscar" — Geolocalização via API do FortiGate
+# Seleção de IP WAN quando há múltiplos IPs Públicos
 
-## Contexto e Análise
+## Problema Atual
 
-### Fluxo atual do botão "Buscar"
-O botão chama `resolveGeoFromUrl(formData.fortigate_url)` (em `src/lib/geolocation.ts`), que:
-1. Tenta resolver o hostname da URL via DNS público (dns.google)
-2. Consulta o IP resultante na ipapi.co
+A Edge Function `resolve-firewall-geo` para imediatamente no **primeiro** IP público encontrado (`wanInterfaces[0]`) e o frontend aplica diretamente no formulário, sem dar opção ao usuário quando há mais de um IP WAN público.
 
-**Problema**: o FortiGate normalmente tem IP privado (`192.168.x.x`), então a consulta DNS retorna um IP privado que não pode ser geolocalizados — resultado: "Não foi possível determinar a localização".
+## Solução
 
-### Fluxo desejado
-1. Chamar a API REST do FortiGate (`/api/v2/cmdb/system/interface`) com URL + API Key do formulário
-2. Filtrar interfaces com `role = wan` (a lógica já existe em `fortigate-compliance`)
-3. Extrair IPs públicos dessas interfaces
-4. Consultar geolocalização pelo IP público
-5. Preencher Latitude/Longitude automaticamente
+### 1 — Edge Function `resolve-firewall-geo` (modificar)
 
-### Viabilidade técnica
-A Edge Function `fortigate-compliance` já demonstra que é possível chamar a API do FortiGate diretamente da nuvem Supabase usando `fetchWithoutSSLVerification` (ignora certificados auto-assinados). Isso **só funciona se o FortiGate for acessível externamente** — o que é o caso quando o campo "URL do FortiGate" contém um IP/hostname público.
+**Mudanças na função `getPublicWanIP`:**
+- Renomear para `getPublicWanIPs` (plural) — retornar **todos** os pares `{ ip, interfaceName }`
 
-Para firewalls em rede interna (IP privado), o fallback atual (DNS da URL) continua sendo a melhor alternativa disponível sem o firewall já cadastrado.
+**Mudanças na função `geolocateIP`:**
+- Enriquecer o retorno com dados completos da `ipapi.co`: `latitude`, `longitude`, `country_name`, `country_code`, `region`, `city`
 
-## Solução: Nova Edge Function `resolve-firewall-geo`
+**Novo fluxo do handler principal:**
+- Geolocalizar **todos** os IPs em paralelo (`Promise.all`)
+- Se 1 IP → retornar diretamente (comportamento atual, sem quebra de UX)
+- Se 2+ IPs → retornar `{ success: true, multiple: true, candidates: [...] }` com a lista enriquecida
 
-Criar uma Edge Function leve e dedicada que:
-1. Recebe `{ url, api_key }` via POST
-2. Chama `/api/v2/cmdb/system/interface` no FortiGate
-3. Filtra interfaces WAN (mesma lógica do `fortigate-compliance`)
-4. Extrai o primeiro IP público das interfaces WAN
-5. Consulta ipapi.co para obter latitude/longitude
-6. Retorna `{ lat, lng, ip, interface_name }` ou erro estruturado
-
-### Lógica de classificação WAN (reaproveitada)
-A Edge Function reutilizará a mesma hierarquia de prioridade já validada:
-1. Interface `virtual-wan-link` → WAN
-2. Membro SD-WAN → WAN
-3. Campo `role` da API = "wan" → WAN
-4. Nome com padrão `/^(wan|wan\d+|internet|isp|...)/i` → WAN
-
-### Extração de IPs públicos
-Das interfaces WAN, filtrar IPs que **não** são privados:
-- Não `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`, `127.x.x.x`
-
-## Mudanças no Frontend (`AddFirewallPage.tsx`)
-
-### Botão "Buscar" — nova lógica
-Substituir a chamada a `resolveGeoFromUrl` por uma chamada à nova Edge Function:
-
-```
-1. Validar que url e api_key estão preenchidos
-2. Chamar edge function resolve-firewall-geo com { url, api_key }
-3. Se retornar geo: preencher campos + toast de sucesso com IP encontrado
-4. Se retornar erro de conexão (FortiGate inacessível):
-   - Fallback para resolveGeoFromUrl(url) — comportamento atual
-   - Toast informando que está usando geolocalização da URL
-5. Se fallback também falhar: toast de erro explicativo
+**Novo contrato de resposta (múltiplos IPs):**
+```json
+{
+  "success": true,
+  "multiple": true,
+  "candidates": [
+    {
+      "ip": "201.33.x.x",
+      "interface": "wan1",
+      "lat": -23.5505,
+      "lng": -46.6333,
+      "country": "Brazil",
+      "country_code": "BR",
+      "region": "São Paulo",
+      "city": "São Paulo"
+    },
+    {
+      "ip": "177.10.x.x",
+      "interface": "wan2",
+      "lat": -15.7801,
+      "lng": -47.9292,
+      "country": "Brazil",
+      "country_code": "BR",
+      "region": "Distrito Federal",
+      "city": "Brasília"
+    }
+  ]
+}
 ```
 
-### Habilitar o botão "Buscar"
-Atualmente o botão só requer `fortigate_url`. Com a nova lógica, o botão deve também requerer `api_key` (já que a nova abordagem principal precisa dos dois). O botão permanece habilitado apenas com `url` para o fallback continuar funcionando — mas a condição primária será `url && api_key`.
-
-### Feedback visual ao usuário
-- Enquanto carrega: spinner (já existe)
-- Sucesso via FortiGate API: `"📍 IP WAN encontrado: 201.x.x.x → -23.5505, -46.6333"`
-- Sucesso via fallback DNS: `"📍 Localização estimada pela URL (IP interno detectado)"`
-- Falha: mensagem explicativa
-
-## Arquivos a criar/modificar
-
-### Novo arquivo: `supabase/functions/resolve-firewall-geo/index.ts`
-Edge Function leve (~150 linhas) com a lógica descrita acima.
-
-### Modificar: `src/pages/environment/AddFirewallPage.tsx`
-- Atualizar o handler `onClick` do botão "Buscar" (linhas 764–777)
-- Manter `resolveGeoFromUrl` como fallback
-- Atualizar `disabled` do botão para `geoLoading || !formData.fortigate_url` (sem mudança — o fallback ainda funciona só com URL)
-
-## Estrutura da Edge Function
-
-```text
-POST /resolve-firewall-geo
-Body: { url: string, api_key: string }
-
-Sucesso:
-{ success: true, lat: number, lng: number, ip: string, interface: string }
-
-Erro de conectividade (FortiGate inacessível):
-{ success: false, error: "connection_failed", message: "..." }
-
-Erro de autenticação:
-{ success: false, error: "auth_failed", message: "..." }
-
-Nenhum IP público encontrado:
-{ success: false, error: "no_public_ip", message: "..." }
+**Resposta para IP único (sem quebra):**
+```json
+{
+  "success": true,
+  "multiple": false,
+  "lat": -23.5505,
+  "lng": -46.6333,
+  "ip": "201.33.x.x",
+  "interface": "wan1",
+  "country": "Brazil",
+  "country_code": "BR",
+  "region": "São Paulo",
+  "city": "São Paulo"
+}
 ```
 
-## Fluxo completo no formulário
+---
 
-```text
-Usuário preenche URL + API Key
-          ↓
-Clica "Buscar"
-          ↓
-Edge Function chama FortiGate API
-  ├── Sucesso → extrai IPs WAN públicos → geolocaliza → preenche campos
-  └── Falha (inacessível/auth) → fallback DNS da URL
-                  ├── Sucesso → preenche campos (avisa que é estimativa)
-                  └── Falha → toast de erro explicativo
+### 2 — Frontend `src/pages/environment/AddFirewallPage.tsx` (modificar)
+
+#### Novo estado para candidatos
+```tsx
+const [wanCandidates, setWanCandidates] = useState<WanCandidate[]>([]);
+const [showWanDialog, setShowWanDialog] = useState(false);
 ```
 
-## Arquivos
+#### Tipo `WanCandidate`
+```tsx
+interface WanCandidate {
+  ip: string;
+  interface: string;
+  lat: number;
+  lng: number;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+}
+```
 
-- `supabase/functions/resolve-firewall-geo/index.ts` — criar (Edge Function nova)
-- `src/pages/environment/AddFirewallPage.tsx` — modificar handler do botão "Buscar" (linhas 764–777)
+#### Lógica do botão "Buscar" (atualizada)
+```
+1. Chama resolve-firewall-geo
+2. Se data.multiple === false → aplica diretamente (comportamento atual + exibe país/cidade no toast)
+3. Se data.multiple === true → salva candidates no estado e abre WanSelectorDialog
+```
+
+#### Novo componente `WanSelectorDialog`
+Dialog modal (usando `<Dialog>` do shadcn já disponível) que exibe os candidatos em cards:
+
+```
+┌────────────────────────────────────────────┐
+│ Múltiplos IPs WAN encontrados              │
+│ Selecione o IP que representa a localização│
+│ física deste firewall                       │
+├────────────────────────────────────────────┤
+│ ┌──────────────────────────────────────┐   │
+│ │ 🏳️ BR  wan1                          │   │
+│ │ IP: 201.33.x.x                       │   │
+│ │ São Paulo, SP — Brazil               │   │
+│ │ Coords: -23.5505, -46.6333           │   │
+│ │                  [Selecionar]        │   │
+│ └──────────────────────────────────────┘   │
+│ ┌──────────────────────────────────────┐   │
+│ │ 🏳️ BR  wan2                          │   │
+│ │ IP: 177.10.x.x                       │   │
+│ │ Brasília, DF — Brazil                │   │
+│ │ Coords: -15.7801, -47.9292           │   │
+│ │                  [Selecionar]        │   │
+│ └──────────────────────────────────────┘   │
+└────────────────────────────────────────────┘
+```
+
+Ao clicar **Selecionar** em um card:
+- `geo_latitude` e `geo_longitude` são preenchidos no formulário
+- Dialog fecha
+- Toast de confirmação: `📍 wan1 — 201.33.x.x (São Paulo, SP) selecionado`
+
+A bandeira do país é exibida usando `flag-icons` (já instalado no projeto: `fi fi-{country_code_lowercase}`).
+
+---
+
+## Arquivos modificados
+
+| Arquivo | Operação |
+|---|---|
+| `supabase/functions/resolve-firewall-geo/index.ts` | Modificar — retornar todos os IPs + dados geo enriquecidos |
+| `src/pages/environment/AddFirewallPage.tsx` | Modificar — novo estado, dialog de seleção, handler atualizado |
+
+## Nenhuma migração de banco necessária
+Os campos `geo_latitude` e `geo_longitude` já existem na tabela `firewalls`.
