@@ -48,7 +48,14 @@ class DNSQueryExecutor(BaseExecutor):
 
         try:
             if query_type == 'NS':
-                answers = resolver.resolve(domain, 'NS')
+                try:
+                    answers = resolver.resolve(domain, 'NS')
+                except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+                    return {
+                        'status_code': 0,
+                        'data': {'query_type': 'NS', 'domain': domain, 'records': [], 'not_found': True},
+                        'error': None,
+                    }
                 records: List[Dict[str, Any]] = []
 
                 for r in answers:
@@ -82,7 +89,14 @@ class DNSQueryExecutor(BaseExecutor):
                 }
 
             if query_type == 'MX':
-                answers = resolver.resolve(domain, 'MX')
+                try:
+                    answers = resolver.resolve(domain, 'MX')
+                except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+                    return {
+                        'status_code': 0,
+                        'data': {'query_type': 'MX', 'domain': domain, 'records': [], 'not_found': True},
+                        'error': None,
+                    }
                 records: List[Dict[str, Any]] = []
 
                 for r in answers:
@@ -118,7 +132,14 @@ class DNSQueryExecutor(BaseExecutor):
                 }
 
             if query_type == 'SOA':
-                answers = resolver.resolve(domain, 'SOA')
+                try:
+                    answers = resolver.resolve(domain, 'SOA')
+                except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+                    return {
+                        'status_code': 0,
+                        'data': {'query_type': 'SOA', 'domain': domain, 'not_found': True},
+                        'error': None,
+                    }
                 r = answers[0]
                 rname = str(r.rname).rstrip('.')
                 contact_email = self._soa_rname_to_email(rname)
@@ -263,7 +284,11 @@ class DNSQueryExecutor(BaseExecutor):
             }
 
     def _get_txt_records(self, resolver, name: str) -> List[str]:
-        answers = resolver.resolve(name, 'TXT')
+        try:
+            answers = resolver.resolve(name, 'TXT')
+        except Exception:
+            # NoAnswer, NXDOMAIN, timeout — record does not exist, return empty list
+            return []
         out: List[str] = []
         for r in answers:
             # dnspython returns bytes chunks; join them
