@@ -60,7 +60,7 @@ export function AttackMapFullscreen({
   return (
     <div className="fixed inset-0 z-50 bg-black animate-fade-in flex flex-col">
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 py-4">
+      <div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
         <Button
           variant="ghost"
           onClick={onClose}
@@ -82,7 +82,7 @@ export function AttackMapFullscreen({
       </div>
 
       {/* Map fills the screen */}
-      <div className="flex-1 w-full h-full">
+      <div className="flex-1 w-full min-h-0">
         <AttackMap
           deniedCountries={deniedCountries}
           authFailedCountries={authFailedCountries}
@@ -93,7 +93,7 @@ export function AttackMapFullscreen({
       </div>
 
       {/* Right panel - Top attack origins */}
-      <div className="absolute top-20 right-4 z-20 w-56 bg-black/70 backdrop-blur-md rounded-lg border border-white/10 p-4">
+      <div className="absolute top-20 right-4 z-[1000] w-56 bg-black/70 backdrop-blur-md rounded-lg border border-white/10 p-4">
         <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-3">
           Top Origens de Ataque
         </h3>
@@ -131,7 +131,7 @@ export function AttackMapFullscreen({
       </div>
 
       {/* Bottom stats bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
+      <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
         <div className="flex items-center justify-center gap-8 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full bg-red-500 inline-block shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
