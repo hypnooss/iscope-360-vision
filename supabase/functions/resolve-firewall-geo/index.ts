@@ -51,7 +51,7 @@ async function fortigateRequest(baseUrl: string, apiKey: string, endpoint: strin
   return await response.json();
 }
 
-async function getPublicWanIP(baseUrl: string, apiKey: string): Promise<{ ip: string; interfaceName: string } | null> {
+async function getPublicWanIPs(baseUrl: string, apiKey: string): Promise<{ ip: string; interfaceName: string }[]> {
   // WAN name patterns (same as fortigate-compliance)
   const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
 
@@ -94,13 +94,19 @@ async function getPublicWanIP(baseUrl: string, apiKey: string): Promise<{ ip: st
     }
   }
 
-  if (wanInterfaces.length === 0) return null;
-
-  // Return the first valid public WAN IP
-  return { ip: wanInterfaces[0].ip, interfaceName: wanInterfaces[0].name };
+  return wanInterfaces.map(w => ({ ip: w.ip, interfaceName: w.name }));
 }
 
-async function geolocateIP(ip: string): Promise<{ lat: number; lng: number } | null> {
+interface GeoData {
+  lat: number;
+  lng: number;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+}
+
+async function geolocateIP(ip: string): Promise<GeoData | null> {
   try {
     const res = await fetch(`https://ipapi.co/${ip}/json/`, {
       signal: AbortSignal.timeout(8000),
@@ -108,7 +114,14 @@ async function geolocateIP(ip: string): Promise<{ lat: number; lng: number } | n
     if (!res.ok) return null;
     const json = await res.json();
     if (json.error || !json.latitude || !json.longitude) return null;
-    return { lat: json.latitude as number, lng: json.longitude as number };
+    return {
+      lat: json.latitude as number,
+      lng: json.longitude as number,
+      country: json.country_name || "",
+      country_code: (json.country_code || "").toLowerCase(),
+      region: json.region || "",
+      city: json.city || "",
+    };
   } catch {
     return null;
   }
@@ -132,10 +145,10 @@ serve(async (req) => {
     // Normalize URL (remove trailing slash)
     const baseUrl = url.replace(/\/$/, "");
 
-    let wanResult: { ip: string; interfaceName: string } | null = null;
+    let wanIPs: { ip: string; interfaceName: string }[] = [];
 
     try {
-      wanResult = await getPublicWanIP(baseUrl, api_key);
+      wanIPs = await getPublicWanIPs(baseUrl, api_key);
     } catch (err: any) {
       console.error("resolve-firewall-geo: FortiGate API error:", err.message);
 
@@ -151,7 +164,7 @@ serve(async (req) => {
       );
     }
 
-    if (!wanResult) {
+    if (wanIPs.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
@@ -162,28 +175,62 @@ serve(async (req) => {
       );
     }
 
-    const geo = await geolocateIP(wanResult.ip);
+    // Geolocate all IPs in parallel
+    const geoResults = await Promise.all(
+      wanIPs.map(async (w) => {
+        const geo = await geolocateIP(w.ip);
+        return geo ? { ip: w.ip, interface: w.interfaceName, ...geo } : null;
+      })
+    );
 
-    if (!geo) {
+    const candidates = geoResults.filter(Boolean) as Array<{
+      ip: string;
+      interface: string;
+      lat: number;
+      lng: number;
+      country: string;
+      country_code: string;
+      region: string;
+      city: string;
+    }>;
+
+    if (candidates.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
           error: "geo_failed",
-          message: `IP WAN ${wanResult.ip} encontrado mas não foi possível geolocalizar`,
-          ip: wanResult.ip,
-          interface: wanResult.interfaceName,
+          message: `IPs WAN encontrados (${wanIPs.map(w => w.ip).join(", ")}) mas não foi possível geolocalizar nenhum`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Single IP: return directly (no dialog needed)
+    if (candidates.length === 1) {
+      const c = candidates[0];
+      return new Response(
+        JSON.stringify({
+          success: true,
+          multiple: false,
+          lat: c.lat,
+          lng: c.lng,
+          ip: c.ip,
+          interface: c.interface,
+          country: c.country,
+          country_code: c.country_code,
+          region: c.region,
+          city: c.city,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Multiple IPs: return all candidates for user selection
     return new Response(
       JSON.stringify({
         success: true,
-        lat: geo.lat,
-        lng: geo.lng,
-        ip: wanResult.ip,
-        interface: wanResult.interfaceName,
+        multiple: true,
+        candidates,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
