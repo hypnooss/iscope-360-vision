@@ -17,7 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { getDeviceUrlError } from '@/lib/urlValidation';
-import { resolveGeoFromUrl } from '@/lib/geolocation';
+// geolocation lib removed — geolocation now done via Agent + ipapi.co in browser
 
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -784,50 +784,164 @@ export default function AddFirewallPage() {
                       size="sm"
                       onClick={async () => {
                         if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
+                        if (!formData.agent_id) { toast.error('Selecione um Agent primeiro. A consulta ao FortiGate deve passar pelo Agent da rede do cliente.'); return; }
+                        const credKey = usesSessionAuth ? formData.auth_username : formData.api_key;
+                        if (!credKey) { toast.error(usesSessionAuth ? 'Preencha o usuário primeiro' : 'Preencha a API Key primeiro'); return; }
+
                         setGeoLoading(true);
                         try {
-                          // Primary: query FortiGate API via edge function (requires api_key)
-                          if (formData.api_key) {
-                            const { data, error } = await supabase.functions.invoke('resolve-firewall-geo', {
-                              body: { url: formData.fortigate_url, api_key: formData.api_key },
-                            });
+                          // Step 1: Create geo_query task via Edge Function (task will be picked up by the Agent)
+                          const { data: taskData, error: taskError } = await supabase.functions.invoke('resolve-firewall-geo', {
+                            body: {
+                              agent_id: formData.agent_id,
+                              url: formData.fortigate_url,
+                              api_key: usesSessionAuth ? formData.auth_username : formData.api_key,
+                            },
+                          });
 
-                            if (!error && data?.success) {
-                              if (data.multiple) {
-                                // Multiple IPs → show selection dialog
-                                setWanCandidates(data.candidates);
-                                setShowWanDialog(true);
-                                return;
+                          if (taskError || !taskData?.success) {
+                            toast.error(`Erro ao criar task: ${taskData?.message || taskError?.message || 'Erro desconhecido'}`);
+                            return;
+                          }
+
+                          const taskId = taskData.task_id;
+                          toast.info('⏳ Aguardando resposta do Agent...');
+
+                          // Step 2: Poll for task completion (every 2s, up to 60s)
+                          const POLL_INTERVAL = 2000;
+                          const MAX_POLLS = 30;
+                          let polls = 0;
+
+                          const pollTask = async (): Promise<void> => {
+                            polls++;
+                            if (polls > MAX_POLLS) {
+                              toast.error('Timeout: O Agent não respondeu em 60 segundos. Verifique se o Agent está online.');
+                              setGeoLoading(false);
+                              return;
+                            }
+
+                            const { data: taskResult } = await supabase
+                              .from('agent_tasks')
+                              .select('status, result, step_results, error_message')
+                              .eq('id', taskId)
+                              .single();
+
+                            if (!taskResult) {
+                              setTimeout(pollTask, POLL_INTERVAL);
+                              return;
+                            }
+
+                            if (taskResult.status === 'pending' || taskResult.status === 'running') {
+                              setTimeout(pollTask, POLL_INTERVAL);
+                              return;
+                            }
+
+                            // Task finished
+                            setGeoLoading(false);
+
+                            if (taskResult.status === 'failed' || taskResult.status === 'timeout') {
+                              toast.error(`Agent reportou erro: ${taskResult.error_message || 'Falha na consulta ao FortiGate'}`);
+                              return;
+                            }
+
+                            if (taskResult.status !== 'completed') {
+                              toast.error(`Status inesperado da task: ${taskResult.status}`);
+                              return;
+                            }
+
+                            // Step 3: Extract WAN IPs from step_results
+                            const stepResults = taskResult.step_results as Record<string, any> | null;
+                            const interfacesData = stepResults?.get_interfaces || stepResults?.['get_interfaces'];
+                            const sdwanData = stepResults?.get_sdwan || stepResults?.['get_sdwan'];
+
+                            if (!interfacesData) {
+                              toast.error('Agent não retornou dados de interfaces. Verifique as credenciais e a URL.');
+                              return;
+                            }
+
+                            // Filter WAN interfaces (same logic as old edge function)
+                            const isPrivateIP = (ip: string) =>
+                              /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
+                            const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
+                            const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
+
+                            const interfaces: any[] = interfacesData?.results || interfacesData?.data?.results || [];
+                            const sdwan = sdwanData?.results || sdwanData?.data?.results || {};
+                            const sdwanMembers = new Set<string>(
+                              (sdwan.members || []).map((m: any) => m.interface).filter(Boolean)
+                            );
+
+                            const wanIPs: { ip: string; interfaceName: string }[] = [];
+
+                            for (const iface of interfaces) {
+                              let isWan = false;
+                              if (iface.name === 'virtual-wan-link') isWan = true;
+                              else if (sdwanMembers.has(iface.name)) isWan = true;
+                              else if (iface.role?.toLowerCase() === 'wan') isWan = true;
+                              else if (wanNamePatterns.test(iface.name)) isWan = true;
+                              if (!isWan) continue;
+
+                              const ipField: string = iface.ip || '';
+                              const ip = ipField.split(' ')[0];
+                              if (looksLikeIP(ip) && !isPrivateIP(ip) && ip !== '0.0.0.0') {
+                                wanIPs.push({ ip, interfaceName: iface.name });
                               }
-                              // Single IP → apply directly
-                              setFormData(prev => ({ ...prev, geo_latitude: String(data.lat), geo_longitude: String(data.lng) }));
-                              const loc = [data.city, data.region, data.country].filter(Boolean).join(', ');
-                              toast.success(`📍 ${data.interface} — ${data.ip}${loc ? ` (${loc})` : ''}`);
+                            }
+
+                            if (wanIPs.length === 0) {
+                              toast.warning('Nenhum IP público encontrado nas interfaces WAN do FortiGate.');
                               return;
                             }
 
-                            // FortiGate unreachable or auth failed → fallback
-                            if (data?.error === 'connection_failed' || data?.error === 'auth_failed') {
-                              console.warn('resolve-firewall-geo fallback:', data?.message);
-                              // fall through to DNS fallback below
-                            } else if (data?.error === 'no_public_ip' || data?.error === 'geo_failed') {
-                              toast.warning(`⚠️ ${data.message}${data.ip ? ` (IP: ${data.ip})` : ''}`);
+                            // Step 4: Geolocate IPs via ipapi.co from the browser
+                            const geoResults = await Promise.all(
+                              wanIPs.map(async (w) => {
+                                try {
+                                  const res = await fetch(`https://ipapi.co/${w.ip}/json/`);
+                                  if (!res.ok) return null;
+                                  const json = await res.json();
+                                  if (json.error || !json.latitude || !json.longitude) return null;
+                                  return {
+                                    ip: w.ip,
+                                    interface: w.interfaceName,
+                                    lat: json.latitude as number,
+                                    lng: json.longitude as number,
+                                    country: json.country_name || '',
+                                    country_code: (json.country_code || '').toLowerCase(),
+                                    region: json.region || '',
+                                    city: json.city || '',
+                                  };
+                                } catch {
+                                  return null;
+                                }
+                              })
+                            );
+
+                            const candidates = geoResults.filter(Boolean) as WanCandidate[];
+
+                            if (candidates.length === 0) {
+                              toast.warning(`IPs WAN encontrados (${wanIPs.map(w => w.ip).join(', ')}) mas não foi possível geolocalizar nenhum.`);
                               return;
                             }
-                          }
 
-                          // Fallback: DNS-based geolocation from URL
-                          const geo = await resolveGeoFromUrl(formData.fortigate_url);
-                          if (geo) {
-                            setFormData(prev => ({ ...prev, geo_latitude: String(geo.lat), geo_longitude: String(geo.lng) }));
-                            toast.success('📍 Localização estimada pela URL (IP interno detectado)');
-                          } else {
-                            toast.error('Não foi possível determinar a localização. Verifique a URL e a API Key.');
-                          }
-                        } catch { toast.error('Erro ao buscar localização'); }
-                        finally { setGeoLoading(false); }
+                            if (candidates.length === 1) {
+                              const c = candidates[0];
+                              setFormData(prev => ({ ...prev, geo_latitude: String(c.lat), geo_longitude: String(c.lng) }));
+                              const loc = [c.city, c.region, c.country].filter(Boolean).join(', ');
+                              toast.success(`📍 ${c.interface} — ${c.ip}${loc ? ` (${loc})` : ''}`);
+                            } else {
+                              setWanCandidates(candidates);
+                              setShowWanDialog(true);
+                            }
+                          };
+
+                          setTimeout(pollTask, POLL_INTERVAL);
+                        } catch (err: any) {
+                          toast.error('Erro ao buscar localização: ' + err.message);
+                          setGeoLoading(false);
+                        }
                       }}
-                      disabled={geoLoading || !formData.fortigate_url}
+                      disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
                     >
                       {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
                       Buscar

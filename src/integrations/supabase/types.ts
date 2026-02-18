@@ -2363,6 +2363,7 @@ export type Database = {
         | "m365_powershell"
         | "firewall_analyzer"
         | "fortigate_analyzer"
+        | "geo_query"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       blueprint_executor_type: "agent" | "edge_function" | "hybrid"
       device_category:
@@ -2540,6 +2541,7 @@ export const Constants = {
         "m365_powershell",
         "firewall_analyzer",
         "fortigate_analyzer",
+        "geo_query",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       blueprint_executor_type: ["agent", "edge_function", "hybrid"],
