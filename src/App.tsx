@@ -143,6 +143,7 @@ const App = () => (
 
                   {/* Environment */}
                   <Route path="/environment" element={<EnvironmentPage />} />
+                  <Route path="/environment/firewall/:id/edit" element={<FirewallEditPage />} />
                   <Route path="/environment/new" element={<AddAssetPage />} />
                   <Route path="/environment/new/external-domain" element={<AddExternalDomainPage />} />
                   <Route path="/environment/new/firewall" element={<AddFirewallPage />} />

@@ -197,7 +197,7 @@ export default function FirewallEditPage() {
 
       if (firewallRes.error || !firewallRes.data) {
         toast.error('Firewall não encontrado');
-        navigate('/scope-firewall/reports');
+        navigate('/environment');
         return;
       }
 
@@ -328,7 +328,7 @@ export default function FirewallEditPage() {
       }
 
       toast.success('Firewall atualizado com sucesso!');
-      navigate('/scope-firewall/reports');
+      navigate('/environment');
     } catch (error: any) {
       toast.error('Erro ao salvar: ' + error.message);
     } finally {
@@ -363,8 +363,8 @@ export default function FirewallEditPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-          { label: 'Compliance', href: '/scope-firewall/reports' },
-          { label: 'Editar' },
+          { label: 'Ambiente', href: '/environment' },
+          { label: 'Editar Firewall' },
         ]} />
 
         <div className="flex items-center gap-4">
