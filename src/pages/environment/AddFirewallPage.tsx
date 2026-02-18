@@ -849,10 +849,26 @@ export default function AddFirewallPage() {
                               return;
                             }
 
-                            // Step 3: Extract WAN IPs from step_results
-                            const stepResults = taskResult.step_results as Record<string, any> | null;
-                            const interfacesData = stepResults?.get_interfaces || stepResults?.['get_interfaces'];
-                            const sdwanData = stepResults?.get_sdwan || stepResults?.['get_sdwan'];
+                            // Step 3: Fetch step results from task_step_results table (not from agent_tasks.step_results)
+                            const { data: stepRows } = await supabase
+                              .from('task_step_results')
+                              .select('step_id, status, data')
+                              .eq('task_id', taskId);
+
+                            const stepResultsMap = Object.fromEntries(
+                              (stepRows || []).map((r: any) => [r.step_id, r.data])
+                            );
+                            const interfacesData = stepResultsMap['get_interfaces'];
+                            const sdwanData = stepResultsMap['get_sdwan'];
+
+                            // Detect HTML response (login page = invalid API key / restricted access)
+                            const isHtmlResponse = (data: any) =>
+                              data?.raw_text && typeof data.raw_text === 'string' && data.raw_text.trim().startsWith('<!DOCTYPE');
+
+                            if (isHtmlResponse(interfacesData)) {
+                              toast.error('O FortiGate retornou página de login. Verifique a API Key e se o token tem permissão de acesso via REST API.');
+                              return;
+                            }
 
                             if (!interfacesData) {
                               toast.error('Agent não retornou dados de interfaces. Verifique as credenciais e a URL.');
