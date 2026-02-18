@@ -1,69 +1,116 @@
 
-# Reposicionar Blocos Informativos na Tela de Instruções FortiGate
+# Botão "Buscar" — Geolocalização via API do FortiGate
 
-## Objetivo
+## Contexto e Análise
 
-Mover dois blocos de aviso/informação existentes para posições mais adequadas pedagogicamente, sem alterar o conteúdo de nenhum deles.
+### Fluxo atual do botão "Buscar"
+O botão chama `resolveGeoFromUrl(formData.fortigate_url)` (em `src/lib/geolocation.ts`), que:
+1. Tenta resolver o hostname da URL via DNS público (dns.google)
+2. Consulta o IP resultante na ipapi.co
 
-## Estrutura atual
+**Problema**: o FortiGate normalmente tem IP privado (`192.168.x.x`), então a consulta DNS retorna um IP privado que não pode ser geolocalizados — resultado: "Não foi possível determinar a localização".
+
+### Fluxo desejado
+1. Chamar a API REST do FortiGate (`/api/v2/cmdb/system/interface`) com URL + API Key do formulário
+2. Filtrar interfaces com `role = wan` (a lógica já existe em `fortigate-compliance`)
+3. Extrair IPs públicos dessas interfaces
+4. Consultar geolocalização pelo IP público
+5. Preencher Latitude/Longitude automaticamente
+
+### Viabilidade técnica
+A Edge Function `fortigate-compliance` já demonstra que é possível chamar a API do FortiGate diretamente da nuvem Supabase usando `fetchWithoutSSLVerification` (ignora certificados auto-assinados). Isso **só funciona se o FortiGate for acessível externamente** — o que é o caso quando o campo "URL do FortiGate" contém um IP/hostname público.
+
+Para firewalls em rede interna (IP privado), o fallback atual (DNS da URL) continua sendo a melhor alternativa disponível sem o firewall já cadastrado.
+
+## Solução: Nova Edge Function `resolve-firewall-geo`
+
+Criar uma Edge Function leve e dedicada que:
+1. Recebe `{ url, api_key }` via POST
+2. Chama `/api/v2/cmdb/system/interface` no FortiGate
+3. Filtra interfaces WAN (mesma lógica do `fortigate-compliance`)
+4. Extrai o primeiro IP público das interfaces WAN
+5. Consulta ipapi.co para obter latitude/longitude
+6. Retorna `{ lat, lng, ip, interface_name }` ou erro estruturado
+
+### Lógica de classificação WAN (reaproveitada)
+A Edge Function reutilizará a mesma hierarquia de prioridade já validada:
+1. Interface `virtual-wan-link` → WAN
+2. Membro SD-WAN → WAN
+3. Campo `role` da API = "wan" → WAN
+4. Nome com padrão `/^(wan|wan\d+|internet|isp|...)/i` → WAN
+
+### Extração de IPs públicos
+Das interfaces WAN, filtrar IPs que **não** são privados:
+- Não `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`, `127.x.x.x`
+
+## Mudanças no Frontend (`AddFirewallPage.tsx`)
+
+### Botão "Buscar" — nova lógica
+Substituir a chamada a `resolveGeoFromUrl` por uma chamada à nova Edge Function:
+
+```
+1. Validar que url e api_key estão preenchidos
+2. Chamar edge function resolve-firewall-geo com { url, api_key }
+3. Se retornar geo: preencher campos + toast de sucesso com IP encontrado
+4. Se retornar erro de conexão (FortiGate inacessível):
+   - Fallback para resolveGeoFromUrl(url) — comportamento atual
+   - Toast informando que está usando geolocalização da URL
+5. Se fallback também falhar: toast de erro explicativo
+```
+
+### Habilitar o botão "Buscar"
+Atualmente o botão só requer `fortigate_url`. Com a nova lógica, o botão deve também requerer `api_key` (já que a nova abordagem principal precisa dos dois). O botão permanece habilitado apenas com `url` para o fallback continuar funcionando — mas a condição primária será `url && api_key`.
+
+### Feedback visual ao usuário
+- Enquanto carrega: spinner (já existe)
+- Sucesso via FortiGate API: `"📍 IP WAN encontrado: 201.x.x.x → -23.5505, -46.6333"`
+- Sucesso via fallback DNS: `"📍 Localização estimada pela URL (IP interno detectado)"`
+- Falha: mensagem explicativa
+
+## Arquivos a criar/modificar
+
+### Novo arquivo: `supabase/functions/resolve-firewall-geo/index.ts`
+Edge Function leve (~150 linhas) com a lógica descrita acima.
+
+### Modificar: `src/pages/environment/AddFirewallPage.tsx`
+- Atualizar o handler `onClick` do botão "Buscar" (linhas 764–777)
+- Manter `resolveGeoFromUrl` como fallback
+- Atualizar `disabled` do botão para `geoLoading || !formData.fortigate_url` (sem mudança — o fallback ainda funciona só com URL)
+
+## Estrutura da Edge Function
 
 ```text
-[Passo 1 — Criar REST API Admin]        (linhas 144–195)
-[Passo 2 — Habilitar acesso via CLI]    (linhas 197–212)
-[Passo 3 — Habilitar logs via REST API] (linhas 214–232)
-[Bloco 🔒 Trusted Hosts]               (linhas 234–244)   ← fora de lugar
-[Bloco ℹ️ super_admin_readonly]         (linhas 246–253)   ← fora de lugar
-[Aviso SSL]                             (linhas 255–260)
+POST /resolve-firewall-geo
+Body: { url: string, api_key: string }
+
+Sucesso:
+{ success: true, lat: number, lng: number, ip: string, interface: string }
+
+Erro de conectividade (FortiGate inacessível):
+{ success: false, error: "connection_failed", message: "..." }
+
+Erro de autenticação:
+{ success: false, error: "auth_failed", message: "..." }
+
+Nenhum IP público encontrado:
+{ success: false, error: "no_public_ip", message: "..." }
 ```
 
-## Estrutura desejada
+## Fluxo completo no formulário
 
 ```text
-[Bloco ℹ️ super_admin_readonly]         ← antes do Passo 1
-[Passo 1 — Criar REST API Admin]
-[Bloco 🔒 Trusted Hosts]               ← entre Passo 1 e Passo 2
-[Passo 2 — Habilitar acesso via CLI]
-[Passo 3 — Habilitar logs via REST API]
-[Aviso SSL]
+Usuário preenche URL + API Key
+          ↓
+Clica "Buscar"
+          ↓
+Edge Function chama FortiGate API
+  ├── Sucesso → extrai IPs WAN públicos → geolocaliza → preenche campos
+  └── Falha (inacessível/auth) → fallback DNS da URL
+                  ├── Sucesso → preenche campos (avisa que é estimativa)
+                  └── Falha → toast de erro explicativo
 ```
 
-## Mudanças técnicas no arquivo `src/pages/environment/AddFirewallPage.tsx`
+## Arquivos
 
-Tudo ocorre dentro da função `FortiGateInstructions` (linhas 141–263). Serão feitas apenas movimentações de blocos JSX já existentes — nenhum conteúdo será alterado.
-
-### Operação 1 — Remover bloco ℹ️ das linhas 246–253 e inserir antes da linha 144
-
-O bloco:
-```tsx
-<div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
-  <p className="text-sm text-blue-400 font-medium">ℹ️ Por que usar o perfil super_admin_readonly?</p>
-  <ul className="text-xs text-blue-300/80 mt-1 space-y-1 list-disc list-inside">
-    <li>Perfil nativo do FortiGate — não requer criação manual</li>
-    <li>Acesso somente-leitura: não permite alterações de configuração</li>
-    <li>Visibilidade completa para coleta de dados de compliance</li>
-  </ul>
-</div>
-```
-Passa a ser o **primeiro elemento** dentro de `<div className="space-y-4">`, antes do Passo 1.
-
-### Operação 2 — Remover bloco 🔒 das linhas 234–244 e inserir após a linha 195 (fechamento do Passo 1)
-
-O bloco:
-```tsx
-<div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
-  <p className="text-sm font-semibold text-destructive flex items-center gap-2">
-    🔒 Segurança: Restrição por IP (Trusted Hosts)
-  </p>
-  <p className="text-xs text-destructive/80">
-    Habilitar Trusted Hosts é essencial. Sem essa restrição...
-  </p>
-  <p className="text-xs text-destructive/80">
-    Ao ativar Trusted Hosts e informar o IP...
-  </p>
-</div>
-```
-Passa a ficar **entre o fechamento do Passo 1 (linha 195) e o início do Passo 2 (linha 197)**.
-
-## Arquivo modificado
-
-- `src/pages/environment/AddFirewallPage.tsx` — apenas reposicionamento de blocos JSX dentro de `FortiGateInstructions`, sem alteração de conteúdo ou estilos.
+- `supabase/functions/resolve-firewall-geo/index.ts` — criar (Edge Function nova)
+- `src/pages/environment/AddFirewallPage.tsx` — modificar handler do botão "Buscar" (linhas 764–777)
