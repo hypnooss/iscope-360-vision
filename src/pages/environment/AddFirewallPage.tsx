@@ -593,7 +593,7 @@ export default function AddFirewallPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-between">
+            <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleBack}>
                 <ArrowLeft className="w-4 h-4" />
                 Voltar
@@ -630,7 +630,7 @@ export default function AddFirewallPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-between">
+            <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleBack}>
                 <ArrowLeft className="w-4 h-4" />
                 Voltar
