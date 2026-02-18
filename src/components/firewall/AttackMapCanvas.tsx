@@ -20,8 +20,8 @@ const COLORS = {
 
 // Offsets calibrados para world-map-dark.png
 // O conteúdo geográfico não começa em pixel 0 — há padding interno na imagem
-const IMG_LEFT = 0.0; // medido: conteúdo geográfico começa em ~6.9% da esquerda
-const IMG_RIGHT = 0.02; // medido: conteúdo geográfico termina a ~5.9% da direita
+const IMG_LEFT = 0.02; // medido: conteúdo geográfico começa em ~6.9% da esquerda
+const IMG_RIGHT = 0.13; // medido: conteúdo geográfico termina a ~5.9% da direita
 const IMG_TOP = 0.13; // medido: Ártico começa em ~7.9% do topo
 const IMG_BOTTOM = 0.02; // medido: Antártica começa em ~7.9% do rodapé
 
