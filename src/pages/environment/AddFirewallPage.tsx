@@ -920,29 +920,32 @@ export default function AddFirewallPage() {
                               return;
                             }
 
-                            // Step 4: Geolocate IPs via ipwho.is from the browser
-                            const geoResults = await Promise.all(
-                              wanIPs.map(async (w) => {
-                                try {
-                                  const res = await fetch(`https://ipwho.is/${w.ip}`);
-                                  if (!res.ok) return null;
-                                  const json = await res.json();
-                                  if (!json.success || !json.latitude || !json.longitude) return null;
-                                  return {
-                                    ip: w.ip,
-                                    interface: w.interfaceName,
-                                    lat: json.latitude as number,
-                                    lng: json.longitude as number,
-                                    country: json.country || '',
-                                    country_code: (json.country_code || '').toLowerCase(),
-                                    region: json.region || '',
-                                    city: json.city || '',
-                                  };
-                                } catch {
-                                  return null;
-                                }
-                              })
+                            // Step 4: Geolocate IPs server-side via Edge Function (ip-api.com/batch — no CORS)
+                            const { data: geoData, error: geoError } = await supabase.functions.invoke('resolve-firewall-geo', {
+                              body: { ips: wanIPs.map(w => w.ip) },
+                            });
+
+                            const geoResultsRaw: any[] = (geoData?.results || []);
+                            const ipToGeo = Object.fromEntries(
+                              geoResultsRaw
+                                .filter((r: any) => r.status === 'success')
+                                .map((r: any) => [r.query, r])
                             );
+
+                            const geoResults = wanIPs.map((w) => {
+                              const r = ipToGeo[w.ip];
+                              if (!r) return null;
+                              return {
+                                ip: w.ip,
+                                interface: w.interfaceName,
+                                lat: r.lat as number,
+                                lng: r.lon as number,
+                                country: r.country || '',
+                                country_code: (r.countryCode || '').toLowerCase(),
+                                region: r.regionName || '',
+                                city: r.city || '',
+                              };
+                            });
 
                             const candidates = geoResults.filter(Boolean) as WanCandidate[];
 
