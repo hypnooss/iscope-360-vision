@@ -40,7 +40,42 @@ serve(async (req) => {
       );
     }
 
-    const { agent_id, url, api_key } = await req.json();
+    const body = await req.json();
+
+    // ── Mode 2: Server-side geolocation (no agent needed) ───────────────────
+    if (Array.isArray(body?.ips)) {
+      const ips: string[] = body.ips.filter((ip: any) => typeof ip === 'string' && ip.length > 0);
+      if (ips.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "no_ips", message: "Nenhum IP fornecido" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const geoRes = await fetch("http://ip-api.com/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          ips.map(ip => ({ query: ip, fields: "status,lat,lon,country,countryCode,regionName,city,query" }))
+        ),
+      });
+
+      if (!geoRes.ok) {
+        return new Response(
+          JSON.stringify({ success: false, error: "geo_api_error", message: "Erro ao contatar ip-api.com" }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const geoData = await geoRes.json();
+      return new Response(
+        JSON.stringify({ success: true, results: geoData }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Mode 1: Create geo_query task via agent ──────────────────────────────
+    const { agent_id, url, api_key } = body;
 
     if (!agent_id || !url || !api_key) {
       return new Response(
