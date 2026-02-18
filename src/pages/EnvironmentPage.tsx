@@ -330,7 +330,6 @@ export default function EnvironmentPage() {
             items={filteredDomains}
             totalCount={stats.domains}
             isLoading={isLoading}
-            showFrequency
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/external-domain/${asset.id}/edit`)}>
@@ -349,7 +348,6 @@ export default function EnvironmentPage() {
             items={filteredFirewalls}
             totalCount={stats.firewalls}
             isLoading={isLoading}
-            showFrequency
             renderActions={(asset) => (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/firewall/${asset.id}/edit`)}>
