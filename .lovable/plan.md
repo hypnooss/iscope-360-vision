@@ -1,122 +1,79 @@
 
-# Remover Menu e Tela "Firewall > Firewalls"
+# Remover o link do nível "Firewall" nas breadcrumbs
 
-## O que será removido
+## Problema
 
-1. **Item de menu** "Firewalls" no sidebar (AppLayout.tsx)
-2. **Rota** `/scope-firewall/firewalls` e página `FirewallListPage`
-3. **Rotas filhas** relacionadas: `/scope-firewall/firewalls/new` e `/scope-firewall/firewalls/:id/edit`
+Em várias páginas do módulo Firewall, o primeiro item da breadcrumb é `{ label: 'Firewall', href: '...' }`. Como a tela Firewalls foi removida, esse link leva a rotas inexistentes ou indesejadas. O pedido é: **manter o efeito de hover, mas remover qualquer ação de clique**.
 
-## Impactos e redirecionamentos necessários
+## Solução
 
-Vários outros arquivos referenciam `/scope-firewall/firewalls` como destino de navegação (botões "Voltar", breadcrumbs, redirects pós-save). Todos precisam ser atualizados para apontar a uma rota ainda existente.
+O componente `PageBreadcrumb` já tem esse comportamento implementado: quando um item de nível intermediário **não tem `href`**, ele é renderizado como `<span>` com `hover:text-primary transition-colors cursor-default` — exatamente o comportamento desejado.
 
-Destino substituto: **`/scope-firewall/reports`** (Compliance), que é a tela principal do módulo de Firewall.
+Basta remover a propriedade `href` dos itens `{ label: 'Firewall' }` nas páginas afetadas.
 
-## Arquivos a modificar
+## Arquivos e mudanças
 
-### 1. `src/components/layout/AppLayout.tsx` — linha 118
-Remover o item "Firewalls" do array `items` de `scope_firewall`:
-
-**Antes:**
-```ts
-items: [
-  { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
-  { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
-  ...
-]
-```
-
-**Depois:**
-```ts
-items: [
-  { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
-  ...
-]
-```
-
----
-
-### 2. `src/App.tsx` — remover 4 rotas
+### `src/pages/firewall/FirewallReportsPage.tsx`
 ```tsx
-// Remover:
-<Route path="/scope-firewall/firewalls" element={<FirewallListPage />} />
-<Route path="/scope-firewall/firewalls/new" element={<FirewallCreatePage />} />
-<Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
-<Route path="/scope-firewall/firewalls/:id/edit" element={<FirewallEditPage />} />
+// Antes:
+{ label: 'Firewall', href: '/scope-firewall/dashboard' }
+
+// Depois:
+{ label: 'Firewall' }
 ```
 
-E também remover as lazy imports de `FirewallListPage`, `FirewallCreatePage`, `FirewallEditPage`.
-
-**Atenção:** A rota `/:id/analysis` é usada para abrir o relatório a partir do Compliance. Ela deve ser **mantida** — apenas as rotas de lista, criação e edição são removidas.
-
----
-
-### 3. `src/pages/FirewallAnalysis.tsx`
-- Breadcrumb: `{ label: 'Firewall', href: '/scope-firewall/firewalls' }` → `href: '/scope-firewall/reports'`
-- Botão "Voltar": `navigate('/scope-firewall/firewalls')` → `navigate('/scope-firewall/reports')`
-
----
-
-### 4. `src/pages/firewall/FirewallReportsPage.tsx` — linha 556
-Botão "Ver Firewalls":
+### `src/pages/firewall/AnalyzerDashboardPage.tsx`
 ```tsx
-onClick={() => navigate('/scope-firewall/firewalls')}
-```
-→ remover o botão ou redirecionar para `/scope-firewall/reports`.
-
----
-
-### 5. `src/pages/firewall/FirewallCVEsPage.tsx` — breadcrumb
-```tsx
+// Antes:
 { label: 'Firewall', href: '/scope-firewall/firewalls' }
+
+// Depois:
+{ label: 'Firewall' }
 ```
-→ `href: '/scope-firewall/reports'`
 
----
+### `src/pages/firewall/AnalyzerCriticalPage.tsx`
+```tsx
+// Antes:
+{ label: 'Firewall', href: '/scope-firewall/firewalls' }
 
-### 6. `src/pages/firewall/TaskExecutionsPage.tsx` — breadcrumb
-Mesma correção: `href: '/scope-firewall/firewalls'` → `href: '/scope-firewall/reports'`
+// Depois:
+{ label: 'Firewall' }
+```
 
----
+### `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+```tsx
+// Antes:
+{ label: 'Firewall', href: '/scope-firewall/firewalls' }
 
-### 7. `src/pages/firewall/AnalyzerInsightsPage.tsx` — breadcrumb
-Mesma correção.
+// Depois:
+{ label: 'Firewall' }
+```
 
----
+## Páginas que NÃO precisam de alteração
 
-### 8. `src/pages/firewall/FirewallEditPage.tsx`
-- Breadcrumb `Firewalls` → remover item ou apontar para `/scope-firewall/reports`
-- `navigate('/scope-firewall/firewalls')` (após salvar e ao cancelar) → `/scope-firewall/reports`
+As páginas abaixo já têm "Compliance" (com href) como primeiro item — não há `{ label: 'Firewall' }` no breadcrumb:
 
----
+- `FirewallCVEsPage.tsx` — `Compliance > CVEs`
+- `TaskExecutionsPage.tsx` — `Compliance > Execuções`
+- `AnalyzerInsightsPage.tsx` — `Compliance > Analyzer > Insights`
 
-### 9. `src/pages/firewall/FirewallCreatePage.tsx`
-- Breadcrumb e botões "Cancelar" / "Voltar" → `/scope-firewall/reports`
-- `navigate('/scope-firewall/firewalls')` após criar → `/scope-firewall/reports`
+## Como ficará o comportamento
 
----
+O componente `PageBreadcrumb` tem o seguinte branch para itens intermediários sem `href`:
 
-### 10. `src/pages/EnvironmentPage.tsx` — linha 118 e 335
-Referências de navegação para `/scope-firewall/firewalls/:id/edit` podem ser mantidas caso a rota de edição continue existindo acessível por outros meios. Caso contrário, apontar para `/scope-firewall/reports`.
+```tsx
+<span className="text-muted-foreground hover:text-primary transition-colors cursor-default">
+  {item.label}
+</span>
+```
 
-## Resumo das rotas — Antes × Depois
+- Hover: muda a cor para `primary` (efeito visual mantido)
+- Cursor: `default` (sem indicação de link clicável)
+- Clique: nenhuma ação
 
-| Rota | Ação |
-|---|---|
-| `/scope-firewall/firewalls` | **Remover** |
-| `/scope-firewall/firewalls/new` | Avaliar: remover ou manter acessível via URL direta |
-| `/scope-firewall/firewalls/:id/edit` | Avaliar: manter ou remover |
-| `/scope-firewall/firewalls/:id/analysis` | **Manter** (usado pelo Compliance) |
+## Arquivos modificados
 
-## Arquivos afetados
-
-- `src/components/layout/AppLayout.tsx`
-- `src/App.tsx`
-- `src/pages/FirewallAnalysis.tsx`
-- `src/pages/firewall/FirewallReportsPage.tsx`
-- `src/pages/firewall/FirewallCVEsPage.tsx`
-- `src/pages/firewall/TaskExecutionsPage.tsx`
-- `src/pages/firewall/AnalyzerInsightsPage.tsx`
-- `src/pages/firewall/FirewallEditPage.tsx`
-- `src/pages/firewall/FirewallCreatePage.tsx`
+1. `src/pages/firewall/FirewallReportsPage.tsx`
+2. `src/pages/firewall/AnalyzerDashboardPage.tsx`
+3. `src/pages/firewall/AnalyzerCriticalPage.tsx`
+4. `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
