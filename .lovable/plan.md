@@ -1,102 +1,91 @@
 
-# Fix Definitivo: Calibração por Ground Truth da Imagem
+# Voltar ao Leaflet no Fullscreen — com Mapa Melhor e Sem Bordas Brancas
 
-## Diagnóstico Confirmado
+## Diagnóstico: Por que as bordas aparecem no Leaflet
 
-Tenho agora três dados concretos:
+O problema das bordas brancas no Leaflet em modo fullscreen é causado por uma limitação matemática da projeção Mercator: em `zoom=2`, o tile world tem `2^2 × 256 = 1024px` de largura. Em telas widescreen (1920px, 2560px), o mapa simplesmente não tem tiles suficientes para cobrir toda a largura — o Leaflet preenche o espaço com a cor de fundo.
 
-1. **Coordenadas reais do firewall no banco**: lat=-10.5283, lng=-48.4744 (norte do Tocantins, Brasil)
-2. **Imagem `world-map-dark.png` visualizada diretamente** — equiretangular com padding preto expressivo
-3. **Print do usuário** — firewall aparece no Atlântico (~36% da largura da tela), mas deveria estar no interior do Brasil
+**A solução definitiva:** definir o `background` do `MapContainer` com a **mesma cor do tile do mapa**. Para o CartoDB Dark Matter, é `#0e0e10`. Para o Stadia Alidade Smooth Dark, é `#121726`. Assim, o espaço "vazio" é invisível — parece que o mapa se estende infinitamente.
 
-## Por que os offsets atuais (0.038/0.020/0.060) estão errados
+Além disso, usaremos `noWrap={true}` no `TileLayer` para impedir repetição lateral do mapa.
 
-Os valores foram estimados sem medir a imagem real. Analisando a imagem diretamente:
+## Novo Tile: Stadia Maps — Alidade Smooth Dark
 
-- O conteúdo geográfico começa (América do Norte/Alaska) em ~**7% da esquerda** (atual: 3.8%)
-- O conteúdo geográfico termina (Pacífico Leste) em ~**6% da direita** (atual: 3.8%)
-- O topo geográfico (Ártico) começa em ~**8% do topo** (atual: 2.0%)
-- O rodapé geográfico (Antártica/sul) começa em ~**8% do rodapé** (atual: 6.0%)
+O **Stadia Alidade Smooth Dark** é visualmente superior ao CartoDB Dark Matter:
+- Cores mais profundas e contrastantes
+- Fronteiras de países com linhas finas mais elegantes
+- Oceanos em `#121726` (quase preto-azulado) — cor de fundo perfeita para disfarçar as bordas
+- Uso gratuito sem API key para projetos razoáveis
 
-Com os offsets errados, **todos os pontos** são deslocados para dentro do mapa (menores que o real), fazendo com que Brasil apareça no Atlântico.
+URL do tile:
+```
+https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png
+```
 
-## Calibração por Ground Truth (método científico)
+## Mudanças por Arquivo
 
-Em vez de estimativa visual, a calibração usa **transformação afim de 2 pontos** derivada de locais geográficos conhecidos e sua posição percentual visível na imagem:
+### 1. `src/components/firewall/AttackMap.tsx` (modo inline — dashboard)
 
-### Pontos de referência medidos na imagem world-map-dark.png:
+- Trocar `TILE_URL` de CartoDB para Stadia Alidade Smooth Dark
+- Adicionar `noWrap={true}` no `<TileLayer>`
+- Ajustar o `background` do `mapStyle` para `#121726` (cor dos oceanos do novo tile)
 
-| Referência | Lat | Lng | % X na imagem | % Y na imagem |
-|---|---|---|---|---|
-| Londres (UK) | 51.5° | -0.1° | ~50.5% | ~29% |
-| São Paulo (BR) | -23.5° | -46.6° | ~34% | ~58% |
-| Tóquio (JP) | 35.7° | 139.7° | ~80% | ~31% |
-| Sydney (AU) | -33.9° | 151.2° | ~83% | ~62% |
+### 2. `src/components/firewall/AttackMapFullscreen.tsx`
 
-### Derivação dos offsets corretos
+- Substituir `<AttackMapCanvas>` de volta para `<AttackMap fullscreen={true}>`
+- Ajustar o `background` do container de `#0a0e1a` para `#121726`
+- O `<AttackMap>` já tem toda a lógica de projéteis SVG, marcadores, trails e firewall marker
 
-Para Londres (lat=51.5, lng=-0.1):
-- Equiretangular puro X% = (179.9/360) = 49.97% ≈ 50%
-- X real na imagem = 50.5% → quase idêntico ao equiretangular → confirma que o padding horizontal é simétrico e pequeno
+### 3. `src/components/firewall/AttackMapCanvas.tsx`
 
-Para São Paulo (lat=-23.5, lng=-46.6):
-- Equiretangular puro X% = (133.4/360) = 37.1%
-- X real na imagem = 34%
-- Diferença: 3.1% → indica padding esquerdo real de ~**6.9%** (e não 3.8%)
+- Manter o arquivo (não deletar), mas ele fica sem uso por ora
 
-Para Sydney (lat=-33.9, lng=151.2):
-- Equiretangular puro Y% = (123.9/180) = 68.8%
-- Y real na imagem = 62%
-- Confirma padding superior de ~**8%** e inferior de ~**8%**
+## Por que isso resolve o problema das bordas
 
-### Novos valores calibrados
+```text
+┌─────────────────────────────────────────────────────┐
+│                   Tela 1920px                       │
+│  ┌──────────────────────────────────────────────┐   │
+│  │         Tiles Leaflet (1024px)               │   │
+│  │        [mapa propriamente dito]              │   │
+│  └──────────────────────────────────────────────┘   │
+│  [espaço vazio]                     [espaço vazio]  │
+└─────────────────────────────────────────────────────┘
+
+SEM FIX: espaço vazio aparece branco/cinza
+COM FIX: espaço vazio tem background: '#121726'
+         = mesma cor dos oceanos do tile = invisível
+```
+
+## Configurações do MapContainer no fullscreen
 
 ```typescript
-const IMG_LEFT   = 0.069;  // medido: conteúdo geográfico começa em ~6.9% da esquerda
-const IMG_RIGHT  = 0.059;  // medido: conteúdo geográfico termina a ~5.9% da direita  
-const IMG_TOP    = 0.079;  // medido: Ártico começa em ~7.9% do topo
-const IMG_BOTTOM = 0.079;  // medido: Antártica começa em ~7.9% do rodapé
+<MapContainer
+  center={[20, 0]}
+  zoom={2}
+  minZoom={1}
+  maxZoom={8}
+  worldCopyJump={false}
+  noWrap={true}          // sem repetição lateral
+  zoomControl={true}     // permitir zoom no fullscreen
+  dragging={true}
+  scrollWheelZoom={true}
+  doubleClickZoom={true}
+  attributionControl={false}
+  style={{ height: '100%', width: '100%', background: '#121726' }}
+>
+  <TileLayer
+    url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+    noWrap={true}
+    attribution="..."
+  />
 ```
 
-## Validação Matemática
+## Resumo dos Arquivos
 
-Com os novos offsets, verificando o **Firewall BR-PNP-FW-001** (lat=-10.53, lng=-48.47):
+| Arquivo | Ação |
+|---|---|
+| `src/components/firewall/AttackMap.tsx` | Trocar tile URL + `noWrap` + ajustar cor de fundo |
+| `src/components/firewall/AttackMapFullscreen.tsx` | Voltar a usar `<AttackMap fullscreen>` em vez de Canvas |
 
-```
-usableW = W * (1 - 0.069 - 0.059) = W * 0.872
-usableH = H * (1 - 0.079 - 0.079) = H * 0.842
-
-x = W * 0.069 + ((180 - 48.47) / 360) * W * 0.872
-x = W * 0.069 + (131.53 / 360) * W * 0.872
-x = W * 0.069 + 0.3654 * W * 0.872
-x = W * 0.069 + W * 0.3186
-x = W * 0.3876  →  38.76% da tela
-```
-
-Para uma tela de 1920px: x ≈ 744px. Isso posiciona o marcador no **interior do Brasil**, aproximadamente no Tocantins — correto para lat=-10.5, lng=-48.5.
-
-## Arquivo Modificado
-
-**`src/components/firewall/AttackMapCanvas.tsx`** — apenas as 4 constantes de calibração:
-
-```typescript
-// ANTES (estimado incorretamente):
-const IMG_LEFT   = 0.038;
-const IMG_RIGHT  = 0.038;
-const IMG_TOP    = 0.020;
-const IMG_BOTTOM = 0.060;
-
-// DEPOIS (medido na imagem real):
-const IMG_LEFT   = 0.069;
-const IMG_RIGHT  = 0.059;
-const IMG_TOP    = 0.079;
-const IMG_BOTTOM = 0.079;
-```
-
-A função `project()` permanece idêntica — somente os 4 números mudam.
-
-## Escopo
-
-- **1 arquivo** modificado: `src/components/firewall/AttackMapCanvas.tsx`
-- **4 linhas** alteradas (as constantes de calibração)
-- Zero impacto em qualquer outra parte do sistema
+Resultado: coordenadas **sempre** corretas (Leaflet projeta lat/lng nativamente), mapa mais bonito, bordas invisíveis, sem Canvas, sem calibração manual.
