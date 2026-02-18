@@ -99,16 +99,12 @@ function ProjectileOverlay({
   );
 }
 
-// Fit world bounds to container on mount — eliminates repeated world copies
-function FitWorldBounds({ fullscreen }: { fullscreen?: boolean }) {
+// Fit world bounds on mount
+function FitWorldBounds() {
   const map = useMap();
   useEffect(() => {
-    // Use tighter latitude bounds to force higher zoom, filling the screen width
-    const bounds: [number, number][] = fullscreen
-      ? [[-55, -175], [75, 175]]
-      : [[-60, -180], [80, 180]];
-    map.fitBounds(bounds as any, { animate: false, padding: [0, 0] });
-  }, [map, fullscreen]);
+    map.setView([20, 0], 2, { animate: false });
+  }, [map]);
   return null;
 }
 
@@ -118,10 +114,7 @@ function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
   useEffect(() => {
     setTimeout(() => {
       map.invalidateSize({ animate: false });
-      const bounds: [number, number][] = fullscreen
-        ? [[-55, -175], [75, 175]]
-        : [[-60, -180], [80, 180]];
-      map.fitBounds(bounds as any, { animate: false, padding: [0, 0] });
+      map.setView([20, 0], 2, { animate: false });
     }, 200);
   }, [fullscreen, map]);
   return null;
@@ -175,10 +168,10 @@ export function AttackMap({
         attributionControl={false}
         style={mapStyle}
       >
-        <FitWorldBounds fullscreen={fullscreen} />
+        <FitWorldBounds />
         <MapResizer fullscreen={fullscreen} />
 
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} noWrap={true} />
+        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
 
         {/* Trail lines */}
         {firewallLocation && points.map((p, i) => (
