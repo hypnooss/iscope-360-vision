@@ -115,7 +115,6 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     icon: Shield,
     color: 'text-orange-500',
     items: [
-      { label: 'Firewalls', href: '/scope-firewall/firewalls', icon: Server },
       { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
       { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Activity },
       { label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck },

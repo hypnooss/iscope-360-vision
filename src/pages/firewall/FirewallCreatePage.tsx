@@ -257,7 +257,7 @@ export default function FirewallCreatePage() {
       }
 
       toast.success('Firewall adicionado com sucesso!');
-      navigate('/scope-firewall/firewalls');
+      navigate('/scope-firewall/reports');
     } catch (error: any) {
       toast.error('Erro ao adicionar firewall: ' + error.message);
     } finally {
@@ -291,13 +291,12 @@ export default function FirewallCreatePage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-          { label: 'Firewall', href: '/scope-firewall/dashboard' },
-          { label: 'Firewalls', href: '/scope-firewall/firewalls' },
+          { label: 'Compliance', href: '/scope-firewall/reports' },
           { label: 'Novo' },
         ]} />
 
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/firewalls')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/reports')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
