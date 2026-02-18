@@ -1,56 +1,130 @@
 
-# Redistribuição das larguras de coluna — AssetCategorySection
+# Persistência do Workspace selecionado — todas as páginas
 
 ## Problema
 
-Em monitores largos (1920px), com o sidebar lateral (~260px), a área de conteúdo tem aproximadamente 1.640px disponíveis. As colunas fixas atuais somam apenas **810px** (140+180+200+80+110+100), deixando a coluna Nome com ~830px — quase metade da tela inteira. Resultado: tudo parece "espremido à direita".
+Cada página mantém o `selectedWorkspaceId` em um `useState` local. Quando a página é recarregada (refresh, navegação, qualquer re-render forçado), o estado local é zerado e a auto-seleção cai sempre no primeiro da lista.
 
 ## Solução
 
-Aumentar as larguras fixas das colunas secundárias para que o total fixo suba para ~1.100px, deixando a coluna Nome com cerca de 500–550px em telas largas — um valor muito mais equilibrado.
+Criar um hook reutilizável `useWorkspaceSelector` que persiste a seleção no `localStorage`. Assim, a escolha sobrevive a refreshes, navegações e até fechamento e reabertura da aba — e é compartilhada entre todas as páginas automaticamente.
+
+O hook substituirá o padrão repetido `useState + useEffect` encontrado em 10 arquivos diferentes.
 
 ---
 
-## Novas larguras propostas
+## Páginas afetadas (todas com `selectedWorkspaceId` local)
 
-| Coluna     | Antes   | Depois    | Justificativa |
-|------------|---------|-----------|---------------|
-| Nome       | fluido  | fluido    | Cresce, mas não domina |
-| Agent      | 140 px  | **180 px** | Mais espaço para nomes como `ESTRELA-SAO` |
-| Workspace  | 180 px  | **240 px** | Nomes como `BRINQUEDOS ESTRELA` sem truncar |
-| Frequência | 200 px  | **240 px** | Dois badges confortáveis (`Diário` + `20:00`) |
-| Score      | 80 px   | **100 px** | Badge com padding generoso |
-| Status     | 110 px  | **140 px** | Texto `Analisado` sem corte |
-| Ações      | 100 px  | **120 px** | Botões com mais espaço |
-
-**Total fixo:** 810px → **1.020px**
-
-Em uma tela de 1.640px úteis, a coluna Nome ficará com ~620px — proporcional e legível.
+| Página | Arquivo |
+|---|---|
+| Ambiente | `src/pages/EnvironmentPage.tsx` |
+| Agentes | `src/pages/AgentsPage.tsx` |
+| Dashboard Geral | `src/pages/GeneralDashboardPage.tsx` |
+| Lista de Firewalls | `src/pages/firewall/FirewallListPage.tsx` |
+| Relatórios de Firewall | `src/pages/firewall/FirewallReportsPage.tsx` |
+| Dashboard Analyzer | `src/pages/firewall/AnalyzerDashboardPage.tsx` |
+| Lista de Domínios | `src/pages/external-domain/ExternalDomainListPage.tsx` |
+| Relatórios de Domínios | `src/pages/external-domain/ExternalDomainReportsPage.tsx` |
+| Analyzer de Superfície | `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx` |
 
 ---
 
-## Mudança técnica
+## Implementação técnica
 
-### `src/components/environment/AssetCategorySection.tsx`
+### 1. Novo hook: `src/hooks/useWorkspaceSelector.ts`
 
-Atualizar apenas o `<colgroup>` com os novos valores:
+```ts
+const STORAGE_KEY = 'iscope_selected_workspace';
 
-```tsx
-<colgroup>
-  <col />                                    {/* Nome — fluido */}
-  <col style={{ width: '180px' }} />         {/* Agent */}
-  <col style={{ width: '240px' }} />         {/* Workspace */}
-  <col style={{ width: '240px' }} />         {/* Frequência */}
-  <col style={{ width: '100px' }} />         {/* Score */}
-  <col style={{ width: '140px' }} />         {/* Status */}
-  <col style={{ width: '120px' }} />         {/* Ações */}
-</colgroup>
+export function useWorkspaceSelector(
+  workspaces: { id: string; name: string }[] | undefined,
+  isSuperRole: boolean
+) {
+  const [selectedWorkspaceId, setSelectedWorkspaceIdState] = useState<string | null>(() => {
+    // Inicializa a partir do localStorage na montagem
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(STORAGE_KEY) || null;
+    }
+    return null;
+  });
+
+  // Quando workspaces carregam: validar se o salvo ainda existe,
+  // caso contrário auto-selecionar o primeiro
+  useEffect(() => {
+    if (!isSuperRole || !workspaces?.length) return;
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const stillExists = saved && workspaces.some(w => w.id === saved);
+    if (!stillExists) {
+      // O workspace salvo foi removido ou é a primeira vez — auto-selecionar o primeiro
+      const firstId = workspaces[0].id;
+      setSelectedWorkspaceIdState(firstId);
+      localStorage.setItem(STORAGE_KEY, firstId);
+    }
+    // Se o salvo ainda existe, o useState já o carregou — não fazer nada
+  }, [workspaces, isSuperRole]);
+
+  const setSelectedWorkspaceId = useCallback((id: string) => {
+    setSelectedWorkspaceIdState(id);
+    localStorage.setItem(STORAGE_KEY, id);
+  }, []);
+
+  return { selectedWorkspaceId, setSelectedWorkspaceId };
+}
 ```
 
-Nenhuma outra mudança é necessária — o `table-fixed` e o `truncate` já estão funcionando corretamente.
+**Comportamento:**
+- Na primeira abertura: salva o primeiro workspace automaticamente
+- Nas visitas seguintes: restaura o último selecionado
+- Se o workspace salvo for excluído: fallback para o primeiro da lista
+- Ao selecionar manualmente: persiste imediatamente no `localStorage`
+
+### 2. Substituição em cada página
+
+O padrão atual repetido em cada página:
+```tsx
+// ANTES (em cada página)
+const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+useEffect(() => {
+  if (isSuperRole && allWorkspaces?.length && !selectedWorkspaceId) {
+    setSelectedWorkspaceId(allWorkspaces[0].id);
+  }
+}, [isSuperRole, allWorkspaces, selectedWorkspaceId]);
+```
+
+Será substituído por uma linha:
+```tsx
+// DEPOIS (em cada página)
+const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+```
+
+O `onValueChange` do `<Select>` continua chamando `setSelectedWorkspaceId` normalmente — o hook cuida da persistência internamente.
+
+### 3. Caso especial: `AnalyzerDashboardPage`
+
+Esta página também reseta o `selectedFirewall` ao trocar de workspace. O hook não interfere nisso — o `onValueChange` existente continua funcionando:
+```tsx
+onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewall(''); }}
+```
 
 ---
 
-## Arquivo modificado
+## Arquivos modificados
 
-- `src/components/environment/AssetCategorySection.tsx`
+- **Novo:** `src/hooks/useWorkspaceSelector.ts`
+- `src/pages/EnvironmentPage.tsx`
+- `src/pages/AgentsPage.tsx`
+- `src/pages/GeneralDashboardPage.tsx`
+- `src/pages/firewall/FirewallListPage.tsx`
+- `src/pages/firewall/FirewallReportsPage.tsx`
+- `src/pages/firewall/AnalyzerDashboardPage.tsx`
+- `src/pages/external-domain/ExternalDomainListPage.tsx`
+- `src/pages/external-domain/ExternalDomainReportsPage.tsx`
+- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+
+---
+
+## Observações
+
+- O `localStorage` foi escolhido em vez de `sessionStorage` para que a seleção persista mesmo após fechar e reabrir o navegador.
+- A chave `iscope_selected_workspace` é global — qualquer página que selecionar um workspace atualiza o valor para todas as outras, o que é o comportamento desejado.
+- Preview Mode (`isPreviewMode`) não é afetado: as páginas já ignoram o `selectedWorkspaceId` quando estão em modo preview.
