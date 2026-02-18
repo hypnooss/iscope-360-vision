@@ -711,17 +711,17 @@ export default function ExternalDomainReportsPage() {
                               {FREQUENCY_LABELS[group.schedule_frequency] || 'Manual'}
                             </Badge>
                             {group.schedule_frequency === 'daily' && (
-                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                              <Badge variant="outline" className={`${FREQUENCY_BADGE_STYLES.daily} text-xs`}>
                                 {String(group.schedule_hour).padStart(2, '0')}:00
                               </Badge>
                             )}
                             {group.schedule_frequency === 'weekly' && (
-                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                              <Badge variant="outline" className={`${FREQUENCY_BADGE_STYLES.weekly} text-xs`}>
                                 {DAYS_OF_WEEK_LABELS[group.schedule_day_of_week]} · {String(group.schedule_hour).padStart(2, '0')}:00
                               </Badge>
                             )}
                             {group.schedule_frequency === 'monthly' && (
-                              <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
+                              <Badge variant="outline" className={`${FREQUENCY_BADGE_STYLES.monthly} text-xs`}>
                                 Dia {group.schedule_day_of_month} · {String(group.schedule_hour).padStart(2, '0')}:00
                               </Badge>
                             )}
