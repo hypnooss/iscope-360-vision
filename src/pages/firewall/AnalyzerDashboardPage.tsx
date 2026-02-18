@@ -385,7 +385,7 @@ export default function AnalyzerDashboardPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8">
-        <PageBreadcrumb items={[{ label: 'Firewall', href: '/scope-firewall/firewalls' }, { label: 'Analyzer' }]} />
+        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>

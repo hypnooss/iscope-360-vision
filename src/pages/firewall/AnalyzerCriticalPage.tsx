@@ -46,7 +46,7 @@ export default function AnalyzerCriticalPage() {
     <AppLayout>
       <div className="p-6 lg:p-8">
         <PageBreadcrumb items={[
-          { label: 'Firewall', href: '/scope-firewall/firewalls' },
+          { label: 'Firewall' },
           { label: 'Analyzer', href: '/scope-firewall/analyzer' },
           { label: 'Monitoramento Crítico' },
         ]} />
