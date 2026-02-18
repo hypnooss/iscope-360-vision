@@ -621,7 +621,7 @@ export default function ExternalDomainExecutionsPage() {
         </div>
 
         {/* Unified Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {isLoading ?
             <div className="flex items-center justify-center py-12">

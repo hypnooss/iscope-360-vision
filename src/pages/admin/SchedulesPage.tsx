@@ -489,7 +489,7 @@ export default function SchedulesPage() {
         </div>
 
         {/* Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-6 space-y-4">
@@ -622,7 +622,7 @@ function CVESourcesSection() {
         <h2 className="text-lg font-semibold text-foreground">Sincronização de CVEs</h2>
         <span className="text-sm text-muted-foreground">({sources.length} fontes)</span>
       </div>
-      <Card>
+      <Card className="glass-card">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

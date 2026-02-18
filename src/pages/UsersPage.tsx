@@ -539,7 +539,7 @@ export default function UsersPage() {
         </div>
 
         {/* Users Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">

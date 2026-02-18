@@ -457,7 +457,7 @@ export default function ClientsPage() {
         </div>
 
         {/* Workspaces Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {filteredClients.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">

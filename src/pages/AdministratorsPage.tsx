@@ -461,7 +461,7 @@ export default function AdministratorsPage() {
         </div>
 
         {/* Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             <Table>
             <TableHeader>
