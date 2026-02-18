@@ -13,10 +13,16 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Save, Loader2, Settings, Clock, MapPin } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Settings, Clock, MapPin, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeviceUrlError } from '@/lib/urlValidation';
-import { resolveGeoFromUrl } from '@/lib/geolocation';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 interface Client {
   id: string;
@@ -89,6 +95,17 @@ function calculateNextRunAt(
   return next.toISOString();
 }
 
+interface WanCandidate {
+  ip: string;
+  interface: string;
+  lat: number;
+  lng: number;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+}
+
 export default function FirewallEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -102,6 +119,8 @@ export default function FirewallEditPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [wanCandidates, setWanCandidates] = useState<WanCandidate[]>([]);
+  const [showWanDialog, setShowWanDialog] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -340,6 +359,7 @@ export default function FirewallEditPage() {
   }
 
   return (
+    <>
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
@@ -349,7 +369,7 @@ export default function FirewallEditPage() {
         ]} />
 
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/firewalls')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
@@ -442,30 +462,188 @@ export default function FirewallEditPage() {
                   placeholder="Longitude"
                   className="flex-1"
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
-                    setGeoLoading(true);
-                    try {
-                      const geo = await resolveGeoFromUrl(formData.fortigate_url);
-                      if (geo) {
-                        setFormData(prev => ({ ...prev, geo_latitude: String(geo.lat), geo_longitude: String(geo.lng) }));
-                        toast.success('Localização encontrada');
-                      } else {
-                        toast.error('Não foi possível determinar a localização');
+                <div className="relative inline-flex shrink-0">
+                  {!geoLoading && formData.fortigate_url && formData.agent_id && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
+                    </span>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
+                      if (!formData.agent_id) { toast.error('Selecione um Agent primeiro. A consulta ao FortiGate deve passar pelo Agent da rede do cliente.'); return; }
+                      const credKey = usesSessionAuth ? formData.auth_username : formData.api_key;
+                      if (!credKey) { toast.error(usesSessionAuth ? 'Preencha o usuário primeiro' : 'Preencha a API Key primeiro'); return; }
+
+                      setGeoLoading(true);
+                      try {
+                        const { data: taskData, error: taskError } = await supabase.functions.invoke('resolve-firewall-geo', {
+                          body: {
+                            agent_id: formData.agent_id,
+                            url: formData.fortigate_url,
+                            api_key: usesSessionAuth ? formData.auth_username : formData.api_key,
+                          },
+                        });
+
+                        if (taskError || !taskData?.success) {
+                          toast.error(`Erro ao criar task: ${taskData?.message || taskError?.message || 'Erro desconhecido'}`);
+                          setGeoLoading(false);
+                          return;
+                        }
+
+                        const taskId = taskData.task_id;
+                        toast.info('⏳ Aguardando resposta do Agent...');
+
+                        const POLL_INTERVAL = 2000;
+                        const MAX_POLLS = 30;
+                        let polls = 0;
+
+                        const pollTask = async (): Promise<void> => {
+                          polls++;
+                          if (polls > MAX_POLLS) {
+                            toast.error('Timeout: O Agent não respondeu em 60 segundos. Verifique se o Agent está online.');
+                            setGeoLoading(false);
+                            return;
+                          }
+
+                          const { data: taskResult } = await supabase
+                            .from('agent_tasks')
+                            .select('status, result, step_results, error_message')
+                            .eq('id', taskId)
+                            .single();
+
+                          if (!taskResult || taskResult.status === 'pending' || taskResult.status === 'running') {
+                            setTimeout(pollTask, POLL_INTERVAL);
+                            return;
+                          }
+
+                          setGeoLoading(false);
+
+                          if (taskResult.status === 'failed' || taskResult.status === 'timeout') {
+                            toast.error(`Agent reportou erro: ${taskResult.error_message || 'Falha na consulta ao FortiGate'}`);
+                            return;
+                          }
+
+                          if (taskResult.status !== 'completed') {
+                            toast.error(`Status inesperado da task: ${taskResult.status}`);
+                            return;
+                          }
+
+                          const { data: stepRows } = await supabase
+                            .from('task_step_results')
+                            .select('step_id, status, data')
+                            .eq('task_id', taskId);
+
+                          const stepResultsMap = Object.fromEntries(
+                            (stepRows || []).map((r: any) => [r.step_id, r.data])
+                          );
+                          const interfacesData = stepResultsMap['get_interfaces'];
+                          const sdwanData = stepResultsMap['get_sdwan'];
+
+                          const isHtmlResponse = (data: any) =>
+                            data?.raw_text && typeof data.raw_text === 'string' && data.raw_text.trim().startsWith('<!DOCTYPE');
+
+                          if (isHtmlResponse(interfacesData)) {
+                            toast.error('O FortiGate retornou página de login. Verifique a API Key e se o token tem permissão de acesso via REST API.');
+                            return;
+                          }
+
+                          if (!interfacesData) {
+                            toast.error('Agent não retornou dados de interfaces. Verifique as credenciais e a URL.');
+                            return;
+                          }
+
+                          const isPrivateIP = (ip: string) =>
+                            /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
+                          const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
+                          const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
+
+                          const interfaces: any[] = interfacesData?.results || interfacesData?.data?.results || [];
+                          const sdwan = sdwanData?.results || sdwanData?.data?.results || {};
+                          const sdwanMembers = new Set<string>(
+                            (sdwan.members || []).map((m: any) => m.interface).filter(Boolean)
+                          );
+
+                          const wanIPs: { ip: string; interfaceName: string }[] = [];
+                          for (const iface of interfaces) {
+                            let isWan = false;
+                            if (iface.name === 'virtual-wan-link') isWan = true;
+                            else if (sdwanMembers.has(iface.name)) isWan = true;
+                            else if (iface.role?.toLowerCase() === 'wan') isWan = true;
+                            else if (wanNamePatterns.test(iface.name)) isWan = true;
+                            if (!isWan) continue;
+                            if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
+                            const ipField: string = iface.ip || '';
+                            const ip = ipField.split(' ')[0];
+                            if (looksLikeIP(ip) && !isPrivateIP(ip) && ip !== '0.0.0.0') {
+                              wanIPs.push({ ip, interfaceName: iface.name });
+                            }
+                          }
+
+                          if (wanIPs.length === 0) {
+                            toast.warning('Nenhum IP público encontrado nas interfaces WAN do FortiGate.');
+                            return;
+                          }
+
+                          const { data: geoData } = await supabase.functions.invoke('resolve-firewall-geo', {
+                            body: { ips: wanIPs.map(w => w.ip) },
+                          });
+
+                          const geoResultsRaw: any[] = (geoData?.results || []);
+                          const ipToGeo = Object.fromEntries(
+                            geoResultsRaw
+                              .filter((r: any) => r.status === 'success')
+                              .map((r: any) => [r.query, r])
+                          );
+
+                          const candidates = wanIPs.map((w) => {
+                            const r = ipToGeo[w.ip];
+                            if (!r) return null;
+                            return {
+                              ip: w.ip,
+                              interface: w.interfaceName,
+                              lat: r.lat as number,
+                              lng: r.lon as number,
+                              country: r.country || '',
+                              country_code: (r.countryCode || '').toLowerCase(),
+                              region: r.regionName || '',
+                              city: r.city || '',
+                            };
+                          }).filter(Boolean) as WanCandidate[];
+
+                          if (candidates.length === 0) {
+                            toast.warning(`IPs WAN encontrados (${wanIPs.map(w => w.ip).join(', ')}) mas não foi possível geolocalizar nenhum.`);
+                            return;
+                          }
+
+                          if (candidates.length === 1) {
+                            const c = candidates[0];
+                            setFormData(prev => ({ ...prev, geo_latitude: String(c.lat), geo_longitude: String(c.lng) }));
+                            const loc = [c.city, c.region, c.country].filter(Boolean).join(', ');
+                            toast.success(`📍 ${c.interface} — ${c.ip}${loc ? ` (${loc})` : ''}`);
+                          } else {
+                            setWanCandidates(candidates);
+                            setShowWanDialog(true);
+                          }
+                        };
+
+                        setTimeout(pollTask, POLL_INTERVAL);
+                      } catch (err: any) {
+                        toast.error('Erro ao buscar localização: ' + err.message);
+                        setGeoLoading(false);
                       }
-                    } catch { toast.error('Erro ao buscar localização'); }
-                    finally { setGeoLoading(false); }
-                  }}
-                  disabled={geoLoading || !formData.fortigate_url}
-                  className="gap-1"
-                >
-                  {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                  Buscar
-                </Button>
+                    }}
+                    disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
+                    className="gap-1"
+                  >
+                    {geoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                    Buscar
+                  </Button>
+                </div>
               </div>
               {formData.geo_latitude && formData.geo_longitude && (
                 <p className="text-xs text-muted-foreground">📍 {formData.geo_latitude}, {formData.geo_longitude}</p>
@@ -577,7 +755,7 @@ export default function FirewallEditPage() {
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={() => navigate('/scope-firewall/firewalls')}>
+          <Button variant="outline" onClick={() => navigate('/environment')}>
             Cancelar
           </Button>
           <Button onClick={handleSave} disabled={saving || !!urlError || !formData.fortigate_url || !canEdit}>
@@ -596,5 +774,68 @@ export default function FirewallEditPage() {
         </div>
       </div>
     </AppLayout>
+
+    {/* WAN IP Selector Dialog */}
+    <Dialog open={showWanDialog} onOpenChange={setShowWanDialog}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-primary" />
+            Múltiplos IPs WAN encontrados
+          </DialogTitle>
+          <DialogDescription>
+            Selecione o IP que representa a localização física deste firewall.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 mt-2">
+          {wanCandidates.map((c) => {
+            const location = [c.city, c.region, c.country].filter(Boolean).join(', ');
+            return (
+              <div
+                key={c.ip}
+                className="group border border-border rounded-lg overflow-hidden transition-all duration-200 hover:border-primary/40 hover:shadow-md"
+              >
+                <div className="flex items-center gap-3 px-4 py-3 bg-muted/30 border-b border-border/50">
+                  {c.country_code ? (
+                    <span className={`fi fi-${c.country_code.toLowerCase()} text-2xl flex-shrink-0`} title={c.country} />
+                  ) : (
+                    <Globe className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  )}
+                  <span className="font-semibold text-foreground">{c.interface}</span>
+                  <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full border border-primary/30 text-primary bg-primary/10">
+                    WAN
+                  </span>
+                </div>
+                <div className="px-4 py-3 space-y-1.5 group-hover:bg-muted/20 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="font-mono font-bold text-base text-foreground">{c.ip}</span>
+                  </div>
+                  {location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm text-muted-foreground">{location}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end px-4 py-2.5 bg-muted/10 border-t border-border/50">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, geo_latitude: String(c.lat), geo_longitude: String(c.lng) }));
+                      setShowWanDialog(false);
+                      toast.success(`📍 ${c.interface} — ${c.ip}${location ? ` (${location})` : ''} selecionado`);
+                    }}
+                  >
+                    Selecionar
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
