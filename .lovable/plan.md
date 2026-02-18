@@ -1,81 +1,81 @@
 
-# Dois Fixes: Pulse Discreto + Filtro de Interfaces Tunnel
+# Fix: Geolocalização falha com ipapi.co — Trocar por ipwho.is
 
-## Diagnóstico via Banco de Dados
+## Diagnóstico
 
-Consultando os `task_step_results` da última tarefa `geo_query` do firewall BR-PNC-FW-001, o problema ficou claro:
+Os IPs WAN `186.233.96.14` e `170.150.137.198` estão sendo detectados **corretamente** — o filtro de interfaces funcionou. O problema é na **etapa de geolocalização**, que chama `ipapi.co` diretamente do browser.
 
-**Interfaces com `role: wan`:**
-| Interface | Type | IP |
-|---|---|---|
-| `wan1` (SIM) | physical | `186.233.96.14 255.255.255.252` ✅ |
-| `wan2` (Infotel) | physical | `170.150.137.198 255.255.255.252` ✅ |
-| `To_Azure-1` | **tunnel** | `0.0.0.0` ❌ |
-| `To_Cambe-1` ... | **tunnel** | `0.0.0.0` ❌ |
-| (26 mais túneis VPN) | **tunnel** | `0.0.0.0` ❌ |
+O `ipapi.co` na versão gratuita:
+- Limita 1.000 requests/dia por IP de origem
+- Bloqueia requests vindas de IPs de datacenter ou CDN (como os usados pelos previews do Lovable)
+- Pode retornar `{"error": true, "reason": "RateLimited"}` — o código trata isso como falha silenciosa (retorna `null`)
 
-O código atual filtra por `role === 'wan'`, `ip !== '0.0.0.0'` e `!isPrivateIP` — mas não exclui explicitamente `type === 'tunnel'`. As interfaces `wan1` e `wan2` **são** capturadas corretamente pelo filtro de IP.
+Por isso `candidates.length === 0` e a mensagem de erro aparece, mesmo com os IPs válidos.
 
-O erro real foi na tarefa anterior (BR-LRV), que genuinamente não tem IPs públicos WAN. Para o BR-PNC, a task mais recente (`0f8d3ee8`) ainda era do LRV. O usuário clicou em "Buscar" para um **novo** firewall (BR-PNC) mas a task criada pode ter sido bloqueada por timeout/polling.
+## Solução: Substituir ipapi.co por ipwho.is
 
-**Melhoria defensiva**: adicionar o filtro `type !== 'tunnel'` explicitamente para não depender do IP `0.0.0.0` como único excludente — afinal, um túnel IPIP ou GRE poderia ter IP público mas não ser a saída WAN real.
+`ipwho.is` é gratuito, sem chave, suporta HTTPS e CORS sem restrições de datacenter.
 
----
-
-## Fix 1 — Pulse discreto no botão "Buscar"
-
-### Problema
-`animate-pulse-glow` aplica `box-shadow` pulsante ao redor do botão inteiro — visualmente muito agressivo.
-
-### Solução
-Substituir por um pequeno **ponto de notificação** (`animate-ping`) no canto superior direito do botão, sem nenhuma animação no botão em si. É o padrão de badge de notificação usado em apps modernos.
-
-```tsx
-<div className="relative inline-flex">
-  {!geoLoading && formData.fortigate_url && formData.agent_id && (
-    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
-    </span>
-  )}
-  <Button
-    disabled={geoLoading || !formData.fortigate_url || !formData.agent_id}
-    // sem className de animação
-  >
-    ...Buscar
-  </Button>
-</div>
+Formato de resposta do `ipwho.is`:
+```json
+{
+  "ip": "186.233.96.14",
+  "success": true,
+  "latitude": -23.5,
+  "longitude": -46.6,
+  "country": "Brazil",
+  "country_code": "BR",
+  "region": "São Paulo",
+  "city": "São Paulo"
+}
 ```
 
-O botão fica estático; apenas um pequeno ponto verde pisca suavemente no canto. Muito mais elegante.
+## Arquivos Modificados
 
----
+| Arquivo | Mudança |
+|---|---|
+| `src/lib/geolocation.ts` | Trocar `ipapi.co` por `ipwho.is` (campos: `latitude`, `longitude`) |
+| `src/pages/environment/AddFirewallPage.tsx` | Trocar `ipapi.co` por `ipwho.is` no Step 4 de geolocalização |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Trocar `ipapi.co` por `ipwho.is` para consistência |
 
-## Fix 2 — Filtro de interfaces tunnel
+## Detalhes Técnicos
 
-### Adição defensiva na extração de IPs WAN
+### Mudança em geolocation.ts
 
 ```typescript
 // ANTES
-if (!isWan) continue;
+const res = await fetch(`https://ipapi.co/${target}/json/`);
+if (json.error || !json.latitude || !json.longitude) return null;
+return { lat: json.latitude, lng: json.longitude };
 
-// DEPOIS — pular túneis (VPN overlay, GRE, IPIP) que nunca têm o IP WAN real
-if (!isWan) continue;
-if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
+// DEPOIS
+const res = await fetch(`https://ipwho.is/${target}`);
+if (!json.success || !json.latitude || !json.longitude) return null;
+return { lat: json.latitude, lng: json.longitude };
 ```
 
-Isso garante que somente interfaces `physical`, `vlan`, `aggregate` (e similares) sejam consideradas para geolocalização — exatamente o que o FortiGate mostra na UI com as interfaces `SIM (wan1)` e `Infotel (wan2)`.
+### Mudança em AddFirewallPage.tsx (Step 4)
 
----
+```typescript
+// ANTES
+const res = await fetch(`https://ipapi.co/${w.ip}/json/`);
+if (json.error || !json.latitude || !json.longitude) return null;
+return { ..., country: json.country_name, country_code: json.country_code.toLowerCase() };
 
-## Arquivo Modificado
+// DEPOIS
+const res = await fetch(`https://ipwho.is/${w.ip}`);
+if (!json.success || !json.latitude || !json.longitude) return null;
+return { ..., country: json.country, country_code: (json.country_code || '').toLowerCase() };
+```
 
-| Arquivo | Operação |
-|---|---|
-| `src/pages/environment/AddFirewallPage.tsx` | Substituir `animate-pulse-glow` por dot indicator + adicionar filtro `type !== 'tunnel'` |
+A diferença de campos:
+- `country_name` (ipapi.co) → `country` (ipwho.is)
+- `json.error` (ipapi.co) → `!json.success` (ipwho.is)
+- Resto igual: `latitude`, `longitude`, `region`, `city`, `country_code`
 
 ## Resultado Esperado
 
-1. Botão "Buscar" com ponto de notificação verde discreto no canto
-2. Interfaces `wan1` (`186.233.96.14`) e `wan2` (`170.150.137.198`) detectadas corretamente
-3. Dialog de seleção de IPs WAN abre com as duas opções para escolha
+Após a mudança, o clique em "Buscar" com o firewall BR-PNC-FW-001 deve:
+1. Detectar `wan1` (`186.233.96.14`) e `wan2` (`170.150.137.198`)
+2. Geolocalizar ambos via `ipwho.is` com sucesso
+3. Abrir o dialog de seleção com as duas opções, bandeiras do Brasil e dados de localização
