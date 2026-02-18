@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AttackMap } from './AttackMap';
+import { AttackMapCanvas } from './AttackMapCanvas';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
@@ -81,14 +81,13 @@ export function AttackMapFullscreen({
         </div>
       </div>
 
-      {/* Map fills the screen */}
+      {/* Map fills the screen — Canvas (no Leaflet, no tile gaps) */}
       <div className="flex-1 w-full min-h-0">
-        <AttackMap
+        <AttackMapCanvas
           deniedCountries={deniedCountries}
           authFailedCountries={authFailedCountries}
           authSuccessCountries={authSuccessCountries}
           firewallLocation={firewallLocation}
-          fullscreen
         />
       </div>
 
