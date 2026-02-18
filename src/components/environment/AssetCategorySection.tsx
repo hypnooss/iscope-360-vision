@@ -28,7 +28,6 @@ interface AssetCategorySectionProps {
   items: AssetItem[];
   totalCount: number;
   isLoading: boolean;
-  showFrequency?: boolean;
   renderActions?: (asset: AssetItem) => React.ReactNode;
 }
 
@@ -65,7 +64,7 @@ const getScoreColor = (score: number | null) => {
   return 'bg-destructive/20 text-destructive border-destructive/30';
 };
 
-export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, showFrequency, renderActions }: AssetCategorySectionProps) {
+export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, renderActions }: AssetCategorySectionProps) {
   const navigate = useNavigate();
 
   if (!isLoading && totalCount === 0) return null;
@@ -97,7 +96,7 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                   <TableHead>Nome</TableHead>
                   <TableHead>Agent</TableHead>
                   <TableHead>Workspace</TableHead>
-                  {showFrequency && <TableHead>Frequência</TableHead>}
+                  <TableHead>Frequência</TableHead>
                   <TableHead>Score</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -105,7 +104,7 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
               </TableHeader>
               <TableBody>
                 {items.map(asset => {
-                  const freq = asset.scheduleFrequency || 'manual';
+                  const freq = asset.scheduleFrequency || null;
                   return (
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-foreground">{asset.name}</TableCell>
@@ -113,8 +112,8 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                         {asset.agentName || '—'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{asset.workspaceName}</TableCell>
-                      {showFrequency && (
-                        <TableCell>
+                      <TableCell>
+                        {freq ? (
                           <div className="flex flex-row flex-wrap items-center gap-1">
                             <Badge variant="outline" className={`text-xs ${FREQUENCY_BADGE_STYLES[freq] || FREQUENCY_BADGE_STYLES.manual}`}>
                               {FREQUENCY_LABELS[freq] || freq}
@@ -135,8 +134,10 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
                               </Badge>
                             )}
                           </div>
-                        </TableCell>
-                      )}
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {asset.score !== null ? (
                           <Badge variant="outline" className={getScoreColor(asset.score)}>
