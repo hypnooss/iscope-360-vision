@@ -115,7 +115,7 @@ export default function EnvironmentPage() {
           score: fw.last_score,
           status: fw.last_score !== null ? 'analyzed' : 'pending',
           agentName: fw.agents?.name || null,
-          navigationUrl: `/scope-firewall/reports`,
+          navigationUrl: `/environment/firewall/${fw.id}/edit`,
         })),
         ...(edRes.data || []).map((ed: any) => ({
           id: ed.id,
