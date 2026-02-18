@@ -1,32 +1,18 @@
 
-# Causa Raiz Identificada
+# Aumentar o Zoom Padrão do Mapa de Ataques
 
-O azul **não vem** do componente React — vem do `src/index.css`, linha 15:
+## O Que Mudar
 
-```css
-.leaflet-container {
-  background: #0a0e1a !important;  /* azul marinho escuro */
-}
-.leaflet-tile-pane {
-  background: #0a0e1a;
-}
-```
+O zoom atual é `2` (visão bem aberta do mundo inteiro). Mudar para `3` vai aproximar o mapa mantendo todos os continentes visíveis, mas com mais detalhe.
 
-O `!important` sobrescreve qualquer `background` passado via inline style no `MapContainer`. Por isso todas as tentativas anteriores não funcionaram — o problema estava no CSS global, não nos componentes.
+## Arquivos e Linhas
 
-## Correção
+**`src/components/firewall/AttackMap.tsx`** — 3 ocorrências do valor `2`:
 
-Trocar `#0a0e1a` por `#222222` em ambas as ocorrências no `src/index.css`:
+| Onde | Linha | Mudança |
+|---|---|---|
+| `<MapContainer zoom={2}>` | 176 | `zoom={3}` |
+| `FitWorldBounds` → `map.setView([20, 0], 2)` | 108 | `map.setView([20, 0], 3)` |
+| `MapResizer` → `map.setView([20, 0], 2)` | 119 | `map.setView([20, 0], 3)` |
 
-```css
-.leaflet-container {
-  background: #222222 !important;
-}
-.leaflet-tile-pane {
-  background: #222222;
-}
-```
-
-## Arquivo
-
-- **`src/index.css`** — linhas 15 e 25: trocar `#0a0e1a` por `#222222`
+O `minZoom` permanece em `1` (usuário pode afastar no fullscreen) e o `maxZoom` permanece em `4` (inline) / `8` (fullscreen) — sem alteração.
