@@ -330,7 +330,7 @@ export default function TemplatesPage() {
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-0">
               <Table>
                 <TableHeader>

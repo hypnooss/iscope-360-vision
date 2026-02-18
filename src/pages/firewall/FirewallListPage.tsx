@@ -583,7 +583,7 @@ export default function FirewallListPage() {
         </div>
 
         {/* Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {loading ? (
               <div className="p-6 space-y-4">

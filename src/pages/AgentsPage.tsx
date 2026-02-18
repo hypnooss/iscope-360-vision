@@ -571,7 +571,7 @@ export default function AgentsPage() {
         </div>
 
         {/* Agents Table */}
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">
