@@ -1,48 +1,92 @@
 
-# Fix: Bordas Escuras/Azuis nas Laterais do Mapa Fullscreen
+# Solução Definitiva: Canvas HTML5 (como Kaspersky/Fortinet)
 
-## Diagnóstico Real
+## O que os mapas profissionais fazem
 
-Olhando o print, o problema é duplo:
+Após pesquisa nos mapas de referência (Kaspersky CyberMap, Fortinet Threat Map, SonicWall), a técnica é sempre a mesma: **Canvas HTML5 com requestAnimationFrame**. Não Leaflet, não SVG overlay, não tiles externos.
 
-1. **Cor de fundo errada**: As bordas laterais estão com uma cor azul-escura diferente do preto do mapa. O container pai do `AttackMapFullscreen` tem fundo `bg-black` (#000000), mas o fundo do Leaflet e dos tiles tem cor `#0a0e1a` (azul-escuríssimo). A diferença de cor torna as bordas visíveis.
+Por que Canvas resolve o problema das bordas:
 
-2. **Mapa não preenche a largura**: Com `noWrap=true` e `fitBounds([-60,-180],[80,180])`, o Leaflet calcula o zoom para que o mundo inteiro caiba horizontalmente. Se o container for muito largo (widescreen), o zoom vai ser baixo e haverá espaço nas bordas superior/inferior, mas se for mais estreito, funciona. No fullscreen de widescreen (1920px+), o mapa fica menor que a tela.
+- Um `<canvas>` com `width = container.offsetWidth` e `height = container.offsetHeight` preenche EXATAMENTE o espaço do container — geometricamente impossível ter bordas
+- O mapa mundial é desenhado via `ctx.drawImage()` escalado para 100% da largura/altura
+- Coordenadas lat/lng são projetadas para pixels com uma fórmula equiretangular simples aplicada sobre as dimensões reais do canvas
+- Animações de projéteis são feitas com `requestAnimationFrame` — fluidas e sem dependência de nenhuma biblioteca
 
-## Causa Raiz
+## Por que as abordagens anteriores falharam
 
-O `MapContainer` tem `style={{ background: '#0a0e1a' }}`, mas o container pai em `AttackMapFullscreen` usa `bg-black`. Quando o Leaflet renderiza com `noWrap`, os tiles param em ±180° de longitude, deixando espaço vazio nas bordas — esse espaço herda a cor do container pai (`bg-black`), que é ligeiramente diferente do `#0a0e1a` do mapa.
-
-## Solução
-
-### Opção A (escolhida): Unificar a cor de fundo
-
-Mudar o container principal do `AttackMapFullscreen` de `bg-black` para `bg-[#0a0e1a]`. Assim, mesmo que o Leaflet não preencha 100% da largura, as bordas ficam invisíveis pois têm a mesma cor do mapa.
-
-Além disso, garantir que o `mapStyle.background` e o CSS do `.leaflet-container` também usem `#0a0e1a`.
-
-### Opção B (complementar): Remover `noWrap` e usar `minZoom` adaptativo
-
-Sem `noWrap`, o Leaflet preenche as bordas com repetições do mapa — o que não queremos. Então mantemos `noWrap=true`, mas ajustamos o `fitBounds` para deixar o mapa usar padding negativo e esticar levemente além dos limites reais, forçando o tile a cobrir toda a tela.
-
-Na prática, `padding: [-20, -20]` (valores negativos) faz o mapa "transbordar" ligeiramente, fazendo os tiles cobrirem as bordas.
-
-## Mudanças
-
-### `src/components/firewall/AttackMapFullscreen.tsx`
-- Mudar `bg-black` → `bg-[#0a0e1a]` no container principal
-
-### `src/components/firewall/AttackMap.tsx`
-- Alterar `FitWorldBounds`: usar `padding: [-10, -10]` para forçar o mapa a preencher o espaço, ou ajustar os bounds para latitudes menores que forçam um zoom maior
-- Garantir que `mapStyle.background` seja `'#0a0e1a'`
-
-### `src/index.css`
-- Adicionar `.leaflet-container { background: #0a0e1a !important; }` para garantir que o fundo do container Leaflet seja sempre o mesmo tom
-
-## Resultado Esperado
-
-| Antes | Depois |
+| Tentativa | Por que falhou |
 |---|---|
-| Bordas azul-escuras visíveis nas laterais | Bordas invisíveis (mesma cor do mapa) |
-| Diferença de cor entre container e mapa | Cor uniforme `#0a0e1a` em tudo |
-| Aspecto "janela no mapa" | Mapa imersivo sem bordas |
+| Leaflet + noWrap | Tiles rasterizados não existem fora da projeção Mercator em zoom 2 |
+| Leaflet + fitBounds | O zoom calculado ainda deixa espaço em widescreen 16:9/21:9 |
+| Leaflet + background color | Camufla, não resolve — o tile ainda não existe |
+| SVG + world-map-dark.png | Imagem PNG não se alinha com coordenadas projetadas com precisão |
+
+A causa raiz é geométrica: em zoom 2 com projeção Mercator, a largura do mapa é 2^zoom × 256 = 1024px. Em uma tela de 1920px, sobram 448px de borda. Isso NÃO é configurável.
+
+## Solução: AttackMapCanvas.tsx
+
+Criar um componente React com Canvas puro, usado EXCLUSIVAMENTE no fullscreen. O Leaflet continua intacto no modo inline do dashboard.
+
+### Como funciona
+
+**1. Canvas preenche o container:**
+```
+canvas.width  = container.offsetWidth   // ex: 1920px
+canvas.height = container.offsetHeight  // ex: 1080px
+ctx.drawImage(worldMapImg, 0, 0, canvas.width, canvas.height)
+```
+
+**2. Projeção equiretangular (mesma fórmula usada pelos mapas profissionais):**
+```
+x = (lng + 180) / 360 * canvas.width
+y = (90 - lat) / 180 * canvas.height
+```
+
+Esta fórmula é aplicada diretamente sobre as dimensões do canvas, então os pontos se alinham perfeitamente com a imagem em qualquer resolução.
+
+**3. Animações com requestAnimationFrame:**
+Cada projétil tem um `progress` (0 a 1) que avança a cada frame. A posição é interpolada entre origem e destino com `lerp`. Ao chegar, reseta. Múltiplos projéteis por rota com delay staggered (igual ao atual).
+
+**4. Glow via Canvas shadowBlur:**
+```
+ctx.shadowColor = '#ef4444'
+ctx.shadowBlur = 12
+ctx.fillStyle = '#ef4444'
+ctx.arc(x, y, r, 0, Math.PI * 2)
+```
+
+**5. ResizeObserver** atualiza canvas.width/height automaticamente ao redimensionar a janela.
+
+### Estrutura do componente
+
+```
+AttackMapCanvas.tsx
+  - useRef: canvasRef, animRef, imgRef
+  - useEffect[mount]: carrega world-map-dark.png, inicia loop de animação
+  - useEffect[resize]: ResizeObserver → redimensiona canvas e reprojecta
+  - draw(): ctx.clearRect → drawImage → trails → projectiles → markers → firewall
+  - Projéteis: array de { progress, delay, routeIndex } atualizado por frame
+```
+
+## Arquivos
+
+| Arquivo | Ação |
+|---|---|
+| `src/components/firewall/AttackMapCanvas.tsx` | CRIAR — Canvas fullscreen, sem dependência externa |
+| `src/components/firewall/AttackMapFullscreen.tsx` | MODIFICAR — usar `AttackMapCanvas` no lugar de `AttackMap fullscreen` |
+| `src/components/firewall/AttackMap.tsx` | SEM ALTERAÇÃO — Leaflet continua no modo inline/dashboard |
+
+## Detalhes Visuais Mantidos
+
+Todos os elementos visuais existentes são mantidos:
+- Marcadores de países com raio proporcional à contagem e glow colorido
+- Linhas de trail tracejadas com baixa opacidade
+- Projéteis animados staggered (3 por rota, delays 0s / 0.7s / 1.4s)
+- Flash de impacto pulsante no ponto do firewall
+- Marcador ciano do firewall com label
+
+## Por que Canvas garante zero bordas
+
+O canvas literalmente tem `width = tela` e `height = tela`. A imagem é desenhada com `drawImage(img, 0, 0, width, height)` — como `object-fit: cover` mas sem o problema de aspect ratio, porque o mapa mundo equiretangular foi projetado exatamente para ser esticado nessa proporção.
+
+Não há tiles, não há zoom, não há projeção Mercator, não há borda possível.
