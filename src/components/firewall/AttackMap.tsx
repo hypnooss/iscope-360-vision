@@ -5,8 +5,6 @@ import 'leaflet/dist/leaflet.css';
 import { getCountryCoords } from '@/lib/countryUtils';
 import type { TopCountry } from '@/types/analyzerInsights';
 
-const WORLD_BOUNDS = new LatLngBounds([-90, -180], [90, 180]);
-
 interface AttackMapProps {
   deniedCountries: TopCountry[];
   authFailedCountries: TopCountry[];
@@ -105,7 +103,7 @@ function ProjectileOverlay({
 function FitWorldBounds() {
   const map = useMap();
   useEffect(() => {
-    map.fitBounds([[-75, -180], [85, 180]], { animate: false });
+    map.fitBounds([[-60, -180], [80, 180]], { animate: false, padding: [0, 0] });
   }, [map]);
   return null;
 }
@@ -114,7 +112,10 @@ function FitWorldBounds() {
 function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
   const map = useMap();
   useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(() => {
+      map.invalidateSize();
+      map.fitBounds([[-60, -180], [80, 180]], { animate: false, padding: [0, 0] });
+    }, 150);
   }, [fullscreen, map]);
   return null;
 }
@@ -159,8 +160,6 @@ export function AttackMap({
         zoom={2}
         minZoom={1}
         maxZoom={fullscreen ? 8 : 4}
-        maxBounds={WORLD_BOUNDS}
-        maxBoundsViscosity={1.0}
         worldCopyJump={false}
         zoomControl={false}
         dragging={!!fullscreen}
