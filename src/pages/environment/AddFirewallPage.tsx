@@ -174,6 +174,14 @@ function FortiGateInstructions() {
                 </li>
                 <li className="flex items-center gap-1.5">
                   <span className="text-muted-foreground/60">–</span>
+                  <span><strong>Trusted Hosts:</strong> ative o toggle</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
+                  <span><strong>Host 1:</strong> insira o IP do servidor do agente iScope (ex: <span className="font-mono bg-muted px-1 rounded text-foreground">192.168.1.50/32</span>)</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/60">–</span>
                   <span>Clique em <strong>OK</strong></span>
                 </li>
               </ul>
@@ -194,12 +202,25 @@ function FortiGateInstructions() {
         <div className="ml-8 space-y-2">
           <p className="text-sm text-muted-foreground">Execute os seguintes comandos no CLI do FortiGate:</p>
           <pre className="text-xs bg-muted font-mono p-3 rounded border border-border overflow-x-auto text-foreground">{`config system api-user
-    edit "<nome-do-api-user>"
+    edit "iscope360"
         set accprofile "super_admin_readonly"
         set vdom "root"
+        set trusthost1 <IP-do-agente>/32
     next
 end`}</pre>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 space-y-2">
+        <p className="text-sm font-semibold text-destructive flex items-center gap-2">
+          🔒 Segurança: Restrição por IP (Trusted Hosts)
+        </p>
+        <p className="text-xs text-destructive/80">
+          Habilitar <strong>Trusted Hosts</strong> é essencial. Sem essa restrição, o API Token pode ser usado de qualquer origem na internet caso seja comprometido.
+        </p>
+        <p className="text-xs text-destructive/80">
+          Ao ativar Trusted Hosts e informar o IP do agente iScope, somente requisições originadas desse endereço serão aceitas pelo FortiGate — o token se torna inútil fora desse contexto.
+        </p>
       </div>
 
       <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
