@@ -142,7 +142,7 @@ export default function ExternalDomainEditPage() {
 
       if (domainRes.error || !domainRes.data) {
         toast.error('Domínio não encontrado');
-        navigate('/scope-external-domain/domains');
+        navigate('/environment');
         return;
       }
 
@@ -218,7 +218,7 @@ export default function ExternalDomainEditPage() {
       }
 
       toast.success('Domínio atualizado com sucesso!');
-      navigate('/scope-external-domain/domains');
+      navigate('/environment');
     } catch (error: any) {
       toast.error('Erro ao salvar: ' + error.message);
     } finally {
@@ -246,13 +246,13 @@ export default function ExternalDomainEditPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
-          { label: 'Domínio Externo' },
-          { label: 'Domínios', href: '/scope-external-domain/domains' },
+          { label: 'Ambiente', href: '/environment' },
+          { label: 'Domínios Externos' },
           { label: 'Editar' },
         ]} />
 
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/scope-external-domain/domains')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/environment')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
@@ -390,7 +390,7 @@ export default function ExternalDomainEditPage() {
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={() => navigate('/scope-external-domain/domains')}>
+          <Button variant="outline" onClick={() => navigate('/environment')}>
             Cancelar
           </Button>
           <Button onClick={handleSave} disabled={saving || !canEdit}>

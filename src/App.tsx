@@ -120,7 +120,7 @@ const App = () => (
                   <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
                   <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
                   <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
-                  <Route path="/scope-external-domain/domains/:id/edit" element={<ExternalDomainEditPage />} />
+                  <Route path="/environment/external-domain/:id/edit" element={<ExternalDomainEditPage />} />
                   <Route path="/scope-external-domain/analyzer" element={<AttackSurfaceAnalyzerPage />} />
 
                    {/* Microsoft 365 Module */}
