@@ -29,11 +29,11 @@ function getAdvisoryUrl(cve: FirewallCVE): string | null {
   const config = VENDOR_ADVISORY[cve.vendor];
   if (!config) return null;
 
-  // Check if any reference matches the vendor advisory
+  const domain = config.baseUrl.split('//')[1]?.split('/')[0];
+  if (!domain) return null;
+
   const advisoryRef = cve.references?.find((r) =>
-    config.baseUrl.split('//')[1]?.split('/')[0]
-      ? r.includes(config.baseUrl.split('//')[1].split('/')[0])
-      : false
+    typeof r === 'string' && r.includes(domain)
   );
   return advisoryRef || null;
 }
