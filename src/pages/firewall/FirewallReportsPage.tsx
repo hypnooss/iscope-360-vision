@@ -426,6 +426,12 @@ export default function FirewallReportsPage() {
     return 'bg-destructive/20 text-destructive border-destructive/30';
   };
 
+  const FREQUENCY_COLORS: Record<string, string> = {
+    daily: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    weekly: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  };
+
   const frequencyLabel = (freq: string) => {
     const map: Record<string, string> = {
       daily: 'Diário',
@@ -583,26 +589,27 @@ export default function FirewallReportsPage() {
                         <TableCell>{group.client_name}</TableCell>
                         <TableCell>
                           {group.vendor_name ? (
-                            <Badge variant="outline" className="text-xs">{group.vendor_name}</Badge>
+                            <Badge variant="outline" className="text-xs bg-orange-500/15 text-orange-400 border-orange-500/30">{group.vendor_name}</Badge>
                           ) : (
                             <span className="text-muted-foreground text-sm">—</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {group.agent_name ? (
-                            <Badge variant="outline" className="text-xs font-mono">{group.agent_name}</Badge>
+                            <Badge variant="outline" className="text-xs font-mono bg-cyan-500/15 text-cyan-400 border-cyan-500/30">{group.agent_name}</Badge>
                           ) : (
                             <span className="text-muted-foreground text-sm">—</span>
                           )}
                         </TableCell>
                         <TableCell>
-                          {group.schedule_frequency ? (
-                            <Badge variant="secondary" className="text-xs capitalize">
-                              {frequencyLabel(group.schedule_frequency)}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">Manual</span>
-                          )}
+                          {(() => {
+                            const freq = group.schedule_frequency || 'manual';
+                            return (
+                              <Badge variant="outline" className={`text-xs ${FREQUENCY_COLORS[freq] || ''}`}>
+                                {frequencyLabel(freq)}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           {currentAnalysis && currentAnalysis.score != null ? (
