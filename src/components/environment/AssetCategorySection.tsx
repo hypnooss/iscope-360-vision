@@ -93,12 +93,12 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
             <Table className="table-fixed w-full">
               <colgroup>
                 <col />                                    {/* Nome — fluido */}
-                <col style={{ width: '140px' }} />         {/* Agent */}
-                <col style={{ width: '180px' }} />         {/* Workspace */}
-                <col style={{ width: '200px' }} />         {/* Frequência */}
-                <col style={{ width: '80px' }} />          {/* Score */}
-                <col style={{ width: '110px' }} />         {/* Status */}
-                <col style={{ width: '100px' }} />         {/* Ações */}
+                <col style={{ width: '180px' }} />         {/* Agent */}
+                <col style={{ width: '240px' }} />         {/* Workspace */}
+                <col style={{ width: '240px' }} />         {/* Frequência */}
+                <col style={{ width: '100px' }} />         {/* Score */}
+                <col style={{ width: '140px' }} />         {/* Status */}
+                <col style={{ width: '120px' }} />         {/* Ações */}
               </colgroup>
               <TableHeader>
                 <TableRow>
