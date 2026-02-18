@@ -40,6 +40,9 @@ interface GroupedFirewall {
   client_name: string;
   agent_id: string | null;
   device_type_id: string | null;
+  vendor_name: string | null;
+  agent_name: string | null;
+  schedule_frequency: string | null;
   analyses: {
     id: string;
     score: number;
@@ -66,6 +69,9 @@ export default function FirewallReportsPage() {
     agent_id: string | null;
     device_type_id: string | null;
     client_name: string;
+    vendor_name: string | null;
+    agent_name: string | null;
+    schedule_frequency: string | null;
   }[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
@@ -137,21 +143,39 @@ export default function FirewallReportsPage() {
 
       const firewallIds = firewallsData.map(f => f.id);
 
-      // 2. Fetch analysis history for those firewalls (lightweight)
-      const { data: historyData } = await supabase
-        .from('analysis_history')
-        .select('id, firewall_id, score, created_at')
-        .in('firewall_id', firewallIds)
-        .order('created_at', { ascending: false });
-
-      // 3. Fetch client names
+      // 2. Fetch analysis history, client names, device types, agents, schedules in parallel
       const clientIds = [...new Set(firewallsData.map(f => f.client_id))];
-      const { data: clientsData } = await supabase
-        .from('clients')
-        .select('id, name')
-        .in('id', clientIds);
+      const deviceTypeIds = [...new Set(firewallsData.map(f => f.device_type_id).filter(Boolean))] as string[];
+      const agentIds = [...new Set(firewallsData.map(f => f.agent_id).filter(Boolean))] as string[];
 
-      const clientMap = new Map((clientsData || []).map(c => [c.id, c]));
+      const [historyRes, clientsRes, deviceTypesRes, agentsRes, schedulesRes] = await Promise.all([
+        supabase
+          .from('analysis_history')
+          .select('id, firewall_id, score, created_at')
+          .in('firewall_id', firewallIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('clients')
+          .select('id, name')
+          .in('id', clientIds),
+        deviceTypeIds.length > 0
+          ? supabase.from('device_types').select('id, vendor, name').in('id', deviceTypeIds)
+          : Promise.resolve({ data: [] }),
+        agentIds.length > 0
+          ? supabase.from('agents').select('id, name').in('id', agentIds)
+          : Promise.resolve({ data: [] }),
+        supabase
+          .from('analysis_schedules')
+          .select('firewall_id, frequency')
+          .in('firewall_id', firewallIds)
+          .eq('is_active', true),
+      ]);
+
+      const historyData = historyRes.data;
+      const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c]));
+      const deviceTypeMap = new Map((deviceTypesRes.data || []).map(dt => [dt.id, dt]));
+      const agentMap = new Map((agentsRes.data || []).map(a => [a.id, a]));
+      const scheduleMap = new Map((schedulesRes.data || []).map(s => [s.firewall_id, s]));
       const firewallMap = new Map(firewallsData.map(f => [f.id, f]));
 
       // Build reports from history
@@ -179,6 +203,9 @@ export default function FirewallReportsPage() {
         agent_id: f.agent_id,
         device_type_id: f.device_type_id,
         client_name: clientMap.get(f.client_id)?.name || 'N/A',
+        vendor_name: f.device_type_id ? (deviceTypeMap.get(f.device_type_id)?.vendor || null) : null,
+        agent_name: f.agent_id ? (agentMap.get(f.agent_id)?.name || null) : null,
+        schedule_frequency: scheduleMap.get(f.id)?.frequency || null,
       })));
     } catch (error) {
       console.error('Error fetching firewall compliance reports:', error);
@@ -210,6 +237,9 @@ export default function FirewallReportsPage() {
           client_name: f.client_name,
           agent_id: f.agent_id,
           device_type_id: f.device_type_id,
+          vendor_name: f.vendor_name,
+          agent_name: f.agent_name,
+          schedule_frequency: f.schedule_frequency,
           analyses: [],
         });
       }
@@ -225,6 +255,9 @@ export default function FirewallReportsPage() {
           client_name: report.client_name,
           agent_id: null,
           device_type_id: null,
+          vendor_name: null,
+          agent_name: null,
+          schedule_frequency: null,
           analyses: [],
         });
       }
@@ -393,6 +426,16 @@ export default function FirewallReportsPage() {
     return 'bg-destructive/20 text-destructive border-destructive/30';
   };
 
+  const frequencyLabel = (freq: string) => {
+    const map: Record<string, string> = {
+      daily: 'Diário',
+      weekly: 'Semanal',
+      monthly: 'Mensal',
+      manual: 'Manual',
+    };
+    return map[freq] || freq;
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR', {
       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -516,6 +559,9 @@ export default function FirewallReportsPage() {
                   <TableRow>
                     <TableHead>Firewall</TableHead>
                     <TableHead>Workspace</TableHead>
+                    <TableHead>Fabricante</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Frequência</TableHead>
                     <TableHead>Último Score</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -535,6 +581,29 @@ export default function FirewallReportsPage() {
                           </div>
                         </TableCell>
                         <TableCell>{group.client_name}</TableCell>
+                        <TableCell>
+                          {group.vendor_name ? (
+                            <span className="text-sm text-foreground">{group.vendor_name}</span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {group.agent_name ? (
+                            <Badge variant="outline" className="text-xs font-mono">{group.agent_name}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {group.schedule_frequency ? (
+                            <Badge variant="secondary" className="text-xs capitalize">
+                              {frequencyLabel(group.schedule_frequency)}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Manual</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {currentAnalysis && currentAnalysis.score != null ? (
                             <Badge variant="outline" className={getScoreBadgeClass(currentAnalysis.score)}>
