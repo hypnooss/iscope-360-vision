@@ -165,7 +165,7 @@ export function AttackMap({
   const mapStyle: React.CSSProperties = {
     height: fullscreen ? '100%' : '240px',
     width: '100%',
-    background: '#121726',
+    background: '#1a1a2a',
     borderRadius: fullscreen ? '0' : '8px',
   };
 
