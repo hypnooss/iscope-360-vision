@@ -1,111 +1,48 @@
 
-# Fix: Layout do AttackMap Fullscreen — z-index, Bordas e Sobreposição
+# Fix: Bordas Escuras/Azuis nas Laterais do Mapa Fullscreen
 
-## Diagnóstico dos 3 Problemas
+## Diagnóstico Real
 
-### Problema 1: Elementos ficando atrás do mapa (legenda, firewall name)
-O Leaflet define z-index interno nos seus panes via CSS:
-- `.leaflet-map-pane` → z-index: 400
-- `.leaflet-tile-pane` → z-index: 200
-- `.leaflet-overlay-pane` → z-index: 400
-- `.leaflet-marker-pane` → z-index: 600
+Olhando o print, o problema é duplo:
 
-O `AttackMapFullscreen` usa `z-20` (Tailwind = z-index: 20) nos overlays. Como o Leaflet já tem z-index 400+, os painéis "Top Origens de Ataque", "Voltar", nome do firewall e barra inferior ficam **atrás** do mapa.
+1. **Cor de fundo errada**: As bordas laterais estão com uma cor azul-escura diferente do preto do mapa. O container pai do `AttackMapFullscreen` tem fundo `bg-black` (#000000), mas o fundo do Leaflet e dos tiles tem cor `#0a0e1a` (azul-escuríssimo). A diferença de cor torna as bordas visíveis.
 
-**Fix**: Mudar os overlays do `AttackMapFullscreen` de `z-20` → `z-[1000]` (acima do z-index máximo do Leaflet que é 650 para popups).
+2. **Mapa não preenche a largura**: Com `noWrap=true` e `fitBounds([-60,-180],[80,180])`, o Leaflet calcula o zoom para que o mundo inteiro caiba horizontalmente. Se o container for muito largo (widescreen), o zoom vai ser baixo e haverá espaço nas bordas superior/inferior, mas se for mais estreito, funciona. No fullscreen de widescreen (1920px+), o mapa fica menor que a tela.
 
-### Problema 2: Bordas azuis nas laterais
-O CSS padrão do Leaflet injeta:
-```css
-.leaflet-container {
-  outline: none; /* às vezes não funciona em todos os browsers */
-}
-.leaflet-container:focus {
-  outline: 2px solid #0078d7; /* ou similar */
-}
-```
-Além disso, o próprio div container pode ter border/outline azul de foco do browser.
+## Causa Raiz
 
-**Fix**: Adicionar CSS global para remover outline/border do container Leaflet:
-```css
-.leaflet-container {
-  outline: none !important;
-  border: none !important;
-}
-.leaflet-container:focus {
-  outline: none !important;
-}
-```
+O `MapContainer` tem `style={{ background: '#0a0e1a' }}`, mas o container pai em `AttackMapFullscreen` usa `bg-black`. Quando o Leaflet renderiza com `noWrap`, os tiles param em ±180° de longitude, deixando espaço vazio nas bordas — esse espaço herda a cor do container pai (`bg-black`), que é ligeiramente diferente do `#0a0e1a` do mapa.
 
-### Problema 3: Mapa não preenchendo corretamente o fullscreen
-A estrutura atual:
-```
-div.fixed.flex-col         ← sem height explícito além do inset-0
-  div.absolute (top bar)   ← ok
-  div.flex-1.h-full        ← flex-1 + h-full conflita
-    AttackMap (h-full)     ← não sabe qual é o pai
-```
+## Solução
 
-O `flex-1` já distribui o espaço restante corretamente, mas `h-full` dentro de `flex-1` é redundante e pode causar comportamento inesperado. O container pai precisa ter `h-full` explicitamente.
+### Opção A (escolhida): Unificar a cor de fundo
 
-**Fix**: Remover `h-full` do wrapper do mapa (deixar só `flex-1`), garantir que o container pai `fixed inset-0` tenha altura implícita (`inset-0` = top/right/bottom/left: 0, o que já define a altura).
+Mudar o container principal do `AttackMapFullscreen` de `bg-black` para `bg-[#0a0e1a]`. Assim, mesmo que o Leaflet não preencha 100% da largura, as bordas ficam invisíveis pois têm a mesma cor do mapa.
 
-## Arquivos Modificados
+Além disso, garantir que o `mapStyle.background` e o CSS do `.leaflet-container` também usem `#0a0e1a`.
 
-| Arquivo | Mudança |
-|---|---|
-| `src/components/firewall/AttackMapFullscreen.tsx` | z-index de `z-20` → `z-[1000]` nos overlays, corrigir estrutura do wrapper do mapa |
-| `src/index.css` | CSS global para remover outline/border do Leaflet |
+### Opção B (complementar): Remover `noWrap` e usar `minZoom` adaptativo
 
-## Mudanças Específicas
+Sem `noWrap`, o Leaflet preenche as bordas com repetições do mapa — o que não queremos. Então mantemos `noWrap=true`, mas ajustamos o `fitBounds` para deixar o mapa usar padding negativo e esticar levemente além dos limites reais, forçando o tile a cobrir toda a tela.
 
-### `AttackMapFullscreen.tsx`
+Na prática, `padding: [-20, -20]` (valores negativos) faz o mapa "transbordar" ligeiramente, fazendo os tiles cobrirem as bordas.
 
-**Top bar** (linha 63): `z-20` → `z-[1000]`
-```tsx
-<div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
-```
+## Mudanças
 
-**Right panel** (linha 96): `z-20` → `z-[1000]`
-```tsx
-<div className="absolute top-20 right-4 z-[1000] w-56 bg-black/70 ...">
-```
+### `src/components/firewall/AttackMapFullscreen.tsx`
+- Mudar `bg-black` → `bg-[#0a0e1a]` no container principal
 
-**Bottom stats bar** (linha 134): `z-20` → `z-[1000]`
-```tsx
-<div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 ...">
-```
-
-**Wrapper do mapa** (linha 85): remover `h-full`, manter só `flex-1 w-full`
-```tsx
-<div className="flex-1 w-full min-h-0">
-```
-O `min-h-0` é necessário para que o flex-1 não estoure quando o filho tem altura maior que o esperado.
+### `src/components/firewall/AttackMap.tsx`
+- Alterar `FitWorldBounds`: usar `padding: [-10, -10]` para forçar o mapa a preencher o espaço, ou ajustar os bounds para latitudes menores que forçam um zoom maior
+- Garantir que `mapStyle.background` seja `'#0a0e1a'`
 
 ### `src/index.css`
-
-Adicionar após as importações existentes do Leaflet:
-```css
-/* Fix Leaflet container focus outline / blue borders */
-.leaflet-container {
-  outline: none !important;
-  border: none !important;
-}
-.leaflet-container:focus,
-.leaflet-container:focus-visible {
-  outline: none !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-```
+- Adicionar `.leaflet-container { background: #0a0e1a !important; }` para garantir que o fundo do container Leaflet seja sempre o mesmo tom
 
 ## Resultado Esperado
 
-| Problema | Antes | Depois |
-|---|---|---|
-| "Top Origens de Ataque" sumindo | Atrás do mapa (z-index 400) | Visível na frente (z-index 1000) |
-| Nome do firewall sumindo | Atrás do mapa | Visível no topo direito |
-| Barra de legenda (Auth/Denied) | Atrás do mapa | Visível na base |
-| Botão "Voltar" | Possivelmente atrás | Visível no topo esquerdo |
-| Bordas azuis laterais | Visíveis | Removidas via CSS |
-| Altura do mapa no fullscreen | Pode não preencher tudo | `flex-1 min-h-0` preenche corretamente |
+| Antes | Depois |
+|---|---|
+| Bordas azul-escuras visíveis nas laterais | Bordas invisíveis (mesma cor do mapa) |
+| Diferença de cor entre container e mapa | Cor uniforme `#0a0e1a` em tudo |
+| Aspecto "janela no mapa" | Mapa imersivo sem bordas |
