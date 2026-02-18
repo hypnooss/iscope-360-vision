@@ -12,7 +12,7 @@
 .leaflet-container {
   outline: none !important;
   border: none !important;
-  background: #0a0e1a !important;
+  background: #222222 !important;
 }
 .leaflet-container:focus,
 .leaflet-container:focus-visible {
@@ -22,7 +22,7 @@
 }
 /* Ensure tiles area background matches map theme */
 .leaflet-tile-pane {
-  background: #0a0e1a;
+  background: #222222;
 }
 
 
