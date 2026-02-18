@@ -8,6 +8,18 @@
 .leaflet-control-attribution { display: none !important; }
 .leaflet-container { font-family: inherit; }
 
+/* Fix Leaflet container focus outline / blue borders */
+.leaflet-container {
+  outline: none !important;
+  border: none !important;
+}
+.leaflet-container:focus,
+.leaflet-container:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @layer base {
