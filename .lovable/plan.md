@@ -1,73 +1,29 @@
 
-# Ajuste do Modal de Agendamento — Firewall Analyzer
+# Correção do Erro ao Salvar Agendamento
 
-## Problema
+## Causa do Erro
 
-O modal de agendamento do Firewall Analyzer usa campos `<Input type="number">` para hora e dia do mês, enquanto o Surface Analyzer usa `<Select>` com dropdowns, resultando em uma inconsistência visual e de UX entre os dois modais.
+O erro `there is no unique or exclusion constraint matching the ON CONFLICT specification` ocorre porque a tabela `analyzer_schedules` não tem uma constraint `UNIQUE` na coluna `firewall_id`.
 
-## Mudanças necessárias em `src/pages/firewall/AnalyzerDashboardPage.tsx`
+O código faz um `upsert` com `{ onConflict: 'firewall_id' }`, mas o banco de dados não sabe que `firewall_id` deve ser único — por isso a operação falha.
 
-### 1. Campo "Hora de execução" — trocar Input por Select
+## Correção
 
-**Antes:**
-```tsx
-<Label>Hora de execução (0–23)</Label>
-<Input type="number" min={0} max={23} value={scheduleHour} ... />
+### 1. Migration — adicionar UNIQUE constraint
+
+Criar uma migration SQL que adiciona o índice único na tabela:
+
+```sql
+ALTER TABLE public.analyzer_schedules
+  ADD CONSTRAINT analyzer_schedules_firewall_id_key UNIQUE (firewall_id);
 ```
 
-**Depois (igual ao Surface Analyzer):**
-```tsx
-<Label>Hora de execução (UTC-3)</Label>
-<Select value={String(scheduleHour)} onValueChange={(v) => setScheduleHour(Number(v))}>
-  <SelectTrigger><SelectValue /></SelectTrigger>
-  <SelectContent>
-    {Array.from({ length: 24 }, (_, i) => (
-      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
-    ))}
-  </SelectContent>
-</Select>
-```
+Isso garante que cada firewall tenha no máximo um registro de agendamento do Analyzer, e permite que o `upsert` funcione corretamente.
 
-### 2. Campo "Dia do mês" — trocar Input por Select
+### 2. Nenhuma alteração de código necessária
 
-**Antes:**
-```tsx
-<Label>Dia do mês (1–28)</Label>
-<Input type="number" min={1} max={28} value={scheduleDayOfMonth} ... />
-```
-
-**Depois (igual ao Surface Analyzer):**
-```tsx
-<Label>Dia do mês</Label>
-<Select value={String(scheduleDayOfMonth)} onValueChange={(v) => setScheduleDayOfMonth(Number(v))}>
-  <SelectTrigger><SelectValue /></SelectTrigger>
-  <SelectContent>
-    {Array.from({ length: 28 }, (_, i) => (
-      <SelectItem key={i + 1} value={String(i + 1)}>Dia {i + 1}</SelectItem>
-    ))}
-  </SelectContent>
-</Select>
-```
-
-### 3. Adicionar opção "Por Hora" na frequência
-
-Adicionar `<SelectItem value="hourly">Por Hora</SelectItem>` no Select de frequência.
-
-Quando selecionado `hourly`, a hora de execução não se aplica (executa a cada hora), portanto o campo de hora fica oculto.
-
-### 4. Atualizar `calculateNextRun` para suportar `hourly`
-
-```tsx
-if (freq === 'hourly') {
-  next.setMinutes(0, 0, 0);
-  next.setTime(next.getTime() + 60 * 60 * 1000); // próxima hora cheia
-}
-```
-
-### 5. Ajuste visual do "Next run preview"
-
-Trocar `bg-secondary/50 border border-border` por `bg-muted/20 border border-border/50` para alinhar com o padrão do Surface Analyzer.
+O `handleSaveSchedule` já usa `onConflict: 'firewall_id'` corretamente — após a migration, ele passará a funcionar sem nenhuma mudança no frontend.
 
 ## Arquivo modificado
 
-- `src/pages/firewall/AnalyzerDashboardPage.tsx` (apenas o bloco do Schedule Dialog, linhas 855–949, e a função `calculateNextRun`, linhas 373–393)
+- Nova migration SQL em `supabase/migrations/`
