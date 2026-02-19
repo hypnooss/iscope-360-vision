@@ -81,8 +81,13 @@ export default function AnalyzerConfigChangesPage() {
   }, [user, authLoading, navigate, hasModuleAccess]);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
-  const configChangesCount = snapshot?.metrics?.configChanges || 0;
-  const details: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
+  const SYSTEM_ACTION_PATTERNS = ['phase1_sa', 'phase2_sa'];
+  const allDetails: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
+  const details = allDetails.filter(d => {
+    if (!d.user || d.user === 'unknown') return false;
+    if (SYSTEM_ACTION_PATTERNS.some(p => d.action?.toLowerCase().includes(p))) return false;
+    return true;
+  });
 
   const categories = useMemo(() => {
     const cats = new Set(details.map(d => d.category));
@@ -166,13 +171,13 @@ export default function AnalyzerConfigChangesPage() {
           </Select>
         </div>
 
-        {configChangesCount > 0 && details.length === 0 && !isLoading && (
+        {allDetails.length > 0 && details.length === 0 && !isLoading && !searchUser && filterCategory === 'all' && (
           <Alert className="mb-6 border-warning/30 bg-warning/5">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle className="text-warning">Detalhes indisponíveis</AlertTitle>
             <AlertDescription>
-              {configChangesCount} alteração(ões) detectada(s), mas os detalhes não estão disponíveis neste snapshot.
-              Execute uma nova análise para gerar os dados detalhados.
+              Alterações detectadas, mas todas são ações automáticas do sistema.
+              Execute uma nova análise para gerar dados detalhados de administradores.
             </AlertDescription>
           </Alert>
         )}
