@@ -802,16 +802,16 @@ export default function AnalyzerDashboardPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="allowed">
+                <Tabs defaultValue="blocked">
                   <TabsList className="mb-3">
-                    <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
                     <TabsTrigger value="blocked">Saída Bloqueada</TabsTrigger>
+                    <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="allowed">
-                    <IPListWidget ips={m?.topOutboundIPs ?? []} />
-                  </TabsContent>
                   <TabsContent value="blocked">
                     <IPListWidget ips={m?.topOutboundBlockedIPs ?? []} />
+                  </TabsContent>
+                  <TabsContent value="allowed">
+                    <IPListWidget ips={m?.topOutboundIPs ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
@@ -828,16 +828,16 @@ export default function AnalyzerDashboardPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="outbound_allowed">
+                <Tabs defaultValue="outbound_blocked">
                   <TabsList className="mb-3">
-                    <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
                     <TabsTrigger value="outbound_blocked">Saída Bloqueada</TabsTrigger>
+                    <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="outbound_allowed">
-                    <CountryListWidget countries={m?.topOutboundCountries ?? []} />
-                  </TabsContent>
                   <TabsContent value="outbound_blocked">
                     <CountryListWidget countries={m?.topOutboundBlockedCountries ?? []} />
+                  </TabsContent>
+                  <TabsContent value="outbound_allowed">
+                    <CountryListWidget countries={m?.topOutboundCountries ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
