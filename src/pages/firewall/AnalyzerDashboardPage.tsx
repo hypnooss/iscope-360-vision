@@ -832,16 +832,12 @@ export default function AnalyzerDashboardPage() {
                   <TabsList className="mb-3">
                     <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
                     <TabsTrigger value="outbound_blocked">Saída Bloqueada</TabsTrigger>
-                    <TabsTrigger value="denied">Negado (Entrada)</TabsTrigger>
                   </TabsList>
                   <TabsContent value="outbound_allowed">
                     <CountryListWidget countries={m?.topOutboundCountries ?? []} />
                   </TabsContent>
                   <TabsContent value="outbound_blocked">
                     <CountryListWidget countries={m?.topOutboundBlockedCountries ?? []} />
-                  </TabsContent>
-                  <TabsContent value="denied">
-                    <CountryListWidget countries={m?.topCountries ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
