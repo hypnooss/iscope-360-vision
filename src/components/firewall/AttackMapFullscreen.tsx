@@ -7,40 +7,42 @@ import type { TopCountry, TopBlockedIP } from '@/types/analyzerInsights';
 import 'flag-icons/css/flag-icons.min.css';
 
 interface AttackMapFullscreenProps {
-  deniedCountries: TopCountry[];
   authFailedCountries: TopCountry[];
   authFailedVpnCountries?: TopCountry[];
   authSuccessCountries: TopCountry[];
   outboundCountries?: TopCountry[];
+  outboundBlockedCountries?: TopCountry[];
   firewallLocation?: { lat: number; lng: number; label: string };
   firewallName?: string;
   lastAnalysis?: string;
-  totalDenied?: number;
   totalFwAuthFailed?: number;
   totalVpnAuthFailed?: number;
   totalAuthSuccess?: number;
   totalOutbound?: number;
+  totalOutboundBlocked?: number;
   topBlockedIPs?: TopBlockedIP[];
   topOutboundCountries?: TopCountry[];
+  topOutboundBlockedCountries?: TopCountry[];
   onClose: () => void;
 }
 
 export function AttackMapFullscreen({
-  deniedCountries,
   authFailedCountries,
   authFailedVpnCountries = [],
   authSuccessCountries,
   outboundCountries = [],
+  outboundBlockedCountries = [],
   firewallLocation,
   firewallName,
   lastAnalysis,
-  totalDenied = 0,
   totalFwAuthFailed = 0,
   totalVpnAuthFailed = 0,
   totalAuthSuccess = 0,
   totalOutbound = 0,
+  totalOutboundBlocked = 0,
   topBlockedIPs = [],
   topOutboundCountries = [],
+  topOutboundBlockedCountries = [],
   onClose,
 }: AttackMapFullscreenProps) {
   useEffect(() => {
@@ -54,8 +56,8 @@ export function AttackMapFullscreen({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Merge denied + FW fail + VPN fail for top attack origins
-  const allAttackCountries = [...deniedCountries, ...authFailedCountries, ...authFailedVpnCountries]
+  // Merge FW fail + VPN fail for top attack origins
+  const allAttackCountries = [...authFailedCountries, ...authFailedVpnCountries]
     .reduce<TopCountry[]>((acc, c) => {
       const existing = acc.find(a => a.country === c.country);
       if (existing) existing.count += c.count;
@@ -66,6 +68,7 @@ export function AttackMapFullscreen({
     .slice(0, 5);
 
   const topOutbound = topOutboundCountries.slice(0, 5);
+  const topOutboundBlocked = topOutboundBlockedCountries.slice(0, 5);
 
   return (
     <div className="fixed inset-0 z-[9999] animate-fade-in flex flex-col" style={{ background: '#222222' }}>
@@ -94,11 +97,11 @@ export function AttackMapFullscreen({
       {/* Map */}
       <div className="flex-1 w-full min-h-0">
         <AttackMap
-          deniedCountries={deniedCountries}
           authFailedCountries={authFailedCountries}
           authFailedVpnCountries={authFailedVpnCountries}
           authSuccessCountries={authSuccessCountries}
           outboundCountries={outboundCountries}
+          outboundBlockedCountries={outboundBlockedCountries}
           firewallLocation={firewallLocation}
           fullscreen={true}
         />
@@ -170,11 +173,6 @@ export function AttackMapFullscreen({
       <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
         <div className="flex items-center justify-center gap-6 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#ef4444', boxShadow: '0 0 8px rgba(239,68,68,0.6)' }} />
-            <span className="text-white/60 text-xs">Tráfego Negado</span>
-            <span className="text-white font-bold text-sm">{totalDenied.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
             <span className="text-white/60 text-xs">Falha Auth FW</span>
             <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
@@ -192,8 +190,15 @@ export function AttackMapFullscreen({
           {totalOutbound > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#38bdf8', boxShadow: '0 0 8px rgba(56,189,248,0.6)' }} />
-              <span className="text-white/60 text-xs">Conexões Saída</span>
+              <span className="text-white/60 text-xs">Saída Permitida</span>
               <span className="text-white font-bold text-sm">{totalOutbound.toLocaleString()}</span>
+            </div>
+          )}
+          {totalOutboundBlocked > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#ef4444', boxShadow: '0 0 8px rgba(239,68,68,0.6)' }} />
+              <span className="text-white/60 text-xs">Saída Bloqueada</span>
+              <span className="text-white font-bold text-sm">{totalOutboundBlocked.toLocaleString()}</span>
             </div>
           )}
           <div className="flex items-center gap-2">

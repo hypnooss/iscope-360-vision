@@ -7,11 +7,11 @@ import type { TopCountry } from '@/types/analyzerInsights';
 import { supabase } from '@/integrations/supabase/client';
 
 interface AttackMapProps {
-  deniedCountries: TopCountry[];
-  authFailedCountries: TopCountry[];       // FW auth failures (legacy compat)
-  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (new)
-  authSuccessCountries: TopCountry[];
-  outboundCountries?: TopCountry[];        // Outbound connections (FW → destination)
+  authFailedCountries: TopCountry[];       // FW auth failures (laranja)
+  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (amarelo)
+  authSuccessCountries: TopCountry[];      // Auth success (verde)
+  outboundCountries?: TopCountry[];        // Saída com sucesso (azul) — FW → destino
+  outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
   firewallLocation?: { lat: number; lng: number; label: string };
   fullscreen?: boolean;
 }
@@ -20,13 +20,13 @@ const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y
 const FALLBACK_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 const STADIA_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
-// Color palette for the 5 layers
+// Color palette
 const COLORS = {
-  denied: '#ef4444',      // Red — denied traffic
-  fw_fail: '#f97316',     // Orange — FW auth failure
-  vpn_fail: '#eab308',    // Yellow — VPN auth failure
-  auth_success: '#22c55e',// Green — auth success
-  outbound: '#38bdf8',    // Sky blue — outbound connections (FW → destination)
+  fw_fail: '#f97316',       // Laranja — falha auth FW (inbound: país → FW)
+  vpn_fail: '#eab308',      // Amarelo — falha auth VPN (inbound: país → FW)
+  auth_success: '#22c55e',  // Verde — sucesso auth (inbound: país → FW)
+  outbound_ok: '#38bdf8',   // Azul — saída com sucesso (FW → país destino)
+  outbound_blocked: '#ef4444', // Vermelho — saída bloqueada (FW → país destino)
 };
 
 // SVG overlay with animated projectiles — synced to Leaflet's projection
@@ -94,12 +94,11 @@ function ProjectileOverlay({
           );
         })}
 
-        {/* Outbound projectiles: firewall → country (denied + outbound connections) */}
+        {/* Outbound projectiles: firewall → country (saída com sucesso = azul, saída bloqueada = vermelho) */}
         {outboundPoints.map((p, i) => {
           const [px, py] = toSVG(p.lat, p.lng);
-          // Reversed path: firewall → destination
           const pathD = `M${fw[0]},${fw[1]} L${px},${py}`;
-          const glowId = p.color === COLORS.denied ? 'url(#lf-glow-red)' : 'url(#lf-glow-sky)';
+          const glowId = p.color === COLORS.outbound_blocked ? 'url(#lf-glow-red)' : 'url(#lf-glow-sky)';
 
           return (
             <g key={`outbound-${i}`}>
@@ -144,11 +143,11 @@ function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
 }
 
 export function AttackMap({
-  deniedCountries,
   authFailedCountries,
   authFailedVpnCountries = [],
   authSuccessCountries,
   outboundCountries = [],
+  outboundBlockedCountries = [],
   firewallLocation,
   fullscreen,
 }: AttackMapProps) {
@@ -184,33 +183,26 @@ export function AttackMap({
     return result;
   }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries]);
 
-  // Outbound: denied traffic and outbound connections go FROM firewall TO countries
+  // Outbound: FW → country (azul = sucesso, vermelho = bloqueada)
   const outboundPoints = useMemo(() => {
     const result: { lat: number; lng: number; r: number; color: string; label: string; count: number; type: string }[] = [];
 
-    const addDenied = (countries: TopCountry[]) => {
-      for (const c of countries) {
-        const coords = getCountryCoords(c.country);
-        if (!coords) continue;
-        const r = Math.max(4, Math.min(18, Math.log2(c.count + 1) * 3));
-        result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.denied, label: c.country, count: c.count, type: 'Tráfego Negado' });
-      }
-    };
+    for (const c of outboundCountries) {
+      const coords = getCountryCoords(c.country);
+      if (!coords) continue;
+      const r = Math.max(4, Math.min(14, Math.log2(c.count + 1) * 2.5));
+      result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.outbound_ok, label: c.country, count: c.count, type: 'Saída Permitida' });
+    }
 
-    const addOutbound = (countries: TopCountry[]) => {
-      for (const c of countries) {
-        const coords = getCountryCoords(c.country);
-        if (!coords) continue;
-        const r = Math.max(4, Math.min(14, Math.log2(c.count + 1) * 2.5));
-        result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.outbound, label: c.country, count: c.count, type: 'Saída' });
-      }
-    };
-
-    addDenied(deniedCountries);
-    addOutbound(outboundCountries);
+    for (const c of outboundBlockedCountries) {
+      const coords = getCountryCoords(c.country);
+      if (!coords) continue;
+      const r = Math.max(4, Math.min(14, Math.log2(c.count + 1) * 2.5));
+      result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.outbound_blocked, label: c.country, count: c.count, type: 'Saída Bloqueada' });
+    }
 
     return result;
-  }, [deniedCountries, outboundCountries]);
+  }, [outboundCountries, outboundBlockedCountries]);
 
   const allPoints = [...inboundPoints, ...outboundPoints];
 
@@ -317,8 +309,8 @@ export function AttackMap({
       {!fullscreen && (
         <div className="flex items-center gap-3 mt-3 justify-center text-xs text-muted-foreground flex-wrap">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.denied }} />
-            Tráfego Negado
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_blocked }} />
+            Saída Bloqueada
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.fw_fail }} />
@@ -333,8 +325,8 @@ export function AttackMap({
             Sucesso Auth
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound }} />
-            Saída
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_ok }} />
+            Saída Permitida
           </div>
           {firewallLocation && (
             <div className="flex items-center gap-1.5">

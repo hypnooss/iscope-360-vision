@@ -853,63 +853,96 @@ function analyzeAnomalies(logs: any[], ipCountryMap: Record<string, string> = {}
 
 function analyzeOutboundTraffic(logs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [] } };
+  const emptyResult = { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [], outboundBlocked: 0, topOutboundBlockedIPs: [], topOutboundBlockedCountries: [] } };
+  if (!Array.isArray(logs) || logs.length === 0) return emptyResult;
 
-  // Filter outbound: srcip is private and dstip is public, OR direction=outbound
-  const outboundLogs = logs.filter(log => {
+  // Separate outbound into allowed and blocked
+  const isOutboundCandidate = (log: any) => {
     const src = log.srcip || log.src || '';
     const dst = log.dstip || log.dst || '';
     const direction = (log.direction || '').toLowerCase();
-    const action = (log.action || '').toLowerCase();
     if (direction === 'outbound') return true;
-    if (action === 'deny' || action === 'block' || action === 'blocked') return false;
     return isPrivateIP(src) && dst && !isPrivateIP(dst);
-  });
+  };
 
-  if (outboundLogs.length === 0) return { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [] } };
+  const isActionDenied = (log: any) => {
+    const action = (log.action || '').toLowerCase();
+    return action === 'deny' || action === 'block' || action === 'blocked';
+  };
 
-  const dstIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
-  const countryMap: Record<string, number> = {};
+  const allowedLogs = logs.filter(log => isOutboundCandidate(log) && !isActionDenied(log));
+  const blockedLogs = logs.filter(log => isOutboundCandidate(log) && isActionDenied(log));
 
-  for (const log of outboundLogs) {
-    const dstip = log.dstip || log.dst || '';
-    if (!dstip || isPrivateIP(dstip)) continue;
-    const country = log.dstcountry || log.dst_country || (dstip ? ipCountryMap[dstip] : undefined) || undefined;
-    const dstport = parseInt(log.dstport || '0');
+  // Helper: build IP and country rankings from destination
+  const buildDstRankings = (subset: any[]) => {
+    const dstIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+    const countryMap: Record<string, number> = {};
 
-    if (!dstIPMap[dstip]) dstIPMap[dstip] = { count: 0, country, ports: new Set() };
-    dstIPMap[dstip].count++;
-    if (dstport > 0) dstIPMap[dstip].ports.add(dstport);
-    if (country) countryMap[country] = (countryMap[country] || 0) + 1;
-  }
+    for (const log of subset) {
+      const dstip = log.dstip || log.dst || '';
+      if (!dstip || isPrivateIP(dstip)) continue;
+      const country = log.dstcountry || log.dst_country || (dstip ? ipCountryMap[dstip] : undefined) || undefined;
+      const dstport = parseInt(log.dstport || '0');
 
-  const topOutboundIPs = Object.entries(dstIPMap)
-    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
-    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+      if (!dstIPMap[dstip]) dstIPMap[dstip] = { count: 0, country, ports: new Set() };
+      dstIPMap[dstip].count++;
+      if (dstport > 0) dstIPMap[dstip].ports.add(dstport);
+      if (country) countryMap[country] = (countryMap[country] || 0) + 1;
+    }
 
-  const topOutboundCountries = Object.entries(countryMap)
-    .sort((a, b) => b[1] - a[1]).slice(0, 15)
-    .map(([country, count]) => ({ country, count }));
+    const topIPs = Object.entries(dstIPMap)
+      .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+      .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
 
-  // High-volume single destination insight
-  for (const [ip, data] of Object.entries(dstIPMap)) {
-    if (data.count >= 100) {
+    const topCountries = Object.entries(countryMap)
+      .sort((a, b) => b[1] - a[1]).slice(0, 15)
+      .map(([country, count]) => ({ country, count }));
+
+    return { topIPs, topCountries };
+  };
+
+  const allowedRank = buildDstRankings(allowedLogs);
+  const blockedRank = buildDstRankings(blockedLogs);
+
+  // High-volume single destination insight (allowed)
+  for (const ip of allowedRank.topIPs) {
+    if (ip.count >= 100) {
       insights.push({
-        id: `outbound_highvol_${ip}`,
+        id: `outbound_highvol_${ip.ip}`,
         category: 'traffic_behavior',
         name: 'Destino Externo com Alto Volume',
-        description: `${data.count} conexões de saída para ${ip}`,
-        severity: data.count >= 500 ? 'high' : 'medium',
-        sourceIPs: [ip],
-        count: data.count,
+        description: `${ip.count} conexões de saída para ${ip.ip}`,
+        severity: ip.count >= 500 ? 'high' : 'medium',
+        sourceIPs: [ip.ip],
+        count: ip.count,
         recommendation: 'Investigue o destino. Pode indicar exfiltração de dados ou comunicação com serviço não autorizado.',
       });
     }
   }
 
+  // High-volume blocked outbound insight
+  if (blockedLogs.length >= 10) {
+    insights.push({
+      id: 'outbound_blocked_volume',
+      category: 'traffic_behavior',
+      name: 'Conexões de Saída Bloqueadas',
+      description: `${blockedLogs.length} tentativas de conexão de saída foram bloqueadas pelo firewall`,
+      severity: blockedLogs.length >= 500 ? 'high' : blockedLogs.length >= 100 ? 'medium' : 'low',
+      count: blockedLogs.length,
+      recommendation: 'Verifique as políticas de saída e se os destinos bloqueados representam ameaças ou serviços legítimos.',
+    });
+  }
+
   return {
     insights,
-    metrics: { outboundConnections: outboundLogs.length, topOutboundIPs, topOutboundCountries },
+    metrics: {
+      outboundConnections: allowedLogs.length,
+      topOutboundIPs: allowedRank.topIPs,
+      topOutboundCountries: allowedRank.topCountries,
+      outboundBlocked: blockedLogs.length,
+      topOutboundBlockedIPs: blockedRank.topIPs,
+      topOutboundBlockedCountries: blockedRank.topCountries,
+    },
   };
 }
 
