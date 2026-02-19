@@ -1,148 +1,123 @@
 
-# Barra de Progresso no Firewall Analyzer
+# Diagnóstico e Correções: Mapa Vazio + Tabela "Top Tráfego"
 
-## O que precisa ser feito
+## Problemas identificados via banco de dados
 
-O Domínio Externo > Analyzer tem uma barra de progresso que:
-1. Detecta quando uma análise está em andamento (`pending` ou `running`)
-2. Mostra um card com spinner + texto + percentual de progresso
-3. Tem um botão "Atualizar" para forçar refresh
-4. Quando a análise termina, atualiza automaticamente os dados da tela
+A query ao snapshot mais recente revelou dois problemas distintos:
 
-O Firewall Analyzer ainda não tem nada disso — só mostra o botão "Executar Análise" e, depois que termina, o usuário precisa atualizar a página manualmente.
+### Problema 1: Mapa de Ataques vazio — 2 causas raiz
 
----
+**Causa A: Métricas de saída bloqueada faltando no snapshot salvo**
 
-## Como o status funciona no Firewall Analyzer
+No arquivo `supabase/functions/firewall-analyzer/index.ts`, o objeto `metrics` salvo no banco (linhas 1111-1114) inclui apenas:
+```ts
+topOutboundIPs: outboundResult.metrics.topOutboundIPs || [],
+topOutboundCountries: outboundResult.metrics.topOutboundCountries || [],
+outboundConnections: outboundResult.metrics.outboundConnections || 0,
+```
+Os campos `outboundBlocked`, `topOutboundBlockedIPs` e `topOutboundBlockedCountries` calculados pela função `analyzeOutboundTraffic` **nunca são incluídos** no objeto `metrics` que vai para o banco. Logo, `m?.topOutboundBlockedCountries` no frontend sempre retorna `undefined` → mapa fica sem dados de saída bloqueada.
 
-O `analyzer_snapshots` tem um campo `status` com valores: `pending`, `processing`, `completed`, `failed`.
+**Causa B: `outboundConnections: 0` no snapshot** (os logs de saída permitida também estão vazios)
 
-Quando o usuário clica "Executar Análise", a edge function `trigger-firewall-analyzer` cria um snapshot com `status: 'pending'` e uma `agent_task` correspondente. O agent então executa e atualiza o snapshot para `processing` e depois `completed`.
+O snapshot real mostra `outbound_ips: []` e `outboundConnections: 0` — os logs de tráfego permitido estão chegando numa collection que o analisador não está lendo corretamente, ou o blueprint do agente não está enviando `allowed_traffic`. Isso é um problema de coleta no agente, não algo que podemos resolver no frontend.
 
-A diferença em relação ao Domínio Externo é que o Firewall Analyzer **não tem subtarefas por IP** — é uma tarefa única. Por isso, a barra de progresso será indeterminada (sem percentual real), mostrando apenas o status e o tempo decorrido desde o início.
+**Causa C: VPN countries estão corretos, mas FW auth IPs são privados**
+
+O snapshot confirma: IPs de FW auth (`10.13.0.1`, `172.20.10.172`) são endereços privados RFC1918. Eles não resolvem para países, então `topFwAuthCountriesFailed` fica vazio — correto e esperado (acesso administrativo vem da rede interna). Isso não é um bug.
+
+O mapa **deveria** mostrar ao menos as VPN failures (`topVpnAuthCountriesFailed` tem dados: United States, Latvia, Argentina, etc.) e VPN successes (`topAuthCountriesSuccess` tem: Brazil). Isso está chegando, mas pode não estar renderizando se o mapa não tem `firewallLocation` definido (coordenadas do firewall ausentes → `ProjectileOverlay` não é renderizado).
+
+### Problema 2: Tabela "Top IPs Bloqueados" → "Top Tráfego" com duas abas
+
+O usuário quer que a tabela existente "Top IPs Bloqueados (Tráfego Negado)" seja substituída por uma tabela "Top Tráfego" com duas abas:
+- **Aba "Saída Permitida"**: exibe `topOutboundIPs` (destinos com conexão bem-sucedida)
+- **Aba "Saída Bloqueada"**: exibe `topOutboundBlockedIPs` (destinos bloqueados)
 
 ---
 
 ## Mudanças necessárias
 
-### 1. `src/hooks/useAnalyzerData.ts` — Novo hook `useAnalyzerProgress`
+### Arquivo 1: `supabase/functions/firewall-analyzer/index.ts`
 
-Criar um hook que verifica se existe snapshot em andamento para o firewall selecionado, com polling a cada 10 segundos:
+**Adicionar os campos faltantes ao objeto `metrics` salvo** (bug crítico — sem isso, saída bloqueada nunca aparece no mapa ou nas tabelas):
 
 ```ts
-export function useAnalyzerProgress(firewallId?: string) {
-  return useQuery({
-    queryKey: ['analyzer-progress', firewallId],
-    queryFn: async () => {
-      if (!firewallId) return null;
-      const { data } = await supabase
-        .from('analyzer_snapshots' as any)
-        .select('id, status, created_at, agent_task_id')
-        .eq('firewall_id', firewallId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (!data) return null;
-      const snap = data as any;
-      if (snap.status === 'completed' || snap.status === 'failed') {
-        return { status: snap.status, elapsed: null };
-      }
-      // Calcular tempo decorrido
-      const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
-      return { status: snap.status as string, elapsed, snapshotId: snap.id };
-    },
-    enabled: !!firewallId,
-    refetchInterval: 10000, // polling a cada 10s
-    staleTime: 5000,
-  });
-}
+// Linhas ~1111-1114 — adicionar os 3 campos faltantes:
+topOutboundIPs: outboundResult.metrics.topOutboundIPs || [],
+topOutboundCountries: outboundResult.metrics.topOutboundCountries || [],
+outboundConnections: outboundResult.metrics.outboundConnections || 0,
+// ADICIONAR:
+outboundBlocked: outboundResult.metrics.outboundBlocked || 0,
+topOutboundBlockedIPs: outboundResult.metrics.topOutboundBlockedIPs || [],
+topOutboundBlockedCountries: outboundResult.metrics.topOutboundBlockedCountries || [],
 ```
 
-### 2. `src/pages/firewall/AnalyzerDashboardPage.tsx` — Adicionar a barra de progresso
+A edge function precisará ser reimplantada após essa correção.
 
-**Imports adicionados:**
-- `useAnalyzerProgress` do hook
-- `Progress` do `@/components/ui/progress`
-- `useRef` (já importado via React hooks)
+### Arquivo 2: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-**Nova lógica:**
-```ts
-const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useAnalyzerProgress(selectedFirewall || undefined);
-const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
+**Alterar o card "Top IPs Bloqueados"** para "Top Tráfego" com duas abas:
 
-// Auto-refresh do snapshot quando análise terminar
-const prevProgressStatus = useRef<string | null>(null);
-useEffect(() => {
-  const currentStatus = progress?.status ?? null;
-  if (
-    (currentStatus === 'completed' || currentStatus === 'failed') &&
-    prevProgressStatus.current &&
-    prevProgressStatus.current !== 'completed' &&
-    prevProgressStatus.current !== 'failed'
-  ) {
-    refetch(); // refetch do useLatestAnalyzerSnapshot
-    queryClient.invalidateQueries({ queryKey: ['analyzer-latest', selectedFirewall] });
-  }
-  prevProgressStatus.current = currentStatus;
-}, [progress?.status, selectedFirewall]);
-```
-
-**Card de progresso** (inserido após o cabeçalho, antes das severity cards, igual ao do Domínio Externo):
 ```tsx
-{isRunning && progress && (
-  <Card className="glass-card border-primary/30">
-    <CardContent className="p-4">
-      <div className="flex items-center gap-3 mb-2">
-        <Loader2 className="w-4 h-4 animate-spin text-primary" />
-        <span className="text-sm font-medium">Análise em andamento...</span>
-        <div className="flex items-center gap-2 ml-auto">
-          {progress.elapsed !== null && (
-            <span className="text-xs text-muted-foreground">
-              {progress.status === 'pending' ? 'Aguardando agent...' : 'Processando logs...'}
-              {' · '}
-              {Math.floor(progress.elapsed / 60) > 0
-                ? `${Math.floor(progress.elapsed / 60)}m ${progress.elapsed % 60}s`
-                : `${progress.elapsed}s`}
-            </span>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs text-primary hover:text-primary/80"
-            onClick={() => refetchProgress()}
-            disabled={isRefetchingProgress}
-          >
-            <Loader2 className={cn("w-3 h-3", isRefetchingProgress && "animate-spin")} />
-            Atualizar
-          </Button>
-        </div>
-      </div>
-      {/* Barra indeterminada: anima de 0% a 100% em loop enquanto running */}
-      <Progress value={progress.status === 'pending' ? 15 : 60} className="h-2" />
-    </CardContent>
-  </Card>
-)}
+// ANTES: card simples sem abas
+<Card className="glass-card">
+  <CardHeader>
+    <CardTitle>Top IPs Bloqueados (Tráfego Negado)</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <IPListWidget ips={m?.topBlockedIPs ?? []} />
+  </CardContent>
+</Card>
+
+// DEPOIS: card com abas Saída Permitida / Saída Bloqueada
+<Card className="glass-card">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2 text-base">
+      <ExternalLink className="w-4 h-4 text-primary" />
+      Top Tráfego
+    </CardTitle>
+  </CardHeader>
+  <CardContent>
+    <Tabs defaultValue="allowed">
+      <TabsList className="mb-3">
+        <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
+        <TabsTrigger value="blocked">Saída Bloqueada</TabsTrigger>
+      </TabsList>
+      <TabsContent value="allowed">
+        <IPListWidget ips={m?.topOutboundIPs ?? []} />
+      </TabsContent>
+      <TabsContent value="blocked">
+        <IPListWidget ips={m?.topOutboundBlockedIPs ?? []} />
+      </TabsContent>
+    </Tabs>
+  </CardContent>
+</Card>
 ```
 
-> **Nota sobre o progresso:** Como o analyzer do Firewall é uma tarefa única (diferente do Domínio Externo que tem subtarefas por IP), não há percentual real disponível. A barra mostrará 15% se `pending` (aguardando o agent pegar a tarefa) e 60% se `processing` (agent executando).
+**Remover o card "Top IPs Destino (Saída)"** (linhas 907-919) pois seus dados agora estão na aba "Saída Permitida" do novo card acima — evita duplicação.
 
-**Desabilitar o botão "Executar Análise" enquanto estiver rodando:**
-```tsx
-<Button onClick={handleTrigger} disabled={triggering || !selectedFirewall || isRunning}>
-  {isRunning
-    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Em andamento...</>
-    : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
-</Button>
-```
+**Verificar se `firewallGeo` está sendo resolvido:** Se as coordenadas do firewall não estão sendo carregadas, o `ProjectileOverlay` não é montado e nada aparece no mapa. Adicionar um log de debug temporário ou garantir que `firewallGeo` seja populado.
+
+### Arquivo 3: `src/components/firewall/AttackMapFullscreen.tsx`
+
+**Atualizar o painel de saída** para exibir "Saída Bloqueada" lado a lado com "Saída Permitida", usando `topOutboundBlockedCountries` para o ranking de países bloqueados.
 
 ---
 
-## Arquivos modificados
+## Por que o mapa pode estar ainda sem dados após as correções
 
-| Arquivo | O que muda |
+O snapshot atual tem `outboundConnections: 0` — os logs de tráfego permitido não estão sendo coletados. Isso é um problema de **blueprint do agente** (a collection `allowed_traffic` não está sendo populada). As VPN failures e successes **devem** aparecer no mapa se o firewall tiver coordenadas geográficas configuradas.
+
+Após reimplantar a edge function e executar uma nova análise, os dados de saída bloqueada aparecerão **se o blueprint enviar a collection `denied_traffic` com logs de action `deny`** originados de IPs privados (tráfego de saída bloqueado pelo firewall).
+
+---
+
+## Arquivos a modificar
+
+| Arquivo | Mudança |
 |---|---|
-| `src/hooks/useAnalyzerData.ts` | Adicionar `useAnalyzerProgress` — hook com polling a cada 10s |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Usar o hook, renderizar o card de progresso, desabilitar botão durante análise, auto-refresh quando terminar |
+| `supabase/functions/firewall-analyzer/index.ts` | Adicionar `outboundBlocked`, `topOutboundBlockedIPs`, `topOutboundBlockedCountries` ao `metrics` final |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Renomear card para "Top Tráfego", adicionar abas "Saída Permitida" / "Saída Bloqueada", remover card duplicado "Top IPs Destino (Saída)" |
+| `src/components/firewall/AttackMapFullscreen.tsx` | Ajuste menor no painel de saída para consistência |
 
-Nenhuma mudança de banco de dados ou edge function é necessária — os dados já existem na tabela `analyzer_snapshots`.
+Após as mudanças: reimplantar a edge function e executar uma nova análise para confirmar que os dados de saída bloqueada aparecem no banco e no mapa.
