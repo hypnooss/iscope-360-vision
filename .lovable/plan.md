@@ -1,156 +1,117 @@
 
-# Separação de Autenticação VPN/Firewall e Conexões de Saída no Analyzer
+# Correção de 3 Problemas no Attack Map e Tabelas de Auth
 
-## Análise da Situação Atual
+## Diagnóstico dos 3 Problemas
 
-### O que já existe (dados separados, UI parcialmente separada)
-O backend (`firewall-analyzer` edge function) **já separa** corretamente:
-- `firewallAuthFailures` / `firewallAuthSuccesses` — logins na interface administrativa
-- `vpnFailures` / `vpnSuccesses` — autenticações VPN
+### Problema 1: Direção das setas vermelhas (tráfego negado)
+O código atual usa `M${px},${py} L${fw[0]},${fw[1]}` para setas inbound (origem → firewall). O usuário quer que as setas de **tráfego negado** saiam do firewall em direção ao país de origem (indicando que o firewall bloqueou aquele destino/origem). Isso é uma escolha de visualização: firewall → países bloqueados.
 
-Os rankings já existem: `topAuthIPsFailed`, `topAuthIPsSuccess`, `topAuthCountriesFailed`, `topAuthCountriesSuccess`.
+A solução é simples: para a camada `denied`, inverter o path para `M${fw[0]},${fw[1]} L${px},${py}` (igual às outbound). Auth failures continuam chegando no firewall (lógica correta).
 
-### O que está faltando
+### Problema 2: Cor laranja não aparece
+No `AnalyzerDashboardPage.tsx`, linha 701:
+```ts
+authFailedCountries={fwAuthCountriesFailed}
+```
+`fwAuthCountriesFailed` (linha 465) usa fallback para `topAuthCountriesFailed` (combinado FW+VPN) quando `topFwAuthCountriesFailed` está vazio.
 
-**1. Dashboard (AnalyzerDashboardPage.tsx)**
-- O card "Resumo de Eventos" agrupa Login Firewall (falha) e VPN (falha) sem mostrar os sucessos separadamente
-- Os widgets "Top IPs - Autenticação" e "Top Países - Autenticação" mostram apenas uma divisão Falha/Sucesso combinada (sem separar VPN de Firewall)
-- Não existe widget de "Conexões de Saída" (tráfego gerado pelo firewall ou dispositivos internos)
+E linha 702:
+```ts
+authFailedVpnCountries={vpnAuthCountriesFailed}
+```
+`vpnAuthCountriesFailed` = `m?.topVpnAuthCountriesFailed ?? []` — se não separado, é vazio.
 
-**2. Mapa de Ataques (AttackMap + AttackMapFullscreen)**
-- Atualmente usa apenas 3 cores: vermelho (negado), laranja (falha auth combinada), verde (sucesso auth combinado)
-- VPN e Firewall auth estão misturados em uma única camada laranja/verde
-- Painel inferior da tela cheia combina `firewallAuthFailures + vpnFailures` em um único número
+**Resultado:** laranja (FW fail) recebe os países combinados, amarelo (VPN fail) fica vazio. Como ambos os arrays têm os mesmos países, o círculo amarelo fica sobreposto ao laranja — visualmente some.
 
-**3. Tipos (analyzerInsights.ts) e métricas**
-- Não existe campos para `topOutboundIPs`, `topOutboundCountries`, `outboundConnections` nas métricas
+**Causa raiz no backend:** Na `analyzeAuthentication`, o filtro por subtype é:
+```ts
+safeAuth = rawAuth.filter(l => subtype === 'system' || subtype === 'admin' || logdesc.includes('admin login') || ...)
+safeVpn = rawVpn.filter(l => subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl')
+```
+Se os logs `authData` e `vpnData` vêm de collections diferentes no FortiGate mas têm subtypes que não batem exatamente, `safeAuth` ou `safeVpn` pode ficar vazio, fazendo os rankings separados serem idênticos aos combinados.
+
+A solução mais robusta é: **remover o filtro rígido por subtype** e em vez disso classificar os logs pela **collection de origem**: tudo que vem de `authData` é tratado como FW auth, tudo de `vpnData` é VPN — sem filtrar por subtype dentro de cada coleção (já que o agent os coletou de endpoints diferentes).
+
+### Problema 3: Tabelas Auth FW e Auth VPN idênticas
+Mesmo resultado da causa raiz acima. Com o filtro por subtype removido e ranking por collection de origem, os dados serão corretamente separados.
 
 ---
 
-## Mudanças Planejadas
+## Solução
 
-### 1. `src/types/analyzerInsights.ts` — Adicionar métricas de saída
+### Arquivo 1: `supabase/functions/firewall-analyzer/index.ts`
 
-```ts
-// Novos campos em AnalyzerMetrics:
-topOutboundIPs: TopBlockedIP[];       // IPs de destino de conexões de saída
-topOutboundCountries: TopCountry[];   // Países de destino de conexões de saída  
-outboundConnections: number;          // Total de conexões de saída permitidas
-```
-
-### 2. `supabase/functions/firewall-analyzer/index.ts` — Análise de tráfego de saída
-
-Adicionar nova função `analyzeOutboundTraffic(logs)` que processa logs de tráfego **permitido** com direção de saída:
+**Remover o filtro rígido por subtype** na função `analyzeAuthentication`. Em vez de tentar reclassificar os logs por subtype dentro de cada collection, confiar na separação já feita pelo agente (authData = logs administrativos, vpnData = logs VPN):
 
 ```ts
-function analyzeOutboundTraffic(logs: any[]): { insights, metrics }
-```
-- Filtra logs where `srcip` é privado (10.x, 192.168.x, 172.16-31.x) e `dstip` é público
-- Também captura logs where `direction` é `outbound`
-- Coleta Top IPs destino, Top países destino, total de conexões
-- Gera insights para conexões a países incomuns ou volume alto para um único destino
+// ANTES: filtros rígidos que descartam logs válidos
+const safeAuth = dedup(rawAuth.filter(l => {
+  const subtype = (l.subtype || '').toLowerCase();
+  return subtype === 'system' || subtype === 'admin' || ...
+}));
 
-Integrar no `raw_data.allowed_traffic` (dados já coletados pelo blueprint `forward_traffic` com `action=accept`).
+const safeVpn = dedup(rawVpn.filter(l => {
+  const subtype = (l.subtype || '').toLowerCase();
+  return subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl';
+}));
 
-### 3. `src/hooks/useAnalyzerData.ts` — Expor métricas de saída
-
-Adicionar `topOutboundIPs`, `topOutboundCountries`, `outboundConnections` ao `parseSnapshot`.
-
-### 4. `src/pages/firewall/AnalyzerDashboardPage.tsx` — UI separada
-
-#### 4a. Resumo de Eventos (Seção de Cards)
-Expandir a grade de 8 para 10 estatísticas com separação explícita:
-
-| Antes | Depois |
-|---|---|
-| "Login Firewall" (apenas falhas) | "Login Firewall" com falhas + tooltip de sucesso |
-| "Falhas VPN" | "VPN Auth" com falhas + tooltip de sucesso |
-| — | "Conexões de Saída" (novo) |
-
-Os cards de autenticação ganham um sub-label colorido: `🔴 X falhas / 🟢 Y sucessos`.
-
-#### 4b. Novos widgets — Autenticação separada por origem
-
-Substituir os dois widgets de "Top IPs - Autenticação" e "Top Países - Autenticação" por **quatro widgets** separados:
-
-```
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│  Top IPs - Auth Firewall     │  │  Top Países - Auth Firewall  │
-│  [Tabs: Falhas | Sucessos]   │  │  [Tabs: Falhas | Sucessos]   │
-└──────────────────────────────┘  └──────────────────────────────┘
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│  Top IPs - Auth VPN          │  │  Top Países - Auth VPN       │
-│  [Tabs: Falhas | Sucessos]   │  │  [Tabs: Falhas | Sucessos]   │
-└──────────────────────────────┘  └──────────────────────────────┘
+// DEPOIS: deduplicar apenas entre as duas collections, sem filtrar por subtype
+const safeAuth = dedup(rawAuth);  // confiar no agente: authData = FW admin logs
+const safeVpn = dedup(rawVpn);    // confiar no agente: vpnData = VPN logs
 ```
 
-Para isso, o `analyzeAuthentication` na edge function precisará expor também:
-- `topFwAuthIPsFailed` / `topFwAuthIPsSuccess`
-- `topVpnAuthIPsFailed` / `topVpnAuthIPsSuccess`
-- `topFwAuthCountriesFailed` / `topFwAuthCountriesSuccess`
-- `topVpnAuthCountriesFailed` / `topVpnAuthCountriesSuccess`
+Isso garante que todos os logs de autenticação do firewall sejam processados como FW, e todos os logs VPN como VPN.
 
-#### 4c. Novo widget — Conexões de Saída
+### Arquivo 2: `src/components/firewall/AttackMap.tsx`
 
-```
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│  Top IPs Destino (Saída)     │  │  Top Países Destino (Saída)  │
-└──────────────────────────────┘  └──────────────────────────────┘
-```
+**Separar inboundPoints em dois grupos:**
+- `deniedPoints` — usa path invertido (firewall → país): `M${fw} L${p}` 
+- `authPoints` — mantém path original (país → firewall): `M${p} L${fw}`
 
-### 5. `src/components/firewall/AttackMap.tsx` — 5 camadas de cor
+Isso requer refatorar `ProjectileOverlay` para receber os dois grupos separados:
 
-| Camada | Tipo | Cor |
-|---|---|---|
-| Vermelho `#ef4444` | Tráfego Negado (entrada) | Existente |
-| Laranja `#f97316` | Falha Auth Firewall | Existente (renomear) |
-| Amarelo `#eab308` | Falha Auth VPN | **Novo** |
-| Verde `#22c55e` | Sucesso Auth | Existente |
-| Azul-claro `#38bdf8` | Conexões de Saída | **Novo** (direção invertida: FW → destino) |
-
-**Direção dos projéteis invertida para saída:**
-- Conexões de entrada (denied, auth fail/success): origem → firewall (atual)
-- Conexões de saída: firewall → destino (novo — inverter `from` e `to` no `animateMotion`)
-
-Interface `AttackMapProps` expandida:
 ```ts
-interface AttackMapProps {
-  deniedCountries: TopCountry[];
-  authFailedFwCountries: TopCountry[];     // renomear authFailedCountries
-  authFailedVpnCountries: TopCountry[];    // NOVO
-  authSuccessCountries: TopCountry[];
-  outboundCountries: TopCountry[];         // NOVO
-  firewallLocation?: ...;
-  fullscreen?: boolean;
+// Projectile groups separados
+interface ProjectileGroup {
+  points: { lat; lng; color; label; count; type }[];
+  direction: 'inbound' | 'outbound';  // 'outbound' = firewall → destination
 }
 ```
 
-### 6. `src/components/firewall/AttackMapFullscreen.tsx` — Painel lateral expandido
+No render:
+- denied + outbound: `direction = 'outbound'` (firewall emite o projétil)  
+- fw_fail + vpn_fail + auth_success: `direction = 'inbound'` (projétil vem do país)
 
-- Separar o painel inferior em 5 métricas (remover a soma `firewallAuthFailures + vpnFailures`)
-- Adicionar seção "Top Países Destino (Saída)" ao painel direito
-- Legenda expandida com as 5 cores
+### Arquivo 3: `src/pages/firewall/AnalyzerDashboardPage.tsx`
 
-### 7. `src/hooks/useAnalyzerData.ts` — Novos campos no parseSnapshot
+**Remover os fallbacks que misturam dados FW e VPN** nas linhas 463-476:
 
-Adicionar ao parseSnapshot:
-- `topFwAuthIPsFailed`, `topFwAuthIPsSuccess`
-- `topVpnAuthIPsFailed`, `topVpnAuthIPsSuccess`
-- `topFwAuthCountriesFailed`, `topFwAuthCountriesSuccess`
-- `topVpnAuthCountriesFailed`, `topVpnAuthCountriesSuccess`
-- `topOutboundIPs`, `topOutboundCountries`, `outboundConnections`
+```ts
+// ANTES (com fallbacks que cruzam dados):
+const fwAuthCountriesFailed = m?.topFwAuthCountriesFailed?.length 
+  ? m.topFwAuthCountriesFailed 
+  : (m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? []);
+
+// DEPOIS (sem fallback para dados combinados):
+const fwAuthCountriesFailed = m?.topFwAuthCountriesFailed ?? [];
+const vpnAuthCountriesFailed = m?.topVpnAuthCountriesFailed ?? [];
+```
+
+Para o mapa, usar os dados separados diretamente sem fallback cruzado:
+```ts
+// Para o mapa: só passar dados realmente separados
+authFailedCountries={m?.topFwAuthCountriesFailed ?? []}    // laranja
+authFailedVpnCountries={m?.topVpnAuthCountriesFailed ?? []} // amarelo
+```
 
 ---
 
-## Arquivos Modificados
+## Resumo das mudanças
 
-1. `src/types/analyzerInsights.ts` — novos campos em `AnalyzerMetrics`
-2. `supabase/functions/firewall-analyzer/index.ts` — separação VPN/FW por origem e análise de saída
-3. `src/hooks/useAnalyzerData.ts` — expor novos campos no parseSnapshot
-4. `src/pages/firewall/AnalyzerDashboardPage.tsx` — UI com separação visual e novos widgets
-5. `src/components/firewall/AttackMap.tsx` — 5 camadas de cor + direção invertida para saída
-6. `src/components/firewall/AttackMapFullscreen.tsx` — painel atualizado
+| Arquivo | Mudança |
+|---|---|
+| `supabase/functions/firewall-analyzer/index.ts` | Remover filtro por subtype na `analyzeAuthentication` — confiar na separação por collection do agente |
+| `src/components/firewall/AttackMap.tsx` | Separar denied (firewall → país) de auth fail (país → firewall) no `ProjectileOverlay` |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Remover fallbacks que cruzam dados FW/VPN nos rankings e no mapa |
 
-## Observação sobre Dados de Saída
-
-O blueprint do FortiGate já coleta logs de `forward_traffic`. Os logs com `action=accept` e `srcip` privado representam conexões de saída de dispositivos internos. A nova função `analyzeOutboundTraffic` apenas precisa filtrar esses dados que já chegam via `raw_data.allowed_traffic` (ou do próprio `raw_data.forward_traffic`). Se esse campo não existir no blueprint atual, usaremos `denied_traffic` invertido (logs do tipo accept no mesmo endpoint) — não requer mudança no agente.
+Após as mudanças, a edge function precisa ser **reimplantada** (`firewall-analyzer`). Os dados nos snapshots existentes já têm os campos separados se o filtro não foi muito restritivo — mas o ideal é executar uma nova análise para garantir os rankings limpos.
