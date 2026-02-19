@@ -94,6 +94,33 @@ export function useAnalyzerData(firewallId?: string) {
   });
 }
 
+export function useAnalyzerProgress(firewallId?: string) {
+  return useQuery({
+    queryKey: ['analyzer-progress', firewallId],
+    queryFn: async () => {
+      if (!firewallId) return null;
+      const { data } = await supabase
+        .from('analyzer_snapshots' as any)
+        .select('id, status, created_at, agent_task_id')
+        .eq('firewall_id', firewallId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle() as any;
+
+      if (!data) return null;
+      const snap = data as any;
+      if (snap.status === 'completed' || snap.status === 'failed') {
+        return { status: snap.status as string, elapsed: null as number | null };
+      }
+      const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
+      return { status: snap.status as string, elapsed, snapshotId: snap.id as string };
+    },
+    enabled: !!firewallId,
+    refetchInterval: 10000,
+    staleTime: 5000,
+  });
+}
+
 export function useLatestAnalyzerSnapshot(firewallId?: string) {
   return useQuery({
     queryKey: ['analyzer-latest', firewallId],
