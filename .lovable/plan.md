@@ -1,120 +1,148 @@
 
-# Conexões de Saída no Mapa: Azul (sucesso) e Vermelho (bloqueada)
+# Barra de Progresso no Firewall Analyzer
 
-## Situação Atual vs. O Que Você Quer
+## O que precisa ser feito
 
-### Hoje o mapa tem:
-| Cor | Significado | Direção |
-|---|---|---|
-| Vermelho | Tráfego negado **de entrada** (países que atacam o FW) | País → Firewall |
-| Laranja | Falha de autenticação no FW | País → Firewall |
-| Amarelo | Falha de autenticação VPN | País → Firewall |
-| Verde | Sucesso de autenticação | País → Firewall |
-| Azul-claro | Conexões de saída permitidas | Firewall → País |
+O Domínio Externo > Analyzer tem uma barra de progresso que:
+1. Detecta quando uma análise está em andamento (`pending` ou `running`)
+2. Mostra um card com spinner + texto + percentual de progresso
+3. Tem um botão "Atualizar" para forçar refresh
+4. Quando a análise termina, atualiza automaticamente os dados da tela
 
-### O Que Você Quer:
-| Cor | Significado | Direção |
-|---|---|---|
-| 🔵 **Azul** | Conexões de saída **com sucesso** | Firewall → País destino |
-| 🔴 **Vermelho** | Conexões de saída **bloqueadas** | Firewall → País destino |
-
-O vermelho atual (tráfego de entrada negado, países que atacam o FW) é um conceito diferente e pode ser mantido ou removido do mapa — isso precisamos decidir. Pela sua mensagem, parece que o foco agora é exclusivamente nas **conexões de saída**. Proponho manter o tráfego de entrada (auth failures) nas cores laranja/amarelo/verde que já existem, e reservar vermelho + azul exclusivamente para saída.
+O Firewall Analyzer ainda não tem nada disso — só mostra o botão "Executar Análise" e, depois que termina, o usuário precisa atualizar a página manualmente.
 
 ---
 
-## Causa Raiz: Falta da Métrica "Saída Bloqueada"
+## Como o status funciona no Firewall Analyzer
 
-O backend atual (`analyzeOutboundTraffic`) já processa conexões de saída, mas filtra **apenas as permitidas** (action = accept). As conexões de saída **bloqueadas** (srcip privado → dstip público, action = deny) ainda não existem como métrica separada.
+O `analyzer_snapshots` tem um campo `status` com valores: `pending`, `processing`, `completed`, `failed`.
 
-Na função `analyzeOutboundTraffic`, a linha que exclui logs bloqueados é:
-```ts
-if (action === 'deny' || action === 'block' || action === 'blocked') return false;
-```
-Precisamos processar esses logs bloqueados separadamente.
+Quando o usuário clica "Executar Análise", a edge function `trigger-firewall-analyzer` cria um snapshot com `status: 'pending'` e uma `agent_task` correspondente. O agent então executa e atualiza o snapshot para `processing` e depois `completed`.
+
+A diferença em relação ao Domínio Externo é que o Firewall Analyzer **não tem subtarefas por IP** — é uma tarefa única. Por isso, a barra de progresso será indeterminada (sem percentual real), mostrando apenas o status e o tempo decorrido desde o início.
 
 ---
 
-## Mudanças Necessárias
+## Mudanças necessárias
 
-### 1. `src/types/analyzerInsights.ts` — Novo campo
-Adicionar `topOutboundBlockedCountries` e `outboundBlocked` às métricas:
+### 1. `src/hooks/useAnalyzerData.ts` — Novo hook `useAnalyzerProgress`
+
+Criar um hook que verifica se existe snapshot em andamento para o firewall selecionado, com polling a cada 10 segundos:
+
 ```ts
-topOutboundBlockedIPs: TopBlockedIP[];
-topOutboundBlockedCountries: TopCountry[];
-outboundBlocked: number;
-```
-
-### 2. `supabase/functions/firewall-analyzer/index.ts` — Separar saída bloqueada
-Dentro de `analyzeOutboundTraffic`, separar em dois grupos:
-- `outboundAllowed`: srcip privado → dstip público, action = accept/allow/pass
-- `outboundBlocked`: srcip privado → dstip público, action = deny/block
-
-Gerar rankings separados `topOutboundBlockedIPs` e `topOutboundBlockedCountries`.
-
-### 3. `src/hooks/useAnalyzerData.ts` — Expor novos campos
-Adicionar `topOutboundBlockedIPs`, `topOutboundBlockedCountries`, `outboundBlocked` ao `parseSnapshot`.
-
-### 4. `src/components/firewall/AttackMap.tsx` — Nova prop + nova cor
-Adicionar a prop `outboundBlockedCountries` e usar vermelho `#ef4444` para ela (mesma cor atual de "denied"), mas com direção FW → país.
-
-Simplificar a paleta de cores focada em saída:
-```ts
-const COLORS = {
-  // Inbound auth (mantidos)
-  fw_fail: '#f97316',      // Laranja — falha auth FW
-  vpn_fail: '#eab308',     // Amarelo — falha auth VPN
-  auth_success: '#22c55e', // Verde — sucesso auth
-  // Saída (novo foco)
-  outbound_ok: '#38bdf8',  // Azul — saída com sucesso (FW → destino)
-  outbound_blocked: '#ef4444', // Vermelho — saída bloqueada (FW → destino)
-};
-```
-
-Interface expandida:
-```ts
-interface AttackMapProps {
-  outboundCountries?: TopCountry[];         // Saída com sucesso (azul)
-  outboundBlockedCountries?: TopCountry[];  // Saída bloqueada (vermelho) — NOVO
-  authFailedCountries: TopCountry[];        // Falha auth FW (laranja)
-  authFailedVpnCountries?: TopCountry[];    // Falha auth VPN (amarelo)
-  authSuccessCountries: TopCountry[];       // Sucesso auth (verde)
-  // deniedCountries — pode ser mantido ou removido (tráfego de entrada negado)
-  firewallLocation?: ...;
-  fullscreen?: boolean;
+export function useAnalyzerProgress(firewallId?: string) {
+  return useQuery({
+    queryKey: ['analyzer-progress', firewallId],
+    queryFn: async () => {
+      if (!firewallId) return null;
+      const { data } = await supabase
+        .from('analyzer_snapshots' as any)
+        .select('id, status, created_at, agent_task_id')
+        .eq('firewall_id', firewallId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!data) return null;
+      const snap = data as any;
+      if (snap.status === 'completed' || snap.status === 'failed') {
+        return { status: snap.status, elapsed: null };
+      }
+      // Calcular tempo decorrido
+      const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
+      return { status: snap.status as string, elapsed, snapshotId: snap.id };
+    },
+    enabled: !!firewallId,
+    refetchInterval: 10000, // polling a cada 10s
+    staleTime: 5000,
+  });
 }
 ```
 
-A legenda no mapa será atualizada para refletir as 2 categorias de saída (azul/vermelho) com setas partindo do firewall.
+### 2. `src/pages/firewall/AnalyzerDashboardPage.tsx` — Adicionar a barra de progresso
 
-### 5. `src/components/firewall/AttackMapFullscreen.tsx` — Painel de saída
-Adicionar seção "Saída Bloqueada" no painel de estatísticas.
+**Imports adicionados:**
+- `useAnalyzerProgress` do hook
+- `Progress` do `@/components/ui/progress`
+- `useRef` (já importado via React hooks)
 
-### 6. `src/pages/firewall/AnalyzerDashboardPage.tsx` — Passar nova prop
-Passar `outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}` para o `AttackMap` e `AttackMapFullscreen`.
+**Nova lógica:**
+```ts
+const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useAnalyzerProgress(selectedFirewall || undefined);
+const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
+
+// Auto-refresh do snapshot quando análise terminar
+const prevProgressStatus = useRef<string | null>(null);
+useEffect(() => {
+  const currentStatus = progress?.status ?? null;
+  if (
+    (currentStatus === 'completed' || currentStatus === 'failed') &&
+    prevProgressStatus.current &&
+    prevProgressStatus.current !== 'completed' &&
+    prevProgressStatus.current !== 'failed'
+  ) {
+    refetch(); // refetch do useLatestAnalyzerSnapshot
+    queryClient.invalidateQueries({ queryKey: ['analyzer-latest', selectedFirewall] });
+  }
+  prevProgressStatus.current = currentStatus;
+}, [progress?.status, selectedFirewall]);
+```
+
+**Card de progresso** (inserido após o cabeçalho, antes das severity cards, igual ao do Domínio Externo):
+```tsx
+{isRunning && progress && (
+  <Card className="glass-card border-primary/30">
+    <CardContent className="p-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+        <span className="text-sm font-medium">Análise em andamento...</span>
+        <div className="flex items-center gap-2 ml-auto">
+          {progress.elapsed !== null && (
+            <span className="text-xs text-muted-foreground">
+              {progress.status === 'pending' ? 'Aguardando agent...' : 'Processando logs...'}
+              {' · '}
+              {Math.floor(progress.elapsed / 60) > 0
+                ? `${Math.floor(progress.elapsed / 60)}m ${progress.elapsed % 60}s`
+                : `${progress.elapsed}s`}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs text-primary hover:text-primary/80"
+            onClick={() => refetchProgress()}
+            disabled={isRefetchingProgress}
+          >
+            <Loader2 className={cn("w-3 h-3", isRefetchingProgress && "animate-spin")} />
+            Atualizar
+          </Button>
+        </div>
+      </div>
+      {/* Barra indeterminada: anima de 0% a 100% em loop enquanto running */}
+      <Progress value={progress.status === 'pending' ? 15 : 60} className="h-2" />
+    </CardContent>
+  </Card>
+)}
+```
+
+> **Nota sobre o progresso:** Como o analyzer do Firewall é uma tarefa única (diferente do Domínio Externo que tem subtarefas por IP), não há percentual real disponível. A barra mostrará 15% se `pending` (aguardando o agent pegar a tarefa) e 60% se `processing` (agent executando).
+
+**Desabilitar o botão "Executar Análise" enquanto estiver rodando:**
+```tsx
+<Button onClick={handleTrigger} disabled={triggering || !selectedFirewall || isRunning}>
+  {isRunning
+    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Em andamento...</>
+    : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
+</Button>
+```
 
 ---
 
-## Sobre o "Vermelho de Entrada" Atual
-
-Atualmente o vermelho representa países que **enviaram tráfego negado ao firewall** (conexões de entrada bloqueadas). Com a mudança, o vermelho passará a representar **saída bloqueada** (FW → país destino).
-
-Há duas opções:
-- **Opção A (mais limpa):** Remover o "vermelho de entrada" do mapa — o mapa passa a mostrar apenas autenticações (laranja/amarelo/verde) e saída (azul/vermelho). O tráfego de entrada negado fica apenas nos widgets de tabela.
-- **Opção B (mais completo):** Introduzir uma 6ª cor (ex: roxo `#a855f7`) para o tráfego de entrada negado, mantendo vermelho exclusivamente para saída bloqueada.
-
-Recomendo a **Opção A** por simplicidade — o mapa fica focado nas conexões de saída e nas autenticações, que são os eventos mais acionáveis.
-
----
-
-## Arquivos Modificados
+## Arquivos modificados
 
 | Arquivo | O que muda |
 |---|---|
-| `src/types/analyzerInsights.ts` | Adicionar `topOutboundBlockedIPs`, `topOutboundBlockedCountries`, `outboundBlocked` |
-| `supabase/functions/firewall-analyzer/index.ts` | Separar saída em allowed vs blocked dentro de `analyzeOutboundTraffic` |
-| `src/hooks/useAnalyzerData.ts` | Expor novos campos no parseSnapshot |
-| `src/components/firewall/AttackMap.tsx` | Nova prop `outboundBlockedCountries`, vermelho = saída bloqueada (FW → país) |
-| `src/components/firewall/AttackMapFullscreen.tsx` | Painel com saída bloqueada |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Passar nova prop para AttackMap e AttackMapFullscreen |
+| `src/hooks/useAnalyzerData.ts` | Adicionar `useAnalyzerProgress` — hook com polling a cada 10s |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Usar o hook, renderizar o card de progresso, desabilitar botão durante análise, auto-refresh quando terminar |
 
-A edge function precisará ser reimplantada após as mudanças, e uma nova análise deverá ser executada para popular os dados de saída bloqueada.
+Nenhuma mudança de banco de dados ou edge function é necessária — os dados já existem na tabela `analyzer_snapshots`.
