@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,7 +18,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
-import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
+import { useLatestAnalyzerSnapshot, useAnalyzerProgress } from '@/hooks/useAnalyzerData';
+import { Progress } from '@/components/ui/progress';
 import { getCountryCode } from '@/lib/countryUtils';
 import { AttackMap } from '@/components/firewall/AttackMap';
 import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
@@ -26,7 +27,7 @@ import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
-  Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar,
+  Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar, Loader2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -210,6 +211,25 @@ export default function AnalyzerDashboardPage() {
   }, [firewalls]);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
+
+  const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useAnalyzerProgress(selectedFirewall || undefined);
+  const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
+
+  // Auto-refresh when analysis finishes
+  const prevProgressStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const currentStatus = progress?.status ?? null;
+    if (
+      (currentStatus === 'completed' || currentStatus === 'failed') &&
+      prevProgressStatus.current &&
+      prevProgressStatus.current !== 'completed' &&
+      prevProgressStatus.current !== 'failed'
+    ) {
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ['analyzer-latest', selectedFirewall] });
+    }
+    prevProgressStatus.current = currentStatus;
+  }, [progress?.status, selectedFirewall]);
 
   // Fetch firewall URL for geolocation
   const { data: firewallUrl } = useQuery({
@@ -509,9 +529,10 @@ export default function AnalyzerDashboardPage() {
                 {firewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button onClick={handleTrigger} disabled={triggering || !selectedFirewall}>
-              <Play className="w-4 h-4 mr-2" />
-              {triggering ? 'Iniciando...' : 'Executar Análise'}
+            <Button onClick={handleTrigger} disabled={triggering || !selectedFirewall || isRunning}>
+              {isRunning
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Em andamento...</>
+                : <><Play className="w-4 h-4 mr-2" />{triggering ? 'Iniciando...' : 'Executar Análise'}</>}
             </Button>
             {isSuperRole && (
               <Button
@@ -547,6 +568,40 @@ export default function AnalyzerDashboardPage() {
               {snapshot.status === 'completed' ? 'Concluída' : snapshot.status === 'processing' ? 'Em andamento' : snapshot.status}
             </Badge>
           </div>
+        )}
+
+        {/* Progress card */}
+        {isRunning && progress && (
+          <Card className="glass-card border-primary/30">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span className="text-sm font-medium">Análise em andamento...</span>
+                <div className="flex items-center gap-2 ml-auto">
+                  {progress.elapsed !== null && (
+                    <span className="text-xs text-muted-foreground">
+                      {progress.status === 'pending' ? 'Aguardando agent...' : 'Processando logs...'}
+                      {' · '}
+                      {Math.floor(progress.elapsed / 60) > 0
+                        ? `${Math.floor(progress.elapsed / 60)}m ${progress.elapsed % 60}s`
+                        : `${progress.elapsed}s`}
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs text-primary hover:text-primary/80"
+                    onClick={() => refetchProgress()}
+                    disabled={isRefetchingProgress}
+                  >
+                    <Loader2 className={cn('w-3 h-3', isRefetchingProgress && 'animate-spin')} />
+                    Atualizar
+                  </Button>
+                </div>
+              </div>
+              <Progress value={progress.status === 'pending' ? 15 : 60} className="h-2" />
+            </CardContent>
+          </Card>
         )}
 
         {/* Severity Cards */}
