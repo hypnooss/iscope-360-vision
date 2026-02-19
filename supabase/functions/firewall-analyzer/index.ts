@@ -851,12 +851,12 @@ function analyzeAnomalies(logs: any[], ipCountryMap: Record<string, string> = {}
 // Outbound Traffic Analysis
 // ============================================
 
-function analyzeOutboundTraffic(logs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
   const emptyResult = { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [], outboundBlocked: 0, topOutboundBlockedIPs: [], topOutboundBlockedCountries: [] } };
-  if (!Array.isArray(logs) || logs.length === 0) return emptyResult;
+  if ((!Array.isArray(allowedLogs) || allowedLogs.length === 0) && (!Array.isArray(blockedLogs) || blockedLogs.length === 0)) return emptyResult;
 
-  // Separate outbound into allowed and blocked
+  // Filter allowed logs for outbound candidates (private src → public dst)
   const isOutboundCandidate = (log: any) => {
     const src = log.srcip || log.src || '';
     const dst = log.dstip || log.dst || '';
@@ -865,13 +865,8 @@ function analyzeOutboundTraffic(logs: any[], ipCountryMap: Record<string, string
     return isPrivateIP(src) && dst && !isPrivateIP(dst);
   };
 
-  const isActionDenied = (log: any) => {
-    const action = (log.action || '').toLowerCase();
-    return action === 'deny' || action === 'block' || action === 'blocked';
-  };
-
-  const allowedLogs = logs.filter(log => isOutboundCandidate(log) && !isActionDenied(log));
-  const blockedLogs = logs.filter(log => isOutboundCandidate(log) && isActionDenied(log));
+  const filteredAllowed = (allowedLogs || []).filter(isOutboundCandidate);
+  // blockedLogs already pre-filtered externally (private src → public dst, deny action)
 
   // Helper: build IP and country rankings from destination
   const buildDstRankings = (subset: any[]) => {
@@ -901,8 +896,8 @@ function analyzeOutboundTraffic(logs: any[], ipCountryMap: Record<string, string
     return { topIPs, topCountries };
   };
 
-  const allowedRank = buildDstRankings(allowedLogs);
-  const blockedRank = buildDstRankings(blockedLogs);
+  const allowedRank = buildDstRankings(filteredAllowed);
+  const blockedRank = buildDstRankings(blockedLogs || []);
 
   // High-volume single destination insight (allowed)
   for (const ip of allowedRank.topIPs) {
@@ -1052,16 +1047,26 @@ Deno.serve(async (req) => {
     const appctrlResult = analyzeAppControl(Array.isArray(appctrlData) ? appctrlData : appctrlData?.results || []);
     const anomalyResult = analyzeAnomalies(Array.isArray(anomalyData) ? anomalyData : anomalyData?.results || [], ipCountryMap);
 
-    // Outbound traffic: try allowed_traffic first, then denied_traffic with accept action
+    // Outbound traffic: separate allowed and blocked sources
     const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-    const allowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
-    // Also check if denied_traffic has accept entries (some blueprints put all forward traffic there)
+    const rawAllowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
+    // Fallback: check if denied_traffic has accept entries (some blueprints put all forward traffic there)
     const acceptedFromDenied = deniedLogs.filter((l: any) => {
       const action = (l.action || '').toLowerCase();
       return action === 'accept' || action === 'allow' || action === 'pass';
     });
-    const outboundLogs = allowedLogs.length > 0 ? allowedLogs : acceptedFromDenied;
-    const outboundResult = analyzeOutboundTraffic(outboundLogs, ipCountryMap);
+    const outboundAllowedLogs = rawAllowedLogs.length > 0 ? rawAllowedLogs : acceptedFromDenied;
+
+    // Blocked outbound: from denied_traffic, private src → public dst with deny action
+    const outboundBlockedLogs = deniedLogs.filter((l: any) => {
+      const action = (l.action || '').toLowerCase();
+      const src = l.srcip || l.src || '';
+      const dst = l.dstip || l.dst || '';
+      const isDeny = action === 'deny' || action === 'block' || action === 'blocked' || action === '';
+      return isDeny && isPrivateIP(src) && dst && !isPrivateIP(dst);
+    });
+
+    const outboundResult = analyzeOutboundTraffic(outboundAllowedLogs, outboundBlockedLogs, ipCountryMap);
 
     // Combine all insights
     const allInsights = [
