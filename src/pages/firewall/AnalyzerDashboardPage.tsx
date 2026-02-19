@@ -695,12 +695,12 @@ export default function AnalyzerDashboardPage() {
               </CardHeader>
               <CardContent className="p-4 pt-0">
                 <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
-                  <AttackMap
-                    deniedCountries={m?.topCountries ?? []}
+                <AttackMap
                     authFailedCountries={fwAuthCountriesFailed}
                     authFailedVpnCountries={vpnAuthCountriesFailed}
                     authSuccessCountries={authCountriesSuccess}
                     outboundCountries={m?.topOutboundCountries ?? []}
+                    outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
                     firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
                   />
                 </div>
@@ -709,21 +709,22 @@ export default function AnalyzerDashboardPage() {
 
             {showAttackMap && (
               <AttackMapFullscreen
-                deniedCountries={m?.topCountries ?? []}
                 authFailedCountries={fwAuthCountriesFailed}
                 authFailedVpnCountries={vpnAuthCountriesFailed}
                 authSuccessCountries={authCountriesSuccess}
                 outboundCountries={m?.topOutboundCountries ?? []}
+                outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
                 firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
                 firewallName={firewallUrl?.name}
                 lastAnalysis={snapshot.created_at}
-                totalDenied={m?.totalDenied ?? 0}
                 totalFwAuthFailed={m?.firewallAuthFailures ?? 0}
                 totalVpnAuthFailed={m?.vpnFailures ?? 0}
                 totalAuthSuccess={(m?.firewallAuthSuccesses ?? 0) + (m?.vpnSuccesses ?? 0)}
                 totalOutbound={m?.outboundConnections ?? 0}
+                totalOutboundBlocked={m?.outboundBlocked ?? 0}
                 topBlockedIPs={m?.topBlockedIPs ?? []}
                 topOutboundCountries={m?.topOutboundCountries ?? []}
+                topOutboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
                 onClose={() => setShowAttackMap(false)}
               />
             )}

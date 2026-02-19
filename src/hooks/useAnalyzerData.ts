@@ -42,10 +42,14 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topVpnAuthIPsSuccess: (metrics.topVpnAuthIPsSuccess as AnalyzerMetrics['topVpnAuthIPsSuccess']) ?? [],
       topVpnAuthCountriesFailed: (metrics.topVpnAuthCountriesFailed as AnalyzerMetrics['topVpnAuthCountriesFailed']) ?? [],
       topVpnAuthCountriesSuccess: (metrics.topVpnAuthCountriesSuccess as AnalyzerMetrics['topVpnAuthCountriesSuccess']) ?? [],
-      // Outbound
+      // Outbound (allowed)
       topOutboundIPs: (metrics.topOutboundIPs as AnalyzerMetrics['topOutboundIPs']) ?? [],
       topOutboundCountries: (metrics.topOutboundCountries as AnalyzerMetrics['topOutboundCountries']) ?? [],
       outboundConnections: (metrics.outboundConnections as number) ?? 0,
+      // Outbound (blocked)
+      topOutboundBlockedIPs: (metrics.topOutboundBlockedIPs as AnalyzerMetrics['topOutboundBlockedIPs']) ?? [],
+      topOutboundBlockedCountries: (metrics.topOutboundBlockedCountries as AnalyzerMetrics['topOutboundBlockedCountries']) ?? [],
+      outboundBlocked: (metrics.outboundBlocked as number) ?? 0,
       ipsEvents: (metrics.ipsEvents as number) ?? 0,
       configChanges: (metrics.configChanges as number) ?? 0,
       configChangeDetails: (metrics.configChangeDetails as AnalyzerMetrics['configChangeDetails']) ?? [],

@@ -97,10 +97,14 @@ export interface AnalyzerMetrics {
   topVpnAuthIPsSuccess: TopBlockedIP[];
   topVpnAuthCountriesFailed: TopCountry[];
   topVpnAuthCountriesSuccess: TopCountry[];
-  // Outbound connections
+  // Outbound connections (allowed)
   topOutboundIPs: TopBlockedIP[];
   topOutboundCountries: TopCountry[];
   outboundConnections: number;
+  // Outbound connections (blocked)
+  topOutboundBlockedIPs: TopBlockedIP[];
+  topOutboundBlockedCountries: TopCountry[];
+  outboundBlocked: number;
   ipsEvents: number;
   configChanges: number;
   configChangeDetails: ConfigChangeDetail[];
