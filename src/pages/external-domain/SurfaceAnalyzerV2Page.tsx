@@ -10,13 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Globe, Network, Server, ChevronDown, ChevronRight, Loader2, Radar,
   AlertTriangle, Building2, CheckCircle2, Play, XCircle, Shield, Lock,
-  ExternalLink, ShieldAlert, Search, Settings, Calendar, Monitor, KeyRound
+  ExternalLink, ShieldAlert, Search, Settings, Calendar, KeyRound
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -34,6 +34,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { differenceInDays, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { SurfaceCategorySection } from '@/components/surface/SurfaceCategorySection';
+import {
+  generateFindings, calculateFindingsStats,
+  CATEGORY_INFO, SEVERITY_ORDER,
+  type SurfaceFinding, type SurfaceFindingCategory, type FindingsAsset,
+} from '@/lib/surfaceFindings';
 
 /* ══════════════════════ DATA LOGIC (ported from original) ══════════════════════ */
 
@@ -221,7 +227,7 @@ interface TLSCertInfo { subject_cn: string; issuer: string; not_after: string | 
 
 interface ExposedAsset {
   hostname: string; ip: string;
-  asn: { asn: string; provider: string; org: string; is_cdn: boolean; country?: string; abuse_email?: string; tech_email?: string; ip_range?: string; owner?: string; ownerid?: string; responsible?: string; abuse_handle?: string } | null;
+  asn: { asn: string; provider: string; org: string; is_cdn: boolean; country?: string } | null;
   source: 'dns' | 'firewall'; ports: number[]; services: AttackSurfaceService[];
   webServices: AttackSurfaceWebService[]; tlsCerts: TLSCertInfo[]; cves: AttackSurfaceCVE[];
   expiredCerts: number; expiringSoonCerts: number; allTechs: string[];
@@ -256,14 +262,14 @@ function buildAssets(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedCVEReco
       for (const t of ws.technologies || []) techSet.add(t);
       if (ws.title && !ws.url?.includes(ws.title.toLowerCase())) techSet.add(ws.title);
       if (ws.tls?.subject_cn) {
-        const cn = typeof ws.tls.subject_cn === 'string' ? ws.tls.subject_cn : '';
+        const tcn = typeof ws.tls.subject_cn === 'string' ? ws.tls.subject_cn : '';
         const urlHost = ws.url ? new URL(ws.url).hostname : '';
-        if (cn && cn !== urlHost && !cn.includes('.') && !cn.includes('*')) techSet.add(cn);
+        if (tcn && tcn !== urlHost && !tcn.includes('.') && !tcn.includes('*')) techSet.add(tcn);
       }
     }
     for (const svc of result.services || []) {
       const scripts = svc.scripts || {};
-      if (scripts['ssl-cert']) { const m = scripts['ssl-cert'].match(/organizationName=([^\n\/,]+)/i); if (m) techSet.add(m[1].trim()); else { const cn = scripts['ssl-cert'].match(/commonName=([^\n\/,]+)/i); if (cn && !cn[1].includes('*')) techSet.add(cn[1].trim()); } }
+      if (scripts['ssl-cert']) { const m = scripts['ssl-cert'].match(/organizationName=([^\n\/,]+)/i); if (m) techSet.add(m[1].trim()); else { const cn2 = scripts['ssl-cert'].match(/commonName=([^\n\/,]+)/i); if (cn2 && !cn2[1].includes('*')) techSet.add(cn2[1].trim()); } }
       if (scripts['smb-os-discovery']) { const m = scripts['smb-os-discovery'].match(/OS:\s*(.+)/i); if (m) techSet.add(m[1].trim()); }
       if (scripts['rdp-ntlm-info']) { const m = scripts['rdp-ntlm-info'].match(/Product_Version:\s*(.+)/i); if (m) techSet.add(`Windows ${m[1].trim()}`); }
       if (scripts['http-server-header']) techSet.add(scripts['http-server-header'].trim().split('\n')[0]);
@@ -286,9 +292,7 @@ function buildAssets(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedCVEReco
     };
     const sevDiff = maxSev(b) - maxSev(a);
     if (sevDiff !== 0) return sevDiff;
-    const svcDiff = (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
-    if (svcDiff !== 0) return svcDiff;
-    return b.ports.length - a.ports.length;
+    return (b.services.length + b.webServices.length) - (a.services.length + a.webServices.length);
   });
 }
 
@@ -324,11 +328,58 @@ function SummaryCard({ icon: Icon, title, value, children, iconClass }: {
   );
 }
 
+/* ══════════════════════ TAB: ANÁLISE (FINDINGS) ══════════════════════ */
+
+function AnalysisTab({ findings }: { findings: SurfaceFinding[] }) {
+  const categoryOrder: SurfaceFindingCategory[] = [
+    'risky_services', 'web_security', 'vulnerabilities', 'tls_certificates', 'obsolete_tech',
+  ];
+
+  const findingsByCategory = useMemo(() => {
+    const map = new Map<SurfaceFindingCategory, SurfaceFinding[]>();
+    for (const cat of categoryOrder) {
+      const catFindings = findings.filter(f => f.category === cat);
+      if (catFindings.length > 0) map.set(cat, catFindings);
+    }
+    return map;
+  }, [findings]);
+
+  if (findings.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <CheckCircle2 className="w-12 h-12 mb-3 text-primary opacity-50" />
+        <p className="font-medium text-foreground">Nenhum achado de risco identificado</p>
+        <p className="text-sm mt-1">Todos os ativos monitorados estão dentro dos parâmetros esperados.</p>
+      </div>
+    );
+  }
+
+  let sectionIndex = 0;
+  return (
+    <div className="space-y-4">
+      {categoryOrder.map(cat => {
+        const catFindings = findingsByCategory.get(cat);
+        if (!catFindings) return null;
+        const info = CATEGORY_INFO[cat];
+        return (
+          <SurfaceCategorySection
+            key={cat}
+            categoryInfo={info}
+            findings={catFindings}
+            index={sectionIndex++}
+            defaultOpen={true}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /* ══════════════════════ TAB: INVENTÁRIO ══════════════════════ */
 
-function InventoryTab({ assets, emptyAssets, isSuperRole, onRescan, isRescanning, activeSnapshot }: {
+function InventoryTab({ assets, emptyAssets, isSuperRole, onRescan, isRescanning }: {
   assets: ExposedAsset[]; emptyAssets: ExposedAsset[]; isSuperRole: boolean;
-  onRescan: (a: ExposedAsset) => void; isRescanning: boolean; activeSnapshot: AttackSurfaceSnapshot | null;
+  onRescan: (a: ExposedAsset) => void; isRescanning: boolean;
 }) {
   const [expandedIp, setExpandedIp] = useState<string | null>(null);
 
@@ -445,7 +496,6 @@ function InlineCVEBadges({ cves }: { cves: AttackSurfaceCVE[] }) {
 function AssetDetailPanel({ asset }: { asset: ExposedAsset }) {
   return (
     <div className="bg-muted/10 border-t border-border/50 p-4 space-y-4">
-      {/* Open Ports */}
       {asset.ports.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Portas Abertas</h4>
@@ -454,7 +504,6 @@ function AssetDetailPanel({ asset }: { asset: ExposedAsset }) {
           </div>
         </div>
       )}
-      {/* Services */}
       {(asset.services.length > 0 || asset.webServices.length > 0) && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Serviços</h4>
@@ -482,13 +531,11 @@ function AssetDetailPanel({ asset }: { asset: ExposedAsset }) {
                 <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{svc.port}/{svc.transport}</Badge>
                 <span className="text-sm">{svc.product || svc.name || '—'}</span>
                 {svc.version && <span className="text-muted-foreground text-xs">{svc.version}</span>}
-                {svc.extra_info && <span className="text-muted-foreground/70 text-xs italic">{svc.extra_info}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {/* CVEs */}
       {asset.cves.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Vulnerabilidades ({asset.cves.length})</h4>
@@ -506,7 +553,6 @@ function AssetDetailPanel({ asset }: { asset: ExposedAsset }) {
           </div>
         </div>
       )}
-      {/* Certs */}
       {asset.tlsCerts.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Certificados TLS</h4>
@@ -559,228 +605,6 @@ function EmptyAssetsSummary({ assets }: { assets: ExposedAsset[] }) {
   );
 }
 
-/* ══════════════════════ TAB: SERVIÇOS WEB ══════════════════════ */
-
-interface WebServiceEntry {
-  url: string; statusCode: number; server: string | null;
-  technologies: string[]; tlsSubject: string | null; tlsExpiry: string | null;
-  asset: ExposedAsset;
-}
-
-function WebServicesTab({ assets }: { assets: ExposedAsset[] }) {
-  const entries = useMemo(() => {
-    const list: WebServiceEntry[] = [];
-    for (const asset of assets) {
-      for (const ws of asset.webServices) {
-        list.push({
-          url: ws.url, statusCode: ws.status_code, server: ws.server || null,
-          technologies: ws.technologies || [], tlsSubject: ws.tls?.subject_cn || null,
-          tlsExpiry: ws.tls?.not_after || null, asset,
-        });
-      }
-    }
-    return list;
-  }, [assets]);
-
-  if (entries.length === 0) return <EmptyTabState text="Nenhum serviço web detectado nesta análise." />;
-
-  return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/30">
-            <TableHead>URL</TableHead>
-            <TableHead className="text-center w-20">Status</TableHead>
-            <TableHead>Servidor</TableHead>
-            <TableHead>Tecnologias</TableHead>
-            <TableHead>TLS</TableHead>
-            <TableHead>Ativo</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.map((e, i) => (
-            <TableRow key={i}>
-              <TableCell>
-                <a href={e.url} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-blue-400 hover:underline truncate block max-w-[300px]">
-                  {e.url}
-                </a>
-              </TableCell>
-              <TableCell className="text-center">
-                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0",
-                  e.statusCode >= 200 && e.statusCode < 300 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                  e.statusCode >= 300 && e.statusCode < 400 ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
-                  'bg-destructive/20 text-destructive border-destructive/30'
-                )}>{e.statusCode}</Badge>
-              </TableCell>
-              <TableCell><span className="text-xs text-muted-foreground">{e.server || '—'}</span></TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1 max-w-[200px]">
-                  {e.technologies.slice(0, 3).map((t, j) => <Badge key={j} variant="outline" className={cn("text-[10px] px-1.5 py-0", getTechBadgeColor(t))}>{t}</Badge>)}
-                  {e.technologies.length > 3 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed">+{e.technologies.length - 3}</Badge>}
-                </div>
-              </TableCell>
-              <TableCell>
-                {e.tlsSubject ? (
-                  <div className="flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-primary" />
-                    <span className="text-xs text-muted-foreground truncate max-w-[100px]">{e.tlsSubject}</span>
-                  </div>
-                ) : <span className="text-xs text-muted-foreground">—</span>}
-              </TableCell>
-              <TableCell><span className="text-xs text-muted-foreground">{e.asset.hostname !== e.asset.ip ? e.asset.hostname : e.asset.ip}</span></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-/* ══════════════════════ TAB: VULNERABILIDADES ══════════════════════ */
-
-interface CVEWithAssets { cve: AttackSurfaceCVE; assets: ExposedAsset[] }
-
-function VulnerabilitiesTab({ assets }: { assets: ExposedAsset[] }) {
-  const [filter, setFilter] = useState<string>('all');
-
-  const cveMap = useMemo(() => {
-    const map = new Map<string, CVEWithAssets>();
-    for (const asset of assets) {
-      for (const cve of asset.cves) {
-        const existing = map.get(cve.cve_id);
-        if (existing) { existing.assets.push(asset); }
-        else { map.set(cve.cve_id, { cve, assets: [asset] }); }
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => (b.cve.score ?? 0) - (a.cve.score ?? 0));
-  }, [assets]);
-
-  const filtered = filter === 'all' ? cveMap : cveMap.filter(c => (c.cve.severity || 'medium').toLowerCase() === filter);
-  const sevCounts = useMemo(() => {
-    const c: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-    for (const e of cveMap) { const s = (e.cve.severity || 'medium').toLowerCase(); c[s] = (c[s] || 0) + 1; }
-    return c;
-  }, [cveMap]);
-
-  if (cveMap.length === 0) return <EmptyTabState text="Nenhuma vulnerabilidade detectada nesta análise." />;
-
-  const sevColors: Record<string, string> = {
-    critical: 'bg-destructive/20 text-destructive border-destructive/30',
-    high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    medium: 'bg-warning/20 text-warning border-warning/30',
-    low: 'bg-info/20 text-info border-info/30',
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Filter pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Badge variant={filter === 'all' ? 'default' : 'outline'} className="cursor-pointer" onClick={() => setFilter('all')}>Todas ({cveMap.length})</Badge>
-        {['critical', 'high', 'medium', 'low'].filter(s => sevCounts[s] > 0).map(s => (
-          <Badge key={s} variant="outline" className={cn("cursor-pointer", filter === s && sevColors[s])} onClick={() => setFilter(filter === s ? 'all' : s)}>
-            {s.charAt(0).toUpperCase() + s.slice(1)} ({sevCounts[s]})
-          </Badge>
-        ))}
-      </div>
-
-      {/* CVE list */}
-      <div className="space-y-2">
-        {filtered.map(({ cve, assets: affectedAssets }) => (
-          <Card key={cve.cve_id} className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <SeverityBadge severity={cve.severity} />
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <a href={cve.advisory_url || `https://nvd.nist.gov/vuln/detail/${cve.cve_id}`} target="_blank" rel="noopener noreferrer"
-                      className="font-mono text-sm font-semibold hover:underline text-blue-400 flex items-center gap-1">
-                      {cve.cve_id} <ExternalLink className="w-3 h-3" />
-                    </a>
-                    {cve.score != null && <span className="text-xs font-mono text-muted-foreground">Score: {cve.score}</span>}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{cve.title}</p>
-                  <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                    <span className="text-xs text-muted-foreground">Afeta:</span>
-                    {affectedAssets.map(a => (
-                      <Badge key={a.ip} variant="outline" className="text-[10px] px-1.5 py-0 font-mono">{a.hostname !== a.ip ? a.hostname : a.ip}</Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════ TAB: CERTIFICADOS ══════════════════════ */
-
-interface CertEntry { cert: TLSCertInfo; asset: ExposedAsset }
-
-function CertificatesTab({ assets }: { assets: ExposedAsset[] }) {
-  const entries = useMemo(() => {
-    const list: CertEntry[] = [];
-    const seen = new Set<string>();
-    for (const asset of assets) {
-      for (const cert of asset.tlsCerts) {
-        const key = `${cert.subject_cn}__${cert.not_after}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        list.push({ cert, asset });
-      }
-    }
-    // Sort: expired first, then expiring soon, then by days remaining
-    return list.sort((a, b) => (a.cert.daysRemaining ?? 9999) - (b.cert.daysRemaining ?? 9999));
-  }, [assets]);
-
-  if (entries.length === 0) return <EmptyTabState text="Nenhum certificado TLS detectado nesta análise." />;
-
-  return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/30">
-            <TableHead>Subject (CN)</TableHead>
-            <TableHead>Emissor</TableHead>
-            <TableHead>Validade</TableHead>
-            <TableHead className="text-center">Status</TableHead>
-            <TableHead>Ativo Associado</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.map(({ cert, asset }, i) => {
-            const isExpired = cert.daysRemaining !== null && cert.daysRemaining < 0;
-            const isExpiring = cert.daysRemaining !== null && cert.daysRemaining >= 0 && cert.daysRemaining <= 30;
-            return (
-              <TableRow key={i}>
-                <TableCell><span className="font-mono text-sm">{cert.subject_cn}</span></TableCell>
-                <TableCell><span className="text-xs text-muted-foreground">{cert.issuer}</span></TableCell>
-                <TableCell><span className="text-xs text-muted-foreground">{cert.not_after ? new Date(cert.not_after).toLocaleDateString('pt-BR') : '—'}</span></TableCell>
-                <TableCell className="text-center">
-                  {isExpired ? <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[10px]">Expirado há {Math.abs(cert.daysRemaining!)}d</Badge> :
-                   isExpiring ? <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[10px]">Expira em {cert.daysRemaining}d</Badge> :
-                   cert.daysRemaining !== null ? <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">{cert.daysRemaining}d</Badge> :
-                   <span className="text-xs text-muted-foreground">—</span>}
-                </TableCell>
-                <TableCell><span className="text-xs text-muted-foreground">{asset.hostname !== asset.ip ? asset.hostname : asset.ip}</span></TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-/* ══════════════════════ TAB: CREDENCIAIS VAZADAS ══════════════════════ */
-
-function LeakedCredentialsTab({ clientId, domains, isSuperRole }: { clientId: string; domains: string[]; isSuperRole: boolean }) {
-  if (domains.length === 0) return <EmptyTabState text="Nenhum domínio configurado para consulta de credenciais vazadas." />;
-  return <LeakedCredentialsSection clientId={clientId} domains={domains} isSuperRole={isSuperRole} />;
-}
-
 /* ══════════════════════ SHARED ══════════════════════ */
 
 function EmptyTabState({ text }: { text: string }) {
@@ -813,7 +637,6 @@ export default function SurfaceAnalyzerV2Page() {
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
-  // Schedule states
   const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
   const [scheduleHour, setScheduleHour] = useState<number>(15);
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState<number>(1);
@@ -925,25 +748,26 @@ export default function SurfaceAnalyzerV2Page() {
     return { activeAssets: active, emptyAssets: empty };
   }, [assets, searchTerm]);
 
+  // Generate findings from assets
+  const findings = useMemo(() => {
+    return generateFindings(assets as FindingsAsset[]);
+  }, [assets]);
+
+  const findingsStats = useMemo(() => calculateFindingsStats(findings), [findings]);
+
   // Executive stats
-  const stats = useMemo(() => {
+  const assetStats = useMemo(() => {
     let totalServices = 0, webServices = 0, infraServices = 0;
-    let criticalCVEs = 0, highCVEs = 0, mediumCVEs = 0, lowCVEs = 0;
     let validCerts = 0, expiringCerts = 0, expiredCerts = 0;
     for (const a of assets) {
       webServices += a.webServices.length;
       infraServices += a.services.length;
       totalServices += a.services.length + a.webServices.length;
-      for (const c of a.cves) {
-        const s = (c.severity || 'medium').toLowerCase();
-        if (s === 'critical') criticalCVEs++; else if (s === 'high') highCVEs++; else if (s === 'medium') mediumCVEs++; else lowCVEs++;
-      }
       expiredCerts += a.expiredCerts;
       expiringCerts += a.expiringSoonCerts;
       validCerts += a.tlsCerts.length - a.expiredCerts - a.expiringSoonCerts;
     }
-    const totalCVEs = criticalCVEs + highCVEs + mediumCVEs + lowCVEs;
-    return { totalAssets: assets.length, totalServices, webServices, infraServices, totalCVEs, criticalCVEs, highCVEs, mediumCVEs, lowCVEs, validCerts, expiringCerts, expiredCerts, totalCerts: validCerts + expiringCerts + expiredCerts };
+    return { totalAssets: assets.length, totalServices, webServices, infraServices, validCerts, expiringCerts, expiredCerts, totalCerts: validCerts + expiringCerts + expiredCerts };
   }, [assets]);
 
   return (
@@ -994,33 +818,38 @@ export default function SurfaceAnalyzerV2Page() {
             </Card>
           )}
 
-          {/* Summary Cards */}
+          {/* Summary Cards — findings-based */}
           {activeSnapshot && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <SummaryCard icon={Globe} title="Ativos Monitorados" value={stats.totalAssets} iconClass="bg-teal-500/15 text-teal-400" />
-              <SummaryCard icon={Server} title="Serviços Expostos" value={stats.totalServices} iconClass="bg-blue-500/15 text-blue-400">
+              <SummaryCard icon={Globe} title="Ativos Monitorados" value={assetStats.totalAssets} iconClass="bg-teal-500/15 text-teal-400">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{stats.webServices} web</span>
-                  <span className="text-border">•</span>
-                  <span>{stats.infraServices} infra</span>
+                  <span>{assetStats.totalServices} serviços expostos</span>
                 </div>
               </SummaryCard>
-              <SummaryCard icon={ShieldAlert} title="Vulnerabilidades" value={stats.totalCVEs} iconClass="bg-destructive/15 text-destructive">
-                {stats.totalCVEs > 0 && (
+              <SummaryCard icon={AlertTriangle} title="Achados Identificados" value={findingsStats.total} iconClass="bg-destructive/15 text-destructive">
+                {findingsStats.total > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {stats.criticalCVEs > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-destructive/20 text-destructive border-destructive/30">{stats.criticalCVEs} Crit</Badge>}
-                    {stats.highCVEs > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-400 border-orange-500/30">{stats.highCVEs} High</Badge>}
-                    {stats.mediumCVEs > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-warning/20 text-warning border-warning/30">{stats.mediumCVEs} Med</Badge>}
-                    {stats.lowCVEs > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-info/20 text-info border-info/30">{stats.lowCVEs} Low</Badge>}
+                    {findingsStats.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{findingsStats.critical} Crítico{findingsStats.critical !== 1 ? 's' : ''}</Badge>}
+                    {findingsStats.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-400 border-orange-500/30">{findingsStats.high} Alto{findingsStats.high !== 1 ? 's' : ''}</Badge>}
+                    {findingsStats.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{findingsStats.medium} Médio{findingsStats.medium !== 1 ? 's' : ''}</Badge>}
+                    {findingsStats.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{findingsStats.low} Baixo{findingsStats.low !== 1 ? 's' : ''}</Badge>}
                   </div>
                 )}
               </SummaryCard>
-              <SummaryCard icon={Lock} title="Certificados" value={stats.totalCerts} iconClass="bg-primary/15 text-primary">
-                {stats.totalCerts > 0 && (
+              <SummaryCard icon={ShieldAlert} title="Achados Críticos" value={findingsStats.critical} iconClass="bg-red-500/15 text-red-500">
+                {findingsStats.critical > 0 && (
+                  <p className="text-xs text-destructive">Requerem ação imediata</p>
+                )}
+                {findingsStats.critical === 0 && (
+                  <p className="text-xs text-primary">Nenhum achado crítico</p>
+                )}
+              </SummaryCard>
+              <SummaryCard icon={Lock} title="Certificados" value={assetStats.totalCerts} iconClass="bg-primary/15 text-primary">
+                {assetStats.totalCerts > 0 && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {stats.validCerts > 0 && <span className="text-primary">{stats.validCerts} válido{stats.validCerts !== 1 ? 's' : ''}</span>}
-                    {stats.expiringCerts > 0 && <span className="text-warning">{stats.expiringCerts} expirando</span>}
-                    {stats.expiredCerts > 0 && <span className="text-destructive">{stats.expiredCerts} expirado{stats.expiredCerts !== 1 ? 's' : ''}</span>}
+                    {assetStats.validCerts > 0 && <span className="text-primary">{assetStats.validCerts} válido{assetStats.validCerts !== 1 ? 's' : ''}</span>}
+                    {assetStats.expiringCerts > 0 && <span className="text-warning">{assetStats.expiringCerts} expirando</span>}
+                    {assetStats.expiredCerts > 0 && <span className="text-destructive">{assetStats.expiredCerts} expirado{assetStats.expiredCerts !== 1 ? 's' : ''}</span>}
                   </div>
                 )}
               </SummaryCard>
@@ -1042,46 +871,48 @@ export default function SurfaceAnalyzerV2Page() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {/* Search */}
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar por hostname, IP ou tecnologia..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9" />
-              </div>
-
-              {/* Tabs */}
-              <Tabs defaultValue="inventory" className="w-full">
+              {/* Tabs: Análise (default), Inventário, Credenciais */}
+              <Tabs defaultValue="analysis" className="w-full">
                 <TabsList className="w-full justify-start bg-muted/50 h-auto p-1 flex-wrap">
+                  <TabsTrigger value="analysis" className="gap-1.5 data-[state=active]:bg-background">
+                    <ShieldAlert className="w-3.5 h-3.5" /> Análise
+                    {findingsStats.total > 0 && (
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 ml-1",
+                        findingsStats.critical > 0 ? 'bg-red-500/20 text-red-500 border-red-500/30' : 'bg-muted text-muted-foreground'
+                      )}>
+                        {findingsStats.total}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
                   <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-background">
                     <Network className="w-3.5 h-3.5" /> Inventário
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">{activeAssets.length}</Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="web-services" className="gap-1.5 data-[state=active]:bg-background">
-                    <Monitor className="w-3.5 h-3.5" /> Serviços Web
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">{stats.webServices}</Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="vulnerabilities" className="gap-1.5 data-[state=active]:bg-background">
-                    <ShieldAlert className="w-3.5 h-3.5" /> Vulnerabilidades
-                    {stats.totalCVEs > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1 bg-destructive/20 text-destructive border-destructive/30">{stats.totalCVEs}</Badge>}
-                  </TabsTrigger>
-                  <TabsTrigger value="certificates" className="gap-1.5 data-[state=active]:bg-background">
-                    <Lock className="w-3.5 h-3.5" /> Certificados
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1">{stats.totalCerts}</Badge>
                   </TabsTrigger>
                   <TabsTrigger value="leaked-credentials" className="gap-1.5 data-[state=active]:bg-background">
                     <KeyRound className="w-3.5 h-3.5" /> Credenciais Vazadas
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="inventory">
-                  <InventoryTab assets={activeAssets} emptyAssets={emptyAssets} isSuperRole={isSuperRole}
-                    onRescan={a => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname, snapshotId: activeSnapshot!.id })}
-                    isRescanning={rescanMutation.isPending} activeSnapshot={activeSnapshot} />
+                <TabsContent value="analysis">
+                  <AnalysisTab findings={findings} />
                 </TabsContent>
-                <TabsContent value="web-services"><WebServicesTab assets={activeAssets} /></TabsContent>
-                <TabsContent value="vulnerabilities"><VulnerabilitiesTab assets={activeAssets} /></TabsContent>
-                <TabsContent value="certificates"><CertificatesTab assets={activeAssets} /></TabsContent>
+                <TabsContent value="inventory">
+                  <div className="space-y-4">
+                    <div className="relative max-w-md">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input placeholder="Buscar por hostname, IP ou tecnologia..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9" />
+                    </div>
+                    <InventoryTab assets={activeAssets} emptyAssets={emptyAssets} isSuperRole={isSuperRole}
+                      onRescan={a => rescanMutation.mutate({ ip: a.ip, source: a.source, label: a.hostname, snapshotId: activeSnapshot!.id })}
+                      isRescanning={rescanMutation.isPending} />
+                  </div>
+                </TabsContent>
                 <TabsContent value="leaked-credentials">
-                  {selectedClientId && <LeakedCredentialsTab clientId={selectedClientId} domains={clientDomains || []} isSuperRole={isSuperRole} />}
+                  {selectedClientId && clientDomains && clientDomains.length > 0 ? (
+                    <LeakedCredentialsSection clientId={selectedClientId} domains={clientDomains} isSuperRole={isSuperRole} />
+                  ) : (
+                    <EmptyTabState text="Nenhum domínio configurado para consulta de credenciais vazadas." />
+                  )}
                 </TabsContent>
               </Tabs>
             </div>
