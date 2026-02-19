@@ -118,7 +118,7 @@ interface RiskyServiceRule {
   ports: number[];
   serviceNames: string[];
   severity: SurfaceFindingSeverity;
-  name: string;
+  nameTemplate: string;
   technicalRisk: string;
   businessImpact: string;
   recommendation: string;
@@ -129,7 +129,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [3389],
     serviceNames: ['ms-wbt-server', 'rdp', 'remote desktop'],
     severity: 'critical',
-    name: 'RDP (porta 3389) exposto na internet',
+    nameTemplate: 'RDP exposto na internet',
     technicalRisk: 'O Remote Desktop Protocol é um dos vetores mais explorados para ataques de ransomware. Permite brute-force de credenciais, exploração de vulnerabilidades como BlueKeep (CVE-2019-0708) e lateral movement na rede interna.',
     businessImpact: 'Acesso remoto não autorizado pode resultar em controle total do servidor, instalação de ransomware, exfiltração de dados sensíveis e comprometimento de toda a infraestrutura conectada.',
     recommendation: 'Restringir acesso via VPN ou desabilitar o serviço se não for necessário. Implementar NLA (Network Level Authentication) e MFA.',
@@ -138,7 +138,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [445, 139],
     serviceNames: ['microsoft-ds', 'smb', 'netbios-ssn', 'samba'],
     severity: 'critical',
-    name: 'SMB (porta 445) exposto na internet',
+    nameTemplate: 'SMB exposto na internet',
     technicalRisk: 'O protocolo SMB exposto permite exploração de vulnerabilidades como EternalBlue (MS17-010), lateral movement e enumeração de compartilhamentos. É o principal vetor de propagação de worms e ransomware.',
     businessImpact: 'Acesso não autorizado a arquivos compartilhados, propagação de malware pela rede, roubo de credenciais e potencial comprometimento em cascata de todos os sistemas conectados.',
     recommendation: 'Bloquear portas 445/139 no firewall de borda. SMB nunca deve ser acessível pela internet.',
@@ -147,7 +147,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [23],
     serviceNames: ['telnet'],
     severity: 'critical',
-    name: 'Telnet (porta 23) exposto na internet',
+    nameTemplate: 'Telnet exposto na internet',
     technicalRisk: 'Telnet transmite credenciais e dados em texto claro (sem criptografia). Permite interceptação de sessões administrativas e é alvo frequente de botnets IoT.',
     businessImpact: 'Interceptação de credenciais administrativas, acesso não autorizado a equipamentos de rede e potencial inclusão do dispositivo em botnets.',
     recommendation: 'Substituir Telnet por SSH (porta 22) e bloquear a porta 23 no firewall.',
@@ -156,7 +156,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [21],
     serviceNames: ['ftp'],
     severity: 'high',
-    name: 'FTP (porta 21) exposto na internet',
+    nameTemplate: 'FTP exposto na internet',
     technicalRisk: 'FTP transmite credenciais em texto claro e pode permitir acesso anônimo. Versões antigas possuem vulnerabilidades conhecidas de buffer overflow e directory traversal.',
     businessImpact: 'Exfiltração de dados, upload de malware, acesso a arquivos sensíveis e possível uso como ponto de entrada para a rede interna.',
     recommendation: 'Substituir por SFTP ou FTPS. Se necessário manter FTP, desabilitar acesso anônimo e restringir por IP.',
@@ -165,7 +165,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [1433],
     serviceNames: ['ms-sql-s', 'mssql', 'sql server'],
     severity: 'critical',
-    name: 'SQL Server (porta 1433) exposto na internet',
+    nameTemplate: 'SQL Server exposto na internet',
     technicalRisk: 'Banco de dados acessível diretamente pela internet permite ataques de brute-force, injeção SQL e execução de comandos via xp_cmdshell.',
     businessImpact: 'Vazamento da base de dados inteira, incluindo dados pessoais, financeiros e credenciais. Pode resultar em multas regulatórias (LGPD) e danos reputacionais.',
     recommendation: 'Remover acesso direto pela internet. Utilizar VPN ou tunnel seguro para acesso remoto ao banco de dados.',
@@ -174,7 +174,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [3306],
     serviceNames: ['mysql', 'mariadb'],
     severity: 'critical',
-    name: 'MySQL/MariaDB (porta 3306) exposto na internet',
+    nameTemplate: 'MySQL/MariaDB exposto na internet',
     technicalRisk: 'Banco de dados acessível diretamente pela internet permite ataques de brute-force e exploração de vulnerabilidades de autenticação.',
     businessImpact: 'Vazamento completo dos dados armazenados, incluindo informações pessoais de clientes, transações financeiras e dados proprietários.',
     recommendation: 'Restringir acesso ao banco de dados apenas via rede interna ou VPN. Nunca expor diretamente na internet.',
@@ -183,7 +183,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [5432],
     serviceNames: ['postgresql', 'postgres'],
     severity: 'critical',
-    name: 'PostgreSQL (porta 5432) exposto na internet',
+    nameTemplate: 'PostgreSQL exposto na internet',
     technicalRisk: 'Banco de dados acessível diretamente pela internet. PostgreSQL pode permitir execução de comandos do sistema operacional através de funções de extensão.',
     businessImpact: 'Acesso direto aos dados da aplicação, possível execução remota de código no servidor e comprometimento total do ambiente.',
     recommendation: 'Restringir acesso ao banco de dados apenas via rede interna ou VPN.',
@@ -192,7 +192,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [6379],
     serviceNames: ['redis'],
     severity: 'critical',
-    name: 'Redis (porta 6379) exposto na internet',
+    nameTemplate: 'Redis exposto na internet',
     technicalRisk: 'Redis por padrão não possui autenticação. Permite leitura/escrita de dados e pode ser explorado para execução remota de comandos através de manipulação de arquivos.',
     businessImpact: 'Exposição de dados de sessão, cache e filas. Possível execução de comandos no servidor, levando a comprometimento total.',
     recommendation: 'Nunca expor Redis na internet. Configurar autenticação (requirepass) e restringir bind address.',
@@ -201,7 +201,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [27017, 27018],
     serviceNames: ['mongodb', 'mongo'],
     severity: 'critical',
-    name: 'MongoDB (porta 27017) exposto na internet',
+    nameTemplate: 'MongoDB exposto na internet',
     technicalRisk: 'MongoDB historicamente é implantado sem autenticação. Permite acesso total aos dados e já foi alvo de ataques massivos de ransomware em bancos expostos.',
     businessImpact: 'Exposição total dos dados armazenados. Ataques de ransomware em MongoDB expostos são comuns e já afetaram milhares de organizações.',
     recommendation: 'Habilitar autenticação, restringir bindIP e nunca expor diretamente na internet.',
@@ -210,7 +210,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [5900, 5901, 5902],
     serviceNames: ['vnc'],
     severity: 'high',
-    name: 'VNC (porta 5900) exposto na internet',
+    nameTemplate: 'VNC exposto na internet',
     technicalRisk: 'VNC frequentemente utiliza autenticação fraca (senha de até 8 caracteres). Versões antigas não utilizam criptografia, expondo a sessão visual completa.',
     businessImpact: 'Controle visual e interativo remoto do servidor/desktop, permitindo ao atacante operar o sistema como se estivesse fisicamente presente.',
     recommendation: 'Restringir acesso via VPN. Utilizar VNC com túnel SSH ou substituir por soluções mais seguras.',
@@ -219,7 +219,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [161],
     serviceNames: ['snmp'],
     severity: 'medium',
-    name: 'SNMP (porta 161) exposto na internet',
+    nameTemplate: 'SNMP exposto na internet',
     technicalRisk: 'SNMP v1/v2c utiliza community strings em texto claro (frequentemente "public" e "private"). Permite enumeração completa da infraestrutura de rede.',
     businessImpact: 'Enumeração de topologia de rede, interfaces, rotas e configurações. Informações podem ser utilizadas para planejar ataques direcionados.',
     recommendation: 'Bloquear SNMP no firewall de borda. Se necessário, migrar para SNMPv3 com autenticação e criptografia.',
@@ -228,7 +228,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [11211],
     serviceNames: ['memcached', 'memcache'],
     severity: 'high',
-    name: 'Memcached (porta 11211) exposto na internet',
+    nameTemplate: 'Memcached exposto na internet',
     technicalRisk: 'Memcached sem autenticação permite leitura de dados em cache e pode ser usado como amplificador em ataques DDoS (amplificação de até 51.000x).',
     businessImpact: 'Vazamento de dados em cache (sessões, tokens), uso do servidor como amplificador DDoS contra terceiros.',
     recommendation: 'Desabilitar acesso UDP, restringir bind address e bloquear no firewall de borda.',
@@ -237,7 +237,7 @@ const RISKY_SERVICES: RiskyServiceRule[] = [
     ports: [9200, 9300],
     serviceNames: ['elasticsearch'],
     severity: 'critical',
-    name: 'Elasticsearch (porta 9200) exposto na internet',
+    nameTemplate: 'Elasticsearch exposto na internet',
     technicalRisk: 'Elasticsearch por padrão não possui autenticação. Permite leitura, modificação e exclusão de todos os índices de dados.',
     businessImpact: 'Exposição massiva de dados indexados (logs, métricas, dados de aplicação). Ataques de ransomware em instâncias Elasticsearch são frequentes.',
     recommendation: 'Habilitar X-Pack Security, configurar autenticação e restringir acesso à rede interna.',
@@ -359,6 +359,7 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
   for (const rule of RISKY_SERVICES) {
     const affected: AffectedAsset[] = [];
     const evidenceMap = new Map<string, SurfaceFindingEvidence[]>();
+    const detectedPorts = new Set<number>();
 
     for (const asset of assets) {
       let matched = false;
@@ -368,6 +369,7 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
       for (const port of asset.ports) {
         if (rule.ports.includes(port)) {
           matched = true;
+          detectedPorts.add(port);
           const svc = asset.services.find(s => s.port === port);
           assetEvidence.push({
             label: 'Porta/Serviço',
@@ -376,12 +378,13 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
         }
       }
 
-      // Check by service name
+      // Check by service name (any port)
       if (!matched) {
         for (const svc of asset.services) {
           const svcName = (svc.product || svc.name || '').toLowerCase();
           if (rule.serviceNames.some(rn => svcName.includes(rn))) {
             matched = true;
+            detectedPorts.add(svc.port);
             assetEvidence.push({
               label: 'Serviço',
               value: `${svc.port}/${svc.transport} — ${svc.product || svc.name}${svc.version ? ` ${svc.version}` : ''}`,
@@ -403,9 +406,17 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
           allEvidence.push({ label: `${ip}`, value: ev.value });
         }
       }
+
+      // Build dynamic name with actual detected ports
+      const portsArr = Array.from(detectedPorts).sort((a, b) => a - b);
+      const portsSuffix = portsArr.length === 1
+        ? ` (porta ${portsArr[0]})`
+        : ` (portas ${portsArr.join(', ')})`;
+      const dynamicName = `${rule.nameTemplate}${portsSuffix}`;
+
       findings.push({
         id: nextId('svc'),
-        name: rule.name,
+        name: dynamicName,
         status: 'fail',
         severity: rule.severity,
         category: 'risky_services',
@@ -426,7 +437,7 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
   const httpNoTlsEvidence: SurfaceFindingEvidence[] = [];
   for (const asset of assets) {
     for (const ws of asset.webServices) {
-      if (ws.url?.startsWith('http://')) {
+      if (ws.url?.startsWith('http://') && (ws.status_code < 300 || ws.status_code >= 400)) {
         const exists = httpNoTls.find(a => a.ip === asset.ip);
         if (!exists) httpNoTls.push({ hostname: asset.hostname, ip: asset.ip });
         httpNoTlsEvidence.push({ label: asset.ip, value: ws.url });
@@ -479,7 +490,8 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
     });
   }
 
-  // ── 3. Vulnerabilities (CVEs grouped by severity) ─────────
+  // ── 3. Vulnerabilities (CVEs grouped by product) ──────────
+  // Collect all CVEs with their affected assets
   const cveMap = new Map<string, { cve: AttackSurfaceCVE; assets: AffectedAsset[] }>();
   for (const asset of assets) {
     for (const cve of asset.cves) {
@@ -494,68 +506,80 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
     }
   }
 
-  // Group CVEs by severity for better findings
-  const cveBySeverity = new Map<string, Array<{ cve: AttackSurfaceCVE; assets: AffectedAsset[] }>>();
+  // Group CVEs by product instead of individual findings
+  const productMap = new Map<string, {
+    cves: Array<{ cve: AttackSurfaceCVE; assets: AffectedAsset[] }>;
+    allAssets: Map<string, AffectedAsset>;
+  }>();
+
   for (const entry of cveMap.values()) {
-    const sev = (entry.cve.severity || 'medium').toLowerCase();
-    const arr = cveBySeverity.get(sev) || [];
-    arr.push(entry);
-    cveBySeverity.set(sev, arr);
+    // Determine product key from CVE products or fallback
+    const productName = entry.cve.products?.length
+      ? entry.cve.products[0]
+      : 'Produto desconhecido';
+
+    const existing = productMap.get(productName);
+    if (existing) {
+      existing.cves.push(entry);
+      for (const a of entry.assets) existing.allAssets.set(a.ip, a);
+    } else {
+      const allAssets = new Map<string, AffectedAsset>();
+      for (const a of entry.assets) allAssets.set(a.ip, a);
+      productMap.set(productName, { cves: [entry], allAssets });
+    }
   }
 
-  // Create one finding per CVE (for critical/high) or grouped (for medium/low)
-  for (const [severity, entries] of cveBySeverity) {
-    const sorted = entries.sort((a, b) => (b.cve.score ?? 0) - (a.cve.score ?? 0));
+  // Generate one finding per product
+  for (const [productName, group] of productMap) {
+    const sortedCves = group.cves.sort((a, b) => (b.cve.score ?? 0) - (a.cve.score ?? 0));
+    const affectedAssets = Array.from(group.allAssets.values());
 
-    if (severity === 'critical' || severity === 'high') {
-      // Individual findings for critical/high CVEs
-      for (const entry of sorted) {
-        const allAffected = entry.assets;
-        findings.push({
-          id: nextId('cve'),
-          name: `${entry.cve.cve_id}${entry.cve.title ? ` — ${entry.cve.title}` : ''}`,
-          status: 'fail',
-          severity: severity as SurfaceFindingSeverity,
-          category: 'vulnerabilities',
-          description: `Vulnerabilidade ${severity === 'critical' ? 'crítica' : 'de alta severidade'} detectada em ${allAffected.length} ${allAffected.length === 1 ? 'ativo' : 'ativos'}.${entry.cve.score != null ? ` Score CVSS: ${entry.cve.score}.` : ''}`,
-          technicalRisk: `Vulnerabilidade conhecida (${entry.cve.cve_id}) com exploits potencialmente disponíveis publicamente. ${severity === 'critical' ? 'Pode permitir execução remota de código, escalonamento de privilégios ou comprometimento total do sistema.' : 'Pode permitir acesso não autorizado, negação de serviço ou vazamento de informações.'}`,
-          businessImpact: severity === 'critical'
-            ? 'Risco imediato de comprometimento. Vulnerabilidades críticas são frequentemente exploradas em campanhas automatizadas de ataque dentro de dias após a divulgação.'
-            : 'Risco significativo que pode ser explorado em ataques direcionados. Requer atenção prioritária na próxima janela de manutenção.',
-          recommendation: `Aplicar o patch de segurança disponível ou implementar medida de mitigação. ${entry.cve.advisory_url ? `Consultar: ${entry.cve.advisory_url}` : `Consultar: https://nvd.nist.gov/vuln/detail/${entry.cve.cve_id}`}`,
-          affectedAssets: allAffected,
-          evidence: [
-            { label: 'CVE ID', value: entry.cve.cve_id },
-            ...(entry.cve.score != null ? [{ label: 'CVSS Score', value: String(entry.cve.score) }] : []),
-            ...(entry.cve.products?.length ? [{ label: 'Produtos afetados', value: entry.cve.products.slice(0, 5).join(', ') }] : []),
-          ],
-        });
-      }
-    } else {
-      // Grouped finding for medium/low
-      if (sorted.length > 0) {
-        const allAffectedMap = new Map<string, AffectedAsset>();
-        for (const entry of sorted) {
-          for (const a of entry.assets) { allAffectedMap.set(a.ip, a); }
-        }
-        findings.push({
-          id: nextId('cve'),
-          name: `${sorted.length} vulnerabilidade${sorted.length !== 1 ? 's' : ''} de severidade ${severity === 'medium' ? 'média' : 'baixa'}`,
-          status: severity === 'medium' ? 'warning' : 'warning',
-          severity: severity as SurfaceFindingSeverity,
-          category: 'vulnerabilities',
-          description: `${sorted.length} CVE${sorted.length !== 1 ? 's' : ''} de severidade ${severity === 'medium' ? 'média' : 'baixa'} detectada${sorted.length !== 1 ? 's' : ''} em ${allAffectedMap.size} ${allAffectedMap.size === 1 ? 'ativo' : 'ativos'}.`,
-          technicalRisk: 'Vulnerabilidades de menor severidade que individualmente representam risco limitado, mas em conjunto podem ser encadeadas com outras falhas para amplificar o impacto de um ataque.',
-          businessImpact: 'Risco moderado que deve ser endereçado no ciclo regular de patching. Não requer ação de emergência, mas negligenciar pode aumentar a superfície de ataque ao longo do tempo.',
-          recommendation: 'Incluir no próximo ciclo de patching. Priorizar CVEs com maior score CVSS.',
-          affectedAssets: Array.from(allAffectedMap.values()),
-          evidence: sorted.slice(0, 10).map(e => ({
-            label: e.cve.cve_id,
-            value: `${e.cve.title || '—'}${e.cve.score != null ? ` (CVSS ${e.cve.score})` : ''} — ${e.assets.length} ${e.assets.length === 1 ? 'ativo' : 'ativos'}`,
-          })),
-        });
+    // Calculate severity breakdown
+    const sevCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    let worstSeverity: SurfaceFindingSeverity = 'low';
+    const sevRankLocal: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+    for (const entry of sortedCves) {
+      const sev = (entry.cve.severity || 'medium').toLowerCase();
+      sevCounts[sev] = (sevCounts[sev] || 0) + 1;
+      if ((sevRankLocal[sev] || 0) > (sevRankLocal[worstSeverity] || 0)) {
+        worstSeverity = sev as SurfaceFindingSeverity;
       }
     }
+
+    // Build severity breakdown string
+    const sevParts: string[] = [];
+    if (sevCounts.critical > 0) sevParts.push(`${sevCounts.critical} Crítica${sevCounts.critical > 1 ? 's' : ''}`);
+    if (sevCounts.high > 0) sevParts.push(`${sevCounts.high} Alta${sevCounts.high > 1 ? 's' : ''}`);
+    if (sevCounts.medium > 0) sevParts.push(`${sevCounts.medium} Média${sevCounts.medium > 1 ? 's' : ''}`);
+    if (sevCounts.low > 0) sevParts.push(`${sevCounts.low} Baixa${sevCounts.low > 1 ? 's' : ''}`);
+    const sevBreakdown = sevParts.join(', ');
+
+    const totalCves = sortedCves.length;
+    const isCriticalOrHigh = worstSeverity === 'critical' || worstSeverity === 'high';
+
+    findings.push({
+      id: nextId('cve'),
+      name: `${productName} — ${totalCves} vulnerabilidade${totalCves !== 1 ? 's' : ''} (${sevBreakdown})`,
+      status: isCriticalOrHigh ? 'fail' : 'warning',
+      severity: worstSeverity,
+      category: 'vulnerabilities',
+      description: `${totalCves} CVE${totalCves !== 1 ? 's' : ''} conhecida${totalCves !== 1 ? 's' : ''} detectada${totalCves !== 1 ? 's' : ''} em ${affectedAssets.length} ${affectedAssets.length === 1 ? 'ativo' : 'ativos'}.`,
+      technicalRisk: isCriticalOrHigh
+        ? `Produto com vulnerabilidades ${worstSeverity === 'critical' ? 'críticas' : 'de alta severidade'} conhecidas. Pode permitir execução remota de código, escalonamento de privilégios ou comprometimento total do sistema.`
+        : 'Vulnerabilidades de menor severidade que individualmente representam risco limitado, mas em conjunto podem ser encadeadas com outras falhas para amplificar o impacto de um ataque.',
+      businessImpact: isCriticalOrHigh
+        ? 'Risco imediato de comprometimento. Vulnerabilidades críticas são frequentemente exploradas em campanhas automatizadas de ataque dentro de dias após a divulgação.'
+        : 'Risco moderado que deve ser endereçado no ciclo regular de patching. Não requer ação de emergência, mas negligenciar pode aumentar a superfície de ataque ao longo do tempo.',
+      recommendation: isCriticalOrHigh
+        ? `Atualizar ${productName} para a versão mais recente com patches de segurança aplicados. Priorizar imediatamente.`
+        : `Incluir atualização de ${productName} no próximo ciclo de patching.`,
+      affectedAssets: affectedAssets,
+      evidence: sortedCves.slice(0, 15).map(e => ({
+        label: e.cve.cve_id,
+        value: `${e.cve.score != null ? `CVSS ${e.cve.score}` : '—'}${e.cve.title ? ` — ${e.cve.title}` : ''}`,
+      })),
+    });
   }
 
   // ── 4. TLS Certificates ───────────────────────────────────
