@@ -72,13 +72,12 @@ function ProjectileOverlay({
           </filter>
         </defs>
 
-        {/* Inbound projectiles: origin → firewall */}
+        {/* Inbound projectiles: country → firewall (auth failures + successes) */}
         {inboundPoints.map((p, i) => {
           const [px, py] = toSVG(p.lat, p.lng);
           const pathD = `M${px},${py} L${fw[0]},${fw[1]}`;
           const glowId =
-            p.color === COLORS.denied ? 'url(#lf-glow-red)'
-            : p.color === COLORS.fw_fail ? 'url(#lf-glow-orange)'
+            p.color === COLORS.fw_fail ? 'url(#lf-glow-orange)'
             : p.color === COLORS.vpn_fail ? 'url(#lf-glow-yellow)'
             : 'url(#lf-glow-green)';
 
@@ -95,17 +94,18 @@ function ProjectileOverlay({
           );
         })}
 
-        {/* Outbound projectiles: firewall → destination */}
+        {/* Outbound projectiles: firewall → country (denied + outbound connections) */}
         {outboundPoints.map((p, i) => {
           const [px, py] = toSVG(p.lat, p.lng);
           // Reversed path: firewall → destination
           const pathD = `M${fw[0]},${fw[1]} L${px},${py}`;
+          const glowId = p.color === COLORS.denied ? 'url(#lf-glow-red)' : 'url(#lf-glow-sky)';
 
           return (
             <g key={`outbound-${i}`}>
-              <path d={pathD} stroke={COLORS.outbound} strokeWidth="0.8" opacity="0.15" fill="none" />
+              <path d={pathD} stroke={p.color} strokeWidth="0.8" opacity="0.15" fill="none" />
               {[0, 0.9, 1.8].map((delay, j) => (
-                <circle key={j} r={fullscreen ? 3 : 2.5} fill={COLORS.outbound} opacity="0.85" filter="url(#lf-glow-sky)">
+                <circle key={j} r={fullscreen ? 3 : 2.5} fill={p.color} opacity="0.85" filter={glowId}>
                   <animateMotion path={pathD} dur="3s" begin={`${delay}s`} repeatCount="indefinite" fill="freeze" />
                   <animate attributeName="opacity" values="0;0.85;0.85;0" dur="3s" begin={`${delay}s`} repeatCount="indefinite" />
                 </circle>
@@ -164,6 +164,7 @@ export function AttackMap({
     }).catch(() => {});
   }, []);
 
+  // Inbound: auth failures and successes come FROM countries TO firewall
   const inboundPoints = useMemo(() => {
     const result: { lat: number; lng: number; r: number; color: string; label: string; count: number; type: string }[] = [];
 
@@ -177,23 +178,39 @@ export function AttackMap({
     };
 
     addPoints(authSuccessCountries, COLORS.auth_success, 'Sucesso Auth');
-    addPoints(deniedCountries, COLORS.denied, 'Tráfego Negado');
     addPoints(authFailedCountries, COLORS.fw_fail, 'Falha Auth Firewall');
     addPoints(authFailedVpnCountries, COLORS.vpn_fail, 'Falha Auth VPN');
 
     return result;
-  }, [deniedCountries, authFailedCountries, authFailedVpnCountries, authSuccessCountries]);
+  }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries]);
 
+  // Outbound: denied traffic and outbound connections go FROM firewall TO countries
   const outboundPoints = useMemo(() => {
     const result: { lat: number; lng: number; r: number; color: string; label: string; count: number; type: string }[] = [];
-    for (const c of outboundCountries) {
-      const coords = getCountryCoords(c.country);
-      if (!coords) continue;
-      const r = Math.max(4, Math.min(14, Math.log2(c.count + 1) * 2.5));
-      result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.outbound, label: c.country, count: c.count, type: 'Saída' });
-    }
+
+    const addDenied = (countries: TopCountry[]) => {
+      for (const c of countries) {
+        const coords = getCountryCoords(c.country);
+        if (!coords) continue;
+        const r = Math.max(4, Math.min(18, Math.log2(c.count + 1) * 3));
+        result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.denied, label: c.country, count: c.count, type: 'Tráfego Negado' });
+      }
+    };
+
+    const addOutbound = (countries: TopCountry[]) => {
+      for (const c of countries) {
+        const coords = getCountryCoords(c.country);
+        if (!coords) continue;
+        const r = Math.max(4, Math.min(14, Math.log2(c.count + 1) * 2.5));
+        result.push({ lat: coords[0], lng: coords[1], r, color: COLORS.outbound, label: c.country, count: c.count, type: 'Saída' });
+      }
+    };
+
+    addDenied(deniedCountries);
+    addOutbound(outboundCountries);
+
     return result;
-  }, [outboundCountries]);
+  }, [deniedCountries, outboundCountries]);
 
   const allPoints = [...inboundPoints, ...outboundPoints];
 
@@ -233,15 +250,16 @@ export function AttackMap({
             pathOptions={{ color: p.color, weight: 1, opacity: 0.2, dashArray: '4 4' }}
           />
         ))}
+        {/* Trail lines — outbound (FW → country): denied + outbound connections */}
         {firewallLocation && outboundPoints.map((p, i) => (
           <Polyline
             key={`line-out-${i}`}
             positions={[[firewallLocation.lat, firewallLocation.lng], [p.lat, p.lng]]}
-            pathOptions={{ color: COLORS.outbound, weight: 1, opacity: 0.2, dashArray: '4 4' }}
+            pathOptions={{ color: p.color, weight: 1, opacity: 0.2, dashArray: '4 4' }}
           />
         ))}
 
-        {/* Country markers — inbound */}
+        {/* Country markers — inbound (auth) */}
         {inboundPoints.map((p, i) => (
           <CircleMarker
             key={`pt-in-${i}`}
@@ -256,17 +274,17 @@ export function AttackMap({
           </CircleMarker>
         ))}
 
-        {/* Country markers — outbound */}
+        {/* Country markers — outbound (denied + saída), each with its own color */}
         {outboundPoints.map((p, i) => (
           <CircleMarker
             key={`pt-out-${i}`}
             center={[p.lat, p.lng]}
             radius={p.r}
-            pathOptions={{ color: COLORS.outbound, fillColor: COLORS.outbound, fillOpacity: 0.55, weight: 1.5, opacity: 0.8, dashArray: '3 3' }}
+            pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.6, weight: 1.5, opacity: 0.9 }}
           >
             <Tooltip direction="top" offset={[0, -p.r]} opacity={1}>
               <span className="font-semibold">{p.label}</span><br />
-              <span className="text-xs">Saída: {p.count} conexões</span>
+              <span className="text-xs">{p.type}: {p.count} eventos</span>
             </Tooltip>
           </CircleMarker>
         ))}
