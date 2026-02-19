@@ -1,52 +1,110 @@
 
 
-# Filtrar Ações de Sistema na Tabela de Alterações de Configuração
+# Redesign do Surface Analyzer - Pagina de Prototipo
 
-## Problema
+## Contexto
 
-A tabela exibe todas as entradas do log de configuração, incluindo ações automáticas do sistema (ex: `delete_phase1_sa` de IPsec SA lifecycle, entradas com usuário `unknown`). O objetivo é mostrar apenas alterações feitas por usuários humanos (administradores).
+A pagina atual do Surface Analyzer (`AttackSurfaceAnalyzerPage.tsx`) tem ~1800 linhas e exibe todas as informacoes de forma linear e congestionada: stat cards no topo, lista de assets como cards expandiveis com portas, servicos, CVEs, certificados TLS, tecnologias e credenciais vazadas - tudo na mesma view. Para usuarios nao-tecnicos, e um muro de dados dificil de interpretar.
 
-## Lógica de Filtragem
+## Inspiracao e Pesquisa
 
-No FortiGate, ações de sistema se identificam por:
-- **Usuário "unknown"**: eventos gerados automaticamente pelo sistema
-- **Ações de SA (Security Association)**: `delete_phase1_sa`, `delete_phase2_sa`, `add_phase1_sa`, `add_phase2_sa` -- são eventos automáticos do ciclo de vida IPsec, não ações de administrador
+Analisei dashboards de ferramentas profissionais de Exposure Management (Censys ASM, Qualys EASM, Rapid7 Surface Command, Microsoft Exposure Management) e principios de UX para dashboards de ciberseguranca. Os padroes recorrentes sao:
 
-Ações de administrador legítimas têm:
-- Usuário identificado (ex: `gdm-admin`, IPs de sessão admin)
-- Ações como `Edit`, `Add`, `Delete` (em contexto de configuração)
+1. **Dashboard Overview primeiro, detalhes depois** - o usuario ve um resumo executivo antes de mergulhar nos dados
+2. **Organizacao por categoria, nao por IP** - agrupar por tipo de achado (servicos web, certificados, CVEs) em vez de listar tudo por ativo
+3. **Progressive disclosure** - mostrar o essencial e permitir drill-down
+4. **Contadores visuais com contexto** - nao apenas numeros, mas barras/distribuicoes que contam uma historia
+5. **Tabelas para dados densos** - cards funcionam para resumo, mas tabelas sao melhores para inventario detalhado
 
-## Filtro Proposto
+## Proposta de Layout (Pagina de Teste)
 
-Excluir entradas onde:
-1. `user === "unknown"` ou `user` estiver vazio
-2. `action` contenha padrões de SA automático: `phase1_sa`, `phase2_sa`
+A nova pagina sera criada em `/scope-external-domain/analyzer-v2` como prototipo. Estrutura em 3 zonas verticais:
 
-Isso será aplicado **antes** dos filtros de busca do usuário, na extração dos `details` do snapshot.
+### Zona 1: Header + Summary Cards (visao executiva)
 
-## Mudança Técnica
+Manter o header padrao do sistema (breadcrumb, titulo, subtitulo, workspace selector). Os stat cards mudam de 4 metricas genericas para metricas que contam uma historia:
 
-### Arquivo: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+| Card | Antes | Depois |
+|---|---|---|
+| 1 | Ativos Expostos (numero) | **Ativos Monitorados** - total de IPs/hostnames |
+| 2 | Servicos Detectados (numero) | **Servicos Expostos** - com mini breakdown (web/infra) |
+| 3 | CVEs Criticas (numero) | **Vulnerabilidades** - com breakdown por severidade (badges inline) |
+| 4 | Certificados Expirados (numero) | **Certificados** - com status (validos/expirando/expirados) |
 
-Na linha 85, onde os `details` são extraídos:
+### Zona 2: Tabs de Navegacao
 
-```typescript
-// Antes
-const details: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
+Em vez de uma lista unica gigante, organizar os dados em abas tematicas:
 
-// Depois - filtrar ações de sistema
-const SYSTEM_ACTION_PATTERNS = ['phase1_sa', 'phase2_sa'];
-const allDetails: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
-const details = allDetails.filter(d => {
-  if (!d.user || d.user === 'unknown') return false;
-  if (SYSTEM_ACTION_PATTERNS.some(p => d.action?.toLowerCase().includes(p))) return false;
-  return true;
-});
+```
+[Inventario] [Servicos Web] [Vulnerabilidades] [Certificados] [Credenciais Vazadas]
 ```
 
-O contador no header também será atualizado para refletir apenas as alterações de usuário (não mais o `configChangesCount` bruto do snapshot).
+**Tab Inventario (padrao):** Tabela limpa com colunas: Hostname | IP | ASN/Provider | Portas | Servicos | CVEs | Status. Cada linha clicavel para expandir detalhes. Ordenacao por colunas.
 
-## Resultado
+**Tab Servicos Web:** Tabela focada em endpoints HTTP/HTTPS: URL | Status | Servidor | Tecnologias | TLS. Agrupamento visual por ativo.
 
-A tabela mostrará apenas alterações feitas por administradores identificados (como `gdm-admin` fazendo `Edit` em `log.setting`), ocultando eventos automáticos do sistema como renegociações IPsec.
+**Tab Vulnerabilidades:** Lista de CVEs encontradas, agrupadas por severidade. Cada CVE mostra quais ativos sao afetados. Filtro por severidade.
+
+**Tab Certificados:** Visao dedicada de todos os certificados TLS: Subject | Emissor | Validade | Status. Ordenado por urgencia (expirados primeiro).
+
+**Tab Credenciais Vazadas:** A secao HIBP que ja existe, promovida para tab propria.
+
+### Zona 3: Footer Info
+
+Timestamp do ultimo scan + botao de acao (executar/cancelar).
+
+## Detalhes Tecnicos
+
+### Novo arquivo: `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx`
+
+- Reutilizar toda a logica de dados existente (`buildAssets`, `matchCVEsToIP`, hooks de snapshot, etc.) - copiar do original
+- Implementar o layout com `Tabs` do Radix UI (ja instalado)
+- Cada tab sera um componente interno (funcao dentro do arquivo ou componente separado se ficar grande)
+- Manter todos os hooks existentes: `useWorkspaceSelector`, `useEffectiveAuth`, `usePreview`, queries de CVE cache, etc.
+
+### Rota de teste: `src/App.tsx`
+
+- Adicionar rota `/scope-external-domain/analyzer-v2` apontando para `SurfaceAnalyzerV2Page`
+- A rota original `/scope-external-domain/analyzer` permanece inalterada
+
+### Componentes da Tab Inventario (visao principal)
+
+Tabela com as colunas:
+- **Hostname**: com icone de fonte (DNS/Firewall) e tooltip de ASN/WHOIS
+- **IP**: badge mono com bandeira do pais
+- **Portas**: badge com contagem, tooltip com lista
+- **Servicos**: badge com contagem
+- **CVEs**: badges coloridas por severidade (ex: "2 Critical | 1 High")
+- **Certificado**: icone de status (verde/amarelo/vermelho/cinza)
+- Linha expandivel com os detalhes do ativo (servicos, scripts NSE, CVEs detalhadas)
+
+### Componentes da Tab Vulnerabilidades
+
+- Cards agrupados por severidade (Critical, High, Medium, Low)
+- Cada card de CVE mostra: ID, titulo, score, ativos afetados (badges clicaveis)
+- Filtro rapido por severidade
+
+### Componentes da Tab Certificados
+
+Tabela com:
+- Subject CN
+- Emissor
+- Data de expiracao
+- Dias restantes (badge colorida)
+- Ativo associado
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Acao |
+|---|---|
+| `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx` | **Criar** - nova pagina de prototipo |
+| `src/App.tsx` | **Modificar** - adicionar rota `/scope-external-domain/analyzer-v2` |
+
+## Observacoes
+
+- Sem risk score (conforme solicitado)
+- Toda a logica de dados (buildAssets, matchCVEsToIP, CVE cache, progress tracking, scan/cancel, rescan por IP, schedule dialog) sera mantida
+- O termo "Surface Analyzer" sera mantido (sem "Attack")
+- A pagina original nao sera alterada ate aprovacao do prototipo
+- Credenciais vazadas (HIBP) ganha tab propria em vez de ficar no final da pagina
 
