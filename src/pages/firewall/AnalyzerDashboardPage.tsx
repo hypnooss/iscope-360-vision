@@ -823,7 +823,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Globe className="w-4 h-4 text-primary" />
-                Top Países (Tráfego)
+                Top Países - Tráfego
               </CardTitle>
             </CardHeader>
             <CardContent>
