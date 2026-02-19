@@ -333,7 +333,7 @@ export type Database = {
           {
             foreignKeyName: "analyzer_schedules_firewall_id_fkey"
             columns: ["firewall_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "firewalls"
             referencedColumns: ["id"]
           },
