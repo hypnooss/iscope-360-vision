@@ -1,62 +1,52 @@
 
 
-# Padronizar a pagina Alteracoes de Configuracao
+# Filtrar Ações de Sistema na Tabela de Alterações de Configuração
 
 ## Problema
 
-A pagina `AnalyzerConfigChangesPage` nao segue o padrao das demais sub-paginas do Analyzer (como Insights e Critical). Faltam:
+A tabela exibe todas as entradas do log de configuração, incluindo ações automáticas do sistema (ex: `delete_phase1_sa` de IPsec SA lifecycle, entradas com usuário `unknown`). O objetivo é mostrar apenas alterações feitas por usuários humanos (administradores).
 
-1. Botao "Voltar" ao lado do titulo
-2. Seletor de Workspace (para Super Roles)
-3. Query de firewalls escopada por workspace
-4. Hooks `usePreview`, `useEffectiveAuth`, `useWorkspaceSelector`
-5. Espacamento padrao (`mb-8` no cabecalho)
+## Lógica de Filtragem
 
-## Mudancas no arquivo `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+No FortiGate, ações de sistema se identificam por:
+- **Usuário "unknown"**: eventos gerados automaticamente pelo sistema
+- **Ações de SA (Security Association)**: `delete_phase1_sa`, `delete_phase2_sa`, `add_phase1_sa`, `add_phase2_sa` -- são eventos automáticos do ciclo de vida IPsec, não ações de administrador
 
-### 1. Adicionar imports faltantes
+Ações de administrador legítimas têm:
+- Usuário identificado (ex: `gdm-admin`, IPs de sessão admin)
+- Ações como `Edit`, `Add`, `Delete` (em contexto de configuração)
 
-- `usePreview` de `@/contexts/PreviewContext`
-- `useEffectiveAuth` de `@/hooks/useEffectiveAuth`
-- `useWorkspaceSelector` de `@/hooks/useWorkspaceSelector`
-- `useQuery` de `@tanstack/react-query`
-- Icones: `ArrowLeft`, `Building2`
-- Remover `Server` (sera substituido pelo botao voltar)
+## Filtro Proposto
 
-### 2. Adicionar hooks e logica de workspace
+Excluir entradas onde:
+1. `user === "unknown"` ou `user` estiver vazio
+2. `action` contenha padrões de SA automático: `phase1_sa`, `phase2_sa`
 
-- Calcular `isSuperRole` a partir de `effectiveRole`
-- Query de workspaces (`clients`) habilitada para super roles
-- `useWorkspaceSelector` para persistencia
-- Substituir query manual de firewalls (`useEffect` + `setState`) por `useQuery` escopado por `selectedWorkspaceId`
-- Auto-selecionar primeiro firewall quando a lista muda
+Isso será aplicado **antes** dos filtros de busca do usuário, na extração dos `details` do snapshot.
 
-### 3. Reestruturar cabecalho
+## Mudança Técnica
 
-**Antes:**
-- Icone Server + Titulo
-- Seletor firewall + botao refresh a direita
+### Arquivo: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**Depois (padrao Insights):**
-- Botao Voltar (ghost, navega para `/scope-firewall/analyzer`) + Titulo + Subtitulo
-- Seletor Workspace (condicional) + Seletor Firewall + Botao Refresh a direita
-- Espacamento `mb-8` (em vez de `mb-6`)
+Na linha 85, onde os `details` são extraídos:
 
-### 4. Interface FirewallOption
+```typescript
+// Antes
+const details: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
 
-Adicionar campo `client_id` para filtro por workspace: `{ id: string; name: string; client_id: string; }`
+// Depois - filtrar ações de sistema
+const SYSTEM_ACTION_PATTERNS = ['phase1_sa', 'phase2_sa'];
+const allDetails: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
+const details = allDetails.filter(d => {
+  if (!d.user || d.user === 'unknown') return false;
+  if (SYSTEM_ACTION_PATTERNS.some(p => d.action?.toLowerCase().includes(p))) return false;
+  return true;
+});
+```
 
-## Resultado Visual
+O contador no header também será atualizado para refletir apenas as alterações de usuário (não mais o `configChangesCount` bruto do snapshot).
 
-O cabecalho ficara identico ao da pagina Insights:
-- Botao voltar (seta) a esquerda do titulo
-- Subtitulo abaixo
-- Seletores de Workspace e Firewall alinhados a direita
-- Filtros de busca e categoria abaixo, como ja estao
+## Resultado
 
-## Arquivo a Modificar
-
-| Arquivo | Mudanca |
-|---|---|
-| `src/pages/firewall/AnalyzerConfigChangesPage.tsx` | Adicionar hooks padrao, botao voltar, seletor workspace, query escopada |
+A tabela mostrará apenas alterações feitas por administradores identificados (como `gdm-admin` fazendo `Edit` em `log.setting`), ocultando eventos automáticos do sistema como renegociações IPsec.
 
