@@ -87,6 +87,20 @@ export interface AnalyzerMetrics {
   topAuthIPsFailed: TopBlockedIP[];
   topAuthCountriesSuccess: TopCountry[];
   topAuthCountriesFailed: TopCountry[];
+  // Separated FW auth rankings
+  topFwAuthIPsFailed: TopBlockedIP[];
+  topFwAuthIPsSuccess: TopBlockedIP[];
+  topFwAuthCountriesFailed: TopCountry[];
+  topFwAuthCountriesSuccess: TopCountry[];
+  // Separated VPN auth rankings
+  topVpnAuthIPsFailed: TopBlockedIP[];
+  topVpnAuthIPsSuccess: TopBlockedIP[];
+  topVpnAuthCountriesFailed: TopCountry[];
+  topVpnAuthCountriesSuccess: TopCountry[];
+  // Outbound connections
+  topOutboundIPs: TopBlockedIP[];
+  topOutboundCountries: TopCountry[];
+  outboundConnections: number;
   ipsEvents: number;
   configChanges: number;
   configChangeDetails: ConfigChangeDetail[];
