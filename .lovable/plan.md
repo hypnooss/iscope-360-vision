@@ -1,86 +1,44 @@
 
-# Habilitar Dados de Tráfego de Saída: Top IPs e Top Países - Tráfego
+# Reposicionar a Barra de Progresso no Analyzer Dashboard
 
-## Diagnóstico
+## Situação Atual
 
-O problema está no blueprint do agente FortiGate (Analyzer). Atualmente o blueprint coleta apenas:
+O layout atual do cabeçalho do Analyzer Dashboard segue esta ordem:
 
-- `denied_traffic` → `/api/v2/log/memory/traffic/forward?filter=action==deny`
+1. `PageBreadcrumb` — Firewall > Analyzer
+2. **Linha do título** — "Analyzer" + subtítulo + seletores + botão de executar
+3. **Linha de última coleta** — Ícone de relógio + badges de data/período
+4. **Progress card** (Card com borda, spinner, barra de progresso) ← posição atual
 
-Não existe nenhum step para tráfego **permitido de saída**. A edge function `firewall-analyzer` tenta compensar filtrando ações `accept` do `denied_traffic`, mas como o endpoint já filtra por `action==deny`, nunca retorna logs permitidos.
+## Mudança Solicitada
 
-Resultado: `topOutboundIPs`, `topOutboundBlockedIPs`, `topOutboundCountries` e `topOutboundBlockedCountries` ficam sempre vazios.
+Mover o **Progress card** para entre o subtítulo e a linha de última coleta:
 
-## O que precisa ser adicionado
+1. `PageBreadcrumb`
+2. **Linha do título** — "Analyzer" + subtítulo + seletores + botão
+3. **Progress card** ← nova posição (apenas quando `isRunning && progress`)
+4. **Linha de última coleta** — badges de data/período
 
-### 1. Novo step no blueprint FortiGate Analyzer (banco de dados)
+## Detalhe Técnico
 
-Adicionar um step `allowed_traffic` no blueprint `hybrid` do FortiGate:
+O bloco do Progress card (linhas 577–609) será **removido** de sua posição atual e **inserido** logo após o bloco do cabeçalho (`</div>` da linha 549) e antes do bloco de "Last analysis info" (linha 551).
 
-```
-GET /api/v2/log/memory/traffic/forward?filter=action==accept&rows=500&extra=country_id
-```
+Visualmente, quando uma análise está em andamento, o resultado será:
 
-Este endpoint retorna os logs de tráfego forward **permitidos** — que são exatamente os dados de saída permitida. O step existente de `denied_traffic` já captura as saídas bloqueadas (com `action==deny`).
-
-A edge function já sabe processar `allowed_traffic` (linha 1056):
-```ts
-const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-```
-
-Portanto **a edge function não precisa de nenhuma mudança** — ela já está preparada para receber esses dados.
-
-### Estratégia de update no blueprint
-
-O blueprint está salvo em `device_blueprints` como JSONB. A query de migração vai fazer um UPDATE adicionando o novo step ao array `collection_steps.steps`.
-
-## Mudança necessária
-
-Apenas **1 mudança**: adicionar o step `allowed_traffic` ao blueprint `hybrid` do FortiGate no banco de dados via migration SQL.
-
-```sql
-UPDATE device_blueprints
-SET collection_steps = jsonb_set(
-  collection_steps,
-  '{steps}',
-  (collection_steps->'steps') || '[{
-    "id": "allowed_traffic",
-    "executor": "http_request",
-    "config": {
-      "method": "GET",
-      "path": "/api/v2/log/memory/traffic/forward?filter=action==accept&rows=500&extra=country_id",
-      "headers": { "Authorization": "Bearer {{api_key}}" },
-      "verify_ssl": false,
-      "optional": true
-    }
-  }]'::jsonb
-)
-WHERE id IN (
-  SELECT db.id 
-  FROM device_blueprints db
-  JOIN device_types dt ON db.device_type_id = dt.id
-  WHERE dt.code = 'fortigate'
-    AND db.is_active = true
-    AND db.executor_type = 'hybrid'
-);
+```text
+[Analyzer]          [MOVECTA ▼] [OCI-FW ▼] [⟳ Em andamento...]  [⚙]
+ Inteligência de segurança baseada em logs
+─────────────────────────────────────────────────────────────────────
+  ⟳ Análise em andamento...     Aguardando agent... · 7s   ↻ Atualizar
+  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+─────────────────────────────────────────────────────────────────────
+⏱ Última coleta: 19/02/2026, 14:00   Período agregado: ...   8 coletas
 ```
 
-Nenhuma alteração de edge function, hook ou componente frontend necessária.
+## Arquivo a Modificar
 
-## Resultado esperado após a mudança
-
-Na próxima execução do analyzer, o agente vai:
-1. Coletar `denied_traffic` (tráfego negado — saída bloqueada)
-2. Coletar `allowed_traffic` (tráfego aceito — saída permitida) ← **novo**
-3. Enviar os dois datasets para a edge function
-4. A edge function processa e salva `topOutboundIPs`, `topOutboundCountries`, `topOutboundBlockedIPs`, `topOutboundBlockedCountries` com dados reais
-
-As tabelas "Top IPs - Tráfego" e "Top Países - Tráfego" vão exibir dados nas abas "Saída Permitida" e "Saída Bloqueada".
-
-## Arquivos a modificar
-
-| Recurso | Mudança |
+| Arquivo | Mudança |
 |---|---|
-| `device_blueprints` (banco) | Adicionar step `allowed_traffic` via migration SQL |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Mover o bloco do Progress card (linhas 577–609) para entre o cabeçalho (linha 549) e o "Last analysis info" (linha 551) |
 
-Nenhum arquivo de código frontend ou edge function precisa ser alterado.
+Apenas reposicionamento de JSX — sem nenhuma alteração de lógica, dados ou estilos.
