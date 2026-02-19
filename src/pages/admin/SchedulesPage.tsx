@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Clock, Search, CheckCircle, CheckCircle2, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair, Database } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, CheckCircle2, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair, Database, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes } from 'date-fns';
@@ -44,7 +44,7 @@ interface UnifiedSchedule {
   id: string;
   targetId: string;
   targetName: string;
-  targetType: 'firewall' | 'external_domain' | 'attack_surface';
+  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer';
   frequency: string;
   isActive: boolean;
   nextRunAt: string | null;
@@ -68,12 +68,14 @@ const FREQUENCY_LABELS: Record<string, string> = {
   daily: 'Diário',
   weekly: 'Semanal',
   monthly: 'Mensal',
+  hourly: 'Por Hora',
 };
 
 const FREQUENCY_COLORS: Record<string, string> = {
   daily: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   weekly: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
   monthly: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  hourly: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
 };
 
 const DAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -93,6 +95,8 @@ function getScheduleDescription(s: UnifiedSchedule) {
   const timeStr = `${String(hour).padStart(2, '0')}:00`;
 
   switch (s.frequency) {
+    case 'hourly':
+      return 'A cada hora';
     case 'daily':
       return `Todos os dias às ${timeStr}`;
     case 'weekly': {
@@ -207,17 +211,45 @@ export default function SchedulesPage() {
     },
   });
 
-  const isLoading = loadingFw || loadingDom || loadingAs;
+  // ── Fetch analyzer schedules ──
+  const { data: analyzerSchedules, isLoading: loadingAn, refetch: refetchAn } = useQuery({
+    queryKey: ['admin-schedules-an'],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('analyzer_schedules')
+        .select('id, firewall_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, firewalls(id, name, last_score, client_id, clients(id, name))')
+        .order('next_run_at', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id,
+        targetId: s.firewall_id,
+        targetName: s.firewalls?.name || '—',
+        targetType: 'firewall_analyzer',
+        frequency: s.frequency,
+        isActive: s.is_active,
+        nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour,
+        scheduledDayOfWeek: s.scheduled_day_of_week,
+        scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.firewalls?.clients?.id || '',
+        clientName: s.firewalls?.clients?.name || '—',
+        lastScore: s.firewalls?.last_score ?? null,
+      }));
+    },
+  });
+
+  const isLoading = loadingFw || loadingDom || loadingAs || loadingAn;
 
   const schedules = useMemo(() => {
-    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || [])];
+    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || []), ...(analyzerSchedules || [])];
     return all.sort((a, b) => {
       if (!a.nextRunAt && !b.nextRunAt) return 0;
       if (!a.nextRunAt) return 1;
       if (!b.nextRunAt) return -1;
       return new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime();
     });
-  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules]);
+  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules, analyzerSchedules]);
 
   // ── Fetch latest task per target ──
   const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
@@ -321,7 +353,7 @@ export default function SchedulesPage() {
     );
   };
 
-  const renderTypeBadge = (type: 'firewall' | 'external_domain' | 'attack_surface') => {
+  const renderTypeBadge = (type: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer') => {
     if (type === 'firewall') {
       return (
         <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
@@ -338,6 +370,14 @@ export default function SchedulesPage() {
         </Badge>
       );
     }
+    if (type === 'firewall_analyzer') {
+      return (
+        <Badge variant="outline" className="bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
+          <Activity className="w-3 h-3" />
+          FW Analyzer
+        </Badge>
+      );
+    }
     return (
       <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
         <Globe className="w-3 h-3" />
@@ -350,6 +390,7 @@ export default function SchedulesPage() {
     refetchFw();
     refetchDom();
     refetchAs();
+    refetchAn();
   };
 
   return (
@@ -462,6 +503,7 @@ export default function SchedulesPage() {
               <SelectItem value="firewall">Firewall</SelectItem>
               <SelectItem value="external_domain">Domínio Externo</SelectItem>
               <SelectItem value="attack_surface">Attack Surface</SelectItem>
+              <SelectItem value="firewall_analyzer">FW Analyzer</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
@@ -484,6 +526,7 @@ export default function SchedulesPage() {
               <SelectItem value="daily">Diário</SelectItem>
               <SelectItem value="weekly">Semanal</SelectItem>
               <SelectItem value="monthly">Mensal</SelectItem>
+              <SelectItem value="hourly">Por Hora</SelectItem>
             </SelectContent>
           </Select>
         </div>
