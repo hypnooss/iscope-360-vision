@@ -379,10 +379,10 @@ export default function AnalyzerDashboardPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Analyzer</h1>
             <p className="text-muted-foreground">Inteligência de segurança baseada em logs</p>
