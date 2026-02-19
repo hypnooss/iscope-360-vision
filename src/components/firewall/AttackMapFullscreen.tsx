@@ -56,19 +56,20 @@ export function AttackMapFullscreen({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Merge FW fail + VPN fail for top attack origins
-  const allAttackCountries = [...authFailedCountries, ...authFailedVpnCountries]
-    .reduce<TopCountry[]>((acc, c) => {
-      const existing = acc.find(a => a.country === c.country);
-      if (existing) existing.count += c.count;
-      else acc.push({ ...c });
-      return acc;
-    }, [])
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+  // Helper: compute private IP count for a category
+  const privateCount = (total: number, countries: TopCountry[]) => {
+    const geoSum = countries.reduce((s, c) => s + c.count, 0);
+    return total > geoSum ? total - geoSum : 0;
+  };
 
-  const topOutbound = topOutboundCountries.slice(0, 5);
-  const topOutboundBlocked = topOutboundBlockedCountries.slice(0, 5);
+  // Build sections config
+  const sections = [
+    { label: 'Falha Auth FW', color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
+    { label: 'Falha Auth VPN', color: '#eab308', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
+    { label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalAuthSuccess, showPrivate: true },
+    { label: 'Saída Permitida', color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
+    { label: 'Saída Bloqueada', color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
+  ].filter(s => s.total > 0);
 
   return (
     <div className="fixed inset-0 z-[9999] animate-fade-in flex flex-col" style={{ background: '#222222' }}>
@@ -107,66 +108,42 @@ export function AttackMapFullscreen({
         />
       </div>
 
-      {/* Right panel - Top attack origins + Top outbound */}
-      <div className="absolute top-20 right-4 z-[1000] w-60 bg-black/70 backdrop-blur-md rounded-lg border border-white/10 p-4 space-y-4">
-        <div>
-          <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-3">
-            Top Origens de Ataque
-          </h3>
-          <div className="space-y-2">
-            {allAttackCountries.map((c, i) => {
-              const code = getCountryCode(c.country);
-              return (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-white/40 text-xs font-bold w-4">{i + 1}</span>
-                  {code && <span className={`fi fi-${code} text-sm`} />}
-                  <span className="text-white/80 text-sm flex-1 truncate">{c.country}</span>
-                  <span className="text-white/60 text-xs font-mono">{c.count.toLocaleString()}</span>
+      {/* Right panel - Per-category rankings */}
+      <div className="absolute top-20 right-4 z-[1000] w-60 max-h-[calc(100vh-160px)] overflow-y-auto bg-black/70 backdrop-blur-md rounded-lg border border-white/10 p-4 space-y-3">
+        {sections.map((section, si) => {
+          const top5 = section.countries.slice(0, 5);
+          const priv = section.showPrivate ? privateCount(section.total, section.countries) : 0;
+          return (
+            <div key={si}>
+              {si > 0 && <div className="border-t border-white/10 mb-3" />}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: section.color, boxShadow: `0 0 6px ${section.color}80` }} />
+                <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider">{section.label}</h3>
+                <span className="text-white/40 text-xs font-mono ml-auto">{section.total.toLocaleString()}</span>
+              </div>
+              {top5.length > 0 ? (
+                <div className="space-y-1.5">
+                  {top5.map((c, i) => {
+                    const code = getCountryCode(c.country);
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-white/40 text-xs font-bold w-4">{i + 1}</span>
+                        {code && <span className={`fi fi-${code} text-sm`} />}
+                        <span className="text-white/80 text-xs flex-1 truncate">{c.country}</span>
+                        <span className="text-white/60 text-xs font-mono">{c.count.toLocaleString()}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {topOutbound.length > 0 && (
-          <div>
-            <div className="border-t border-white/10 mb-3" />
-            <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-3">
-              Top Destinos (Saída)
-            </h3>
-            <div className="space-y-2">
-              {topOutbound.map((c, i) => {
-                const code = getCountryCode(c.country);
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-white/40 text-xs font-bold w-4">{i + 1}</span>
-                    {code && <span className={`fi fi-${code} text-sm`} />}
-                    <span className="text-white/80 text-sm flex-1 truncate">{c.country}</span>
-                    <span style={{ color: '#38bdf8' }} className="text-xs font-mono">{c.count.toLocaleString()}</span>
-                  </div>
-                );
-              })}
+              ) : (
+                <p className="text-white/30 text-xs italic">Sem dados geolocalizados</p>
+              )}
+              {priv > 0 && (
+                <p className="text-white/40 text-xs mt-1.5">* {priv.toLocaleString()} de IPs privados</p>
+              )}
             </div>
-          </div>
-        )}
-
-        {topBlockedIPs.length > 0 && (
-          <div>
-            <div className="border-t border-white/10 mb-3" />
-            <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-3">
-              Top IPs Bloqueados
-            </h3>
-            <div className="space-y-2">
-              {topBlockedIPs.slice(0, 3).map((ip, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-white/40 text-xs font-bold w-4">{i + 1}</span>
-                  <span className="text-white/80 text-xs font-mono flex-1 truncate">{ip.ip}</span>
-                  <span className="text-white/60 text-xs font-mono">{ip.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+          );
+        })}
       </div>
 
       {/* Bottom stats bar */}
