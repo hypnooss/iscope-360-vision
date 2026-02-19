@@ -13,6 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
 import { getCountryCode } from '@/lib/countryUtils';
@@ -22,10 +26,11 @@ import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
-  Filter, AppWindow, Building2, Zap, Clock, Maximize2,
+  Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast as sonnerToast } from 'sonner';
 import 'flag-icons/css/flag-icons.min.css';
 import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP } from '@/types/analyzerInsights';
 
@@ -148,9 +153,19 @@ export default function AnalyzerDashboardPage() {
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
   const [showAttackMap, setShowAttackMap] = useState(false);
+
+  // Schedule dialog state
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
+  const [scheduleHour, setScheduleHour] = useState<number>(15);
+  const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState<number>(1);
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState<number>(1);
+  const [scheduleActive, setScheduleActive] = useState<boolean>(true);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   // Workspace selector for super roles
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -329,6 +344,81 @@ export default function AnalyzerDashboardPage() {
     staleTime: 1000 * 60 * 30,
   });
 
+  // Schedule query
+  const { data: currentSchedule, refetch: refetchSchedule } = useQuery({
+    queryKey: ['analyzer-schedule', selectedFirewall],
+    queryFn: async () => {
+      if (!selectedFirewall) return null;
+      const { data } = await supabase
+        .from('analyzer_schedules')
+        .select('*')
+        .eq('firewall_id', selectedFirewall)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!selectedFirewall && isSuperRole,
+  });
+
+  // Sync form when dialog opens
+  useEffect(() => {
+    if (currentSchedule && scheduleDialogOpen) {
+      setScheduleFreq(currentSchedule.frequency ?? 'daily');
+      setScheduleHour(currentSchedule.scheduled_hour ?? 15);
+      setScheduleDayOfWeek(currentSchedule.scheduled_day_of_week ?? 1);
+      setScheduleDayOfMonth(currentSchedule.scheduled_day_of_month ?? 1);
+      setScheduleActive(currentSchedule.is_active ?? true);
+    }
+  }, [currentSchedule, scheduleDialogOpen]);
+
+  function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
+    const now = new Date();
+    const next = new Date();
+    next.setMinutes(0, 0, 0);
+    next.setHours(hour);
+    if (freq === 'daily') {
+      if (next <= now) next.setDate(next.getDate() + 1);
+    } else if (freq === 'weekly') {
+      const currentDay = now.getDay();
+      let diff = dayOfWeek - currentDay;
+      if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
+      next.setDate(now.getDate() + diff);
+    } else if (freq === 'monthly') {
+      next.setDate(dayOfMonth);
+      if (next <= now) {
+        next.setMonth(next.getMonth() + 1);
+        next.setDate(dayOfMonth);
+      }
+    }
+    return next;
+  }
+
+  const handleSaveSchedule = async () => {
+    if (!selectedFirewall) return;
+    setScheduleSaving(true);
+    try {
+      const nextRunAt = calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth);
+      const { error } = await supabase
+        .from('analyzer_schedules')
+        .upsert({
+          firewall_id: selectedFirewall,
+          frequency: scheduleFreq as any,
+          scheduled_hour: scheduleHour,
+          scheduled_day_of_week: scheduleDayOfWeek,
+          scheduled_day_of_month: scheduleDayOfMonth,
+          is_active: scheduleActive,
+          next_run_at: nextRunAt.toISOString(),
+        }, { onConflict: 'firewall_id' });
+      if (error) throw error;
+      sonnerToast.success('Agendamento salvo com sucesso!');
+      await refetchSchedule();
+      setScheduleDialogOpen(false);
+    } catch (e: any) {
+      sonnerToast.error('Erro ao salvar agendamento', { description: e.message });
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
+
   const handleTrigger = async () => {
     if (!selectedFirewall) return;
     setTriggering(true);
@@ -409,6 +499,17 @@ export default function AnalyzerDashboardPage() {
               <Play className="w-4 h-4 mr-2" />
               {triggering ? 'Iniciando...' : 'Executar Análise'}
             </Button>
+            {isSuperRole && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Configurar agendamento"
+                disabled={!selectedFirewall}
+                onClick={() => setScheduleDialogOpen(true)}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -750,6 +851,102 @@ export default function AnalyzerDashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Schedule Dialog */}
+      <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" />
+              Agendamento do Firewall Analyzer
+            </DialogTitle>
+            <DialogDescription>
+              Configure a frequência de execução automática do Analyzer para este firewall.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Active toggle */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="sched-active" className="text-sm font-medium">Agendamento ativo</Label>
+              <Switch id="sched-active" checked={scheduleActive} onCheckedChange={setScheduleActive} />
+            </div>
+
+            {/* Frequency */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Frequência</Label>
+              <Select value={scheduleFreq} onValueChange={setScheduleFreq}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Diário</SelectItem>
+                  <SelectItem value="weekly">Semanal</SelectItem>
+                  <SelectItem value="monthly">Mensal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Hour */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Hora de execução (0–23)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={23}
+                value={scheduleHour}
+                onChange={e => setScheduleHour(Number(e.target.value))}
+              />
+            </div>
+
+            {/* Day of week (weekly only) */}
+            {scheduleFreq === 'weekly' && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Dia da semana</Label>
+                <Select value={String(scheduleDayOfWeek)} onValueChange={v => setScheduleDayOfWeek(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
+                      <SelectItem key={i} value={String(i)}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Day of month (monthly only) */}
+            {scheduleFreq === 'monthly' && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Dia do mês (1–28)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={scheduleDayOfMonth}
+                  onChange={e => setScheduleDayOfMonth(Number(e.target.value))}
+                />
+              </div>
+            )}
+
+            {/* Next run preview */}
+            <div className="rounded-md bg-secondary/50 border border-border px-3 py-2 text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Próxima execução estimada: </span>
+              {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR', {
+                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleDialogOpen(false)} disabled={scheduleSaving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveSchedule} disabled={scheduleSaving}>
+              {scheduleSaving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
