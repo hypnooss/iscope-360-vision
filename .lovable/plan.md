@@ -1,152 +1,81 @@
 
 
-# Redesign do Surface Analyzer V2 - De Dados Brutos para Inteligencia Acionavel
+# Ajustes no Motor de Findings - 3 Correções
 
-## O que deu errado na V1 das abas
+## 1. Serviços de Risco: Detecção por nome do serviço independente da porta
 
-A versao atual apenas redistribuiu os mesmos dados brutos em abas diferentes. O usuario continua olhando para IPs, portas e CVE-IDs sem entender **o que isso significa para o negocio**. Faltou a camada de inteligencia que ja existe no modulo de Compliance (Risco Tecnico, Impacto no Negocio, Recomendacao).
+**Problema:** Se o RDP estiver na porta 63389, o match por porta falha (só procura 3389). O fallback por nome de serviço já existe (linhas 380-391), mas o `name` do finding fica fixo como "RDP (porta 3389) exposto na internet" mesmo quando detectado na 63389.
 
-## Inspiracao: O padrao que ja funciona no iScope
+**Correção:**
+- Remover a dependência do número da porta no campo `name` da regra
+- Tornar o `name` dinâmico, incluindo a porta real detectada (ex: "RDP exposto na porta 63389")
+- Manter a lista de portas conhecidas como "dica rápida" mas o match por service name deve funcionar em qualquer porta
+- O finding agrupará todos os ativos que expõem aquele serviço, independente da porta
 
-O `UnifiedComplianceCard` ja resolve exatamente esse problema em outros modulos. Ele transforma dados tecnicos em **achados interpretados** com:
-- Status visual (pass/fail/warning)
-- Severidade com cor
-- Mensagem contextual
-- Recomendacao de acao
-- Risco Tecnico e Impacto no Negocio (expandiveis)
-- Evidencias coletadas
+**Mudança em `RISKY_SERVICES`:** Trocar o campo `name` fixo por um template (ex: `nameTemplate: "RDP exposto na internet"`) e gerar o nome final com as portas reais encontradas nas evidências.
 
-A proposta e aplicar esse **mesmo padrao mental** ao Surface Analyzer, criando "Findings" (achados) automaticos a partir dos dados brutos.
+## 2. HTTP sem TLS: Ignorar redirecionamentos 301/302
 
-## Nova Arquitetura da Pagina
+**Problema:** Um servidor HTTP que responde 301/302 redirecionando para HTTPS está funcionando corretamente. Não deve ser flagged como finding.
 
-A pagina deixa de ser organizada por **tipo de dado** (inventario, servicos, CVEs, certs) e passa a ser organizada por **categoria de risco de exposicao**:
+**Correção:**
+- Na seção de "HTTP without TLS" (linhas 427-450), adicionar verificação do `status_code`
+- Ignorar web services com `status_code` entre 300-399 (redirecionamentos)
+- Apenas flaggear endpoints HTTP que servem conteúdo real (status 200-299)
 
-```text
-+------------------------------------------------------------------+
-|  HEADER + WORKSPACE SELECTOR + ACOES                             |
-+------------------------------------------------------------------+
-|  RESUMO EXECUTIVO (4 cards com contexto)                         |
-|  [Ativos] [Servicos Expostos] [Vulnerabilidades] [Certificados]  |
-+------------------------------------------------------------------+
-|  FINDINGS POR CATEGORIA                                          |
-|                                                                  |
-|  [Servicos de Risco]  - portas/servicos perigosos expostos       |
-|    Finding: "RDP (3389) exposto na internet"         [Critico]   |
-|      > Risco Tecnico: Permite brute-force e lateral movement...  |
-|      > Impacto: Acesso remoto nao autorizado a rede interna...   |
-|      > Ativos afetados: server01 (1.2.3.4)                      |
-|                                                                  |
-|  [Vulnerabilidades]   - CVEs agrupadas por severidade            |
-|    Finding: "CVE-2024-1234 - OpenSSH RCE"            [Critico]   |
-|      > Risco Tecnico: Execucao remota de codigo sem autenticacao |
-|      > Ativos afetados: 3 hosts                                 |
-|                                                                  |
-|  [Certificados TLS]   - problemas com certificados               |
-|    Finding: "Certificado expirado ha 45 dias"        [Alto]      |
-|      > Risco: Conexoes podem ser interceptadas (MITM)            |
-|      > Ativo: mail.cliente.com.br                                |
-|                                                                  |
-|  [Tecnologias Obsoletas] - software desatualizado detectado      |
-|    Finding: "Apache 2.4.29 detectado (EOL)"          [Medio]     |
-|      > Risco: Versao sem suporte a patches de seguranca          |
-|                                                                  |
-|  [Credenciais Vazadas]  - HIBP (se houver)                       |
-+------------------------------------------------------------------+
-|  INVENTARIO TECNICO (aba secundaria, para quem quer drill-down)  |
-+------------------------------------------------------------------+
+**Código atual (linha 429):**
+```
+if (ws.url?.startsWith('http://'))
 ```
 
-## Categorias de Findings (gerados automaticamente dos dados)
-
-O motor de findings analisa os dados do snapshot e gera achados inteligentes:
-
-| Categoria | Logica de Geracao | Exemplos de Findings |
-|---|---|---|
-| **Servicos de Risco** | Detecta portas/servicos perigosos expostos (RDP, SMB, Telnet, FTP, MSSQL, MySQL, etc.) | "RDP exposto (porta 3389)", "SMB exposto (445)", "Banco de dados MySQL acessivel" |
-| **Servicos Web** | Analisa headers de seguranca ausentes, paginas admin expostas, HTTP sem TLS | "Painel de administracao exposto", "HSTS ausente", "Pagina servida sem HTTPS" |
-| **Vulnerabilidades** | CVEs agrupadas por severidade, com lista de ativos afetados | "CVE-2024-XXXX afeta 3 hosts", agrupado por Critical/High/Medium |
-| **Certificados TLS** | Certs expirados, expirando em 30d, autoassinados, CN mismatch | "Certificado expirado ha 45 dias em mail.empresa.com" |
-| **Tecnologias Obsoletas** | Versoes conhecidamente EOL ou desatualizadas | "PHP 7.4 detectado (EOL desde Nov 2022)" |
-| **Credenciais Vazadas** | Dados do HIBP existente | Mantido como esta |
-
-## Estrutura de um Finding
-
-Cada finding sera um objeto que alimenta um card similar ao `UnifiedComplianceCard`:
-
-```text
-{
-  name: "RDP (porta 3389) exposto na internet"
-  status: "fail"
-  severity: "critical"
-  category: "Servicos de Risco"
-  description: "O servico de Remote Desktop Protocol esta acessivel..."
-  technicalRisk: "RDP e um dos vetores mais explorados para ransomware..."
-  businessImpact: "Acesso nao autorizado pode resultar em..."
-  recommendation: "Restringir acesso via VPN ou desabilitar se nao necessario"
-  affectedAssets: [{ hostname, ip }]
-  evidence: [{ port: 3389, service: "ms-wbt-server", version: "..." }]
-}
+**Passa a ser:**
+```
+if (ws.url?.startsWith('http://') && (ws.status_code < 300 || ws.status_code >= 400))
 ```
 
-## Regras de Deteccao de Servicos de Risco (built-in)
+## 3. Vulnerabilidades: Agrupar por Produto em vez de CVE individual
 
-Mapa estatico de servicos/portas considerados perigosos quando expostos:
+**Problema:** Exibir cada CVE do OpenSSH individualmente polui a tela. O que importa é: "OpenSSH 8.2 tem 5 vulnerabilidades conhecidas (2 critical, 3 high)".
 
-| Porta/Servico | Severidade | Risco Tecnico | Impacto |
-|---|---|---|---|
-| 3389 (RDP) | Critical | Brute-force, BlueKeep, ransomware | Acesso remoto total ao servidor |
-| 445 (SMB) | Critical | EternalBlue, lateral movement | Acesso a arquivos e propagacao de malware |
-| 23 (Telnet) | Critical | Credenciais em texto claro | Interceptacao de sessoes administrativas |
-| 21 (FTP) | High | Credenciais em texto claro, anonymous | Exfiltracao de dados |
-| 1433/3306/5432 (DBs) | Critical | Injecao SQL, acesso direto a dados | Vazamento de base de dados inteira |
-| 6379 (Redis) | Critical | Sem autenticacao por padrao | Execucao de comandos no servidor |
-| 27017 (MongoDB) | Critical | Sem autenticacao por padrao | Exposicao total dos dados |
-| 5900 (VNC) | High | Autenticacao fraca | Controle visual remoto |
-| 161 (SNMP) | Medium | Community strings padrao | Enumeracao completa da rede |
-| HTTP sem TLS | Medium | Dados trafegam sem criptografia | Interceptacao de sessoes |
-| Admin panels | High | Paginas de login expostas | Brute-force em interfaces admin |
+**Correção:**
+- Agrupar CVEs por produto (usando `cve.products` ou extraindo do nome do serviço do ativo)
+- Cada finding de vulnerabilidade passa a ser por produto, não por CVE-ID
+- Título: "OpenSSH 8.2 — 5 vulnerabilidades (2 Críticas, 3 Altas)"
+- Dentro do finding, listar as CVEs como evidências (drill-down)
+- A severidade do finding é a mais alta entre as CVEs do grupo
+- Manter o agrupamento medium/low como já está
 
-## Deteccao de Tecnologias Obsoletas (built-in)
+**Estrutura do novo finding de vulnerabilidade:**
+```
+name: "OpenSSH 8.2 — 5 vulnerabilidades conhecidas"
+severity: critical (a pior do grupo)
+evidence: [
+  { label: "CVE-2024-1234", value: "CVSS 9.8 — Remote Code Execution" },
+  { label: "CVE-2024-5678", value: "CVSS 8.1 — Auth Bypass" },
+  ...
+]
+affectedAssets: [hosts que têm esse produto]
+```
 
-Mapa de versoes EOL conhecidas:
+## Detalhes Técnicos
 
-| Tecnologia | Versao EOL | Data EOL |
-|---|---|---|
-| PHP < 8.1 | 7.4, 8.0 | Nov 2022, Nov 2023 |
-| Apache < 2.4.58 | Versoes antigas | Varias |
-| OpenSSH < 9.0 | Versoes antigas | Varias |
-| nginx < 1.24 | Versoes antigas | Varias |
-| Windows Server 2012 | Todas | Out 2023 |
+### Arquivo: `src/lib/surfaceFindings.ts`
 
-## Mudancas Tecnicas
+**Seção 1 - Risky Services (linhas 127-420):**
+- Adicionar campo `nameTemplate` às regras (sem porta hardcoded)
+- No loop de geração, construir o nome dinamicamente com as portas reais detectadas
+- Ex: se RDP detectado nas portas 3389 e 63389, o nome fica "RDP exposto na internet (portas 3389, 63389)"
 
-### Arquivo: `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx` (reescrever)
+**Seção 2 - Web Security (linhas 422-450):**
+- Adicionar filtro de status_code para excluir redirects (3xx)
 
-1. **Novo motor `generateFindings(assets)`**: funcao pura que recebe a lista de `ExposedAsset[]` e retorna `SurfaceFinding[]` com todas as categorias acima
-2. **Tipo `SurfaceFinding`**: interface inspirada em `UnifiedComplianceItem` mas adaptada para surface (sem code/rawData, com `affectedAssets`)
-3. **Componente `SurfaceFindingCard`**: card visual identico ao padrao do `UnifiedComplianceCard` com 3 niveis (visao rapida, contexto estrategico, detalhes expandiveis)
-4. **Componente `SurfaceCategorySection`**: agrupa findings por categoria, com contadores de severidade, identico ao `ExternalDomainCategorySection`
-5. **Manter as abas mas com proposito diferente**:
-   - **Aba "Analise" (padrao)**: Findings organizados por categoria
-   - **Aba "Inventario"**: Tabela tecnica para drill-down (a tabela que ja existe)
-   - **Aba "Credenciais Vazadas"**: HIBP existente
-6. **Summary Cards atualizados**: Em vez de contar "servicos", contar "findings criticos", "findings totais", etc.
+**Seção 3 - Vulnerabilities (linhas 482-559):**
+- Criar mapa de CVEs agrupadas por produto em vez de por severity
+- Para cada produto, calcular a severidade mais alta e contadores por severity
+- Gerar um finding por produto (não por CVE)
+- CVEs individuais viram evidências dentro do finding do produto
+- Se o produto não for identificável, agrupar como "Produto desconhecido"
 
-### Arquivo: `src/App.tsx`
-
-Sem alteracao (rota ja existe).
-
-## Resultado Esperado
-
-- Usuario leigo: ve "3 problemas criticos" com explicacao em linguagem acessivel
-- Usuario tecnico: expande o finding e ve portas, CVEs, evidencias, pode ir ao Inventario para drill-down
-- Gestor: entende o impacto no negocio de cada achado sem precisar saber o que e "porta 3389"
-
-## Observacoes
-
-- Os findings sao gerados 100% no frontend a partir dos dados do snapshot (sem backend novo)
-- O mapa de servicos de risco e tecnologias obsoletas e estatico (hardcoded), pode ser movido para o banco depois
-- Sem risk score numerico (conforme preferencia do usuario)
-- A aba Inventario preserva a tabela tecnica para quem precisa de detalhes granulares
+### Nenhum outro arquivo precisa ser alterado
+Os componentes `SurfaceFindingCard` e `SurfaceCategorySection` já renderizam findings genéricos — a mudança é apenas no motor de geração.
 
