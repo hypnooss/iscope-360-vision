@@ -1,97 +1,62 @@
 
 
-# Adicionar Auth VPN (Sucesso + Falha) ao Mapa de Ataques
+# Padronizar a pagina Alteracoes de Configuracao
 
-## Situacao Atual
+## Problema
 
-| Camada | Cor | Status |
-|---|---|---|
-| Falha Auth FW | Vermelho escuro (#dc2626) | OK no mapa |
-| Falha Auth VPN | Amarelo (#eab308) | No mapa, mas usuario quer **laranja** |
-| Sucesso Auth FW | Verde (#22c55e) | OK no mapa |
-| **Sucesso Auth VPN** | -- | **NAO esta no mapa** |
+A pagina `AnalyzerConfigChangesPage` nao segue o padrao das demais sub-paginas do Analyzer (como Insights e Critical). Faltam:
 
-O `authSuccessCountries` recebe apenas `fwAuthCountriesSuccess` (linha 495 do AnalyzerDashboardPage). Os dados de `vpnAuthCountriesSuccess` existem mas nao sao passados ao mapa.
+1. Botao "Voltar" ao lado do titulo
+2. Seletor de Workspace (para Super Roles)
+3. Query de firewalls escopada por workspace
+4. Hooks `usePreview`, `useEffectiveAuth`, `useWorkspaceSelector`
+5. Espacamento padrao (`mb-8` no cabecalho)
 
-## Mudancas Planejadas
+## Mudancas no arquivo `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-### 1. AttackMap.tsx -- Nova prop + cor laranja
+### 1. Adicionar imports faltantes
 
-- Adicionar prop `authSuccessVpnCountries?: TopCountry[]` para VPN success (verde no mapa, camada separada)
-- Alterar `vpn_fail` de `#eab308` (amarelo) para `#f97316` (laranja)
-- No `inboundPoints`, adicionar `addPoints(authSuccessVpnCountries, COLORS.auth_success, 'Sucesso Auth VPN')`
-- Na legenda inline (modo nao-fullscreen), adicionar bullet "Sucesso Auth VPN" (verde) e alterar "Falha Auth VPN" para laranja
+- `usePreview` de `@/contexts/PreviewContext`
+- `useEffectiveAuth` de `@/hooks/useEffectiveAuth`
+- `useWorkspaceSelector` de `@/hooks/useWorkspaceSelector`
+- `useQuery` de `@tanstack/react-query`
+- Icones: `ArrowLeft`, `Building2`
+- Remover `Server` (sera substituido pelo botao voltar)
 
-### 2. AnalyzerDashboardPage.tsx -- Passar dados VPN success
+### 2. Adicionar hooks e logica de workspace
 
-- Passar `authSuccessVpnCountries={vpnAuthCountriesSuccess}` ao AttackMap e AttackMapFullscreen
-- Separar `totalAuthSuccess` em `totalFwAuthSuccess` e `totalVpnAuthSuccess` para o painel fullscreen
+- Calcular `isSuperRole` a partir de `effectiveRole`
+- Query de workspaces (`clients`) habilitada para super roles
+- `useWorkspaceSelector` para persistencia
+- Substituir query manual de firewalls (`useEffect` + `setState`) por `useQuery` escopado por `selectedWorkspaceId`
+- Auto-selecionar primeiro firewall quando a lista muda
 
-### 3. AttackMapFullscreen.tsx -- Nova secao + cor laranja
+### 3. Reestruturar cabecalho
 
-- Adicionar prop `authSuccessVpnCountries?: TopCountry[]` e `totalVpnAuthSuccess?: number`
-- Adicionar secao "Sucesso Auth VPN" (verde) no painel lateral
-- Alterar cor "Falha Auth VPN" de `#eab308` para `#f97316` (laranja)
-- Atualizar barra inferior com os mesmos ajustes
+**Antes:**
+- Icone Server + Titulo
+- Seletor firewall + botao refresh a direita
 
-## Paleta Final do Mapa
+**Depois (padrao Insights):**
+- Botao Voltar (ghost, navega para `/scope-firewall/analyzer`) + Titulo + Subtitulo
+- Seletor Workspace (condicional) + Seletor Firewall + Botao Refresh a direita
+- Espacamento `mb-8` (em vez de `mb-6`)
 
-| Camada | Cor | Direcao |
-|---|---|---|
-| Falha Auth FW | Vermelho escuro (#dc2626) | Pais Origem -> Firewall |
-| Falha Auth VPN | **Laranja (#f97316)** | Pais Origem -> Firewall |
-| Sucesso Auth FW | Verde (#22c55e) | Pais Origem -> Firewall |
-| **Sucesso Auth VPN** | **Verde (#22c55e)** | Pais Origem -> Firewall |
-| Saida Permitida | Azul (#38bdf8) | Firewall -> Pais Destino |
-| Saida Bloqueada | Vermelho claro (#ef4444) | Firewall -> Pais Destino |
+### 4. Interface FirewallOption
 
-Nota: Sucesso Auth FW e VPN usam a mesma cor verde no mapa, mas aparecem como secoes separadas no painel lateral com contagens independentes.
+Adicionar campo `client_id` para filtro por workspace: `{ id: string; name: string; client_id: string; }`
 
-## Detalhes Tecnicos
+## Resultado Visual
 
-### AttackMap.tsx
+O cabecalho ficara identico ao da pagina Insights:
+- Botao voltar (seta) a esquerda do titulo
+- Subtitulo abaixo
+- Seletores de Workspace e Firewall alinhados a direita
+- Filtros de busca e categoria abaixo, como ja estao
 
-```
-// Paleta atualizada
-COLORS.vpn_fail: '#eab308' --> '#f97316'  (laranja)
-
-// Interface - nova prop
-authSuccessVpnCountries?: TopCountry[];
-
-// inboundPoints - adicionar
-addPoints(authSuccessVpnCountries, COLORS.auth_success, 'Sucesso Auth VPN');
-
-// Glow do projetil VPN fail: trocar de yellow para orange
-p.color === COLORS.vpn_fail ? 'url(#lf-glow-orange)' ...
-```
-
-### AnalyzerDashboardPage.tsx
-
-```
-// Passar ao AttackMap e AttackMapFullscreen:
-authSuccessVpnCountries={vpnAuthCountriesSuccess}
-totalFwAuthSuccess={m?.firewallAuthSuccesses ?? 0}
-totalVpnAuthSuccess={m?.vpnSuccesses ?? 0}
-```
-
-### AttackMapFullscreen.tsx
-
-```
-// Nova prop
-authSuccessVpnCountries?: TopCountry[];
-totalFwAuthSuccess?: number;
-totalVpnAuthSuccess?: number;
-
-// Secoes atualizadas:
-{ label: 'Falha Auth VPN', color: '#f97316', ... }
-{ label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess }
-{ label: 'Sucesso Auth VPN', color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess }
-```
-
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Mudanca |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Nova prop VPN success + cor laranja para VPN fail |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Passar dados VPN success e totais separados |
-| `src/components/firewall/AttackMapFullscreen.tsx` | Nova secao VPN success + cor laranja + totais separados |
+| `src/pages/firewall/AnalyzerConfigChangesPage.tsx` | Adicionar hooks padrao, botao voltar, seletor workspace, query escopada |
+
