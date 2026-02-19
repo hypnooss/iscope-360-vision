@@ -788,17 +788,29 @@ export default function AnalyzerDashboardPage() {
 
         {/* Widgets Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top Blocked IPs - Denied Traffic */}
+          {/* Top Tráfego - Saída Permitida / Bloqueada */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Globe className="w-4 h-4 text-primary" />
-                Top IPs Bloqueados (Tráfego Negado)
+                <ExternalLink className="w-4 h-4 text-primary" />
+                Top Tráfego
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-                : <IPListWidget ips={m?.topBlockedIPs ?? []} />}
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="allowed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
+                    <TabsTrigger value="blocked">Saída Bloqueada</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="allowed">
+                    <IPListWidget ips={m?.topOutboundIPs ?? []} />
+                  </TabsContent>
+                  <TabsContent value="blocked">
+                    <IPListWidget ips={m?.topOutboundBlockedIPs ?? []} />
+                  </TabsContent>
+                </Tabs>
+              )}
             </CardContent>
           </Card>
 
@@ -901,20 +913,6 @@ export default function AnalyzerDashboardPage() {
                   <TabsContent value="success"><CountryListWidget countries={vpnAuthCountriesSuccess} /></TabsContent>
                 </Tabs>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Top IPs Destino - Conexões de Saída */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ExternalLink className="w-4 h-4 text-primary" />
-                Top IPs Destino (Saída)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-                : <IPListWidget ips={m?.topOutboundIPs ?? []} />}
             </CardContent>
           </Card>
 
