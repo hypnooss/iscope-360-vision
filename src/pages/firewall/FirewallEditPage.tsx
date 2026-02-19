@@ -474,12 +474,134 @@ export default function FirewallEditPage() {
                     size="sm"
                     onClick={async () => {
                       if (!formData.fortigate_url) { toast.error('Preencha a URL primeiro'); return; }
-                      if (!formData.agent_id) { toast.error('Selecione um Agent primeiro. A consulta ao FortiGate deve passar pelo Agent da rede do cliente.'); return; }
-                      const credKey = usesSessionAuth ? formData.auth_username : formData.api_key;
-                      if (!credKey) { toast.error(usesSessionAuth ? 'Preencha o usuário primeiro' : 'Preencha a API Key primeiro'); return; }
+                      if (!formData.agent_id) { toast.error('Selecione um Agent primeiro'); return; }
 
                       setGeoLoading(true);
+
+                      // Helper: extract WAN public IPs from compliance step data
+                      const extractWanPublicIPs = (interfacesData: any, sdwanData: any): { ip: string; interfaceName: string }[] => {
+                        const isPrivateIP = (ip: string) =>
+                          /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
+                        const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
+                        const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
+                        const interfaces: any[] = interfacesData?.results || interfacesData?.data?.results || [];
+                        const sdwan = sdwanData?.results || sdwanData?.data?.results || {};
+                        const sdwanMembers = new Set<string>(
+                          (sdwan.members || []).map((m: any) => m.interface).filter(Boolean)
+                        );
+                        const wanIPs: { ip: string; interfaceName: string }[] = [];
+                        for (const iface of interfaces) {
+                          let isWan = false;
+                          if (iface.name === 'virtual-wan-link') isWan = true;
+                          else if (sdwanMembers.has(iface.name)) isWan = true;
+                          else if (iface.role?.toLowerCase() === 'wan') isWan = true;
+                          else if (wanNamePatterns.test(iface.name)) isWan = true;
+                          if (!isWan) continue;
+                          if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
+                          const ipField: string = iface.ip || '';
+                          const ip = ipField.split(' ')[0];
+                          if (looksLikeIP(ip) && !isPrivateIP(ip) && ip !== '0.0.0.0') {
+                            wanIPs.push({ ip, interfaceName: iface.name });
+                          }
+                        }
+                        return wanIPs;
+                      };
+
+                      // Helper: geolocate IPs and show result / WanSelectorDialog
+                      const applyGeoResults = async (wanIPs: { ip: string; interfaceName: string }[], source: 'cache' | 'agent') => {
+                        const { data: geoData } = await supabase.functions.invoke('resolve-firewall-geo', {
+                          body: { ips: wanIPs.map(w => w.ip) },
+                        });
+
+                        const geoResultsRaw: any[] = (geoData?.results || []);
+                        const ipToGeo = Object.fromEntries(
+                          geoResultsRaw
+                            .filter((r: any) => r.status === 'success')
+                            .map((r: any) => [r.query, r])
+                        );
+
+                        const candidates = wanIPs.map((w) => {
+                          const r = ipToGeo[w.ip];
+                          if (!r) return null;
+                          return {
+                            ip: w.ip,
+                            interface: w.interfaceName,
+                            lat: r.lat as number,
+                            lng: r.lon as number,
+                            country: r.country || '',
+                            country_code: (r.countryCode || '').toLowerCase(),
+                            region: r.regionName || '',
+                            city: r.city || '',
+                          };
+                        }).filter(Boolean) as WanCandidate[];
+
+                        if (candidates.length === 0) {
+                          toast.warning(`IPs WAN encontrados (${wanIPs.map(w => w.ip).join(', ')}) mas não foi possível geolocalizar nenhum.`);
+                          return;
+                        }
+
+                        const sourceIcon = source === 'cache' ? '📦' : '🔌';
+                        if (candidates.length === 1) {
+                          const c = candidates[0];
+                          setFormData(prev => ({ ...prev, geo_latitude: String(c.lat), geo_longitude: String(c.lng) }));
+                          const loc = [c.city, c.region, c.country].filter(Boolean).join(', ');
+                          toast.success(`${sourceIcon} ${c.interface} — ${c.ip}${loc ? ` (${loc})` : ''}`);
+                        } else {
+                          setWanCandidates(candidates);
+                          setShowWanDialog(true);
+                        }
+                      };
+
                       try {
+                        // ── CAMINHO 1: Verificar coletas de compliance recentes (últimos 7 dias) ──
+                        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                        const { data: recentTask } = await supabase
+                          .from('agent_tasks')
+                          .select('id, completed_at')
+                          .eq('target_id', id!)
+                          .eq('target_type', 'firewall')
+                          .eq('task_type', 'fortigate_compliance')
+                          .eq('status', 'completed')
+                          .gte('completed_at', sevenDaysAgo)
+                          .order('completed_at', { ascending: false })
+                          .limit(1)
+                          .maybeSingle();
+
+                        if (recentTask?.id) {
+                          const { data: stepRows } = await supabase
+                            .from('task_step_results')
+                            .select('step_id, data, status')
+                            .eq('task_id', recentTask.id)
+                            .in('step_id', ['system_interface', 'system_sdwan'])
+                            .eq('status', 'success');
+
+                          const stepMap = Object.fromEntries(
+                            (stepRows || []).map((r: any) => [r.step_id, r.data])
+                          );
+
+                          const interfacesData = stepMap['system_interface'];
+                          const sdwanData = stepMap['system_sdwan'];
+
+                          if (interfacesData) {
+                            const wanIPs = extractWanPublicIPs(interfacesData, sdwanData);
+                            if (wanIPs.length > 0) {
+                              const collectedAt = new Date(recentTask.completed_at!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                              toast.info(`📦 Usando dados da coleta de ${collectedAt}`);
+                              await applyGeoResults(wanIPs, 'cache');
+                              setGeoLoading(false);
+                              return;
+                            }
+                          }
+                        }
+
+                        // ── CAMINHO 2: Fallback — criar task via Agent ──────────────────────────
+                        const credKey = usesSessionAuth ? formData.auth_username : formData.api_key;
+                        if (!credKey) {
+                          toast.error(usesSessionAuth ? 'Preencha o usuário primeiro' : 'Preencha a API Key primeiro');
+                          setGeoLoading(false);
+                          return;
+                        }
+
                         const { data: taskData, error: taskError } = await supabase.functions.invoke('resolve-firewall-geo', {
                           body: {
                             agent_id: formData.agent_id,
@@ -495,7 +617,7 @@ export default function FirewallEditPage() {
                         }
 
                         const taskId = taskData.task_id;
-                        toast.info('⏳ Aguardando resposta do Agent...');
+                        toast.info('⏳ Nenhuma coleta recente. Aguardando resposta do Agent...');
 
                         const POLL_INTERVAL = 2000;
                         const MAX_POLLS = 30;
@@ -556,78 +678,14 @@ export default function FirewallEditPage() {
                             return;
                           }
 
-                          const isPrivateIP = (ip: string) =>
-                            /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
-                          const looksLikeIP = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
-                          const wanNamePatterns = /^(wan|wan\d+|internet|isp|isp\d+|mpls|lte|4g|5g|broadband)/i;
-
-                          const interfaces: any[] = interfacesData?.results || interfacesData?.data?.results || [];
-                          const sdwan = sdwanData?.results || sdwanData?.data?.results || {};
-                          const sdwanMembers = new Set<string>(
-                            (sdwan.members || []).map((m: any) => m.interface).filter(Boolean)
-                          );
-
-                          const wanIPs: { ip: string; interfaceName: string }[] = [];
-                          for (const iface of interfaces) {
-                            let isWan = false;
-                            if (iface.name === 'virtual-wan-link') isWan = true;
-                            else if (sdwanMembers.has(iface.name)) isWan = true;
-                            else if (iface.role?.toLowerCase() === 'wan') isWan = true;
-                            else if (wanNamePatterns.test(iface.name)) isWan = true;
-                            if (!isWan) continue;
-                            if (iface.type === 'tunnel' || iface.type === 'loopback') continue;
-                            const ipField: string = iface.ip || '';
-                            const ip = ipField.split(' ')[0];
-                            if (looksLikeIP(ip) && !isPrivateIP(ip) && ip !== '0.0.0.0') {
-                              wanIPs.push({ ip, interfaceName: iface.name });
-                            }
-                          }
+                          const wanIPs = extractWanPublicIPs(interfacesData, sdwanData);
 
                           if (wanIPs.length === 0) {
                             toast.warning('Nenhum IP público encontrado nas interfaces WAN do FortiGate.');
                             return;
                           }
 
-                          const { data: geoData } = await supabase.functions.invoke('resolve-firewall-geo', {
-                            body: { ips: wanIPs.map(w => w.ip) },
-                          });
-
-                          const geoResultsRaw: any[] = (geoData?.results || []);
-                          const ipToGeo = Object.fromEntries(
-                            geoResultsRaw
-                              .filter((r: any) => r.status === 'success')
-                              .map((r: any) => [r.query, r])
-                          );
-
-                          const candidates = wanIPs.map((w) => {
-                            const r = ipToGeo[w.ip];
-                            if (!r) return null;
-                            return {
-                              ip: w.ip,
-                              interface: w.interfaceName,
-                              lat: r.lat as number,
-                              lng: r.lon as number,
-                              country: r.country || '',
-                              country_code: (r.countryCode || '').toLowerCase(),
-                              region: r.regionName || '',
-                              city: r.city || '',
-                            };
-                          }).filter(Boolean) as WanCandidate[];
-
-                          if (candidates.length === 0) {
-                            toast.warning(`IPs WAN encontrados (${wanIPs.map(w => w.ip).join(', ')}) mas não foi possível geolocalizar nenhum.`);
-                            return;
-                          }
-
-                          if (candidates.length === 1) {
-                            const c = candidates[0];
-                            setFormData(prev => ({ ...prev, geo_latitude: String(c.lat), geo_longitude: String(c.lng) }));
-                            const loc = [c.city, c.region, c.country].filter(Boolean).join(', ');
-                            toast.success(`📍 ${c.interface} — ${c.ip}${loc ? ` (${loc})` : ''}`);
-                          } else {
-                            setWanCandidates(candidates);
-                            setShowWanDialog(true);
-                          }
+                          await applyGeoResults(wanIPs, 'agent');
                         };
 
                         setTimeout(pollTask, POLL_INTERVAL);
