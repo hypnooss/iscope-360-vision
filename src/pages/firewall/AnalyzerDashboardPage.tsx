@@ -491,8 +491,7 @@ export default function AnalyzerDashboardPage() {
   const vpnAuthCountriesFailed = m?.topVpnAuthCountriesFailed ?? [];
   const vpnAuthCountriesSuccess = m?.topVpnAuthCountriesSuccess ?? [];
 
-  // For map: use separated arrays directly (no cross-fallback)
-  const authCountriesSuccess = fwAuthCountriesSuccess;
+  // authCountriesSuccess removed — now passing fwAuthCountriesSuccess and vpnAuthCountriesSuccess directly
 
   useEffect(() => {
     if (!authLoading && !user) { navigate('/auth'); return; }
@@ -757,7 +756,8 @@ export default function AnalyzerDashboardPage() {
                 <AttackMap
                     authFailedCountries={fwAuthCountriesFailed}
                     authFailedVpnCountries={vpnAuthCountriesFailed}
-                    authSuccessCountries={authCountriesSuccess}
+                    authSuccessCountries={fwAuthCountriesSuccess}
+                    authSuccessVpnCountries={vpnAuthCountriesSuccess}
                     outboundCountries={m?.topOutboundCountries ?? []}
                     outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
                     firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
@@ -770,7 +770,8 @@ export default function AnalyzerDashboardPage() {
               <AttackMapFullscreen
                 authFailedCountries={fwAuthCountriesFailed}
                 authFailedVpnCountries={vpnAuthCountriesFailed}
-                authSuccessCountries={authCountriesSuccess}
+                authSuccessCountries={fwAuthCountriesSuccess}
+                authSuccessVpnCountries={vpnAuthCountriesSuccess}
                 outboundCountries={m?.topOutboundCountries ?? []}
                 outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
                 firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
@@ -778,7 +779,8 @@ export default function AnalyzerDashboardPage() {
                 lastAnalysis={snapshot.created_at}
                 totalFwAuthFailed={m?.firewallAuthFailures ?? 0}
                 totalVpnAuthFailed={m?.vpnFailures ?? 0}
-                totalAuthSuccess={(m?.firewallAuthSuccesses ?? 0) + (m?.vpnSuccesses ?? 0)}
+                totalFwAuthSuccess={m?.firewallAuthSuccesses ?? 0}
+                totalVpnAuthSuccess={m?.vpnSuccesses ?? 0}
                 totalOutbound={m?.outboundConnections ?? 0}
                 totalOutboundBlocked={m?.outboundBlocked ?? 0}
                 topBlockedIPs={m?.topBlockedIPs ?? []}
