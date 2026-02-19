@@ -1,34 +1,57 @@
 
-# Correção do Erro de Agendamento
+# Ajuste de Espaçamento — Firewall Analyzer Dashboard
 
-## Causa do Problema
+## Problema
 
-O código faz um `upsert` com `onConflict: 'client_id'`:
-```ts
-await supabase
-  .from('attack_surface_schedules')
-  .upsert(payload, { onConflict: 'client_id' });
+Na tela `Firewall > Analyzer` (`AnalyzerDashboardPage.tsx`), o breadcrumb fica com espaçamento insuficiente em relação ao título "Analyzer" (indicado pelas setas vermelhas).
+
+## Causa
+
+O wrapper principal da página usa `className="p-6 lg:p-8"` **sem** `space-y-6`, e o div do cabeçalho tem `mb-8` para compensar manualmente. Esse padrão difere de todas as outras telas da aplicação.
+
+## Padrão correto (todas as outras telas)
+
+Todas as outras páginas (Compliance, Surface Analyzer, etc.) seguem este padrão:
+
+```tsx
+// wrapper principal
+<div className="p-6 lg:p-8 space-y-6">
+  <PageBreadcrumb ... />
+  
+  {/* Header sem mb-X */}
+  <div className="flex flex-col md:flex-row ...">
+    ...
+  </div>
+  ...
+</div>
 ```
 
-O PostgreSQL exige que exista uma constraint `UNIQUE` ou `EXCLUSION` na coluna especificada no `ON CONFLICT`. A tabela `attack_surface_schedules` tem `client_id` como campo, mas **não possui** um índice único nessa coluna, causando o erro:
+O `space-y-6` no wrapper aplica `margin-top: 1.5rem` automaticamente entre todos os filhos diretos, gerando o espaçamento correto e consistente.
 
-> `there is no unique or exclusion constraint matching the ON CONFLICT specification`
+## Correção
 
-## Solução
+Em `src/pages/firewall/AnalyzerDashboardPage.tsx`, **linha 382**:
 
-Criar uma migration que adiciona um índice único (`UNIQUE INDEX`) na coluna `client_id` da tabela `attack_surface_schedules`. Isso garante:
-- Um agendamento por workspace (client)
-- O `upsert` com `onConflict: 'client_id'` funciona corretamente
+**Antes:**
+```tsx
+<div className="p-6 lg:p-8">
+  <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
-## Migration SQL
-
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS attack_surface_schedules_client_id_key
-  ON public.attack_surface_schedules (client_id);
+  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
 ```
 
-## Arquivo Modificado
+**Depois:**
+```tsx
+<div className="p-6 lg:p-8 space-y-6">
+  <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
-- Nova migration em `supabase/migrations/`
+  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+```
 
-Nenhuma alteração de código frontend é necessária — apenas a constraint no banco.
+Duas mudanças simples:
+1. Adicionar `space-y-6` ao wrapper principal (linha 382)
+2. Remover `mb-8` do div do cabeçalho (linha 385)
+
+## Arquivo modificado
+
+- `src/pages/firewall/AnalyzerDashboardPage.tsx`
