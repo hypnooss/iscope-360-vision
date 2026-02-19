@@ -792,12 +792,12 @@ export default function AnalyzerDashboardPage() {
 
         {/* Widgets Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top Tráfego - Saída Permitida / Bloqueada */}
+          {/* Top IPs - Tráfego - Saída Permitida / Bloqueada */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ExternalLink className="w-4 h-4 text-primary" />
-                Top Tráfego
+                Top IPs - Tráfego
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -818,17 +818,33 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Top Countries - Denied Traffic */}
+          {/* Top Countries - Tráfego */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Globe className="w-4 h-4 text-primary" />
-                Top Países (Tráfego Negado)
+                Top Países (Tráfego)
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-                : <CountryListWidget countries={m?.topCountries ?? []} />}
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="outbound_allowed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
+                    <TabsTrigger value="outbound_blocked">Saída Bloqueada</TabsTrigger>
+                    <TabsTrigger value="denied">Negado (Entrada)</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="outbound_allowed">
+                    <CountryListWidget countries={m?.topOutboundCountries ?? []} />
+                  </TabsContent>
+                  <TabsContent value="outbound_blocked">
+                    <CountryListWidget countries={m?.topOutboundBlockedCountries ?? []} />
+                  </TabsContent>
+                  <TabsContent value="denied">
+                    <CountryListWidget countries={m?.topCountries ?? []} />
+                  </TabsContent>
+                </Tabs>
+              )}
             </CardContent>
           </Card>
 
@@ -920,19 +936,6 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Top Países Destino - Conexões de Saída */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Globe className="w-4 h-4 text-primary" />
-                Top Países Destino (Saída)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-                : <CountryListWidget countries={m?.topOutboundCountries ?? []} />}
-            </CardContent>
-          </Card>
 
           {/* Top Web Filter Categories */}
           <Card className="glass-card">
