@@ -29,8 +29,14 @@ import {
   ExternalLink,
   ShieldAlert,
   Search,
-  ArrowUpDown } from
+  ArrowUpDown,
+  Settings,
+  Calendar } from
 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -1264,6 +1270,27 @@ function AssetCard({ asset, isSuperRole, onRescan, isRescanning }: {asset: Expos
 
 /* ──────────────────────────── Page ──────────────────────────── */
 
+function calculateNextRun(frequency: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
+  const now = new Date();
+  const next = new Date();
+  next.setHours(hour, 0, 0, 0);
+  if (frequency === 'daily') {
+    if (next <= now) next.setDate(next.getDate() + 1);
+  } else if (frequency === 'weekly') {
+    const currentDay = next.getDay();
+    let daysUntil = (dayOfWeek - currentDay + 7) % 7;
+    if (daysUntil === 0 && next <= now) daysUntil = 7;
+    next.setDate(next.getDate() + daysUntil);
+  } else if (frequency === 'monthly') {
+    next.setDate(dayOfMonth);
+    if (next <= now) {
+      next.setMonth(next.getMonth() + 1);
+      next.setDate(dayOfMonth);
+    }
+  }
+  return next;
+}
+
 type SortMode = 'risk' | 'cves' | 'ports' | 'alpha';
 
 export default function AttackSurfaceAnalyzerPage() {
@@ -1290,6 +1317,69 @@ export default function AttackSurfaceAnalyzerPage() {
   const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
   const cancelMutation = useAttackSurfaceCancelScan(selectedClientId ?? undefined);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+
+  // Schedule states
+  const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
+  const [scheduleHour, setScheduleHour] = useState<number>(15);
+  const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState<number>(1);
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState<number>(1);
+  const [scheduleActive, setScheduleActive] = useState<boolean>(true);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+
+  const { data: currentSchedule, refetch: refetchSchedule } = useQuery({
+    queryKey: ['attack-surface-schedule', selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return null;
+      const { data } = await supabase
+        .from('attack_surface_schedules')
+        .select('*')
+        .eq('client_id', selectedClientId)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!selectedClientId && isSuperRole,
+  });
+
+  // Sync schedule form when dialog opens or data changes
+  useEffect(() => {
+    if (currentSchedule && scheduleDialogOpen) {
+      setScheduleFreq(currentSchedule.frequency ?? 'daily');
+      setScheduleHour(currentSchedule.scheduled_hour ?? 15);
+      setScheduleDayOfWeek(currentSchedule.scheduled_day_of_week ?? 1);
+      setScheduleDayOfMonth(currentSchedule.scheduled_day_of_month ?? 1);
+      setScheduleActive(currentSchedule.is_active ?? true);
+    }
+  }, [currentSchedule, scheduleDialogOpen]);
+
+  const workspaceName = workspaces?.find((w) => w.id === selectedClientId)?.name;
+
+  const handleSaveSchedule = async () => {
+    if (!selectedClientId) return;
+    setScheduleSaving(true);
+    try {
+      const nextRunAt = calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth);
+      const payload = {
+        client_id: selectedClientId,
+        frequency: scheduleFreq as any,
+        scheduled_hour: scheduleHour,
+        scheduled_day_of_week: scheduleDayOfWeek,
+        scheduled_day_of_month: scheduleDayOfMonth,
+        is_active: scheduleActive,
+        next_run_at: nextRunAt.toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('attack_surface_schedules').upsert(payload, { onConflict: 'client_id' });
+      if (error) throw error;
+      toast.success('Agendamento salvo com sucesso!');
+      refetchSchedule();
+      setScheduleDialogOpen(false);
+    } catch (err: any) {
+      toast.error('Erro ao salvar: ' + err.message);
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
   const { data: snapshot, isLoading } = useLatestAttackSurfaceSnapshot(selectedClientId ?? undefined);
   const { data: progress } = useAttackSurfaceProgress(selectedClientId ?? undefined);
 
@@ -1436,6 +1526,16 @@ export default function AttackSurfaceAnalyzerPage() {
                   </SelectContent>
                 </Select>
               }
+              {isSuperRole && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Configurar agendamento"
+                  onClick={() => setScheduleDialogOpen(true)}
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
               {isSuperRole && !isRunning &&
               <Button onClick={() => setScanDialogOpen(true)}>
                   <Play className="w-4 h-4" />
@@ -1581,6 +1681,113 @@ export default function AttackSurfaceAnalyzerPage() {
           isPending={scanMutation.isPending} />
 
         }
+
+        {/* Schedule Dialog */}
+        <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                Agendamento do Analyzer
+              </DialogTitle>
+              <DialogDescription>
+                Configure a frequência de execução automática do Surface Analyzer
+                {workspaceName ? ` para ${workspaceName}` : ''}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              {/* Active toggle */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="schedule-active">Agendamento ativo</Label>
+                <Switch
+                  id="schedule-active"
+                  checked={scheduleActive}
+                  onCheckedChange={setScheduleActive}
+                />
+              </div>
+
+              {/* Frequency */}
+              <div className="space-y-1.5">
+                <Label>Frequência</Label>
+                <Select value={scheduleFreq} onValueChange={setScheduleFreq}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Diário</SelectItem>
+                    <SelectItem value="weekly">Semanal</SelectItem>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Hour */}
+              <div className="space-y-1.5">
+                <Label>Hora de execução (UTC-3)</Label>
+                <Select value={String(scheduleHour)} onValueChange={(v) => setScheduleHour(Number(v))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Day of week (weekly only) */}
+              {scheduleFreq === 'weekly' && (
+                <div className="space-y-1.5">
+                  <Label>Dia da semana</Label>
+                  <Select value={String(scheduleDayOfWeek)} onValueChange={(v) => setScheduleDayOfWeek(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
+                        <SelectItem key={i} value={String(i)}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Day of month (monthly only) */}
+              {scheduleFreq === 'monthly' && (
+                <div className="space-y-1.5">
+                  <Label>Dia do mês</Label>
+                  <Select value={String(scheduleDayOfMonth)} onValueChange={(v) => setScheduleDayOfMonth(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 28 }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>Dia {i + 1}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Next run preview */}
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                Próxima execução estimada:{' '}
+                <span className="text-foreground font-medium">
+                  {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR')}
+                </span>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setScheduleDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveSchedule} disabled={scheduleSaving}>
+                {scheduleSaving ? 'Salvando...' : 'Salvar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TooltipProvider>
     </AppLayout>);
 
