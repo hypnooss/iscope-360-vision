@@ -400,6 +400,12 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
     }
   }
 
+  // Separated FW and VPN rankings
+  const fwFailedRank = collectRankings(firewallFailures);
+  const fwSuccessRank = collectRankings(firewallSuccesses);
+  const vpnFailedRank = collectRankings(vpnOnlyFailures);
+  const vpnSuccessRank = collectRankings(vpnSuccesses);
+
   return {
     insights,
     metrics: {
@@ -413,6 +419,15 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
       topAuthIPsSuccess: successRank.topIPs,
       topAuthCountriesFailed: failedRank.topCountries,
       topAuthCountriesSuccess: successRank.topCountries,
+      // Separated by source
+      topFwAuthIPsFailed: fwFailedRank.topIPs,
+      topFwAuthIPsSuccess: fwSuccessRank.topIPs,
+      topFwAuthCountriesFailed: fwFailedRank.topCountries,
+      topFwAuthCountriesSuccess: fwSuccessRank.topCountries,
+      topVpnAuthIPsFailed: vpnFailedRank.topIPs,
+      topVpnAuthIPsSuccess: vpnSuccessRank.topIPs,
+      topVpnAuthCountriesFailed: vpnFailedRank.topCountries,
+      topVpnAuthCountriesSuccess: vpnSuccessRank.topCountries,
     },
   };
 }
@@ -842,6 +857,72 @@ function analyzeAnomalies(logs: any[], ipCountryMap: Record<string, string> = {}
 }
 
 // ============================================
+// Outbound Traffic Analysis
+// ============================================
+
+function analyzeOutboundTraffic(logs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [] } };
+
+  // Filter outbound: srcip is private and dstip is public, OR direction=outbound
+  const outboundLogs = logs.filter(log => {
+    const src = log.srcip || log.src || '';
+    const dst = log.dstip || log.dst || '';
+    const direction = (log.direction || '').toLowerCase();
+    const action = (log.action || '').toLowerCase();
+    if (direction === 'outbound') return true;
+    if (action === 'deny' || action === 'block' || action === 'blocked') return false;
+    return isPrivateIP(src) && dst && !isPrivateIP(dst);
+  });
+
+  if (outboundLogs.length === 0) return { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [] } };
+
+  const dstIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+  const countryMap: Record<string, number> = {};
+
+  for (const log of outboundLogs) {
+    const dstip = log.dstip || log.dst || '';
+    if (!dstip || isPrivateIP(dstip)) continue;
+    const country = log.dstcountry || log.dst_country || (dstip ? ipCountryMap[dstip] : undefined) || undefined;
+    const dstport = parseInt(log.dstport || '0');
+
+    if (!dstIPMap[dstip]) dstIPMap[dstip] = { count: 0, country, ports: new Set() };
+    dstIPMap[dstip].count++;
+    if (dstport > 0) dstIPMap[dstip].ports.add(dstport);
+    if (country) countryMap[country] = (countryMap[country] || 0) + 1;
+  }
+
+  const topOutboundIPs = Object.entries(dstIPMap)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+
+  const topOutboundCountries = Object.entries(countryMap)
+    .sort((a, b) => b[1] - a[1]).slice(0, 15)
+    .map(([country, count]) => ({ country, count }));
+
+  // High-volume single destination insight
+  for (const [ip, data] of Object.entries(dstIPMap)) {
+    if (data.count >= 100) {
+      insights.push({
+        id: `outbound_highvol_${ip}`,
+        category: 'traffic_behavior',
+        name: 'Destino Externo com Alto Volume',
+        description: `${data.count} conexões de saída para ${ip}`,
+        severity: data.count >= 500 ? 'high' : 'medium',
+        sourceIPs: [ip],
+        count: data.count,
+        recommendation: 'Investigue o destino. Pode indicar exfiltração de dados ou comunicação com serviço não autorizado.',
+      });
+    }
+  }
+
+  return {
+    insights,
+    metrics: { outboundConnections: outboundLogs.length, topOutboundIPs, topOutboundCountries },
+  };
+}
+
+// ============================================
 // Score Calculation
 // ============================================
 
@@ -947,6 +1028,17 @@ Deno.serve(async (req) => {
     const appctrlResult = analyzeAppControl(Array.isArray(appctrlData) ? appctrlData : appctrlData?.results || []);
     const anomalyResult = analyzeAnomalies(Array.isArray(anomalyData) ? anomalyData : anomalyData?.results || [], ipCountryMap);
 
+    // Outbound traffic: try allowed_traffic first, then denied_traffic with accept action
+    const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
+    const allowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
+    // Also check if denied_traffic has accept entries (some blueprints put all forward traffic there)
+    const acceptedFromDenied = deniedLogs.filter((l: any) => {
+      const action = (l.action || '').toLowerCase();
+      return action === 'accept' || action === 'allow' || action === 'pass';
+    });
+    const outboundLogs = allowedLogs.length > 0 ? allowedLogs : acceptedFromDenied;
+    const outboundResult = analyzeOutboundTraffic(outboundLogs, ipCountryMap);
+
     // Combine all insights
     const allInsights = [
       ...deniedResult.insights,
@@ -956,6 +1048,7 @@ Deno.serve(async (req) => {
       ...webfilterResult.insights,
       ...appctrlResult.insights,
       ...anomalyResult.insights,
+      ...outboundResult.insights,
     ];
 
     // Deduplicate by id
@@ -982,6 +1075,19 @@ Deno.serve(async (req) => {
       topAuthIPsSuccess: authResult.metrics.topAuthIPsSuccess || [],
       topAuthCountriesFailed: authResult.metrics.topAuthCountriesFailed || [],
       topAuthCountriesSuccess: authResult.metrics.topAuthCountriesSuccess || [],
+      // Separated by source
+      topFwAuthIPsFailed: authResult.metrics.topFwAuthIPsFailed || [],
+      topFwAuthIPsSuccess: authResult.metrics.topFwAuthIPsSuccess || [],
+      topFwAuthCountriesFailed: authResult.metrics.topFwAuthCountriesFailed || [],
+      topFwAuthCountriesSuccess: authResult.metrics.topFwAuthCountriesSuccess || [],
+      topVpnAuthIPsFailed: authResult.metrics.topVpnAuthIPsFailed || [],
+      topVpnAuthIPsSuccess: authResult.metrics.topVpnAuthIPsSuccess || [],
+      topVpnAuthCountriesFailed: authResult.metrics.topVpnAuthCountriesFailed || [],
+      topVpnAuthCountriesSuccess: authResult.metrics.topVpnAuthCountriesSuccess || [],
+      // Outbound
+      topOutboundIPs: outboundResult.metrics.topOutboundIPs || [],
+      topOutboundCountries: outboundResult.metrics.topOutboundCountries || [],
+      outboundConnections: outboundResult.metrics.outboundConnections || 0,
       ipsEvents: ipsResult.metrics.ipsEvents || 0,
       configChanges: configResult.metrics.configChanges || 0,
       configChangeDetails: configResult.metrics.configChangeDetails || [],

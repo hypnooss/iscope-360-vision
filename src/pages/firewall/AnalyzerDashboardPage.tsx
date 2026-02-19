@@ -459,10 +459,20 @@ export default function AnalyzerDashboardPage() {
 
   const m = snapshot?.metrics;
 
-  // Use split metrics when available, fallback to combined
-  const authIPsFailed = m?.topAuthIPsFailed?.length ? m.topAuthIPsFailed : m?.topAuthIPs ?? [];
-  const authIPsSuccess = m?.topAuthIPsSuccess ?? [];
-  const authCountriesFailed = m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? [];
+  // FW-specific auth rankings (use separated if available, fallback to combined)
+  const fwAuthIPsFailed = m?.topFwAuthIPsFailed?.length ? m.topFwAuthIPsFailed : (m?.topAuthIPsFailed?.length ? m.topAuthIPsFailed : m?.topAuthIPs ?? []);
+  const fwAuthIPsSuccess = m?.topFwAuthIPsSuccess?.length ? m.topFwAuthIPsSuccess : m?.topAuthIPsSuccess ?? [];
+  const fwAuthCountriesFailed = m?.topFwAuthCountriesFailed?.length ? m.topFwAuthCountriesFailed : (m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? []);
+  const fwAuthCountriesSuccess = m?.topFwAuthCountriesSuccess?.length ? m.topFwAuthCountriesSuccess : m?.topAuthCountriesSuccess ?? [];
+
+  // VPN-specific auth rankings
+  const vpnAuthIPsFailed = m?.topVpnAuthIPsFailed ?? [];
+  const vpnAuthIPsSuccess = m?.topVpnAuthIPsSuccess ?? [];
+  const vpnAuthCountriesFailed = m?.topVpnAuthCountriesFailed ?? [];
+  const vpnAuthCountriesSuccess = m?.topVpnAuthCountriesSuccess ?? [];
+
+  // For map (combined failed = FW + VPN countries)
+  const authCountriesFailed = m?.topFwAuthCountriesFailed?.length ? m.topFwAuthCountriesFailed : m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? [];
   const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
 
   useEffect(() => {
@@ -607,7 +617,7 @@ export default function AnalyzerDashboardPage() {
         {/* Attack Map - Always visible */}
         {snapshot && (
           <>
-            <Card
+          <Card
               className="glass-card mb-6 cursor-pointer hover:border-primary/50 transition-colors group"
               onClick={() => setShowAttackMap(true)}
             >
@@ -627,8 +637,10 @@ export default function AnalyzerDashboardPage() {
                 <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
                   <AttackMap
                     deniedCountries={m?.topCountries ?? []}
-                    authFailedCountries={authCountriesFailed}
+                    authFailedCountries={fwAuthCountriesFailed}
+                    authFailedVpnCountries={vpnAuthCountriesFailed}
                     authSuccessCountries={authCountriesSuccess}
+                    outboundCountries={m?.topOutboundCountries ?? []}
                     firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
                   />
                 </div>
@@ -638,15 +650,20 @@ export default function AnalyzerDashboardPage() {
             {showAttackMap && (
               <AttackMapFullscreen
                 deniedCountries={m?.topCountries ?? []}
-                authFailedCountries={authCountriesFailed}
+                authFailedCountries={fwAuthCountriesFailed}
+                authFailedVpnCountries={vpnAuthCountriesFailed}
                 authSuccessCountries={authCountriesSuccess}
+                outboundCountries={m?.topOutboundCountries ?? []}
                 firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
                 firewallName={firewallUrl?.name}
                 lastAnalysis={snapshot.created_at}
                 totalDenied={m?.totalDenied ?? 0}
-                totalAuthFailed={(m?.firewallAuthFailures ?? 0) + (m?.vpnFailures ?? 0)}
+                totalFwAuthFailed={m?.firewallAuthFailures ?? 0}
+                totalVpnAuthFailed={m?.vpnFailures ?? 0}
                 totalAuthSuccess={(m?.firewallAuthSuccesses ?? 0) + (m?.vpnSuccesses ?? 0)}
+                totalOutbound={m?.outboundConnections ?? 0}
                 topBlockedIPs={m?.topBlockedIPs ?? []}
+                topOutboundCountries={m?.topOutboundCountries ?? []}
                 onClose={() => setShowAttackMap(false)}
               />
             )}
@@ -683,12 +700,12 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Top Auth IPs - with tabs */}
+          {/* Top IPs - Auth Firewall */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <KeyRound className="w-4 h-4 text-primary" />
-                Top IPs - Autenticação
+                <KeyRound className="w-4 h-4 text-warning" />
+                Top IPs - Auth Firewall
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -698,23 +715,19 @@ export default function AnalyzerDashboardPage() {
                     <TabsTrigger value="failed">Falhas</TabsTrigger>
                     <TabsTrigger value="success">Sucessos</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="failed">
-                    <IPListWidget ips={authIPsFailed} />
-                  </TabsContent>
-                  <TabsContent value="success">
-                    <IPListWidget ips={authIPsSuccess} />
-                  </TabsContent>
+                  <TabsContent value="failed"><IPListWidget ips={fwAuthIPsFailed} /></TabsContent>
+                  <TabsContent value="success"><IPListWidget ips={fwAuthIPsSuccess} /></TabsContent>
                 </Tabs>
               )}
             </CardContent>
           </Card>
 
-          {/* Top Auth Countries - with tabs */}
+          {/* Top Países - Auth Firewall */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <KeyRound className="w-4 h-4 text-primary" />
-                Top Países - Autenticação
+                <KeyRound className="w-4 h-4 text-warning" />
+                Top Países - Auth Firewall
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -724,12 +737,52 @@ export default function AnalyzerDashboardPage() {
                     <TabsTrigger value="failed">Falhas</TabsTrigger>
                     <TabsTrigger value="success">Sucessos</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="failed">
-                    <CountryListWidget countries={authCountriesFailed} />
-                  </TabsContent>
-                  <TabsContent value="success">
-                    <CountryListWidget countries={authCountriesSuccess} />
-                  </TabsContent>
+                  <TabsContent value="failed"><CountryListWidget countries={fwAuthCountriesFailed} /></TabsContent>
+                  <TabsContent value="success"><CountryListWidget countries={fwAuthCountriesSuccess} /></TabsContent>
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top IPs - Auth VPN */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wifi className="w-4 h-4 text-primary" />
+                Top IPs - Auth VPN
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="failed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="failed">Falhas</TabsTrigger>
+                    <TabsTrigger value="success">Sucessos</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="failed"><IPListWidget ips={vpnAuthIPsFailed} /></TabsContent>
+                  <TabsContent value="success"><IPListWidget ips={vpnAuthIPsSuccess} /></TabsContent>
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Países - Auth VPN */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Wifi className="w-4 h-4 text-yellow-400" />
+                Top Países - Auth VPN
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
+                <Tabs defaultValue="failed">
+                  <TabsList className="mb-3">
+                    <TabsTrigger value="failed">Falhas</TabsTrigger>
+                    <TabsTrigger value="success">Sucessos</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="failed"><CountryListWidget countries={vpnAuthCountriesFailed} /></TabsContent>
+                  <TabsContent value="success"><CountryListWidget countries={vpnAuthCountriesSuccess} /></TabsContent>
                 </Tabs>
               )}
             </CardContent>

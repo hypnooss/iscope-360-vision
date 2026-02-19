@@ -32,6 +32,20 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topAuthIPsFailed: (metrics.topAuthIPsFailed as AnalyzerMetrics['topAuthIPsFailed']) ?? [],
       topAuthCountriesSuccess: (metrics.topAuthCountriesSuccess as AnalyzerMetrics['topAuthCountriesSuccess']) ?? [],
       topAuthCountriesFailed: (metrics.topAuthCountriesFailed as AnalyzerMetrics['topAuthCountriesFailed']) ?? [],
+      // Separated FW auth
+      topFwAuthIPsFailed: (metrics.topFwAuthIPsFailed as AnalyzerMetrics['topFwAuthIPsFailed']) ?? [],
+      topFwAuthIPsSuccess: (metrics.topFwAuthIPsSuccess as AnalyzerMetrics['topFwAuthIPsSuccess']) ?? [],
+      topFwAuthCountriesFailed: (metrics.topFwAuthCountriesFailed as AnalyzerMetrics['topFwAuthCountriesFailed']) ?? [],
+      topFwAuthCountriesSuccess: (metrics.topFwAuthCountriesSuccess as AnalyzerMetrics['topFwAuthCountriesSuccess']) ?? [],
+      // Separated VPN auth
+      topVpnAuthIPsFailed: (metrics.topVpnAuthIPsFailed as AnalyzerMetrics['topVpnAuthIPsFailed']) ?? [],
+      topVpnAuthIPsSuccess: (metrics.topVpnAuthIPsSuccess as AnalyzerMetrics['topVpnAuthIPsSuccess']) ?? [],
+      topVpnAuthCountriesFailed: (metrics.topVpnAuthCountriesFailed as AnalyzerMetrics['topVpnAuthCountriesFailed']) ?? [],
+      topVpnAuthCountriesSuccess: (metrics.topVpnAuthCountriesSuccess as AnalyzerMetrics['topVpnAuthCountriesSuccess']) ?? [],
+      // Outbound
+      topOutboundIPs: (metrics.topOutboundIPs as AnalyzerMetrics['topOutboundIPs']) ?? [],
+      topOutboundCountries: (metrics.topOutboundCountries as AnalyzerMetrics['topOutboundCountries']) ?? [],
+      outboundConnections: (metrics.outboundConnections as number) ?? 0,
       ipsEvents: (metrics.ipsEvents as number) ?? 0,
       configChanges: (metrics.configChanges as number) ?? 0,
       configChangeDetails: (metrics.configChangeDetails as AnalyzerMetrics['configChangeDetails']) ?? [],
