@@ -366,7 +366,7 @@ export default function SchedulesPage() {
       return (
         <Badge variant="outline" className="bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
           <Crosshair className="w-3 h-3" />
-          Attack Surface
+          Surface Analyzer
         </Badge>
       );
     }
@@ -374,7 +374,7 @@ export default function SchedulesPage() {
       return (
         <Badge variant="outline" className="bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
           <Activity className="w-3 h-3" />
-          FW Analyzer
+          Firewall Analyzer
         </Badge>
       );
     }
@@ -502,8 +502,8 @@ export default function SchedulesPage() {
               <SelectItem value="all">Todos os tipos</SelectItem>
               <SelectItem value="firewall">Firewall</SelectItem>
               <SelectItem value="external_domain">Domínio Externo</SelectItem>
-              <SelectItem value="attack_surface">Attack Surface</SelectItem>
-              <SelectItem value="firewall_analyzer">FW Analyzer</SelectItem>
+              <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
+              <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
