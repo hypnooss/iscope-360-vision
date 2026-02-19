@@ -578,37 +578,98 @@ export default function AnalyzerDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Tráfego Negado', value: m?.totalDenied ?? 0, icon: Shield },
-                  { label: 'Login Firewall', value: m?.firewallAuthFailures ?? 0, icon: Lock },
-                  { label: 'Falhas VPN', value: m?.vpnFailures ?? 0, icon: Wifi },
-                  { label: 'Eventos IPS', value: m?.ipsEvents ?? 0, icon: AlertTriangle },
-                  {
-                    label: 'Alterações Config',
-                    value: m?.configChanges ?? 0,
-                    icon: Server,
-                    onClick: () => navigate('/scope-firewall/analyzer/config-changes'),
-                  },
-                  { label: 'Web Filter', value: m?.webFilterBlocked ?? 0, icon: Filter },
-                  { label: 'App Control', value: m?.appControlBlocked ?? 0, icon: AppWindow },
-                  { label: 'Anomalias', value: m?.anomalyEvents ?? 0, icon: Zap },
-                ].map(s => (
-                  <div
-                    key={s.label}
-                    className={cn(
-                      'flex items-center gap-3 p-3 rounded-lg bg-secondary/30',
-                      'onClick' in s && s.onClick && 'cursor-pointer hover:bg-secondary/50 transition-colors'
-                    )}
-                    onClick={'onClick' in s ? s.onClick : undefined}
-                  >
-                    <s.icon className="w-5 h-5 text-muted-foreground" />
-                    <div className="flex-1">
-                      <div className="text-lg font-bold text-foreground">{s.value}</div>
-                      <div className="text-xs text-muted-foreground">{s.label}</div>
-                    </div>
-                    {'onClick' in s && s.onClick && <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />}
+                {/* Tráfego Negado */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <Shield className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.totalDenied ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Tráfego Negado</div>
                   </div>
-                ))}
+                </div>
+
+                {/* Login Firewall — falhas + sucessos */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{(m?.firewallAuthFailures ?? 0) + (m?.firewallAuthSuccesses ?? 0)}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Auth Firewall</div>
+                    <div className="flex gap-2 text-[10px]">
+                      <span className="text-destructive font-semibold">{m?.firewallAuthFailures ?? 0} falhas</span>
+                      <span className="text-success font-semibold">{m?.firewallAuthSuccesses ?? 0} ok</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* VPN Auth — falhas + sucessos */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <Wifi className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{(m?.vpnFailures ?? 0) + (m?.vpnSuccesses ?? 0)}</div>
+                    <div className="text-xs text-muted-foreground mb-1">Auth VPN</div>
+                    <div className="flex gap-2 text-[10px]">
+                      <span className="text-destructive font-semibold">{m?.vpnFailures ?? 0} falhas</span>
+                      <span className="text-success font-semibold">{m?.vpnSuccesses ?? 0} ok</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conexões de Saída */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <ExternalLink className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.outboundConnections ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Conexões de Saída</div>
+                  </div>
+                </div>
+
+                {/* Eventos IPS */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <AlertTriangle className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.ipsEvents ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Eventos IPS</div>
+                  </div>
+                </div>
+
+                {/* Alterações Config */}
+                <div
+                  className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors"
+                  onClick={() => navigate('/scope-firewall/analyzer/config-changes')}
+                >
+                  <Server className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.configChanges ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Alterações Config</div>
+                  </div>
+                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                </div>
+
+                {/* Web Filter */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <Filter className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.webFilterBlocked ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Web Filter</div>
+                  </div>
+                </div>
+
+                {/* App Control */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <AppWindow className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.appControlBlocked ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">App Control</div>
+                  </div>
+                </div>
+
+                {/* Anomalias */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <Zap className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-bold text-foreground">{m?.anomalyEvents ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Anomalias</div>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -770,7 +831,7 @@ export default function AnalyzerDashboardPage() {
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Wifi className="w-4 h-4 text-yellow-400" />
+                <Wifi className="w-4 h-4 text-warning" />
                 Top Países - Auth VPN
               </CardTitle>
             </CardHeader>
@@ -788,6 +849,33 @@ export default function AnalyzerDashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Top IPs Destino - Conexões de Saída */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ExternalLink className="w-4 h-4 text-primary" />
+                Top IPs Destino (Saída)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+                : <IPListWidget ips={m?.topOutboundIPs ?? []} />}
+            </CardContent>
+          </Card>
+
+          {/* Top Países Destino - Conexões de Saída */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="w-4 h-4 text-primary" />
+                Top Países Destino (Saída)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+                : <CountryListWidget countries={m?.topOutboundCountries ?? []} />}
+            </CardContent>
+          </Card>
 
           {/* Top Web Filter Categories */}
           <Card className="glass-card">
@@ -889,10 +977,10 @@ export default function AnalyzerDashboardPage() {
                         variant="outline"
                         className={cn(
                           'text-xs mt-0.5 shrink-0',
-                          insight.severity === 'critical' && 'text-rose-400 border-rose-500/30',
-                          insight.severity === 'high' && 'text-orange-400 border-orange-500/30',
-                          insight.severity === 'medium' && 'text-warning border-warning/30',
-                          insight.severity === 'low' && 'text-primary border-primary/30',
+                          insight.severity === 'critical' && 'text-destructive border-destructive/30',
+                          insight.severity === 'high' && 'text-warning border-warning/30',
+                          insight.severity === 'medium' && 'text-primary border-primary/30',
+                          insight.severity === 'low' && 'text-muted-foreground border-muted-foreground/30',
                         )}
                       >
                         {insight.severity}
