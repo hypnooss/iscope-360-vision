@@ -1,79 +1,84 @@
 
-# Auth Firewall: Tabelas e Mapa de Ataques
+# Refazer a Legenda do Painel Lateral do Mapa Fullscreen
 
-## Situacao Atual
+## Problema
 
-### Tabelas (OK - ja funcionam)
-As tabelas "Top IPs - Auth Firewall" e "Top Paises - Auth Firewall" ja estao implementadas com abas Falhas/Sucessos, usando os dados separados `topFwAuthIPsFailed`, `topFwAuthIPsSuccess`, `topFwAuthCountriesFailed`, `topFwAuthCountriesSuccess`.
+1. **Painel lateral direito desconexo**: Ainda mostra "Top Origens de Ataque" (FW+VPN misturados) e "Top IPs Bloqueados" -- categorias antigas que nao refletem a separacao atual de dados (Auth FW, Auth VPN, Saida Permitida, Saida Bloqueada).
 
-### Dados Reais (diagnostico)
-O ultimo snapshot do ADM-FW mostra 351 falhas de FW auth, porem todos os IPs sao **privados** (172.20.10.172, 10.20.0.81 na porta 161 -- SNMP). IPs privados nao tem geolocalizacao, por isso `topFwAuthCountriesFailed` esta vazio. Isso e comportamento correto -- logins administrativos vindos da rede interna nao tem pais de origem. Tentativas externas (publicas) apareceriam com pais.
+2. **4.232 Falha Auth FW sem circulos no mapa**: Correto -- a maioria dos IPs de autenticacao administrativa sao privados (RFC1918), sem geolocalizacao possivel. O usuario quer que isso fique claro na legenda.
 
-### Mapa (precisa de ajustes)
-| Elemento | Cor Atual | Cor Solicitada |
-|---|---|---|
-| Falha Auth FW | Laranja (#f97316) | **Vermelho** |
-| Sucesso Auth FW | Verde (#22c55e) - dados combinados FW+VPN | **Verde** - dados apenas FW |
-| Saida Bloqueada | Vermelho (#ef4444) | Manter |
+## Nova Estrutura do Painel Lateral Direito
 
-**Conflito de cor**: Falha Auth FW (vermelho) e Saida Bloqueada (vermelho) usariam a mesma cor. Para diferenciar, usaremos **vermelho escuro** (#dc2626) para Falha Auth FW e manteremos **vermelho claro** (#ef4444) para Saida Bloqueada. A direcao dos projeteis tambem ajuda: Auth vai Origem -> Firewall, Saida vai Firewall -> Destino.
+O painel sera reestruturado para ter secoes que espelham as camadas do mapa, cada uma com cor correspondente e contagem. Quando os dados geolocalizados forem menores que o total (IPs privados), exibira uma nota discreta.
 
-## Mudancas Planejadas
-
-### 1. AttackMap.tsx -- Ajustar cores
-- Alterar `fw_fail` de `#f97316` (laranja) para `#dc2626` (vermelho escuro)
-- Manter `outbound_blocked` como `#ef4444` (vermelho claro)
-
-### 2. AnalyzerDashboardPage.tsx -- Passar dados FW-especificos
-- Alterar `authSuccessCountries` de `m?.topAuthCountriesSuccess` (combinado FW+VPN) para `fwAuthCountriesSuccess` (apenas FW)
-- Idem no fullscreen: separar totais de sucesso FW e VPN
-
-### 3. AttackMapFullscreen.tsx -- Atualizar legenda
-- Alterar a bolinha de "Falha Auth FW" de laranja para vermelho escuro (#dc2626)
-- Separar "Sucesso Auth" em "Sucesso Auth FW" usando dados FW-especificos
-
-## Detalhes Tecnicos
-
-### Arquivo: `src/components/firewall/AttackMap.tsx`
-
-**Paleta de cores (linha 24-30)**:
-```
-fw_fail: '#f97316'  -->  fw_fail: '#dc2626'  (vermelho escuro)
-```
-
-### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
-
-**Dados do mapa (linha 495)**:
-```
-// ANTES: combinado FW + VPN
-const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
-
-// DEPOIS: apenas FW
-const authCountriesSuccess = fwAuthCountriesSuccess;
+```text
++-------------------------------+
+| FALHA AUTH FW        (#dc2626)|
+| (vermelho escuro)             |
+| 1  [flag] United States   136 |
+| 2  [flag] Latvia           56 |
+| ...                           |
+| * 3.987 de IPs privados       |
++-------------------------------+
+| FALHA AUTH VPN       (#eab308)|
+| (amarelo)                     |
+| 1  [flag] Country          XX |
+| ...                           |
++-------------------------------+
+| SUCESSO AUTH FW      (#22c55e)|
+| (verde)                       |
+| 1  [flag] Country          XX |
+| ...                           |
++-------------------------------+
+| SAIDA PERMITIDA      (#38bdf8)|
+| (azul)                        |
+| 1  [flag] Country          XX |
+| ...                           |
++-------------------------------+
+| SAIDA BLOQUEADA      (#ef4444)|
+| (vermelho claro)              |
+| 1  [flag] Country          XX |
+| ...                           |
++-------------------------------+
 ```
 
-**Passagem de props ao AttackMap e AttackMapFullscreen**: usar `fwAuthCountriesSuccess` em vez de `authCountriesSuccess`.
+Secoes sem dados serao ocultadas. A nota de "IPs privados" aparecera quando o total de eventos for significativamente maior que a soma dos paises geolocalizados (ex: 4232 total, mas so 245 geolocalizados = 3987 de IPs privados).
+
+## Mudancas Tecnicas
 
 ### Arquivo: `src/components/firewall/AttackMapFullscreen.tsx`
 
-**Legenda inferior (linha 176)**:
-- Alterar cor da bolinha "Falha Auth FW" de `#f97316` para `#dc2626`
-- Atualizar label "Sucesso Auth" para "Sucesso Auth FW"
+**1. Adicionar props para os rankings FW-especificos:**
+- `topFwAuthCountriesFailed` (ja temos `authFailedCountries` que e esse dado)
+- `topVpnAuthCountriesFailed` (ja temos `authFailedVpnCountries`)
+- `topFwAuthCountriesSuccess` (ja temos `authSuccessCountries`)
 
-## Resultado Visual no Mapa
+As props existentes ja carregam os dados corretos, entao so precisamos reestruturar o JSX.
 
-| Camada | Cor | Direcao |
-|---|---|---|
-| Falha Auth FW | Vermelho escuro (#dc2626) | Pais Origem -> Firewall |
-| Falha Auth VPN | Amarelo (#eab308) | Pais Origem -> Firewall |
-| Sucesso Auth FW | Verde (#22c55e) | Pais Origem -> Firewall |
-| Saida Permitida | Azul (#38bdf8) | Firewall -> Pais Destino |
-| Saida Bloqueada | Vermelho claro (#ef4444) | Firewall -> Pais Destino |
+**2. Substituir o painel lateral (linhas 110-170):**
+
+Remover:
+- "Top Origens de Ataque" (merged)
+- "Top Destinos (Saida)" 
+- "Top IPs Bloqueados"
+
+Adicionar secoes separadas por categoria, cada uma com:
+- Titulo com bolinha colorida da camada correspondente
+- Top 5 paises com bandeiras
+- Nota de "IPs privados" quando `total - somaGeo > 0`
+
+**3. Tornar o painel scrollable** com `max-h-[calc(100vh-160px)] overflow-y-auto` para acomodar mais secoes.
+
+### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
+
+Nenhuma alteracao -- as props ja sao passadas corretamente.
+
+## Resultado Visual
+
+O painel lateral refletira exatamente as mesmas categorias e cores da barra inferior, com rankings de paises detalhados por camada. Quando houver muitos eventos de IPs privados (como as 4232 falhas de Auth FW no OCI-FW), uma nota discreta explicara por que nao aparecem circulos no mapa.
 
 ## Arquivos a Modificar
 
 | Arquivo | Mudanca |
 |---|---|
-| `src/components/firewall/AttackMap.tsx` | Alterar cor `fw_fail` de laranja para vermelho escuro |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Passar dados FW-especificos para sucesso auth no mapa |
-| `src/components/firewall/AttackMapFullscreen.tsx` | Atualizar cor e label na legenda inferior |
+| `src/components/firewall/AttackMapFullscreen.tsx` | Reestruturar painel lateral com secoes por categoria + nota de IPs privados |
