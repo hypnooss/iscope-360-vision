@@ -2,17 +2,22 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Filter } from 'lucide-react';
+import { ArrowLeft, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AnalyzerCategory, AnalyzerSeverity, AnalyzerInsight } from '@/types/analyzerInsights';
 
 const categoryLabels: Record<AnalyzerCategory, string> = {
@@ -31,34 +36,62 @@ const categoryLabels: Record<AnalyzerCategory, string> = {
 
 const severityOrder: AnalyzerSeverity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
-interface FirewallOption { id: string; name: string; }
+interface FirewallOption { id: string; name: string; client_id: string; }
 
 export default function AnalyzerInsightsPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
-  const [firewalls, setFirewalls] = useState<FirewallOption[]>([]);
   const [selectedFirewall, setSelectedFirewall] = useState('');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [expandedInsights, setExpandedInsights] = useState<Record<string, boolean>>({});
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+
+  const { data: firewalls = [] } = useQuery({
+    queryKey: ['analyzer-firewalls', selectedWorkspaceId, isSuperRole],
+    queryFn: async () => {
+      let query = supabase.from('firewalls').select('id, name, client_id').order('name');
+      if (isSuperRole && selectedWorkspaceId) {
+        query = query.eq('client_id', selectedWorkspaceId);
+      }
+      const { data } = await query;
+      return (data ?? []) as FirewallOption[];
+    },
+    enabled: isSuperRole ? !!selectedWorkspaceId : true,
+  });
+
+  useEffect(() => {
+    if (firewalls.length > 0 && !firewalls.find(f => f.id === selectedFirewall)) {
+      setSelectedFirewall(firewalls[0].id);
+    } else if (firewalls.length === 0) {
+      setSelectedFirewall('');
+    }
+  }, [firewalls]);
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
     if (!authLoading && user && !hasModuleAccess('scope_firewall')) navigate('/modules');
   }, [user, authLoading, navigate, hasModuleAccess]);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('firewalls').select('id, name').order('name');
-      if (data?.length) { setFirewalls(data); setSelectedFirewall(data[0].id); }
-    })();
-  }, []);
-
   const { data: snapshot, isLoading } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
   const filteredInsights = (snapshot?.insights ?? []).filter(i => {
-    if (severityFilter !== 'all' && i.severity !== severityFilter) return false;
     if (categoryFilter !== 'all' && i.category !== categoryFilter) return false;
     return true;
   });
@@ -81,27 +114,36 @@ export default function AnalyzerInsightsPage() {
     <AppLayout>
       <div className="p-6 lg:p-8">
         <PageBreadcrumb items={[
-          { label: 'Compliance', href: '/scope-firewall/reports' },
+          { label: 'Firewall' },
           { label: 'Analyzer', href: '/scope-firewall/analyzer' },
           { label: 'Insights' },
         ]} />
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Insights</h1>
-            <p className="text-muted-foreground">Drill-down técnico por categoria</p>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/analyzer')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Insights</h1>
+              <p className="text-muted-foreground">Drill-down técnico por categoria</p>
+            </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            {isSuperRole && !isPreviewMode && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewall(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
               <SelectTrigger className="w-[180px]"><SelectValue placeholder="Firewall" /></SelectTrigger>
               <SelectContent>{firewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger className="w-[130px]"><Filter className="w-3 h-3 mr-1" /><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                {severityOrder.map(s => <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>)}
-              </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
