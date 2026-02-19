@@ -373,20 +373,25 @@ export default function AnalyzerDashboardPage() {
   function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
     const now = new Date();
     const next = new Date();
-    next.setMinutes(0, 0, 0);
-    next.setHours(hour);
-    if (freq === 'daily') {
-      if (next <= now) next.setDate(next.getDate() + 1);
-    } else if (freq === 'weekly') {
-      const currentDay = now.getDay();
-      let diff = dayOfWeek - currentDay;
-      if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
-      next.setDate(now.getDate() + diff);
-    } else if (freq === 'monthly') {
-      next.setDate(dayOfMonth);
-      if (next <= now) {
-        next.setMonth(next.getMonth() + 1);
+    if (freq === 'hourly') {
+      next.setMinutes(0, 0, 0);
+      next.setTime(next.getTime() + 60 * 60 * 1000);
+    } else {
+      next.setMinutes(0, 0, 0);
+      next.setHours(hour);
+      if (freq === 'daily') {
+        if (next <= now) next.setDate(next.getDate() + 1);
+      } else if (freq === 'weekly') {
+        const currentDay = now.getDay();
+        let diff = dayOfWeek - currentDay;
+        if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
+        next.setDate(now.getDate() + diff);
+      } else if (freq === 'monthly') {
         next.setDate(dayOfMonth);
+        if (next <= now) {
+          next.setMonth(next.getMonth() + 1);
+          next.setDate(dayOfMonth);
+        }
       }
     }
     return next;
@@ -880,6 +885,7 @@ export default function AnalyzerDashboardPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="hourly">Por Hora</SelectItem>
                   <SelectItem value="daily">Diário</SelectItem>
                   <SelectItem value="weekly">Semanal</SelectItem>
                   <SelectItem value="monthly">Mensal</SelectItem>
@@ -887,17 +893,20 @@ export default function AnalyzerDashboardPage() {
               </Select>
             </div>
 
-            {/* Hour */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Hora de execução (0–23)</Label>
-              <Input
-                type="number"
-                min={0}
-                max={23}
-                value={scheduleHour}
-                onChange={e => setScheduleHour(Number(e.target.value))}
-              />
-            </div>
+            {/* Hour (hidden for hourly) */}
+            {scheduleFreq !== 'hourly' && (
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Hora de execução (UTC-3)</Label>
+                <Select value={String(scheduleHour)} onValueChange={v => setScheduleHour(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Day of week (weekly only) */}
             {scheduleFreq === 'weekly' && (
@@ -917,19 +926,20 @@ export default function AnalyzerDashboardPage() {
             {/* Day of month (monthly only) */}
             {scheduleFreq === 'monthly' && (
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Dia do mês (1–28)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={28}
-                  value={scheduleDayOfMonth}
-                  onChange={e => setScheduleDayOfMonth(Number(e.target.value))}
-                />
+                <Label className="text-sm font-medium">Dia do mês</Label>
+                <Select value={String(scheduleDayOfMonth)} onValueChange={v => setScheduleDayOfMonth(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 28 }, (_, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>Dia {i + 1}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
             {/* Next run preview */}
-            <div className="rounded-md bg-secondary/50 border border-border px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-md bg-muted/20 border border-border/50 px-3 py-2 text-sm text-muted-foreground">
               <span className="font-medium text-foreground">Próxima execução estimada: </span>
               {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR', {
                 day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
