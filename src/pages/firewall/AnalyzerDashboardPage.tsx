@@ -459,11 +459,11 @@ export default function AnalyzerDashboardPage() {
 
   const m = snapshot?.metrics;
 
-  // FW-specific auth rankings (use separated if available, fallback to combined)
-  const fwAuthIPsFailed = m?.topFwAuthIPsFailed?.length ? m.topFwAuthIPsFailed : (m?.topAuthIPsFailed?.length ? m.topAuthIPsFailed : m?.topAuthIPs ?? []);
-  const fwAuthIPsSuccess = m?.topFwAuthIPsSuccess?.length ? m.topFwAuthIPsSuccess : m?.topAuthIPsSuccess ?? [];
-  const fwAuthCountriesFailed = m?.topFwAuthCountriesFailed?.length ? m.topFwAuthCountriesFailed : (m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? []);
-  const fwAuthCountriesSuccess = m?.topFwAuthCountriesSuccess?.length ? m.topFwAuthCountriesSuccess : m?.topAuthCountriesSuccess ?? [];
+  // FW-specific auth rankings — no cross-fallbacks to avoid mixing FW and VPN data
+  const fwAuthIPsFailed = m?.topFwAuthIPsFailed ?? [];
+  const fwAuthIPsSuccess = m?.topFwAuthIPsSuccess ?? [];
+  const fwAuthCountriesFailed = m?.topFwAuthCountriesFailed ?? [];
+  const fwAuthCountriesSuccess = m?.topFwAuthCountriesSuccess ?? [];
 
   // VPN-specific auth rankings
   const vpnAuthIPsFailed = m?.topVpnAuthIPsFailed ?? [];
@@ -471,8 +471,7 @@ export default function AnalyzerDashboardPage() {
   const vpnAuthCountriesFailed = m?.topVpnAuthCountriesFailed ?? [];
   const vpnAuthCountriesSuccess = m?.topVpnAuthCountriesSuccess ?? [];
 
-  // For map (combined failed = FW + VPN countries)
-  const authCountriesFailed = m?.topFwAuthCountriesFailed?.length ? m.topFwAuthCountriesFailed : m?.topAuthCountriesFailed?.length ? m.topAuthCountriesFailed : m?.topAuthCountries ?? [];
+  // For map: use separated arrays directly (no cross-fallback)
   const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
 
   useEffect(() => {

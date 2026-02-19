@@ -233,20 +233,11 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
     return true;
   });
 
-  // ── Filter by subtype to separate firewall auth from VPN events ──
-  const safeAuth = dedup(rawAuth.filter(l => {
-    const subtype = (l.subtype || '').toLowerCase();
-    const logdesc = (l.logdesc || '').toLowerCase();
-    // Keep only system/admin authentication events
-    return subtype === 'system' || subtype === 'admin' ||
-           logdesc.includes('admin login') || logdesc.includes('authentication');
-  }));
-
-  const safeVpn = dedup(rawVpn.filter(l => {
-    const subtype = (l.subtype || '').toLowerCase();
-    // Keep only real VPN events
-    return subtype === 'vpn' || subtype === 'ipsec' || subtype === 'ssl';
-  }));
+  // ── Trust the agent's collection separation: authData = FW admin logs, vpnData = VPN logs ──
+  // No subtype filtering — the agent already collected them from distinct endpoints.
+  // Dedup removes any cross-collection duplicates by event ID.
+  const safeAuth = dedup(rawAuth);
+  const safeVpn = dedup(rawVpn);
 
   console.log(`[analyzeAuthentication] After filtering: auth=${safeAuth.length} (raw=${rawAuth.length}), vpn=${safeVpn.length} (raw=${rawVpn.length})`);
 
