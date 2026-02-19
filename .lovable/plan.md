@@ -1,110 +1,152 @@
 
 
-# Redesign do Surface Analyzer - Pagina de Prototipo
+# Redesign do Surface Analyzer V2 - De Dados Brutos para Inteligencia Acionavel
 
-## Contexto
+## O que deu errado na V1 das abas
 
-A pagina atual do Surface Analyzer (`AttackSurfaceAnalyzerPage.tsx`) tem ~1800 linhas e exibe todas as informacoes de forma linear e congestionada: stat cards no topo, lista de assets como cards expandiveis com portas, servicos, CVEs, certificados TLS, tecnologias e credenciais vazadas - tudo na mesma view. Para usuarios nao-tecnicos, e um muro de dados dificil de interpretar.
+A versao atual apenas redistribuiu os mesmos dados brutos em abas diferentes. O usuario continua olhando para IPs, portas e CVE-IDs sem entender **o que isso significa para o negocio**. Faltou a camada de inteligencia que ja existe no modulo de Compliance (Risco Tecnico, Impacto no Negocio, Recomendacao).
 
-## Inspiracao e Pesquisa
+## Inspiracao: O padrao que ja funciona no iScope
 
-Analisei dashboards de ferramentas profissionais de Exposure Management (Censys ASM, Qualys EASM, Rapid7 Surface Command, Microsoft Exposure Management) e principios de UX para dashboards de ciberseguranca. Os padroes recorrentes sao:
+O `UnifiedComplianceCard` ja resolve exatamente esse problema em outros modulos. Ele transforma dados tecnicos em **achados interpretados** com:
+- Status visual (pass/fail/warning)
+- Severidade com cor
+- Mensagem contextual
+- Recomendacao de acao
+- Risco Tecnico e Impacto no Negocio (expandiveis)
+- Evidencias coletadas
 
-1. **Dashboard Overview primeiro, detalhes depois** - o usuario ve um resumo executivo antes de mergulhar nos dados
-2. **Organizacao por categoria, nao por IP** - agrupar por tipo de achado (servicos web, certificados, CVEs) em vez de listar tudo por ativo
-3. **Progressive disclosure** - mostrar o essencial e permitir drill-down
-4. **Contadores visuais com contexto** - nao apenas numeros, mas barras/distribuicoes que contam uma historia
-5. **Tabelas para dados densos** - cards funcionam para resumo, mas tabelas sao melhores para inventario detalhado
+A proposta e aplicar esse **mesmo padrao mental** ao Surface Analyzer, criando "Findings" (achados) automaticos a partir dos dados brutos.
 
-## Proposta de Layout (Pagina de Teste)
+## Nova Arquitetura da Pagina
 
-A nova pagina sera criada em `/scope-external-domain/analyzer-v2` como prototipo. Estrutura em 3 zonas verticais:
+A pagina deixa de ser organizada por **tipo de dado** (inventario, servicos, CVEs, certs) e passa a ser organizada por **categoria de risco de exposicao**:
 
-### Zona 1: Header + Summary Cards (visao executiva)
+```text
++------------------------------------------------------------------+
+|  HEADER + WORKSPACE SELECTOR + ACOES                             |
++------------------------------------------------------------------+
+|  RESUMO EXECUTIVO (4 cards com contexto)                         |
+|  [Ativos] [Servicos Expostos] [Vulnerabilidades] [Certificados]  |
++------------------------------------------------------------------+
+|  FINDINGS POR CATEGORIA                                          |
+|                                                                  |
+|  [Servicos de Risco]  - portas/servicos perigosos expostos       |
+|    Finding: "RDP (3389) exposto na internet"         [Critico]   |
+|      > Risco Tecnico: Permite brute-force e lateral movement...  |
+|      > Impacto: Acesso remoto nao autorizado a rede interna...   |
+|      > Ativos afetados: server01 (1.2.3.4)                      |
+|                                                                  |
+|  [Vulnerabilidades]   - CVEs agrupadas por severidade            |
+|    Finding: "CVE-2024-1234 - OpenSSH RCE"            [Critico]   |
+|      > Risco Tecnico: Execucao remota de codigo sem autenticacao |
+|      > Ativos afetados: 3 hosts                                 |
+|                                                                  |
+|  [Certificados TLS]   - problemas com certificados               |
+|    Finding: "Certificado expirado ha 45 dias"        [Alto]      |
+|      > Risco: Conexoes podem ser interceptadas (MITM)            |
+|      > Ativo: mail.cliente.com.br                                |
+|                                                                  |
+|  [Tecnologias Obsoletas] - software desatualizado detectado      |
+|    Finding: "Apache 2.4.29 detectado (EOL)"          [Medio]     |
+|      > Risco: Versao sem suporte a patches de seguranca          |
+|                                                                  |
+|  [Credenciais Vazadas]  - HIBP (se houver)                       |
++------------------------------------------------------------------+
+|  INVENTARIO TECNICO (aba secundaria, para quem quer drill-down)  |
++------------------------------------------------------------------+
+```
 
-Manter o header padrao do sistema (breadcrumb, titulo, subtitulo, workspace selector). Os stat cards mudam de 4 metricas genericas para metricas que contam uma historia:
+## Categorias de Findings (gerados automaticamente dos dados)
 
-| Card | Antes | Depois |
+O motor de findings analisa os dados do snapshot e gera achados inteligentes:
+
+| Categoria | Logica de Geracao | Exemplos de Findings |
 |---|---|---|
-| 1 | Ativos Expostos (numero) | **Ativos Monitorados** - total de IPs/hostnames |
-| 2 | Servicos Detectados (numero) | **Servicos Expostos** - com mini breakdown (web/infra) |
-| 3 | CVEs Criticas (numero) | **Vulnerabilidades** - com breakdown por severidade (badges inline) |
-| 4 | Certificados Expirados (numero) | **Certificados** - com status (validos/expirando/expirados) |
+| **Servicos de Risco** | Detecta portas/servicos perigosos expostos (RDP, SMB, Telnet, FTP, MSSQL, MySQL, etc.) | "RDP exposto (porta 3389)", "SMB exposto (445)", "Banco de dados MySQL acessivel" |
+| **Servicos Web** | Analisa headers de seguranca ausentes, paginas admin expostas, HTTP sem TLS | "Painel de administracao exposto", "HSTS ausente", "Pagina servida sem HTTPS" |
+| **Vulnerabilidades** | CVEs agrupadas por severidade, com lista de ativos afetados | "CVE-2024-XXXX afeta 3 hosts", agrupado por Critical/High/Medium |
+| **Certificados TLS** | Certs expirados, expirando em 30d, autoassinados, CN mismatch | "Certificado expirado ha 45 dias em mail.empresa.com" |
+| **Tecnologias Obsoletas** | Versoes conhecidamente EOL ou desatualizadas | "PHP 7.4 detectado (EOL desde Nov 2022)" |
+| **Credenciais Vazadas** | Dados do HIBP existente | Mantido como esta |
 
-### Zona 2: Tabs de Navegacao
+## Estrutura de um Finding
 
-Em vez de uma lista unica gigante, organizar os dados em abas tematicas:
+Cada finding sera um objeto que alimenta um card similar ao `UnifiedComplianceCard`:
 
+```text
+{
+  name: "RDP (porta 3389) exposto na internet"
+  status: "fail"
+  severity: "critical"
+  category: "Servicos de Risco"
+  description: "O servico de Remote Desktop Protocol esta acessivel..."
+  technicalRisk: "RDP e um dos vetores mais explorados para ransomware..."
+  businessImpact: "Acesso nao autorizado pode resultar em..."
+  recommendation: "Restringir acesso via VPN ou desabilitar se nao necessario"
+  affectedAssets: [{ hostname, ip }]
+  evidence: [{ port: 3389, service: "ms-wbt-server", version: "..." }]
+}
 ```
-[Inventario] [Servicos Web] [Vulnerabilidades] [Certificados] [Credenciais Vazadas]
-```
 
-**Tab Inventario (padrao):** Tabela limpa com colunas: Hostname | IP | ASN/Provider | Portas | Servicos | CVEs | Status. Cada linha clicavel para expandir detalhes. Ordenacao por colunas.
+## Regras de Deteccao de Servicos de Risco (built-in)
 
-**Tab Servicos Web:** Tabela focada em endpoints HTTP/HTTPS: URL | Status | Servidor | Tecnologias | TLS. Agrupamento visual por ativo.
+Mapa estatico de servicos/portas considerados perigosos quando expostos:
 
-**Tab Vulnerabilidades:** Lista de CVEs encontradas, agrupadas por severidade. Cada CVE mostra quais ativos sao afetados. Filtro por severidade.
+| Porta/Servico | Severidade | Risco Tecnico | Impacto |
+|---|---|---|---|
+| 3389 (RDP) | Critical | Brute-force, BlueKeep, ransomware | Acesso remoto total ao servidor |
+| 445 (SMB) | Critical | EternalBlue, lateral movement | Acesso a arquivos e propagacao de malware |
+| 23 (Telnet) | Critical | Credenciais em texto claro | Interceptacao de sessoes administrativas |
+| 21 (FTP) | High | Credenciais em texto claro, anonymous | Exfiltracao de dados |
+| 1433/3306/5432 (DBs) | Critical | Injecao SQL, acesso direto a dados | Vazamento de base de dados inteira |
+| 6379 (Redis) | Critical | Sem autenticacao por padrao | Execucao de comandos no servidor |
+| 27017 (MongoDB) | Critical | Sem autenticacao por padrao | Exposicao total dos dados |
+| 5900 (VNC) | High | Autenticacao fraca | Controle visual remoto |
+| 161 (SNMP) | Medium | Community strings padrao | Enumeracao completa da rede |
+| HTTP sem TLS | Medium | Dados trafegam sem criptografia | Interceptacao de sessoes |
+| Admin panels | High | Paginas de login expostas | Brute-force em interfaces admin |
 
-**Tab Certificados:** Visao dedicada de todos os certificados TLS: Subject | Emissor | Validade | Status. Ordenado por urgencia (expirados primeiro).
+## Deteccao de Tecnologias Obsoletas (built-in)
 
-**Tab Credenciais Vazadas:** A secao HIBP que ja existe, promovida para tab propria.
+Mapa de versoes EOL conhecidas:
 
-### Zona 3: Footer Info
+| Tecnologia | Versao EOL | Data EOL |
+|---|---|---|
+| PHP < 8.1 | 7.4, 8.0 | Nov 2022, Nov 2023 |
+| Apache < 2.4.58 | Versoes antigas | Varias |
+| OpenSSH < 9.0 | Versoes antigas | Varias |
+| nginx < 1.24 | Versoes antigas | Varias |
+| Windows Server 2012 | Todas | Out 2023 |
 
-Timestamp do ultimo scan + botao de acao (executar/cancelar).
+## Mudancas Tecnicas
 
-## Detalhes Tecnicos
+### Arquivo: `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx` (reescrever)
 
-### Novo arquivo: `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx`
+1. **Novo motor `generateFindings(assets)`**: funcao pura que recebe a lista de `ExposedAsset[]` e retorna `SurfaceFinding[]` com todas as categorias acima
+2. **Tipo `SurfaceFinding`**: interface inspirada em `UnifiedComplianceItem` mas adaptada para surface (sem code/rawData, com `affectedAssets`)
+3. **Componente `SurfaceFindingCard`**: card visual identico ao padrao do `UnifiedComplianceCard` com 3 niveis (visao rapida, contexto estrategico, detalhes expandiveis)
+4. **Componente `SurfaceCategorySection`**: agrupa findings por categoria, com contadores de severidade, identico ao `ExternalDomainCategorySection`
+5. **Manter as abas mas com proposito diferente**:
+   - **Aba "Analise" (padrao)**: Findings organizados por categoria
+   - **Aba "Inventario"**: Tabela tecnica para drill-down (a tabela que ja existe)
+   - **Aba "Credenciais Vazadas"**: HIBP existente
+6. **Summary Cards atualizados**: Em vez de contar "servicos", contar "findings criticos", "findings totais", etc.
 
-- Reutilizar toda a logica de dados existente (`buildAssets`, `matchCVEsToIP`, hooks de snapshot, etc.) - copiar do original
-- Implementar o layout com `Tabs` do Radix UI (ja instalado)
-- Cada tab sera um componente interno (funcao dentro do arquivo ou componente separado se ficar grande)
-- Manter todos os hooks existentes: `useWorkspaceSelector`, `useEffectiveAuth`, `usePreview`, queries de CVE cache, etc.
+### Arquivo: `src/App.tsx`
 
-### Rota de teste: `src/App.tsx`
+Sem alteracao (rota ja existe).
 
-- Adicionar rota `/scope-external-domain/analyzer-v2` apontando para `SurfaceAnalyzerV2Page`
-- A rota original `/scope-external-domain/analyzer` permanece inalterada
+## Resultado Esperado
 
-### Componentes da Tab Inventario (visao principal)
-
-Tabela com as colunas:
-- **Hostname**: com icone de fonte (DNS/Firewall) e tooltip de ASN/WHOIS
-- **IP**: badge mono com bandeira do pais
-- **Portas**: badge com contagem, tooltip com lista
-- **Servicos**: badge com contagem
-- **CVEs**: badges coloridas por severidade (ex: "2 Critical | 1 High")
-- **Certificado**: icone de status (verde/amarelo/vermelho/cinza)
-- Linha expandivel com os detalhes do ativo (servicos, scripts NSE, CVEs detalhadas)
-
-### Componentes da Tab Vulnerabilidades
-
-- Cards agrupados por severidade (Critical, High, Medium, Low)
-- Cada card de CVE mostra: ID, titulo, score, ativos afetados (badges clicaveis)
-- Filtro rapido por severidade
-
-### Componentes da Tab Certificados
-
-Tabela com:
-- Subject CN
-- Emissor
-- Data de expiracao
-- Dias restantes (badge colorida)
-- Ativo associado
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Acao |
-|---|---|
-| `src/pages/external-domain/SurfaceAnalyzerV2Page.tsx` | **Criar** - nova pagina de prototipo |
-| `src/App.tsx` | **Modificar** - adicionar rota `/scope-external-domain/analyzer-v2` |
+- Usuario leigo: ve "3 problemas criticos" com explicacao em linguagem acessivel
+- Usuario tecnico: expande o finding e ve portas, CVEs, evidencias, pode ir ao Inventario para drill-down
+- Gestor: entende o impacto no negocio de cada achado sem precisar saber o que e "porta 3389"
 
 ## Observacoes
 
-- Sem risk score (conforme solicitado)
-- Toda a logica de dados (buildAssets, matchCVEsToIP, CVE cache, progress tracking, scan/cancel, rescan por IP, schedule dialog) sera mantida
-- O termo "Surface Analyzer" sera mantido (sem "Attack")
-- A pagina original nao sera alterada ate aprovacao do prototipo
-- Credenciais vazadas (HIBP) ganha tab propria em vez de ficar no final da pagina
+- Os findings sao gerados 100% no frontend a partir dos dados do snapshot (sem backend novo)
+- O mapa de servicos de risco e tecnologias obsoletas e estatico (hardcoded), pode ser movido para o banco depois
+- Sem risk score numerico (conforme preferencia do usuario)
+- A aba Inventario preserva a tabela tecnica para quem precisa de detalhes granulares
 
