@@ -1526,16 +1526,6 @@ export default function AttackSurfaceAnalyzerPage() {
                   </SelectContent>
                 </Select>
               }
-              {isSuperRole && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  title="Configurar agendamento"
-                  onClick={() => setScheduleDialogOpen(true)}
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-              )}
               {isSuperRole && !isRunning &&
               <Button onClick={() => setScanDialogOpen(true)}>
                   <Play className="w-4 h-4" />
@@ -1548,6 +1538,16 @@ export default function AttackSurfaceAnalyzerPage() {
                   Cancelar Análise
                 </Button>
               }
+              {isSuperRole && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Configurar agendamento"
+                  onClick={() => setScheduleDialogOpen(true)}
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </div>
 
