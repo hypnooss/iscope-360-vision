@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
         firewall_id,
         client_id: firewall.client_id,
         status: 'pending',
-        period_start: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        period_start: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
         period_end: now,
       })
       .select('id')

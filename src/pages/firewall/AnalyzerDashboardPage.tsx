@@ -552,21 +552,25 @@ export default function AnalyzerDashboardPage() {
         {snapshot && (
           <div className="mb-6 flex items-center gap-3 flex-wrap">
             <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Última análise:</span>
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
             <Badge variant="outline" className="text-xs">
               {new Date(snapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </Badge>
             {snapshot.period_start && snapshot.period_end && (
               <>
-                <span className="text-sm text-muted-foreground">Período:</span>
+                <span className="text-sm text-muted-foreground">Período agregado:</span>
                 <Badge variant="outline" className="text-xs">
-                  {new Date(snapshot.period_start).toLocaleDateString('pt-BR')} — {new Date(snapshot.period_end).toLocaleDateString('pt-BR')}
+                  {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {' → '}
+                  {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                 </Badge>
               </>
             )}
-            <Badge variant={snapshot.status === 'completed' ? 'default' : 'secondary'} className="text-xs">
-              {snapshot.status === 'completed' ? 'Concluída' : snapshot.status === 'processing' ? 'Em andamento' : snapshot.status}
-            </Badge>
+            {(snapshot as any).snapshotCount && (
+              <Badge variant="secondary" className="text-xs">
+                {(snapshot as any).snapshotCount} coletas
+              </Badge>
+            )}
           </div>
         )}
 

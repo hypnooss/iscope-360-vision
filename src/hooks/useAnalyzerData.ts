@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { AnalyzerSnapshot, AnalyzerInsight, AnalyzerMetrics, AnalyzerSummary } from '@/types/analyzerInsights';
-import type { Json } from '@/integrations/supabase/types';
+import type { AnalyzerSnapshot, AnalyzerInsight, AnalyzerMetrics, AnalyzerSummary, TopBlockedIP, TopCountry, TopCategory, TopUserIP } from '@/types/analyzerInsights';
 
 function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
   const rawSummary = (row.summary ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 }) as unknown as AnalyzerSummary;
@@ -70,6 +69,160 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
   };
 }
 
+// --- Aggregation helpers ---
+
+function mergeIPRankings(ips: TopBlockedIP[]): TopBlockedIP[] {
+  const map = new Map<string, TopBlockedIP>();
+  for (const ip of ips) {
+    const existing = map.get(ip.ip);
+    if (existing) {
+      existing.count += ip.count;
+      existing.targetPorts = [...new Set([...(existing.targetPorts ?? []), ...(ip.targetPorts ?? [])])];
+    } else {
+      map.set(ip.ip, { ...ip, targetPorts: [...(ip.targetPorts ?? [])] });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 15);
+}
+
+function mergeCountryRankings(countries: TopCountry[]): TopCountry[] {
+  const map = new Map<string, { count: number; code?: string }>();
+  for (const c of countries) {
+    const existing = map.get(c.country);
+    if (existing) {
+      existing.count += c.count;
+    } else {
+      map.set(c.country, { count: c.count, code: c.code });
+    }
+  }
+  return [...map.entries()]
+    .map(([country, v]) => ({ country, count: v.count, code: v.code }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+}
+
+function mergeCategoryRankings(items: TopCategory[]): TopCategory[] {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    map.set(item.category, (map.get(item.category) ?? 0) + item.count);
+  }
+  return [...map.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+}
+
+function mergeUserRankings(items: { user: string; ip?: string; count: number }[]): { user: string; ip?: string; count: number }[] {
+  const map = new Map<string, { ip?: string; count: number }>();
+  for (const item of items) {
+    const existing = map.get(item.user);
+    if (existing) {
+      existing.count += item.count;
+    } else {
+      map.set(item.user, { ip: item.ip, count: item.count });
+    }
+  }
+  return [...map.entries()]
+    .map(([user, v]) => ({ user, ip: v.ip, count: v.count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+}
+
+function deduplicateInsights(insights: AnalyzerInsight[]): AnalyzerInsight[] {
+  const seen = new Set<string>();
+  return insights.filter(ins => {
+    const key = `${ins.category}::${ins.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Aggregates multiple snapshots (each covering 1h) into a single consolidated snapshot
+ * representing the full time range. Numeric counters are summed, IP/country rankings
+ * are merged and re-ranked by total count across all snapshots.
+ */
+function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & { snapshotCount: number } | null {
+  if (!snapshots.length) return null;
+
+  const latest = snapshots[0];
+  const oldest = snapshots[snapshots.length - 1];
+
+  // Sum all severity counts
+  const summary: AnalyzerSummary = snapshots.reduce(
+    (acc, s) => ({
+      critical: acc.critical + (s.summary?.critical ?? 0),
+      high: acc.high + (s.summary?.high ?? 0),
+      medium: acc.medium + (s.summary?.medium ?? 0),
+      low: acc.low + (s.summary?.low ?? 0),
+      info: acc.info + (s.summary?.info ?? 0),
+    }),
+    { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+  );
+
+  // Sum numeric metrics
+  const sum = (key: keyof AnalyzerMetrics) =>
+    snapshots.reduce((acc, s) => acc + ((s.metrics[key] as number) ?? 0), 0);
+
+  const metrics: AnalyzerMetrics = {
+    totalEvents: sum('totalEvents'),
+    totalDenied: sum('totalDenied'),
+    vpnFailures: sum('vpnFailures'),
+    vpnSuccesses: sum('vpnSuccesses'),
+    firewallAuthFailures: sum('firewallAuthFailures'),
+    firewallAuthSuccesses: sum('firewallAuthSuccesses'),
+    outboundConnections: sum('outboundConnections'),
+    outboundBlocked: sum('outboundBlocked'),
+    ipsEvents: sum('ipsEvents'),
+    configChanges: sum('configChanges'),
+    webFilterBlocked: sum('webFilterBlocked'),
+    appControlBlocked: sum('appControlBlocked'),
+    anomalyEvents: sum('anomalyEvents'),
+    anomalyDropped: sum('anomalyDropped'),
+
+    // Merged rankings
+    topBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topBlockedIPs ?? [])),
+    topCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topCountries ?? [])),
+    topAuthIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAuthIPs ?? [])),
+    topAuthCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topAuthCountries ?? [])),
+    topAuthIPsSuccess: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAuthIPsSuccess ?? [])),
+    topAuthIPsFailed: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAuthIPsFailed ?? [])),
+    topAuthCountriesSuccess: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topAuthCountriesSuccess ?? [])),
+    topAuthCountriesFailed: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topAuthCountriesFailed ?? [])),
+    topFwAuthIPsFailed: mergeIPRankings(snapshots.flatMap(s => s.metrics.topFwAuthIPsFailed ?? [])),
+    topFwAuthIPsSuccess: mergeIPRankings(snapshots.flatMap(s => s.metrics.topFwAuthIPsSuccess ?? [])),
+    topFwAuthCountriesFailed: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topFwAuthCountriesFailed ?? [])),
+    topFwAuthCountriesSuccess: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topFwAuthCountriesSuccess ?? [])),
+    topVpnAuthIPsFailed: mergeIPRankings(snapshots.flatMap(s => s.metrics.topVpnAuthIPsFailed ?? [])),
+    topVpnAuthIPsSuccess: mergeIPRankings(snapshots.flatMap(s => s.metrics.topVpnAuthIPsSuccess ?? [])),
+    topVpnAuthCountriesFailed: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesFailed ?? [])),
+    topVpnAuthCountriesSuccess: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesSuccess ?? [])),
+    topOutboundIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundIPs ?? [])),
+    topOutboundCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topOutboundCountries ?? [])),
+    topOutboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundBlockedIPs ?? [])),
+    topOutboundBlockedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topOutboundBlockedCountries ?? [])),
+    topWebFilterCategories: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topWebFilterCategories ?? [])),
+    topWebFilterUsers: mergeUserRankings(snapshots.flatMap(s => s.metrics.topWebFilterUsers ?? [])) as any,
+    topAppControlApps: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topAppControlApps ?? [])),
+    topAppControlUsers: mergeUserRankings(snapshots.flatMap(s => s.metrics.topAppControlUsers ?? [])) as any,
+    topAnomalySources: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAnomalySources ?? [])),
+    topAnomalyTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topAnomalyTypes ?? [])),
+    configChangeDetails: snapshots.flatMap(s => s.metrics.configChangeDetails ?? []).slice(0, 50),
+  };
+
+  return {
+    ...latest,
+    // Expand period to cover the oldest snapshot's start
+    period_start: oldest.period_start ?? latest.period_start,
+    period_end: latest.period_end,
+    summary,
+    insights: deduplicateInsights(snapshots.flatMap(s => s.insights ?? [])),
+    metrics,
+    snapshotCount: snapshots.length,
+  };
+}
+
 export function useAnalyzerData(firewallId?: string) {
   return useQuery({
     queryKey: ['analyzer-snapshots', firewallId],
@@ -125,24 +278,25 @@ export function useLatestAnalyzerSnapshot(firewallId?: string) {
   return useQuery({
     queryKey: ['analyzer-latest', firewallId],
     queryFn: async () => {
-      let query = supabase
+      if (!firewallId) return null;
+
+      // Fetch last 24 completed snapshots to aggregate a 24h window
+      const { data, error } = await supabase
         .from('analyzer_snapshots' as any)
         .select('*')
+        .eq('firewall_id', firewallId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(24) as any;
 
-      if (firewallId) {
-        query = query.eq('firewall_id', firewallId);
-      }
-
-      const { data, error } = await query as any;
       if (error) throw error;
       const rows = (data as any[]) || [];
       if (rows.length === 0) return null;
-      return parseSnapshot(rows[0] as Record<string, unknown>);
+
+      const snapshots = rows.map((r) => parseSnapshot(r as Record<string, unknown>));
+      return aggregateSnapshots(snapshots);
     },
-    enabled: true,
+    enabled: !!firewallId,
     staleTime: 1000 * 30,
   });
 }
