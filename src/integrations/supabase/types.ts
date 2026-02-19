@@ -2384,7 +2384,7 @@ export type Database = {
       parse_type: "text" | "boolean" | "time" | "list" | "json" | "number"
       permission_status: "granted" | "pending" | "denied" | "missing"
       rule_severity: "critical" | "high" | "medium" | "low" | "info"
-      schedule_frequency: "daily" | "weekly" | "monthly" | "manual"
+      schedule_frequency: "daily" | "weekly" | "monthly" | "manual" | "hourly"
       scope_module:
         | "scope_firewall"
         | "scope_network"
@@ -2565,7 +2565,7 @@ export const Constants = {
       parse_type: ["text", "boolean", "time", "list", "json", "number"],
       permission_status: ["granted", "pending", "denied", "missing"],
       rule_severity: ["critical", "high", "medium", "low", "info"],
-      schedule_frequency: ["daily", "weekly", "monthly", "manual"],
+      schedule_frequency: ["daily", "weekly", "monthly", "manual", "hourly"],
       scope_module: [
         "scope_firewall",
         "scope_network",
