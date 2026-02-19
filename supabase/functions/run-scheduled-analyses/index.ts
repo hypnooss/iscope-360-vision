@@ -14,7 +14,12 @@ function calculateNextRunAt(
   const now = new Date();
   let next: Date;
 
-  if (frequency === 'daily') {
+  if (frequency === 'hourly') {
+    // Next full hour (e.g. now is 14:23 → next = 15:00)
+    next = new Date(now);
+    next.setUTCMinutes(0, 0, 0);
+    next.setUTCHours(next.getUTCHours() + 1);
+  } else if (frequency === 'daily') {
     next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, 0, 0));
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   } else if (frequency === 'weekly') {
