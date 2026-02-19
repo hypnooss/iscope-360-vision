@@ -2,6 +2,9 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,12 +14,13 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
+import { useQuery } from '@tanstack/react-query';
 import type { ConfigChangeDetail } from '@/types/analyzerInsights';
-import { Server, Search, Filter, RefreshCw, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Building2, Search, Filter, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-interface FirewallOption { id: string; name: string; }
+interface FirewallOption { id: string; name: string; client_id: string; }
 
 const severityColors: Record<string, string> = {
   critical: 'text-rose-400 border-rose-500/30 bg-rose-500/10',
@@ -28,23 +32,53 @@ const severityColors: Record<string, string> = {
 export default function AnalyzerConfigChangesPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
+  const { isPreviewMode } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
-  const [firewalls, setFirewalls] = useState<FirewallOption[]>([]);
   const [selectedFirewall, setSelectedFirewall] = useState('');
   const [searchUser, setSearchUser] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+
+  const { data: firewalls = [] } = useQuery({
+    queryKey: ['analyzer-firewalls', selectedWorkspaceId, isSuperRole],
+    queryFn: async () => {
+      let query = supabase.from('firewalls').select('id, name, client_id').order('name');
+      if (isSuperRole && selectedWorkspaceId) {
+        query = query.eq('client_id', selectedWorkspaceId);
+      }
+      const { data } = await query;
+      return (data ?? []) as FirewallOption[];
+    },
+    enabled: isSuperRole ? !!selectedWorkspaceId : true,
+  });
+
+  useEffect(() => {
+    if (firewalls.length > 0 && !firewalls.find(f => f.id === selectedFirewall)) {
+      setSelectedFirewall(firewalls[0].id);
+    } else if (firewalls.length === 0) {
+      setSelectedFirewall('');
+    }
+  }, [firewalls]);
 
   useEffect(() => {
     if (!authLoading && !user) { navigate('/auth'); return; }
     if (!authLoading && user && !hasModuleAccess('scope_firewall')) navigate('/modules');
   }, [user, authLoading, navigate, hasModuleAccess]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('firewalls').select('id, name').order('name');
-      if (data?.length) { setFirewalls(data); setSelectedFirewall(data[0].id); }
-    })();
-  }, []);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
   const configChangesCount = snapshot?.metrics?.configChanges || 0;
@@ -74,15 +108,28 @@ export default function AnalyzerConfigChangesPage() {
           { label: 'Alterações de Configuração' },
         ]} />
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Server className="w-6 h-6 text-primary" />
-              Alterações de Configuração
-            </h1>
-            <p className="text-muted-foreground text-sm">Auditoria detalhada de modificações no firewall</p>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/scope-firewall/analyzer')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Alterações de Configuração</h1>
+              <p className="text-muted-foreground text-sm">Auditoria detalhada de modificações no firewall</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            {isSuperRole && !isPreviewMode && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewall(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={selectedFirewall} onValueChange={setSelectedFirewall}>
               <SelectTrigger className="w-[200px]"><SelectValue placeholder="Selecionar firewall" /></SelectTrigger>
               <SelectContent>
