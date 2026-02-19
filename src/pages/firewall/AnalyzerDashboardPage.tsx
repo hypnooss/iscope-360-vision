@@ -548,32 +548,6 @@ export default function AnalyzerDashboardPage() {
           </div>
         </div>
 
-        {/* Last analysis info */}
-        {snapshot && (
-          <div className="mb-6 flex items-center gap-3 flex-wrap">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Última coleta:</span>
-            <Badge variant="outline" className="text-xs">
-              {new Date(snapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </Badge>
-            {snapshot.period_start && snapshot.period_end && (
-              <>
-                <span className="text-sm text-muted-foreground">Período agregado:</span>
-                <Badge variant="outline" className="text-xs">
-                  {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                  {' → '}
-                  {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                </Badge>
-              </>
-            )}
-            {(snapshot as any).snapshotCount && (
-              <Badge variant="secondary" className="text-xs">
-                {(snapshot as any).snapshotCount} coletas
-              </Badge>
-            )}
-          </div>
-        )}
-
         {/* Progress card */}
         {isRunning && progress && (
           <Card className="glass-card border-primary/30">
@@ -606,6 +580,32 @@ export default function AnalyzerDashboardPage() {
               <Progress value={progress.status === 'pending' ? 15 : 60} className="h-2" />
             </CardContent>
           </Card>
+        )}
+
+        {/* Last analysis info */}
+        {snapshot && (
+          <div className="mb-6 flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(snapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {snapshot.period_start && snapshot.period_end && (
+              <>
+                <span className="text-sm text-muted-foreground">Período agregado:</span>
+                <Badge variant="outline" className="text-xs">
+                  {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {' → '}
+                  {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </Badge>
+              </>
+            )}
+            {(snapshot as any).snapshotCount && (
+              <Badge variant="secondary" className="text-xs">
+                {(snapshot as any).snapshotCount} coletas
+              </Badge>
+            )}
+          </div>
         )}
 
         {/* Severity Cards */}
