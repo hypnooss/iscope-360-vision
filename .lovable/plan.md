@@ -1,102 +1,79 @@
 
-# Corrigir a Lógica de Saída Bloqueada no Firewall Analyzer
+# Auth Firewall: Tabelas e Mapa de Ataques
 
-## Diagnóstico do Problema
+## Situacao Atual
 
-A função `analyzeOutboundTraffic` recebe um único array de logs e internamente tenta separar entre "allowed" e "blocked" pelo campo `action`. O problema está em como esse array é montado antes da chamada (linhas 1055–1064):
+### Tabelas (OK - ja funcionam)
+As tabelas "Top IPs - Auth Firewall" e "Top Paises - Auth Firewall" ja estao implementadas com abas Falhas/Sucessos, usando os dados separados `topFwAuthIPsFailed`, `topFwAuthIPsSuccess`, `topFwAuthCountriesFailed`, `topFwAuthCountriesSuccess`.
 
-```
-const outboundLogs = allowedLogs.length > 0 ? allowedLogs : acceptedFromDenied;
-```
+### Dados Reais (diagnostico)
+O ultimo snapshot do ADM-FW mostra 351 falhas de FW auth, porem todos os IPs sao **privados** (172.20.10.172, 10.20.0.81 na porta 161 -- SNMP). IPs privados nao tem geolocalizacao, por isso `topFwAuthCountriesFailed` esta vazio. Isso e comportamento correto -- logins administrativos vindos da rede interna nao tem pais de origem. Tentativas externas (publicas) apareceriam com pais.
 
-Como `allowed_traffic` já contém **somente** logs com `action=accept` (filtrado na API do FortiGate), nenhum deles terá `action=deny`. Logo, `blockedLogs` dentro da função sempre fica vazio → **aba "Saída Bloqueada" nunca tem dados**.
-
-## Solução
-
-Reestruturar a chamada para separar explicitamente as duas fontes de dados **antes** de chamar `analyzeOutboundTraffic`:
-
-- **Saída Permitida** → vem de `allowed_traffic` (action=accept) **ou** de entradas com accept dentro de `denied_traffic`
-- **Saída Bloqueada** → vem do `denied_traffic` original, identificando fluxos onde `srcip` é IP privado e `dstip` é IP público (independente do nome do step)
-
-A assinatura de `analyzeOutboundTraffic` será atualizada para receber dois arrays separados: `allowedLogs` e `blockedLogs`, eliminando a ambiguidade de detecção pela `action`.
-
-## Mudanças Técnicas
-
-### Arquivo: `supabase/functions/firewall-analyzer/index.ts`
-
-**1. Alterar a assinatura da função `analyzeOutboundTraffic`** (linha 854):
-
-```ts
-// ANTES
-function analyzeOutboundTraffic(logs: any[], ipCountryMap)
-
-// DEPOIS
-function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountryMap)
-```
-
-**2. Simplificar o corpo da função** — remover a separação interna por `action` (que era a lógica quebrada) e usar diretamente os dois arrays já separados para construir os rankings de destino.
-
-**3. Alterar a montagem dos logs no handler** (linhas 1055–1064):
-
-```ts
-// ANTES (problemático)
-const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-const allowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
-const acceptedFromDenied = deniedLogs.filter(l => action === 'accept'...);
-const outboundLogs = allowedLogs.length > 0 ? allowedLogs : acceptedFromDenied;
-const outboundResult = analyzeOutboundTraffic(outboundLogs, ipCountryMap);
-
-// DEPOIS (correto)
-// Saída Permitida: allowed_traffic OU logs accept dentro de denied_traffic
-const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-const rawAllowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
-const acceptedFromDenied = deniedLogs.filter(l => {
-  const action = (l.action || '').toLowerCase();
-  return action === 'accept' || action === 'allow' || action === 'pass';
-});
-const outboundAllowedLogs = rawAllowedLogs.length > 0 ? rawAllowedLogs : acceptedFromDenied;
-
-// Saída Bloqueada: sempre do denied_traffic, identificando fluxos internos → externos
-const outboundBlockedLogs = deniedLogs.filter(l => {
-  const action = (l.action || '').toLowerCase();
-  const src = l.srcip || l.src || '';
-  const dst = l.dstip || l.dst || '';
-  const isDeny = action === 'deny' || action === 'block' || action === 'blocked' || action === '';
-  return isDeny && isPrivateIP(src) && dst && !isPrivateIP(dst);
-});
-
-const outboundResult = analyzeOutboundTraffic(outboundAllowedLogs, outboundBlockedLogs, ipCountryMap);
-```
-
-**4. Dentro de `analyzeOutboundTraffic`**, substituir a lógica de separação por `isActionDenied` / `isOutboundCandidate` (que não funciona mais) por uso direto dos dois parâmetros:
-
-```ts
-function analyzeOutboundTraffic(
-  allowedLogs: any[],
-  blockedLogs: any[],
-  ipCountryMap: Record<string, string> = {}
-) {
-  const insights: AnalyzerInsight[] = [];
-  // ... buildDstRankings continua igual ...
-  
-  const allowedRank = buildDstRankings(allowedLogs.filter(isOutboundCandidate));
-  const blockedRank = buildDstRankings(blockedLogs); // já filtrado externamente
-  
-  // ... insights e retorno continuam iguais ...
-}
-```
-
-## Resultado Esperado
-
-| Situação | Antes | Depois |
+### Mapa (precisa de ajustes)
+| Elemento | Cor Atual | Cor Solicitada |
 |---|---|---|
-| allowed_traffic coletado | Saída Permitida ✅, Saída Bloqueada ❌ | Saída Permitida ✅, Saída Bloqueada ✅ |
-| Sem allowed_traffic | Saída Permitida ❌, Saída Bloqueada ❌ | Saída Permitida ❌, Saída Bloqueada ✅ |
+| Falha Auth FW | Laranja (#f97316) | **Vermelho** |
+| Sucesso Auth FW | Verde (#22c55e) - dados combinados FW+VPN | **Verde** - dados apenas FW |
+| Saida Bloqueada | Vermelho (#ef4444) | Manter |
 
-A correção não requer nova coleta de dados. Os snapshots existentes não serão reprocessados (são histórico), mas **a próxima análise já produzirá dados corretos** nas duas abas.
+**Conflito de cor**: Falha Auth FW (vermelho) e Saida Bloqueada (vermelho) usariam a mesma cor. Para diferenciar, usaremos **vermelho escuro** (#dc2626) para Falha Auth FW e manteremos **vermelho claro** (#ef4444) para Saida Bloqueada. A direcao dos projeteis tambem ajuda: Auth vai Origem -> Firewall, Saida vai Firewall -> Destino.
 
-## Arquivo a Modificar
+## Mudancas Planejadas
 
-| Arquivo | Mudança |
+### 1. AttackMap.tsx -- Ajustar cores
+- Alterar `fw_fail` de `#f97316` (laranja) para `#dc2626` (vermelho escuro)
+- Manter `outbound_blocked` como `#ef4444` (vermelho claro)
+
+### 2. AnalyzerDashboardPage.tsx -- Passar dados FW-especificos
+- Alterar `authSuccessCountries` de `m?.topAuthCountriesSuccess` (combinado FW+VPN) para `fwAuthCountriesSuccess` (apenas FW)
+- Idem no fullscreen: separar totais de sucesso FW e VPN
+
+### 3. AttackMapFullscreen.tsx -- Atualizar legenda
+- Alterar a bolinha de "Falha Auth FW" de laranja para vermelho escuro (#dc2626)
+- Separar "Sucesso Auth" em "Sucesso Auth FW" usando dados FW-especificos
+
+## Detalhes Tecnicos
+
+### Arquivo: `src/components/firewall/AttackMap.tsx`
+
+**Paleta de cores (linha 24-30)**:
+```
+fw_fail: '#f97316'  -->  fw_fail: '#dc2626'  (vermelho escuro)
+```
+
+### Arquivo: `src/pages/firewall/AnalyzerDashboardPage.tsx`
+
+**Dados do mapa (linha 495)**:
+```
+// ANTES: combinado FW + VPN
+const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
+
+// DEPOIS: apenas FW
+const authCountriesSuccess = fwAuthCountriesSuccess;
+```
+
+**Passagem de props ao AttackMap e AttackMapFullscreen**: usar `fwAuthCountriesSuccess` em vez de `authCountriesSuccess`.
+
+### Arquivo: `src/components/firewall/AttackMapFullscreen.tsx`
+
+**Legenda inferior (linha 176)**:
+- Alterar cor da bolinha "Falha Auth FW" de `#f97316` para `#dc2626`
+- Atualizar label "Sucesso Auth" para "Sucesso Auth FW"
+
+## Resultado Visual no Mapa
+
+| Camada | Cor | Direcao |
+|---|---|---|
+| Falha Auth FW | Vermelho escuro (#dc2626) | Pais Origem -> Firewall |
+| Falha Auth VPN | Amarelo (#eab308) | Pais Origem -> Firewall |
+| Sucesso Auth FW | Verde (#22c55e) | Pais Origem -> Firewall |
+| Saida Permitida | Azul (#38bdf8) | Firewall -> Pais Destino |
+| Saida Bloqueada | Vermelho claro (#ef4444) | Firewall -> Pais Destino |
+
+## Arquivos a Modificar
+
+| Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/firewall-analyzer/index.ts` | Atualizar assinatura e corpo de `analyzeOutboundTraffic` + reestruturar montagem dos logs no handler |
+| `src/components/firewall/AttackMap.tsx` | Alterar cor `fw_fail` de laranja para vermelho escuro |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Passar dados FW-especificos para sucesso auth no mapa |
+| `src/components/firewall/AttackMapFullscreen.tsx` | Atualizar cor e label na legenda inferior |
