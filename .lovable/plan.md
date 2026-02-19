@@ -1,45 +1,34 @@
 
-# Reposicionar Botão de Engrenagem
+# Correção do Erro de Agendamento
 
-## Mudança
+## Causa do Problema
 
-Mover o botão `<Settings>` (engrenagem) de **antes** do botão "Executar Análise" para **depois** dele, conforme a imagem de referência.
-
-## Ordem atual (incorreta)
-
-```text
-[ Workspace ] [ ⚙️ ] [ ▶ Executar Análise ]
+O código faz um `upsert` com `onConflict: 'client_id'`:
+```ts
+await supabase
+  .from('attack_surface_schedules')
+  .upsert(payload, { onConflict: 'client_id' });
 ```
 
-## Ordem desejada
+O PostgreSQL exige que exista uma constraint `UNIQUE` ou `EXCLUSION` na coluna especificada no `ON CONFLICT`. A tabela `attack_surface_schedules` tem `client_id` como campo, mas **não possui** um índice único nessa coluna, causando o erro:
 
-```text
-[ Workspace ] [ ▶ Executar Análise ] [ ⚙️ ]
+> `there is no unique or exclusion constraint matching the ON CONFLICT specification`
+
+## Solução
+
+Criar uma migration que adiciona um índice único (`UNIQUE INDEX`) na coluna `client_id` da tabela `attack_surface_schedules`. Isso garante:
+- Um agendamento por workspace (client)
+- O `upsert` com `onConflict: 'client_id'` funciona corretamente
+
+## Migration SQL
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS attack_surface_schedules_client_id_key
+  ON public.attack_surface_schedules (client_id);
 ```
 
-## Alteração técnica
+## Arquivo Modificado
 
-Em `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`, linhas 1529–1550, apenas reordenar os blocos JSX:
+- Nova migration em `supabase/migrations/`
 
-1. Mover o bloco do botão `Settings` (linhas 1529–1538) para **depois** dos dois botões condicionais de Executar/Cancelar (linha 1550).
-
-### Antes (simplificado):
-```tsx
-{/* ⚙️ vem ANTES */}
-{isSuperRole && <Button size="icon"><Settings /></Button>}
-{isSuperRole && !isRunning && <Button>Executar Análise</Button>}
-{isSuperRole && isRunning && <Button>Cancelar Análise</Button>}
-```
-
-### Depois (simplificado):
-```tsx
-{/* Executar/Cancelar ANTES */}
-{isSuperRole && !isRunning && <Button>Executar Análise</Button>}
-{isSuperRole && isRunning && <Button>Cancelar Análise</Button>}
-{/* ⚙️ vem DEPOIS */}
-{isSuperRole && <Button size="icon"><Settings /></Button>}
-```
-
-## Arquivo modificado
-
-- `src/pages/external-domain/AttackSurfaceAnalyzerPage.tsx`
+Nenhuma alteração de código frontend é necessária — apenas a constraint no banco.
