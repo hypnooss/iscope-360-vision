@@ -7,9 +7,10 @@ import type { TopCountry } from '@/types/analyzerInsights';
 import { supabase } from '@/integrations/supabase/client';
 
 interface AttackMapProps {
-  authFailedCountries: TopCountry[];       // FW auth failures (laranja)
-  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (amarelo)
-  authSuccessCountries: TopCountry[];      // Auth success (verde)
+  authFailedCountries: TopCountry[];       // FW auth failures (vermelho escuro)
+  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (laranja)
+  authSuccessCountries: TopCountry[];      // FW Auth success (verde)
+  authSuccessVpnCountries?: TopCountry[];  // VPN Auth success (verde)
   outboundCountries?: TopCountry[];        // Saída com sucesso (azul) — FW → destino
   outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
   firewallLocation?: { lat: number; lng: number; label: string };
@@ -23,7 +24,7 @@ const STADIA_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps
 // Color palette
 const COLORS = {
   fw_fail: '#dc2626',       // Vermelho escuro — falha auth FW (inbound: país → FW)
-  vpn_fail: '#eab308',      // Amarelo — falha auth VPN (inbound: país → FW)
+  vpn_fail: '#f97316',      // Laranja — falha auth VPN (inbound: país → FW)
   auth_success: '#22c55e',  // Verde — sucesso auth (inbound: país → FW)
   outbound_ok: '#38bdf8',   // Azul — saída com sucesso (FW → país destino)
   outbound_blocked: '#ef4444', // Vermelho — saída bloqueada (FW → país destino)
@@ -78,7 +79,7 @@ function ProjectileOverlay({
           const pathD = `M${px},${py} L${fw[0]},${fw[1]}`;
           const glowId =
             p.color === COLORS.fw_fail ? 'url(#lf-glow-red)'
-            : p.color === COLORS.vpn_fail ? 'url(#lf-glow-yellow)'
+            : p.color === COLORS.vpn_fail ? 'url(#lf-glow-orange)'
             : 'url(#lf-glow-green)';
 
           return (
@@ -146,6 +147,7 @@ export function AttackMap({
   authFailedCountries,
   authFailedVpnCountries = [],
   authSuccessCountries,
+  authSuccessVpnCountries = [],
   outboundCountries = [],
   outboundBlockedCountries = [],
   firewallLocation,
@@ -176,12 +178,13 @@ export function AttackMap({
       }
     };
 
-    addPoints(authSuccessCountries, COLORS.auth_success, 'Sucesso Auth');
-    addPoints(authFailedCountries, COLORS.fw_fail, 'Falha Auth Firewall');
+    addPoints(authSuccessCountries, COLORS.auth_success, 'Sucesso Auth FW');
+    addPoints(authSuccessVpnCountries, COLORS.auth_success, 'Sucesso Auth VPN');
+    addPoints(authFailedCountries, COLORS.fw_fail, 'Falha Auth FW');
     addPoints(authFailedVpnCountries, COLORS.vpn_fail, 'Falha Auth VPN');
 
     return result;
-  }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries]);
+  }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries, authSuccessVpnCountries]);
 
   // Outbound: FW → country (azul = sucesso, vermelho = bloqueada)
   const outboundPoints = useMemo(() => {
@@ -323,6 +326,10 @@ export function AttackMap({
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.auth_success }} />
             Sucesso Auth FW
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.auth_success }} />
+            Sucesso Auth VPN
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_ok }} />

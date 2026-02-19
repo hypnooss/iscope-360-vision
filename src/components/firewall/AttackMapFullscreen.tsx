@@ -10,6 +10,7 @@ interface AttackMapFullscreenProps {
   authFailedCountries: TopCountry[];
   authFailedVpnCountries?: TopCountry[];
   authSuccessCountries: TopCountry[];
+  authSuccessVpnCountries?: TopCountry[];
   outboundCountries?: TopCountry[];
   outboundBlockedCountries?: TopCountry[];
   firewallLocation?: { lat: number; lng: number; label: string };
@@ -17,7 +18,8 @@ interface AttackMapFullscreenProps {
   lastAnalysis?: string;
   totalFwAuthFailed?: number;
   totalVpnAuthFailed?: number;
-  totalAuthSuccess?: number;
+  totalFwAuthSuccess?: number;
+  totalVpnAuthSuccess?: number;
   totalOutbound?: number;
   totalOutboundBlocked?: number;
   topBlockedIPs?: TopBlockedIP[];
@@ -30,6 +32,7 @@ export function AttackMapFullscreen({
   authFailedCountries,
   authFailedVpnCountries = [],
   authSuccessCountries,
+  authSuccessVpnCountries = [],
   outboundCountries = [],
   outboundBlockedCountries = [],
   firewallLocation,
@@ -37,7 +40,8 @@ export function AttackMapFullscreen({
   lastAnalysis,
   totalFwAuthFailed = 0,
   totalVpnAuthFailed = 0,
-  totalAuthSuccess = 0,
+  totalFwAuthSuccess = 0,
+  totalVpnAuthSuccess = 0,
   totalOutbound = 0,
   totalOutboundBlocked = 0,
   topBlockedIPs = [],
@@ -65,8 +69,9 @@ export function AttackMapFullscreen({
   // Build sections config
   const sections = [
     { label: 'Falha Auth FW', color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
-    { label: 'Falha Auth VPN', color: '#eab308', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
-    { label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalAuthSuccess, showPrivate: true },
+    { label: 'Falha Auth VPN', color: '#f97316', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
+    { label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess, showPrivate: true },
+    { label: 'Sucesso Auth VPN', color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess, showPrivate: true },
     { label: 'Saída Permitida', color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
     { label: 'Saída Bloqueada', color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
   ].filter(s => s.total > 0);
@@ -101,6 +106,7 @@ export function AttackMapFullscreen({
           authFailedCountries={authFailedCountries}
           authFailedVpnCountries={authFailedVpnCountries}
           authSuccessCountries={authSuccessCountries}
+          authSuccessVpnCountries={authSuccessVpnCountries}
           outboundCountries={outboundCountries}
           outboundBlockedCountries={outboundBlockedCountries}
           firewallLocation={firewallLocation}
@@ -155,15 +161,22 @@ export function AttackMapFullscreen({
             <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#eab308', boxShadow: '0 0 8px rgba(234,179,8,0.6)' }} />
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
             <span className="text-white/60 text-xs">Falha Auth VPN</span>
             <span className="text-white font-bold text-sm">{totalVpnAuthFailed.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
             <span className="text-white/60 text-xs">Sucesso Auth FW</span>
-            <span className="text-white font-bold text-sm">{totalAuthSuccess.toLocaleString()}</span>
+            <span className="text-white font-bold text-sm">{totalFwAuthSuccess.toLocaleString()}</span>
           </div>
+          {totalVpnAuthSuccess > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
+              <span className="text-white/60 text-xs">Sucesso Auth VPN</span>
+              <span className="text-white font-bold text-sm">{totalVpnAuthSuccess.toLocaleString()}</span>
+            </div>
+          )}
           {totalOutbound > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#38bdf8', boxShadow: '0 0 8px rgba(56,189,248,0.6)' }} />
