@@ -492,7 +492,7 @@ export default function AnalyzerDashboardPage() {
   const vpnAuthCountriesSuccess = m?.topVpnAuthCountriesSuccess ?? [];
 
   // For map: use separated arrays directly (no cross-fallback)
-  const authCountriesSuccess = m?.topAuthCountriesSuccess ?? [];
+  const authCountriesSuccess = fwAuthCountriesSuccess;
 
   useEffect(() => {
     if (!authLoading && !user) { navigate('/auth'); return; }

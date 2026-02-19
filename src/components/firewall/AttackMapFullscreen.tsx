@@ -173,7 +173,7 @@ export function AttackMapFullscreen({
       <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
         <div className="flex items-center justify-center gap-6 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626', boxShadow: '0 0 8px rgba(220,38,38,0.6)' }} />
             <span className="text-white/60 text-xs">Falha Auth FW</span>
             <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
           </div>
@@ -184,7 +184,7 @@ export function AttackMapFullscreen({
           </div>
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
-            <span className="text-white/60 text-xs">Sucesso Auth</span>
+            <span className="text-white/60 text-xs">Sucesso Auth FW</span>
             <span className="text-white font-bold text-sm">{totalAuthSuccess.toLocaleString()}</span>
           </div>
           {totalOutbound > 0 && (
