@@ -22,7 +22,7 @@ const STADIA_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps
 
 // Color palette
 const COLORS = {
-  fw_fail: '#f97316',       // Laranja — falha auth FW (inbound: país → FW)
+  fw_fail: '#dc2626',       // Vermelho escuro — falha auth FW (inbound: país → FW)
   vpn_fail: '#eab308',      // Amarelo — falha auth VPN (inbound: país → FW)
   auth_success: '#22c55e',  // Verde — sucesso auth (inbound: país → FW)
   outbound_ok: '#38bdf8',   // Azul — saída com sucesso (FW → país destino)
@@ -77,7 +77,7 @@ function ProjectileOverlay({
           const [px, py] = toSVG(p.lat, p.lng);
           const pathD = `M${px},${py} L${fw[0]},${fw[1]}`;
           const glowId =
-            p.color === COLORS.fw_fail ? 'url(#lf-glow-orange)'
+            p.color === COLORS.fw_fail ? 'url(#lf-glow-red)'
             : p.color === COLORS.vpn_fail ? 'url(#lf-glow-yellow)'
             : 'url(#lf-glow-green)';
 
@@ -322,7 +322,7 @@ export function AttackMap({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.auth_success }} />
-            Sucesso Auth
+            Sucesso Auth FW
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_ok }} />
