@@ -1,29 +1,28 @@
 
-# Correção do Erro ao Salvar Agendamento
+# Correção: Adicionar "hourly" ao Enum `schedule_frequency`
 
 ## Causa do Erro
 
-O erro `there is no unique or exclusion constraint matching the ON CONFLICT specification` ocorre porque a tabela `analyzer_schedules` não tem uma constraint `UNIQUE` na coluna `firewall_id`.
+O enum `schedule_frequency` no banco de dados foi criado apenas com os valores `daily`, `weekly` e `monthly`. Ao tentar salvar com frequência `hourly`, o Postgres rejeita com:
 
-O código faz um `upsert` com `{ onConflict: 'firewall_id' }`, mas o banco de dados não sabe que `firewall_id` deve ser único — por isso a operação falha.
+```
+invalid input value for enum schedule_frequency: "hourly"
+```
 
 ## Correção
 
-### 1. Migration — adicionar UNIQUE constraint
-
-Criar uma migration SQL que adiciona o índice único na tabela:
+### Migration SQL
 
 ```sql
-ALTER TABLE public.analyzer_schedules
-  ADD CONSTRAINT analyzer_schedules_firewall_id_key UNIQUE (firewall_id);
+ALTER TYPE public.schedule_frequency ADD VALUE IF NOT EXISTS 'hourly';
 ```
 
-Isso garante que cada firewall tenha no máximo um registro de agendamento do Analyzer, e permite que o `upsert` funcione corretamente.
+Essa instrução adiciona o valor `hourly` ao enum existente de forma segura (sem afetar dados existentes).
 
-### 2. Nenhuma alteração de código necessária
+### Nenhuma alteração de código necessária
 
-O `handleSaveSchedule` já usa `onConflict: 'firewall_id'` corretamente — após a migration, ele passará a funcionar sem nenhuma mudança no frontend.
+O frontend já usa `'hourly'` corretamente — após a migration, o banco passará a aceitar esse valor.
 
-## Arquivo modificado
+## Arquivo criado
 
 - Nova migration SQL em `supabase/migrations/`
