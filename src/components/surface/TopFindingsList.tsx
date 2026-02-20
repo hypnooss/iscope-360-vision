@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ interface TopFindingsListProps {
 }
 
 export function TopFindingsList({ findings, maxItems = 7, onViewAll, onFindingClick }: TopFindingsListProps) {
+  const navigate = useNavigate();
   // Only critical + high, already sorted by severity
   const topFindings = findings
     .filter(f => f.severity === 'critical' || f.severity === 'high')
@@ -97,7 +99,7 @@ export function TopFindingsList({ findings, maxItems = 7, onViewAll, onFindingCl
               variant="ghost"
               size="sm"
               className="w-full text-xs text-muted-foreground hover:text-foreground mt-1"
-              onClick={onViewAll}
+              onClick={() => navigate('/scope-external-domain/analyzer-v3/findings')}
             >
               Ver todos os achados →
             </Button>
