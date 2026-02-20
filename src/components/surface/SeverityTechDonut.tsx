@@ -140,7 +140,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <Eye className="w-4 h-4 text-primary" />
-          Visão Geral
+          Gráfico de Exposição
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 pt-0 pb-2">
