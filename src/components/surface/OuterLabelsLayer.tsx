@@ -23,9 +23,8 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
   const total = techData.reduce((s, d) => s + d.value, 0) || 1;
 
-  // Recharts default: startAngle=0 (3 o'clock), endAngle=360, counter-clockwise
   const items: LabelItem[] = [];
-  let currentAngle = 0; // Recharts default startAngle
+  let currentAngle = 0;
   for (const d of techData) {
     const sliceAngle = (d.value / total) * 360;
     const midAngle = currentAngle + sliceAngle / 2;
@@ -39,21 +38,50 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
     currentAngle += sliceAngle;
   }
 
-  // Split into right (cos >= 0) and left (cos < 0)
-  const rightItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
-  const leftItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
-
-  for (const item of items) {
+  // Natural side assignment based on cosine
+  type SidedItem = LabelItem & { naturalY: number; finalY: number; naturalSide: 'right' | 'left' };
+  const allItems: SidedItem[] = items.map(item => {
     const a = item.midAngle;
-    // Recharts coordinate: x = cx + r * cos(angle), y = cy - r * sin(angle)
     const naturalY = cy - outerRadius * Math.sin(a * RADIAN);
     const cosA = Math.cos(a * RADIAN);
+    return { ...item, naturalY, finalY: naturalY, naturalSide: cosA >= 0 ? 'right' : 'left' };
+  });
 
-    if (cosA >= 0) {
-      rightItems.push({ ...item, naturalY, finalY: naturalY });
-    } else {
-      leftItems.push({ ...item, naturalY, finalY: naturalY });
+  // Balance: if one side has too many more, move boundary items to the other side
+  let rightItems = allItems.filter(i => i.naturalSide === 'right');
+  let leftItems = allItems.filter(i => i.naturalSide === 'left');
+
+  const maxImbalance = 2;
+  while (rightItems.length - leftItems.length > maxImbalance) {
+    // Move the right-side item closest to the boundary (angle near 90° or 270°)
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < rightItems.length; i++) {
+      const a = rightItems[i].midAngle % 360;
+      const distTo90 = Math.abs(a - 90);
+      const distTo270 = Math.abs(a - 270);
+      const dist = Math.min(distTo90, distTo270);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
     }
+    if (bestIdx >= 0) {
+      const [moved] = rightItems.splice(bestIdx, 1);
+      leftItems.push(moved);
+    } else break;
+  }
+  while (leftItems.length - rightItems.length > maxImbalance) {
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < leftItems.length; i++) {
+      const a = leftItems[i].midAngle % 360;
+      const distTo90 = Math.abs(a - 90);
+      const distTo270 = Math.abs(a - 270);
+      const dist = Math.min(distTo90, distTo270);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    }
+    if (bestIdx >= 0) {
+      const [moved] = leftItems.splice(bestIdx, 1);
+      rightItems.push(moved);
+    } else break;
   }
 
   // Sort each group by naturalY (top to bottom)
@@ -63,26 +91,33 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   const minY = 20;
   const maxY = height - 20;
 
-  function resolveCollisions(group: typeof rightItems) {
+  // Improved collision resolution: anchor to natural positions, spread symmetrically
+  function resolveCollisions(group: SidedItem[]) {
     if (group.length === 0) return;
 
-    // Step 1: resolve overlaps
-    for (let i = 1; i < group.length; i++) {
-      if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
-        group[i].finalY = group[i - 1].finalY + MIN_SPACING;
-      }
-    }
-
-    // Step 2: center block around cy
-    const topBlock = group[0].finalY;
-    const bottomBlock = group[group.length - 1].finalY;
-    const blockCenter = (topBlock + bottomBlock) / 2;
-    const offset = cy - blockCenter;
+    // Start from natural positions
     for (const item of group) {
-      item.finalY += offset;
+      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
     }
 
-    // Step 3: clamp within bounds
+    // Iterative relaxation: push overlapping pairs apart symmetrically
+    for (let iter = 0; iter < 10; iter++) {
+      let moved = false;
+      for (let i = 1; i < group.length; i++) {
+        const gap = group[i].finalY - group[i - 1].finalY;
+        if (gap < MIN_SPACING) {
+          const overlap = MIN_SPACING - gap;
+          const pushUp = overlap / 2;
+          const pushDown = overlap / 2;
+          group[i - 1].finalY -= pushUp;
+          group[i].finalY += pushDown;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+
+    // Clamp within bounds and re-resolve if needed
     if (group[0].finalY < minY) {
       const shift = minY - group[0].finalY;
       for (const item of group) item.finalY += shift;
@@ -92,7 +127,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
       for (const item of group) item.finalY -= shift;
     }
 
-    // Step 4: re-resolve collisions after centering/clamping
+    // Final pass to ensure no overlaps after clamping
     for (let i = 1; i < group.length; i++) {
       if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
         group[i].finalY = group[i - 1].finalY + MIN_SPACING;
@@ -103,11 +138,11 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   resolveCollisions(rightItems);
   resolveCollisions(leftItems);
 
-const EDGE_MARGIN = 200;
+  const EDGE_MARGIN = 200;
   const MAX_LABEL_CHARS = 18;
   const extLen = 20;
 
-  function renderGroup(group: typeof rightItems, isRight: boolean) {
+  function renderGroup(group: SidedItem[], isRight: boolean) {
     return group.map((item, i) => {
       const a = item.midAngle;
       const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
@@ -117,7 +152,6 @@ const EDGE_MARGIN = 200;
       const ex2 = cx + extR * Math.cos(a * RADIAN);
       const ey2 = cy - extR * Math.sin(a * RADIAN);
 
-      // Position labels at container edges
       const ex3 = isRight ? width - EDGE_MARGIN : EDGE_MARGIN;
       const ey3 = item.finalY;
 
