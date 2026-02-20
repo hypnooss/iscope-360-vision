@@ -1,5 +1,5 @@
 const RADIAN = Math.PI / 180;
-const MIN_SPACING = 38;
+const MIN_SPACING = 48;
 
 interface LabelItem {
   name: string;
@@ -103,7 +103,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   resolveCollisions(rightItems);
   resolveCollisions(leftItems);
 
-  const EDGE_MARGIN = 10;
+  const EDGE_MARGIN = 80;
   const extLen = 20;
 
   function renderGroup(group: typeof rightItems, isRight: boolean) {
