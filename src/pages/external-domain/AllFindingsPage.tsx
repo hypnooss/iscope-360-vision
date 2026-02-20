@@ -18,7 +18,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 import { generateFindings, SEVERITY_ORDER, SEVERITY_LABELS, type FindingsAsset, type SurfaceFinding } from '@/lib/surfaceFindings';
 import { SurfaceFindingCard } from '@/components/surface/SurfaceFindingCard';
 
-/* ── Reuse data helpers from V3 (inline to avoid circular) ── */
+/* ── Reuse data helpers from V3 ── */
 
 function useClientId() {
   const { profile } = useAuth();
@@ -41,7 +41,73 @@ interface CachedCVERecord {
   advisory_url: string | null; products: string[] | null;
 }
 
-function buildAssetsSimple(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedCVERecord[]): FindingsAsset[] {
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number); const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const va = pa[i] || 0; const vb = pb[i] || 0; if (va !== vb) return va - vb; }
+  return 0;
+}
+
+function isVersionInRange(version: string, range: { gte?: string; lt?: string; lte?: string }): boolean {
+  if (range.gte && compareVersions(version, range.gte) < 0) return false;
+  if (range.lt && compareVersions(version, range.lt) >= 0) return false;
+  if (range.lte && compareVersions(version, range.lte) > 0) return false;
+  return true;
+}
+
+function matchCVEsToIP(
+  result: { services?: AttackSurfaceService[]; web_services?: AttackSurfaceWebService[]; vulns?: string[] } | undefined,
+  cveMatches: AttackSurfaceCVE[], cachedCVEs?: CachedCVERecord[]
+): AttackSurfaceCVE[] {
+  if (!result) return [];
+  const vulnSet = new Set(result.vulns || []);
+  const productVersions = new Map<string, string | null>();
+  const productNames = new Set<string>();
+  for (const svc of result.services || []) {
+    if (svc.cpe && Array.isArray(svc.cpe)) { for (const cpe of svc.cpe) { const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':'); const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase(); const version = parts[3] && parts[3] !== '*' && parts[3] !== '' ? parts[3] : null; if (product) { productNames.add(product); if (!productVersions.has(product)) productVersions.set(product, version || null); } } }
+    if (svc.product) { const p = svc.product.toLowerCase(); productNames.add(p); if (!productVersions.has(p)) productVersions.set(p, svc.version || null); }
+  }
+  for (const ws of result.web_services || []) {
+    for (const tech of ws.technologies || []) { const [name, ver] = tech.split(':'); const n = name.trim().toLowerCase(); const v = ver?.trim() || null; if (n) { productNames.add(n); if (!productVersions.has(n)) productVersions.set(n, v); } }
+    if (ws.server) { const [name, ver] = ws.server.toLowerCase().split('/'); const p = name.trim(); if (p) { productNames.add(p); if (!productVersions.has(p)) productVersions.set(p, ver?.trim() || null); } }
+  }
+  const matched = new Map<string, AttackSurfaceCVE>();
+  if (cveMatches.length > 0 && (vulnSet.size > 0 || productNames.size > 0)) {
+    for (const c of cveMatches) {
+      if (vulnSet.has(c.cve_id)) { matched.set(c.cve_id, c); continue; }
+      const titleLower = (c.title || '').toLowerCase(); const cveProducts = (c.products || []).map((p: string) => p.toLowerCase());
+      for (const product of productNames) { if (titleLower.includes(product) || cveProducts.some((cp: string) => cp.includes(product))) { matched.set(c.cve_id, c); break; } }
+    }
+  }
+  if (cachedCVEs && productVersions.size > 0) {
+    for (const cached of cachedCVEs) {
+      if (matched.has(cached.cve_id)) continue;
+      const cachedProducts = cached.products || [];
+      let didMatch = false;
+      for (const productEntry of cachedProducts) {
+        if (didMatch) break;
+        const productStr = typeof productEntry === 'string' ? productEntry : '';
+        const tokens = productStr.split(' ').filter(Boolean);
+        if (tokens.length < 2) continue;
+        const hasRange = tokens.some(t => t === '>=' || t === '<' || t === '<=');
+        if (hasRange) {
+          const rangeInfo: { product: string; gte?: string; lt?: string; lte?: string } = { product: '' };
+          const nonRangeTokens: string[] = [];
+          for (let i = 0; i < tokens.length; i++) { if (tokens[i] === '>=' && tokens[i + 1]) { rangeInfo.gte = tokens[++i]; } else if (tokens[i] === '<' && tokens[i + 1]) { rangeInfo.lt = tokens[++i]; } else if (tokens[i] === '<=' && tokens[i + 1]) { rangeInfo.lte = tokens[++i]; } else { nonRangeTokens.push(tokens[i]); } }
+          rangeInfo.product = nonRangeTokens.length >= 2 ? nonRangeTokens.slice(1).join(' ').toLowerCase() : (nonRangeTokens[0] || '').toLowerCase();
+          for (const [product, detectedVersion] of productVersions) { if (!rangeInfo.product.includes(product) && !product.includes(rangeInfo.product)) continue; if (!detectedVersion) continue; if (isVersionInRange(detectedVersion, rangeInfo)) { didMatch = true; break; } }
+        } else {
+          const cachedVersion = tokens.length >= 3 ? tokens[tokens.length - 1] : '*';
+          const cachedProduct = (tokens.length >= 3 ? tokens.slice(1, -1).join(' ') : tokens[1]).toLowerCase();
+          for (const [product, detectedVersion] of productVersions) { if (!cachedProduct.includes(product) && !product.includes(cachedProduct)) continue; if (!detectedVersion) continue; if (cachedVersion === '*' || cachedVersion === detectedVersion) { didMatch = true; break; } }
+        }
+      }
+      if (didMatch) { matched.set(cached.cve_id, { cve_id: cached.cve_id, title: cached.title || '', severity: cached.severity || 'medium', score: cached.score, advisory_url: cached.advisory_url || '', products: cached.products || [] }); }
+    }
+  }
+  return Array.from(matched.values());
+}
+
+function buildAssets(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedCVERecord[]): FindingsAsset[] {
   const assets: FindingsAsset[] = [];
   for (const ip of Object.keys(snapshot.results)) {
     const result = snapshot.results[ip];
@@ -57,6 +123,7 @@ function buildAssetsSimple(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedC
       if (ws.tls.not_after) { try { daysRemaining = differenceInDays(parseISO(ws.tls.not_after), new Date()); } catch { /* */ } }
       certMap.set(key, { subject_cn: ws.tls.subject_cn, issuer, not_after: ws.tls.not_after ?? null, daysRemaining });
     }
+    const cves = matchCVEsToIP(result, snapshot.cve_matches, cachedCVEs);
     const techSet = new Set<string>();
     for (const svc of result.services || []) { if (svc.product) techSet.add(svc.version ? `${svc.product}/${svc.version}` : svc.product); }
     for (const ws of result.web_services || []) { if (ws.server) techSet.add(ws.server); for (const t of ws.technologies || []) techSet.add(t); }
@@ -66,7 +133,7 @@ function buildAssetsSimple(snapshot: AttackSurfaceSnapshot, cachedCVEs?: CachedC
       services: result.services || [],
       webServices: result.web_services || [],
       tlsCerts: Array.from(certMap.values()),
-      cves: [] as AttackSurfaceCVE[],
+      cves,
       allTechs: Array.from(techSet),
     });
   }
@@ -109,7 +176,7 @@ export default function AllFindingsPage() {
 
   const assets = useMemo(() => {
     if (!snapshot) return [];
-    return buildAssetsSimple(snapshot, cachedCVEs);
+    return buildAssets(snapshot, cachedCVEs);
   }, [snapshot, cachedCVEs]);
 
   const findings = useMemo(() => generateFindings(assets), [assets]);
