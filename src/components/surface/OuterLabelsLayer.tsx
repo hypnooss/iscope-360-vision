@@ -170,7 +170,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
       const ey3 = item.finalY;
 
-      const textGoesDown = ey3 >= cy;
+      const textGoesDown = item.ey2 >= cy;
       const textAnchor = isRight ? 'start' : 'end';
       const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
@@ -178,8 +178,8 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
         ? item.name.slice(0, MAX_LABEL_CHARS) + '…'
         : item.name;
 
-      const nameY = textGoesDown ? ey3 + 5 : ey3 - 16;
-      const valueY = textGoesDown ? ey3 + 18 : ey3 - 3;
+      const nameY = textGoesDown ? ey3 + 12 : ey3 - 22;
+      const valueY = textGoesDown ? ey3 + 25 : ey3 - 9;
 
       return (
         <g key={`label-${item.quadrant}-${i}`}>
