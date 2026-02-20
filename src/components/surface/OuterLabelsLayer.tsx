@@ -20,6 +20,24 @@ interface OuterLabelsLayerProps {
   height: number;
 }
 
+type Quadrant = 'top-right' | 'top-left' | 'bottom-left' | 'bottom-right';
+
+type SidedItem = LabelItem & {
+  naturalY: number;
+  finalY: number;
+  quadrant: Quadrant;
+  ex2: number;
+  ey2: number;
+};
+
+function getQuadrant(midAngle: number): Quadrant {
+  const a = ((midAngle % 360) + 360) % 360;
+  if (a < 90) return 'top-right';
+  if (a < 180) return 'top-left';
+  if (a < 270) return 'bottom-left';
+  return 'bottom-right';
+}
+
 export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height }: OuterLabelsLayerProps) {
   if (!techData.length || !cx || !cy || !outerRadius) return null;
 
@@ -40,84 +58,112 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
     currentAngle += sliceAngle;
   }
 
-  type SidedItem = LabelItem & { naturalY: number; finalY: number; naturalSide: 'right' | 'left'; ex2: number; ey2: number };
   const extLen = 20;
 
   const allItems: SidedItem[] = items.map(item => {
     const a = item.midAngle;
     const naturalY = cy - outerRadius * Math.sin(a * RADIAN);
-    const cosA = Math.cos(a * RADIAN);
     const extR = outerRadius + extLen;
     const ex2 = cx + extR * Math.cos(a * RADIAN);
     const ey2 = cy - extR * Math.sin(a * RADIAN);
-    return { ...item, naturalY, finalY: naturalY, naturalSide: cosA >= 0 ? 'right' : 'left', ex2, ey2 };
+    return { ...item, naturalY, finalY: naturalY, quadrant: getQuadrant(a), ex2, ey2 };
   });
 
-  // No balancing — pure side assignment
-  const rightItems = allItems.filter(i => i.naturalSide === 'right');
-  const leftItems = allItems.filter(i => i.naturalSide === 'left');
-
-  // Sort each group by naturalY (top to bottom)
-  rightItems.sort((a, b) => a.naturalY - b.naturalY);
-  leftItems.sort((a, b) => a.naturalY - b.naturalY);
+  // Group by quadrant
+  const quadrants: Record<Quadrant, SidedItem[]> = {
+    'top-right': [],
+    'top-left': [],
+    'bottom-left': [],
+    'bottom-right': [],
+  };
+  for (const item of allItems) {
+    quadrants[item.quadrant].push(item);
+  }
 
   const minY = 20;
   const maxY = height - 20;
 
-  function resolveCollisions(group: SidedItem[]) {
-    if (group.length === 0) return;
+  // Top quadrants: sort by naturalY descending (bottom-to-top), resolve upward
+  // Bottom quadrants: sort by naturalY ascending (top-to-bottom), resolve downward
 
+  function resolveTop(group: SidedItem[]) {
+    group.sort((a, b) => b.naturalY - a.naturalY); // bottom first
     for (const item of group) {
       item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
     }
-
-    // Iterative symmetric relaxation
+    // Push upward on collision (iterate from bottom to top, i.e. index 0 is bottom-most)
+    for (let i = group.length - 2; i >= 0; i--) {
+      if (group[i].finalY - group[i + 1].finalY > -MIN_SPACING) {
+        // group[i] should be above group[i+1]... wait, sorted desc so group[0].finalY > group[1].finalY
+        // Actually: sorted descending by naturalY, so group[0] is the one closest to center (highest naturalY = lowest on screen for top quadrant... no)
+        // naturalY = cy - outerRadius * sin(a). For top quadrant (0-180°), sin > 0, so naturalY < cy. Lower naturalY = higher on screen.
+        // Descending by naturalY means group[0] has the largest naturalY = lowest on screen (closest to center line)
+      }
+    }
+    // Simpler approach: sort so that on-screen order is top-to-bottom, then resolve
+    group.sort((a, b) => a.naturalY - b.naturalY); // top of screen first (smallest Y)
+    for (const item of group) {
+      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
+    }
+    // Push items upward: if two collide, move the upper one up
     for (let iter = 0; iter < 10; iter++) {
       let moved = false;
-      for (let i = 1; i < group.length; i++) {
-        const gap = group[i].finalY - group[i - 1].finalY;
+      for (let i = group.length - 2; i >= 0; i--) {
+        const gap = group[i + 1].finalY - group[i].finalY;
         if (gap < MIN_SPACING) {
-          const overlap = MIN_SPACING - gap;
-          group[i - 1].finalY -= overlap / 2;
-          group[i].finalY += overlap / 2;
+          // Push item[i] upward
+          group[i].finalY = group[i + 1].finalY - MIN_SPACING;
           moved = true;
         }
       }
       if (!moved) break;
     }
-
-    // Clamp within bounds
-    if (group[0].finalY < minY) {
+    // Clamp top
+    if (group.length && group[0].finalY < minY) {
       const shift = minY - group[0].finalY;
       for (const item of group) item.finalY += shift;
     }
-    if (group[group.length - 1].finalY > maxY) {
+  }
+
+  function resolveBottom(group: SidedItem[]) {
+    group.sort((a, b) => a.naturalY - b.naturalY); // top of screen first
+    for (const item of group) {
+      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
+    }
+    // Push items downward: if two collide, move the lower one down
+    for (let iter = 0; iter < 10; iter++) {
+      let moved = false;
+      for (let i = 1; i < group.length; i++) {
+        const gap = group[i].finalY - group[i - 1].finalY;
+        if (gap < MIN_SPACING) {
+          group[i].finalY = group[i - 1].finalY + MIN_SPACING;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    // Clamp bottom
+    if (group.length && group[group.length - 1].finalY > maxY) {
       const shift = group[group.length - 1].finalY - maxY;
       for (const item of group) item.finalY -= shift;
     }
-
-    // Final pass
-    for (let i = 1; i < group.length; i++) {
-      if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
-        group[i].finalY = group[i - 1].finalY + MIN_SPACING;
-      }
-    }
   }
 
-  resolveCollisions(rightItems);
-  resolveCollisions(leftItems);
+  resolveTop(quadrants['top-right']);
+  resolveTop(quadrants['top-left']);
+  resolveBottom(quadrants['bottom-right']);
+  resolveBottom(quadrants['bottom-left']);
 
   const MAX_LABEL_CHARS = 18;
 
-  function renderGroup(group: SidedItem[], isRight: boolean) {
+  function renderGroup(group: SidedItem[]) {
     return group.map((item, i) => {
       const a = item.midAngle;
+      const isRight = item.quadrant === 'top-right' || item.quadrant === 'bottom-right';
       const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
       const ey1 = cy - outerRadius * Math.sin(a * RADIAN);
 
-      // Dynamic X: extend radially then add horizontal segment
       let ex3 = isRight ? item.ex2 + HORIZONTAL_LEN : item.ex2 - HORIZONTAL_LEN;
-      // Clamp within card bounds
       ex3 = isRight
         ? Math.min(ex3, width - MARGIN)
         : Math.max(ex3, MARGIN);
@@ -132,7 +178,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
         : item.name;
 
       return (
-        <g key={`label-${isRight ? 'r' : 'l'}-${i}`}>
+        <g key={`label-${item.quadrant}-${i}`}>
           <polyline
             points={`${ex1},${ey1} ${item.ex2},${item.ey2} ${ex3},${ey3}`}
             fill="none"
@@ -169,8 +215,10 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
   return (
     <g className="outer-labels-layer">
-      {renderGroup(rightItems, true)}
-      {renderGroup(leftItems, false)}
+      {renderGroup(quadrants['top-right'])}
+      {renderGroup(quadrants['top-left'])}
+      {renderGroup(quadrants['bottom-right'])}
+      {renderGroup(quadrants['bottom-left'])}
     </g>
   );
 }
