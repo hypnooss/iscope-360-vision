@@ -39,6 +39,7 @@ import { CategoryOverviewGrid } from '@/components/surface/CategoryOverviewGrid'
 import { TopFindingsList } from '@/components/surface/TopFindingsList';
 import { AssetHealthGrid } from '@/components/surface/AssetHealthGrid';
 import { CategoryDetailSheet } from '@/components/surface/CategoryDetailSheet';
+import { SeverityTechDonut } from '@/components/surface/SeverityTechDonut';
 
 /* ══════════════════════ DATA LOGIC (from V2) ══════════════════════ */
 
@@ -353,32 +354,29 @@ export default function SurfaceAnalyzerV3Page() {
   // Sheet state
   const [sheetCategory, setSheetCategory] = useState<SurfaceFindingCategory | null>(null);
   const [sheetAssetIp, setSheetAssetIp] = useState<string | null>(null);
-  const [sheetAllFindings, setSheetAllFindings] = useState(false);
 
-  const sheetOpen = sheetCategory !== null || sheetAssetIp !== null || sheetAllFindings;
+
+  const sheetOpen = sheetCategory !== null || sheetAssetIp !== null;
 
   const sheetFindings = useMemo(() => {
-    if (sheetAllFindings) return findings;
     if (sheetCategory) return findings.filter(f => f.category === sheetCategory);
     if (sheetAssetIp) return findings.filter(f => f.affectedAssets.some(a => a.ip === sheetAssetIp));
     return [];
-  }, [findings, sheetCategory, sheetAssetIp, sheetAllFindings]);
+  }, [findings, sheetCategory, sheetAssetIp]);
 
   const sheetTitle = useMemo(() => {
-    if (sheetAllFindings) return 'Todos os Achados';
     if (sheetCategory) return CATEGORY_INFO[sheetCategory]?.label || '';
     if (sheetAssetIp) {
       const asset = assets.find(a => a.ip === sheetAssetIp);
       return asset ? `${asset.hostname} (${asset.ip})` : sheetAssetIp;
     }
     return '';
-  }, [sheetAllFindings, sheetCategory, sheetAssetIp, assets]);
+  }, [sheetCategory, sheetAssetIp, assets]);
 
   const handleCloseSheet = (open: boolean) => {
     if (!open) {
       setSheetCategory(null);
       setSheetAssetIp(null);
-      setSheetAllFindings(false);
     }
   };
 
@@ -527,19 +525,22 @@ export default function SurfaceAnalyzerV3Page() {
                 />
               </div>
 
-              {/* 3. Top Findings + Asset Health side by side */}
+              {/* 3. Top Findings + Donut side by side */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <TopFindingsList
                   findings={findings}
-                  onViewAll={() => setSheetAllFindings(true)}
+                  onViewAll={() => {}}
                   onFindingClick={(f) => setSheetCategory(f.category)}
                 />
-                <AssetHealthGrid
-                  assets={assets}
-                  findings={findings}
-                  onAssetClick={(ip) => setSheetAssetIp(ip)}
-                />
+                <SeverityTechDonut findings={findings} assets={assets} />
               </div>
+
+              {/* 4. Asset Health (full-width) */}
+              <AssetHealthGrid
+                assets={assets}
+                findings={findings}
+                onAssetClick={(ip) => setSheetAssetIp(ip)}
+              />
             </div>
           )}
 
@@ -549,10 +550,10 @@ export default function SurfaceAnalyzerV3Page() {
         <CategoryDetailSheet
           open={sheetOpen}
           onOpenChange={handleCloseSheet}
-          category={sheetAllFindings ? null : sheetCategory}
+          category={sheetCategory}
           findings={sheetCategory === 'leaked_credentials' ? [] : sheetFindings}
           title={sheetTitle}
-          subtitle={sheetAssetIp ? 'Achados deste ativo' : sheetAllFindings ? 'Ordenados por severidade' : undefined}
+          subtitle={sheetAssetIp ? 'Achados deste ativo' : undefined}
         >
           {sheetCategory === 'leaked_credentials' && selectedClientId && clientDomains && clientDomains.length > 0 && (
             <LeakedCredentialsSection clientId={selectedClientId} domains={clientDomains} isSuperRole={isSuperRole} />
