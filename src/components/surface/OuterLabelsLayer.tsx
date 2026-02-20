@@ -1,5 +1,3 @@
-import type { SurfaceFindingSeverity } from '@/lib/surfaceFindings';
-
 const RADIAN = Math.PI / 180;
 const MIN_SPACING = 28;
 
@@ -23,12 +21,12 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
 
   const total = techData.reduce((s, d) => s + d.value, 0) || 1;
 
-  // Calculate mid-angle for each segment (Recharts starts at 90° clockwise)
+  // Recharts default: startAngle=0 (3 o'clock), endAngle=360, counter-clockwise
   const items: LabelItem[] = [];
-  let startAngle = 90; // Recharts default startAngle
+  let currentAngle = 0; // Recharts default startAngle
   for (const d of techData) {
     const sliceAngle = (d.value / total) * 360;
-    const midAngle = startAngle - sliceAngle / 2; // Recharts goes counter-clockwise in angle space
+    const midAngle = currentAngle + sliceAngle / 2;
     items.push({
       name: d.name,
       value: d.value,
@@ -36,19 +34,20 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
       midAngle,
       percent: d.value / total,
     });
-    startAngle -= sliceAngle;
+    currentAngle += sliceAngle;
   }
 
-  // Split into right (midAngle 0-180 in Recharts coords) and left
+  // Split into right (cos >= 0) and left (cos < 0)
   const rightItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
   const leftItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
 
   for (const item of items) {
-    const angle = item.midAngle;
-    const naturalY = cy - outerRadius * Math.sin(angle * RADIAN);
-    const isRight = Math.cos(angle * RADIAN) >= 0;
+    const a = item.midAngle;
+    // Recharts coordinate: x = cx + r * cos(angle), y = cy - r * sin(angle)
+    const naturalY = cy - outerRadius * Math.sin(a * RADIAN);
+    const cosA = Math.cos(a * RADIAN);
 
-    if (isRight) {
+    if (cosA >= 0) {
       rightItems.push({ ...item, naturalY, finalY: naturalY });
     } else {
       leftItems.push({ ...item, naturalY, finalY: naturalY });
@@ -62,15 +61,13 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
   // Resolve collisions: push down if too close
   function resolveCollisions(group: typeof rightItems) {
     for (let i = 1; i < group.length; i++) {
-      const prev = group[i - 1];
-      const curr = group[i];
-      if (curr.finalY - prev.finalY < MIN_SPACING) {
-        curr.finalY = prev.finalY + MIN_SPACING;
+      if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
+        group[i].finalY = group[i - 1].finalY + MIN_SPACING;
       }
     }
     // If labels overflowed bottom, push everything up
     if (group.length > 0) {
-      const maxY = cy + outerRadius + 40;
+      const maxY = cy + outerRadius + 50;
       const last = group[group.length - 1];
       if (last.finalY > maxY) {
         const overflow = last.finalY - maxY;
@@ -95,15 +92,15 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
 
   function renderGroup(group: typeof rightItems, isRight: boolean) {
     return group.map((item, i) => {
-      const angle = item.midAngle;
-      // Point on outer edge of arc
-      const ex1 = cx + outerRadius * Math.cos(-angle * RADIAN);
-      const ey1 = cy + outerRadius * Math.sin(-angle * RADIAN);
+      const a = item.midAngle;
+      // Point on outer edge of arc (Recharts coords)
+      const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
+      const ey1 = cy - outerRadius * Math.sin(a * RADIAN);
 
       // Elbow point (radial extension)
       const extR = outerRadius + extLen;
-      const ex2 = cx + extR * Math.cos(-angle * RADIAN);
-      const ey2 = cy + extR * Math.sin(-angle * RADIAN);
+      const ex2 = cx + extR * Math.cos(a * RADIAN);
+      const ey2 = cy - extR * Math.sin(a * RADIAN);
 
       // Final horizontal position
       const colX = outerRadius + extLen + horizLen;
