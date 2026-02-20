@@ -1,23 +1,23 @@
 
 
-# Badges de Severidade com Nome Completo
+# Indicador de Clique nos Cards de Categoria
 
 ## Alteracao
 
-No arquivo `src/components/surface/CategoryOverviewGrid.tsx`, trocar as abreviacoes das badges de severidade de formato curto (ex: `11C`, `4H`, `7M`, `1L`) para nome completo (ex: `11 Critical`, `4 High`, `2 Medium`, `1 Low`).
+Adicionar um icone `ExternalLink` (ou `ChevronRight`) no canto inferior direito de cada card do `CategoryOverviewGrid` para indicar visualmente que sao clicaveis e abrem o painel lateral.
 
 ## Detalhe Tecnico
 
 **Arquivo:** `src/components/surface/CategoryOverviewGrid.tsx`
 
-Linhas ~90-95 — substituir o texto das badges:
+1. Importar `ExternalLink` de `lucide-react`
+2. Dentro de cada `<Card>`, apos as badges de severidade e antes do fechamento do `</CardContent>`, adicionar o icone posicionado no canto inferior direito:
 
-| Antes | Depois |
-|---|---|
-| `{counts.critical}C` | `{counts.critical} Critical` |
-| `{counts.high}H` | `{counts.high} High` |
-| `{counts.medium}M` | `{counts.medium} Medium` |
-| `{counts.low}L` | `{counts.low} Low` |
+```tsx
+<div className="flex justify-end mt-1">
+  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+</div>
+```
 
-Nenhuma outra alteracao necessaria.
+O icone fica sutil (muted/50) e ganha destaque no hover do card (gracas a classe `group` ja existente no Card). Nenhuma alteracao no comportamento de clique — o `onClick` existente continua abrindo o Sheet lateral.
 
