@@ -1,52 +1,64 @@
 
 
-# Ajuste de Cores e Posicionamento dos Labels Externos
+# Labels Externos com Anti-Colisao Manual
 
-## Problemas Identificados
+## Problema
 
-1. **Cores muito cinza** - A paleta atual (`#5b9aa9`, `#7c8bb8`, etc.) ficou dessaturada demais, perdendo a identidade visual de cada tecnologia
-2. **Labels sobrepostos ao grafico** - O `outerRadius` de `65%` esta grande demais para o container, nao deixando espaco suficiente para os labels externos com suas linhas conectoras
+O Recharts nao possui deteccao de colisao para labels de pie charts. A prop `label` renderiza cada label independentemente com base no angulo do segmento, causando sobreposicao quando segmentos sao pequenos ou adjacentes. Isso e uma limitacao conhecida do Recharts - nao existe configuracao que resolva isso.
 
 ## Solucao
 
-### 1. Nova paleta intermediaria
+Abandonar a prop `label` do Recharts para o anel externo e renderizar os labels manualmente usando o componente `<Customized>` do Recharts, com logica propria de posicionamento e anti-colisao.
 
-Cores com saturacao moderada - nao tao vibrantes quanto as originais, mas com identidade visual clara no dark mode:
+## Como funciona
 
-```text
-'#4db8a4'   (teal suave)
-'#7b8fdb'   (azul lavanda)
-'#b07cc3'   (roxo medio)
-'#45b5bf'   (ciano suave)
-'#c4956a'   (dourado muted)
-'#5bae7e'   (verde salvia)
-'#8f8bc7'   (indigo suave)
-'#c27884'   (rosa dusty)
-'#5aa3c9'   (azul steel)
-'#a98db5'   (malva)
-```
-
-### 2. Reduzir raio do grafico e aumentar distancia dos labels
-
-- Reduzir `outerRadius` do anel externo de `"65%"` para `"55%"` - isso libera mais espaco ao redor do grafico
-- Ajustar `innerRadius` do anel externo de `"48%"` para `"42%"` (manter espessura do anel)
-- Ajustar anel interno: `innerRadius="15%"` / `outerRadius="36%"`
-- Aumentar `extRadius` de `outerRadius + 22` para `outerRadius + 30` para garantir que os labels fiquem bem fora do grafico
-- Aumentar `horizLen` de `28` para `35`
-
-### 3. Aumentar container
-
-- Aumentar `min-h` de `320px` para `380px` para acomodar melhor o grafico com labels externos
+1. Separar os labels em dois grupos: lado direito (angulo 0-180) e lado esquerdo (180-360)
+2. Dentro de cada grupo, ordenar por posicao Y
+3. Aplicar espacamento minimo vertical (ex: 28px) entre labels consecutivos - se dois labels ficarem muito proximos, empurrar o de baixo para baixo
+4. Desenhar as linhas conectoras (polylines) do segmento ate a posicao final ajustada do label
 
 ## Detalhe Tecnico
 
-**Arquivo unico:** `src/components/surface/SeverityTechDonut.tsx`
+**Arquivo:** `src/components/surface/SeverityTechDonut.tsx`
 
-Alteracoes pontuais:
-- Linhas 23-26: substituir array `TECH_COLORS`
-- Linha 72: `extRadius = outerRadius + 30`
-- Linha 78: `horizLen = 35`
-- Linha 203: `min-h-[380px]`
-- Linhas 211-212: anel interno `innerRadius="15%"` / `outerRadius="36%"`
-- Linhas 228-229: anel externo `innerRadius="42%"` / `outerRadius="55%"`
+### 1. Remover `label={renderOuterLabel}` do Pie externo
+
+O segundo `<Pie>` passa a nao ter prop `label` - os labels serao desenhados pelo componente customizado.
+
+### 2. Criar componente `OuterLabelsLayer`
+
+Componente que recebe `techData` e as dimensoes do grafico e:
+- Calcula o angulo medio de cada segmento a partir dos dados
+- Calcula a posicao Y natural de cada label (baseada no angulo)
+- Separa em grupo esquerdo e direito
+- Aplica resolucao de colisao: percorre cada grupo de cima para baixo, garantindo `minSpacing = 28px` entre labels consecutivos
+- Renderiza `<g>` SVG com polylines e textos nas posicoes ajustadas
+- Posiciona os textos em colunas fixas (ex: `cx + colX` para direita, `cx - colX` para esquerda) para alinhamento limpo
+
+### 3. Usar `<Customized>` do Recharts
+
+```text
+<Customized
+  component={(props) => (
+    <OuterLabelsLayer
+      techData={techData}
+      cx={props.width / 2}
+      cy={props.height / 2}
+      outerRadius={props.width * 0.55 / 2}
+    />
+  )}
+/>
+```
+
+Isso garante que os labels sao renderizados no mesmo SVG do grafico mas com posicionamento controlado manualmente.
+
+### 4. A funcao `renderOuterLabel` sera removida
+
+Nao e mais necessaria pois a logica de labels externos passa a ser do `OuterLabelsLayer`.
+
+### 5. Manter tudo o mais
+
+- Anel interno com `renderCustomLabel` (labels dentro dos segmentos)
+- Tooltip customizado para ambos os aneis
+- Cores e dados inalterados
 
