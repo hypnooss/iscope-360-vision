@@ -1,47 +1,57 @@
 
 
-# Espalhar Labels Horizontalmente pelo Espaco Disponivel
+# Distribuir Labels Verticalmente de Forma Uniforme
 
 ## Problema
 
-Os labels estao posicionados a uma distancia fixa do centro do grafico (`outerRadius + 58px`), ignorando o espaco real disponivel no container. Isso faz com que os labels fiquem amontoados perto do grafico, especialmente no lado esquerdo onde costumam ter mais itens.
+Os labels estao amontoados verticalmente porque:
+1. O `MIN_SPACING` de 28px e insuficiente para labels de duas linhas (nome + valor)
+2. O algoritmo so empurra labels para baixo quando colidem, mas nao centraliza o grupo resultante em torno do centro do grafico
+3. Quando varios segmentos tem angulos proximos, todos os labels naturais ficam na mesma faixa de Y
 
 ## Solucao
 
-Passar as dimensoes do container (`width`, `height`) para o `OuterLabelsLayer` e posicionar os labels nos extremos do container (com uma margem), em vez de usar uma distancia fixa do centro do grafico. Isso garante que os labels usem toda a largura disponivel.
+Melhorar o algoritmo de anti-colisao para:
+- Aumentar `MIN_SPACING` para 38px (acomodar duas linhas de texto com folga)
+- Apos resolver colisoes, centralizar o bloco de labels verticalmente em torno de `cy` (centro do grafico), garantindo distribuicao equilibrada
+- Limitar os labels entre `minY = 20` e `maxY = height - 20`
 
 ## Detalhe Tecnico
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-1. **Adicionar `width` e `height` as props** do componente
-2. **Posicionar labels nos extremos do container**:
-   - Labels da direita: X final = `width - margem` (ex: `width - 10`)
-   - Labels da esquerda: X final = `margem` (ex: `10`)
-   - Isso espalha os labels para as bordas do card
-3. **Ajustar textAnchor**: labels da direita ficam `end` (texto cresce para a esquerda a partir da borda), labels da esquerda ficam `start` (texto cresce para a direita a partir da borda)
-4. **Melhorar limites verticais**: usar `height` real em vez de `cy + outerRadius + 50` para calcular o espaco vertical disponivel para labels
-5. **Centralizar verticalmente os grupos de labels** em torno do centro do grafico quando possivel
+1. **Aumentar MIN_SPACING** de 28 para 38
+2. **Reescrever `resolveCollisions`** para centralizar o grupo:
+   - Primeiro resolve colisoes normalmente (empurra para baixo)
+   - Calcula a altura total do bloco resultante
+   - Calcula o offset necessario para centralizar o bloco em torno de `cy`
+   - Aplica o offset, respeitando limites `minY` e `maxY`
+   - Re-resolve colisoes caso o ajuste tenha comprimido labels no topo
+3. **Passar `cy` como parametro** para a funcao de resolucao para permitir centralizacao
 
-### Arquivo: `src/components/surface/SeverityTechDonut.tsx`
+A funcao revisada ficara assim (em pseudocodigo):
 
-1. **Passar `width` e `height`** do container para `OuterLabelsLayer` via `<Customized>`:
-   ```text
-   <OuterLabelsLayer
-     techData={techData}
-     cx={props.width / 2}
-     cy={props.height / 2}
-     outerRadius={...}
-     width={props.width}
-     height={props.height}
-   />
-   ```
+```text
+resolveCollisions(group):
+  // Passo 1: resolver sobreposicoes
+  para cada label apos o primeiro:
+    se distancia ao anterior < MIN_SPACING:
+      mover para anterior.Y + MIN_SPACING
 
-### Resultado esperado
+  // Passo 2: centralizar em torno de cy
+  topoBloco = primeiro label Y
+  baseBloco = ultimo label Y
+  centroBloco = (topoBloco + baseBloco) / 2
+  offset = cy - centroBloco
+  aplicar offset a todos os labels
 
-- Labels do lado direito alinhados perto da borda direita do card
-- Labels do lado esquerdo alinhados perto da borda esquerda do card
-- Linhas conectoras se estendem do grafico ate a posicao do label na borda
-- Espacamento vertical mantido com anti-colisao
-- Melhor uso do espaco horizontal disponivel
+  // Passo 3: garantir limites
+  se primeiro label < minY: ajustar tudo para baixo
+  se ultimo label > maxY: ajustar tudo para cima
+
+  // Passo 4: re-resolver colisoes
+  repetir passo 1
+```
+
+Nenhuma alteracao necessaria em `SeverityTechDonut.tsx`.
 
