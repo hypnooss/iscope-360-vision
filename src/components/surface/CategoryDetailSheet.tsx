@@ -43,7 +43,7 @@ export function CategoryDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-xl lg:max-w-2xl p-0">
+      <SheetContent side="right" className="w-full sm:max-w-[50vw] p-0">
         <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/50 space-y-3">
           <div className="flex items-center gap-3">
             {info && (
@@ -61,7 +61,7 @@ export function CategoryDetailSheet({
           {findings.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="secondary" className="text-xs">
-                {findings.length} achado{findings.length !== 1 ? 's' : ''}
+                {findings.length} serviço{findings.length !== 1 ? 's' : ''} exposto{findings.length !== 1 ? 's' : ''}
               </Badge>
               {criticalCount > 0 && (
                 <Badge variant="outline" className="text-[10px] bg-red-500/20 text-red-500 border-red-500/30">
