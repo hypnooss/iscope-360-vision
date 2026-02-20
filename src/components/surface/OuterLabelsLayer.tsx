@@ -3,174 +3,152 @@ const MIN_SPACING = 48;
 const HORIZONTAL_LEN = 30;
 const MARGIN = 10;
 
-interface LabelItem {
+interface SliceData {
+  cx: number;
+  cy: number;
+  midAngle: number;
+  outerRadius: number;
+  name: string;
+  value: number;
+  percent: number;
+  color: string;
+}
+
+interface SidedItem {
   name: string;
   value: number;
   color: string;
-  midAngle: number;
   percent: number;
+  cx: number;
+  cy: number;
+  ex1: number;
+  ey1: number;
+  ex2: number;
+  ey2: number;
+  naturalY: number;
+  finalY: number;
+  isRight: boolean;
+  isBottom: boolean;
 }
 
 interface OuterLabelsLayerProps {
+  sliceData: SliceData[];
   techData: Array<{ name: string; value: number; color: string; _total: number }>;
-  cx: number;
-  cy: number;
-  outerRadius: number;
   width: number;
   height: number;
 }
 
-type Quadrant = 'top-right' | 'top-left' | 'bottom-left' | 'bottom-right';
-
-type SidedItem = LabelItem & {
-  naturalY: number;
-  finalY: number;
-  quadrant: Quadrant;
-  ex2: number;
-  ey2: number;
-};
-
-function getQuadrant(midAngle: number): Quadrant {
-  const a = ((midAngle % 360) + 360) % 360;
-  if (a < 90) return 'top-right';
-  if (a < 180) return 'top-left';
-  if (a < 270) return 'bottom-left';
-  return 'bottom-right';
-}
-
-export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height }: OuterLabelsLayerProps) {
-  if (!techData.length || !cx || !cy || !outerRadius) return null;
-
-  const total = techData.reduce((s, d) => s + d.value, 0) || 1;
-
-  const items: LabelItem[] = [];
-  let currentAngle = 0;
-  for (const d of techData) {
-    const sliceAngle = (d.value / total) * 360;
-    const midAngle = currentAngle + sliceAngle / 2;
-    items.push({
-      name: d.name,
-      value: d.value,
-      color: d.color,
-      midAngle,
-      percent: d.value / total,
-    });
-    currentAngle += sliceAngle;
-  }
+export function OuterLabelsLayer({ sliceData, techData, width, height }: OuterLabelsLayerProps) {
+  if (!sliceData?.length || !techData.length || !width || !height) return null;
 
   const extLen = 20;
+  const total = techData.reduce((s, d) => s + d.value, 0) || 1;
 
-  const allItems: SidedItem[] = items.map(item => {
-    const a = item.midAngle;
-    const naturalY = cy - outerRadius * Math.sin(a * RADIAN);
-    const extR = outerRadius + extLen;
-    const ex2 = cx + extR * Math.cos(a * RADIAN);
-    const ey2 = cy - extR * Math.sin(a * RADIAN);
-    return { ...item, naturalY, finalY: naturalY, quadrant: getQuadrant(a), ex2, ey2 };
-  });
+  // Build items using REAL Recharts coordinates
+  const allItems: SidedItem[] = sliceData
+    .filter(s => s && s.cx && s.cy)
+    .map((slice, i) => {
+      const { cx, cy, midAngle, outerRadius } = slice;
+      const td = techData[i];
+      const color = td?.color || slice.color;
+      const name = td?.name || slice.name;
+      const value = td?.value ?? slice.value;
 
-  // Group by quadrant
-  const quadrants: Record<Quadrant, SidedItem[]> = {
-    'top-right': [],
-    'top-left': [],
-    'bottom-left': [],
-    'bottom-right': [],
+      // Use Recharts' exact convention: cos(-midAngle), sin(-midAngle)
+      const ex1 = cx + outerRadius * Math.cos(-midAngle * RADIAN);
+      const ey1 = cy + outerRadius * Math.sin(-midAngle * RADIAN);
+      const extR = outerRadius + extLen;
+      const ex2 = cx + extR * Math.cos(-midAngle * RADIAN);
+      const ey2 = cy + extR * Math.sin(-midAngle * RADIAN);
+
+      const isRight = ex2 >= cx;
+      const isBottom = ey2 > cy;
+
+      return {
+        name, value, color,
+        percent: value / total,
+        cx, cy,
+        ex1, ey1, ex2, ey2,
+        naturalY: ey2,
+        finalY: ey2,
+        isRight,
+        isBottom,
+      };
+    });
+
+  if (!allItems.length) return null;
+
+  // Group into 4 quadrants based on real position
+  const groups = {
+    topRight: allItems.filter(i => i.isRight && !i.isBottom),
+    topLeft: allItems.filter(i => !i.isRight && !i.isBottom),
+    bottomRight: allItems.filter(i => i.isRight && i.isBottom),
+    bottomLeft: allItems.filter(i => !i.isRight && i.isBottom),
   };
-  for (const item of allItems) {
-    quadrants[item.quadrant].push(item);
-  }
 
   const minY = 20;
   const maxY = height - 20;
 
-  // Top quadrants: sort by naturalY descending (bottom-to-top), resolve upward
-  // Bottom quadrants: sort by naturalY ascending (top-to-bottom), resolve downward
+  function resolveCollisions(group: SidedItem[], pushDown: boolean) {
+    // Sort by naturalY: top-to-bottom
+    group.sort((a, b) => a.naturalY - b.naturalY);
+    for (const item of group) {
+      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
+    }
 
-  function resolveTop(group: SidedItem[]) {
-    group.sort((a, b) => b.naturalY - a.naturalY); // bottom first
-    for (const item of group) {
-      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
-    }
-    // Push upward on collision (iterate from bottom to top, i.e. index 0 is bottom-most)
-    for (let i = group.length - 2; i >= 0; i--) {
-      if (group[i].finalY - group[i + 1].finalY > -MIN_SPACING) {
-        // group[i] should be above group[i+1]... wait, sorted desc so group[0].finalY > group[1].finalY
-        // Actually: sorted descending by naturalY, so group[0] is the one closest to center (highest naturalY = lowest on screen for top quadrant... no)
-        // naturalY = cy - outerRadius * sin(a). For top quadrant (0-180°), sin > 0, so naturalY < cy. Lower naturalY = higher on screen.
-        // Descending by naturalY means group[0] has the largest naturalY = lowest on screen (closest to center line)
-      }
-    }
-    // Simpler approach: sort so that on-screen order is top-to-bottom, then resolve
-    group.sort((a, b) => a.naturalY - b.naturalY); // top of screen first (smallest Y)
-    for (const item of group) {
-      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
-    }
-    // Push items upward: if two collide, move the upper one up
     for (let iter = 0; iter < 10; iter++) {
       let moved = false;
-      for (let i = group.length - 2; i >= 0; i--) {
-        const gap = group[i + 1].finalY - group[i].finalY;
-        if (gap < MIN_SPACING) {
-          // Push item[i] upward
-          group[i].finalY = group[i + 1].finalY - MIN_SPACING;
-          moved = true;
+      if (pushDown) {
+        // Push downward on collision
+        for (let i = 1; i < group.length; i++) {
+          if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
+            group[i].finalY = group[i - 1].finalY + MIN_SPACING;
+            moved = true;
+          }
+        }
+      } else {
+        // Push upward on collision
+        for (let i = group.length - 2; i >= 0; i--) {
+          if (group[i + 1].finalY - group[i].finalY < MIN_SPACING) {
+            group[i].finalY = group[i + 1].finalY - MIN_SPACING;
+            moved = true;
+          }
         }
       }
       if (!moved) break;
     }
-    // Clamp top
-    if (group.length && group[0].finalY < minY) {
-      const shift = minY - group[0].finalY;
-      for (const item of group) item.finalY += shift;
-    }
-  }
 
-  function resolveBottom(group: SidedItem[]) {
-    group.sort((a, b) => a.naturalY - b.naturalY); // top of screen first
-    for (const item of group) {
-      item.finalY = Math.max(minY, Math.min(maxY, item.naturalY));
-    }
-    // Push items downward: if two collide, move the lower one down
-    for (let iter = 0; iter < 10; iter++) {
-      let moved = false;
-      for (let i = 1; i < group.length; i++) {
-        const gap = group[i].finalY - group[i - 1].finalY;
-        if (gap < MIN_SPACING) {
-          group[i].finalY = group[i - 1].finalY + MIN_SPACING;
-          moved = true;
-        }
+    // Clamp
+    if (group.length) {
+      if (group[0].finalY < minY) {
+        const shift = minY - group[0].finalY;
+        for (const item of group) item.finalY += shift;
       }
-      if (!moved) break;
-    }
-    // Clamp bottom
-    if (group.length && group[group.length - 1].finalY > maxY) {
-      const shift = group[group.length - 1].finalY - maxY;
-      for (const item of group) item.finalY -= shift;
+      if (group[group.length - 1].finalY > maxY) {
+        const shift = group[group.length - 1].finalY - maxY;
+        for (const item of group) item.finalY -= shift;
+      }
     }
   }
 
-  resolveTop(quadrants['top-right']);
-  resolveTop(quadrants['top-left']);
-  resolveBottom(quadrants['bottom-right']);
-  resolveBottom(quadrants['bottom-left']);
+  // Top quadrants: push upward; Bottom quadrants: push downward
+  resolveCollisions(groups.topRight, false);
+  resolveCollisions(groups.topLeft, false);
+  resolveCollisions(groups.bottomRight, true);
+  resolveCollisions(groups.bottomLeft, true);
 
   const MAX_LABEL_CHARS = 18;
 
   function renderGroup(group: SidedItem[]) {
     return group.map((item, i) => {
-      const a = item.midAngle;
-      const isRight = item.ex2 >= cx;
-      const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
-      const ey1 = cy - outerRadius * Math.sin(a * RADIAN);
+      const { ex1, ey1, ex2, isRight, isBottom, cy } = item;
+      const ey3 = item.finalY;
 
-      let ex3 = isRight ? item.ex2 + HORIZONTAL_LEN : item.ex2 - HORIZONTAL_LEN;
+      let ex3 = isRight ? ex2 + HORIZONTAL_LEN : ex2 - HORIZONTAL_LEN;
       ex3 = isRight
         ? Math.min(ex3, width - MARGIN)
         : Math.max(ex3, MARGIN);
 
-      const ey3 = item.finalY;
-
-      const textGoesDown = item.ey2 >= cy;
       const textAnchor = isRight ? 'start' : 'end';
       const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
@@ -178,13 +156,17 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
         ? item.name.slice(0, MAX_LABEL_CHARS) + '…'
         : item.name;
 
+      // Direction based on REAL hemisphere from Recharts
+      const textGoesDown = isBottom;
       const nameY = textGoesDown ? ey3 + 12 : ey3 - 22;
       const valueY = textGoesDown ? ey3 + 25 : ey3 - 9;
 
+      const key = `label-${isRight ? 'r' : 'l'}-${isBottom ? 'b' : 't'}-${i}`;
+
       return (
-        <g key={`label-${item.quadrant}-${i}`}>
+        <g key={key}>
           <polyline
-            points={`${ex1},${ey1} ${item.ex2},${item.ey2} ${ex3},${ey3}`}
+            points={`${ex1},${ey1} ${ex2},${item.ey2} ${ex3},${ey3}`}
             fill="none"
             stroke={item.color}
             strokeWidth={1.2}
@@ -219,10 +201,10 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
   return (
     <g className="outer-labels-layer">
-      {renderGroup(quadrants['top-right'])}
-      {renderGroup(quadrants['top-left'])}
-      {renderGroup(quadrants['bottom-right'])}
-      {renderGroup(quadrants['bottom-left'])}
+      {renderGroup(groups.topRight)}
+      {renderGroup(groups.topLeft)}
+      {renderGroup(groups.bottomRight)}
+      {renderGroup(groups.bottomLeft)}
     </g>
   );
 }
