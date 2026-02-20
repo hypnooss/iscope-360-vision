@@ -182,6 +182,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                       cx={props.width / 2}
                       cy={props.height / 2}
                       outerRadius={Math.min(props.width, props.height) * 0.55 / 2}
+                      width={props.width}
+                      height={props.height}
                     />
                   )}
                 />
