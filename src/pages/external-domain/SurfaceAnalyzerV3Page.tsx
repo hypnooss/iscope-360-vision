@@ -34,7 +34,7 @@ import {
   CATEGORY_INFO,
   type SurfaceFinding, type SurfaceFindingCategory, type FindingsAsset,
 } from '@/lib/surfaceFindings';
-import { StatCard } from '@/components/StatCard';
+
 import { CategoryOverviewGrid } from '@/components/surface/CategoryOverviewGrid';
 import { TopFindingsList } from '@/components/surface/TopFindingsList';
 import { AssetHealthGrid } from '@/components/surface/AssetHealthGrid';
@@ -479,10 +479,42 @@ export default function SurfaceAnalyzerV3Page() {
             <div className="space-y-6">
               {/* 1. Summary Stats Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard title="Ativos Expostos" value={assetStats.totalAssets} icon={Globe} variant="default" delay={0} />
-                <StatCard title="Serviços Detectados" value={assetStats.totalServices} icon={Server} variant="default" delay={0.05} />
-                <StatCard title="CVEs Críticas" value={assetStats.criticalCVEs} icon={ShieldAlert} variant="default" delay={0.1} />
-                <StatCard title="Certificados Expirados" value={assetStats.expiredCerts} icon={AlertTriangle} variant="default" delay={0.15} />
+                <Card className="glass-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Globe className="w-8 h-8 text-teal-400" />
+                    <div>
+                      <p className="text-2xl font-bold">{assetStats.totalAssets}</p>
+                      <p className="text-xs text-muted-foreground">Ativos Expostos</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Server className="w-8 h-8 text-blue-400" />
+                    <div>
+                      <p className="text-2xl font-bold">{assetStats.totalServices}</p>
+                      <p className="text-xs text-muted-foreground">Serviços Detectados</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <ShieldAlert className="w-8 h-8 text-destructive" />
+                    <div>
+                      <p className="text-2xl font-bold">{assetStats.criticalCVEs}</p>
+                      <p className="text-xs text-muted-foreground">CVEs Críticas</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="glass-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <AlertTriangle className="w-8 h-8 text-warning" />
+                    <div>
+                      <p className="text-2xl font-bold">{assetStats.expiredCerts}</p>
+                      <p className="text-xs text-muted-foreground">Certificados Expirados</p>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {/* 2. Category Overview Grid */}
