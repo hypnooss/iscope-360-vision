@@ -1,92 +1,22 @@
 
+# Ajustar Grafico Donut Duplo - Remover Legenda e Expandir
 
-# Reestruturar Layout do Dashboard V3 + Pagina de Todos os Achados + Grafico Donut Duplo
+## Resumo
 
-## Resumo das Alteracoes
-
-Tres mudancas principais no Surface Analyzer V3:
-
-1. **"Ver todos os achados" abre uma pagina dedicada** (nao mais um Sheet lateral)
-2. **"Saude dos Ativos" move para linha full-width** abaixo dos cards de achados
-3. **Novo componente de grafico Donut duplo** ocupa o espaco ao lado de "Achados Prioritarios" — anel interno mostra distribuicao de severidade, anel externo mostra tecnologias/servicos detectados
-
-## Layout Resultante
-
-```text
-+-----------------------------------------------------+
-|  Stats Cards (4 colunas)                             |
-+-----------------------------------------------------+
-|  Panorama por Categoria (grid de cards)              |
-+---------------------------+-------------------------+
-|  Achados Prioritarios     |  Donut Duplo            |
-|  (top critical+high)      |  (severidade + techs)   |
-|  [Ver todos -> pagina]    |                         |
-+---------------------------+-------------------------+
-|  Saude dos Ativos (full-width, 2 colunas internas)  |
-+-----------------------------------------------------+
-```
+Remover a legenda separada do componente `SeverityTechDonut`, fazer o grafico ocupar todo o espaco disponivel do card e usar labels integrados no proprio grafico (recharts `Label`/`renderCustomizedLabel`) para porcionamentos maiores, enquanto porcoes pequenas mostram dados apenas via tooltip no hover.
 
 ## Detalhe Tecnico
 
-### 1. Nova pagina: Todos os Achados
+**Arquivo:** `src/components/surface/SeverityTechDonut.tsx`
 
-**Novo arquivo:** `src/pages/external-domain/AllFindingsPage.tsx`
-
-- Rota: `/scope-external-domain/analyzer-v3/findings`
-- Segue o padrao visual da aplicacao: `AppLayout`, `PageBreadcrumb`, titulo com botao de voltar (`ArrowLeft`), subtitulo, seletor de workspace para super roles
-- Recebe o `clientId` via contexto (mesmo fluxo do V3 — busca `useClientId`, carrega snapshot, gera findings)
-- Lista **todos** os findings (nao apenas critical/high), agrupados por severidade ou em lista unica ordenada
-- Cada finding usa o componente `SurfaceFindingCard` ja existente
-
-**Alteracao em `src/App.tsx`:** adicionar rota nova
-
-**Alteracao em `src/components/surface/TopFindingsList.tsx`:**
-- O botao "Ver todos os achados" passa a navegar para a nova rota via `useNavigate()` em vez de chamar `onViewAll`
-
-**Alteracao em `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`:**
-- Remover o state `sheetAllFindings` e a logica de abrir Sheet para "todos os achados" (o Sheet continua existindo para categorias individuais e ativos)
-
-### 2. Mover "Saude dos Ativos" para full-width
-
-**Alteracao em `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`:**
-
-O grid `lg:grid-cols-2` atual contem `TopFindingsList` + `AssetHealthGrid` lado a lado. A nova estrutura:
-
-```tsx
-{/* Row: Achados Prioritarios + Donut Duplo */}
-<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <TopFindingsList ... />
-  <SeverityTechDonut findings={findings} assets={assets} />
-</div>
-
-{/* Row: Saude dos Ativos (full-width) */}
-<AssetHealthGrid assets={assets} findings={findings} onAssetClick={...} />
-```
-
-O `AssetHealthGrid` ja renderiza internamente em `grid-cols-1 sm:grid-cols-2`, entao ocupando a largura total fica muito melhor.
-
-### 3. Novo componente: Grafico Donut Duplo
-
-**Novo arquivo:** `src/components/surface/SeverityTechDonut.tsx`
-
-Utiliza `recharts` (ja instalado) com `PieChart` e dois componentes `Pie` concentricos:
-
-- **Anel interno (menor raio):** Distribuicao de severidade dos findings
-  - Critical (vermelho), High (laranja), Medium (amarelo), Low (azul)
-  - Dados: contagem de findings por severity
-- **Anel externo (maior raio):** Top tecnologias/servicos detectados
-  - Extraidos de `assets[].allTechs` (produto/versao) e `assets[].services`
-  - Agrupa por nome de tecnologia com contagem de ativos onde aparece
-  - Exibe as top 8-10 tecnologias, agrupando o restante em "Outros"
-  - Cores distintas por tecnologia
-
-O componente fica dentro de um `Card` com titulo "Visao Geral" e uma legenda compacta abaixo do grafico mostrando os itens de cada anel.
-
-Props:
-```tsx
-interface SeverityTechDonutProps {
-  findings: SurfaceFinding[];
-  assets: ExposedAsset[];  // ou FindingsAsset[]
-}
-```
-
+1. **Remover toda a secao de legenda** (linhas 134-161 — o grid com "Severidade" e "Tecnologias")
+2. **Expandir altura do grafico** de `h-[220px]` para `h-full` com o container usando `flex-1` para ocupar todo o espaco restante do card. O Card recebe `flex flex-col` e o CardContent recebe `flex-1`
+3. **Aumentar raios dos aneis** para preencher melhor o espaco maior:
+   - Inner ring: `innerRadius={45}` / `outerRadius={85}`
+   - Outer ring: `innerRadius={95}` / `outerRadius={130}`
+4. **Adicionar labels customizados** nos segmentos maiores usando a prop `label` do Pie com uma funcao `renderCustomizedLabel` que:
+   - Calcula a porcentagem do segmento em relacao ao total
+   - Se a porcentagem for maior que ~8-10%, renderiza o nome abreviado + valor dentro/ao lado do arco
+   - Se for menor, nao renderiza label (o tooltip ja cobre)
+5. **Manter o Tooltip** existente para exibir nome completo + valor ao passar o mouse em qualquer segmento (inclusive nos pequenos sem label)
+6. **Remover o padding** desnecessario: `CardHeader` com `pb-2` e `CardContent` com `flex-1 pt-0 pb-2`
