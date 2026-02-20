@@ -1,4 +1,4 @@
-import { Shield } from 'lucide-react';
+import { Shield, ExternalLink } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -106,6 +106,11 @@ export function CategoryOverviewGrid({ findings, leakedCount = 0, onCategoryClic
                   {counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{counts.low} Low</Badge>}
                 </div>
               )}
+
+              {/* Click indicator */}
+              <div className="flex justify-end mt-1">
+                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+              </div>
             </CardContent>
           </Card>
         );
