@@ -1,52 +1,29 @@
 
-# Labels por Quadrante no Donut
+
+# Corrigir Posicionamento de Bolinha e Texto por Quadrante
 
 ## Problema
-O algoritmo atual divide labels apenas em esquerda/direita. Isso causa problemas quando uma fatia esta no topo-direito mas o label e empurrado para baixo pela anti-colisao, ou quando uma fatia esta embaixo mas o label sobe. As setas vermelhas na imagem mostram exatamente esses casos.
+O texto e a bolinha (circle) sempre seguem o mesmo layout vertical: nome acima, valor abaixo. Isso ignora a direcao do quadrante. No quadrante inferior, "Outros" tem o texto subindo quando deveria estar descendo. "MikroTik bandwidth" no topo-direito tambem fica desalinhado.
 
 ## Solucao
-Dividir o grafico em 4 quadrantes e posicionar cada label de acordo com o quadrante da sua fatia:
-
-- **Topo-Direito (0-90 graus)**: label vai para cima e para a direita
-- **Topo-Esquerdo (90-180 graus)**: label vai para cima e para a esquerda
-- **Baixo-Esquerdo (180-270 graus)**: label vai para baixo e para a esquerda
-- **Baixo-Direito (270-360 graus)**: label vai para baixo e para a direita
-
-Cada quadrante resolve colisoes apenas dentro do seu proprio grupo, respeitando a direcao natural.
+Ajustar o posicionamento vertical do texto e da bolinha com base no quadrante:
+- **Quadrantes de topo** (top-right, top-left): bolinha no ponto final da linha, texto ACIMA da bolinha (nome primeiro, valor abaixo do nome, ambos acima do ponto)
+- **Quadrantes de baixo** (bottom-right, bottom-left): bolinha no ponto final da linha, texto ABAIXO da bolinha (nome primeiro, valor abaixo do nome, ambos abaixo do ponto)
 
 ## Detalhes Tecnicos
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-**1. Substituir a divisao esquerda/direita por 4 quadrantes**
+Alterar a funcao `renderGroup` (linhas 159-213):
 
-Ao inves de dividir por `cos >= 0`, classificar cada label em um dos 4 quadrantes com base no `midAngle`:
+1. Determinar se o quadrante e de topo ou de baixo:
 ```text
-quadrante = angulo 0-90    -> 'top-right'
-quadrante = angulo 90-180  -> 'top-left'
-quadrante = angulo 180-270 -> 'bottom-left'
-quadrante = angulo 270-360 -> 'bottom-right'
+const isTop = item.quadrant === 'top-right' || item.quadrant === 'top-left';
 ```
 
-**2. Ordenar cada quadrante de forma coerente**
+2. Ajustar posicao Y do texto com base na direcao:
+- **Topo**: nome em `ey3 - 16`, valor em `ey3 - 3` (texto sobe, bolinha fica embaixo)
+- **Baixo**: nome em `ey3 + 5`, valor em `ey3 + 18` (texto desce, bolinha fica em cima)
 
-- Top-right: ordenar por naturalY decrescente (de baixo para cima, os mais proximos do centro primeiro)
-- Top-left: ordenar por naturalY decrescente (idem)
-- Bottom-left: ordenar por naturalY crescente (de cima para baixo)
-- Bottom-right: ordenar por naturalY crescente (idem)
+Isso faz com que o fluxo visual siga a direcao natural: nos quadrantes superiores o texto "puxa" para cima, nos inferiores "puxa" para baixo, mantendo a bolinha como ancora no ponto final da linha de conexao.
 
-**3. Anti-colisao por quadrante**
-
-Cada quadrante resolve colisoes na sua direcao:
-- Quadrantes de topo: labels sao empurrados para cima quando colidem (respeitando minY)
-- Quadrantes de baixo: labels sao empurrados para baixo quando colidem (respeitando maxY)
-
-**4. Manter o X dinamico**
-
-A logica de posicao X continua sendo calculada radialmente (ex2 + HORIZONTAL_LEN), sem alinhamento em coluna. Cada label fica no X natural da sua extensao radial.
-
-**5. Renderizacao**
-
-- Quadrantes direitos: textAnchor = 'start', ex3 = ex2 + HORIZONTAL_LEN
-- Quadrantes esquerdos: textAnchor = 'end', ex3 = ex2 - HORIZONTAL_LEN
-- Clamping de seguranca nos limites do card (MARGIN = 10)
