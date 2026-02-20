@@ -1,64 +1,47 @@
 
 
-# Labels Externos com Anti-Colisao Manual
+# Espalhar Labels Horizontalmente pelo Espaco Disponivel
 
 ## Problema
 
-O Recharts nao possui deteccao de colisao para labels de pie charts. A prop `label` renderiza cada label independentemente com base no angulo do segmento, causando sobreposicao quando segmentos sao pequenos ou adjacentes. Isso e uma limitacao conhecida do Recharts - nao existe configuracao que resolva isso.
+Os labels estao posicionados a uma distancia fixa do centro do grafico (`outerRadius + 58px`), ignorando o espaco real disponivel no container. Isso faz com que os labels fiquem amontoados perto do grafico, especialmente no lado esquerdo onde costumam ter mais itens.
 
 ## Solucao
 
-Abandonar a prop `label` do Recharts para o anel externo e renderizar os labels manualmente usando o componente `<Customized>` do Recharts, com logica propria de posicionamento e anti-colisao.
-
-## Como funciona
-
-1. Separar os labels em dois grupos: lado direito (angulo 0-180) e lado esquerdo (180-360)
-2. Dentro de cada grupo, ordenar por posicao Y
-3. Aplicar espacamento minimo vertical (ex: 28px) entre labels consecutivos - se dois labels ficarem muito proximos, empurrar o de baixo para baixo
-4. Desenhar as linhas conectoras (polylines) do segmento ate a posicao final ajustada do label
+Passar as dimensoes do container (`width`, `height`) para o `OuterLabelsLayer` e posicionar os labels nos extremos do container (com uma margem), em vez de usar uma distancia fixa do centro do grafico. Isso garante que os labels usem toda a largura disponivel.
 
 ## Detalhe Tecnico
 
-**Arquivo:** `src/components/surface/SeverityTechDonut.tsx`
+### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-### 1. Remover `label={renderOuterLabel}` do Pie externo
+1. **Adicionar `width` e `height` as props** do componente
+2. **Posicionar labels nos extremos do container**:
+   - Labels da direita: X final = `width - margem` (ex: `width - 10`)
+   - Labels da esquerda: X final = `margem` (ex: `10`)
+   - Isso espalha os labels para as bordas do card
+3. **Ajustar textAnchor**: labels da direita ficam `end` (texto cresce para a esquerda a partir da borda), labels da esquerda ficam `start` (texto cresce para a direita a partir da borda)
+4. **Melhorar limites verticais**: usar `height` real em vez de `cy + outerRadius + 50` para calcular o espaco vertical disponivel para labels
+5. **Centralizar verticalmente os grupos de labels** em torno do centro do grafico quando possivel
 
-O segundo `<Pie>` passa a nao ter prop `label` - os labels serao desenhados pelo componente customizado.
+### Arquivo: `src/components/surface/SeverityTechDonut.tsx`
 
-### 2. Criar componente `OuterLabelsLayer`
+1. **Passar `width` e `height`** do container para `OuterLabelsLayer` via `<Customized>`:
+   ```text
+   <OuterLabelsLayer
+     techData={techData}
+     cx={props.width / 2}
+     cy={props.height / 2}
+     outerRadius={...}
+     width={props.width}
+     height={props.height}
+   />
+   ```
 
-Componente que recebe `techData` e as dimensoes do grafico e:
-- Calcula o angulo medio de cada segmento a partir dos dados
-- Calcula a posicao Y natural de cada label (baseada no angulo)
-- Separa em grupo esquerdo e direito
-- Aplica resolucao de colisao: percorre cada grupo de cima para baixo, garantindo `minSpacing = 28px` entre labels consecutivos
-- Renderiza `<g>` SVG com polylines e textos nas posicoes ajustadas
-- Posiciona os textos em colunas fixas (ex: `cx + colX` para direita, `cx - colX` para esquerda) para alinhamento limpo
+### Resultado esperado
 
-### 3. Usar `<Customized>` do Recharts
-
-```text
-<Customized
-  component={(props) => (
-    <OuterLabelsLayer
-      techData={techData}
-      cx={props.width / 2}
-      cy={props.height / 2}
-      outerRadius={props.width * 0.55 / 2}
-    />
-  )}
-/>
-```
-
-Isso garante que os labels sao renderizados no mesmo SVG do grafico mas com posicionamento controlado manualmente.
-
-### 4. A funcao `renderOuterLabel` sera removida
-
-Nao e mais necessaria pois a logica de labels externos passa a ser do `OuterLabelsLayer`.
-
-### 5. Manter tudo o mais
-
-- Anel interno com `renderCustomLabel` (labels dentro dos segmentos)
-- Tooltip customizado para ambos os aneis
-- Cores e dados inalterados
+- Labels do lado direito alinhados perto da borda direita do card
+- Labels do lado esquerdo alinhados perto da borda esquerda do card
+- Linhas conectoras se estendem do grafico ate a posicao do label na borda
+- Espacamento vertical mantido com anti-colisao
+- Melhor uso do espaco horizontal disponivel
 
