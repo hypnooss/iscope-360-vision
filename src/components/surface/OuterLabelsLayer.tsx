@@ -1,5 +1,5 @@
 const RADIAN = Math.PI / 180;
-const MIN_SPACING = 28;
+const MIN_SPACING = 38;
 
 interface LabelItem {
   name: string;
@@ -60,28 +60,42 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   rightItems.sort((a, b) => a.naturalY - b.naturalY);
   leftItems.sort((a, b) => a.naturalY - b.naturalY);
 
-  // Resolve collisions: push down if too close
+  const minY = 20;
+  const maxY = height - 20;
+
   function resolveCollisions(group: typeof rightItems) {
+    if (group.length === 0) return;
+
+    // Step 1: resolve overlaps
     for (let i = 1; i < group.length; i++) {
       if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
         group[i].finalY = group[i - 1].finalY + MIN_SPACING;
       }
     }
-    // If labels overflowed bottom, push everything up
-    if (group.length > 0) {
-      const maxY = height - 20;
-      const last = group[group.length - 1];
-      if (last.finalY > maxY) {
-        const overflow = last.finalY - maxY;
-        for (const item of group) {
-          item.finalY -= overflow;
-        }
-        // Re-resolve from top
-        for (let i = 1; i < group.length; i++) {
-          if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
-            group[i].finalY = group[i - 1].finalY + MIN_SPACING;
-          }
-        }
+
+    // Step 2: center block around cy
+    const topBlock = group[0].finalY;
+    const bottomBlock = group[group.length - 1].finalY;
+    const blockCenter = (topBlock + bottomBlock) / 2;
+    const offset = cy - blockCenter;
+    for (const item of group) {
+      item.finalY += offset;
+    }
+
+    // Step 3: clamp within bounds
+    if (group[0].finalY < minY) {
+      const shift = minY - group[0].finalY;
+      for (const item of group) item.finalY += shift;
+    }
+    if (group[group.length - 1].finalY > maxY) {
+      const shift = group[group.length - 1].finalY - maxY;
+      for (const item of group) item.finalY -= shift;
+    }
+
+    // Step 4: re-resolve collisions after centering/clamping
+    for (let i = 1; i < group.length; i++) {
+      if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
+        group[i].finalY = group[i - 1].finalY + MIN_SPACING;
       }
     }
   }
