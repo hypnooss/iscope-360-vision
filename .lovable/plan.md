@@ -1,81 +1,108 @@
 
+# Surface Analyzer V3 — Layout Dashboard
 
-# Ajustes no Motor de Findings - 3 Correções
+## Objetivo
+Criar `/scope-external-domain/analyzer-v3` com layout de **dashboard visual** em vez de listas verticais infinitas. Toda a logica de dados (hooks, `buildAssets`, `generateFindings`, CVE matching) sera reutilizada do V2 — apenas o layout muda.
 
-## 1. Serviços de Risco: Detecção por nome do serviço independente da porta
+## Estrutura da Pagina
 
-**Problema:** Se o RDP estiver na porta 63389, o match por porta falha (só procura 3389). O fallback por nome de serviço já existe (linhas 380-391), mas o `name` do finding fica fixo como "RDP (porta 3389) exposto na internet" mesmo quando detectado na 63389.
-
-**Correção:**
-- Remover a dependência do número da porta no campo `name` da regra
-- Tornar o `name` dinâmico, incluindo a porta real detectada (ex: "RDP exposto na porta 63389")
-- Manter a lista de portas conhecidas como "dica rápida" mas o match por service name deve funcionar em qualquer porta
-- O finding agrupará todos os ativos que expõem aquele serviço, independente da porta
-
-**Mudança em `RISKY_SERVICES`:** Trocar o campo `name` fixo por um template (ex: `nameTemplate: "RDP exposto na internet"`) e gerar o nome final com as portas reais encontradas nas evidências.
-
-## 2. HTTP sem TLS: Ignorar redirecionamentos 301/302
-
-**Problema:** Um servidor HTTP que responde 301/302 redirecionando para HTTPS está funcionando corretamente. Não deve ser flagged como finding.
-
-**Correção:**
-- Na seção de "HTTP without TLS" (linhas 427-450), adicionar verificação do `status_code`
-- Ignorar web services com `status_code` entre 300-399 (redirecionamentos)
-- Apenas flaggear endpoints HTTP que servem conteúdo real (status 200-299)
-
-**Código atual (linha 429):**
-```
-if (ws.url?.startsWith('http://'))
-```
-
-**Passa a ser:**
-```
-if (ws.url?.startsWith('http://') && (ws.status_code < 300 || ws.status_code >= 400))
-```
-
-## 3. Vulnerabilidades: Agrupar por Produto em vez de CVE individual
-
-**Problema:** Exibir cada CVE do OpenSSH individualmente polui a tela. O que importa é: "OpenSSH 8.2 tem 5 vulnerabilidades conhecidas (2 critical, 3 high)".
-
-**Correção:**
-- Agrupar CVEs por produto (usando `cve.products` ou extraindo do nome do serviço do ativo)
-- Cada finding de vulnerabilidade passa a ser por produto, não por CVE-ID
-- Título: "OpenSSH 8.2 — 5 vulnerabilidades (2 Críticas, 3 Altas)"
-- Dentro do finding, listar as CVEs como evidências (drill-down)
-- A severidade do finding é a mais alta entre as CVEs do grupo
-- Manter o agrupamento medium/low como já está
-
-**Estrutura do novo finding de vulnerabilidade:**
-```
-name: "OpenSSH 8.2 — 5 vulnerabilidades conhecidas"
-severity: critical (a pior do grupo)
-evidence: [
-  { label: "CVE-2024-1234", value: "CVSS 9.8 — Remote Code Execution" },
-  { label: "CVE-2024-5678", value: "CVSS 8.1 — Auth Bypass" },
-  ...
-]
-affectedAssets: [hosts que têm esse produto]
+```text
++------------------------------------------------------------------+
+| HEADER + WORKSPACE SELECTOR + ACOES (scan, schedule)             |
++------------------------------------------------------------------+
+| PROGRESS BAR (se scan rodando)                                   |
++------------------------------------------------------------------+
+| 4 SEVERITY CARDS                                                 |
+| [Critical: X]  [High: X]  [Medium: X]  [Low: X]                 |
++------------------------------------------------------------------+
+|                                                                  |
+| PANORAMA DE CATEGORIAS (grid 3x2)                                |
+| +--Servicos Risco--+ +--Vulnerabilidades-+ +--Certificados-----+ |
+| | barra segmentada | | barra segmentada  | | barra segmentada  | |
+| | 2C 1H badges     | | 1C 3H badges      | | 1H 1M badges      | |
+| +----- click ------+ +----- click -------+ +----- click -------+ |
+| +--Seguranca Web---+ +--Tech Obsoletas---+ +--Cred. Vazadas----+ |
+| | barra segmentada | | barra segmentada  | | X emails vazados  | |
+| +----- click ------+ +----- click -------+ +----- click -------+ |
+|                                                                  |
++------------------------------------------------------------------+
+| DOIS PAINEIS LADO A LADO (lg:grid-cols-2)                        |
+| +--ACHADOS PRIORITARIOS-----+ +--SAUDE DOS ATIVOS-------------+ |
+| | 1. RDP (3389) Crit [bar]  | | server01 [3C 2H] vermelho     | |
+| | 2. SMB (445) Crit  [bar]  | | mail.co  [1H 1M] laranja      | |
+| | 3. OpenSSH 8.2 Crit [bar] | | web.co   [1M]    amarelo       | |
+| | 4. Cert expirado High     | | db.co    [ok]    verde          | |
+| |        [Ver todos ->]     | |                                | |
+| +---------------------------+ +--------------------------------+ |
++------------------------------------------------------------------+
+| RODAPE: ultimo scan em DD/MM/AAAA HH:MM                         |
++------------------------------------------------------------------+
 ```
 
-## Detalhes Técnicos
+Clicar em qualquer **categoria**, **finding** ou **ativo** abre um `Sheet` lateral com os detalhes (reutilizando `SurfaceFindingCard` e `SurfaceCategorySection` existentes).
 
-### Arquivo: `src/lib/surfaceFindings.ts`
+## Componentes a Criar
 
-**Seção 1 - Risky Services (linhas 127-420):**
-- Adicionar campo `nameTemplate` às regras (sem porta hardcoded)
-- No loop de geração, construir o nome dinamicamente com as portas reais detectadas
-- Ex: se RDP detectado nas portas 3389 e 63389, o nome fica "RDP exposto na internet (portas 3389, 63389)"
+### 1. `src/components/surface/SeverityCards.tsx`
+- 4 cards em `grid-cols-2 md:grid-cols-4`
+- Cada card: icone, numero grande, label (Critical/High/Medium/Low)
+- Cores: vermelho, laranja, amarelo, azul
+- Padrao identico ao Firewall Analyzer
 
-**Seção 2 - Web Security (linhas 422-450):**
-- Adicionar filtro de status_code para excluir redirects (3xx)
+### 2. `src/components/surface/CategoryOverviewGrid.tsx`
+- Grid `grid-cols-2 lg:grid-cols-3`
+- Cada card: icone da categoria + label + barra horizontal segmentada por severidade + badges de contagem
+- `onClick` -> abre `CategoryDetailSheet`
+- A categoria "Credenciais Vazadas" mostra contagem de emails vazados em vez de severidades
 
-**Seção 3 - Vulnerabilities (linhas 482-559):**
-- Criar mapa de CVEs agrupadas por produto em vez de por severity
-- Para cada produto, calcular a severidade mais alta e contadores por severity
-- Gerar um finding por produto (não por CVE)
-- CVEs individuais viram evidências dentro do finding do produto
-- Se o produto não for identificável, agrupar como "Produto desconhecido"
+### 3. `src/components/surface/TopFindingsList.tsx`
+- Card com lista de max 7 findings (Critical + High primeiro)
+- Cada linha: ranking number, nome do finding, badge severidade, ativo afetado, barra horizontal proporcional
+- Padrao do `IPListWidget` do Firewall Analyzer (numero de ranking + barra de progresso)
+- Link "Ver todos" no rodape -> abre Sheet com lista completa
 
-### Nenhum outro arquivo precisa ser alterado
-Os componentes `SurfaceFindingCard` e `SurfaceCategorySection` já renderizam findings genéricos — a mudança é apenas no motor de geração.
+### 4. `src/components/surface/AssetHealthGrid.tsx`
+- Card com grid `grid-cols-2 md:grid-cols-3 lg:grid-cols-4` de mini-cards
+- Cada mini-card: hostname, IP, borda colorida pela pior severidade, contadores compactos
+- Verde = sem findings, amarelo = medium, laranja = high, vermelho = critical
+- `onClick` -> abre Sheet com findings filtrados daquele ativo
 
+### 5. `src/components/surface/CategoryDetailSheet.tsx`
+- `Sheet` lateral (side="right", largura lg)
+- Header: icone + nome da categoria + contadores
+- Body: reutiliza `SurfaceFindingCard` para cada finding da categoria
+- Tambem usado para mostrar findings de um ativo especifico
+
+### 6. `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`
+- Pagina principal do dashboard
+- Reutiliza toda a logica de dados do V2 (hooks, buildAssets, generateFindings, CVE cache, progress, scan, schedule)
+- Layout: Header -> Progress -> SeverityCards -> CategoryOverviewGrid -> TopFindings + AssetHealth lado a lado
+- Estados para controlar Sheet aberto (categoria ou ativo)
+- Dialogs de scan e schedule copiados do V2
+
+## Rota
+
+Adicionar em `App.tsx`:
+```
+const SurfaceAnalyzerV3Page = lazy(() => import("./pages/external-domain/SurfaceAnalyzerV3Page"));
+<Route path="/scope-external-domain/analyzer-v3" element={<SurfaceAnalyzerV3Page />} />
+```
+
+## Arquivos Afetados
+
+| Arquivo | Acao |
+|---|---|
+| `src/components/surface/SeverityCards.tsx` | Criar |
+| `src/components/surface/CategoryOverviewGrid.tsx` | Criar |
+| `src/components/surface/TopFindingsList.tsx` | Criar |
+| `src/components/surface/AssetHealthGrid.tsx` | Criar |
+| `src/components/surface/CategoryDetailSheet.tsx` | Criar |
+| `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx` | Criar |
+| `src/App.tsx` | Adicionar rota e lazy import |
+
+## Reutilizacao
+
+- `SurfaceFindingCard` e `SurfaceCategorySection` existentes sao usados dentro dos Sheets
+- Toda a logica de `buildAssets`, `generateFindings`, `calculateFindingsStats`, `CATEGORY_INFO` vem de `surfaceFindings.ts`
+- Hooks de dados (`useLatestAttackSurfaceSnapshot`, `useAttackSurfaceScan`, etc) reutilizados
+- Helper functions (`matchCVEsToIP`, `compareVersions`, etc) copiadas/importadas do V2
