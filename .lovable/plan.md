@@ -1,41 +1,39 @@
 
 
-# Labels Externos com Linhas para o Anel de Tecnologias
+# Ajustes no Donut Duplo - Cores, Tamanho de Texto e Espacamento
 
-## O que muda
+## Resumo
 
-O anel externo (Tecnologias) passa a exibir labels **fora do grafico**, conectados por linhas ao segmento correspondente — similar ao estilo do print de referencia. O anel interno (Severidade) mantem os labels dentro dos segmentos para porcoes grandes e tooltip para porcoes pequenas.
+Tres ajustes no componente `SeverityTechDonut.tsx`:
 
-## Como funciona
-
-Para o anel externo, usamos a prop `label` com uma funcao customizada que renderiza SVG com:
-- Uma **linha** do centro do arco ate o ponto externo (polyline com 2 segmentos: radial + horizontal)
-- Um **circulo colorido** pequeno (indicador)
-- O **nome da tecnologia** em negrito
-- **Valor + porcentagem** abaixo, em texto menor
-
-Para segmentos muito pequenos (menos de ~4%), o label externo e suprimido para evitar sobreposicao — esses dados ficam acessiveis via tooltip.
-
-O anel interno continua usando `renderCustomLabel` atual (texto dentro do segmento, threshold 10%).
+1. **Paleta do anel externo (Tecnologias)** - Trocar as cores vibrantes por tons mais suaves e dessaturados que harmonizam com o fundo escuro sem competir visualmente com as cores de severidade
+2. **Tamanho do texto dos labels externos** - Aumentar fontSize do nome para 11 e do valor para 10
+3. **Maior distancia entre labels e grafico** - Aumentar o `extRadius` (extensao radial) e o `horizLen` (extensao horizontal) para afastar os labels do anel
 
 ## Detalhe Tecnico
 
 **Arquivo:** `src/components/surface/SeverityTechDonut.tsx`
 
-1. Criar funcao `renderOuterLabel` que recebe as props do recharts (`cx`, `cy`, `midAngle`, `outerRadius`, `name`, `value`, `percent`, `payload`) e retorna um grupo SVG `<g>` com:
-   - `<path>` ou `<polyline>` do ponto no arco ate o label (segmento radial + segmento horizontal)
-   - `<circle>` colorido como indicador
-   - `<text>` com nome e valor/porcentagem
-   - Posicionamento: labels a direita para angulos 0-180, a esquerda para 180-360 (textAnchor dinamico)
-   - Offset horizontal de ~20px alem do outerRadius para dar espaco
+### 1. Nova paleta de cores para tecnologias (linha 23-26)
 
-2. No `<Pie>` externo (techData):
-   - Trocar `label={renderCustomLabel}` por `label={renderOuterLabel}`
-   - Manter `labelLine={false}` pois desenhamos a linha manualmente dentro do label
+Substituir `TECH_COLORS` por tons mais frios/dessaturados que nao competem com vermelho/laranja/amarelo do anel de severidade:
 
-3. Aumentar levemente o `outerRadius` do anel externo para `"68%"` (de `"72%"`) para dar mais espaco aos labels externos, ou ajustar o container para ter mais margem
+```text
+Antes:  '#14b8a6', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b', '#22c55e', '#6366f1', '#e11d48', '#0ea5e9', '#a855f7'
+Depois: '#5b9aa9', '#7c8bb8', '#8a7fa8', '#6ba3a0', '#9ca3af', '#7a9b8d', '#8691a8', '#a0929b', '#6d97a8', '#8b8fa3'
+```
 
-4. O anel interno (severityData) nao muda — continua com `renderCustomLabel` e threshold de 10%
+Tons pasteis/cinza-azulados que ficam elegantes no dark mode sem poluicao visual.
 
-5. Tooltip continua funcionando para **ambos** os aneis (hover mostra detalhes completos)
+### 2. Distancia dos labels externos (linhas 72, 78)
+
+- `extRadius`: de `outerRadius + 14` para `outerRadius + 22` (mais afastado radialmente)
+- `horizLen`: de `18` para `28` (linha horizontal mais longa)
+- `textX` offset: de `6` para `8`
+
+### 3. Tamanho do texto (linhas 100, 111)
+
+- Nome da tecnologia: fontSize de `10` para `11`
+- Valor + porcentagem: fontSize de `9` para `10`
+- Espaco entre linhas: `ey3 + 12` para `ey3 + 14`
 
