@@ -1,18 +1,14 @@
 
 
-# Corrigir Labels Cortados e Aumentar Espacamento Vertical
+# Aproximar Labels do Grafico
 
 ## Problema
 
-1. As bolinhas estao posicionadas no limite do card (`EDGE_MARGIN = 10`), fazendo com que o texto fique fora da area visivel do card e seja cortado
-2. O espacamento vertical entre labels ainda e insuficiente para leitura confortavel
+O `EDGE_MARGIN` de 80px posiciona as bolinhas muito longe do grafico, empurrando os textos para fora da area visivel do card (especialmente "MikroTik bandw..." que fica cortado no lado direito).
 
 ## Solucao
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-1. **Aumentar `EDGE_MARGIN`** de 10 para 80 -- isso move as bolinhas para dentro do card, deixando espaco suficiente para o texto ao lado
-2. **Aumentar `MIN_SPACING`** de 38 para 48 -- mais distancia vertical entre cada label para melhor legibilidade
-
-Essas duas alteracoes simples resolvem ambos os problemas sem mudar a logica do algoritmo.
+Reduzir `EDGE_MARGIN` de 80 para 55. Isso aproxima as bolinhas e textos do grafico, mantendo espaco suficiente para os textos sem que fiquem cortados pelas bordas do card.
 
