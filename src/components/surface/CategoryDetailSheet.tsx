@@ -44,7 +44,7 @@ export function CategoryDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-[50vw] p-0">
-        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/50 space-y-3">
+        <SheetHeader className="px-6 pt-6 pb-4 space-y-3">
           <div className="flex items-center gap-3">
             {info && (
               <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${info.colorHex}15` }}>
