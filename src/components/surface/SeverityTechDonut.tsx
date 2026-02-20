@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Customized } from 'recharts';
 import { Eye } from 'lucide-react';
+import { OuterLabelsLayer } from './OuterLabelsLayer';
 import type { SurfaceFinding, SurfaceFindingSeverity } from '@/lib/surfaceFindings';
 
 /* ── Severity colors ── */
@@ -27,7 +28,7 @@ const TECH_COLORS = [
 
 const RADIAN = Math.PI / 180;
 const MIN_PERCENT_FOR_LABEL = 0.10;
-const MIN_PERCENT_FOR_OUTER_LABEL = 0.04;
+
 
 function renderCustomLabel({
   cx, cy, midAngle, innerRadius, outerRadius, name, value, percent,
@@ -56,66 +57,6 @@ function renderCustomLabel({
   );
 }
 
-function renderOuterLabel({
-  cx, cy, midAngle, outerRadius, name, value, percent, payload,
-}: any) {
-  if (percent < MIN_PERCENT_FOR_OUTER_LABEL) return null;
-
-  const color = payload?.color || '#888';
-  const pct = (percent * 100).toFixed(0);
-
-  // Point on the outer edge of the arc
-  const ex1 = cx + outerRadius * Math.cos(-midAngle * RADIAN);
-  const ey1 = cy + outerRadius * Math.sin(-midAngle * RADIAN);
-
-  // Extended point (radial extension)
-  const extRadius = outerRadius + 30;
-  const ex2 = cx + extRadius * Math.cos(-midAngle * RADIAN);
-  const ey2 = cy + extRadius * Math.sin(-midAngle * RADIAN);
-
-  // Horizontal extension
-  const isRight = midAngle <= 180;
-  const horizLen = 35;
-  const ex3 = isRight ? ex2 + horizLen : ex2 - horizLen;
-  const ey3 = ey2;
-
-  const textAnchor = isRight ? 'start' : 'end';
-  const textX = isRight ? ex3 + 8 : ex3 - 8;
-
-  return (
-    <g>
-      <polyline
-        points={`${ex1},${ey1} ${ex2},${ey2} ${ex3},${ey3}`}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.2}
-        strokeOpacity={0.7}
-      />
-      <circle cx={ex3} cy={ey3} r={3} fill={color} />
-      <text
-        x={textX}
-        y={ey3 - 1}
-        textAnchor={textAnchor}
-        dominantBaseline="central"
-        fontSize={11}
-        fontWeight={600}
-        fill="hsl(var(--foreground))"
-      >
-        {name}
-      </text>
-      <text
-        x={textX}
-        y={ey3 + 14}
-        textAnchor={textAnchor}
-        dominantBaseline="central"
-        fontSize={10}
-        fill="hsl(var(--muted-foreground))"
-      >
-        {value} ({pct}%)
-      </text>
-    </g>
-  );
-}
 
 /* ── Custom Tooltip ── */
 function CustomTooltip({ active, payload }: any) {
@@ -228,13 +169,22 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   outerRadius="55%"
                   paddingAngle={1}
                   strokeWidth={0}
-                  label={renderOuterLabel}
                   labelLine={false}
                 >
                   {techData.map((entry, i) => (
                     <Cell key={`tech-${i}`} fill={entry.color} />
                   ))}
                 </Pie>
+                <Customized
+                  component={(props: any) => (
+                    <OuterLabelsLayer
+                      techData={techData}
+                      cx={props.width / 2}
+                      cy={props.height / 2}
+                      outerRadius={Math.min(props.width, props.height) * 0.55 / 2}
+                    />
+                  )}
+                />
                 <Tooltip content={<CustomTooltip />} />
               </PieChart>
             </ResponsiveContainer>
