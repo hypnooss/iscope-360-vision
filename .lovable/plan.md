@@ -1,32 +1,31 @@
 
-# Renomear Cards e Aumentar Sheet Lateral
 
-## Alteracoes
+# Corrigir Painel Lateral e Pagina de Servicos Expostos
 
-### 1. Renomear "Achados Prioritarios" para "Servicos Expostos"
+## Problema 1: Painel lateral mostra todos os achados da categoria
 
-**Arquivo: `src/components/surface/TopFindingsList.tsx`**
-- Titulo do card: "Achados Prioritarios" -> "Servicos Expostos"
-- Botao inferior: "Ver todos os achados" -> "Ver todos os servicos expostos"
+Quando voce clica em "nginx * -- 5 vulnerabilidades" na lista de Servicos Expostos, o codigo executa `setSheetCategory(f.category)`, que abre o painel filtrando por **categoria** (ex: "vulnerabilities"). Isso mostra TODOS os achados de vulnerabilidade (nginx, M365, openssh, etc.) em vez de mostrar apenas o item clicado.
 
-### 2. Renomear "Visao Geral" para "Grafico de Exposicao"
+## Problema 2: Pagina "Servicos Expostos" nao mostra todos os achados
 
-**Arquivo: `src/components/surface/SeverityTechDonut.tsx`**
-- Titulo do card: "Visao Geral" -> "Grafico de Exposicao"
+A pagina AllFindingsPage usa a funcao `buildAssetsSimple` que define `cves: []` para todos os ativos (linha 69). Sem CVEs associados aos ativos, o motor `generateFindings` nao gera achados de vulnerabilidades. O dashboard principal usa `buildAssets` que faz o matching correto de CVEs. Por isso a pagina so mostra achados de servicos de risco, seguranca web, certificados e tecnologias obsoletas -- faltam todas as vulnerabilidades.
 
-### 3. Aumentar largura do Sheet lateral para 50%
+## Solucao
 
-**Arquivo: `src/components/surface/CategoryDetailSheet.tsx`**
-- Alterar classes de largura do SheetContent de `sm:max-w-xl lg:max-w-2xl` para `sm:max-w-[50vw]`
-- Isso faz o painel lateral ocupar metade da tela em telas maiores
+### 1. Painel lateral filtra pelo achado especifico
 
-### 4. Renomear textos na pagina de todos os achados
+**Arquivo: `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`**
+
+- Adicionar estado `sheetFindingId` para armazenar o ID do achado clicado
+- Quando `sheetFindingId` esta definido, o painel mostra apenas aquele achado especifico
+- Alterar `onFindingClick` para definir `sheetFindingId` em vez de `sheetCategory`
+- Atualizar `sheetTitle` e `sheetOpen` para considerar o novo estado
+
+### 2. Pagina AllFindingsPage usa buildAssets com CVE matching
 
 **Arquivo: `src/pages/external-domain/AllFindingsPage.tsx`**
-- Breadcrumb: "Todos os Achados" -> "Servicos Expostos"
-- Titulo: "Todos os Achados" -> "Servicos Expostos"
 
-### 5. Renomear badge no Sheet
+- Substituir `buildAssetsSimple` pela logica completa de `buildAssets` que inclui `matchCVEsToIP`
+- Importar as funcoes auxiliares necessarias (`matchCVEsToIP`, `compareVersions`, `isVersionInRange`) ou reutilizar diretamente do V3 page
+- Para evitar duplicacao de codigo, extrair a logica de matching de CVEs para um utilitario compartilhado (ou copiar as funcoes necessarias para AllFindingsPage)
 
-**Arquivo: `src/components/surface/CategoryDetailSheet.tsx`**
-- Badge: "X achado(s)" -> "X servico(s) exposto(s)"
