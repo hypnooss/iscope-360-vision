@@ -103,7 +103,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   resolveCollisions(rightItems);
   resolveCollisions(leftItems);
 
-  const EDGE_MARGIN = 145;
+  const EDGE_MARGIN = 160;
   const extLen = 20;
 
   function renderGroup(group: typeof rightItems, isRight: boolean) {
