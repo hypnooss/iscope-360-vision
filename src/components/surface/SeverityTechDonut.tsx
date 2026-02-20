@@ -21,8 +21,8 @@ const SEV_LABELS: Record<SurfaceFindingSeverity, string> = {
 
 /* ── Tech ring colors (distinct palette) ── */
 const TECH_COLORS = [
-  '#14b8a6', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b',
-  '#22c55e', '#6366f1', '#e11d48', '#0ea5e9', '#a855f7',
+  '#5b9aa9', '#7c8bb8', '#8a7fa8', '#6ba3a0', '#9ca3af',
+  '#7a9b8d', '#8691a8', '#a0929b', '#6d97a8', '#8b8fa3',
 ];
 
 const RADIAN = Math.PI / 180;
@@ -69,18 +69,18 @@ function renderOuterLabel({
   const ey1 = cy + outerRadius * Math.sin(-midAngle * RADIAN);
 
   // Extended point (radial extension)
-  const extRadius = outerRadius + 14;
+  const extRadius = outerRadius + 22;
   const ex2 = cx + extRadius * Math.cos(-midAngle * RADIAN);
   const ey2 = cy + extRadius * Math.sin(-midAngle * RADIAN);
 
   // Horizontal extension
   const isRight = midAngle <= 180;
-  const horizLen = 18;
+  const horizLen = 28;
   const ex3 = isRight ? ex2 + horizLen : ex2 - horizLen;
   const ey3 = ey2;
 
   const textAnchor = isRight ? 'start' : 'end';
-  const textX = isRight ? ex3 + 6 : ex3 - 6;
+  const textX = isRight ? ex3 + 8 : ex3 - 8;
 
   return (
     <g>
@@ -97,7 +97,7 @@ function renderOuterLabel({
         y={ey3 - 1}
         textAnchor={textAnchor}
         dominantBaseline="central"
-        fontSize={10}
+        fontSize={11}
         fontWeight={600}
         fill="hsl(var(--foreground))"
       >
@@ -105,10 +105,10 @@ function renderOuterLabel({
       </text>
       <text
         x={textX}
-        y={ey3 + 12}
+        y={ey3 + 14}
         textAnchor={textAnchor}
         dominantBaseline="central"
-        fontSize={9}
+        fontSize={10}
         fill="hsl(var(--muted-foreground))"
       >
         {value} ({pct}%)
