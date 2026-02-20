@@ -1,23 +1,32 @@
 
+# Renomear Cards e Aumentar Sheet Lateral
 
-# Corrigir Labels Saindo do Card no Lado Esquerdo
+## Alteracoes
 
-## Problema
-Para labels do lado esquerdo, `textAnchor="end"` faz o texto renderizar para a ESQUERDA do ponto de ancoragem. O dot fica em `ex3 = 16` (MARGIN), o texto comeca em `textX = 10` (ex3 - 6), mas como o texto "termina" nesse ponto e se estende para a esquerda, nomes longos como "Hikvision Network ..." ultrapassam x=0, saindo do SVG. O `overflow-hidden` no div nao funciona porque o SVG do Recharts tem `overflow: visible` por padrao.
+### 1. Renomear "Achados Prioritarios" para "Servicos Expostos"
 
-## Solucao
-Duas acoes combinadas:
+**Arquivo: `src/components/surface/TopFindingsList.tsx`**
+- Titulo do card: "Achados Prioritarios" -> "Servicos Expostos"
+- Botao inferior: "Ver todos os achados" -> "Ver todos os servicos expostos"
 
-1. Reduzir o truncamento de nomes para 14 caracteres (de 18) -- nomes menores ocupam menos espaco horizontal
-2. Adicionar `style={{ overflow: 'hidden' }}` no PieChart para que o proprio SVG corte qualquer conteudo que ultrapasse seus limites
+### 2. Renomear "Visao Geral" para "Grafico de Exposicao"
 
-## Detalhes Tecnicos
+**Arquivo: `src/components/surface/SeverityTechDonut.tsx`**
+- Titulo do card: "Visao Geral" -> "Grafico de Exposicao"
 
-### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
+### 3. Aumentar largura do Sheet lateral para 50%
 
-- Reduzir `MAX_LABEL_CHARS` de 18 para 14
+**Arquivo: `src/components/surface/CategoryDetailSheet.tsx`**
+- Alterar classes de largura do SheetContent de `sm:max-w-xl lg:max-w-2xl` para `sm:max-w-[50vw]`
+- Isso faz o painel lateral ocupar metade da tela em telas maiores
 
-### Arquivo: `src/components/surface/SeverityTechDonut.tsx`
+### 4. Renomear textos na pagina de todos os achados
 
-- Adicionar `style={{ overflow: 'hidden' }}` no componente `<PieChart>` para que o SVG gerado tenha clipping nativo
+**Arquivo: `src/pages/external-domain/AllFindingsPage.tsx`**
+- Breadcrumb: "Todos os Achados" -> "Servicos Expostos"
+- Titulo: "Todos os Achados" -> "Servicos Expostos"
 
+### 5. Renomear badge no Sheet
+
+**Arquivo: `src/components/surface/CategoryDetailSheet.tsx`**
+- Badge: "X achado(s)" -> "X servico(s) exposto(s)"
