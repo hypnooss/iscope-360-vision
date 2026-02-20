@@ -1,26 +1,18 @@
 
 
-# Ajustar Posicao de Bolinha e Texto por Lado
+# Corrigir Labels Cortados e Aumentar Espacamento Vertical
 
 ## Problema
 
-Atualmente, os labels dos dois lados posicionam o texto sempre do mesmo lado da bolinha, fazendo com que no lado direito o texto sobreponha a linha conectora, e no lado esquerdo fique desalinhado.
+1. As bolinhas estao posicionadas no limite do card (`EDGE_MARGIN = 10`), fazendo com que o texto fique fora da area visivel do card e seja cortado
+2. O espacamento vertical entre labels ainda e insuficiente para leitura confortavel
 
 ## Solucao
 
-No `OuterLabelsLayer.tsx`, inverter a logica de posicionamento:
-
-- **Lado esquerdo**: bolinha na posicao `EDGE_MARGIN`, texto a direita da bolinha (`textX = EDGE_MARGIN + 6`), `textAnchor = "start"`
-- **Lado direito**: bolinha na posicao `width - EDGE_MARGIN`, texto a esquerda da bolinha (`textX = width - EDGE_MARGIN - 6`), `textAnchor = "end"`
-
-## Detalhe Tecnico
-
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-Na funcao `renderGroup`, a bolinha (`<circle>`) fica no ponto final da polyline (`ex3`). O texto precisa ser posicionado ao lado correto:
+1. **Aumentar `EDGE_MARGIN`** de 10 para 80 -- isso move as bolinhas para dentro do card, deixando espaco suficiente para o texto ao lado
+2. **Aumentar `MIN_SPACING`** de 38 para 48 -- mais distancia vertical entre cada label para melhor legibilidade
 
-- Para `isRight = true`: `textAnchor = "end"` e `textX = ex3 - 6` (texto cresce para a esquerda, afastando-se da borda)
-- Para `isRight = false`: `textAnchor = "start"` e `textX = ex3 + 6` (texto cresce para a direita, afastando-se da borda)
-
-Isso garante que o texto nunca sobreponha a bolinha nem a linha conectora, pois fica sempre no lado oposto ao grafico.
+Essas duas alteracoes simples resolvem ambos os problemas sem mudar a logica do algoritmo.
 
