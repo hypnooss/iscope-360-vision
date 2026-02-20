@@ -170,12 +170,16 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
       const ey3 = item.finalY;
 
+      const isTop = item.quadrant === 'top-right' || item.quadrant === 'top-left';
       const textAnchor = isRight ? 'start' : 'end';
       const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
       const displayName = item.name.length > MAX_LABEL_CHARS
         ? item.name.slice(0, MAX_LABEL_CHARS) + '…'
         : item.name;
+
+      const nameY = isTop ? ey3 - 16 : ey3 + 5;
+      const valueY = isTop ? ey3 - 3 : ey3 + 18;
 
       return (
         <g key={`label-${item.quadrant}-${i}`}>
@@ -189,7 +193,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
           <circle cx={ex3} cy={ey3} r={3} fill={item.color} />
           <text
             x={textX}
-            y={ey3 - 1}
+            y={nameY}
             textAnchor={textAnchor}
             dominantBaseline="central"
             fontSize={11}
@@ -200,7 +204,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
           </text>
           <text
             x={textX}
-            y={ey3 + 14}
+            y={valueY}
             textAnchor={textAnchor}
             dominantBaseline="central"
             fontSize={10}
