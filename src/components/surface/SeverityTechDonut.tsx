@@ -21,8 +21,8 @@ const SEV_LABELS: Record<SurfaceFindingSeverity, string> = {
 
 /* ── Tech ring colors (distinct palette) ── */
 const TECH_COLORS = [
-  '#5b9aa9', '#7c8bb8', '#8a7fa8', '#6ba3a0', '#9ca3af',
-  '#7a9b8d', '#8691a8', '#a0929b', '#6d97a8', '#8b8fa3',
+  '#4db8a4', '#7b8fdb', '#b07cc3', '#45b5bf', '#c4956a',
+  '#5bae7e', '#8f8bc7', '#c27884', '#5aa3c9', '#a98db5',
 ];
 
 const RADIAN = Math.PI / 180;
@@ -69,13 +69,13 @@ function renderOuterLabel({
   const ey1 = cy + outerRadius * Math.sin(-midAngle * RADIAN);
 
   // Extended point (radial extension)
-  const extRadius = outerRadius + 22;
+  const extRadius = outerRadius + 30;
   const ex2 = cx + extRadius * Math.cos(-midAngle * RADIAN);
   const ey2 = cy + extRadius * Math.sin(-midAngle * RADIAN);
 
   // Horizontal extension
   const isRight = midAngle <= 180;
-  const horizLen = 28;
+  const horizLen = 35;
   const ex3 = isRight ? ex2 + horizLen : ex2 - horizLen;
   const ey3 = ey2;
 
@@ -200,7 +200,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
         {!hasData ? (
           <p className="text-sm text-muted-foreground text-center py-6">Sem dados para exibir</p>
         ) : (
-          <div className="w-full h-full min-h-[320px]">
+          <div className="w-full h-full min-h-[380px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -208,8 +208,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   dataKey="value"
                   cx="50%"
                   cy="50%"
-                  innerRadius="20%"
-                  outerRadius="42%"
+                  innerRadius="15%"
+                  outerRadius="36%"
                   paddingAngle={2}
                   strokeWidth={0}
                   label={renderCustomLabel}
@@ -224,8 +224,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   dataKey="value"
                   cx="50%"
                   cy="50%"
-                  innerRadius="48%"
-                  outerRadius="65%"
+                  innerRadius="42%"
+                  outerRadius="55%"
                   paddingAngle={1}
                   strokeWidth={0}
                   label={renderOuterLabel}
