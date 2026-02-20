@@ -120,8 +120,8 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
       const ex3 = isRight ? width - EDGE_MARGIN : EDGE_MARGIN;
       const ey3 = item.finalY;
 
-      const textAnchor = isRight ? 'end' : 'start';
-      const textX = isRight ? ex3 - 6 : ex3 + 6;
+      const textAnchor = isRight ? 'start' : 'end';
+      const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
 
       return (
