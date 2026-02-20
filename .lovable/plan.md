@@ -1,34 +1,45 @@
 
 
-# Melhorar Posicionamento dos Labels do Donut
+# Reposicionar Labels do Donut: Sem Equalização, Sem Alinhamento Fixo
 
 ## Problema
 
-A logica atual divide labels em esquerda/direita baseando-se apenas no cosseno do angulo medio da fatia. Isso faz com que fatias no topo do donut (como SSL) caiam no lado esquerdo mesmo quando sua fatia esta visualmente mais a direita. Alem disso, o algoritmo de anti-colisao empurra labels para baixo sequencialmente, afastando-os da posicao real da fatia.
+1. O algoritmo atual tenta equalizar a quantidade de labels entre os lados esquerdo e direito, movendo labels de um lado para o outro. Isso causa labels no lado errado em relação à sua fatia.
+2. Todas as labels de um mesmo lado ficam alinhadas em uma coluna fixa (definida pelo `EDGE_MARGIN`), criando linhas retas artificiais. Na verdade, cada label só precisa não sobrepor as outras.
 
-## Solucao Proposta
+## Solução
 
-Alterar a logica de posicionamento para que os labels fiquem mais proximos da fatia correspondente no donut, usando uma abordagem que respeita melhor a posicao angular real.
+### 1. Remover a lógica de balanceamento
+Eliminar todo o bloco `while (rightItems.length - leftItems.length > maxImbalance)`. Cada label fica no lado determinado puramente pelo cosseno do ângulo da fatia: `cos >= 0` vai para a direita, `cos < 0` vai para a esquerda. Se um lado tiver mais fatias, terá mais labels -- isso é correto.
 
-## Detalhes Tecnicos
+### 2. Posicionar labels com X variável (não alinhados em coluna)
+Em vez de usar um `EDGE_MARGIN` fixo para o ponto final da linha (ex3), calcular o X do label com base na extensão radial da linha, criando um layout mais orgânico:
+- A linha sai da fatia (ex1, ey1), vai até um ponto de extensão (ex2, ey2), e depois vai horizontalmente até o texto
+- O X final do texto será `ex2 + offset` (direita) ou `ex2 - offset` (esquerda), com um pequeno segmento horizontal
+- Isso faz com que labels de fatias maiores (no topo) fiquem mais próximos, e labels de fatias menores fiquem onde precisam
+
+### 3. Manter anti-colisão apenas no eixo Y
+O algoritmo de `resolveCollisions` continua funcionando por grupo (esquerda/direita), garantindo que labels não se sobreponham verticalmente, mas sem forçá-los a uma posição X fixa.
+
+## Detalhes Técnicos
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-**1. Balancear a distribuicao esquerda/direita**
+**Mudanças:**
 
-Atualmente a divisao e `cos(angulo) >= 0 -> direita`. Quando ha muitos labels de um lado so, a colisao os empurra para longe. Uma abordagem melhor:
-- Contar quantos labels cairiam em cada lado
-- Se um lado tiver muito mais que o outro, mover labels que estao proximo do limite (angulos proximos de 90 ou 270 graus) para o lado com menos labels
+1. **Remover linhas 50-85** (bloco de balanceamento `maxImbalance` e os dois `while` loops)
 
-**2. Usar posicao angular para ordenar, nao apenas Y natural**
+2. **Simplificar a divisão** -- manter apenas:
+   ```
+   const rightItems = allItems.filter(i => i.naturalSide === 'right');
+   const leftItems = allItems.filter(i => i.naturalSide === 'left');
+   ```
 
-Ao inves de centralizar o bloco inteiro de labels no `cy`, ancorar cada label o mais proximo possivel do seu Y natural (posicao real da fatia), aplicando anti-colisao apenas onde necessario.
+3. **Alterar `renderGroup`** para calcular X dinamicamente:
+   - Definir um comprimento horizontal fixo para o segmento final (ex: `horizontalLen = 30`)
+   - O ponto ex3 passa a ser `ex2 + horizontalLen` (direita) ou `ex2 - horizontalLen` (esquerda)
+   - Aplicar um clamp para que ex3 não ultrapasse os limites do card (mínimo 10px de margem)
+   - O texto fica posicionado a partir de ex3
 
-**3. Melhorar o algoritmo de anti-colisao**
-
-Substituir o esquema atual de "empurrar para baixo" por um que distribui os labels simetricamente ao redor da posicao natural:
-- Quando dois labels colidem, mover ambos (um para cima, outro para baixo) em vez de so empurrar o debaixo
-- Remover o passo de "centralizar bloco inteiro no cy" que desloca todos os labels da posicao real
-
-Isso fara com que o SSL, cuja fatia esta no topo-direita, fique posicionado no lado direito e proximo do topo, como voce indicou no print 2.
+4. **Manter** `EDGE_MARGIN` como fallback máximo -- se o X calculado ultrapassar `width - EDGE_MARGIN` ou ficar abaixo de `EDGE_MARGIN`, usar o limite
 
