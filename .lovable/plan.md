@@ -1,14 +1,10 @@
 
 
-# Aproximar Labels do Grafico
+# Ajustar EDGE_MARGIN para 160
 
-## Problema
-
-O `EDGE_MARGIN` de 80px posiciona as bolinhas muito longe do grafico, empurrando os textos para fora da area visivel do card (especialmente "MikroTik bandw..." que fica cortado no lado direito).
-
-## Solucao
+## Alteracao
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-Reduzir `EDGE_MARGIN` de 80 para 55. Isso aproxima as bolinhas e textos do grafico, mantendo espaco suficiente para os textos sem que fiquem cortados pelas bordas do card.
+Aumentar `EDGE_MARGIN` de `145` para `160`, dando mais espaco para os textos longos como "MikroTik bandwidth-te..." ficarem totalmente visiveis dentro do card.
 
