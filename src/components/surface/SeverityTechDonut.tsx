@@ -147,7 +147,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
         {!hasData ? (
           <p className="text-sm text-muted-foreground text-center py-6">Sem dados para exibir</p>
         ) : (
-          <div className="w-full h-full min-h-[380px]">
+          <div className="w-full h-full min-h-[380px] overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
