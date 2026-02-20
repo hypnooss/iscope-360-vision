@@ -1,36 +1,69 @@
 
-# Corrigir Direcao do Texto Usando Posicao Real do Slice
 
-## Problema
-A variavel `textGoesDown` usa `ey3` (posicao Y apos resolucao de anti-colisao) para decidir a direcao do texto. Porem, a anti-colisao pode mover o `finalY` para acima do centro (`cy`), fazendo com que `textGoesDown` retorne `false` mesmo quando o slice ("Outros") esta claramente na metade inferior do grafico. Isso faz o texto "subir" em vez de "descer".
+# Corrigir Labels do Donut Usando Coordenadas Reais do Recharts
+
+## Problema Raiz
+
+O componente `OuterLabelsLayer` calcula `cx`, `cy`, angulos e raios de forma independente do Recharts. Se houver QUALQUER diferenca entre esses valores calculados e os que o Recharts usa internamente (margens, resolucao de porcentagens, offsets do viewBox), a deteccao de hemisferio (acima/abaixo do centro) falha, fazendo o texto ir na direcao errada.
 
 ## Solucao
-Usar `item.ey2` (a posicao Y calculada diretamente do angulo, sem anti-colisao) para determinar a direcao do texto. Essa posicao reflete o hemisferio REAL do slice no grafico. Tambem aumentar os offsets verticais para criar separacao visual mais clara entre o dot e o texto.
+
+Capturar as coordenadas REAIS do Recharts usando o prop `label` do Pie externo (tecnologia). O Recharts passa `cx`, `cy`, `midAngle`, `outerRadius` como props para a funcao de label de cada fatia. Vamos coletar esses dados e usa-los no `OuterLabelsLayer`, eliminando qualquer calculo manual de angulo.
 
 ## Detalhes Tecnicos
 
-### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
+### 1. Arquivo: `src/components/surface/SeverityTechDonut.tsx`
 
-Na funcao `renderGroup` (linha 173), trocar:
-
-```text
-const textGoesDown = ey3 >= cy;
-```
-
-Por:
+- Adicionar um `useRef` para armazenar os dados reais de cada fatia do Recharts
+- Adicionar uma funcao `label` invisivel (retorna `null`) ao Pie de tecnologia que captura `cx`, `cy`, `midAngle`, `outerRadius` de cada slice e salva no ref
+- Passar esses dados capturados para o `OuterLabelsLayer` em vez de `techData` + centro/raio calculados manualmente
 
 ```text
-const textGoesDown = item.ey2 >= cy;
+// Dentro do SeverityTechDonut:
+const sliceDataRef = useRef([]);
+
+function captureSliceData({ cx, cy, midAngle, outerRadius, name, value, percent, fill, index }: any) {
+  sliceDataRef.current[index] = { cx, cy, midAngle, outerRadius, name, value, percent, color: fill };
+  return null; // Label invisivel, so captura dados
+}
+
+// No Pie de tecnologia, adicionar:
+<Pie ... label={captureSliceData} labelLine={false}>
+
+// No Customized, passar sliceDataRef.current:
+<Customized component={(props) => (
+  <OuterLabelsLayer
+    sliceData={sliceDataRef.current}
+    techData={techData}
+    width={props.width}
+    height={props.height}
+  />
+)} />
 ```
 
-Tambem aumentar os offsets para melhor separacao visual (linhas 181-182):
+### 2. Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
+
+- Alterar a interface de props para receber `sliceData` (com cx, cy, midAngle, outerRadius reais do Recharts)
+- Usar as coordenadas do Recharts para calcular posicoes, usando a formula EXATA do Recharts: `x = cx + r * cos(-midAngle * RADIAN)`, `y = cy + r * sin(-midAngle * RADIAN)`
+- Manter toda a logica de anti-colisao existente
+- Usar a posicao real `ey2` (calculada com o midAngle do Recharts) para determinar se o texto vai para cima ou para baixo:
+  - Se `ey2 > cy` (Recharts real): texto desce (afasta do centro)
+  - Se `ey2 <= cy`: texto sobe (afasta do centro)
 
 ```text
-const nameY = textGoesDown ? ey3 + 12 : ey3 - 22;
-const valueY = textGoesDown ? ey3 + 25 : ey3 - 9;
+// Nova formula usando convencao Recharts:
+const ex2 = slice.cx + extR * Math.cos(-slice.midAngle * RADIAN);
+const ey2 = slice.cy + extR * Math.sin(-slice.midAngle * RADIAN);
+
+// Direcao baseada na posicao REAL:
+const textGoesDown = item.ey2 > item.cy;
 ```
 
-Isso garante que:
-- A direcao do texto e determinada pela posicao real do slice no grafico (angulo original), nao pela posicao resolvida apos anti-colisao
-- O texto fica visivelmente separado do dot/bolinha, tanto para cima quanto para baixo
-- "Outros" (embaixo do centro) tera texto descendo, "Bootstrap" (acima do centro) tera texto subindo
+### 3. Resultado Esperado
+
+- "Outros" (fatia na parte inferior): texto vai para BAIXO, afastando do centro
+- "Bootstrap"/"SSL" (fatias na parte superior): texto vai para CIMA, afastando do centro
+- Itens a direita: texto alinha a direita
+- Itens a esquerda: texto alinha a esquerda
+- Zero dependencia de calculos manuais de angulo - tudo vem do Recharts
+
