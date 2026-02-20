@@ -14,9 +14,11 @@ interface OuterLabelsLayerProps {
   cx: number;
   cy: number;
   outerRadius: number;
+  width: number;
+  height: number;
 }
 
-export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsLayerProps) {
+export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height }: OuterLabelsLayerProps) {
   if (!techData.length || !cx || !cy || !outerRadius) return null;
 
   const total = techData.reduce((s, d) => s + d.value, 0) || 1;
@@ -67,7 +69,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
     }
     // If labels overflowed bottom, push everything up
     if (group.length > 0) {
-      const maxY = cy + outerRadius + 50;
+      const maxY = height - 20;
       const last = group[group.length - 1];
       if (last.finalY > maxY) {
         const overflow = last.finalY - maxY;
@@ -87,28 +89,25 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsL
   resolveCollisions(rightItems);
   resolveCollisions(leftItems);
 
-  const extLen = 28;
-  const horizLen = 30;
+  const EDGE_MARGIN = 10;
+  const extLen = 20;
 
   function renderGroup(group: typeof rightItems, isRight: boolean) {
     return group.map((item, i) => {
       const a = item.midAngle;
-      // Point on outer edge of arc (Recharts coords)
       const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
       const ey1 = cy - outerRadius * Math.sin(a * RADIAN);
 
-      // Elbow point (radial extension)
       const extR = outerRadius + extLen;
       const ex2 = cx + extR * Math.cos(a * RADIAN);
       const ey2 = cy - extR * Math.sin(a * RADIAN);
 
-      // Final horizontal position
-      const colX = outerRadius + extLen + horizLen;
-      const ex3 = isRight ? cx + colX : cx - colX;
+      // Position labels at container edges
+      const ex3 = isRight ? width - EDGE_MARGIN : EDGE_MARGIN;
       const ey3 = item.finalY;
 
-      const textAnchor = isRight ? 'start' : 'end';
-      const textX = isRight ? ex3 + 6 : ex3 - 6;
+      const textAnchor = isRight ? 'end' : 'start';
+      const textX = isRight ? ex3 - 6 : ex3 + 6;
       const pct = (item.percent * 100).toFixed(0);
 
       return (
