@@ -1,24 +1,23 @@
 
 
-# Corrigir Overflow das Labels do Donut
+# Corrigir Labels Saindo do Card no Lado Esquerdo
 
 ## Problema
-A label "HTTP" (e potencialmente outras no lado esquerdo) extrapola os limites do card porque:
-1. O container SVG nao tem clipping ativado -- conteudo que ultrapassa o viewBox fica visivel
-2. O `MARGIN` de 10px e insuficiente: o ponto (dot) fica em x=10, o texto comeca em x=4 (`ex3 - 6`), mas como o `textAnchor` e `end`, o texto renderiza para a ESQUERDA de x=4, saindo do SVG
+Para labels do lado esquerdo, `textAnchor="end"` faz o texto renderizar para a ESQUERDA do ponto de ancoragem. O dot fica em `ex3 = 16` (MARGIN), o texto comeca em `textX = 10` (ex3 - 6), mas como o texto "termina" nesse ponto e se estende para a esquerda, nomes longos como "Hikvision Network ..." ultrapassam x=0, saindo do SVG. O `overflow-hidden` no div nao funciona porque o SVG do Recharts tem `overflow: visible` por padrao.
 
 ## Solucao
-1. Adicionar `overflow-hidden` no container do grafico para que qualquer conteudo que ultrapasse seja cortado
-2. Aumentar a margem lateral e reduzir o comprimento da linha horizontal para manter as labels dentro dos limites
+Duas acoes combinadas:
+
+1. Reduzir o truncamento de nomes para 14 caracteres (de 18) -- nomes menores ocupam menos espaco horizontal
+2. Adicionar `style={{ overflow: 'hidden' }}` no PieChart para que o proprio SVG corte qualquer conteudo que ultrapasse seus limites
 
 ## Detalhes Tecnicos
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-- Aumentar `MARGIN` de 10 para 60 -- garante espaco para o texto nao ultrapassar a borda
-- Reduzir `HORIZONTAL_LEN` de 30 para 20 -- linhas horizontais mais curtas para economizar espaco lateral
+- Reduzir `MAX_LABEL_CHARS` de 18 para 14
 
 ### Arquivo: `src/components/surface/SeverityTechDonut.tsx`
 
-- Adicionar `overflow-hidden` na div container do grafico (`min-h-[380px]`) para garantir que mesmo se algo ultrapassar, o card corta o excesso
+- Adicionar `style={{ overflow: 'hidden' }}` no componente `<PieChart>` para que o SVG gerado tenha clipping nativo
 
