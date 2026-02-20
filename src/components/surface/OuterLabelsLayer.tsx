@@ -137,7 +137,7 @@ export function OuterLabelsLayer({ sliceData, techData, width, height }: OuterLa
   resolveCollisions(groups.bottomRight, true);
   resolveCollisions(groups.bottomLeft, true);
 
-  const MAX_LABEL_CHARS = 18;
+  const MAX_LABEL_CHARS = 14;
 
   function renderGroup(group: SidedItem[]) {
     return group.map((item, i) => {
