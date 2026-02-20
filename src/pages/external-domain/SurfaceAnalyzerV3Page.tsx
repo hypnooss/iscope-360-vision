@@ -354,29 +354,35 @@ export default function SurfaceAnalyzerV3Page() {
   // Sheet state
   const [sheetCategory, setSheetCategory] = useState<SurfaceFindingCategory | null>(null);
   const [sheetAssetIp, setSheetAssetIp] = useState<string | null>(null);
+  const [sheetFindingId, setSheetFindingId] = useState<string | null>(null);
 
-
-  const sheetOpen = sheetCategory !== null || sheetAssetIp !== null;
+  const sheetOpen = sheetCategory !== null || sheetAssetIp !== null || sheetFindingId !== null;
 
   const sheetFindings = useMemo(() => {
+    if (sheetFindingId) return findings.filter(f => f.id === sheetFindingId);
     if (sheetCategory) return findings.filter(f => f.category === sheetCategory);
     if (sheetAssetIp) return findings.filter(f => f.affectedAssets.some(a => a.ip === sheetAssetIp));
     return [];
-  }, [findings, sheetCategory, sheetAssetIp]);
+  }, [findings, sheetCategory, sheetAssetIp, sheetFindingId]);
 
   const sheetTitle = useMemo(() => {
+    if (sheetFindingId) {
+      const f = findings.find(f => f.id === sheetFindingId);
+      return f?.name || '';
+    }
     if (sheetCategory) return CATEGORY_INFO[sheetCategory]?.label || '';
     if (sheetAssetIp) {
       const asset = assets.find(a => a.ip === sheetAssetIp);
       return asset ? `${asset.hostname} (${asset.ip})` : sheetAssetIp;
     }
     return '';
-  }, [sheetCategory, sheetAssetIp, assets]);
+  }, [sheetCategory, sheetAssetIp, sheetFindingId, assets, findings]);
 
   const handleCloseSheet = (open: boolean) => {
     if (!open) {
       setSheetCategory(null);
       setSheetAssetIp(null);
+      setSheetFindingId(null);
     }
   };
 
@@ -530,7 +536,7 @@ export default function SurfaceAnalyzerV3Page() {
                 <TopFindingsList
                   findings={findings}
                   onViewAll={() => {}}
-                  onFindingClick={(f) => setSheetCategory(f.category)}
+                  onFindingClick={(f) => setSheetFindingId(f.id)}
                 />
                 <SeverityTechDonut findings={findings} assets={assets} />
               </div>
