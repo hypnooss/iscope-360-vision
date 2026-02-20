@@ -103,7 +103,8 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   resolveCollisions(rightItems);
   resolveCollisions(leftItems);
 
-  const EDGE_MARGIN = 160;
+const EDGE_MARGIN = 120;
+  const MAX_LABEL_CHARS = 18;
   const extLen = 20;
 
   function renderGroup(group: typeof rightItems, isRight: boolean) {
@@ -123,6 +124,9 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
       const textAnchor = isRight ? 'start' : 'end';
       const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
+      const displayName = item.name.length > MAX_LABEL_CHARS
+        ? item.name.slice(0, MAX_LABEL_CHARS) + '…'
+        : item.name;
 
       return (
         <g key={`label-${isRight ? 'r' : 'l'}-${i}`}>
@@ -143,7 +147,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
             fontWeight={600}
             fill="hsl(var(--foreground))"
           >
-            {item.name}
+            {displayName}
           </text>
           <text
             x={textX}
