@@ -1,40 +1,36 @@
 
-# Corrigir Direcao do Texto com Base na Posicao Real na Tela
+# Corrigir Direcao do Texto Usando Posicao Real do Slice
 
 ## Problema
-O texto das labels (ex: "Outros") vai na direcao errada porque a classificacao por quadrante depende de calculos de angulo que podem nao corresponder exatamente ao posicionamento visual real do Recharts. Mesmo com a logica matematicamente correta, diferencas sutis na convencao de angulos fazem com que um item como "Outros" (visualmente embaixo) seja classificado no quadrante errado.
+A variavel `textGoesDown` usa `ey3` (posicao Y apos resolucao de anti-colisao) para decidir a direcao do texto. Porem, a anti-colisao pode mover o `finalY` para acima do centro (`cy`), fazendo com que `textGoesDown` retorne `false` mesmo quando o slice ("Outros") esta claramente na metade inferior do grafico. Isso faz o texto "subir" em vez de "descer".
 
 ## Solucao
-Abandonar a classificacao por angulo para determinar a direcao do texto. Em vez disso, usar a **posicao real na tela** do ponto final da label:
-- Se o ponto (dot) esta ABAIXO do centro do grafico: texto desce
-- Se o ponto esta ACIMA do centro: texto sobe
-- Se o ponto esta a DIREITA do centro: texto alinha a direita
-- Se esta a ESQUERDA: texto alinha a esquerda
-
-Isso elimina qualquer dependencia de convencao de angulos.
+Usar `item.ey2` (a posicao Y calculada diretamente do angulo, sem anti-colisao) para determinar a direcao do texto. Essa posicao reflete o hemisferio REAL do slice no grafico. Tambem aumentar os offsets verticais para criar separacao visual mais clara entre o dot e o texto.
 
 ## Detalhes Tecnicos
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-Na funcao `renderGroup`, substituir as determinacoes de `isRight` e `isTop` baseadas no quadrante por comparacoes de posicao na tela:
+Na funcao `renderGroup` (linha 173), trocar:
 
-Trocar:
 ```text
-const isRight = item.quadrant === 'top-right' || item.quadrant === 'bottom-right';
-const isTop = item.quadrant === 'top-right' || item.quadrant === 'top-left';
-```
-
-Por:
-```text
-const isRight = item.ex2 >= cx;
 const textGoesDown = ey3 >= cy;
 ```
 
-E ajustar os offsets de Y do texto:
+Por:
+
 ```text
-const nameY = textGoesDown ? ey3 + 5 : ey3 - 16;
-const valueY = textGoesDown ? ey3 + 18 : ey3 - 3;
+const textGoesDown = item.ey2 >= cy;
 ```
 
-Isso garante que, independente de qualquer convencao de angulo, a direcao visual do texto segue a posicao real do ponto na tela. "Outros" embaixo do centro tera o texto descendo. "Bootstrap" acima do centro tera o texto subindo.
+Tambem aumentar os offsets para melhor separacao visual (linhas 181-182):
+
+```text
+const nameY = textGoesDown ? ey3 + 12 : ey3 - 22;
+const valueY = textGoesDown ? ey3 + 25 : ey3 - 9;
+```
+
+Isso garante que:
+- A direcao do texto e determinada pela posicao real do slice no grafico (angulo original), nao pela posicao resolvida apos anti-colisao
+- O texto fica visivelmente separado do dot/bolinha, tanto para cima quanto para baixo
+- "Outros" (embaixo do centro) tera texto descendo, "Bootstrap" (acima do centro) tera texto subindo
