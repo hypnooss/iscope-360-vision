@@ -100,10 +100,10 @@ export function CategoryOverviewGrid({ findings, leakedCount = 0, onCategoryClic
               {/* Severity badges */}
               {!isLeaked && totalBar > 0 && (
                 <div className="flex items-center gap-1 flex-wrap">
-                  {counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{counts.critical}C</Badge>}
-                  {counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{counts.high}H</Badge>}
-                  {counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{counts.medium}M</Badge>}
-                  {counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{counts.low}L</Badge>}
+                  {counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{counts.critical} Critical</Badge>}
+                  {counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{counts.high} High</Badge>}
+                  {counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{counts.medium} Medium</Badge>}
+                  {counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{counts.low} Low</Badge>}
                 </div>
               )}
             </CardContent>
