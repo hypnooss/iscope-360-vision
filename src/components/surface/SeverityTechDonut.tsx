@@ -26,7 +26,7 @@ const TECH_COLORS = [
 ];
 
 const RADIAN = Math.PI / 180;
-const MIN_PERCENT_FOR_LABEL = 0.08; // 8%
+const MIN_PERCENT_FOR_LABEL = 0.10;
 
 function renderCustomLabel({
   cx, cy, midAngle, innerRadius, outerRadius, name, value, percent,
@@ -43,14 +43,42 @@ function renderCustomLabel({
     <text
       x={x}
       y={y}
-      fill="hsl(var(--foreground))"
+      fill="#fff"
       textAnchor="middle"
       dominantBaseline="central"
-      fontSize={10}
+      fontSize={11}
       fontWeight={600}
+      style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
     >
       {label} {value}
     </text>
+  );
+}
+
+/* ── Custom Tooltip ── */
+function CustomTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+
+  const entry = payload[0];
+  const { name, value, payload: data } = entry;
+  const color = data?.color || entry.color || '#888';
+  const total = entry.payload?._total || 1;
+  const pct = ((value / total) * 100).toFixed(1);
+  const ring = entry.payload?._ring || '';
+
+  return (
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-lg text-popover-foreground">
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        <span className="text-xs font-semibold">{name}</span>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {value} ({pct}%) · {ring}
+      </div>
+    </div>
   );
 }
 
@@ -67,9 +95,10 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
   const severityData = useMemo(() => {
     const counts: Record<SurfaceFindingSeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const f of findings) counts[f.severity]++;
+    const total = findings.length || 1;
     return (['critical', 'high', 'medium', 'low'] as SurfaceFindingSeverity[])
       .filter(s => counts[s] > 0)
-      .map(s => ({ name: SEV_LABELS[s], value: counts[s], color: SEV_COLORS[s] }));
+      .map(s => ({ name: SEV_LABELS[s], value: counts[s], color: SEV_COLORS[s], _total: total, _ring: 'Severidade' }));
   }, [findings]);
 
   const techData = useMemo(() => {
@@ -87,10 +116,11 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
     const MAX_ITEMS = 8;
     const top = sorted.slice(0, MAX_ITEMS);
     const otherCount = sorted.slice(MAX_ITEMS).reduce((sum, [, c]) => sum + c, 0);
+    const totalTech = sorted.reduce((sum, [, c]) => sum + c, 0) || 1;
     const result = top.map(([name, value], i) => ({
-      name, value, color: TECH_COLORS[i % TECH_COLORS.length],
+      name, value, color: TECH_COLORS[i % TECH_COLORS.length], _total: totalTech, _ring: 'Tecnologia',
     }));
-    if (otherCount > 0) result.push({ name: 'Outros', value: otherCount, color: '#6b7280' });
+    if (otherCount > 0) result.push({ name: 'Outros', value: otherCount, color: '#6b7280', _total: totalTech, _ring: 'Tecnologia' });
     return result;
   }, [assets]);
 
@@ -108,7 +138,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
         {!hasData ? (
           <p className="text-sm text-muted-foreground text-center py-6">Sem dados para exibir</p>
         ) : (
-          <div className="w-full h-full min-h-[280px]">
+          <div className="w-full h-full min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -116,8 +146,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   dataKey="value"
                   cx="50%"
                   cy="50%"
-                  innerRadius={45}
-                  outerRadius={85}
+                  innerRadius="20%"
+                  outerRadius="42%"
                   paddingAngle={2}
                   strokeWidth={0}
                   label={renderCustomLabel}
@@ -132,8 +162,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   dataKey="value"
                   cx="50%"
                   cy="50%"
-                  innerRadius={95}
-                  outerRadius={130}
+                  innerRadius="48%"
+                  outerRadius="72%"
                   paddingAngle={1}
                   strokeWidth={0}
                   label={renderCustomLabel}
@@ -143,10 +173,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                     <Cell key={`tech-${i}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip
-                  contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px', color: 'hsl(var(--popover-foreground))' }}
-                  formatter={(value: number, name: string) => [value, name]}
-                />
+                <Tooltip content={<CustomTooltip />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
