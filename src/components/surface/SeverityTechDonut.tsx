@@ -149,7 +149,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
         ) : (
           <div className="w-full h-full min-h-[380px] overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+              <PieChart style={{ overflow: 'hidden' }}>
                 <Pie
                   data={severityData}
                   dataKey="value"
