@@ -14,7 +14,9 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, Radar, Building2, CheckCircle2, Play, XCircle, Settings, Calendar,
+  Globe, Server, ShieldAlert, AlertTriangle, Clock,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
@@ -32,7 +34,7 @@ import {
   CATEGORY_INFO,
   type SurfaceFinding, type SurfaceFindingCategory, type FindingsAsset,
 } from '@/lib/surfaceFindings';
-import { SeverityCards } from '@/components/surface/SeverityCards';
+import { StatCard } from '@/components/StatCard';
 import { CategoryOverviewGrid } from '@/components/surface/CategoryOverviewGrid';
 import { TopFindingsList } from '@/components/surface/TopFindingsList';
 import { AssetHealthGrid } from '@/components/surface/AssetHealthGrid';
@@ -336,6 +338,18 @@ export default function SurfaceAnalyzerV3Page() {
   const findings = useMemo(() => generateFindings(assets as FindingsAsset[]), [assets]);
   const findingsStats = useMemo(() => calculateFindingsStats(findings), [findings]);
 
+  const assetStats = useMemo(() => {
+    let totalServices = 0, expiredCerts = 0, criticalCVEs = 0;
+    for (const a of assets) {
+      totalServices += a.services.length + a.webServices.length;
+      expiredCerts += a.expiredCerts;
+      for (const cve of a.cves) {
+        if ((cve.severity || '').toLowerCase() === 'critical') criticalCVEs++;
+      }
+    }
+    return { totalAssets: assets.length, totalServices, expiredCerts, criticalCVEs };
+  }, [assets]);
+
   // Sheet state
   const [sheetCategory, setSheetCategory] = useState<SurfaceFindingCategory | null>(null);
   const [sheetAssetIp, setSheetAssetIp] = useState<string | null>(null);
@@ -437,6 +451,17 @@ export default function SurfaceAnalyzerV3Page() {
             </Card>
           )}
 
+          {/* Last collection info */}
+          {snapshot?.completed_at && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              <span>Última coleta:</span>
+              <Badge variant="secondary" className="font-mono text-xs">
+                {new Date(snapshot.completed_at).toLocaleString('pt-BR')}
+              </Badge>
+            </div>
+          )}
+
           {/* Main content */}
           {isLoading ? (
             <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
@@ -452,8 +477,13 @@ export default function SurfaceAnalyzerV3Page() {
             </Card>
           ) : (
             <div className="space-y-6">
-              {/* 1. Severity Cards */}
-              <SeverityCards stats={findingsStats} />
+              {/* 1. Summary Stats Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard title="Ativos Expostos" value={assetStats.totalAssets} icon={Globe} variant="default" delay={0} />
+                <StatCard title="Serviços Detectados" value={assetStats.totalServices} icon={Server} variant="default" delay={0.05} />
+                <StatCard title="CVEs Críticas" value={assetStats.criticalCVEs} icon={ShieldAlert} variant="destructive" delay={0.1} />
+                <StatCard title="Certificados Expirados" value={assetStats.expiredCerts} icon={AlertTriangle} variant="warning" delay={0.15} />
+              </div>
 
               {/* 2. Category Overview Grid */}
               <div>
@@ -481,13 +511,6 @@ export default function SurfaceAnalyzerV3Page() {
             </div>
           )}
 
-          {/* Last scan timestamp */}
-          {snapshot?.completed_at && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground pb-4">
-              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-              Último scan concluído em {new Date(snapshot.completed_at).toLocaleString('pt-BR')}
-            </div>
-          )}
         </div>
 
         {/* Detail Sheet */}
