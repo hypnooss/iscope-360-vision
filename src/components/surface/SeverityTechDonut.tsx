@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Customized } from 'recharts';
 import { Eye } from 'lucide-react';
@@ -95,6 +95,12 @@ interface SeverityTechDonutProps {
 }
 
 export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) {
+  const sliceDataRef = useRef<any[]>([]);
+
+  function captureSliceData({ cx, cy, midAngle, outerRadius, name, value, percent, fill, index }: any) {
+    sliceDataRef.current[index] = { cx, cy, midAngle, outerRadius, name, value, percent, color: fill };
+    return null;
+  }
   const severityData = useMemo(() => {
     const counts: Record<SurfaceFindingSeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const f of findings) counts[f.severity]++;
@@ -169,6 +175,7 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   outerRadius="55%"
                   paddingAngle={1}
                   strokeWidth={0}
+                  label={captureSliceData}
                   labelLine={false}
                 >
                   {techData.map((entry, i) => (
@@ -178,10 +185,8 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                 <Customized
                   component={(props: any) => (
                     <OuterLabelsLayer
+                      sliceData={sliceDataRef.current}
                       techData={techData}
-                      cx={props.width / 2}
-                      cy={props.height / 2}
-                      outerRadius={Math.min(props.width, props.height) * 0.55 / 2}
                       width={props.width}
                       height={props.height}
                     />
