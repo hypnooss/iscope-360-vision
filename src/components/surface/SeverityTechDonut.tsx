@@ -25,6 +25,35 @@ const TECH_COLORS = [
   '#22c55e', '#6366f1', '#e11d48', '#0ea5e9', '#a855f7',
 ];
 
+const RADIAN = Math.PI / 180;
+const MIN_PERCENT_FOR_LABEL = 0.08; // 8%
+
+function renderCustomLabel({
+  cx, cy, midAngle, innerRadius, outerRadius, name, value, percent,
+}: any) {
+  if (percent < MIN_PERCENT_FOR_LABEL) return null;
+
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+  const label = name.length > 7 ? name.slice(0, 6) + '…' : name;
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="hsl(var(--foreground))"
+      textAnchor="middle"
+      dominantBaseline="central"
+      fontSize={10}
+      fontWeight={600}
+    >
+      {label} {value}
+    </text>
+  );
+}
+
 interface SeverityTechDonutProps {
   findings: SurfaceFinding[];
   assets: Array<{
@@ -35,7 +64,6 @@ interface SeverityTechDonutProps {
 }
 
 export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) {
-  // Inner ring: severity distribution
   const severityData = useMemo(() => {
     const counts: Record<SurfaceFindingSeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const f of findings) counts[f.severity]++;
@@ -44,121 +72,83 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
       .map(s => ({ name: SEV_LABELS[s], value: counts[s], color: SEV_COLORS[s] }));
   }, [findings]);
 
-  // Outer ring: top technologies
   const techData = useMemo(() => {
     const techCount = new Map<string, number>();
     for (const asset of assets) {
       const seen = new Set<string>();
       for (const tech of asset.allTechs) {
-        // Normalize: take product name (before /) or full string
         const name = tech.split('/')[0].split(':')[0].trim();
         if (!name || seen.has(name.toLowerCase())) continue;
         seen.add(name.toLowerCase());
         techCount.set(name, (techCount.get(name) || 0) + 1);
       }
     }
-    const sorted = Array.from(techCount.entries())
-      .sort((a, b) => b[1] - a[1]);
-
+    const sorted = Array.from(techCount.entries()).sort((a, b) => b[1] - a[1]);
     const MAX_ITEMS = 8;
     const top = sorted.slice(0, MAX_ITEMS);
     const otherCount = sorted.slice(MAX_ITEMS).reduce((sum, [, c]) => sum + c, 0);
-
     const result = top.map(([name, value], i) => ({
-      name,
-      value,
-      color: TECH_COLORS[i % TECH_COLORS.length],
+      name, value, color: TECH_COLORS[i % TECH_COLORS.length],
     }));
-    if (otherCount > 0) {
-      result.push({ name: 'Outros', value: otherCount, color: '#6b7280' });
-    }
+    if (otherCount > 0) result.push({ name: 'Outros', value: otherCount, color: '#6b7280' });
     return result;
   }, [assets]);
 
   const hasData = severityData.length > 0 || techData.length > 0;
 
   return (
-    <Card className="border-border/50">
-      <CardHeader className="pb-3">
+    <Card className="border-border/50 flex flex-col">
+      <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <Eye className="w-4 h-4 text-primary" />
           Visão Geral
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="flex-1 pt-0 pb-2">
         {!hasData ? (
           <p className="text-sm text-muted-foreground text-center py-6">Sem dados para exibir</p>
         ) : (
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-full h-[220px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  {/* Inner ring: severity */}
-                  <Pie
-                    data={severityData}
-                    dataKey="value"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={55}
-                    paddingAngle={2}
-                    strokeWidth={0}
-                  >
-                    {severityData.map((entry, i) => (
-                      <Cell key={`sev-${i}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  {/* Outer ring: technologies */}
-                  <Pie
-                    data={techData}
-                    dataKey="value"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={62}
-                    outerRadius={90}
-                    paddingAngle={1}
-                    strokeWidth={0}
-                  >
-                    {techData.map((entry, i) => (
-                      <Cell key={`tech-${i}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px', color: 'hsl(var(--popover-foreground))' }}
-                    formatter={(value: number, name: string) => [value, name]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Legend */}
-            <div className="w-full grid grid-cols-2 gap-x-4 gap-y-1">
-              {/* Severity legend */}
-              <div>
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Severidade</p>
-                {severityData.map(d => (
-                  <div key={d.name} className="flex items-center gap-1.5 text-xs">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="text-muted-foreground truncate">{d.name}</span>
-                    <span className="ml-auto font-medium text-foreground">{d.value}</span>
-                  </div>
-                ))}
-              </div>
-              {/* Tech legend */}
-              <div>
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Tecnologias</p>
-                {techData.slice(0, 6).map(d => (
-                  <div key={d.name} className="flex items-center gap-1.5 text-xs">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="text-muted-foreground truncate">{d.name}</span>
-                    <span className="ml-auto font-medium text-foreground">{d.value}</span>
-                  </div>
-                ))}
-                {techData.length > 6 && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">+{techData.length - 6} mais</p>
-                )}
-              </div>
-            </div>
+          <div className="w-full h-full min-h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={severityData}
+                  dataKey="value"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={45}
+                  outerRadius={85}
+                  paddingAngle={2}
+                  strokeWidth={0}
+                  label={renderCustomLabel}
+                  labelLine={false}
+                >
+                  {severityData.map((entry, i) => (
+                    <Cell key={`sev-${i}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Pie
+                  data={techData}
+                  dataKey="value"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={95}
+                  outerRadius={130}
+                  paddingAngle={1}
+                  strokeWidth={0}
+                  label={renderCustomLabel}
+                  labelLine={false}
+                >
+                  {techData.map((entry, i) => (
+                    <Cell key={`tech-${i}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px', color: 'hsl(var(--popover-foreground))' }}
+                  formatter={(value: number, name: string) => [value, name]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         )}
       </CardContent>
