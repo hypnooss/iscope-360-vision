@@ -481,8 +481,8 @@ export default function SurfaceAnalyzerV3Page() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard title="Ativos Expostos" value={assetStats.totalAssets} icon={Globe} variant="default" delay={0} />
                 <StatCard title="Serviços Detectados" value={assetStats.totalServices} icon={Server} variant="default" delay={0.05} />
-                <StatCard title="CVEs Críticas" value={assetStats.criticalCVEs} icon={ShieldAlert} variant="destructive" delay={0.1} />
-                <StatCard title="Certificados Expirados" value={assetStats.expiredCerts} icon={AlertTriangle} variant="warning" delay={0.15} />
+                <StatCard title="CVEs Críticas" value={assetStats.criticalCVEs} icon={ShieldAlert} variant="default" delay={0.1} />
+                <StatCard title="Certificados Expirados" value={assetStats.expiredCerts} icon={AlertTriangle} variant="default" delay={0.15} />
               </div>
 
               {/* 2. Category Overview Grid */}
