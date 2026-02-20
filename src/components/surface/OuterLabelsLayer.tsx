@@ -1,0 +1,159 @@
+import type { SurfaceFindingSeverity } from '@/lib/surfaceFindings';
+
+const RADIAN = Math.PI / 180;
+const MIN_SPACING = 28;
+
+interface LabelItem {
+  name: string;
+  value: number;
+  color: string;
+  midAngle: number;
+  percent: number;
+}
+
+interface OuterLabelsLayerProps {
+  techData: Array<{ name: string; value: number; color: string; _total: number }>;
+  cx: number;
+  cy: number;
+  outerRadius: number;
+}
+
+export function OuterLabelsLayer({ techData, cx, cy, outerRadius }: OuterLabelsLayerProps) {
+  if (!techData.length || !cx || !cy || !outerRadius) return null;
+
+  const total = techData.reduce((s, d) => s + d.value, 0) || 1;
+
+  // Calculate mid-angle for each segment (Recharts starts at 90° clockwise)
+  const items: LabelItem[] = [];
+  let startAngle = 90; // Recharts default startAngle
+  for (const d of techData) {
+    const sliceAngle = (d.value / total) * 360;
+    const midAngle = startAngle - sliceAngle / 2; // Recharts goes counter-clockwise in angle space
+    items.push({
+      name: d.name,
+      value: d.value,
+      color: d.color,
+      midAngle,
+      percent: d.value / total,
+    });
+    startAngle -= sliceAngle;
+  }
+
+  // Split into right (midAngle 0-180 in Recharts coords) and left
+  const rightItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
+  const leftItems: (LabelItem & { naturalY: number; finalY: number })[] = [];
+
+  for (const item of items) {
+    const angle = item.midAngle;
+    const naturalY = cy - outerRadius * Math.sin(angle * RADIAN);
+    const isRight = Math.cos(angle * RADIAN) >= 0;
+
+    if (isRight) {
+      rightItems.push({ ...item, naturalY, finalY: naturalY });
+    } else {
+      leftItems.push({ ...item, naturalY, finalY: naturalY });
+    }
+  }
+
+  // Sort each group by naturalY (top to bottom)
+  rightItems.sort((a, b) => a.naturalY - b.naturalY);
+  leftItems.sort((a, b) => a.naturalY - b.naturalY);
+
+  // Resolve collisions: push down if too close
+  function resolveCollisions(group: typeof rightItems) {
+    for (let i = 1; i < group.length; i++) {
+      const prev = group[i - 1];
+      const curr = group[i];
+      if (curr.finalY - prev.finalY < MIN_SPACING) {
+        curr.finalY = prev.finalY + MIN_SPACING;
+      }
+    }
+    // If labels overflowed bottom, push everything up
+    if (group.length > 0) {
+      const maxY = cy + outerRadius + 40;
+      const last = group[group.length - 1];
+      if (last.finalY > maxY) {
+        const overflow = last.finalY - maxY;
+        for (const item of group) {
+          item.finalY -= overflow;
+        }
+        // Re-resolve from top
+        for (let i = 1; i < group.length; i++) {
+          if (group[i].finalY - group[i - 1].finalY < MIN_SPACING) {
+            group[i].finalY = group[i - 1].finalY + MIN_SPACING;
+          }
+        }
+      }
+    }
+  }
+
+  resolveCollisions(rightItems);
+  resolveCollisions(leftItems);
+
+  const extLen = 28;
+  const horizLen = 30;
+
+  function renderGroup(group: typeof rightItems, isRight: boolean) {
+    return group.map((item, i) => {
+      const angle = item.midAngle;
+      // Point on outer edge of arc
+      const ex1 = cx + outerRadius * Math.cos(-angle * RADIAN);
+      const ey1 = cy + outerRadius * Math.sin(-angle * RADIAN);
+
+      // Elbow point (radial extension)
+      const extR = outerRadius + extLen;
+      const ex2 = cx + extR * Math.cos(-angle * RADIAN);
+      const ey2 = cy + extR * Math.sin(-angle * RADIAN);
+
+      // Final horizontal position
+      const colX = outerRadius + extLen + horizLen;
+      const ex3 = isRight ? cx + colX : cx - colX;
+      const ey3 = item.finalY;
+
+      const textAnchor = isRight ? 'start' : 'end';
+      const textX = isRight ? ex3 + 6 : ex3 - 6;
+      const pct = (item.percent * 100).toFixed(0);
+
+      return (
+        <g key={`label-${isRight ? 'r' : 'l'}-${i}`}>
+          <polyline
+            points={`${ex1},${ey1} ${ex2},${ey2} ${ex3},${ey3}`}
+            fill="none"
+            stroke={item.color}
+            strokeWidth={1.2}
+            strokeOpacity={0.7}
+          />
+          <circle cx={ex3} cy={ey3} r={3} fill={item.color} />
+          <text
+            x={textX}
+            y={ey3 - 1}
+            textAnchor={textAnchor}
+            dominantBaseline="central"
+            fontSize={11}
+            fontWeight={600}
+            fill="hsl(var(--foreground))"
+          >
+            {item.name}
+          </text>
+          <text
+            x={textX}
+            y={ey3 + 14}
+            textAnchor={textAnchor}
+            dominantBaseline="central"
+            fontSize={10}
+            fill="hsl(var(--muted-foreground))"
+          >
+            {item.value} ({pct}%)
+          </text>
+        </g>
+      );
+    });
+  }
+
+  return (
+    <g className="outer-labels-layer">
+      {renderGroup(rightItems, true)}
+      {renderGroup(leftItems, false)}
+    </g>
+  );
+}
