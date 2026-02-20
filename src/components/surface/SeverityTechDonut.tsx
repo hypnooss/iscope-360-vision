@@ -27,6 +27,7 @@ const TECH_COLORS = [
 
 const RADIAN = Math.PI / 180;
 const MIN_PERCENT_FOR_LABEL = 0.10;
+const MIN_PERCENT_FOR_OUTER_LABEL = 0.04;
 
 function renderCustomLabel({
   cx, cy, midAngle, innerRadius, outerRadius, name, value, percent,
@@ -52,6 +53,67 @@ function renderCustomLabel({
     >
       {label} {value}
     </text>
+  );
+}
+
+function renderOuterLabel({
+  cx, cy, midAngle, outerRadius, name, value, percent, payload,
+}: any) {
+  if (percent < MIN_PERCENT_FOR_OUTER_LABEL) return null;
+
+  const color = payload?.color || '#888';
+  const pct = (percent * 100).toFixed(0);
+
+  // Point on the outer edge of the arc
+  const ex1 = cx + outerRadius * Math.cos(-midAngle * RADIAN);
+  const ey1 = cy + outerRadius * Math.sin(-midAngle * RADIAN);
+
+  // Extended point (radial extension)
+  const extRadius = outerRadius + 14;
+  const ex2 = cx + extRadius * Math.cos(-midAngle * RADIAN);
+  const ey2 = cy + extRadius * Math.sin(-midAngle * RADIAN);
+
+  // Horizontal extension
+  const isRight = midAngle <= 180;
+  const horizLen = 18;
+  const ex3 = isRight ? ex2 + horizLen : ex2 - horizLen;
+  const ey3 = ey2;
+
+  const textAnchor = isRight ? 'start' : 'end';
+  const textX = isRight ? ex3 + 6 : ex3 - 6;
+
+  return (
+    <g>
+      <polyline
+        points={`${ex1},${ey1} ${ex2},${ey2} ${ex3},${ey3}`}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.2}
+        strokeOpacity={0.7}
+      />
+      <circle cx={ex3} cy={ey3} r={3} fill={color} />
+      <text
+        x={textX}
+        y={ey3 - 1}
+        textAnchor={textAnchor}
+        dominantBaseline="central"
+        fontSize={10}
+        fontWeight={600}
+        fill="hsl(var(--foreground))"
+      >
+        {name}
+      </text>
+      <text
+        x={textX}
+        y={ey3 + 12}
+        textAnchor={textAnchor}
+        dominantBaseline="central"
+        fontSize={9}
+        fill="hsl(var(--muted-foreground))"
+      >
+        {value} ({pct}%)
+      </text>
+    </g>
   );
 }
 
@@ -163,10 +225,10 @@ export function SeverityTechDonut({ findings, assets }: SeverityTechDonutProps) 
                   cx="50%"
                   cy="50%"
                   innerRadius="48%"
-                  outerRadius="72%"
+                  outerRadius="65%"
                   paddingAngle={1}
                   strokeWidth={0}
-                  label={renderCustomLabel}
+                  label={renderOuterLabel}
                   labelLine={false}
                 >
                   {techData.map((entry, i) => (
