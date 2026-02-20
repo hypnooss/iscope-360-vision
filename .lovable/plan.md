@@ -1,39 +1,52 @@
 
 
-# Ajustes no Donut Duplo - Cores, Tamanho de Texto e Espacamento
+# Ajuste de Cores e Posicionamento dos Labels Externos
 
-## Resumo
+## Problemas Identificados
 
-Tres ajustes no componente `SeverityTechDonut.tsx`:
+1. **Cores muito cinza** - A paleta atual (`#5b9aa9`, `#7c8bb8`, etc.) ficou dessaturada demais, perdendo a identidade visual de cada tecnologia
+2. **Labels sobrepostos ao grafico** - O `outerRadius` de `65%` esta grande demais para o container, nao deixando espaco suficiente para os labels externos com suas linhas conectoras
 
-1. **Paleta do anel externo (Tecnologias)** - Trocar as cores vibrantes por tons mais suaves e dessaturados que harmonizam com o fundo escuro sem competir visualmente com as cores de severidade
-2. **Tamanho do texto dos labels externos** - Aumentar fontSize do nome para 11 e do valor para 10
-3. **Maior distancia entre labels e grafico** - Aumentar o `extRadius` (extensao radial) e o `horizLen` (extensao horizontal) para afastar os labels do anel
+## Solucao
+
+### 1. Nova paleta intermediaria
+
+Cores com saturacao moderada - nao tao vibrantes quanto as originais, mas com identidade visual clara no dark mode:
+
+```text
+'#4db8a4'   (teal suave)
+'#7b8fdb'   (azul lavanda)
+'#b07cc3'   (roxo medio)
+'#45b5bf'   (ciano suave)
+'#c4956a'   (dourado muted)
+'#5bae7e'   (verde salvia)
+'#8f8bc7'   (indigo suave)
+'#c27884'   (rosa dusty)
+'#5aa3c9'   (azul steel)
+'#a98db5'   (malva)
+```
+
+### 2. Reduzir raio do grafico e aumentar distancia dos labels
+
+- Reduzir `outerRadius` do anel externo de `"65%"` para `"55%"` - isso libera mais espaco ao redor do grafico
+- Ajustar `innerRadius` do anel externo de `"48%"` para `"42%"` (manter espessura do anel)
+- Ajustar anel interno: `innerRadius="15%"` / `outerRadius="36%"`
+- Aumentar `extRadius` de `outerRadius + 22` para `outerRadius + 30` para garantir que os labels fiquem bem fora do grafico
+- Aumentar `horizLen` de `28` para `35`
+
+### 3. Aumentar container
+
+- Aumentar `min-h` de `320px` para `380px` para acomodar melhor o grafico com labels externos
 
 ## Detalhe Tecnico
 
-**Arquivo:** `src/components/surface/SeverityTechDonut.tsx`
+**Arquivo unico:** `src/components/surface/SeverityTechDonut.tsx`
 
-### 1. Nova paleta de cores para tecnologias (linha 23-26)
-
-Substituir `TECH_COLORS` por tons mais frios/dessaturados que nao competem com vermelho/laranja/amarelo do anel de severidade:
-
-```text
-Antes:  '#14b8a6', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b', '#22c55e', '#6366f1', '#e11d48', '#0ea5e9', '#a855f7'
-Depois: '#5b9aa9', '#7c8bb8', '#8a7fa8', '#6ba3a0', '#9ca3af', '#7a9b8d', '#8691a8', '#a0929b', '#6d97a8', '#8b8fa3'
-```
-
-Tons pasteis/cinza-azulados que ficam elegantes no dark mode sem poluicao visual.
-
-### 2. Distancia dos labels externos (linhas 72, 78)
-
-- `extRadius`: de `outerRadius + 14` para `outerRadius + 22` (mais afastado radialmente)
-- `horizLen`: de `18` para `28` (linha horizontal mais longa)
-- `textX` offset: de `6` para `8`
-
-### 3. Tamanho do texto (linhas 100, 111)
-
-- Nome da tecnologia: fontSize de `10` para `11`
-- Valor + porcentagem: fontSize de `9` para `10`
-- Espaco entre linhas: `ey3 + 12` para `ey3 + 14`
+Alteracoes pontuais:
+- Linhas 23-26: substituir array `TECH_COLORS`
+- Linha 72: `extRadius = outerRadius + 30`
+- Linha 78: `horizLen = 35`
+- Linha 203: `min-h-[380px]`
+- Linhas 211-212: anel interno `innerRadius="15%"` / `outerRadius="36%"`
+- Linhas 228-229: anel externo `innerRadius="42%"` / `outerRadius="55%"`
 
