@@ -1,26 +1,41 @@
 
 
-# Cores Neutras nos Stats Cards
+# Corrigir Layout dos Stats Cards para V1
 
 ## Problema
-Os cards de "CVEs Criticas" e "Certificados Expirados" estao usando `variant="destructive"` (fundo vermelho) e `variant="warning"` (fundo amarelo), o que da a impressao de severidade. Todos os 4 cards devem ter fundo neutro identico, como na referencia do Analyzer V1.
+O `StatCard` compartilhado (`src/components/StatCard.tsx`) tem layout "titulo em cima, numero embaixo, icone a direita". O V1 (`AttackSurfaceAnalyzerPage`) usa um `StatCard` local com layout "icone grande a esquerda, numero grande + label embaixo".
+
+## Solucao
+Substituir o uso do `StatCard` compartilhado no V3 por cards inline que replicam exatamente o layout do V1:
+
+```
+[Icone colorido 8x8] | Numero grande (2xl bold)
+                      | Label pequeno (xs muted)
+```
 
 ## Alteracao
 
-No arquivo `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`, trocar o `variant` dos dois ultimos StatCards de `"destructive"` e `"warning"` para `"default"`, igualando todos os 4 cards:
+**Arquivo:** `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`
 
+- Remover import do `StatCard` de `@/components/StatCard`
+- Adicionar import de `Card, CardContent` de `@/components/ui/card`
+- Substituir os 4 `<StatCard>` por 4 cards usando o mesmo padrao do V1:
+
+```tsx
+<Card className="glass-card">
+  <CardContent className="p-4 flex items-center gap-3">
+    <Globe className="w-8 h-8 text-teal-400" />
+    <div>
+      <p className="text-2xl font-bold">{assetStats.totalAssets}</p>
+      <p className="text-xs text-muted-foreground">Ativos Expostos</p>
+    </div>
+  </CardContent>
+</Card>
 ```
-<StatCard title="Ativos Expostos"        value={...} icon={Globe}        variant="default" />
-<StatCard title="Serviços Detectados"    value={...} icon={Server}       variant="default" />
-<StatCard title="CVEs Críticas"          value={...} icon={ShieldAlert}  variant="default" />
-<StatCard title="Certificados Expirados" value={...} icon={AlertTriangle} variant="default" />
-```
 
-Isso resulta em todos os cards com borda e fundo neutro (`border-primary/30 bg-primary/5`), enquanto cada icone mantem sua cor natural (teal, blue, red, orange) vinda do proprio componente de icone do Lucide.
-
-## Arquivo Afetado
-
-| Arquivo | Acao |
-|---|---|
-| `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx` | Alterar variant de 2 StatCards (linhas 484-485) |
+Cada card com seu icone e cor:
+- Globe / text-teal-400 / "Ativos Expostos"
+- Server / text-blue-400 / "Servicos Detectados"
+- ShieldAlert / text-destructive / "CVEs Criticas"
+- AlertTriangle / text-warning / "Certificados Expirados"
 
