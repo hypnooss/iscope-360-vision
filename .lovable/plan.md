@@ -1,29 +1,40 @@
 
-
-# Corrigir Posicionamento de Bolinha e Texto por Quadrante
+# Corrigir Direcao do Texto com Base na Posicao Real na Tela
 
 ## Problema
-O texto e a bolinha (circle) sempre seguem o mesmo layout vertical: nome acima, valor abaixo. Isso ignora a direcao do quadrante. No quadrante inferior, "Outros" tem o texto subindo quando deveria estar descendo. "MikroTik bandwidth" no topo-direito tambem fica desalinhado.
+O texto das labels (ex: "Outros") vai na direcao errada porque a classificacao por quadrante depende de calculos de angulo que podem nao corresponder exatamente ao posicionamento visual real do Recharts. Mesmo com a logica matematicamente correta, diferencas sutis na convencao de angulos fazem com que um item como "Outros" (visualmente embaixo) seja classificado no quadrante errado.
 
 ## Solucao
-Ajustar o posicionamento vertical do texto e da bolinha com base no quadrante:
-- **Quadrantes de topo** (top-right, top-left): bolinha no ponto final da linha, texto ACIMA da bolinha (nome primeiro, valor abaixo do nome, ambos acima do ponto)
-- **Quadrantes de baixo** (bottom-right, bottom-left): bolinha no ponto final da linha, texto ABAIXO da bolinha (nome primeiro, valor abaixo do nome, ambos abaixo do ponto)
+Abandonar a classificacao por angulo para determinar a direcao do texto. Em vez disso, usar a **posicao real na tela** do ponto final da label:
+- Se o ponto (dot) esta ABAIXO do centro do grafico: texto desce
+- Se o ponto esta ACIMA do centro: texto sobe
+- Se o ponto esta a DIREITA do centro: texto alinha a direita
+- Se esta a ESQUERDA: texto alinha a esquerda
+
+Isso elimina qualquer dependencia de convencao de angulos.
 
 ## Detalhes Tecnicos
 
 ### Arquivo: `src/components/surface/OuterLabelsLayer.tsx`
 
-Alterar a funcao `renderGroup` (linhas 159-213):
+Na funcao `renderGroup`, substituir as determinacoes de `isRight` e `isTop` baseadas no quadrante por comparacoes de posicao na tela:
 
-1. Determinar se o quadrante e de topo ou de baixo:
+Trocar:
 ```text
+const isRight = item.quadrant === 'top-right' || item.quadrant === 'bottom-right';
 const isTop = item.quadrant === 'top-right' || item.quadrant === 'top-left';
 ```
 
-2. Ajustar posicao Y do texto com base na direcao:
-- **Topo**: nome em `ey3 - 16`, valor em `ey3 - 3` (texto sobe, bolinha fica embaixo)
-- **Baixo**: nome em `ey3 + 5`, valor em `ey3 + 18` (texto desce, bolinha fica em cima)
+Por:
+```text
+const isRight = item.ex2 >= cx;
+const textGoesDown = ey3 >= cy;
+```
 
-Isso faz com que o fluxo visual siga a direcao natural: nos quadrantes superiores o texto "puxa" para cima, nos inferiores "puxa" para baixo, mantendo a bolinha como ancora no ponto final da linha de conexao.
+E ajustar os offsets de Y do texto:
+```text
+const nameY = textGoesDown ? ey3 + 5 : ey3 - 16;
+const valueY = textGoesDown ? ey3 + 18 : ey3 - 3;
+```
 
+Isso garante que, independente de qualquer convencao de angulo, a direcao visual do texto segue a posicao real do ponto na tela. "Outros" embaixo do centro tera o texto descendo. "Bootstrap" acima do centro tera o texto subindo.
