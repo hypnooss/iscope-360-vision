@@ -159,7 +159,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
   function renderGroup(group: SidedItem[]) {
     return group.map((item, i) => {
       const a = item.midAngle;
-      const isRight = item.quadrant === 'top-right' || item.quadrant === 'bottom-right';
+      const isRight = item.ex2 >= cx;
       const ex1 = cx + outerRadius * Math.cos(a * RADIAN);
       const ey1 = cy - outerRadius * Math.sin(a * RADIAN);
 
@@ -170,7 +170,7 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
 
       const ey3 = item.finalY;
 
-      const isTop = item.quadrant === 'top-right' || item.quadrant === 'top-left';
+      const textGoesDown = ey3 >= cy;
       const textAnchor = isRight ? 'start' : 'end';
       const textX = isRight ? ex3 + 6 : ex3 - 6;
       const pct = (item.percent * 100).toFixed(0);
@@ -178,8 +178,8 @@ export function OuterLabelsLayer({ techData, cx, cy, outerRadius, width, height 
         ? item.name.slice(0, MAX_LABEL_CHARS) + '…'
         : item.name;
 
-      const nameY = isTop ? ey3 - 16 : ey3 + 5;
-      const valueY = isTop ? ey3 - 3 : ey3 + 18;
+      const nameY = textGoesDown ? ey3 + 5 : ey3 - 16;
+      const valueY = textGoesDown ? ey3 + 18 : ey3 - 3;
 
       return (
         <g key={`label-${item.quadrant}-${i}`}>
