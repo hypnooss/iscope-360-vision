@@ -1,7 +1,7 @@
 const RADIAN = Math.PI / 180;
 const MIN_SPACING = 48;
-const HORIZONTAL_LEN = 20;
-const MARGIN = 60;
+const HORIZONTAL_LEN = 40;
+const MARGIN = 16;
 
 interface SliceData {
   cx: number;
