@@ -572,15 +572,35 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
 
   // Filter real modifications (not reads/queries)
   const MODIFY_ACTIONS = ['add', 'edit', 'delete', 'set', 'move', 'modify', 'create', 'remove'];
+  // System action patterns to exclude (IPsec SA negotiations, VPN tunnel events)
+  const SYSTEM_ACTION_PATTERNS = ['phase1_sa', 'phase2_sa', 'tunnel-up', 'tunnel-down', 'tunnel-stats', 'negotiate', 'ike_'];
+  const IP_REGEX = /^\d+\.\d+\.\d+/;
+
   const realChanges = logs.filter(log => {
     const action = (log.action || '').toLowerCase();
     const msg = (log.msg || log.logdesc || '').toLowerCase();
-    // If action field exists, use it; otherwise check msg for modification keywords
-    if (action) return MODIFY_ACTIONS.some(a => action.includes(a));
-    return MODIFY_ACTIONS.some(a => msg.includes(a));
+    const user = (log.user || log.ui || '').trim();
+    const cfgpath = (log.cfgpath || '').trim();
+
+    // Must be a modification action
+    const isModify = action
+      ? MODIFY_ACTIONS.some(a => action.includes(a))
+      : MODIFY_ACTIONS.some(a => msg.includes(a));
+    if (!isModify) return false;
+
+    // Exclude system/automated actions (IPsec, VPN tunnel events)
+    if (SYSTEM_ACTION_PATTERNS.some(p => action.includes(p) || msg.includes(p))) return false;
+
+    // Exclude entries where user is an IP address (automated system events)
+    if (!user || user === 'unknown' || IP_REGEX.test(user)) return false;
+
+    // Require cfgpath to be present (real config changes always have a path)
+    if (!cfgpath) return false;
+
+    return true;
   });
 
-  const realCount = realChanges.length > 0 ? realChanges.length : logs.length;
+  const realCount = realChanges.length;
 
   // === Aggregate high-volume config changes insight ===
   if (realCount >= HIGH_VOLUME_CONFIG_THRESHOLD) {
@@ -1157,6 +1177,44 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: false, error: 'Failed to save results' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Persist config change details to dedicated table
+    const configDetails = (configResult.metrics.configChangeDetails || []) as any[];
+    if (configDetails.length > 0) {
+      // Get snapshot info for firewall_id and client_id
+      const { data: snapInfo } = await supabase
+        .from('analyzer_snapshots')
+        .select('firewall_id, client_id')
+        .eq('id', snapshot_id)
+        .single();
+
+      if (snapInfo) {
+        const rows = configDetails.map((d: any) => ({
+          firewall_id: snapInfo.firewall_id,
+          client_id: snapInfo.client_id,
+          snapshot_id,
+          user_name: d.user || 'unknown',
+          action: d.action || '',
+          cfgpath: d.cfgpath || '',
+          cfgobj: d.cfgobj || '',
+          cfgattr: d.cfgattr || '',
+          msg: d.msg || '',
+          category: d.category || 'Outros',
+          severity: d.severity || 'low',
+          changed_at: d.date ? new Date(d.date).toISOString() : new Date().toISOString(),
+        }));
+
+        const { error: insertErr } = await supabase
+          .from('analyzer_config_changes')
+          .upsert(rows, { onConflict: 'firewall_id,user_name,action,cfgpath,cfgobj,changed_at', ignoreDuplicates: true });
+
+        if (insertErr) {
+          console.error('[firewall-analyzer] Failed to persist config changes:', insertErr);
+        } else {
+          console.log(`[firewall-analyzer] Persisted ${rows.length} config changes to history`);
+        }
+      }
     }
 
     console.log(`[firewall-analyzer] Completed: score=${score}, insights=${uniqueInsights.length}, critical=${summary.critical}`);

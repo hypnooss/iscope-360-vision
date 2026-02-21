@@ -13,14 +13,24 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
-import { useLatestAnalyzerSnapshot } from '@/hooks/useAnalyzerData';
 import { useQuery } from '@tanstack/react-query';
-import type { ConfigChangeDetail } from '@/types/analyzerInsights';
-import { ArrowLeft, Building2, Search, Filter, RefreshCw, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Building2, Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface FirewallOption { id: string; name: string; client_id: string; }
+
+interface ConfigChangeRow {
+  id: string;
+  user_name: string;
+  action: string;
+  cfgpath: string;
+  cfgobj: string;
+  cfgattr: string;
+  msg: string;
+  category: string;
+  severity: string;
+  changed_at: string;
+}
 
 const severityColors: Record<string, string> = {
   critical: 'text-rose-400 border-rose-500/30 bg-rose-500/10',
@@ -28,6 +38,8 @@ const severityColors: Record<string, string> = {
   medium: 'text-warning border-warning/30 bg-warning/10',
   low: 'text-primary border-primary/30 bg-primary/10',
 };
+
+const PAGE_SIZE = 50;
 
 export default function AnalyzerConfigChangesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -38,6 +50,8 @@ export default function AnalyzerConfigChangesPage() {
   const [selectedFirewall, setSelectedFirewall] = useState('');
   const [searchUser, setSearchUser] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [page, setPage] = useState(0);
+  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -80,27 +94,68 @@ export default function AnalyzerConfigChangesPage() {
     if (!authLoading && user && !hasModuleAccess('scope_firewall')) navigate('/modules');
   }, [user, authLoading, navigate, hasModuleAccess]);
 
-  const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
-  const SYSTEM_ACTION_PATTERNS = ['phase1_sa', 'phase2_sa'];
-  const allDetails: ConfigChangeDetail[] = (snapshot?.metrics?.configChangeDetails as any) || [];
-  const details = allDetails.filter(d => {
-    if (!d.user || d.user === 'unknown') return false;
-    if (SYSTEM_ACTION_PATTERNS.some(p => d.action?.toLowerCase().includes(p))) return false;
-    return true;
+  // Reset page when filters change
+  useEffect(() => { setPage(0); }, [selectedFirewall, searchUser, filterCategory, dateRange]);
+
+  const dateFilterStart = useMemo(() => {
+    if (dateRange === 'all') return null;
+    const d = new Date();
+    if (dateRange === '7d') d.setDate(d.getDate() - 7);
+    if (dateRange === '30d') d.setDate(d.getDate() - 30);
+    if (dateRange === '90d') d.setDate(d.getDate() - 90);
+    return d.toISOString();
+  }, [dateRange]);
+
+  // Query persistent table
+  const { data: queryResult, isLoading, refetch } = useQuery({
+    queryKey: ['analyzer-config-changes', selectedFirewall, searchUser, filterCategory, dateRange, page],
+    queryFn: async () => {
+      if (!selectedFirewall) return { rows: [] as ConfigChangeRow[], total: 0 };
+
+      let query = supabase
+        .from('analyzer_config_changes' as any)
+        .select('id, user_name, action, cfgpath, cfgobj, cfgattr, msg, category, severity, changed_at', { count: 'exact' })
+        .eq('firewall_id', selectedFirewall)
+        .order('changed_at', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (dateFilterStart) {
+        query = query.gte('changed_at', dateFilterStart);
+      }
+      if (searchUser) {
+        query = query.ilike('user_name', `%${searchUser}%`);
+      }
+      if (filterCategory !== 'all') {
+        query = query.eq('category', filterCategory);
+      }
+
+      const { data, count, error } = await query as any;
+      if (error) throw error;
+      return { rows: (data ?? []) as ConfigChangeRow[], total: (count ?? 0) as number };
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 30,
   });
 
-  const categories = useMemo(() => {
-    const cats = new Set(details.map(d => d.category));
-    return ['all', ...Array.from(cats).sort()];
-  }, [details]);
+  const rows = queryResult?.rows ?? [];
+  const totalCount = queryResult?.total ?? 0;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
-  const filtered = useMemo(() => {
-    return details.filter(d => {
-      if (searchUser && !d.user.toLowerCase().includes(searchUser.toLowerCase())) return false;
-      if (filterCategory !== 'all' && d.category !== filterCategory) return false;
-      return true;
-    });
-  }, [details, searchUser, filterCategory]);
+  // Get unique categories for filter
+  const { data: categories = ['all'] } = useQuery({
+    queryKey: ['analyzer-config-categories', selectedFirewall],
+    queryFn: async () => {
+      if (!selectedFirewall) return ['all'];
+      const { data } = await supabase
+        .from('analyzer_config_changes' as any)
+        .select('category')
+        .eq('firewall_id', selectedFirewall) as any;
+      const cats = new Set<string>((data ?? []).map((d: any) => d.category).filter(Boolean));
+      return ['all', ...Array.from(cats).sort()];
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 60 * 5,
+  });
 
   if (authLoading) return null;
 
@@ -169,29 +224,30 @@ export default function AnalyzerConfigChangesPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as any)}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">Últimos 7 dias</SelectItem>
+              <SelectItem value="30d">Últimos 30 dias</SelectItem>
+              <SelectItem value="90d">Últimos 90 dias</SelectItem>
+              <SelectItem value="all">Todo histórico</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-
-        {allDetails.length > 0 && details.length === 0 && !isLoading && !searchUser && filterCategory === 'all' && (
-          <Alert className="mb-6 border-warning/30 bg-warning/5">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            <AlertTitle className="text-warning">Detalhes indisponíveis</AlertTitle>
-            <AlertDescription>
-              Alterações detectadas, mas todas são ações automáticas do sistema.
-              Execute uma nova análise para gerar dados detalhados de administradores.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-base">
-              {filtered.length} alteração(ões) encontrada(s)
+              {totalCount} alteração(ões) encontrada(s)
+              {totalPages > 1 && <span className="text-muted-foreground font-normal ml-2">— Página {page + 1} de {totalPages}</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <p className="text-muted-foreground text-sm text-center py-8">Carregando...</p>
-            ) : filtered.length === 0 ? (
+            ) : rows.length === 0 ? (
               <p className="text-muted-foreground text-sm text-center py-8">Nenhuma alteração de configuração encontrada</p>
             ) : (
               <div className="overflow-x-auto">
@@ -209,12 +265,12 @@ export default function AnalyzerConfigChangesPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((d, i) => (
-                      <TableRow key={i}>
+                    {rows.map((d) => (
+                      <TableRow key={d.id}>
                         <TableCell className="text-xs font-mono whitespace-nowrap">
-                          {d.date ? new Date(d.date).toLocaleString('pt-BR') : '—'}
+                          {d.changed_at ? new Date(d.changed_at).toLocaleString('pt-BR') : '—'}
                         </TableCell>
-                        <TableCell className="font-medium">{d.user}</TableCell>
+                        <TableCell className="font-medium">{d.user_name}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
                         </TableCell>
@@ -237,6 +293,31 @@ export default function AnalyzerConfigChangesPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {page + 1} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                >
+                  Próxima <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
               </div>
             )}
           </CardContent>

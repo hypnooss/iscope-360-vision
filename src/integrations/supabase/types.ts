@@ -289,6 +289,79 @@ export type Database = {
           },
         ]
       }
+      analyzer_config_changes: {
+        Row: {
+          action: string
+          category: string | null
+          cfgattr: string | null
+          cfgobj: string | null
+          cfgpath: string
+          changed_at: string
+          client_id: string
+          created_at: string
+          firewall_id: string
+          id: string
+          msg: string | null
+          severity: string | null
+          snapshot_id: string | null
+          user_name: string
+        }
+        Insert: {
+          action?: string
+          category?: string | null
+          cfgattr?: string | null
+          cfgobj?: string | null
+          cfgpath?: string
+          changed_at: string
+          client_id: string
+          created_at?: string
+          firewall_id: string
+          id?: string
+          msg?: string | null
+          severity?: string | null
+          snapshot_id?: string | null
+          user_name: string
+        }
+        Update: {
+          action?: string
+          category?: string | null
+          cfgattr?: string | null
+          cfgobj?: string | null
+          cfgpath?: string
+          changed_at?: string
+          client_id?: string
+          created_at?: string
+          firewall_id?: string
+          id?: string
+          msg?: string | null
+          severity?: string | null
+          snapshot_id?: string | null
+          user_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyzer_config_changes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analyzer_config_changes_firewall_id_fkey"
+            columns: ["firewall_id"]
+            isOneToOne: false
+            referencedRelation: "firewalls"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analyzer_config_changes_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "analyzer_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analyzer_schedules: {
         Row: {
           created_at: string
