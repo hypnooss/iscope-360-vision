@@ -788,11 +788,16 @@ Deno.serve(async (req) => {
       // 1b. From firewall analyses (WAN interfaces)
       const { data: firewalls } = await supabase
         .from('firewalls')
-        .select('id, name')
+        .select('id, name, cloud_public_ip')
         .eq('client_id', client_id)
 
       if (firewalls && firewalls.length > 0) {
         for (const fw of firewalls) {
+          // Cloud public IP: add directly if present and not private
+          if (fw.cloud_public_ip && !isPrivateIP(fw.cloud_public_ip)) {
+            allIPs.push({ ip: fw.cloud_public_ip, source: 'firewall', label: `${fw.name} - Cloud Public IP` })
+          }
+
           const { data: tasks } = await supabase
             .from('agent_tasks')
             .select('id')

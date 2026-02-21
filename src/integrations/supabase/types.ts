@@ -1272,6 +1272,7 @@ export type Database = {
           auth_password: string | null
           auth_username: string | null
           client_id: string
+          cloud_public_ip: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -1292,6 +1293,7 @@ export type Database = {
           auth_password?: string | null
           auth_username?: string | null
           client_id: string
+          cloud_public_ip?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -1312,6 +1314,7 @@ export type Database = {
           auth_password?: string | null
           auth_username?: string | null
           client_id?: string
+          cloud_public_ip?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
