@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
     // Collect Firewall targets
     const { data: firewalls } = await supabase
       .from('firewalls')
-      .select('id, name')
+      .select('id, name, cloud_public_ip')
       .eq('client_id', clientId)
 
     const firewallTargets: FirewallTarget[] = []
@@ -257,6 +257,19 @@ Deno.serve(async (req) => {
               firewallTargets.push({ ...ft, expanded_ips: filteredIPs })
             }
           }
+        }
+      }
+
+      // Add cloud_public_ip if available and not already included
+      if (fw.cloud_public_ip && !isPrivateIP(fw.cloud_public_ip) && !seenDNS.has(fw.cloud_public_ip)) {
+        const alreadyIncluded = firewallTargets.some(ft => ft.expanded_ips.includes(fw.cloud_public_ip));
+        if (!alreadyIncluded) {
+          firewallTargets.push({
+            ip: fw.cloud_public_ip,
+            label: `${fw.name} - Cloud Public IP`,
+            subnet: null,
+            expanded_ips: [fw.cloud_public_ip],
+          });
         }
       }
     }
