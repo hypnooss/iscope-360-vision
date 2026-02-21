@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Check,
   Clock,
+  Cloud,
   Globe,
   Loader2,
   MapPin,
@@ -366,7 +367,10 @@ export default function AddFirewallPage() {
     agent_id: '',
     geo_latitude: '',
     geo_longitude: '',
+    cloud_public_ip: '',
   });
+
+  const [showCloudIP, setShowCloudIP] = useState(false);
 
   // Step 4
   const [schedule, setSchedule] = useState<ScheduleFrequency>('manual');
@@ -476,6 +480,7 @@ export default function AddFirewallPage() {
           created_by: user?.id,
           geo_latitude: formData.geo_latitude ? parseFloat(formData.geo_latitude) : null,
           geo_longitude: formData.geo_longitude ? parseFloat(formData.geo_longitude) : null,
+          cloud_public_ip: formData.cloud_public_ip?.trim() || null,
         } as any)
         .select()
         .single();
@@ -698,6 +703,31 @@ export default function AddFirewallPage() {
                     className={urlError ? 'border-destructive' : ''}
                   />
                   {urlError && <p className="text-sm text-destructive">{urlError}</p>}
+                  {/* Cloud Public IP toggle */}
+                  {!showCloudIP && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCloudIP(true)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
+                    >
+                      <Cloud className="w-3 h-3" />
+                      Firewall em Cloud?
+                    </button>
+                  )}
+                  {showCloudIP && (
+                    <div className="space-y-1.5 mt-2 p-3 rounded-lg border border-border bg-muted/20">
+                      <Label className="text-xs">IP Público da Cloud</Label>
+                      <Input
+                        value={formData.cloud_public_ip}
+                        onChange={(e) => setFormData(prev => ({ ...prev, cloud_public_ip: e.target.value }))}
+                        placeholder="Ex: 203.0.113.50"
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Informe o IP público atribuído pela cloud (AWS, Azure, GCP). Será usado para geolocalização e Surface Analyzer.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Auth */}
@@ -790,8 +820,25 @@ export default function AddFirewallPage() {
                         const credKey = usesSessionAuth ? formData.auth_username : formData.api_key;
                         if (!credKey) { toast.error(usesSessionAuth ? 'Preencha o usuário primeiro' : 'Preencha a API Key primeiro'); return; }
 
-                        setGeoLoading(true);
+                         setGeoLoading(true);
                         try {
+                          // Cloud Public IP shortcut: geolocate directly
+                          if (formData.cloud_public_ip?.trim()) {
+                            const { data: geoData } = await supabase.functions.invoke('resolve-firewall-geo', {
+                              body: { ips: [formData.cloud_public_ip.trim()] },
+                            });
+                            const geoResults: any[] = geoData?.results || [];
+                            const success = geoResults.find((r: any) => r.status === 'success');
+                            if (success) {
+                              setFormData(prev => ({ ...prev, geo_latitude: String(success.lat), geo_longitude: String(success.lon) }));
+                              const loc = [success.city, success.regionName, success.country].filter(Boolean).join(', ');
+                              toast.success(`☁️ Cloud IP — ${formData.cloud_public_ip}${loc ? ` (${loc})` : ''}`);
+                            } else {
+                              toast.error('Não foi possível geolocalizar o IP público da cloud.');
+                            }
+                            setGeoLoading(false);
+                            return;
+                          }
                           // Step 1: Create geo_query task via Edge Function (task will be picked up by the Agent)
                           const { data: taskData, error: taskError } = await supabase.functions.invoke('resolve-firewall-geo', {
                             body: {

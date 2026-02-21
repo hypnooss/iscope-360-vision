@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Server, MapPin, Loader2 } from 'lucide-react';
+import { Plus, Server, MapPin, Loader2, Cloud } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -83,7 +83,10 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
     agent_id: '',
     geo_latitude: '',
     geo_longitude: '',
+    cloud_public_ip: '',
   });
+
+  const [showCloudIP, setShowCloudIP] = useState(false);
 
   // Determine if selected device uses session auth
   const selectedDeviceType = useMemo(() => {
@@ -152,7 +155,9 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
       agent_id: '',
       geo_latitude: '',
       geo_longitude: '',
+      cloud_public_ip: '',
     });
+    setShowCloudIP(false);
   };
 
   const handleFetchLocation = async () => {
@@ -186,7 +191,8 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
         auth_password: usesSessionAuth ? formData.auth_password : undefined,
         geo_latitude: formData.geo_latitude ? parseFloat(formData.geo_latitude) : null,
         geo_longitude: formData.geo_longitude ? parseFloat(formData.geo_longitude) : null,
-      });
+        cloud_public_ip: formData.cloud_public_ip?.trim() || undefined,
+      } as any);
       setOpen(false);
       resetForm();
     } finally {
@@ -320,6 +326,31 @@ export function AddFirewallDialog({ clients, onFirewallAdded }: AddFirewallDialo
               />
               {urlError && (
                 <p className="text-sm text-destructive">{urlError}</p>
+              )}
+              {/* Cloud Public IP toggle */}
+              {!showCloudIP && (
+                <button
+                  type="button"
+                  onClick={() => setShowCloudIP(true)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
+                >
+                  <Cloud className="w-3 h-3" />
+                  Firewall em Cloud?
+                </button>
+              )}
+              {showCloudIP && (
+                <div className="space-y-1.5 mt-2 p-3 rounded-lg border border-border bg-muted/20">
+                  <Label className="text-xs">IP Público da Cloud</Label>
+                  <Input
+                    value={formData.cloud_public_ip}
+                    onChange={(e) => setFormData({ ...formData, cloud_public_ip: e.target.value })}
+                    placeholder="Ex: 203.0.113.50"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Informe o IP público atribuído pela cloud provider.
+                  </p>
+                </div>
               )}
             </div>
 

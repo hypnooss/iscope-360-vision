@@ -13,7 +13,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Save, Loader2, Settings, Clock, MapPin, Globe } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Settings, Clock, MapPin, Globe, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeviceUrlError } from '@/lib/urlValidation';
 import {
@@ -138,7 +138,10 @@ export default function FirewallEditPage() {
     scheduled_day_of_month: 1,
     geo_latitude: '',
     geo_longitude: '',
+    cloud_public_ip: '',
   });
+
+  const [showCloudIP, setShowCloudIP] = useState(false);
 
   const selectedDeviceType = useMemo(() => {
     return deviceTypes.find(dt => dt.id === formData.device_type_id);
@@ -238,7 +241,9 @@ export default function FirewallEditPage() {
         scheduled_day_of_month: (schedule as any)?.scheduled_day_of_month ?? 1,
         geo_latitude: (fw as any).geo_latitude ? String((fw as any).geo_latitude) : '',
         geo_longitude: (fw as any).geo_longitude ? String((fw as any).geo_longitude) : '',
+        cloud_public_ip: (fw as any).cloud_public_ip || '',
       });
+      if ((fw as any).cloud_public_ip) setShowCloudIP(true);
       setUrlError(getDeviceUrlError(fw.fortigate_url));
 
       // Fetch agents for this client
@@ -281,6 +286,7 @@ export default function FirewallEditPage() {
           agent_id: formData.agent_id || null,
           geo_latitude: formData.geo_latitude ? parseFloat(formData.geo_latitude) : null,
           geo_longitude: formData.geo_longitude ? parseFloat(formData.geo_longitude) : null,
+          cloud_public_ip: formData.cloud_public_ip?.trim() || null,
         } as any)
         .eq('id', id!);
 
@@ -439,6 +445,31 @@ export default function FirewallEditPage() {
                 className={urlError ? 'border-destructive' : ''}
               />
               {urlError && <p className="text-sm text-destructive">{urlError}</p>}
+              {/* Cloud Public IP toggle */}
+              {!showCloudIP && (
+                <button
+                  type="button"
+                  onClick={() => setShowCloudIP(true)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
+                >
+                  <Cloud className="w-3 h-3" />
+                  Firewall em Cloud?
+                </button>
+              )}
+              {showCloudIP && (
+                <div className="space-y-1.5 mt-2 p-3 rounded-lg border border-border bg-muted/20">
+                  <Label className="text-xs">IP Público da Cloud</Label>
+                  <Input
+                    value={formData.cloud_public_ip}
+                    onChange={(e) => setFormData({ ...formData, cloud_public_ip: e.target.value })}
+                    placeholder="Ex: 203.0.113.50"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Informe o IP público atribuído pela cloud (AWS, Azure, GCP). Será usado para geolocalização e Surface Analyzer.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Geolocation */}
@@ -477,6 +508,30 @@ export default function FirewallEditPage() {
                       if (!formData.agent_id) { toast.error('Selecione um Agent primeiro'); return; }
 
                       setGeoLoading(true);
+
+                      try {
+                        // Cloud Public IP shortcut: geolocate directly
+                        if (formData.cloud_public_ip?.trim()) {
+                          const { data: geoData } = await supabase.functions.invoke('resolve-firewall-geo', {
+                            body: { ips: [formData.cloud_public_ip.trim()] },
+                          });
+                          const geoResults: any[] = geoData?.results || [];
+                          const success = geoResults.find((r: any) => r.status === 'success');
+                          if (success) {
+                            setFormData(prev => ({ ...prev, geo_latitude: String(success.lat), geo_longitude: String(success.lon) }));
+                            const loc = [success.city, success.regionName, success.country].filter(Boolean).join(', ');
+                            toast.success(`☁️ Cloud IP — ${formData.cloud_public_ip}${loc ? ` (${loc})` : ''}`);
+                          } else {
+                            toast.error('Não foi possível geolocalizar o IP público da cloud.');
+                          }
+                          setGeoLoading(false);
+                          return;
+                        }
+                      } catch (cloudErr: any) {
+                        toast.error('Erro ao geolocalizar Cloud IP: ' + cloudErr.message);
+                        setGeoLoading(false);
+                        return;
+                      }
 
                       // Helper: extract WAN public IPs from compliance step data
                       const extractWanPublicIPs = (interfacesData: any, sdwanData: any): { ip: string; interfaceName: string }[] => {
