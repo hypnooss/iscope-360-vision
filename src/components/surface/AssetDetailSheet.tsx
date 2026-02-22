@@ -39,23 +39,6 @@ interface AssetDetailSheetProps {
   findings: SurfaceFinding[];
 }
 
-// ─── Mini Stat Card ─────────────────────────────────────────
-
-function MiniStat({ label, value, icon: Icon, colorClass }: {
-  label: string; value: number; icon: typeof Server; colorClass: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border/50 bg-card/50 p-3 flex items-center gap-3">
-      <div className={cn('p-2 rounded-lg', colorClass)}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div>
-        <p className="text-xl font-bold tabular-nums">{value}</p>
-        <p className="text-[11px] text-muted-foreground">{label}</p>
-      </div>
-    </div>
-  );
-}
 
 // ─── Services Tab ───────────────────────────────────────────
 
@@ -332,37 +315,23 @@ export function AssetDetailSheet({
           </div>
         </SheetHeader>
 
-        <Tabs defaultValue="resumo" className="flex flex-col h-[calc(100vh-140px)]">
+        <Tabs defaultValue="analise" className="flex flex-col h-[calc(100vh-140px)]">
           <TabsList className="mx-6 mb-0 w-fit">
-            <TabsTrigger value="resumo">Resumo</TabsTrigger>
+            <TabsTrigger value="analise">Análise</TabsTrigger>
             <TabsTrigger value="servicos">Serviços</TabsTrigger>
             <TabsTrigger value="cves">CVEs ({cves.length})</TabsTrigger>
             <TabsTrigger value="certificados">Certificados ({tlsCerts.length})</TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1">
-            <TabsContent value="resumo" className="p-6 space-y-4 mt-0">
-              {/* Mini stat cards */}
-              <div className="grid grid-cols-2 gap-3">
-                <MiniStat label="Portas Abertas" value={ports.length} icon={Network} colorClass="bg-orange-500/10 text-orange-400" />
-                <MiniStat label="Serviços" value={services.length + webServices.length} icon={Server} colorClass="bg-blue-500/10 text-blue-400" />
-                <MiniStat label="CVEs" value={cves.length} icon={Bug} colorClass="bg-red-500/10 text-red-500" />
-                <MiniStat label="Certificados" value={tlsCerts.length} icon={Lock} colorClass="bg-emerald-500/10 text-emerald-400" />
-              </div>
-
-              {/* Findings */}
-              {findings.length > 0 && (
+            <TabsContent value="analise" className="p-6 space-y-4 mt-0">
+              {findings.length > 0 ? (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                    <ShieldAlert className="w-3 h-3" /> Achados ({findings.length})
-                  </h4>
                   {findings.map(f => (
                     <SurfaceFindingCard key={f.id} finding={f} />
                   ))}
                 </div>
-              )}
-
-              {findings.length === 0 && (
+              ) : (
                 <p className="text-sm text-muted-foreground text-center py-6">Nenhum achado para este ativo.</p>
               )}
             </TabsContent>
