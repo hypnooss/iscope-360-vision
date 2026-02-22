@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Server, CheckCircle2, Lock } from 'lucide-react';
+import { Server, CheckCircle2, Lock, Play, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import 'flag-icons/css/flag-icons.min.css';
 import type { SurfaceFinding, SurfaceFindingSeverity } from '@/lib/surfaceFindings';
@@ -52,9 +53,13 @@ interface AssetHealthGridProps {
     expiredCerts?: number;
     expiringSoonCerts?: number;
     allTechs?: string[];
+    source?: string;
   }>;
   findings: SurfaceFinding[];
   onAssetClick: (ip: string) => void;
+  onRescan?: (ip: string, hostname: string, source: string) => void;
+  rescanningIp?: string | null;
+  isSuperRole?: boolean;
 }
 
 const PROVIDER_DOMAINS: Record<string, string> = {
@@ -208,7 +213,7 @@ function ContextLine({ asset }: { asset: AssetHealth }) {
   );
 }
 
-export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthGridProps) {
+export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, rescanningIp, isSuperRole }: AssetHealthGridProps) {
   const healthData: AssetHealth[] = assets
     .filter(a => a.services.length > 0 || (a as any).webServices?.length > 0 || (a as any).ports?.length > 0)
     .map(asset => {
@@ -267,61 +272,89 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
               {healthData.map(asset =>
                 asset.worstSeverity === 'ok' ? (
-                  <div
-                    key={asset.ip}
-                    className={cn(
-                      'rounded-lg border bg-card/50 px-3 py-3 border-l-4 cursor-pointer transition-colors',
-                      CARD_STYLES.ok.border, CARD_STYLES.ok.hover, CARD_STYLES.ok.borderL
-                    )}
-                    onClick={() => onAssetClick(asset.ip)}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-foreground truncate max-w-[140px]">{asset.hostname}</span>
-                      <span className="text-muted-foreground/50 text-[10px]">·</span>
-                      <IpBadge ip={asset.ip} asnRaw={asset.asnRaw} />
-                      {asset.asn && (
-                        <>
-                          <span className="text-muted-foreground/50 text-[10px]">·</span>
-                          <AsnBadge label={asset.asn} asnRaw={asset.asnRaw} />
-                        </>
+                    <div
+                      key={asset.ip}
+                      className={cn(
+                        'rounded-lg border bg-card/50 pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
+                        CARD_STYLES.ok.border, CARD_STYLES.ok.hover, CARD_STYLES.ok.borderL
                       )}
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 ml-auto shrink-0" />
+                      onClick={() => onAssetClick(asset.ip)}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-foreground truncate max-w-[140px]">{asset.hostname}</span>
+                        <span className="text-muted-foreground/50 text-[10px]">·</span>
+                        <IpBadge ip={asset.ip} asnRaw={asset.asnRaw} />
+                        {asset.asn && (
+                          <>
+                            <span className="text-muted-foreground/50 text-[10px]">·</span>
+                            <AsnBadge label={asset.asn} asnRaw={asset.asnRaw} />
+                          </>
+                        )}
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 ml-auto shrink-0" />
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <ContextLine asset={asset} />
+                        {isSuperRole && onRescan && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0 ml-2"
+                            disabled={rescanningIp === asset.ip}
+                            onClick={(e) => { e.stopPropagation(); onRescan(asset.ip, asset.hostname, (assets.find(a => a.ip === asset.ip) as any)?.source || 'dns'); }}
+                          >
+                            {rescanningIp === asset.ip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                            Testar
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <ContextLine asset={asset} />
-                  </div>
                 ) : (
-                  <div
-                    key={asset.ip}
-                    className={cn(
-                      'rounded-lg border bg-card/50 px-3 py-3 border-l-4 cursor-pointer transition-colors',
-                      CARD_STYLES[asset.worstSeverity]?.border,
-                      CARD_STYLES[asset.worstSeverity]?.hover, CARD_STYLES[asset.worstSeverity]?.borderL
-                    )}
-                    onClick={() => onAssetClick(asset.ip)}
-                  >
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
-                      <span className="text-muted-foreground/50 text-[10px]">·</span>
-                      <IpBadge ip={asset.ip} asnRaw={asset.asnRaw} />
-                      {asset.asn && (
-                        <>
-                          <span className="text-muted-foreground/50 text-[10px]">·</span>
-                          <AsnBadge label={asset.asn} asnRaw={asset.asnRaw} />
-                        </>
+                    <div
+                      key={asset.ip}
+                      className={cn(
+                        'rounded-lg border bg-card/50 pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
+                        CARD_STYLES[asset.worstSeverity]?.border,
+                        CARD_STYLES[asset.worstSeverity]?.hover, CARD_STYLES[asset.worstSeverity]?.borderL
                       )}
-                      
+                      onClick={() => onAssetClick(asset.ip)}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
+                        <span className="text-muted-foreground/50 text-[10px]">·</span>
+                        <IpBadge ip={asset.ip} asnRaw={asset.asnRaw} />
+                        {asset.asn && (
+                          <>
+                            <span className="text-muted-foreground/50 text-[10px]">·</span>
+                            <AsnBadge label={asset.asn} asnRaw={asset.asnRaw} />
+                          </>
+                        )}
+                        
+                      </div>
+                      <ContextLine asset={asset} />
+                      <div className="flex items-center justify-between mt-2.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {asset.counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical} Critical</Badge>}
+                          {asset.counts.critical > 0 && (asset.counts.high > 0 || asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
+                          {asset.counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high} High</Badge>}
+                          {asset.counts.high > 0 && (asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
+                          {asset.counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium} Medium</Badge>}
+                          {asset.counts.medium > 0 && asset.counts.low > 0 && <span className="text-muted-foreground/50 text-[10px]">·</span>}
+                          {asset.counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low} Low</Badge>}
+                        </div>
+                        {isSuperRole && onRescan && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0 ml-2"
+                            disabled={rescanningIp === asset.ip}
+                            onClick={(e) => { e.stopPropagation(); onRescan(asset.ip, asset.hostname, (assets.find(a => a.ip === asset.ip) as any)?.source || 'dns'); }}
+                          >
+                            {rescanningIp === asset.ip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                            Testar
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <ContextLine asset={asset} />
-                    <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-                      {asset.counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical} Critical</Badge>}
-                      {asset.counts.critical > 0 && (asset.counts.high > 0 || asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
-                      {asset.counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high} High</Badge>}
-                      {asset.counts.high > 0 && (asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
-                      {asset.counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium} Medium</Badge>}
-                      {asset.counts.medium > 0 && asset.counts.low > 0 && <span className="text-muted-foreground/50 text-[10px]">·</span>}
-                      {asset.counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low} Low</Badge>}
-                    </div>
-                  </div>
                 )
               )}
             </div>
