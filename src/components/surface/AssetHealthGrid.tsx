@@ -94,14 +94,14 @@ function getTechBadgeColor(tech: string): string {
 
 function CertStatusBadge({ tlsCerts, expiredCerts, expiringSoonCerts }: { tlsCerts: TLSCertInfo[]; expiredCerts: number; expiringSoonCerts: number }) {
   if (tlsCerts.length === 0) return (
-    <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground border-border">
+    <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 text-muted-foreground border-border/60">
       <Lock className="w-3 h-3 mr-1" /> Sem Certificado
     </Badge>
   );
   if (expiredCerts > 0) {
     const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
     return (
-      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[11px] px-2 py-0.5">
+      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[11px] font-mono px-1.5 py-0">
         <Lock className="w-3 h-3 mr-1" /> Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
       </Badge>
     );
@@ -109,13 +109,13 @@ function CertStatusBadge({ tlsCerts, expiredCerts, expiringSoonCerts }: { tlsCer
   if (expiringSoonCerts > 0) {
     const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
     return (
-      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[11px] px-2 py-0.5">
+      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[11px] font-mono px-1.5 py-0">
         <Lock className="w-3 h-3 mr-1" /> Expira em {worst.daysRemaining}d
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] px-2 py-0.5">
+    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] font-mono px-1.5 py-0">
       <Lock className="w-3 h-3 mr-1" /> Válido
     </Badge>
   );
@@ -193,46 +193,17 @@ function AsnBadge({ label, asnRaw }: { label: string; asnRaw: AsnData | null }) 
 }
 
 function ContextLine({ asset }: { asset: AssetHealth }) {
-  const visibleTechs = asset.allTechs.slice(0, 4);
-  const overflowTechs = asset.allTechs.length - visibleTechs.length;
-
   return (
-    <div className="flex items-center gap-1.5 flex-wrap text-xs">
-      <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-orange-500/10 text-orange-400 border-orange-500/30">
+    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+      <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 bg-orange-500/10 text-orange-400 border-orange-500/30">
         {asset.ports} porta{asset.ports !== 1 ? 's' : ''}
       </Badge>
-      <span className="text-border">•</span>
-      <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border-blue-500/30">
+      <span className="text-muted-foreground/50 text-[10px]">·</span>
+      <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/30">
         {asset.services} serviço{asset.services !== 1 ? 's' : ''}
       </Badge>
-      <span className="text-border">•</span>
+      <span className="text-muted-foreground/50 text-[10px]">·</span>
       <CertStatusBadge tlsCerts={asset.tlsCerts} expiredCerts={asset.expiredCerts} expiringSoonCerts={asset.expiringSoonCerts} />
-      {visibleTechs.length > 0 && (
-        <>
-          <span className="text-border">•</span>
-          <div className="flex flex-wrap gap-1">
-            {visibleTechs.map((t, i) => (
-              <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
-            ))}
-            {overflowTechs > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex cursor-help">
-                    <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-sm p-2">
-                  <div className="flex flex-wrap gap-1">
-                    {asset.allTechs.map((t, i) => (
-                      <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
-                    ))}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
