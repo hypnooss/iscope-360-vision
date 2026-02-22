@@ -1,8 +1,8 @@
 # iScope 360 — Python Agent
 
-**Versão atual: 1.2.3**
+**Versão atual: 1.2.10**
 
-Agent Python para comunicação com o backend do iScope 360. Executa em servidores Linux, envia heartbeats periódicos, processa tarefas de coleta (firewalls, domínios externos, M365 PowerShell) e suporta atualização automática.
+Agent Python para comunicação com o backend do iScope 360. Executa em servidores Linux, envia heartbeats periódicos, processa tarefas de coleta (firewalls, domínios externos, M365 PowerShell, attack surface scanning) e suporta atualização automática.
 
 ## Índice
 
@@ -16,8 +16,10 @@ Agent Python para comunicação com o backend do iScope 360. Executa em servidor
 - [Endpoints Utilizados](#endpoints-utilizados)
 - [Sistema de Tarefas](#sistema-de-tarefas)
 - [Módulos/Executores](#módulosexecutores)
+- [Pipeline de Attack Surface](#pipeline-de-attack-surface)
 - [Gerenciamento de Componentes](#gerenciamento-de-componentes)
 - [Sistema de Auto-Update](#sistema-de-auto-update)
+- [Scheduler com Exponential Backoff](#scheduler-com-exponential-backoff)
 - [Compatibilidade de Sistemas](#compatibilidade-de-sistemas)
 - [Estrutura de Arquivos](#estrutura-de-arquivos)
 - [Tratamento de Erros](#tratamento-de-erros)
@@ -34,6 +36,9 @@ Agent Python para comunicação com o backend do iScope 360. Executa em servidor
 | **Rede** | Acesso HTTPS aos endpoints do backend |
 | **Amass** | Instalado automaticamente pelo script |
 | **PowerShell Core** | Instalado automaticamente (necessário para M365) |
+| **nmap** | Obrigatório para discovery e fingerprinting de portas |
+| **httpx** | [projectdiscovery/httpx](https://github.com/projectdiscovery/httpx) — fingerprinting web |
+| **masscan** | Opcional — descoberta rápida de portas (alternativa ao nmap discovery) |
 
 ### Sistemas Operacionais Suportados
 
@@ -247,12 +252,13 @@ O agent processa tarefas atribuídas pela plataforma em um modelo de execução 
 | `ssh_command` | Execução de comandos via SSH |
 | `snmp_query` | Queries SNMP em dispositivos |
 | `m365_powershell` | Comandos PowerShell para Exchange Online e Microsoft Graph |
+| `attack_surface_scan` | Pipeline completo de attack surface (Super Agent) — executa ASN classification, port discovery, fingerprinting e web probing sequencialmente |
 
 ---
 
 ## Módulos/Executores
 
-O agent possui 7 executores implementados para diferentes tipos de coleta:
+O agent possui 12 executores implementados para diferentes tipos de coleta:
 
 | Executor | Descrição | Dependência |
 |----------|-----------|-------------|
@@ -263,6 +269,11 @@ O agent possui 7 executores implementados para diferentes tipos de coleta:
 | `dns_query` | Queries DNS (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) | dnspython |
 | `amass` | Enumeração de subdomínios via OWASP Amass | amass (CLI) |
 | `powershell` | Comandos M365 via PowerShell Core (Exchange Online, Microsoft Graph) | pwsh + módulos |
+| `masscan` | Descoberta rápida de portas TCP (alternativa ao nmap discovery) | masscan (CLI) |
+| `nmap_discovery` | Descoberta de portas TCP em 2 fases com detecção de CDN | nmap (CLI) |
+| `nmap` | Fingerprinting de serviços com modelo de 2 fases e scripts NSE | nmap (CLI) |
+| `httpx` | Fingerprinting web (tecnologias, TLS, status codes) com modo CDN-aware | httpx (CLI) |
+| `asn_classifier` | Classificação de IP por ASN/provedor via WHOIS + RDAP | nenhuma (stdlib) |
 
 ### Detalhes dos Executores
 
@@ -304,6 +315,147 @@ O agent possui 7 executores implementados para diferentes tipos de coleta:
 - Suporte a múltiplos comandos por execução com isolamento de erros
 - Timeout configurável (padrão: 300s)
 - Certificado auto-assinado RSA-2048 gerenciado automaticamente
+
+#### ASN Classifier
+- **Fase**: Phase 0 do pipeline de attack surface
+- Classificação de IP por ASN/provedor via WHOIS socket (TCP porta 43)
+- Enriquecimento via RDAP (IANA bootstrap + fallbacks para ARIN, RIPE, APNIC, LACNIC)
+- Identifica 12 provedores CDN/Cloud: Cloudflare, Akamai, Fastly, AWS CloudFront, AWS, Azure, Google Cloud, Incapsula/Imperva, Sucuri, StackPath, Limelight, OVH
+- Distingue entre CDN edge (proxy reverso) e cloud hosting genérico
+- Retorna: `ip`, `is_cdn`, `provider`, `asn`, `org`, `country`, `abuse_email`, `tech_email`, `ip_range`
+- Sem dependências externas (usa stdlib: `socket`, `urllib`, `ssl`)
+
+#### Nmap Discovery (Descoberta de Portas)
+- **Fases**: 2 fases sequenciais
+  - **Phase 1** — Baseline rápido: `--top-ports 2000` (~30s) para confirmar responsividade do host
+  - **Phase 2** — Full range: `1-65535` com rate otimizado (`--min-rate 800`, `--max-rate 1500`, `--defeat-rst-ratelimit`) (~2-4 min)
+- Usa `-sS` (SYN stealth) por padrão com fallback automático para `-sT` (TCP connect) se permissão negada
+- **CDN-aware**: se `is_cdn=true` no contexto (via ASN Classifier), pula o scan e retorna 14 portas web padrão (80, 443, 8080, 8443, 2052-2096, etc.)
+- Se Phase 1 encontra 0 portas, pula Phase 2 (host unresponsive)
+- Se Phase 2 falha, retorna resultados parciais do Phase 1
+- Parâmetros RTT otimizados: `--initial-rtt-timeout 150ms`, `--max-rtt-timeout 400ms`
+- Retorna formato compatível com masscan: `{data: {ip, ports}}`
+
+#### Nmap Fingerprint (Fingerprinting de Serviços)
+- **Fases**: 2 fases sequenciais
+  - **Phase 1** — Scan principal: `-sT -Pn -sV` com `--version-intensity 5`, scripts NSE pré-calculados por porta (`PORT_SCRIPTS`) + scripts globais (`banner`, `ssl-cert`, `vulners`)
+  - **Phase 2** — Enriquecimento condicional: apenas para portas "exóticas" (não cobertas por `PORT_SCRIPTS`) onde `-sV` identificou o serviço — aplica scripts do `SERVICE_SCRIPTS` baseado no nome do serviço
+- Limite de 100 portas por scan para evitar timeouts excessivos
+- Fallback: se Phase 1 não obtém fingerprints, re-executa com `--version-intensity 3` e apenas `--script=banner`
+- Extrai: `port`, `protocol`, `product`, `version`, `cpe`, `scripts` (output NSE), `os` (detecção de OS)
+
+##### Scripts NSE por Porta (PORT_SCRIPTS)
+
+| Porta(s) | Scripts |
+|----------|---------|
+| 21 (FTP) | `ftp-anon`, `ftp-syst`, `ftp-bounce` |
+| 22 (SSH) | `ssh-hostkey`, `ssh2-enum-algos` |
+| 25, 587 (SMTP) | `smtp-commands`, `smtp-ntlm-info`, `smtp-open-relay` |
+| 53 (DNS) | `dns-zone-transfer` |
+| 80, 8080 (HTTP) | `http-title`, `http-server-header`, `http-headers`, `http-security-headers`, `http-methods`, `http-robots.txt` |
+| 161 (SNMP) | `snmp-info`, `snmp-sysdescr`, `snmp-brute` |
+| 389 (LDAP) | `ldap-rootdse` |
+| 443, 8443 (HTTPS) | `http-title`, `http-server-header`, `http-headers`, `ssl-cert`, `ssl-enum-ciphers`, `ssl-heartbleed`, `ssl-poodle`, `http-security-headers`, `http-methods`, `http-robots.txt` |
+| 445 (SMB) | `smb-os-discovery`, `smb-protocols`, `smb-security-mode`, `smb-vuln-ms17-010` |
+| 636 (LDAPS) | `ldap-rootdse`, `ssl-enum-ciphers`, `ssl-heartbleed` |
+| 1433 (MSSQL) | `ms-sql-info`, `ms-sql-ntlm-info` |
+| 3306 (MySQL) | `mysql-info`, `mysql-empty-password` |
+| 3389 (RDP) | `rdp-ntlm-info`, `rdp-enum-encryption`, `rdp-vuln-ms12-020` |
+| 5432 (PostgreSQL) | `pgsql-info` |
+| 6379 (Redis) | `redis-info` |
+| 27017 (MongoDB) | `mongodb-info` |
+
+##### Scripts NSE por Serviço (SERVICE_SCRIPTS) — Phase 2
+
+Usados para portas exóticas onde `-sV` identificou o serviço mas a porta não está no `PORT_SCRIPTS`:
+
+| Serviço | Scripts |
+|---------|---------|
+| `http` | `http-title`, `http-server-header`, `http-headers`, `http-security-headers`, `http-methods`, `http-robots.txt` |
+| `https` / `ssl` | `ssl-cert`, `ssl-enum-ciphers`, `ssl-heartbleed`, `ssl-poodle` + scripts HTTP |
+| `ssh` | `ssh-hostkey`, `ssh2-enum-algos` |
+| `ftp` | `ftp-anon`, `ftp-syst`, `ftp-bounce` |
+| `smtp` | `smtp-commands`, `smtp-ntlm-info`, `smtp-open-relay` |
+| `snmp` | `snmp-info`, `snmp-sysdescr`, `snmp-brute` |
+| `ldap` | `ldap-rootdse` |
+| `smb` | `smb-os-discovery`, `smb-protocols`, `smb-security-mode`, `smb-vuln-ms17-010` |
+| `ms-sql-s` | `ms-sql-info`, `ms-sql-ntlm-info` |
+| `mysql` | `mysql-info`, `mysql-empty-password` |
+| `ms-wbt-server` (RDP) | `rdp-ntlm-info`, `rdp-enum-encryption`, `rdp-vuln-ms12-020` |
+| `postgresql` | `pgsql-info` |
+| `redis` | `redis-info` |
+| `mongodb` | `mongodb-info` |
+| `domain` (DNS) | `dns-zone-transfer` |
+
+##### Scripts Globais (incluídos em todo scan Phase 1)
+
+`banner`, `ssl-cert`, `vulners`
+
+#### Masscan (Descoberta Rápida de Portas)
+- Alternativa ao nmap discovery para scan rápido de todas as 65535 portas
+- Rate configurável (padrão: 1000 pps)
+- Tolerante a timeout: extrai resultados parciais se o scan exceder o tempo limite
+- Parsing robusto do JSON malformado do masscan (trailing commas, etc.)
+- Retorna formato idêntico ao nmap discovery: `{data: {ip, ports}}`
+
+#### httpx (Fingerprinting Web)
+- Sonda HTTP/HTTPS em portas abertas descobertas pelo nmap/masscan
+- Detecta: tecnologias web (`-tech-detect`), status codes, títulos, servidor, TLS (versão, cipher, CN, issuer, validade)
+- **CDN-aware**: injeta headers de browser realistas (User-Agent Chrome, Accept, etc.) quando `is_cdn=true` no contexto
+- Limite de 200 portas por scan para evitar "Argument list too long"
+- Prioriza portas web conhecidas (80, 443, 8080, 8443, 3000, 5000, 9090) quando excede o limite
+- Retorna: `url`, `status_code`, `title`, `server`, `technologies`, `tls`
+
+---
+
+## Pipeline de Attack Surface
+
+O Super Agent executa um pipeline sequencial de 5 fases para mapear a superfície de ataque de um IP:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PIPELINE DE ATTACK SURFACE SCANNING                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Phase 0: ASN Classifier                                                    │
+│  ├─ WHOIS lookup (TCP socket porta 43) + RDAP (HTTPS)                       │
+│  ├─ Identifica provedor (Cloudflare, Akamai, AWS, etc.)                     │
+│  ├─ Classifica: is_cdn=true (edge proxy) ou false (hosting direto)          │
+│  └─ Output: provider, asn, org, country, is_cdn                            │
+│                                                                             │
+│  Phase 1: Nmap Discovery — Baseline (top-ports 2000)                        │
+│  ├─ Scan rápido ~30s para confirmar responsividade                          │
+│  ├─ Se CDN: retorna portas web padrão sem scan                              │
+│  └─ Se 0 portas: para aqui (host unresponsive)                              │
+│                                                                             │
+│  Phase 2: Nmap Discovery — Full Range (1-65535)                             │
+│  ├─ Scan completo com rate otimizado ~2-4min                                │
+│  ├─ Merge com Phase 1 (union de portas únicas)                              │
+│  └─ Se falha: retorna apenas Phase 1                                        │
+│                                                                             │
+│  Phase 3: Nmap Fingerprint — Main Scan + Exotic Enrichment                  │
+│  ├─ -sV com scripts NSE contextuais por porta                               │
+│  ├─ Scripts globais: banner, ssl-cert, vulners                              │
+│  ├─ Fallback: se sem fingerprints → re-scan com intensity=3                 │
+│  └─ Phase 2 condicional: scripts extras para portas exóticas                │
+│                                                                             │
+│  Phase 4: httpx — Web Fingerprinting                                        │
+│  ├─ Sonda HTTP/HTTPS em portas abertas                                      │
+│  ├─ Detecta tecnologias, TLS, status codes                                  │
+│  └─ CDN-aware: headers de browser realistas                                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Comportamento CDN-Aware
+
+Quando o ASN Classifier identifica um IP como CDN edge (Cloudflare, Akamai, etc.):
+
+1. **Nmap Discovery** pula o scan e retorna 14 portas web padrão
+2. **Nmap Fingerprint** executa normalmente nas portas retornadas
+3. **httpx** injeta headers de browser realistas para evitar bloqueio por WAF
+
+Isso evita scans demorados e improdutivos em IPs de CDN que apenas fazem proxy reverso.
 
 ---
 
@@ -379,6 +531,27 @@ O agent possui sistema de atualização automática controlado pelo backend:
 
 ---
 
+## Scheduler com Exponential Backoff
+
+O loop principal do agent (`scheduler.py`) implementa um scheduler com backoff exponencial para resiliência:
+
+- **Intervalo base**: configurável (padrão: 60s via `AGENT_POLL_INTERVAL`)
+- **Backoff exponencial**: em caso de erro, o intervalo dobra a cada falha consecutiva (`base × 2^erros`)
+- **Intervalo máximo**: 300s (5 minutos) — cap para evitar intervalos excessivos
+- **Reset automático**: após uma operação bem-sucedida, o intervalo volta ao base
+- **Intervalo do servidor**: se o heartbeat retornar um intervalo específico, o scheduler o utiliza (mínimo 10s)
+
+Exemplo de progressão com base=120s:
+```
+Sucesso:  120s → 120s → 120s
+Erro #1:  240s
+Erro #2:  300s (capped)
+Erro #3:  300s (capped)
+Sucesso:  120s (reset)
+```
+
+---
+
 ## Compatibilidade de Sistemas
 
 ### Ubuntu/Debian
@@ -428,10 +601,10 @@ python-agent/
     ├── auth.py                # Autenticação e renovação de tokens
     ├── heartbeat.py           # Lógica de heartbeat
     ├── tasks.py               # Orquestrador de tarefas
-    ├── scheduler.py           # Loop principal
+    ├── scheduler.py           # Loop principal com exponential backoff
     ├── logger.py              # Sistema de logging com rotação
     ├── updater.py             # Auto-update com rollback
-    ├── version.py             # Versão centralizada (1.2.3)
+    ├── version.py             # Versão centralizada (1.2.10)
     ├── components.py          # Gerenciamento de componentes do sistema
     └── executors/
         ├── __init__.py        # Exporta executores
@@ -442,7 +615,12 @@ python-agent/
         ├── snmp.py            # SNMP (pysnmp)
         ├── dns_query.py       # DNS queries
         ├── amass.py           # Subdomain enumeration
-        └── powershell.py      # M365 PowerShell (Exchange Online, Microsoft Graph)
+        ├── powershell.py      # M365 PowerShell (Exchange Online, Microsoft Graph)
+        ├── asn_classifier.py  # Classificação ASN/CDN via WHOIS + RDAP
+        ├── nmap_discovery.py  # Descoberta de portas TCP (2 fases)
+        ├── nmap.py            # Fingerprinting de serviços (2 fases + NSE)
+        ├── masscan.py         # Descoberta rápida de portas (alternativa)
+        └── httpx_executor.py  # Fingerprinting web (tecnologias, TLS)
 ```
 
 ---
@@ -505,6 +683,24 @@ amass -version
 curl -fsSL .../agent-install | sudo bash -s -- --update
 ```
 
+### nmap / httpx / masscan não encontrado
+```bash
+# Verificar instalação
+which nmap && nmap --version
+which httpx && httpx -version
+which masscan && masscan --version
+
+# Instalar nmap (Ubuntu/Debian)
+sudo apt install -y nmap
+
+# Instalar httpx (projectdiscovery)
+# https://github.com/projectdiscovery/httpx#installation
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+
+# Instalar masscan (opcional)
+sudo apt install -y masscan
+```
+
 ### PowerShell / M365 não funciona
 ```bash
 # Verificar PowerShell
@@ -554,4 +750,4 @@ dnspython>=2.7.0      # DNS queries
 
 ## Licença
 
-Proprietário — iScope 360 © 2024-2025
+Proprietário — iScope 360 © 2024-2026
