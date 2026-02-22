@@ -3982,92 +3982,20 @@ async function handleAttackSurfaceTaskResult(
     .in('status', ['pending', 'assigned', 'running']);
 
   if ((pendingCount || 0) === 0) {
-    console.log(`[attack-surface] All tasks for snapshot ${asTask.snapshot_id} completed. Consolidating...`);
+    console.log(`[attack-surface] All tasks for snapshot ${asTask.snapshot_id} completed. Triggering consolidation (fire-and-forget)...`);
 
-    // Fetch all completed tasks
-    const { data: allTasks } = await supabase
-      .from('attack_surface_tasks')
-      .select('ip, source, label, status, result')
-      .eq('snapshot_id', asTask.snapshot_id);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // Consolidate results (same logic as attack-surface-step-result)
-    const results: Record<string, any> = {};
-    let totalPorts = 0;
-    let totalServices = 0;
-    const allVulns = new Set<string>();
-
-    for (const t of (allTasks || [])) {
-      const r = t.result || {};
-      results[t.ip] = {
-        ports: r.ports || [],
-        services: r.services || [],
-        web_services: r.web_services || [],
-        vulns: r.vulns || [],
-        os: r.os || '',
-        hostnames: r.hostnames || [],
-        asn: r.raw_steps?.asn_classifier?.data || null,
-        error: t.status === 'failed' ? (r.error || 'Task failed') : undefined,
-      };
-      totalPorts += (r.ports || []).length;
-      totalServices += (r.services || []).length + (r.web_services || []).length;
-      for (const v of (r.vulns || [])) allVulns.add(v);
-    }
-
-    // Calculate exposure score
-    const totalIPs = Object.keys(results).length;
-    const vulnCount = allVulns.size;
-    let score = 100;
-    if (totalIPs > 0) {
-      const avgPorts = totalPorts / totalIPs;
-      const portPenalty = Math.min(avgPorts * 2, 40);
-      const servicePenalty = Math.min(totalServices * 1.5, 30);
-      const vulnPenalty = Math.min(vulnCount * 5, 30);
-      score = Math.max(0, Math.round(100 - portPenalty - servicePenalty - vulnPenalty));
-    }
-
-    // CVE matching
-    const allCPEs: string[] = [];
-    for (const ip of Object.keys(results)) {
-      for (const svc of (results[ip].services || [])) {
-        if (svc.cpe && Array.isArray(svc.cpe)) allCPEs.push(...svc.cpe);
-      }
-    }
-
-    let cveMatches: any[] = [];
-    if (allCPEs.length > 0) {
-      const products = allCPEs.map((cpe: string) => {
-        const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':');
-        return (parts[2] || '').replace(/_/g, ' ');
-      }).filter(Boolean);
-      const uniqueProducts = [...new Set(products)];
-      for (const product of uniqueProducts.slice(0, 10)) {
-        const { data: cves } = await supabase
-          .from('cve_cache')
-          .select('cve_id, title, severity, score, advisory_url, products')
-          .ilike('title', `%${product}%`)
-          .order('score', { ascending: false })
-          .limit(5);
-        if (cves) {
-          for (const cve of cves) {
-            if (!cveMatches.find(c => c.cve_id === cve.cve_id)) cveMatches.push(cve);
-          }
-        }
-      }
-    }
-
-    await supabase
-      .from('attack_surface_snapshots')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        results,
-        cve_matches: cveMatches,
-        summary: { total_ips: totalIPs, open_ports: totalPorts, services: totalServices, cves: vulnCount + cveMatches.length },
-        score,
-      })
-      .eq('id', asTask.snapshot_id);
-
-    console.log(`[attack-surface] Snapshot ${asTask.snapshot_id} completed: score=${score}, ips=${totalIPs}, ports=${totalPorts}`);
+    // Fire-and-forget: trigger consolidation without blocking the response
+    fetch(`${supabaseUrl}/functions/v1/consolidate-attack-surface`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ snapshot_id: asTask.snapshot_id }),
+    }).catch(err => console.error('[attack-surface] fire-and-forget consolidation failed:', err.message));
   } else {
     await supabase
       .from('attack_surface_snapshots')

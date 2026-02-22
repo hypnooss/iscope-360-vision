@@ -126,3 +126,6 @@ verify_jwt = false
 [functions.get-map-config]
 verify_jwt = false
 
+[functions.consolidate-attack-surface]
+verify_jwt = false
+
