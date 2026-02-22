@@ -1,34 +1,52 @@
 
-
-# Ajustes no AssetHealthGrid: Padding Interno e Botao Testar
+# Redesign do Painel Lateral de Detalhes do Ativo
 
 ## Resumo
-Duas alteracoes no componente AssetHealthGrid:
-1. Aumentar o padding esquerdo interno dos cards (espaco entre a borda esquerda colorida e o conteudo)
-2. Adicionar o botao "Testar" (re-scan individual por IP) que existia na v1
+Refazer o painel lateral (Sheet) que abre ao clicar em um card de ativo na "Saude dos Ativos", reorganizando as informacoes em abas (Tabs) para exibir nao apenas os achados/triggers, mas tambem portas abertas, servicos detectados, CVEs vinculadas e certificados TLS -- tudo filtrado para aquele host especifico.
 
-## Detalhes tecnicos
+## Estrutura das Abas
 
-**Arquivo 1**: `src/components/surface/AssetHealthGrid.tsx`
+O painel lateral tera 4 abas:
 
-### 1. Aumentar padding esquerdo
-Alterar `px-3` para `pl-5 pr-3` em ambos os tipos de card (ok e com achados), criando mais espaco entre a borda esquerda colorida (border-l-4) e as tres linhas de conteudo.
+1. **Resumo** (aba padrao) -- Visao geral com mini-cards de portas, servicos, CVEs e certificados, alem dos achados/triggers existentes
+2. **Servicos** -- Lista de todas as portas abertas com detalhes dos servicos (produto, versao, banner, scripts NSE)
+3. **CVEs** -- CVEs vinculadas aos servicos detectados neste host (com severidade, score CVSS e link)
+4. **Certificados** -- Certificados TLS encontrados (subject, issuer, validade, dias restantes)
 
-### 2. Adicionar botao Testar
-- Adicionar novas props ao componente: `onRescan`, `rescannigIp`, e `isSuperRole`
-- `onRescan(ip: string, hostname: string)`: callback para disparar o re-scan
-- `rescanningIp: string | null`: IP sendo re-escaneado no momento (para mostrar spinner)
-- `isSuperRole: boolean`: controla visibilidade do botao (apenas super_admin e super_suporte)
-- Renderizar um botao ghost com icone Play (ou Loader2 quando ativo) e texto "Testar" no canto inferior direito de cada card, visivel apenas para super roles
-- O botao usa `e.stopPropagation()` para nao acionar o `onAssetClick`
+## Detalhes Tecnicos
 
-**Arquivo 2**: `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`
+### Arquivo 1: Novo componente `src/components/surface/AssetDetailSheet.tsx`
 
-### Conectar o botao Testar ao hook existente
-- Importar `useAttackSurfaceRescanIP` de `@/hooks/useAttackSurfaceData`
-- Instanciar `rescanMutation` com o `selectedClientId`
-- Passar as novas props para `AssetHealthGrid`:
-  - `isSuperRole`: ja existe na pagina
-  - `rescanningIp`: estado local para rastrear qual IP esta sendo re-escaneado
-  - `onRescan`: funcao que chama `rescanMutation.mutate()` com ip, source, label e snapshotId do snapshot ativo
+Criar um novo componente dedicado ao detalhe de ativos, substituindo o uso do `CategoryDetailSheet` quando `sheetAssetIp` esta definido.
 
+- **Props**: recebe o `ExposedAsset` completo (hostname, ip, ports, services, webServices, tlsCerts, cves, allTechs) + findings filtrados + estado open/onOpenChange
+- **Header**: Hostname (IP) com badge de ASN e status geral do ativo (como no card)
+- **Tabs (Radix Tabs)**: 4 abas conforme descrito acima
+
+#### Aba "Resumo"
+- 4 mini stat-cards em grid 2x2: Portas abertas, Servicos, CVEs, Certificados
+- Lista de achados/triggers (os `SurfaceFindingCard` atuais), mantendo o comportamento existente
+
+#### Aba "Servicos"
+- Tabela/lista com cada servico: porta, protocolo, produto/nome, versao, banner
+- Web services: URL, status code, server, tecnologias detectadas
+- Scripts NSE expandiveis (se existirem)
+
+#### Aba "CVEs"
+- Lista de CVEs vinculadas, ordenadas por score (desc)
+- Cada CVE mostra: ID (link para advisory), titulo, severidade (badge colorido), score CVSS
+- Produtos afetados listados como badges
+
+#### Aba "Certificados"
+- Cards para cada certificado TLS: Subject CN, Issuer, Data de expiracao, Dias restantes
+- Status visual (expirado = vermelho, expirando = amarelo, valido = verde)
+
+### Arquivo 2: `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`
+
+- Quando `sheetAssetIp` esta definido, renderizar o novo `AssetDetailSheet` em vez do `CategoryDetailSheet`
+- Passar o asset encontrado por IP (`assets.find(a => a.ip === sheetAssetIp)`) como prop
+- O `CategoryDetailSheet` continua sendo usado para cliques em categorias e findings individuais
+
+### Arquivo 3: `src/components/surface/CategoryDetailSheet.tsx`
+
+- Sem alteracoes -- continua funcionando para categorias e findings individuais
