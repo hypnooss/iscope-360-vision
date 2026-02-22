@@ -7,6 +7,7 @@ import type { SurfaceFinding, SurfaceFindingSeverity } from '@/lib/surfaceFindin
 interface AssetHealth {
   hostname: string;
   ip: string;
+  asn: string | null;
   worstSeverity: SurfaceFindingSeverity | 'ok';
   counts: { critical: number; high: number; medium: number; low: number };
   totalFindings: number;
@@ -25,6 +26,7 @@ interface AssetHealthGridProps {
   assets: Array<{
     hostname: string;
     ip: string;
+    asn?: { asn: string; provider: string; org: string } | null;
     services: Array<unknown>;
     webServices: Array<unknown>;
   }>;
@@ -32,8 +34,17 @@ interface AssetHealthGridProps {
   onAssetClick: (ip: string) => void;
 }
 
+function formatAsn(asn?: { asn: string; provider: string; org: string } | null): string | null {
+  if (!asn?.asn) return null;
+  const label = asn.org || asn.provider;
+  if (label) {
+    const full = `${asn.asn} - ${label}`;
+    return full.length > 24 ? `${asn.asn} - ${label.slice(0, 14)}…` : full;
+  }
+  return asn.asn;
+}
+
 export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthGridProps) {
-  // Build health data per asset
   const healthData: AssetHealth[] = assets
     .filter(a => a.services.length > 0 || (a as any).webServices?.length > 0 || (a as any).ports?.length > 0)
     .map(asset => {
@@ -55,6 +66,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
       return {
         hostname: asset.hostname,
         ip: asset.ip,
+        asn: formatAsn(asset.asn),
         worstSeverity,
         counts,
         totalFindings,
@@ -82,30 +94,60 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
           <p className="text-sm text-muted-foreground text-center py-6">Nenhum ativo com serviços expostos</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {healthData.map(asset => (
-              <div
-                key={asset.ip}
-                className={cn(
-                  'rounded-lg border border-border/40 bg-card/50 p-3 border-l-4 cursor-pointer',
-                  'hover:bg-muted/30 transition-colors',
-                  BORDER_COLORS[asset.worstSeverity]
-                )}
-                onClick={() => onAssetClick(asset.ip)}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
-                  {asset.worstSeverity === 'ok' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+            {healthData.map(asset =>
+              asset.worstSeverity === 'ok' ? (
+                /* ── Card compacto (sem vulnerabilidades) ── */
+                <div
+                  key={asset.ip}
+                  className={cn(
+                    'rounded-lg border border-border/40 bg-card/50 px-3 py-2 border-l-4 cursor-pointer',
+                    'hover:bg-muted/30 transition-colors',
+                    BORDER_COLORS.ok
+                  )}
+                  onClick={() => onAssetClick(asset.ip)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground truncate max-w-[140px]">{asset.hostname}</span>
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{asset.ip}</span>
+                    {asset.asn && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
+                        {asset.asn}
+                      </Badge>
+                    )}
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 ml-auto" />
+                    <span className="text-[10px] text-muted-foreground shrink-0">{asset.services} svc</span>
+                  </div>
                 </div>
-                <p className="text-xs font-mono text-muted-foreground mb-1.5">{asset.ip}</p>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {asset.counts.critical > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical}C</Badge>}
-                  {asset.counts.high > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high}H</Badge>}
-                  {asset.counts.medium > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium}M</Badge>}
-                  {asset.counts.low > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low}L</Badge>}
-                  <span className="text-[10px] text-muted-foreground ml-auto">{asset.services} svc</span>
+              ) : (
+                /* ── Card expandido (com vulnerabilidades) ── */
+                <div
+                  key={asset.ip}
+                  className={cn(
+                    'rounded-lg border border-border/40 bg-card/50 p-3 border-l-4 cursor-pointer',
+                    'hover:bg-muted/30 transition-colors',
+                    BORDER_COLORS[asset.worstSeverity]
+                  )}
+                  onClick={() => onAssetClick(asset.ip)}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{asset.ip}</span>
+                    {asset.asn && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 ml-auto">
+                        {asset.asn}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {asset.counts.critical > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical}C</Badge>}
+                    {asset.counts.high > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high}H</Badge>}
+                    {asset.counts.medium > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium}M</Badge>}
+                    {asset.counts.low > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low}L</Badge>}
+                    <span className="text-[10px] text-muted-foreground ml-auto">{asset.services} svc</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         )}
       </CardContent>
