@@ -158,7 +158,7 @@ interface TLSCertInfo { subject_cn: string; issuer: string; not_after: string | 
 
 interface ExposedAsset {
   hostname: string; ip: string;
-  asn: { asn: string; provider: string; org: string; is_cdn: boolean; country?: string } | null;
+  asn: { asn: string; provider: string; org: string; is_cdn: boolean; country?: string; abuse_email?: string; tech_email?: string; ip_range?: string; owner?: string; ownerid?: string; responsible?: string; abuse_handle?: string; } | null;
   source: 'dns' | 'firewall'; ports: number[]; services: AttackSurfaceService[];
   webServices: AttackSurfaceWebService[]; tlsCerts: TLSCertInfo[]; cves: AttackSurfaceCVE[];
   expiredCerts: number; expiringSoonCerts: number; allTechs: string[];
