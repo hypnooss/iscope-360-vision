@@ -1,60 +1,45 @@
 
 
-# Redesign dos Cards de Saude dos Ativos
+# Corrigir Layout dos Cards de Saude dos Ativos
 
-## Resumo
+## Problema
 
-Ajustar o componente `AssetHealthGrid` para:
-1. Cards sem vulnerabilidades ocupam apenas uma linha (compactos)
-2. Cards com vulnerabilidades mantem ou aumentam o tamanho vertical
-3. Exibir na primeira linha: hostname, IP e AS/ASN
+Na linha 1 dos cards, o hostname, IP e ASN estao desalinhados: hostname e IP ficam colados, o ASN fica empurrado para a extremidade direita (`ml-auto`), e nao ha separador visual entre os elementos.
 
-## Mudancas
+## Solucao
 
-### 1. AssetHealthGrid - Props e dados
+Alterar `src/components/surface/AssetHealthGrid.tsx` para:
 
-Atualizar a interface `AssetHealthGridProps` para receber `asn` de cada asset:
+1. **Agrupar hostname, IP e ASN lado a lado** (sem `ml-auto` no ASN)
+2. **Separar com bullet** (`·`) entre hostname, IP e ASN
+3. **Exibir IP tambem como badge** (mesmo estilo outline do ASN) para consistencia visual
+4. **Alinhar verticalmente** todos os elementos da linha 1 com `items-center`
+5. **Mover "X svc" para `ml-auto`** para ficar na extremidade direita
 
+### Layout resultante
+
+**Card com vulnerabilidades:**
 ```
-assets: Array<{
-  hostname: string;
-  ip: string;
-  asn?: { asn: string; provider: string; org: string } | null;
-  services: Array<unknown>;
-  webServices: Array<unknown>;
-}>
-```
-
-Incluir `asn` no `AssetHealth`:
-
-```
-interface AssetHealth {
-  ...
-  asn: string | null;  // ex: "AS16509 - Amazon"
-}
+| Hostname · [IP badge] · [ASN badge]                    X svc |
+| [2C] [8H] [9M]                                               |
 ```
 
-### 2. Layout dos cards
+**Card sem vulnerabilidades (compacto):**
+```
+| Hostname · [IP badge] · [ASN badge]              [check] X svc |
+```
 
-**Card COM vulnerabilidades** (worstSeverity != 'ok'):
-- Primeira linha: hostname (truncado) | IP (mono) | ASN badge
-- Segunda linha: badges de severidade (C, H, M, L) + contagem de servicos
+### Detalhes tecnicos
 
-**Card SEM vulnerabilidades** (worstSeverity == 'ok'):
-- Layout single-line (horizontal): hostname | IP | ASN | check icon | servicos
-- Padding reduzido (py-2 px-3) para ocupar uma unica linha
-- Sem quebras verticais
-
-### 3. Formatacao do ASN
-
-Exibir como badge discreto: "AS16509" ou "AS16509 - Amazon" (truncado se longo).
-Se nao houver ASN, nao exibir nada.
+- Remover `ml-auto` do Badge de ASN (linhas 136 e 113)
+- Adicionar separadores `·` (`<span className="text-muted-foreground/50 text-[10px]">·</span>`) entre hostname, IP badge e ASN badge
+- Converter IP de `<span>` para `<Badge variant="outline">` com estilo `text-[9px] font-mono px-1.5 py-0`
+- Manter `shrink-0` nos badges para evitar truncamento
+- Adicionar `ml-auto` ao container de "svc" / check icon
 
 ### Arquivo afetado
 
 | Arquivo | Descricao |
 |---------|-----------|
-| `src/components/surface/AssetHealthGrid.tsx` | Redesign dos cards + inclusao de ASN |
-
-Nenhum outro arquivo precisa mudar pois o `SurfaceAnalyzerV3Page` ja passa `assets` com o campo `asn` incluso.
+| `src/components/surface/AssetHealthGrid.tsx` | Corrigir alinhamento e separadores na linha 1 dos cards |
 
