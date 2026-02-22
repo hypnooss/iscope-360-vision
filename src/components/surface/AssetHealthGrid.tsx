@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Server, CheckCircle2 } from 'lucide-react';
+import { Server, CheckCircle2, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import 'flag-icons/css/flag-icons.min.css';
 import type { SurfaceFinding, SurfaceFindingSeverity } from '@/lib/surfaceFindings';
@@ -14,6 +14,8 @@ interface AsnData {
   [key: string]: unknown;
 }
 
+interface TLSCertInfo { subject_cn: string; issuer: string; not_after: string | null; daysRemaining: number | null; }
+
 interface AssetHealth {
   hostname: string;
   ip: string;
@@ -23,6 +25,11 @@ interface AssetHealth {
   counts: { critical: number; high: number; medium: number; low: number };
   totalFindings: number;
   services: number;
+  ports: number;
+  tlsCerts: TLSCertInfo[];
+  expiredCerts: number;
+  expiringSoonCerts: number;
+  allTechs: string[];
 }
 
 const BORDER_COLORS: Record<string, string> = {
@@ -40,6 +47,11 @@ interface AssetHealthGridProps {
     asn?: AsnData | null;
     services: Array<unknown>;
     webServices: Array<unknown>;
+    ports?: number[] | unknown[];
+    tlsCerts?: TLSCertInfo[];
+    expiredCerts?: number;
+    expiringSoonCerts?: number;
+    allTechs?: string[];
   }>;
   findings: SurfaceFinding[];
   onAssetClick: (ip: string) => void;
@@ -67,6 +79,48 @@ function formatAsn(asn?: AsnData | null): string | null {
   return asnNum || providerLabel;
 }
 
+function getTechBadgeColor(tech: string): string {
+  const t = tech.toLowerCase();
+  if (['hsts', 'csp', 'x-frame-options', 'x-xss-protection'].some(k => t.includes(k)))
+    return 'bg-teal-500/15 text-teal-400 border-teal-500/30';
+  if (['nginx', 'apache', 'iis', 'litespeed', 'caddy'].some(k => t.includes(k)))
+    return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+  if (['php', 'python', 'node', 'java', 'ruby', 'asp.net', '.net'].some(k => t.includes(k)))
+    return 'bg-purple-500/15 text-purple-400 border-purple-500/30';
+  if (['wordpress', 'nextcloud', 'drupal', 'joomla', 'react', 'angular', 'vue', 'django', 'laravel'].some(k => t.includes(k)))
+    return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+  return '';
+}
+
+function CertStatusBadge({ tlsCerts, expiredCerts, expiringSoonCerts }: { tlsCerts: TLSCertInfo[]; expiredCerts: number; expiringSoonCerts: number }) {
+  if (tlsCerts.length === 0) return (
+    <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground border-border">
+      <Lock className="w-3 h-3 mr-1" /> Sem Certificado
+    </Badge>
+  );
+  if (expiredCerts > 0) {
+    const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
+    return (
+      <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[11px] px-2 py-0.5">
+        <Lock className="w-3 h-3 mr-1" /> Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
+      </Badge>
+    );
+  }
+  if (expiringSoonCerts > 0) {
+    const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
+    return (
+      <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[11px] px-2 py-0.5">
+        <Lock className="w-3 h-3 mr-1" /> Expira em {worst.daysRemaining}d
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] px-2 py-0.5">
+      <Lock className="w-3 h-3 mr-1" /> Válido
+    </Badge>
+  );
+}
+
 function IpTooltipBody({ asn }: { asn: AsnData }) {
   const unavailable = <span className="italic text-muted-foreground/60">indisponível</span>;
   return (
@@ -84,11 +138,8 @@ function IpTooltipBody({ asn }: { asn: AsnData }) {
         </div>
       )}
       {asn.ip_range && (
-        <div className="text-xs text-muted-foreground font-mono">
-          Range: {asn.ip_range}
-        </div>
+        <div className="text-xs text-muted-foreground font-mono">Range: {asn.ip_range}</div>
       )}
-
       <div className="border-t border-border my-1.5" />
       <div className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
         <span className="text-muted-foreground font-mono">abuse-c:</span>
@@ -100,20 +151,11 @@ function IpTooltipBody({ asn }: { asn: AsnData }) {
         <span className="text-muted-foreground font-mono">responsible:</span>
         <span className="truncate">{asn.responsible || unavailable}</span>
       </div>
-
       {(asn.abuse_email || (asn.tech_email && asn.tech_email !== asn.abuse_email)) && (
         <>
           <div className="border-t border-border my-1.5" />
-          {asn.abuse_email && (
-            <div className="text-xs text-muted-foreground">
-              Abuse: {asn.abuse_email}
-            </div>
-          )}
-          {asn.tech_email && asn.tech_email !== asn.abuse_email && (
-            <div className="text-xs text-muted-foreground">
-              Técnico: {asn.tech_email}
-            </div>
-          )}
+          {asn.abuse_email && <div className="text-xs text-muted-foreground">Abuse: {asn.abuse_email}</div>}
+          {asn.tech_email && asn.tech_email !== asn.abuse_email && <div className="text-xs text-muted-foreground">Técnico: {asn.tech_email}</div>}
         </>
       )}
     </div>
@@ -150,6 +192,51 @@ function AsnBadge({ label, asnRaw }: { label: string; asnRaw: AsnData | null }) 
   );
 }
 
+function ContextLine({ asset }: { asset: AssetHealth }) {
+  const visibleTechs = asset.allTechs.slice(0, 4);
+  const overflowTechs = asset.allTechs.length - visibleTechs.length;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+      <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-orange-500/10 text-orange-400 border-orange-500/30">
+        {asset.ports} porta{asset.ports !== 1 ? 's' : ''}
+      </Badge>
+      <span className="text-border">•</span>
+      <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border-blue-500/30">
+        {asset.services} serviço{asset.services !== 1 ? 's' : ''}
+      </Badge>
+      <span className="text-border">•</span>
+      <CertStatusBadge tlsCerts={asset.tlsCerts} expiredCerts={asset.expiredCerts} expiringSoonCerts={asset.expiringSoonCerts} />
+      {visibleTechs.length > 0 && (
+        <>
+          <span className="text-border">•</span>
+          <div className="flex flex-wrap gap-1">
+            {visibleTechs.map((t, i) => (
+              <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
+            ))}
+            {overflowTechs > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-help">
+                    <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-dashed text-muted-foreground">+{overflowTechs}</Badge>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-sm p-2">
+                  <div className="flex flex-wrap gap-1">
+                    {asset.allTechs.map((t, i) => (
+                      <Badge key={i} variant="outline" className={cn("text-[11px] px-2 py-0.5", getTechBadgeColor(t))}>{t}</Badge>
+                    ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthGridProps) {
   const healthData: AssetHealth[] = assets
     .filter(a => a.services.length > 0 || (a as any).webServices?.length > 0 || (a as any).ports?.length > 0)
@@ -178,6 +265,11 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
         counts,
         totalFindings,
         services: asset.services.length + ((asset as any).webServices?.length || 0),
+        ports: Array.isArray(asset.ports) ? asset.ports.length : 0,
+        tlsCerts: asset.tlsCerts || [],
+        expiredCerts: asset.expiredCerts || 0,
+        expiringSoonCerts: asset.expiringSoonCerts || 0,
+        allTechs: asset.allTechs || [],
       };
     })
     .sort((a, b) => {
@@ -228,6 +320,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                         <span className="text-[10px] text-muted-foreground">{asset.services} svc</span>
                       </div>
                     </div>
+                    <ContextLine asset={asset} />
                   </div>
                 ) : (
                   <div
@@ -239,7 +332,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     )}
                     onClick={() => onAssetClick(asset.ip)}
                   >
-                    <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="flex items-center gap-1.5 mb-1">
                       <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
                       <span className="text-muted-foreground/50 text-[10px]">·</span>
                       <IpBadge ip={asset.ip} asnRaw={asset.asnRaw} />
@@ -251,7 +344,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                       )}
                       <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{asset.services} svc</span>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                    <ContextLine asset={asset} />
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                       {asset.counts.critical > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical}C</Badge>}
                       {asset.counts.high > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high}H</Badge>}
                       {asset.counts.medium > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium}M</Badge>}
