@@ -1,100 +1,103 @@
 
-
-# Heartbeat Worker Independente
+# Desacoplar Consolidacao do Attack Surface
 
 ## Problema
 
-O loop atual e sequencial: heartbeat, executa tarefas, dorme. Durante scans longos (nmap full-range pode levar 10-30 min), o agent nao envia heartbeat e o token pode expirar. O backend perde visibilidade do agent e pode marca-lo como offline.
+Quando a ultima task de um snapshot termina, as edge functions `attack-surface-step-result` e `agent-task-result` fazem a consolidacao inline (buscar todas as tasks, calcular score, match de CVEs). Isso leva tempo e causa timeout no agent.
 
-## Solucao
+## Solucao: Fire-and-Forget
 
-Criar um **HeartbeatWorker** em thread separada que roda em paralelo com a execucao de tarefas.
+As edge functions que recebem resultados do agent vao:
+1. Salvar os dados da task no banco
+2. Verificar se todas as tasks do snapshot terminaram
+3. Se sim, disparar `fetch()` para uma nova edge function `consolidate-attack-surface` **sem await** (fire-and-forget)
+4. Retornar `{ success: true }` imediatamente ao agent
 
-```text
-Antes:
-  [heartbeat] -> [tarefa 10min] -> [sleep] -> [heartbeat] -> ...
-  (backend acha que agent morreu durante os 10min)
-
-Depois:
-  Thread Principal:  [busca tarefas] -> [executa tarefa 10min] -> [busca tarefas] -> ...
-  Thread Heartbeat:  [heartbeat] -> [sleep 120s] -> [heartbeat] -> [sleep 120s] -> ...
-  (heartbeat nunca para, token sempre valido)
-```
+A consolidacao roda em paralelo, sem bloquear a resposta.
 
 ## Mudancas
 
-### 1. Novo arquivo: `python-agent/agent/heartbeat_worker.py`
+### 1. Nova edge function: `supabase/functions/consolidate-attack-surface/index.ts`
 
-Thread daemon dedicada que:
-- Envia heartbeat no intervalo configurado pelo backend (default 120s)
-- Renova token proativamente quando esta proximo de expirar (usa `auth.is_access_token_valid()`)
-- Usa `threading.Event` para permitir shutdown gracioso
-- Usa `threading.Lock` para sincronizar acesso ao state/token com a thread principal
-- Detecta `AgentStopped` (BLOCKED/REVOKED) e sinaliza para a thread principal parar
+Recebe `{ snapshot_id }` e executa toda a logica pesada:
+- Busca todas as tasks completadas do snapshot
+- Monta o mapa de resultados por IP
+- Calcula score de exposicao
+- Faz match de CVEs via cve_cache
+- Atualiza o snapshot com results, summary, score, cve_matches, status=completed
 
-### 2. Modificar: `python-agent/agent/auth.py`
+Essa funcao sera chamada internamente (fire-and-forget), entao usa service_role_key para autenticacao.
 
-- Adicionar um `threading.Lock` ao `AuthManager` para proteger `refresh_tokens()` contra chamadas simultaneas da thread de heartbeat e da thread de tarefas
-- Garantir que apenas um refresh acontece por vez (evita race condition)
+### 2. Modificar: `supabase/functions/attack-surface-step-result/index.ts`
 
-### 3. Modificar: `python-agent/agent/state.py`
+- Remover toda a logica de consolidacao (linhas 67-193)
+- Apos salvar a task e verificar pendingCount === 0, disparar fire-and-forget:
+```
+fetch(`${supabaseUrl}/functions/v1/consolidate-attack-surface`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+  body: JSON.stringify({ snapshot_id: snapshotId })
+})
+// sem await — fire and forget
+```
+- Retornar `{ success: true }` imediatamente
 
-- Adicionar um `threading.Lock` ao `AgentState` para proteger `save()` e `load()` contra acesso concorrente
+### 3. Modificar: `supabase/functions/agent-task-result/index.ts`
 
-### 4. Modificar: `python-agent/main.py`
+Na funcao `handleAttackSurfaceTaskResult` (linhas 3984-4077):
+- Remover toda a logica de consolidacao inline (fetch tasks, calcular score, CVE matching)
+- Substituir por fire-and-forget para `consolidate-attack-surface`
+- Retornar resposta imediatamente ao agent
 
-- Criar o `HeartbeatWorker` e inicia-lo como thread daemon antes do loop de tarefas
-- Simplificar o `agent_loop`: remover logica de heartbeat (agora e responsabilidade do worker)
-- O loop principal passa a focar apenas em: buscar tarefas, executar, dormir
-- Tratar sinal de parada vindo do heartbeat worker (AgentStopped)
+### 4. Atualizar: `supabase/config.toml`
 
-### 5. Modificar: `python-agent/agent/api_client.py`
-
-- Adicionar lock no `_headers()` para leitura thread-safe do token
+Adicionar configuracao para a nova edge function:
+```toml
+[functions.consolidate-attack-surface]
+verify_jwt = false
+```
 
 ## Detalhes tecnicos
 
-### Thread Safety
+### Fire-and-forget em Deno
 
-Os recursos compartilhados entre as threads sao:
-- `state.data` (tokens, agent_id) — protegido por lock no `AgentState`
-- `auth.refresh_tokens()` — protegido por lock no `AuthManager` para evitar refresh duplicado
-- `api._headers()` — le token de `state.data`, protegido pelo lock do state
-
-### HeartbeatWorker (pseudo-codigo)
-
-```text
-class HeartbeatWorker(Thread):
-    daemon = True
-
-    loop:
-        1. Se token proximo de expirar -> auth.refresh_tokens()
-        2. Envia heartbeat via api.post("/agent-heartbeat")
-        3. Processa resposta (update, check_components, certificate)
-        4. Se BLOCKED/REVOKED -> sinaliza stop_event
-        5. Dorme pelo intervalo retornado pelo backend
+```typescript
+// Dispara sem bloquear — a consolidacao roda em background
+fetch(`${supabaseUrl}/functions/v1/consolidate-attack-surface`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${serviceKey}`
+  },
+  body: JSON.stringify({ snapshot_id: snapshotId })
+}).catch(err => console.error('[consolidate] fire-and-forget failed:', err.message))
 ```
 
-### Shutdown gracioso
+O `fetch()` sem `await` inicia a request e continua. O `.catch()` evita unhandled promise rejection.
 
-- HeartbeatWorker usa `threading.Event` como stop signal
-- A thread principal verifica `stop_event.is_set()` entre tarefas
-- Como e daemon thread, se a main thread morrer, ela morre junto
+### Idempotencia
 
-### O que NAO muda
+A `consolidate-attack-surface` deve ser idempotente — se chamada 2x para o mesmo snapshot (race condition entre step-result e task-result), a segunda execucao simplesmente recalcula e sobrescreve. Sem efeitos colaterais.
 
-- Nenhum executor e modificado
-- A logica de execucao de tarefas em `tasks.py` permanece igual
-- O `AgentScheduler` continua gerenciando o loop principal (agora so de tarefas)
-- O progressive streaming continua funcionando normalmente
-- O `AutoUpdater` continua no loop principal
+### Protecao contra chamada duplicada
 
-## Riscos e mitigacoes
+Antes de consolidar, a funcao verifica se o snapshot ainda esta em status `running` (nao `completed`). Se ja estiver completed, retorna sem fazer nada.
 
-| Risco | Mitigacao |
-|-------|-----------|
-| Race condition no token refresh | Lock no AuthManager — apenas um refresh por vez |
-| Heartbeat e tarefa escrevendo state simultaneamente | Lock no AgentState.save() |
-| Token expira entre leitura e uso no POST | APIClient ja tem retry automatico com TOKEN_EXPIRED |
-| HeartbeatWorker crasha | Como daemon thread, o agent continua rodando (fallback ao comportamento atual) |
+## O que NAO muda
 
+- Nenhum codigo do python-agent
+- Nenhum componente de UI
+- A logica de consolidacao em si (score, CVE matching) permanece identica, so muda de lugar
+- O `agent-step-result` (steps progressivos) continua salvando steps normalmente
+
+## Fluxo resultante
+
+```text
+Agent envia resultado
+  -> attack-surface-step-result recebe
+  -> Salva task no banco
+  -> Retorna OK (< 1 segundo)
+  -> Fire-and-forget -> consolidate-attack-surface
+      -> Busca tasks, calcula score, CVE match
+      -> Atualiza snapshot (10-60 segundos)
+```
