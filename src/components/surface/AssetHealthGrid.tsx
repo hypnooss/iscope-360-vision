@@ -113,7 +113,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     {asset.asn && (
                       <>
                         <span className="text-muted-foreground/50 text-[10px]">·</span>
-                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
+                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
                           {asset.asn}
                         </Badge>
                       </>
