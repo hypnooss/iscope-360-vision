@@ -1,45 +1,29 @@
 
 
-# Corrigir Layout dos Cards de Saude dos Ativos
+# Corrigir Badges e ASN nos Cards de Saude dos Ativos
 
-## Problema
+## Problemas Identificados
 
-Na linha 1 dos cards, o hostname, IP e ASN estao desalinhados: hostname e IP ficam colados, o ASN fica empurrado para a extremidade direita (`ml-auto`), e nao ha separador visual entre os elementos.
+1. O badge de IP usa `font-mono` mas o badge de ASN nao, causando diferenca visual no tamanho da fonte (ambos sao `text-[9px]` mas `font-mono` tem metricas diferentes)
+2. A contagem de servicos ("X svc") aparece duplicada nos cards expandidos -- tanto na linha 1 quanto na linha 2
+3. Cards sem ASN provavelmente nao tem dados de ASN na fonte (nao e bug de codigo)
 
 ## Solucao
 
-Alterar `src/components/surface/AssetHealthGrid.tsx` para:
+### 1. Uniformizar fonte dos badges
 
-1. **Agrupar hostname, IP e ASN lado a lado** (sem `ml-auto` no ASN)
-2. **Separar com bullet** (`·`) entre hostname, IP e ASN
-3. **Exibir IP tambem como badge** (mesmo estilo outline do ASN) para consistencia visual
-4. **Alinhar verticalmente** todos os elementos da linha 1 com `items-center`
-5. **Mover "X svc" para `ml-auto`** para ficar na extremidade direita
+Aplicar `font-mono` em ambos os badges (IP e ASN) para consistencia visual, ou remover `font-mono` de ambos. A melhor opcao e manter `font-mono` no IP (faz sentido para numeros) e adicionar `font-mono` tambem no ASN (que contem numeros como AS266446).
 
-### Layout resultante
+### 2. Remover "svc" duplicado no card expandido
 
-**Card com vulnerabilidades:**
-```
-| Hostname · [IP badge] · [ASN badge]                    X svc |
-| [2C] [8H] [9M]                                               |
-```
-
-**Card sem vulnerabilidades (compacto):**
-```
-| Hostname · [IP badge] · [ASN badge]              [check] X svc |
-```
+No card expandido, a contagem de servicos aparece na linha 1 (junto com hostname/IP/ASN) e tambem na linha 2 (junto com badges de severidade). Remover da linha 2 para evitar duplicacao.
 
 ### Detalhes tecnicos
 
-- Remover `ml-auto` do Badge de ASN (linhas 136 e 113)
-- Adicionar separadores `·` (`<span className="text-muted-foreground/50 text-[10px]">·</span>`) entre hostname, IP badge e ASN badge
-- Converter IP de `<span>` para `<Badge variant="outline">` com estilo `text-[9px] font-mono px-1.5 py-0`
-- Manter `shrink-0` nos badges para evitar truncamento
-- Adicionar `ml-auto` ao container de "svc" / check icon
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/surface/AssetHealthGrid.tsx` | Adicionar `font-mono` ao badge de ASN (linhas 116, 145); remover "svc" duplicado da linha 157 |
 
-### Arquivo afetado
-
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/components/surface/AssetHealthGrid.tsx` | Corrigir alinhamento e separadores na linha 1 dos cards |
+**Linha 116 e 145** (badge ASN): adicionar `font-mono` a className
+**Linha 157**: remover `<span>` de "svc" duplicado da segunda linha do card expandido
 
