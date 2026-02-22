@@ -39,6 +39,7 @@ import { CategoryOverviewGrid } from '@/components/surface/CategoryOverviewGrid'
 import { TopFindingsList } from '@/components/surface/TopFindingsList';
 import { AssetHealthGrid } from '@/components/surface/AssetHealthGrid';
 import { CategoryDetailSheet } from '@/components/surface/CategoryDetailSheet';
+import { AssetDetailSheet } from '@/components/surface/AssetDetailSheet';
 import { SeverityTechDonut } from '@/components/surface/SeverityTechDonut';
 
 /* ══════════════════════ DATA LOGIC (from V2) ══════════════════════ */
@@ -564,14 +565,34 @@ export default function SurfaceAnalyzerV3Page() {
 
         </div>
 
-        {/* Detail Sheet */}
+        {/* Detail Sheet — Asset Detail (tabbed) */}
+        {sheetAssetIp && (() => {
+          const asset = assets.find(a => a.ip === sheetAssetIp);
+          if (!asset) return null;
+          return (
+            <AssetDetailSheet
+              open={!!sheetAssetIp}
+              onOpenChange={handleCloseSheet}
+              hostname={asset.hostname}
+              ip={asset.ip}
+              ports={asset.ports}
+              services={asset.services}
+              webServices={asset.webServices}
+              tlsCerts={asset.tlsCerts}
+              cves={asset.cves}
+              allTechs={asset.allTechs}
+              findings={sheetFindings}
+            />
+          );
+        })()}
+
+        {/* Detail Sheet — Category / Finding */}
         <CategoryDetailSheet
-          open={sheetOpen}
+          open={sheetOpen && !sheetAssetIp}
           onOpenChange={handleCloseSheet}
           category={sheetCategory}
           findings={sheetCategory === 'leaked_credentials' ? [] : sheetFindings}
           title={sheetTitle}
-          subtitle={sheetAssetIp ? 'Achados deste ativo' : undefined}
         >
           {sheetCategory === 'leaked_credentials' && selectedClientId && clientDomains && clientDomains.length > 0 && (
             <LeakedCredentialsSection clientId={selectedClientId} domains={clientDomains} isSuperRole={isSuperRole} />
