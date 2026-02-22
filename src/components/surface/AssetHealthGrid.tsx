@@ -194,7 +194,7 @@ function AsnBadge({ label, asnRaw }: { label: string; asnRaw: AsnData | null }) 
 
 function ContextLine({ asset }: { asset: AssetHealth }) {
   return (
-    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+    <div className="flex items-center gap-1.5 flex-wrap mt-2">
       <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 bg-orange-500/10 text-orange-400 border-orange-500/30">
         {asset.ports} porta{asset.ports !== 1 ? 's' : ''}
       </Badge>
@@ -313,7 +313,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                       
                     </div>
                     <ContextLine asset={asset} />
-                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
                       {asset.counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical} Critical</Badge>}
                       {asset.counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high} High</Badge>}
                       {asset.counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium} Medium</Badge>}
