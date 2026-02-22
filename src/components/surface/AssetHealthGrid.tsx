@@ -127,7 +127,9 @@ function IpBadge({ ip, asnRaw }: { ip: string; asnRaw: AsnData | null }) {
   if (!asnRaw) return badge;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <span className="shrink-0">{badge}</span>
+      </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs"><IpTooltipBody asn={asnRaw} /></TooltipContent>
     </Tooltip>
   );
@@ -140,7 +142,9 @@ function AsnBadge({ label, asnRaw }: { label: string; asnRaw: AsnData | null }) 
   if (!asnRaw) return badge;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <span className="shrink-0">{badge}</span>
+      </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs"><IpTooltipBody asn={asnRaw} /></TooltipContent>
     </Tooltip>
   );
