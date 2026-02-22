@@ -34,14 +34,26 @@ interface AssetHealthGridProps {
   onAssetClick: (ip: string) => void;
 }
 
+const PROVIDER_DOMAINS: Record<string, string> = {
+  'cloudflare': 'cloudflare.com', 'akamai': 'akamai.com', 'fastly': 'fastly.com',
+  'aws_cloudfront': 'aws.com', 'aws': 'aws.com', 'azure': 'microsoft.com',
+  'google_cloud': 'google.com', 'incapsula': 'imperva.com', 'sucuri': 'sucuri.net',
+  'stackpath': 'stackpath.com', 'oracle': 'oracle.com',
+  'digitalocean': 'digitalocean.com', 'hetzner': 'hetzner.com',
+  'vultr': 'vultr.com', 'ovh': 'ovh.com',
+};
+
 function formatAsn(asn?: { asn: string; provider: string; org: string } | null): string | null {
-  if (!asn?.asn) return null;
-  const label = asn.org || asn.provider;
-  if (label) {
-    const full = `${asn.asn} - ${label}`;
-    return full.length > 24 ? `${asn.asn} - ${label.slice(0, 14)}…` : full;
-  }
-  return asn.asn;
+  if (!asn) return null;
+  const asnNum = asn.asn || '';
+  const raw = asn.provider && asn.provider !== 'unknown' ? asn.provider : '';
+  const friendly = raw ? (PROVIDER_DOMAINS[raw] || raw) : '';
+  const providerLabel = friendly || (asn.org
+    ? (asn.org.length > 20 ? asn.org.slice(0, 20) + '...' : asn.org)
+    : '');
+  if (!asnNum && !providerLabel) return null;
+  if (asnNum && providerLabel) return `${asnNum} - ${providerLabel}`;
+  return asnNum || providerLabel;
 }
 
 export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthGridProps) {
