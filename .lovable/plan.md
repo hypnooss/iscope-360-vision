@@ -1,43 +1,60 @@
 
 
-# Incluir cloud_public_ip no Preview do Surface Analyzer
+# Redesign dos Cards de Saude dos Ativos
 
-## Problema
+## Resumo
 
-A edge function `attack-surface-preview` (que popula o dialogo "Selecionar Alvos do Scan") busca firewalls com `select('id, name')` e extrai IPs apenas das interfaces WAN via step results. O campo `cloud_public_ip` nao e consultado, entao firewalls em cloud com IPs privados nas interfaces nao aparecem.
+Ajustar o componente `AssetHealthGrid` para:
+1. Cards sem vulnerabilidades ocupam apenas uma linha (compactos)
+2. Cards com vulnerabilidades mantem ou aumentam o tamanho vertical
+3. Exibir na primeira linha: hostname, IP e AS/ASN
 
-## Solucao
+## Mudancas
 
-Alterar a edge function `attack-surface-preview/index.ts` para:
+### 1. AssetHealthGrid - Props e dados
 
-1. Incluir `cloud_public_ip` no select dos firewalls (linha 228): `select('id, name, cloud_public_ip')`
-2. Apos extrair targets das interfaces WAN, verificar se o firewall tem `cloud_public_ip` preenchido e publico
-3. Se sim, adicionar como um FirewallTarget adicional com label "FW-Name - Cloud Public IP" e `expanded_ips: [cloud_public_ip]`
+Atualizar a interface `AssetHealthGridProps` para receber `asn` de cada asset:
 
-### Detalhe tecnico
+```
+assets: Array<{
+  hostname: string;
+  ip: string;
+  asn?: { asn: string; provider: string; org: string } | null;
+  services: Array<unknown>;
+  webServices: Array<unknown>;
+}>
+```
 
-No loop de firewalls (linha 233), apos processar os step results de interfaces WAN, adicionar:
+Incluir `asn` no `AssetHealth`:
 
-```text
-if (fw.cloud_public_ip && !isPrivateIP(fw.cloud_public_ip) && !seenDNS.has(fw.cloud_public_ip)) {
-  // Verificar se o IP ja nao foi incluido nos targets de interface
-  const alreadyIncluded = firewallTargets.some(ft => ft.expanded_ips.includes(fw.cloud_public_ip));
-  if (!alreadyIncluded) {
-    firewallTargets.push({
-      ip: fw.cloud_public_ip,
-      label: `${fw.name} - Cloud Public IP`,
-      subnet: null,
-      expanded_ips: [fw.cloud_public_ip],
-    });
-  }
+```
+interface AssetHealth {
+  ...
+  asn: string | null;  // ex: "AS16509 - Amazon"
 }
 ```
+
+### 2. Layout dos cards
+
+**Card COM vulnerabilidades** (worstSeverity != 'ok'):
+- Primeira linha: hostname (truncado) | IP (mono) | ASN badge
+- Segunda linha: badges de severidade (C, H, M, L) + contagem de servicos
+
+**Card SEM vulnerabilidades** (worstSeverity == 'ok'):
+- Layout single-line (horizontal): hostname | IP | ASN | check icon | servicos
+- Padding reduzido (py-2 px-3) para ocupar uma unica linha
+- Sem quebras verticais
+
+### 3. Formatacao do ASN
+
+Exibir como badge discreto: "AS16509" ou "AS16509 - Amazon" (truncado se longo).
+Se nao houver ASN, nao exibir nada.
 
 ### Arquivo afetado
 
 | Arquivo | Descricao |
 |---------|-----------|
-| `supabase/functions/attack-surface-preview/index.ts` | Incluir cloud_public_ip no select e adicionar como alvo |
+| `src/components/surface/AssetHealthGrid.tsx` | Redesign dos cards + inclusao de ASN |
 
-Apenas uma alteracao pequena e localizada. O deploy da edge function sera feito apos a edicao.
+Nenhum outro arquivo precisa mudar pois o `SurfaceAnalyzerV3Page` ja passa `assets` com o campo `asn` incluso.
 
