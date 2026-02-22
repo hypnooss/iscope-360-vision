@@ -1,29 +1,61 @@
 
-# Remover "X svc" da Linha 1 e Expandir Nomes das Severidades
+# Efeito Glass nos Cards de Saude dos Ativos
 
-## Resumo
+## Problema
+Os cards estao visualmente "amontoados" - todos compartilham o mesmo fundo escuro generico (`bg-card/50`) com apenas a borda esquerda colorida, tornando dificil distinguir rapidamente um card do outro.
 
-Duas alteracoes visuais nos cards do AssetHealthGrid:
+## Solucao
+Aplicar a cor da severidade de forma mais abrangente em cada card, criando um efeito "glass" sutil:
 
-1. **Remover a informacao de quantidade de servicos do final da linha 1** (tanto nos cards "ok" quanto nos cards com achados), ja que essa informacao agora aparece na linha 2 (ContextLine).
-
-2. **Expandir os nomes das severidades na linha 3**: de "2C", "8H", "7M", "1L" para "2 Critical", "8 High", "7 Medium", "1 Low".
+1. **Background tintado**: usar a cor da severidade como fundo com baixa opacidade (ex: `bg-red-500/5` para critical)
+2. **Bordas coloridas em todas as direcoes**: substituir `border-border/40` pela cor da severidade com transparencia (ex: `border-red-500/20`)
+3. **Hover com intensidade levemente maior** no background
 
 ## Detalhes tecnicos
 
 **Arquivo**: `src/components/surface/AssetHealthGrid.tsx`
 
-### Mudanca 1 - Cards "ok" (linha 289-292)
-Remover o bloco `<div>` com `CheckCircle2` e `{asset.services} svc`. Manter apenas o icone de check sem o texto.
+### Substituir `BORDER_COLORS` por `CARD_STYLES`
+Trocar o mapa simples de cores de borda por um mapa completo de estilos por severidade:
 
-### Mudanca 2 - Cards com achados (linha 316)
-Remover `<span>{asset.services} svc</span>`.
+```text
+CARD_STYLES = {
+  critical: {
+    border-l: border-l-red-500
+    border:   border-red-500/20
+    bg:       bg-red-500/5
+    hover:    hover:bg-red-500/10
+  },
+  high: {
+    border-l: border-l-orange-500
+    border:   border-orange-500/20
+    bg:       bg-orange-500/5
+    hover:    hover:bg-orange-500/10
+  },
+  medium: {
+    border-l: border-l-yellow-500
+    border:   border-yellow-500/20
+    bg:       bg-yellow-500/5
+    hover:    hover:bg-yellow-500/10
+  },
+  low: {
+    border-l: border-l-blue-400
+    border:   border-blue-400/20
+    bg:       bg-blue-400/5
+    hover:    hover:bg-blue-400/10
+  },
+  ok: {
+    border-l: border-l-emerald-500
+    border:   border-emerald-500/20
+    bg:       bg-emerald-500/5
+    hover:    hover:bg-emerald-500/10
+  }
+}
+```
 
-### Mudanca 3 - Badges de severidade (linhas 319-324)
-Alterar os textos:
-- `{asset.counts.critical}C` para `{asset.counts.critical} Critical`
-- `{asset.counts.high}H` para `{asset.counts.high} High`
-- `{asset.counts.medium}M` para `{asset.counts.medium} Medium`
-- `{asset.counts.low}L` para `{asset.counts.low} Low`
+### Atualizar os cards (ok e com achados)
+Substituir as classes atuais:
+- De: `border border-border/40 bg-card/50 ... hover:bg-muted/30`
+- Para: `border ${style.border} ${style.bg} ... ${style.hover} border-l-4 ${style.borderL}`
 
-Ajustar o tamanho do texto de `text-[9px]` para `text-[10px]` e o padding de `px-1` para `px-1.5` para acomodar os nomes completos.
+Isso cria uma "aura" visual em cada card que comunica a severidade imediatamente, com o efeito glass vindo da combinacao de fundo semi-transparente colorido com bordas suaves na mesma tonalidade.
