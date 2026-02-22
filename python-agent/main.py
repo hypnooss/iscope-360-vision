@@ -4,6 +4,7 @@ from agent.api_client import APIClient
 from agent.auth import AuthManager
 from agent.scheduler import AgentScheduler
 from agent.heartbeat import AgentHeartbeat, AgentStopped
+from agent.heartbeat_worker import HeartbeatWorker
 from agent.tasks import TaskExecutor
 from agent.logger import setup_logger
 from agent.updater import AutoUpdater
@@ -55,97 +56,68 @@ class AgentApp:
 
         self.api = APIClient(API_BASE_URL, self.state, logger)
         self.auth = AuthManager(self.state, self.api, logger)
-        self.api.set_auth_manager(self.auth)  # Enable auto-retry on TOKEN_EXPIRED
+        self.api.set_auth_manager(self.auth)
         self.heartbeat = AgentHeartbeat(self.api, self.state, logger)
         self.task_executor = TaskExecutor(self.api, self.state, logger)
         self.updater = AutoUpdater(logger)
 
-    def agent_loop(self):
-        self.logger.info(f"Início do loop do agent v{get_version()}")
-
-        self.auth.ensure_authenticated()
-
-        try:
-            result = self.heartbeat.send(status="running")
-        except RuntimeError as e:
-            msg = str(e)
-            if "TOKEN_EXPIRED" in msg:
-                self.logger.info("Token expirado durante heartbeat, renovando...")
-                self.auth.refresh_tokens()
-                # Retry heartbeat after refresh
-                result = self.heartbeat.send(status="running")
-            else:
-                raise
-
-        next_interval = result.get("next_heartbeat_in", POLL_INTERVAL)
-
-        self.logger.info(
-            f"Heartbeat OK | config_flag={result.get('config_flag')} | "
-            f"has_pending_tasks={result.get('has_pending_tasks')} | "
-            f"update={result.get('update_available')} | "
-            f"next={next_interval}s"
+        # HeartbeatWorker runs in a separate daemon thread
+        self.hb_worker = HeartbeatWorker(
+            api=self.api,
+            auth=self.auth,
+            heartbeat=self.heartbeat,
+            state=self.state,
+            updater=self.updater,
+            logger=logger,
+            default_interval=POLL_INTERVAL
         )
 
-        # Check if component verification was requested
-        if result.get('check_components'):
-            self.logger.info("Backend solicitou verificação de componentes")
-            try:
-                # Create flag file for the pre-start script (runs as root)
-                flag_file = Path("/var/lib/iscope-agent/check_components.flag")
-                flag_file.touch()
-                self.logger.info("Flag de verificação criada. Solicitando restart...")
-                
-                # Request service restart - the systemd ExecStartPre will run check-deps.sh as root
-                import subprocess
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'restart', 'iscope-agent'],
-                    capture_output=True,
-                    timeout=30
-                )
-                if result.returncode != 0:
-                    stderr = result.stderr.decode() if result.stderr else ''
-                    self.logger.warning(f"Falha ao reiniciar serviço: {stderr}")
-                # Note: this process will be terminated by the restart
-            except Exception as e:
-                self.logger.warning(f"Erro ao solicitar verificação de componentes: {e}")
+    def start(self):
+        """Register, start heartbeat worker, then enter task loop."""
+        self.logger.info(f"Agent v{get_version()} iniciando...")
 
-        # Check for available updates
-        if result.get('update_available') and result.get('update_info'):
-            self.logger.info("Atualização disponível detectada")
-            update_info = result['update_info']
+        # Must register before anything else
+        self.auth.ensure_authenticated()
 
-            # Force update or no pending tasks: proceed with update
-            if update_info.get('force') or not result.get('has_pending_tasks'):
-                self.logger.info(f"Iniciando update para v{update_info.get('version')}")
-                if self.updater.check_and_update(update_info):
-                    # Update succeeded, process will restart
-                    return next_interval
-            else:
-                self.logger.info("Adiando update - há tarefas pendentes")
+        # Start heartbeat worker (daemon thread)
+        self.hb_worker.start()
+        self.logger.info("HeartbeatWorker thread iniciada")
 
-        # Processar tarefas pendentes se houver
-        if result.get('has_pending_tasks'):
-            self.logger.info("Tarefas pendentes detectadas. Processando...")
+        # Enter task processing loop
+        scheduler = AgentScheduler(POLL_INTERVAL, self.agent_loop, self.logger)
+        scheduler.start()
 
-            # Garantir token válido ANTES de processar tarefas
-            # Tarefas podem levar vários minutos, então verificamos novamente
-            if not self.auth.is_access_token_valid():
-                self.logger.info("Token próximo de expirar, renovando antes de processar tarefas...")
-                self.auth.refresh_tokens()
+    def agent_loop(self):
+        """Main loop: only processes tasks. Heartbeat is handled by the worker thread."""
+        self.logger.info(f"Início do loop de tarefas v{get_version()}")
 
-            try:
-                processed = self.task_executor.process_all()
+        # Check if heartbeat worker signaled a stop (BLOCKED/REVOKED)
+        if self.hb_worker.should_stop:
+            self.logger.critical("HeartbeatWorker sinalizou parada. Encerrando agent.")
+            raise AgentStopped("Agent parado pelo HeartbeatWorker")
+
+        # Ensure token is valid before fetching tasks
+        if not self.auth.is_access_token_valid():
+            self.auth.refresh_tokens()
+
+        # Fetch and process pending tasks
+        try:
+            self.hb_worker.signal_has_pending_tasks()
+            processed = self.task_executor.process_all()
+            self.hb_worker.clear_pending_tasks()
+
+            if processed > 0:
                 self.logger.info(f"{processed} tarefas processadas")
-            except RuntimeError as e:
-                msg = str(e)
-                if "TOKEN_EXPIRED" in msg:
-                    # Token expirou durante execução - renovar e reportar erro
-                    self.logger.warning("Token expirou durante execução de tarefa")
-                    self.auth.refresh_tokens()
-                else:
-                    self.logger.error(f"Erro ao processar tarefas: {e}")
+        except RuntimeError as e:
+            self.hb_worker.clear_pending_tasks()
+            msg = str(e)
+            if "TOKEN_EXPIRED" in msg:
+                self.logger.warning("Token expirou durante execução de tarefa")
+                self.auth.refresh_tokens()
+            else:
+                self.logger.error(f"Erro ao processar tarefas: {e}")
 
-        return next_interval
+        return POLL_INTERVAL
 
 
 def main():
@@ -158,10 +130,8 @@ def main():
     logger.info("Agent iniciado")
 
     app = AgentApp(logger)
-    scheduler = AgentScheduler(POLL_INTERVAL, app.agent_loop, logger)
-    scheduler.start()
+    app.start()
 
 
 if __name__ == "__main__":
     main()
-

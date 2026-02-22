@@ -2,6 +2,7 @@ import os
 import jwt
 import time
 import sys
+import threading
 from pathlib import Path
 
 
@@ -82,6 +83,7 @@ class AuthManager:
         self.state = state
         self.api = api_client
         self.logger = logger
+        self._refresh_lock = threading.Lock()
 
     def is_access_token_valid(self):
         token = self.state.data.get("access_token")
@@ -152,28 +154,34 @@ class AuthManager:
         self.logger.info("Agent registrado com sucesso")
 
     def refresh_tokens(self):
-        refresh_token = self.state.data.get("refresh_token")
-        if not refresh_token:
-            self.logger.critical("Refresh token ausente. Re-registro necessário.")
-            sys.exit(1)
+        with self._refresh_lock:
+            # Double-check: another thread may have refreshed while we waited
+            if self.is_access_token_valid():
+                self.logger.info("Token já foi renovado por outra thread, pulando refresh")
+                return
 
-        self.logger.info("Renovando access token")
+            refresh_token = self.state.data.get("refresh_token")
+            if not refresh_token:
+                self.logger.critical("Refresh token ausente. Re-registro necessário.")
+                sys.exit(1)
 
-        response = self.api.post(
-            "/agent-refresh",
-            use_refresh_token=True
-        )
+            self.logger.info("Renovando access token")
 
-        self.state.data.update({
-            "access_token": response["access_token"],
-            "refresh_token": response.get(
-                "refresh_token",
-                self.state.data.get("refresh_token")
+            response = self.api.post(
+                "/agent-refresh",
+                use_refresh_token=True
             )
-        })
 
-        self.state.save()
-        self.logger.info("Tokens atualizados com sucesso")
+            self.state.data.update({
+                "access_token": response["access_token"],
+                "refresh_token": response.get(
+                    "refresh_token",
+                    self.state.data.get("refresh_token")
+                )
+            })
+
+            self.state.save()
+            self.logger.info("Tokens atualizados com sucesso")
 
     def ensure_authenticated(self):
         self.register_if_needed()
