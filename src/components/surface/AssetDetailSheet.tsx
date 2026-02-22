@@ -328,7 +328,7 @@ export function AssetDetailSheet({
               {findings.length > 0 ? (
                 <div className="space-y-2">
                   {findings.map(f => (
-                    <SurfaceFindingCard key={f.id} finding={f} />
+                    <SurfaceFindingCard key={f.id} finding={f} hideAffectedAssets />
                   ))}
                 </div>
               ) : (

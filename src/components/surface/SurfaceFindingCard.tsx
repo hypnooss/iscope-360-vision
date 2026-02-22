@@ -100,11 +100,12 @@ const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> =
 interface SurfaceFindingCardProps {
   finding: SurfaceFinding;
   categoryColorKey?: string;
+  hideAffectedAssets?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────
 
-export function SurfaceFindingCard({ finding, categoryColorKey }: SurfaceFindingCardProps) {
+export function SurfaceFindingCard({ finding, categoryColorKey, hideAffectedAssets }: SurfaceFindingCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const statusConfig = STATUS_CONFIG[finding.status];
@@ -160,7 +161,7 @@ export function SurfaceFindingCard({ finding, categoryColorKey }: SurfaceFinding
               )}
 
               {/* Affected assets count */}
-              {finding.affectedAssets.length > 0 && (
+              {!hideAffectedAssets && finding.affectedAssets.length > 0 && (
                 <div className="flex items-center gap-2 text-xs text-amber-400 mt-2">
                   <Server className="w-3.5 h-3.5" />
                   <span>
@@ -209,7 +210,7 @@ export function SurfaceFindingCard({ finding, categoryColorKey }: SurfaceFinding
             )}
 
             {/* ATIVOS AFETADOS */}
-            {finding.affectedAssets.length > 0 && (
+            {!hideAffectedAssets && finding.affectedAssets.length > 0 && (
               <div className="space-y-2">
                 <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                   <Server className="w-3 h-3 text-muted-foreground" />
