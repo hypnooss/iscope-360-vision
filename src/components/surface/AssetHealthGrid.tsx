@@ -121,11 +121,11 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium text-foreground truncate max-w-[140px]">{asset.hostname}</span>
                     <span className="text-muted-foreground/50 text-[10px]">·</span>
-                    <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
+                    <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
                     {asset.asn && (
                       <>
                         <span className="text-muted-foreground/50 text-[10px]">·</span>
-                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
+                        <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
                           {asset.asn}
                         </Badge>
                       </>
@@ -150,11 +150,11 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
                     <span className="text-muted-foreground/50 text-[10px]">·</span>
-                    <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
+                    <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
                     {asset.asn && (
                       <>
                         <span className="text-muted-foreground/50 text-[10px]">·</span>
-                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
+                        <Badge variant="outline" className="text-[11px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
                           {asset.asn}
                         </Badge>
                       </>
