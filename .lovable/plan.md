@@ -1,46 +1,29 @@
 
+# Remover "X svc" da Linha 1 e Expandir Nomes das Severidades
 
-# Adicionar Linha de Contexto (Portas, Servicos, Certificado, Tecnologias) nos Cards do AssetHealthGrid
+## Resumo
 
-## Problema
+Duas alteracoes visuais nos cards do AssetHealthGrid:
 
-Na V1, cada card de ativo exibia uma segunda linha com badges informativos: quantidade de portas, quantidade de servicos, status do certificado TLS e tecnologias detectadas, separados por bullets. Na V3, essa linha nao existe nos cards do "Saude dos Ativos".
+1. **Remover a informacao de quantidade de servicos do final da linha 1** (tanto nos cards "ok" quanto nos cards com achados), ja que essa informacao agora aparece na linha 2 (ContextLine).
 
-## Solucao
+2. **Expandir os nomes das severidades na linha 3**: de "2C", "8H", "7M", "1L" para "2 Critical", "8 High", "7 Medium", "1 Low".
 
-Adicionar uma linha intermediaria nos cards expandidos (com achados) e compactos (ok) do `AssetHealthGrid`, entre a linha de hostname/IP/ASN e a linha de severidades.
-
-### Detalhes tecnicos
+## Detalhes tecnicos
 
 **Arquivo**: `src/components/surface/AssetHealthGrid.tsx`
 
-**1. Expandir a interface `AssetHealthGridProps` para receber os dados necessarios:**
+### Mudanca 1 - Cards "ok" (linha 289-292)
+Remover o bloco `<div>` com `CheckCircle2` e `{asset.services} svc`. Manter apenas o icone de check sem o texto.
 
-Adicionar `ports`, `tlsCerts` (com `daysRemaining`), `expiredCerts`, `expiringSoonCerts` e `allTechs` ao tipo dos assets na prop.
+### Mudanca 2 - Cards com achados (linha 316)
+Remover `<span>{asset.services} svc</span>`.
 
-**2. Expandir a interface `AssetHealth` para armazenar os novos dados:**
+### Mudanca 3 - Badges de severidade (linhas 319-324)
+Alterar os textos:
+- `{asset.counts.critical}C` para `{asset.counts.critical} Critical`
+- `{asset.counts.high}H` para `{asset.counts.high} High`
+- `{asset.counts.medium}M` para `{asset.counts.medium} Medium`
+- `{asset.counts.low}L` para `{asset.counts.low} Low`
 
-Adicionar `ports: number`, `expiredCerts: number`, `expiringSoonCerts: number`, `hasCerts: boolean`, `certStatus`, e `allTechs: string[]`.
-
-**3. Adicionar funcao auxiliar `getTechBadgeColor`** (replicada da V1):
-
-Mapeia tecnologias para cores: seguranca (teal), servidores (blue), linguagens (purple), frameworks (amber).
-
-**4. Adicionar componente `CertStatusBadge`** (replicado da V1):
-
-Exibe "Certificado Valido" (verde), "Certificado Expirado ha Xd" (vermelho), "Certificado Expira em Xd" (amarelo), ou "Sem Certificado" (cinza).
-
-**5. Adicionar a linha de contexto nos cards:**
-
-```
-[N portas] . [N servicos] . [CertStatus] . [Tech1] [Tech2] [Tech3] [Tech4] [+N]
-```
-
-- Badges de portas: fundo laranja (como V1)
-- Badges de servicos: fundo azul (como V1)
-- Tecnologias limitadas a 4 visiveis + badge "+N" com tooltip mostrando todas
-- Bullets (.) como separadores entre grupos
-
-**6. A linha aparece em ambos os layouts** (ok e com achados), posicionada apos a linha de hostname/IP/ASN.
-
-Nenhuma mudanca necessaria no `SurfaceAnalyzerV3Page.tsx` pois o array `assets` ja contem todos esses campos (`ports`, `tlsCerts`, `expiredCerts`, `expiringSoonCerts`, `allTechs`) do tipo `ExposedAsset`.
+Ajustar o tamanho do texto de `text-[9px]` para `text-[10px]` e o padding de `px-1` para `px-1.5` para acomodar os nomes completos.
