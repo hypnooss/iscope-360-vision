@@ -1,103 +1,145 @@
 
-# Desacoplar Consolidacao do Attack Surface
 
-## Problema
+# Enriquecer Findings com Dados NSE dos Scripts Nmap
 
-Quando a ultima task de um snapshot termina, as edge functions `attack-surface-step-result` e `agent-task-result` fazem a consolidacao inline (buscar todas as tasks, calcular score, match de CVEs). Isso leva tempo e causa timeout no agent.
+## Contexto
 
-## Solucao: Fire-and-Forget
+Os scans recentes agora coletam dados ricos dos scripts NSE do Nmap que estao armazenados nos snapshots mas **nao sao aproveitados** pelo motor de findings (`surfaceFindings.ts`). Os scripts disponíveis incluem:
 
-As edge functions que recebem resultados do agent vao:
-1. Salvar os dados da task no banco
-2. Verificar se todas as tasks do snapshot terminaram
-3. Se sim, disparar `fetch()` para uma nova edge function `consolidate-attack-surface` **sem await** (fire-and-forget)
-4. Retornar `{ success: true }` imediatamente ao agent
+| Script NSE | Dados coletados | Status atual |
+|---|---|---|
+| `vulners` | CVEs e exploits conhecidos por produto/versao | Ignorado (usa apenas cve_cache) |
+| `ssl-enum-ciphers` | Versoes TLS suportadas e cipher suites | Ignorado |
+| `http-security-headers` | Headers de seguranca presentes/ausentes (HSTS, X-Content-Type, etc) | Ignorado |
+| `ssh2-enum-algos` | Algoritmos de criptografia SSH | Ignorado |
+| `http-robots.txt` | Caminhos bloqueados/expostos | Ignorado |
+| `http-methods` | Metodos HTTP permitidos (PUT, DELETE, TRACE) | Ignorado |
+| `ssl-cert` | Detalhes do certificado (org, CN, validade) | Parcialmente usado (apenas para tech extraction) |
+| `smb-os-discovery` | SO detectado via SMB | Parcialmente usado (apenas para tech extraction) |
+| `rdp-ntlm-info` | Versao Windows via NTLM | Parcialmente usado (apenas para tech extraction) |
+| `http-server-header` | Server header | Parcialmente usado |
 
-A consolidacao roda em paralelo, sem bloquear a resposta.
+## Novas Categorias de Findings
 
-## Mudancas
+### 1. Seguranca Web (web_security) -- Novos findings via scripts
 
-### 1. Nova edge function: `supabase/functions/consolidate-attack-surface/index.ts`
+**a) Headers de Seguranca Ausentes** (severity: medium)
+- Fonte: `http-security-headers`
+- Detectar ausencia de: `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`
+- O script ja indica explicitamente "HSTS not configured" e quais headers estao presentes
+- Gera 1 finding agrupado por tipo de header ausente com lista dos ativos afetados
 
-Recebe `{ snapshot_id }` e executa toda a logica pesada:
-- Busca todas as tasks completadas do snapshot
-- Monta o mapa de resultados por IP
-- Calcula score de exposicao
-- Faz match de CVEs via cve_cache
-- Atualiza o snapshot com results, summary, score, cve_matches, status=completed
+**b) Metodos HTTP Perigosos** (severity: medium)
+- Fonte: `http-methods`
+- Detectar presença de `PUT`, `DELETE`, `TRACE`, `CONNECT` em endpoints publicos
+- TRACE permite cross-site tracing (XST), PUT/DELETE permitem manipulação remota
 
-Essa funcao sera chamada internamente (fire-and-forget), entao usa service_role_key para autenticacao.
+### 2. Criptografia (nova categoria: `crypto_weaknesses`)
 
-### 2. Modificar: `supabase/functions/attack-surface-step-result/index.ts`
+**a) Cipher Suites Fracos** (severity: high/medium)
+- Fonte: `ssl-enum-ciphers`
+- Detectar TLSv1.0, TLSv1.1 (obsoletos)
+- Detectar cipher suites com CBC (vulneravel a BEAST/POODLE)
+- Detectar cipher suites com RSA key exchange (sem forward secrecy)
+- Rating "B" ou "C" no campo `least strength`
 
-- Remover toda a logica de consolidacao (linhas 67-193)
-- Apos salvar a task e verificar pendingCount === 0, disparar fire-and-forget:
+**b) Algoritmos SSH Fracos** (severity: medium)
+- Fonte: `ssh2-enum-algos`
+- Detectar algoritmos obsoletos: `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1`, `3des-cbc`, `arcfour`, `hmac-sha1`, `hmac-md5`
+
+### 3. Vulnerabilidades (vulnerabilities) -- Enriquecimento
+
+**Vulners Script** (enriquecimento do matching existente)
+- Fonte: `vulners`
+- O script retorna CVEs com score CVSS diretamente do scan
+- Atualmente o sistema depende apenas do `cve_cache` e matching por produto/versao
+- Integrar os CVEs do vulners como fonte adicional, mesclando com os ja detectados
+
+## Mudancas Tecnicas
+
+### 1. `src/lib/surfaceFindings.ts`
+
+**Nova categoria:**
 ```
-fetch(`${supabaseUrl}/functions/v1/consolidate-attack-surface`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
-  body: JSON.stringify({ snapshot_id: snapshotId })
-})
-// sem await — fire and forget
-```
-- Retornar `{ success: true }` imediatamente
-
-### 3. Modificar: `supabase/functions/agent-task-result/index.ts`
-
-Na funcao `handleAttackSurfaceTaskResult` (linhas 3984-4077):
-- Remover toda a logica de consolidacao inline (fetch tasks, calcular score, CVE matching)
-- Substituir por fire-and-forget para `consolidate-attack-surface`
-- Retornar resposta imediatamente ao agent
-
-### 4. Atualizar: `supabase/config.toml`
-
-Adicionar configuracao para a nova edge function:
-```toml
-[functions.consolidate-attack-surface]
-verify_jwt = false
-```
-
-## Detalhes tecnicos
-
-### Fire-and-forget em Deno
-
-```typescript
-// Dispara sem bloquear — a consolidacao roda em background
-fetch(`${supabaseUrl}/functions/v1/consolidate-attack-surface`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${serviceKey}`
-  },
-  body: JSON.stringify({ snapshot_id: snapshotId })
-}).catch(err => console.error('[consolidate] fire-and-forget failed:', err.message))
+crypto_weaknesses: {
+  key: 'crypto_weaknesses',
+  label: 'Criptografia',
+  icon: 'lock',
+  color: 'cyan-500',
+  colorHex: '#06b6d4',
+  description: 'Configuracoes criptograficas fracas ou obsoletas',
+}
 ```
 
-O `fetch()` sem `await` inicia a request e continua. O `.catch()` evita unhandled promise rejection.
+**Novos blocos no `generateFindings()`:**
+- Bloco 6: Security Headers (parsear `http-security-headers` de `services[].scripts`)
+- Bloco 7: Metodos HTTP perigosos (parsear `http-methods` de `services[].scripts`)
+- Bloco 8: TLS/SSL fraco (parsear `ssl-enum-ciphers` de `services[].scripts`)
+- Bloco 9: SSH fraco (parsear `ssh2-enum-algos` de `services[].scripts`)
+- Enriquecer bloco 3 (CVEs): adicionar CVEs do script `vulners`
 
-### Idempotencia
+**Tipo `FindingsAsset`:**
+- O tipo `services[].scripts` ja esta definido como `Record<string, string>` -- nao precisa mudar
 
-A `consolidate-attack-surface` deve ser idempotente — se chamada 2x para o mesmo snapshot (race condition entre step-result e task-result), a segunda execucao simplesmente recalcula e sobrescreve. Sem efeitos colaterais.
+### 2. `src/components/surface/CategoryOverviewGrid.tsx` e `CategoryDetailSheet.tsx`
 
-### Protecao contra chamada duplicada
+- Adicionar a nova categoria `crypto_weaknesses` nos componentes de visualizacao
+- Adicionar icone e cor correspondentes
 
-Antes de consolidar, a funcao verifica se o snapshot ainda esta em status `running` (nao `completed`). Se ja estiver completed, retorna sem fazer nada.
+### 3. `src/components/surface/SurfaceFindingCard.tsx`
+
+- Adicionar cor hover para `cyan-500` no mapa `CATEGORY_HOVER_CLASSES`
+
+### 4. `src/components/surface/SeverityTechDonut.tsx`
+
+- Suportar a nova categoria no grafico donut
+
+### 5. `src/pages/external-domain/AllFindingsPage.tsx`
+
+- Nenhuma mudanca necessaria (usa `generateFindings` que sera atualizado)
+
+## Logica de Parsing dos Scripts
+
+### `http-security-headers`
+```text
+Input:  "\n  Strict_Transport_Security: \n    HSTS not configured..."
+Output: { missing: ['HSTS'], present: ['X-Content-Type-Options'] }
+```
+Detectar linhas com "not configured" ou ausencia de headers-chave.
+
+### `ssl-enum-ciphers`
+```text
+Input:  "\n  TLSv1.2: \n    ciphers: \n      TLS_RSA_WITH_AES_128_CBC_SHA..."
+Output: { versions: ['TLSv1.2'], hasWeakCiphers: true, hasCBC: true, leastStrength: 'A' }
+```
+Parsear versoes TLS e identificar cipher suites fracos.
+
+### `ssh2-enum-algos`
+```text
+Input:  "\n  kex_algorithms: (11)\n      curve25519-sha256\n      ..."
+Output: { weakAlgos: ['hmac-sha1', 'diffie-hellman-group14-sha1'] }
+```
+Verificar presença de algoritmos obsoletos na lista.
+
+### `http-methods`
+```text
+Input:  "\n  Supported Methods: GET HEAD POST OPTIONS PUT DELETE"
+Output: { dangerous: ['PUT', 'DELETE'] }
+```
+Extrair metodos apos "Supported Methods:" e filtrar perigosos.
+
+### `vulners`
+```text
+Input:  "\n  nginx 1.18.0: \n    NGINX:CVE-2026-1642\t8.2\thttps://..."
+Output: [{ cve_id: 'CVE-2026-1642', score: 8.2, url: '...' }]
+```
+Parsear linhas com CVE IDs e scores para injetar no matching existente.
 
 ## O que NAO muda
 
-- Nenhum codigo do python-agent
-- Nenhum componente de UI
-- A logica de consolidacao em si (score, CVE matching) permanece identica, so muda de lugar
-- O `agent-step-result` (steps progressivos) continua salvando steps normalmente
+- Nenhuma edge function
+- Nenhuma tabela do banco
+- Nenhum executor do python-agent
+- A logica existente de findings (risky_services, web_security HTTP, CVE matching por cve_cache, TLS certs, obsolete_tech) permanece identica
+- Os novos findings sao **aditivos** -- somam-se aos existentes
 
-## Fluxo resultante
-
-```text
-Agent envia resultado
-  -> attack-surface-step-result recebe
-  -> Salva task no banco
-  -> Retorna OK (< 1 segundo)
-  -> Fire-and-forget -> consolidate-attack-surface
-      -> Busca tasks, calcula score, CVE match
-      -> Atualiza snapshot (10-60 segundos)
-```
