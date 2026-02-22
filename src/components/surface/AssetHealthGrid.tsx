@@ -315,8 +315,11 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     <ContextLine asset={asset} />
                     <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
                       {asset.counts.critical > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical} Critical</Badge>}
+                      {asset.counts.critical > 0 && (asset.counts.high > 0 || asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
                       {asset.counts.high > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high} High</Badge>}
+                      {asset.counts.high > 0 && (asset.counts.medium > 0 || asset.counts.low > 0) && <span className="text-muted-foreground/50 text-[10px]">·</span>}
                       {asset.counts.medium > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium} Medium</Badge>}
+                      {asset.counts.medium > 0 && asset.counts.low > 0 && <span className="text-muted-foreground/50 text-[10px]">·</span>}
                       {asset.counts.low > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low} Low</Badge>}
                     </div>
                   </div>
