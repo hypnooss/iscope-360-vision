@@ -106,16 +106,22 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   )}
                   onClick={() => onAssetClick(asset.ip)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium text-foreground truncate max-w-[140px]">{asset.hostname}</span>
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{asset.ip}</span>
+                    <span className="text-muted-foreground/50 text-[10px]">·</span>
+                    <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
                     {asset.asn && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
-                        {asset.asn}
-                      </Badge>
+                      <>
+                        <span className="text-muted-foreground/50 text-[10px]">·</span>
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
+                          {asset.asn}
+                        </Badge>
+                      </>
                     )}
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 ml-auto" />
-                    <span className="text-[10px] text-muted-foreground shrink-0">{asset.services} svc</span>
+                    <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-[10px] text-muted-foreground">{asset.services} svc</span>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -129,14 +135,19 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   )}
                   onClick={() => onAssetClick(asset.ip)}
                 >
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 mb-1.5">
                     <span className="text-sm font-medium text-foreground truncate">{asset.hostname}</span>
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{asset.ip}</span>
+                    <span className="text-muted-foreground/50 text-[10px]">·</span>
+                    <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">{asset.ip}</Badge>
                     {asset.asn && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 ml-auto">
-                        {asset.asn}
-                      </Badge>
+                      <>
+                        <span className="text-muted-foreground/50 text-[10px]">·</span>
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
+                          {asset.asn}
+                        </Badge>
+                      </>
                     )}
+                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{asset.services} svc</span>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {asset.counts.critical > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-red-500/20 text-red-500 border-red-500/30">{asset.counts.critical}C</Badge>}
