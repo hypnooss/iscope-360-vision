@@ -102,7 +102,7 @@ function CertStatusBadge({ tlsCerts, expiredCerts, expiringSoonCerts }: { tlsCer
     const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
     return (
       <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive/30 text-[11px] font-mono px-1.5 py-0">
-        <Lock className="w-3 h-3 mr-1" /> Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
+        <Lock className="w-3 h-3 mr-1" /> Certificado Expirado há {Math.abs(worst.daysRemaining ?? 0)}d
       </Badge>
     );
   }
@@ -110,13 +110,13 @@ function CertStatusBadge({ tlsCerts, expiredCerts, expiringSoonCerts }: { tlsCer
     const worst = tlsCerts.reduce((a, b) => (a.daysRemaining ?? 9999) < (b.daysRemaining ?? 9999) ? a : b);
     return (
       <Badge variant="outline" className="bg-warning/20 text-warning border-warning/30 text-[11px] font-mono px-1.5 py-0">
-        <Lock className="w-3 h-3 mr-1" /> Expira em {worst.daysRemaining}d
+        <Lock className="w-3 h-3 mr-1" /> Certificado Expira em {worst.daysRemaining}d
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[11px] font-mono px-1.5 py-0">
-      <Lock className="w-3 h-3 mr-1" /> Válido
+      <Lock className="w-3 h-3 mr-1" /> Certificado Válido
     </Badge>
   );
 }
