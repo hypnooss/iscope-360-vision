@@ -1,12 +1,19 @@
 
-# Ajustes na aba Resumo do AssetDetailSheet
 
-## Alteracoes
+# Ocultar "Ativos Afetados" no painel de detalhe do ativo
+
+## Problema
+Quando abrimos o painel lateral de um ativo especifico e expandimos um achado na aba "Analise", a secao "ATIVOS AFETADOS" lista todos os hosts afetados por aquele achado -- incluindo outros hosts. Isso e redundante e confuso, pois ja estamos no contexto de um unico ativo.
+
+## Solucao
+
+**Arquivo**: `src/components/surface/SurfaceFindingCard.tsx`
+
+Adicionar uma prop opcional `hideAffectedAssets?: boolean` ao componente. Quando `true`, oculta tanto o contador de ativos afetados (nivel 2) quanto a secao expandida "ATIVOS AFETADOS" (nivel 3).
 
 **Arquivo**: `src/components/surface/AssetDetailSheet.tsx`
 
-1. **Renomear aba "Resumo" para "Analise"**: Alterar o texto do TabsTrigger e o valor do defaultValue de `resumo` para `analise`
-2. **Remover os 4 mini stat cards**: Remover o bloco do grid 2x2 com MiniStat (linhas 345-351) -- as informacoes de portas, servicos, CVEs e certificados ja estao visiveis nos badges do header e nas abas dedicadas
-3. **Remover o titulo "ACHADOS (X)"**: Remover o `h4` com icone ShieldAlert e texto "Achados (N)" (linhas 356-358), mantendo apenas os cards de findings diretamente
+Passar `hideAffectedAssets={true}` ao renderizar os `SurfaceFindingCard` dentro da aba "Analise".
 
-Apos as alteracoes, a aba "Analise" exibira apenas os cards de findings (SurfaceFindingCard) sem titulo de secao, ou a mensagem "Nenhum achado" caso vazio. O componente `MiniStat` pode ser removido tambem ja que nao sera mais utilizado.
+Isso mantem o comportamento original em todas as outras paginas (AllFindingsPage, CategoryDetailSheet, etc.) e remove a informacao redundante apenas no contexto do detalhe de um ativo individual.
+
