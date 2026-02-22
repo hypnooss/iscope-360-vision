@@ -32,12 +32,12 @@ interface AssetHealth {
   allTechs: string[];
 }
 
-const CARD_STYLES: Record<string, { borderL: string; border: string; bg: string; hover: string }> = {
-  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20', bg: 'bg-red-500/5', hover: 'hover:bg-red-500/10' },
-  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/20', bg: 'bg-orange-500/5', hover: 'hover:bg-orange-500/10' },
-  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500/20', bg: 'bg-yellow-500/5', hover: 'hover:bg-yellow-500/10' },
-  low: { borderL: 'border-l-blue-400', border: 'border-blue-400/20', bg: 'bg-blue-400/5', hover: 'hover:bg-blue-400/10' },
-  ok: { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5', hover: 'hover:bg-emerald-500/10' },
+const CARD_STYLES: Record<string, { borderL: string; border: string; hover: string }> = {
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20', hover: 'hover:bg-red-500/10' },
+  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/20', hover: 'hover:bg-orange-500/10' },
+  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500/20', hover: 'hover:bg-yellow-500/10' },
+  low: { borderL: 'border-l-blue-400', border: 'border-blue-400/20', hover: 'hover:bg-blue-400/10' },
+  ok: { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20', hover: 'hover:bg-emerald-500/10' },
 };
 
 interface AssetHealthGridProps {
@@ -270,8 +270,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   <div
                     key={asset.ip}
                     className={cn(
-                      'rounded-lg border px-3 py-2 border-l-4 cursor-pointer transition-colors',
-                      CARD_STYLES.ok.border, CARD_STYLES.ok.bg, CARD_STYLES.ok.hover, CARD_STYLES.ok.borderL
+                      'rounded-lg border bg-card/50 px-3 py-2 border-l-4 cursor-pointer transition-colors',
+                      CARD_STYLES.ok.border, CARD_STYLES.ok.hover, CARD_STYLES.ok.borderL
                     )}
                     onClick={() => onAssetClick(asset.ip)}
                   >
@@ -293,8 +293,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                   <div
                     key={asset.ip}
                     className={cn(
-                      'rounded-lg border p-3 border-l-4 cursor-pointer transition-colors',
-                      CARD_STYLES[asset.worstSeverity]?.border, CARD_STYLES[asset.worstSeverity]?.bg,
+                      'rounded-lg border bg-card/50 p-3 border-l-4 cursor-pointer transition-colors',
+                      CARD_STYLES[asset.worstSeverity]?.border,
                       CARD_STYLES[asset.worstSeverity]?.hover, CARD_STYLES[asset.worstSeverity]?.borderL
                     )}
                     onClick={() => onAssetClick(asset.ip)}
