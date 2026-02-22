@@ -68,6 +68,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
 
 // Map icon names to components
 const iconMap: Record<string, LucideIcon> = {
@@ -179,6 +180,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem('sidebar-open');
     return saved !== null ? saved === 'true' : true;
   });
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('sidebar-open', String(sidebarOpen));
@@ -814,6 +816,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <Settings className="w-4 h-4 mr-2" />
                     Configurações
                   </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setChangePasswordOpen(true); }} className="cursor-pointer">
+                    <Lock className="w-4 h-4 mr-2" />
+                    Trocar Senha
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     onSelect={(e) => {
@@ -834,6 +840,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Main Content */}
         <main className="flex-1 flex flex-col min-h-screen cyber-grid">{children}</main>
       </div>
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </div>
   );
 }
