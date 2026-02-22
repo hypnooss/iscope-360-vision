@@ -191,11 +191,11 @@ export default function AllFindingsPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Domínio Externo' }, { label: 'Analyzer (v3)', href: '/scope-external-domain/analyzer-v3' }, { label: 'Serviços Expostos' }]} />
+        <PageBreadcrumb items={[{ label: 'Domínio Externo' }, { label: 'Analyzer', href: '/scope-external-domain/analyzer' }, { label: 'Serviços Expostos' }]} />
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/scope-external-domain/analyzer-v3')}>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/scope-external-domain/analyzer')}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>

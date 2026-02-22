@@ -46,8 +46,6 @@ const ExternalDomainExecutionsPage = lazy(() => import("./pages/external-domain/
 const ExternalDomainReportsPage = lazy(() => import("./pages/external-domain/ExternalDomainReportsPage"));
 const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-domain/ExternalDomainAnalysisReportPage"));
 const ExternalDomainEditPage = lazy(() => import("./pages/external-domain/ExternalDomainEditPage"));
-const AttackSurfaceAnalyzerPage = lazy(() => import("./pages/external-domain/AttackSurfaceAnalyzerPage"));
-const SurfaceAnalyzerV2Page = lazy(() => import("./pages/external-domain/SurfaceAnalyzerV2Page"));
 const SurfaceAnalyzerV3Page = lazy(() => import("./pages/external-domain/SurfaceAnalyzerV3Page"));
 const AllFindingsPage = lazy(() => import("./pages/external-domain/AllFindingsPage"));
 
@@ -119,10 +117,8 @@ const App = () => (
                   <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
                   <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />
                   <Route path="/environment/external-domain/:id/edit" element={<ExternalDomainEditPage />} />
-                  <Route path="/scope-external-domain/analyzer" element={<AttackSurfaceAnalyzerPage />} />
-                  <Route path="/scope-external-domain/analyzer-v2" element={<SurfaceAnalyzerV2Page />} />
-                  <Route path="/scope-external-domain/analyzer-v3" element={<SurfaceAnalyzerV3Page />} />
-                  <Route path="/scope-external-domain/analyzer-v3/findings" element={<AllFindingsPage />} />
+                  <Route path="/scope-external-domain/analyzer" element={<SurfaceAnalyzerV3Page />} />
+                  <Route path="/scope-external-domain/analyzer/findings" element={<AllFindingsPage />} />
 
                    {/* Microsoft 365 Module */}
                   <Route path="/scope-m365" element={<Navigate to="/scope-m365/tenant-connection" replace />} />
