@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -24,7 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useLatestAttackSurfaceSnapshot, useRunningAttackSurfaceSnapshot,
-  useAttackSurfaceScan, useAttackSurfaceCancelScan,
+  useAttackSurfaceScan, useAttackSurfaceCancelScan, useAttackSurfaceRescanIP,
   type AttackSurfaceSnapshot, type AttackSurfaceService, type AttackSurfaceWebService, type AttackSurfaceCVE,
 } from '@/hooks/useAttackSurfaceData';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -240,6 +240,8 @@ export default function SurfaceAnalyzerV3Page() {
 
   const scanMutation = useAttackSurfaceScan(selectedClientId ?? undefined);
   const cancelMutation = useAttackSurfaceCancelScan(selectedClientId ?? undefined);
+  const rescanMutation = useAttackSurfaceRescanIP(selectedClientId ?? undefined);
+  const [rescanningIp, setRescanningIp] = useState<string | null>(null);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
@@ -546,6 +548,16 @@ export default function SurfaceAnalyzerV3Page() {
                 assets={assets}
                 findings={findings}
                 onAssetClick={(ip) => setSheetAssetIp(ip)}
+                isSuperRole={isSuperRole}
+                rescanningIp={rescanningIp}
+                onRescan={(ip, hostname, source) => {
+                  if (!activeSnapshot) return;
+                  setRescanningIp(ip);
+                  rescanMutation.mutate(
+                    { ip, source, label: hostname, snapshotId: activeSnapshot.id },
+                    { onSettled: () => setRescanningIp(null) }
+                  );
+                }}
               />
             </div>
           )}
