@@ -24,7 +24,7 @@ interface CategoryOverviewGridProps {
 
 const CATEGORY_ORDER: SurfaceFindingCategory[] = [
   'risky_services', 'vulnerabilities', 'tls_certificates',
-  'web_security', 'obsolete_tech', 'leaked_credentials',
+  'web_security', 'crypto_weaknesses', 'obsolete_tech', 'leaked_credentials',
 ];
 
 const SEV_COLORS = {

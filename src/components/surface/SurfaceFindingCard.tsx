@@ -93,6 +93,7 @@ const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> =
   'amber-500': { border: 'hover:border-amber-500/50', text: 'group-hover:text-amber-500' },
   'purple-500': { border: 'hover:border-purple-500/50', text: 'group-hover:text-purple-500' },
   'sky-500': { border: 'hover:border-sky-500/50', text: 'group-hover:text-sky-500' },
+  'cyan-500': { border: 'hover:border-cyan-500/50', text: 'group-hover:text-cyan-500' },
 };
 
 // ─── Props ──────────────────────────────────────────────────
