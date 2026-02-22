@@ -113,7 +113,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     {asset.asn && (
                       <>
                         <span className="text-muted-foreground/50 text-[10px]">·</span>
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
+                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0 hidden sm:inline-flex">
                           {asset.asn}
                         </Badge>
                       </>
@@ -142,7 +142,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     {asset.asn && (
                       <>
                         <span className="text-muted-foreground/50 text-[10px]">·</span>
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
+                        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 text-muted-foreground border-border/60 shrink-0">
                           {asset.asn}
                         </Badge>
                       </>
@@ -154,7 +154,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick }: AssetHealthG
                     {asset.counts.high > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-orange-500/20 text-orange-500 border-orange-500/30">{asset.counts.high}H</Badge>}
                     {asset.counts.medium > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-yellow-500/20 text-yellow-500 border-yellow-500/30">{asset.counts.medium}M</Badge>}
                     {asset.counts.low > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-400/20 text-blue-400 border-blue-400/30">{asset.counts.low}L</Badge>}
-                    <span className="text-[10px] text-muted-foreground ml-auto">{asset.services} svc</span>
+                    
                   </div>
                 </div>
               )
