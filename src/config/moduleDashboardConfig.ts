@@ -26,6 +26,7 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
     statsKey: 'externalDomain',
     path: '/environment',
     infraLabel: 'Domínios',
+    cvePath: '/scope-external-domain/analyzer',
   },
   scope_network: {
     statsKey: 'network',
