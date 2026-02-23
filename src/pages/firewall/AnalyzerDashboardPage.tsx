@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { useFirewallSelector } from '@/hooks/useFirewallSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -155,7 +156,6 @@ export default function AnalyzerDashboardPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedFirewall, setSelectedFirewall] = useState<string>('');
   const [triggering, setTriggering] = useState(false);
   const [showAttackMap, setShowAttackMap] = useState(false);
 
@@ -201,14 +201,7 @@ export default function AnalyzerDashboardPage() {
     enabled: isSuperRole ? !!selectedWorkspaceId : true,
   });
 
-  // Auto-select first firewall when list changes
-  useEffect(() => {
-    if (firewalls.length > 0 && !firewalls.find(f => f.id === selectedFirewall)) {
-      setSelectedFirewall(firewalls[0].id);
-    } else if (firewalls.length === 0) {
-      setSelectedFirewall('');
-    }
-  }, [firewalls]);
+  const { selectedFirewallId: selectedFirewall, setSelectedFirewallId: setSelectedFirewall } = useFirewallSelector(firewalls);
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
