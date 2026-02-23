@@ -186,8 +186,11 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     }
 
     setUploading(true);
+    setUploadProgress(0);
     let successCount = 0;
-    for (const file of parsedFiles) {
+    for (let idx = 0; idx < parsedFiles.length; idx++) {
+      const file = parsedFiles[idx];
+      setUploadProgress(idx + 1);
       try {
         await insertMutation.mutateAsync({
           title: file.detectedTitle,
