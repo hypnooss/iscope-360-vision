@@ -138,6 +138,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    setParsing(true);
     const newParsed: ParsedFile[] = [];
     let processed = 0;
 
