@@ -131,6 +131,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     setCustomVersion('');
     setParsedFiles([]);
     setNotes('');
+    setUploadProgress(0);
   };
 
   const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
