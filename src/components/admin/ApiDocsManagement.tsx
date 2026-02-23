@@ -76,6 +76,8 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
   const [notes, setNotes] = useState('');
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [parseTotal, setParseTotal] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const effectiveVersion = selectedVersion === 'custom' ? customVersion : selectedVersion;
@@ -134,45 +136,49 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     setUploadProgress(0);
   };
 
-  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const readFileAsText = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev.target?.result as string);
+      reader.onerror = () => reject(new Error(`Erro ao ler: ${file.name}`));
+      reader.readAsText(file);
+    });
+  };
+
+  const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    setParsing(true);
-    const newParsed: ParsedFile[] = [];
-    let processed = 0;
-
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        processed++;
-        try {
-          const parsed = JSON.parse(ev.target?.result as string);
-          const detectedType = detectDocType(parsed);
-          const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
-          const endpointCount = parsed?.paths ? Object.keys(parsed.paths).length : 0;
-          newParsed.push({ name: file.name, content: parsed, detectedTitle, detectedType, endpointCount });
-        } catch {
-          toast.error(`Arquivo inválido: ${file.name}`);
-        }
-        if (processed === files.length) {
-          setParsedFiles((prev) => [...prev, ...newParsed]);
-          setParsing(false);
-        }
-      };
-      reader.onerror = () => {
-        processed++;
-        toast.error(`Erro ao ler: ${file.name}`);
-        if (processed === files.length) {
-          setParsedFiles((prev) => [...prev, ...newParsed]);
-          setParsing(false);
-        }
-      };
-      reader.readAsText(file);
-    });
-
+    const fileArray = Array.from(files);
     // Reset input so same files can be re-selected
     e.target.value = '';
+
+    setParsing(true);
+    setParseProgress(0);
+    setParseTotal(fileArray.length);
+    const newParsed: ParsedFile[] = [];
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setParseProgress(i + 1);
+      // Yield to UI so progress updates render
+      await new Promise((r) => setTimeout(r, 0));
+      try {
+        const text = await readFileAsText(file);
+        const parsed = JSON.parse(text);
+        const detectedType = detectDocType(parsed);
+        const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
+        const endpointCount = parsed?.paths ? Object.keys(parsed.paths).length : 0;
+        newParsed.push({ name: file.name, content: parsed, detectedTitle, detectedType, endpointCount });
+      } catch {
+        toast.error(`Arquivo inválido: ${file.name}`);
+      }
+    }
+
+    setParsedFiles((prev) => [...prev, ...newParsed]);
+    setParsing(false);
+    setParseProgress(0);
+    setParseTotal(0);
   };
 
   const removeFile = (index: number) => {
@@ -394,7 +400,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
               {parsing && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Processando arquivos...
+                  Processando {parseProgress} de {parseTotal} arquivos...
                 </div>
               )}
             </div>
