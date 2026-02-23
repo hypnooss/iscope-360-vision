@@ -54,6 +54,21 @@ const FORTIOS_VERSIONS = [
   { value: '6.4', label: 'FortiOS 6.4' },
 ];
 
+function buildDescriptiveTitle(content: any, fileName: string): string {
+  const basePath = content?.basePath || '';
+  const parts = basePath.replace(/^\/api\/v\d+\//, '').split('/').filter(Boolean);
+  if (parts.length >= 2) {
+    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    const subcategory = parts.slice(1).join(' ');
+    return `FortiOS ${category} ${subcategory}`;
+  }
+  if (parts.length === 1) {
+    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    return `FortiOS ${category}`;
+  }
+  return content?.info?.title || fileName.replace('.json', '');
+}
+
 function detectDocType(content: any): string {
   const basePath = (content?.basePath || '').toLowerCase();
   const title = (content?.info?.title || '').toLowerCase();
@@ -167,7 +182,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         const text = await readFileAsText(file);
         const parsed = JSON.parse(text);
         const detectedType = detectDocType(parsed);
-        const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
+        const detectedTitle = buildDescriptiveTitle(parsed, file.name);
         const endpointCount = parsed?.paths ? Object.keys(parsed.paths).length : 0;
         newParsed.push({ name: file.name, content: parsed, detectedTitle, detectedType, endpointCount });
       } catch {
