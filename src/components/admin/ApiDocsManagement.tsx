@@ -382,7 +382,13 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
             {/* File input */}
             <div className="space-y-2">
               <Label>Arquivos JSON (Swagger/OpenAPI)</Label>
-              <Input type="file" accept=".json" multiple onChange={handleFilesChange} />
+              <Input type="file" accept=".json" multiple onChange={handleFilesChange} disabled={uploading} />
+              {parsing && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processando arquivos...
+                </div>
+              )}
             </div>
 
             {/* Files preview */}
