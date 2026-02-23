@@ -29,6 +29,10 @@ export function useTopCVEs(clientIds?: string[]): Record<string, TopCVE[]> {
     staleTime: 1000 * 60 * 5,
   });
 
+  const MODULE_CODE_TO_STATS_KEY: Record<string, string> = {
+    external_domain: 'externalDomain',
+  };
+
   const result: Record<string, TopCVE[]> = {};
 
   if (data) {
@@ -43,7 +47,8 @@ export function useTopCVEs(clientIds?: string[]): Record<string, TopCVE[]> {
         .map((c) => ({ id: c.id, score: c.score, severity: c.severity }));
 
       if (parsed.length > 0) {
-        result[row.module_code] = parsed;
+        const key = MODULE_CODE_TO_STATS_KEY[row.module_code] ?? row.module_code;
+        result[key] = parsed;
       }
     }
   }
