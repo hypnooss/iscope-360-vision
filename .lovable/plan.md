@@ -1,50 +1,52 @@
 
-# Titulos Descritivos para Documentacao API
+
+# Usar Nome do Arquivo como Titulo da Documentacao API
 
 ## Problema
 
-Todos os documentos API do FortiOS ficam com o mesmo titulo generico (ex: "FortiOS API") porque o campo `info.title` do Swagger e igual em todos os arquivos. O titulo deveria refletir o conteudo real, como "FortiOS Monitor webfilter".
+A funcao `buildDescriptiveTitle` tenta extrair informacoes do `basePath` do Swagger, mas isso gera titulos genericos e duplicados. Os arquivos JSON do FortiOS ja vem com nomes descritivos que identificam o conteudo.
 
 ## Solucao
 
+Alterar a funcao `buildDescriptiveTitle` em `src/components/admin/ApiDocsManagement.tsx` para priorizar o nome do arquivo como titulo.
+
+### Logica
+
+1. Pegar o nome do arquivo (ex: `monitor_webfilter.json`)
+2. Remover a extensao `.json`
+3. Substituir underscores e hifens por espacos
+4. Capitalizar as palavras para gerar um titulo legivel
+5. Manter fallback para `basePath` e `info.title` caso o nome do arquivo nao seja descritivo
+
+### Exemplo de resultado
+
+| Nome do arquivo | Titulo gerado |
+|---|---|
+| `monitor_webfilter.json` | Monitor Webfilter |
+| `cmdb_firewall_policy.json` | Cmdb Firewall Policy |
+| `log_disk_traffic.json` | Log Disk Traffic |
+
+### Alteracao tecnica
+
 **Arquivo:** `src/components/admin/ApiDocsManagement.tsx`
 
-Alterar a logica de deteccao de titulo (linha 170) para construir um nome mais descritivo a partir do `basePath` do Swagger. Por exemplo:
-
-- `basePath: "/api/v2/monitor/webfilter"` gera o titulo **"FortiOS Monitor webfilter"**
-- `basePath: "/api/v2/cmdb/firewall"` gera o titulo **"FortiOS REST firewall"**
-- `basePath: "/api/v2/log/disk"` gera o titulo **"FortiOS Log disk"**
-
-### Logica tecnica
+Reescrever `buildDescriptiveTitle` (linhas 57-70):
 
 ```typescript
 function buildDescriptiveTitle(content: any, fileName: string): string {
-  const basePath = content?.basePath || '';
-  // Extrair categoria e subcategoria do basePath
-  // Ex: "/api/v2/monitor/webfilter" -> ["monitor", "webfilter"]
-  const parts = basePath.replace(/^\/api\/v\d+\//, '').split('/').filter(Boolean);
-  
-  if (parts.length >= 2) {
-    // "FortiOS Monitor webfilter"
-    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    const subcategory = parts.slice(1).join(' ');
-    return `FortiOS ${category} ${subcategory}`;
+  // Priorizar o nome do arquivo, que no FortiOS ja e descritivo
+  const nameWithoutExt = fileName.replace(/\.json$/i, '');
+  if (nameWithoutExt) {
+    // Substituir _ e - por espacos e capitalizar cada palavra
+    const formatted = nameWithoutExt
+      .replace(/[_-]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return formatted;
   }
-  if (parts.length === 1) {
-    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    return `FortiOS ${category}`;
-  }
-  // Fallback: info.title ou nome do arquivo
-  return content?.info?.title || fileName.replace('.json', '');
+  // Fallback
+  return content?.info?.title || fileName;
 }
 ```
 
-Substituir a linha 170:
-```typescript
-// De:
-const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
-// Para:
-const detectedTitle = buildDescriptiveTitle(parsed, file.name);
-```
+Uma unica funcao alterada, sem outras mudancas no componente.
 
-O titulo tambem sera editavel na lista de preview antes do envio, caso o usuario queira ajustar manualmente.
