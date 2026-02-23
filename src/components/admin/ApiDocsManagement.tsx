@@ -205,6 +205,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
       }
     }
     setUploading(false);
+    setUploadProgress(0);
 
     if (successCount > 0) {
       queryClient.invalidateQueries({ queryKey: ['api-docs', deviceTypeId] });
