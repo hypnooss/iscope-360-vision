@@ -423,7 +423,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
                     <Progress value={(uploadProgress / parsedFiles.length) * 100} className="h-2" />
                   </div>
                 )}
-                <ScrollArea className="max-h-[240px]">
+                <ScrollArea className="h-[300px] overflow-hidden">
                   <div className="space-y-1.5 pr-2">
                     {parsedFiles.map((file, i) => {
                       const isUploaded = uploading && i < uploadProgress;
