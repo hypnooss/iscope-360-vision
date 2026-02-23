@@ -5,6 +5,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { useFirewallSelector } from '@/hooks/useFirewallSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +45,6 @@ export default function AnalyzerInsightsPage() {
   const { isPreviewMode } = usePreview();
   const { effectiveRole } = useEffectiveAuth();
   const navigate = useNavigate();
-  const [selectedFirewall, setSelectedFirewall] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [expandedInsights, setExpandedInsights] = useState<Record<string, boolean>>({});
 
@@ -76,13 +76,7 @@ export default function AnalyzerInsightsPage() {
     enabled: isSuperRole ? !!selectedWorkspaceId : true,
   });
 
-  useEffect(() => {
-    if (firewalls.length > 0 && !firewalls.find(f => f.id === selectedFirewall)) {
-      setSelectedFirewall(firewalls[0].id);
-    } else if (firewalls.length === 0) {
-      setSelectedFirewall('');
-    }
-  }, [firewalls]);
+  const { selectedFirewallId: selectedFirewall, setSelectedFirewallId: setSelectedFirewall } = useFirewallSelector(firewalls);
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');

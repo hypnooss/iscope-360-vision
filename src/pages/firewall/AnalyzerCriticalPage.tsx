@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
+import { useFirewallSelector } from '@/hooks/useFirewallSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,7 +21,6 @@ export default function AnalyzerCriticalPage() {
   const { hasModuleAccess } = useModules();
   const navigate = useNavigate();
   const [firewalls, setFirewalls] = useState<FirewallOption[]>([]);
-  const [selectedFirewall, setSelectedFirewall] = useState('');
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
@@ -30,9 +30,11 @@ export default function AnalyzerCriticalPage() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('firewalls').select('id, name').order('name');
-      if (data?.length) { setFirewalls(data); setSelectedFirewall(data[0].id); }
+      if (data?.length) { setFirewalls(data); }
     })();
   }, []);
+
+  const { selectedFirewallId: selectedFirewall, setSelectedFirewallId: setSelectedFirewall } = useFirewallSelector(firewalls);
 
   const { data: snapshot, isLoading } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
