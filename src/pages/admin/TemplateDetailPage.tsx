@@ -149,6 +149,21 @@ export default function TemplateDetailPage() {
     enabled: !!user && !!id && (role === 'super_admin' || role === 'super_suporte'),
   });
 
+  // Fetch API docs count for this template
+  const { data: apiDocsCount = 0 } = useQuery({
+    queryKey: ['api-docs-count', id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('device_type_api_docs' as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('device_type_id', id);
+
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!user && !!id && (role === 'super_admin' || role === 'super_suporte'),
+  });
+
   if (authLoading || templateLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
