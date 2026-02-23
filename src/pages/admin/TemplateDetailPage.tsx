@@ -308,6 +308,13 @@ export default function TemplateDetailPage() {
                 {guidesCount}
               </Badge>
             </TabsTrigger>
+            <TabsTrigger value="api-docs" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Documentação API
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {apiDocsCount}
+              </Badge>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="blueprints" className="mt-6">
