@@ -157,6 +157,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         }
         if (processed === files.length) {
           setParsedFiles((prev) => [...prev, ...newParsed]);
+          setParsing(false);
         }
       };
       reader.readAsText(file);
