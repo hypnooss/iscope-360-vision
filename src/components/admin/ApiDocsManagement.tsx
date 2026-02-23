@@ -76,6 +76,8 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
   const [notes, setNotes] = useState('');
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [parseTotal, setParseTotal] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const effectiveVersion = selectedVersion === 'custom' ? customVersion : selectedVersion;
