@@ -1,36 +1,42 @@
 
 
-# Exibir Top CVEs nos Cards de Firewall e Dominio Externo
+# Filtrar Logs de Configuracao por Horario no Firewall Analyzer
 
 ## Problema
 
-1. **Firewall**: O card do Firewall no Dashboard nao exibe as top CVEs, apesar de ter o botao "CVEs". O problema esta no lookup: o hook `useTopCVEs` retorna dados indexados por `module_code` da tabela `cve_severity_cache`, mas o dashboard usa `statsKey` para buscar. Para firewall ambos sao `'firewall'`, entao o problema pode ser que os registros na tabela `cve_severity_cache` para firewall tem `client_id` definido e o filtro no hook nao esta retornando corretamente, ou o campo `top_cves` esta vazio para esses registros.
+O blueprint do FortiGate coleta ate 500 registros de alteracoes de configuracao via API REST, sem filtro de tempo. Como o Analyzer roda de hora em hora, muitos desses 500 registros podem ser de periodos anteriores (ja processados), e alteracoes recentes podem nao aparecer porque o limite de 500 ja foi preenchido com logs antigos que ja foram persistidos.
 
-2. **Dominio Externo**: O card nao exibe CVEs porque: (a) o `statsKey` e `'externalDomain'` mas o `module_code` na tabela e `'external_domain'` -- nao batem; (b) nao tem `cvePath` configurado, entao o botao de CVEs nem aparece.
+O correto e: ao processar os logs no backend (Edge Function), filtrar apenas os logs cujo timestamp esteja dentro do periodo do snapshot (ultima 1 hora), garantindo que alteracoes recentes sejam capturadas e que logs antigos ja persistidos nao sejam reprocessados desnecessariamente.
 
 ## Solucao
 
-### 1. Corrigir mapeamento de module_code para statsKey no `useTopCVEs`
+Alterar a Edge Function `firewall-analyzer` para filtrar os logs de `config_changes` (e opcionalmente todos os outros tipos de log) pelo timestamp, usando o `period_start` do snapshot como referencia.
 
-Alterar o hook `src/hooks/useTopCVEs.ts` para mapear os `module_code` do banco para os `statsKey` usados no dashboard, garantindo compatibilidade:
+### Detalhes Tecnicos
 
-- `firewall` -> `firewall` (ja correto)
-- `m365` -> `m365` (ja correto)
-- `external_domain` -> `externalDomain` (precisa mapeamento)
+**Arquivo: `supabase/functions/firewall-analyzer/index.ts`**
 
-### 2. Adicionar CVE path para Dominio Externo no config
+1. Na secao principal (apos extrair `configData` na linha ~1016), adicionar logica para buscar o `period_start` do snapshot e filtrar os logs de config_changes pelo campo de data/hora do log (`date` + `time`, ou `eventtime`).
 
-Atualizar `src/config/moduleDashboardConfig.ts` para incluir `cvePath` no modulo `scope_external_domain`, apontando para a pagina do Surface Analyzer (ou uma pagina dedicada de CVEs, se existir).
+2. Criar uma funcao auxiliar `filterLogsByTime(logs, periodStart)` que:
+   - Recebe o array de logs e o timestamp de inicio do periodo
+   - Para cada log, monta o timestamp a partir de `log.date` + `log.time` (formato FortiGate: `"2026-02-22"` + `"19:10:05"`) ou `log.eventtime` (epoch em segundos)
+   - Filtra apenas os logs cujo timestamp >= `period_start`
+   - Retorna o array filtrado
 
-### Secao Tecnica
+3. Aplicar esse filtro em `configData` antes de passar para `analyzeConfigChanges()`:
+   ```
+   const filteredConfigData = filterLogsByTime(configLogs, periodStart);
+   ```
 
-**Arquivo: `src/hooks/useTopCVEs.ts`**
-- Adicionar um mapa de conversao `MODULE_CODE_TO_STATS_KEY` com `{ external_domain: 'externalDomain' }`.
-- No loop que processa os dados, usar o mapa para converter a chave antes de inserir no resultado.
+4. Tambem aplicar o filtro nos demais tipos de log (denied_traffic, auth_events, vpn_events, etc.) para consistencia, ja que todos sofrem da mesma limitacao de 500 registros.
 
-**Arquivo: `src/config/moduleDashboardConfig.ts`**
-- Adicionar `cvePath: '/scope-external-domain/analyzer'` ao bloco `scope_external_domain` para que o botao "CVEs" apareca no card.
+5. O `period_start` sera obtido do snapshot que ja esta salvo no banco (criado pelo `trigger-firewall-analyzer` com `period_start = now - 1h`). Caso nao exista, usar fallback de 1 hora atras.
 
-**Arquivo: `src/pages/GeneralDashboardPage.tsx`**
-- Nenhuma alteracao necessaria; o card ja renderiza `topCves` e o botao de CVEs quando `cvePath` existe.
+### Impacto
+
+- Logs coletados fora do periodo de 1 hora serao descartados no processamento
+- Alteracoes de configuracao feitas dentro da janela de 1 hora serao corretamente capturadas e persistidas na tabela `analyzer_config_changes`
+- Nenhuma alteracao no blueprint ou no agente Python e necessaria
+- Funciona tanto para execucoes agendadas quanto manuais
 
