@@ -1008,17 +1008,72 @@ Deno.serve(async (req) => {
 
     await supabase.from('analyzer_snapshots').update({ status: 'processing' }).eq('id', snapshot_id);
 
-    // Extract step data
-    const deniedData = raw_data.denied_traffic?.data || raw_data.denied_traffic || [];
-    const authData = raw_data.auth_events?.data || raw_data.auth_events || [];
-    const vpnData = raw_data.vpn_events?.data || raw_data.vpn_events || [];
-    const ipsData = raw_data.ips_events?.data || raw_data.ips_events || [];
-    const configData = raw_data.config_changes?.data || raw_data.config_changes || [];
-    const webfilterData = raw_data.webfilter_blocked?.data || raw_data.webfilter_blocked || [];
-    const appctrlData = raw_data.appctrl_blocked?.data || raw_data.appctrl_blocked || [];
-    const anomalyData = raw_data.anomaly_events?.data || raw_data.anomaly_events || [];
+    // ── Fetch period_start from snapshot for time-based filtering ──
+    const { data: snapMeta } = await supabase
+      .from('analyzer_snapshots')
+      .select('period_start')
+      .eq('id', snapshot_id)
+      .single();
 
-    const deniedLogs = Array.isArray(deniedData) ? deniedData : deniedData?.results || [];
+    const periodStart = snapMeta?.period_start
+      ? new Date(snapMeta.period_start)
+      : new Date(Date.now() - 60 * 60 * 1000); // fallback: 1h ago
+
+    console.log(`[firewall-analyzer] period_start for filtering: ${periodStart.toISOString()}`);
+
+    // ── Helper: filter logs by timestamp >= periodStart ──
+    function filterLogsByTime(logs: any[], cutoff: Date): any[] {
+      if (!Array.isArray(logs) || logs.length === 0) return logs;
+
+      const cutoffMs = cutoff.getTime();
+      const filtered = logs.filter(log => {
+        // Try eventtime first (epoch in seconds or microseconds)
+        if (log.eventtime) {
+          const et = Number(log.eventtime);
+          // eventtime > 1e15 means microseconds, > 1e12 means milliseconds, else seconds
+          const ms = et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
+          return ms >= cutoffMs;
+        }
+        // Try date + time fields (FortiGate format: "2026-02-22" + "19:10:05")
+        if (log.date) {
+          const timeStr = log.time || '00:00:00';
+          const parsed = new Date(`${log.date}T${timeStr}`);
+          if (!isNaN(parsed.getTime())) {
+            return parsed.getTime() >= cutoffMs;
+          }
+        }
+        // If no timestamp field found, keep the log (don't discard unknowns)
+        return true;
+      });
+
+      if (filtered.length !== logs.length) {
+        console.log(`[firewall-analyzer] filterLogsByTime: ${logs.length} → ${filtered.length} (removed ${logs.length - filtered.length} outside period)`);
+      }
+
+      return filtered;
+    }
+
+    // Extract step data
+    const rawDeniedData = raw_data.denied_traffic?.data || raw_data.denied_traffic || [];
+    const rawAuthData = raw_data.auth_events?.data || raw_data.auth_events || [];
+    const rawVpnData = raw_data.vpn_events?.data || raw_data.vpn_events || [];
+    const rawIpsData = raw_data.ips_events?.data || raw_data.ips_events || [];
+    const rawConfigData = raw_data.config_changes?.data || raw_data.config_changes || [];
+    const rawWebfilterData = raw_data.webfilter_blocked?.data || raw_data.webfilter_blocked || [];
+    const rawAppctrlData = raw_data.appctrl_blocked?.data || raw_data.appctrl_blocked || [];
+    const rawAnomalyData = raw_data.anomaly_events?.data || raw_data.anomaly_events || [];
+
+    // Apply time-based filtering to all log types
+    const deniedData = filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart);
+    const authData = filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart);
+    const vpnData = filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart);
+    const ipsData = filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart);
+    const configData = filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart);
+    const webfilterData = filterLogsByTime(Array.isArray(rawWebfilterData) ? rawWebfilterData : rawWebfilterData?.results || [], periodStart);
+    const appctrlData = filterLogsByTime(Array.isArray(rawAppctrlData) ? rawAppctrlData : rawAppctrlData?.results || [], periodStart);
+    const anomalyData = filterLogsByTime(Array.isArray(rawAnomalyData) ? rawAnomalyData : rawAnomalyData?.results || [], periodStart);
+
+    const deniedLogs = deniedData;
 
     // Run analysis modules
     const deniedResult = analyzeDeniedTraffic(deniedLogs);
