@@ -1119,8 +1119,8 @@ Deno.serve(async (req) => {
     const anomalyResult = analyzeAnomalies(anomalyData, ipCountryMap);
 
     // Outbound traffic: separate allowed and blocked sources
-    const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-    const rawAllowedLogs = Array.isArray(allowedData) ? allowedData : allowedData?.results || [];
+    const rawAllowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
+    const rawAllowedLogs = filterLogsByTime(Array.isArray(rawAllowedData) ? rawAllowedData : rawAllowedData?.results || [], periodStart);
     // Fallback: check if denied_traffic has accept entries (some blueprints put all forward traffic there)
     const acceptedFromDenied = deniedLogs.filter((l: any) => {
       const action = (l.action || '').toLowerCase();
