@@ -459,7 +459,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
             <Button variant="outline" onClick={resetForm}>Cancelar</Button>
             <Button onClick={handleSubmitBatch} disabled={uploading || !effectiveVersion || parsedFiles.length === 0} className="gap-2">
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Enviar {parsedFiles.length > 0 ? `(${parsedFiles.length})` : ''}
+              {uploading ? `Enviando ${uploadProgress} de ${parsedFiles.length}...` : `Enviar ${parsedFiles.length > 0 ? `(${parsedFiles.length})` : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
