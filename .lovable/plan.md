@@ -1,32 +1,35 @@
 
+# Persistir Seletor de Firewall no Analyzer
 
-# Adicionar Opcao "Trocar Senha" no Menu do Usuario
+## Objetivo
 
-## O que sera feito
-
-Adicionar uma opcao "Trocar Senha" no menu dropdown inferior da sidebar (onde ja existe "Configuracoes" e "Sair"), abrindo um dialog modal para o usuario alterar sua senha.
+Aplicar o mesmo padrao de persistencia do seletor de Workspace (`useWorkspaceSelector`) ao seletor de Firewall nas paginas do Firewall Analyzer, para que o firewall selecionado seja lembrado ao navegar entre sub-paginas.
 
 ## Mudancas
 
-### 1. Criar componente `src/components/ChangePasswordDialog.tsx`
+### 1. Criar hook `src/hooks/useFirewallSelector.ts`
 
-Dialog modal com formulario contendo:
-- Campo "Nova Senha" (usando o componente `PasswordInput` ja existente)
-- Campo "Confirmar Nova Senha"
-- Validacao: senha minima de 6 caracteres e confirmacao deve ser igual
-- Ao submeter, chama `supabase.auth.updateUser({ password })` 
-- Exibe toast de sucesso ou erro
-- Fecha automaticamente apos sucesso
+Hook generico seguindo o mesmo padrao de `useWorkspaceSelector`:
+- Armazena o ID do firewall selecionado no `localStorage` com chave `iscope_selected_firewall`
+- Ao carregar, restaura o valor salvo
+- Se o valor salvo nao existir mais na lista de firewalls, seleciona o primeiro automaticamente
+- Exporta `selectedFirewallId` e `setSelectedFirewallId`
 
-### 2. Modificar `src/components/layout/AppLayout.tsx`
+### 2. Atualizar 4 paginas do Firewall Analyzer
 
-No menu dropdown do usuario (linhas 810-828):
-- Importar o `ChangePasswordDialog`
-- Adicionar state `changePasswordOpen`
-- Adicionar item "Trocar Senha" com icone `Lock` entre "Configuracoes" e "Sair"
-- Renderizar o dialog controlado pelo state
+Substituir o `useState('')` + `useEffect` de auto-selecao pelo novo `useFirewallSelector` nas seguintes paginas:
+
+- `src/pages/firewall/AnalyzerDashboardPage.tsx`
+- `src/pages/firewall/AnalyzerInsightsPage.tsx`
+- `src/pages/firewall/AnalyzerCriticalPage.tsx`
+- `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+
+Em cada pagina:
+- Remover `const [selectedFirewall, setSelectedFirewall] = useState('')`
+- Remover o `useEffect` que faz auto-selecao do primeiro firewall
+- Adicionar `const { selectedFirewallId, setSelectedFirewallId } = useFirewallSelector(firewalls)`
+- Renomear as referencias de `selectedFirewall` para `selectedFirewallId` (ou alias)
 
 ### Secao Tecnica
 
-O Supabase Auth ja oferece `supabase.auth.updateUser({ password })` que atualiza a senha do usuario autenticado sem precisar da senha atual -- basta estar logado. Nenhuma edge function ou alteracao de banco e necessaria.
-
+O hook recebe o array de firewalls carregado via react-query e valida se o ID salvo no localStorage ainda existe na lista. Quando o workspace muda e a lista de firewalls atualiza, o hook detecta que o ID salvo nao pertence mais a lista e auto-seleciona o primeiro disponivel, mantendo o comportamento atual mas com persistencia entre navegacoes.
