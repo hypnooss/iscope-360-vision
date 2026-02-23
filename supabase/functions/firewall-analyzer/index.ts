@@ -1088,7 +1088,7 @@ Deno.serve(async (req) => {
 
     // Enrich from auth and VPN logs (they often have srccountry for external IPs)
     const authLogs = authData;
-    const vpnLogs = Array.isArray(vpnData) ? vpnData : vpnData?.results || [];
+    const vpnLogs = vpnData;
     for (const log of [...authLogs, ...vpnLogs]) {
       const ip = log.srcip || log.remip || log.src;
       const country = log.srccountry || log.src_country;
