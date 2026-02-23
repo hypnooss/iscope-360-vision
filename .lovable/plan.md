@@ -1,73 +1,35 @@
 
 
-# Upload em Lote de Documentacao API com Seletor de Versao FortiOS
+# Progress/Status Indicators para Upload em Lote
 
 ## Problema
 
-Atualmente o upload e feito arquivo por arquivo, e a versao precisa ser digitada manualmente. Como os JSONs exportados do FortiOS nao incluem a versao do sistema operacional, e necessario selecionar a versao antes de fazer o upload em lote.
+Ao selecionar varios JSONs, nao ha feedback visual durante o parsing dos arquivos nem durante o envio ao banco. O usuario nao sabe se esta funcionando.
 
 ## Solucao
 
-Alterar o dialog de upload em `ApiDocsManagement.tsx` para suportar **multiplos arquivos** com um **seletor de versao FortiOS** obrigatorio no topo.
+Adicionar indicadores de progresso em duas etapas:
 
-### Fluxo do Usuario
+### 1. Parsing dos arquivos (leitura local)
 
-1. Clicar em "Adicionar Documento"
-2. Selecionar a **versao do FortiOS** (ex: 7.4, 7.2, 7.0, 6.4) -- campo obrigatorio no topo do dialog
-3. Opcionalmente informar a versao especifica (ex: 7.4.11) ou deixar apenas a major (7.4)
-4. Selecionar **multiplos arquivos JSON** de uma vez (input com `multiple`)
-5. O sistema detecta automaticamente o **tipo** (log_api, monitor_api, rest_api) pelo conteudo/titulo do JSON
-6. Lista preview dos arquivos selecionados com titulo, tipo detectado e contagem de endpoints
-7. Clicar em "Enviar Todos" para fazer o upload em lote
-8. Observacoes opcionais aplicadas a todos os documentos do lote
+- Novo estado `parsing` (boolean) -- ativado enquanto os FileReaders estao processando
+- Exibir "Processando X arquivos..." com spinner abaixo do input de arquivo
 
-### Alteracoes no Componente
+### 2. Upload para o banco (envio em lote)
+
+- Novo estado `uploadProgress` (numero do arquivo atual sendo enviado)
+- Durante o upload, mostrar uma barra de progresso (Progress component) com texto "Enviando 3 de 8..."
+- Cada item na lista de preview recebe um indicador visual: check verde (enviado), spinner (enviando), cinza (pendente)
+- Desabilitar botoes e inputs durante o upload
+
+### Alteracoes tecnicas
 
 **Arquivo:** `src/components/admin/ApiDocsManagement.tsx`
 
-1. **Seletor de versao FortiOS** -- Select com versoes pre-definidas (7.4, 7.2, 7.0, 6.4) + opcao "Outra" para digitar manualmente
-2. **Input de arquivo com `multiple`** -- Permite selecionar varios JSONs de uma vez
-3. **Estado de arquivos como array** -- Substituir `jsonContent`/`fileName` por um array de objetos `{ file, name, content, detectedType, detectedTitle, endpointCount }`
-4. **Auto-deteccao de tipo** -- Analisar o titulo/basePath/paths do JSON para inferir se e `log_api`, `monitor_api` ou `rest_api`
-5. **Lista de preview** -- Mostrar todos os arquivos selecionados com tipo detectado e permitir remover individualmente
-6. **Submit em lote** -- Inserir todos os documentos com a mesma versao selecionada
-
-### Deteccao Automatica de Tipo
-
-Logica para inferir `doc_type` a partir do conteudo JSON:
-
-```text
-Se basePath contem "/log/" ou titulo contem "Log" -> log_api
-Se basePath contem "/monitor/" ou titulo contem "Monitor" -> monitor_api
-Se basePath contem "/cmdb/" ou titulo contem "CMDB" ou "REST" -> rest_api
-Senao -> reference
-```
-
-### Versoes Pre-definidas
-
-```text
-FORTIOS_VERSIONS = [
-  { value: '7.6', label: 'FortiOS 7.6' },
-  { value: '7.4', label: 'FortiOS 7.4' },
-  { value: '7.2', label: 'FortiOS 7.2' },
-  { value: '7.0', label: 'FortiOS 7.0' },
-  { value: '6.4', label: 'FortiOS 6.4' },
-]
-```
-
-Com campo de versao especifica opcional (ex: digitar "7.4.11" manualmente).
-
-### Detalhes Tecnicos
-
-- Nenhuma alteracao no banco de dados -- a tabela `device_type_api_docs` ja suporta tudo
-- Cada arquivo gera um registro separado na tabela, todos com a mesma `version`
-- O titulo e extraido automaticamente do `info.title` do JSON quando disponivel
-- O tipo e detectado automaticamente mas pode ser ajustado manualmente na lista de preview
-- Inserir todos os registros em sequencia (nao em paralelo) para evitar problemas com rate limiting do Supabase
-
-### Resumo
-
-| Arquivo | Acao |
-|---|---|
-| `src/components/admin/ApiDocsManagement.tsx` | Refatorar dialog de upload para suportar multiplos arquivos + seletor de versao |
-
+- Adicionar estados: `parsing: boolean`, `uploadProgress: number` (0 = nao iniciado, 1..N = arquivo atual)
+- Em `handleFilesChange`: setar `parsing = true` no inicio, `false` ao terminar todos os FileReaders
+- Em `handleSubmitBatch`: atualizar `uploadProgress` a cada iteracao do loop
+- Na lista de preview (linhas 389-409): adicionar icone condicional por arquivo (CheckCircle2, Loader2, ou FileText)
+- Acima da lista durante upload: barra de Progress mostrando `(uploadProgress / parsedFiles.length) * 100`
+- No botao Enviar: trocar texto para "Enviando X de Y..." durante upload
+- Importar `Progress` de `@/components/ui/progress` e `CheckCircle2` de `lucide-react`
