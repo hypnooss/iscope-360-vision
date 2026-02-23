@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Plus, Trash2, Eye, Upload, FileText, Search, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Eye, Upload, FileText, Search, ChevronRight, Loader2, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ApiDoc {
@@ -26,6 +26,14 @@ interface ApiDoc {
   updated_at: string;
 }
 
+interface ParsedFile {
+  name: string;
+  content: any;
+  detectedTitle: string;
+  detectedType: string;
+  endpointCount: number;
+}
+
 interface Props {
   deviceTypeId: string;
 }
@@ -37,20 +45,37 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   reference: 'Referência',
 };
 
+const FORTIOS_VERSIONS = [
+  { value: '7.6', label: 'FortiOS 7.6' },
+  { value: '7.4', label: 'FortiOS 7.4' },
+  { value: '7.2', label: 'FortiOS 7.2' },
+  { value: '7.0', label: 'FortiOS 7.0' },
+  { value: '6.4', label: 'FortiOS 6.4' },
+];
+
+function detectDocType(content: any): string {
+  const basePath = (content?.basePath || '').toLowerCase();
+  const title = (content?.info?.title || '').toLowerCase();
+  if (basePath.includes('/log/') || title.includes('log')) return 'log_api';
+  if (basePath.includes('/monitor/') || title.includes('monitor')) return 'monitor_api';
+  if (basePath.includes('/cmdb/') || title.includes('cmdb') || title.includes('rest')) return 'rest_api';
+  return 'reference';
+}
+
 export function ApiDocsManagement({ deviceTypeId }: Props) {
   const queryClient = useQueryClient();
   const [showUpload, setShowUpload] = useState(false);
   const [showViewer, setShowViewer] = useState<ApiDoc | null>(null);
   const [searchEndpoint, setSearchEndpoint] = useState('');
 
-  // Form state
-  const [title, setTitle] = useState('');
-  const [version, setVersion] = useState('');
-  const [docType, setDocType] = useState('log_api');
+  // Batch upload state
+  const [selectedVersion, setSelectedVersion] = useState('');
+  const [customVersion, setCustomVersion] = useState('');
+  const [parsedFiles, setParsedFiles] = useState<ParsedFile[]>([]);
   const [notes, setNotes] = useState('');
-  const [jsonContent, setJsonContent] = useState<any>(null);
-  const [fileName, setFileName] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  const effectiveVersion = selectedVersion === 'custom' ? customVersion : selectedVersion;
 
   const { data: docs = [], isLoading } = useQuery({
     queryKey: ['api-docs', deviceTypeId],
@@ -79,13 +104,6 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         } as any);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['api-docs', deviceTypeId] });
-      queryClient.invalidateQueries({ queryKey: ['api-docs-count', deviceTypeId] });
-      toast.success('Documento adicionado com sucesso');
-      resetForm();
-    },
-    onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
   const deleteMutation = useMutation({
@@ -106,46 +124,85 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
 
   const resetForm = () => {
     setShowUpload(false);
-    setTitle('');
-    setVersion('');
-    setDocType('log_api');
+    setSelectedVersion('');
+    setCustomVersion('');
+    setParsedFiles([]);
     setNotes('');
-    setJsonContent(null);
-    setFileName('');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        setJsonContent(parsed);
-        // Auto-fill title/version from swagger info
-        if (parsed.info) {
-          if (!title && parsed.info.title) setTitle(parsed.info.title);
-          if (!version && parsed.info.version) setVersion(parsed.info.version);
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newParsed: ParsedFile[] = [];
+    let processed = 0;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        processed++;
+        try {
+          const parsed = JSON.parse(ev.target?.result as string);
+          const detectedType = detectDocType(parsed);
+          const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
+          const endpointCount = parsed?.paths ? Object.keys(parsed.paths).length : 0;
+          newParsed.push({ name: file.name, content: parsed, detectedTitle, detectedType, endpointCount });
+        } catch {
+          toast.error(`Arquivo inválido: ${file.name}`);
         }
-      } catch {
-        toast.error('Arquivo JSON inválido');
-        setJsonContent(null);
-      }
-    };
-    reader.readAsText(file);
+        if (processed === files.length) {
+          setParsedFiles((prev) => [...prev, ...newParsed]);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // Reset input so same files can be re-selected
+    e.target.value = '';
   };
 
-  const handleSubmit = () => {
-    if (!title || !version || !jsonContent) {
-      toast.error('Preencha título, versão e selecione um arquivo JSON');
+  const removeFile = (index: number) => {
+    setParsedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateFileType = (index: number, newType: string) => {
+    setParsedFiles((prev) => prev.map((f, i) => i === index ? { ...f, detectedType: newType } : f));
+  };
+
+  const handleSubmitBatch = async () => {
+    if (!effectiveVersion) {
+      toast.error('Selecione a versão do FortiOS');
       return;
     }
+    if (parsedFiles.length === 0) {
+      toast.error('Selecione pelo menos um arquivo JSON');
+      return;
+    }
+
     setUploading(true);
-    insertMutation.mutate(
-      { title, version, doc_type: docType, content: jsonContent, notes },
-      { onSettled: () => setUploading(false) }
-    );
+    let successCount = 0;
+    for (const file of parsedFiles) {
+      try {
+        await insertMutation.mutateAsync({
+          title: file.detectedTitle,
+          version: effectiveVersion,
+          doc_type: file.detectedType,
+          content: file.content,
+          notes: notes || null,
+        });
+        successCount++;
+      } catch (e: any) {
+        toast.error(`Erro em ${file.name}: ${e.message}`);
+      }
+    }
+    setUploading(false);
+
+    if (successCount > 0) {
+      queryClient.invalidateQueries({ queryKey: ['api-docs', deviceTypeId] });
+      queryClient.invalidateQueries({ queryKey: ['api-docs-count', deviceTypeId] });
+      toast.success(`${successCount} documento(s) adicionado(s) com sucesso`);
+      resetForm();
+    }
   };
 
   // Extract endpoints from swagger/openapi content
@@ -180,6 +237,8 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     }
   };
 
+  const totalEndpoints = parsedFiles.reduce((sum, f) => sum + f.endpointCount, 0);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -191,7 +250,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         </div>
         <Button onClick={() => setShowUpload(true)} className="gap-2">
           <Plus className="w-4 h-4" />
-          Adicionar Documento
+          Adicionar Documentos
         </Button>
       </div>
 
@@ -205,7 +264,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
           <p className="text-muted-foreground">Nenhuma documentação API cadastrada</p>
           <Button variant="outline" className="mt-4 gap-2" onClick={() => setShowUpload(true)}>
             <Upload className="w-4 h-4" />
-            Enviar primeiro documento
+            Enviar documentos
           </Button>
         </div>
       ) : (
@@ -269,53 +328,102 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         </Table>
       )}
 
-      {/* Upload Dialog */}
+      {/* Batch Upload Dialog */}
       <Dialog open={showUpload} onOpenChange={(o) => !o && resetForm()}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Adicionar Documentação API</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Título</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Log API - Memory" />
-            </div>
+            {/* Version selector */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Versão</Label>
-                <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="Ex: 7.4.11" />
-              </div>
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select value={docType} onValueChange={setDocType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Label>Versão FortiOS *</Label>
+                <Select value={selectedVersion} onValueChange={(v) => { setSelectedVersion(v); if (v !== 'custom') setCustomVersion(''); }}>
+                  <SelectTrigger><SelectValue placeholder="Selecione a versão" /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    {FORTIOS_VERSIONS.map((v) => (
+                      <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
                     ))}
+                    <SelectItem value="custom">Outra versão...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {selectedVersion === 'custom' ? (
+                <div className="space-y-2">
+                  <Label>Versão específica *</Label>
+                  <Input value={customVersion} onChange={(e) => setCustomVersion(e.target.value)} placeholder="Ex: 6.2.15" />
+                </div>
+              ) : selectedVersion ? (
+                <div className="space-y-2">
+                  <Label>Versão específica (opcional)</Label>
+                  <Input
+                    value={customVersion}
+                    onChange={(e) => setCustomVersion(e.target.value)}
+                    placeholder={`Ex: ${selectedVersion}.11`}
+                  />
+                  {customVersion && (
+                    <p className="text-xs text-muted-foreground">Será salvo como: {customVersion}</p>
+                  )}
+                </div>
+              ) : null}
             </div>
+
+            {/* File input */}
             <div className="space-y-2">
-              <Label>Arquivo JSON (Swagger/OpenAPI)</Label>
-              <Input type="file" accept=".json" onChange={handleFileChange} />
-              {fileName && (
-                <p className="text-xs text-muted-foreground">
-                  {fileName} {jsonContent && `• ${Object.keys(jsonContent.paths || {}).length} endpoints detectados`}
-                </p>
-              )}
+              <Label>Arquivos JSON (Swagger/OpenAPI)</Label>
+              <Input type="file" accept=".json" multiple onChange={handleFilesChange} />
             </div>
+
+            {/* Files preview */}
+            {parsedFiles.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>{parsedFiles.length} arquivo(s) • {totalEndpoints} endpoints</Label>
+                  <Button variant="ghost" size="sm" onClick={() => setParsedFiles([])} className="text-xs text-muted-foreground h-7">
+                    Limpar todos
+                  </Button>
+                </div>
+                <ScrollArea className="max-h-[240px]">
+                  <div className="space-y-1.5 pr-2">
+                    {parsedFiles.map((file, i) => (
+                      <div key={`${file.name}-${i}`} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/50 bg-muted/30">
+                        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{file.detectedTitle}</p>
+                          <p className="text-xs text-muted-foreground">{file.name} • {file.endpointCount} endpoints</p>
+                        </div>
+                        <Select value={file.detectedType} onValueChange={(v) => updateFileType(i, v)}>
+                          <SelectTrigger className="w-[130px] h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                              <SelectItem key={k} value={k}>{v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFile(i)}>
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Notes */}
             <div className="space-y-2">
               <Label>Observações (opcional)</Label>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas sobre esta versão..." rows={2} />
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas aplicadas a todos os documentos do lote..." rows={2} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={resetForm}>Cancelar</Button>
-            <Button onClick={handleSubmit} disabled={uploading} className="gap-2">
+            <Button onClick={handleSubmitBatch} disabled={uploading || !effectiveVersion || parsedFiles.length === 0} className="gap-2">
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Enviar
+              Enviar {parsedFiles.length > 0 ? `(${parsedFiles.length})` : ''}
             </Button>
           </DialogFooter>
         </DialogContent>
