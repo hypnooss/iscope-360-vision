@@ -1,42 +1,80 @@
 
 
-# Fix: Config Changes Nao Capturadas no BAU-FW
+# Fix Config Changes + Documentacao API
 
-## Diagnostico
+## Parte 1: Correcao do Blueprint
 
-O FortiGate BAU-FW (FGT40F, v7.4.9) retorna `"results": []` e `"total_lines": 0` para a query de config_changes. O blueprint atual usa:
-```
-/api/v2/log/memory/event/system?filter=logid==0100044546||logid==0100044547&rows=500
-```
+Voce esta correto. O filtro `filter=subtype==system` no path `/api/v2/log/memory/event/system/` funciona e ja elimina VPN, wireless e outros subtypes irrelevantes. Os logins que ainda aparecem na saida serao descartados pelo filtro `realChanges` que ja existe no backend (exige `cfgpath` presente, exclui usuarios automaticos/IPs).
 
-O problema nao esta no `filterLogsByTime` (que foi implementado corretamente) -- o FortiGate simplesmente nao retorna nenhum log com esse filtro. Isso pode acontecer porque:
-- O operador `||` (OR) no filtro de logs em memoria pode nao funcionar corretamente em todas as versoes do FortiOS
-- O path `event/system` com subcategoria fixa pode nao incluir logs de config neste modelo
+### Alteracao no Blueprint (SQL Migration)
 
-O GCP-FW funciona, mas o BAU-FW nao, apesar de ambos serem FortiGate.
+Atualizar o step `config_changes` no blueprint `9e33ae45-053c-4ea2-9723-c9e0cf01549c`:
 
-## Solucao
-
-Alterar o blueprint do FortiGate Analyzer para usar um filtro mais compativel para config_changes. Em vez de filtrar por logids especificos com operador OR, usar o filtro `subtype==config` que e o subcategoria padrao para eventos de configuracao no FortiOS:
-
+**De:**
 ```
 /api/v2/log/memory/event/system?filter=subtype==config&rows=500
 ```
 
-Isso captura todos os eventos de configuracao (criacao, edicao, delecao de objetos) sem depender de logids especificos ou operadores compostos.
+**Para:**
+```
+/api/v2/log/memory/event/system/?filter=subtype==system&rows=500
+```
 
-### Detalhes Tecnicos
+O `rows=500` permanece como limite de seguranca da API (o FortiGate exige esse parametro), mas a filtragem real e feita pelo `filterLogsByTime` no backend que ja descarta tudo fora da ultima hora.
 
-**Alteracao no banco de dados** (migration SQL):
-- UPDATE na tabela `device_blueprints` para alterar o step `config_changes` no blueprint ativo do FortiGate Analyzer (executor_type = 'hybrid')
-- Trocar o path de `filter=logid==0100044546||logid==0100044547` para `filter=subtype==config`
+### Backend (Edge Function)
 
-**Nenhuma alteracao em codigo** -- a Edge Function `firewall-analyzer` ja possui a logica de filtragem (`filterLogsByTime`) e o filtro de ruido do sistema (excluindo IPsec, tunnel-stats, usuarios desconhecidos/IPs) que vai continuar funcionando normalmente com o filtro mais amplo.
+**Nenhuma alteracao necessaria.** O codigo atual em `firewall-analyzer/index.ts` (linhas 579-601) ja possui o filtro `realChanges` que:
+- Exige `cfgpath` presente (descarta logins)
+- Exclui acoes de sistema (IPsec, tunnel-stats)
+- Exclui usuarios automaticos ou IPs
+- Filtra apenas acoes de modificacao (add, edit, delete, set, move)
 
-### Impacto
+---
 
-- Compatibilidade melhorada com todas as versoes do FortiOS
-- Eventos de configuracao serao capturados corretamente no BAU-FW e em qualquer outro FortiGate
-- O filtro de ruido existente no backend continua a remover eventos automaticos do sistema
-- O `filterLogsByTime` continua filtrando apenas logs da ultima hora
+## Parte 2: Nova Aba "Documentacao API" no Template
+
+### 2.1 Criar tabela `device_type_api_docs` (SQL Migration)
+
+Campos:
+- `id` (uuid, PK)
+- `device_type_id` (uuid, FK para device_types)
+- `title` (text) -- ex: "Log API - Memory"
+- `version` (text) -- ex: "7.4.11"
+- `doc_type` (text) -- ex: "log_api", "rest_api", "reference"
+- `content` (jsonb) -- o JSON completo do swagger/schema
+- `notes` (text, nullable) -- observacoes livres
+- `created_by` (uuid, nullable)
+- `created_at` / `updated_at` (timestamptz)
+
+RLS: Super admins podem gerenciar tudo; usuarios autenticados podem ler.
+
+### 2.2 Novo componente `ApiDocsManagement.tsx`
+
+Funcionalidades:
+- Lista de documentos associados ao template (titulo, versao, tipo, data)
+- Upload de novos documentos JSON (dialog com campos: titulo, versao, tipo, arquivo JSON)
+- Visualizacao do conteudo (dialog mostrando endpoints/paths do JSON de forma organizada com busca)
+- Edicao de titulo/versao/notas
+- Exclusao de documentos
+
+### 2.3 Atualizar `TemplateDetailPage.tsx`
+
+- Adicionar nova aba "Documentacao API" com icone `FileText`
+- Badge com contador de documentos
+- Query para contar docs da tabela `device_type_api_docs`
+
+### 2.4 Inserir o JSON do FortiOS 7.4.11
+
+O arquivo enviado sera inserido como primeiro registro na tabela, associado ao device_type do FortiGate.
+
+---
+
+## Resumo de Arquivos
+
+| Arquivo | Acao |
+|---|---|
+| SQL Migration | Criar tabela `device_type_api_docs`, atualizar blueprint path, inserir doc FortiOS 7.4 |
+| `src/components/admin/ApiDocsManagement.tsx` | Novo componente |
+| `src/pages/admin/TemplateDetailPage.tsx` | Adicionar aba "Documentacao API" |
 
