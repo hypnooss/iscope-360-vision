@@ -396,34 +396,54 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>{parsedFiles.length} arquivo(s) • {totalEndpoints} endpoints</Label>
-                  <Button variant="ghost" size="sm" onClick={() => setParsedFiles([])} className="text-xs text-muted-foreground h-7">
+                  <Button variant="ghost" size="sm" onClick={() => setParsedFiles([])} className="text-xs text-muted-foreground h-7" disabled={uploading}>
                     Limpar todos
                   </Button>
                 </div>
+                {uploading && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Enviando {uploadProgress} de {parsedFiles.length}...</span>
+                      <span>{Math.round((uploadProgress / parsedFiles.length) * 100)}%</span>
+                    </div>
+                    <Progress value={(uploadProgress / parsedFiles.length) * 100} className="h-2" />
+                  </div>
+                )}
                 <ScrollArea className="max-h-[240px]">
                   <div className="space-y-1.5 pr-2">
-                    {parsedFiles.map((file, i) => (
-                      <div key={`${file.name}-${i}`} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/50 bg-muted/30">
-                        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{file.detectedTitle}</p>
-                          <p className="text-xs text-muted-foreground">{file.name} • {file.endpointCount} endpoints</p>
+                    {parsedFiles.map((file, i) => {
+                      const isUploaded = uploading && i < uploadProgress;
+                      const isCurrently = uploading && i === uploadProgress - 1 && uploadProgress <= parsedFiles.length;
+                      const isPending = !uploading || i >= uploadProgress;
+                      return (
+                        <div key={`${file.name}-${i}`} className={`flex items-center gap-2 p-2.5 rounded-lg border border-border/50 ${isUploaded ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/30'}`}>
+                          {isUploaded ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                          ) : isCurrently ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                          ) : (
+                            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{file.detectedTitle}</p>
+                            <p className="text-xs text-muted-foreground">{file.name} • {file.endpointCount} endpoints</p>
+                          </div>
+                          <Select value={file.detectedType} onValueChange={(v) => updateFileType(i, v)} disabled={uploading}>
+                            <SelectTrigger className="w-[130px] h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFile(i)} disabled={uploading}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
-                        <Select value={file.detectedType} onValueChange={(v) => updateFileType(i, v)}>
-                          <SelectTrigger className="w-[130px] h-7 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-                              <SelectItem key={k} value={k}>{v}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFile(i)}>
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
