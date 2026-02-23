@@ -1016,6 +1016,53 @@ export type Database = {
           },
         ]
       }
+      device_type_api_docs: {
+        Row: {
+          content: Json
+          created_at: string
+          created_by: string | null
+          device_type_id: string
+          doc_type: string
+          id: string
+          notes: string | null
+          title: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          created_by?: string | null
+          device_type_id: string
+          doc_type?: string
+          id?: string
+          notes?: string | null
+          title: string
+          updated_at?: string
+          version: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          created_by?: string | null
+          device_type_id?: string
+          doc_type?: string
+          id?: string
+          notes?: string | null
+          title?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_type_api_docs_device_type_id_fkey"
+            columns: ["device_type_id"]
+            isOneToOne: false
+            referencedRelation: "device_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       device_types: {
         Row: {
           category: Database["public"]["Enums"]["device_category"]
