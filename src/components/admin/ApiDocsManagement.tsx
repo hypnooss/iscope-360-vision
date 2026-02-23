@@ -182,7 +182,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         const text = await readFileAsText(file);
         const parsed = JSON.parse(text);
         const detectedType = detectDocType(parsed);
-        const detectedTitle = parsed?.info?.title || file.name.replace('.json', '');
+        const detectedTitle = buildDescriptiveTitle(parsed, file.name);
         const endpointCount = parsed?.paths ? Object.keys(parsed.paths).length : 0;
         newParsed.push({ name: file.name, content: parsed, detectedTitle, detectedType, endpointCount });
       } catch {
