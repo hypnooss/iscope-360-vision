@@ -160,6 +160,14 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
           setParsing(false);
         }
       };
+      reader.onerror = () => {
+        processed++;
+        toast.error(`Erro ao ler: ${file.name}`);
+        if (processed === files.length) {
+          setParsedFiles((prev) => [...prev, ...newParsed]);
+          setParsing(false);
+        }
+      };
       reader.readAsText(file);
     });
 
