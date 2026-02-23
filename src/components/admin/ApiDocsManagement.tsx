@@ -55,18 +55,14 @@ const FORTIOS_VERSIONS = [
 ];
 
 function buildDescriptiveTitle(content: any, fileName: string): string {
-  const basePath = content?.basePath || '';
-  const parts = basePath.replace(/^\/api\/v\d+\//, '').split('/').filter(Boolean);
-  if (parts.length >= 2) {
-    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    const subcategory = parts.slice(1).join(' ');
-    return `FortiOS ${category} ${subcategory}`;
+  const nameWithoutExt = fileName.replace(/\.json$/i, '');
+  if (nameWithoutExt) {
+    const formatted = nameWithoutExt
+      .replace(/[_-]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return formatted;
   }
-  if (parts.length === 1) {
-    const category = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    return `FortiOS ${category}`;
-  }
-  return content?.info?.title || fileName.replace('.json', '');
+  return content?.info?.title || fileName;
 }
 
 function detectDocType(content: any): string {
