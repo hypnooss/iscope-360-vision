@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings, BookOpen } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings, BookOpen, FileText } from 'lucide-react';
 import { BlueprintFlowVisualization } from '@/components/admin/BlueprintFlowVisualization';
 import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow';
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
