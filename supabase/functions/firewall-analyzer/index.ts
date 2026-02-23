@@ -1111,16 +1111,12 @@ Deno.serve(async (req) => {
       console.log(`[firewall-analyzer] ipCountryMap now has ${Object.keys(ipCountryMap).length} entries (after GeoIP)`);
     }
 
-    const authResult = analyzeAuthentication(
-      Array.isArray(authData) ? authData : authData?.results || [],
-      Array.isArray(vpnData) ? vpnData : vpnData?.results || [],
-      ipCountryMap,
-    );
-    const ipsResult = analyzeIPS(Array.isArray(ipsData) ? ipsData : ipsData?.results || []);
-    const configResult = analyzeConfigChanges(Array.isArray(configData) ? configData : configData?.results || []);
-    const webfilterResult = analyzeWebFilter(Array.isArray(webfilterData) ? webfilterData : webfilterData?.results || []);
-    const appctrlResult = analyzeAppControl(Array.isArray(appctrlData) ? appctrlData : appctrlData?.results || []);
-    const anomalyResult = analyzeAnomalies(Array.isArray(anomalyData) ? anomalyData : anomalyData?.results || [], ipCountryMap);
+    const authResult = analyzeAuthentication(authData, vpnData, ipCountryMap);
+    const ipsResult = analyzeIPS(ipsData);
+    const configResult = analyzeConfigChanges(configData);
+    const webfilterResult = analyzeWebFilter(webfilterData);
+    const appctrlResult = analyzeAppControl(appctrlData);
+    const anomalyResult = analyzeAnomalies(anomalyData, ipCountryMap);
 
     // Outbound traffic: separate allowed and blocked sources
     const allowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
