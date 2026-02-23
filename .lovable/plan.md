@@ -1,42 +1,42 @@
 
 
-# Filtrar Logs de Configuracao por Horario no Firewall Analyzer
+# Fix: Config Changes Nao Capturadas no BAU-FW
 
-## Problema
+## Diagnostico
 
-O blueprint do FortiGate coleta ate 500 registros de alteracoes de configuracao via API REST, sem filtro de tempo. Como o Analyzer roda de hora em hora, muitos desses 500 registros podem ser de periodos anteriores (ja processados), e alteracoes recentes podem nao aparecer porque o limite de 500 ja foi preenchido com logs antigos que ja foram persistidos.
+O FortiGate BAU-FW (FGT40F, v7.4.9) retorna `"results": []` e `"total_lines": 0` para a query de config_changes. O blueprint atual usa:
+```
+/api/v2/log/memory/event/system?filter=logid==0100044546||logid==0100044547&rows=500
+```
 
-O correto e: ao processar os logs no backend (Edge Function), filtrar apenas os logs cujo timestamp esteja dentro do periodo do snapshot (ultima 1 hora), garantindo que alteracoes recentes sejam capturadas e que logs antigos ja persistidos nao sejam reprocessados desnecessariamente.
+O problema nao esta no `filterLogsByTime` (que foi implementado corretamente) -- o FortiGate simplesmente nao retorna nenhum log com esse filtro. Isso pode acontecer porque:
+- O operador `||` (OR) no filtro de logs em memoria pode nao funcionar corretamente em todas as versoes do FortiOS
+- O path `event/system` com subcategoria fixa pode nao incluir logs de config neste modelo
+
+O GCP-FW funciona, mas o BAU-FW nao, apesar de ambos serem FortiGate.
 
 ## Solucao
 
-Alterar a Edge Function `firewall-analyzer` para filtrar os logs de `config_changes` (e opcionalmente todos os outros tipos de log) pelo timestamp, usando o `period_start` do snapshot como referencia.
+Alterar o blueprint do FortiGate Analyzer para usar um filtro mais compativel para config_changes. Em vez de filtrar por logids especificos com operador OR, usar o filtro `subtype==config` que e o subcategoria padrao para eventos de configuracao no FortiOS:
+
+```
+/api/v2/log/memory/event/system?filter=subtype==config&rows=500
+```
+
+Isso captura todos os eventos de configuracao (criacao, edicao, delecao de objetos) sem depender de logids especificos ou operadores compostos.
 
 ### Detalhes Tecnicos
 
-**Arquivo: `supabase/functions/firewall-analyzer/index.ts`**
+**Alteracao no banco de dados** (migration SQL):
+- UPDATE na tabela `device_blueprints` para alterar o step `config_changes` no blueprint ativo do FortiGate Analyzer (executor_type = 'hybrid')
+- Trocar o path de `filter=logid==0100044546||logid==0100044547` para `filter=subtype==config`
 
-1. Na secao principal (apos extrair `configData` na linha ~1016), adicionar logica para buscar o `period_start` do snapshot e filtrar os logs de config_changes pelo campo de data/hora do log (`date` + `time`, ou `eventtime`).
-
-2. Criar uma funcao auxiliar `filterLogsByTime(logs, periodStart)` que:
-   - Recebe o array de logs e o timestamp de inicio do periodo
-   - Para cada log, monta o timestamp a partir de `log.date` + `log.time` (formato FortiGate: `"2026-02-22"` + `"19:10:05"`) ou `log.eventtime` (epoch em segundos)
-   - Filtra apenas os logs cujo timestamp >= `period_start`
-   - Retorna o array filtrado
-
-3. Aplicar esse filtro em `configData` antes de passar para `analyzeConfigChanges()`:
-   ```
-   const filteredConfigData = filterLogsByTime(configLogs, periodStart);
-   ```
-
-4. Tambem aplicar o filtro nos demais tipos de log (denied_traffic, auth_events, vpn_events, etc.) para consistencia, ja que todos sofrem da mesma limitacao de 500 registros.
-
-5. O `period_start` sera obtido do snapshot que ja esta salvo no banco (criado pelo `trigger-firewall-analyzer` com `period_start = now - 1h`). Caso nao exista, usar fallback de 1 hora atras.
+**Nenhuma alteracao em codigo** -- a Edge Function `firewall-analyzer` ja possui a logica de filtragem (`filterLogsByTime`) e o filtro de ruido do sistema (excluindo IPsec, tunnel-stats, usuarios desconhecidos/IPs) que vai continuar funcionando normalmente com o filtro mais amplo.
 
 ### Impacto
 
-- Logs coletados fora do periodo de 1 hora serao descartados no processamento
-- Alteracoes de configuracao feitas dentro da janela de 1 hora serao corretamente capturadas e persistidas na tabela `analyzer_config_changes`
-- Nenhuma alteracao no blueprint ou no agente Python e necessaria
-- Funciona tanto para execucoes agendadas quanto manuais
+- Compatibilidade melhorada com todas as versoes do FortiOS
+- Eventos de configuracao serao capturados corretamente no BAU-FW e em qualquer outro FortiGate
+- O filtro de ruido existente no backend continua a remover eventos automaticos do sistema
+- O `filterLogsByTime` continua filtrando apenas logs da ultima hora
 
