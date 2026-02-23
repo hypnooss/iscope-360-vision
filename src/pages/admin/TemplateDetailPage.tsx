@@ -17,6 +17,7 @@ import { ParsesManagement } from '@/components/admin/ParsesManagement';
 import { TemplateRulesManagement } from '@/components/admin/TemplateRulesManagement';
 import { TemplateBlueprintsManagement } from '@/components/admin/TemplateBlueprintsManagement';
 import { CorrectionGuidesManagement } from '@/components/admin/CorrectionGuidesManagement';
+import { ApiDocsManagement } from '@/components/admin/ApiDocsManagement';
 import { ComplianceRuleDB } from '@/types/complianceRule';
 
 // Map device codes to icons
