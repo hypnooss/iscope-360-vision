@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Plus, Trash2, Eye, Upload, FileText, Search, ChevronRight, Loader2, X } from 'lucide-react';
+import { Plus, Trash2, Eye, Upload, FileText, Search, ChevronRight, Loader2, X, CheckCircle2 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { format } from 'date-fns';
 
 interface ApiDoc {
@@ -74,6 +75,8 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
   const [parsedFiles, setParsedFiles] = useState<ParsedFile[]>([]);
   const [notes, setNotes] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const effectiveVersion = selectedVersion === 'custom' ? customVersion : selectedVersion;
 
@@ -128,12 +131,14 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     setCustomVersion('');
     setParsedFiles([]);
     setNotes('');
+    setUploadProgress(0);
   };
 
   const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    setParsing(true);
     const newParsed: ParsedFile[] = [];
     let processed = 0;
 
@@ -152,6 +157,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
         }
         if (processed === files.length) {
           setParsedFiles((prev) => [...prev, ...newParsed]);
+          setParsing(false);
         }
       };
       reader.readAsText(file);
@@ -180,8 +186,11 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
     }
 
     setUploading(true);
+    setUploadProgress(0);
     let successCount = 0;
-    for (const file of parsedFiles) {
+    for (let idx = 0; idx < parsedFiles.length; idx++) {
+      const file = parsedFiles[idx];
+      setUploadProgress(idx + 1);
       try {
         await insertMutation.mutateAsync({
           title: file.detectedTitle,
@@ -196,6 +205,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
       }
     }
     setUploading(false);
+    setUploadProgress(0);
 
     if (successCount > 0) {
       queryClient.invalidateQueries({ queryKey: ['api-docs', deviceTypeId] });
@@ -372,7 +382,13 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
             {/* File input */}
             <div className="space-y-2">
               <Label>Arquivos JSON (Swagger/OpenAPI)</Label>
-              <Input type="file" accept=".json" multiple onChange={handleFilesChange} />
+              <Input type="file" accept=".json" multiple onChange={handleFilesChange} disabled={uploading} />
+              {parsing && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processando arquivos...
+                </div>
+              )}
             </div>
 
             {/* Files preview */}
@@ -380,34 +396,54 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>{parsedFiles.length} arquivo(s) • {totalEndpoints} endpoints</Label>
-                  <Button variant="ghost" size="sm" onClick={() => setParsedFiles([])} className="text-xs text-muted-foreground h-7">
+                  <Button variant="ghost" size="sm" onClick={() => setParsedFiles([])} className="text-xs text-muted-foreground h-7" disabled={uploading}>
                     Limpar todos
                   </Button>
                 </div>
+                {uploading && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Enviando {uploadProgress} de {parsedFiles.length}...</span>
+                      <span>{Math.round((uploadProgress / parsedFiles.length) * 100)}%</span>
+                    </div>
+                    <Progress value={(uploadProgress / parsedFiles.length) * 100} className="h-2" />
+                  </div>
+                )}
                 <ScrollArea className="max-h-[240px]">
                   <div className="space-y-1.5 pr-2">
-                    {parsedFiles.map((file, i) => (
-                      <div key={`${file.name}-${i}`} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/50 bg-muted/30">
-                        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{file.detectedTitle}</p>
-                          <p className="text-xs text-muted-foreground">{file.name} • {file.endpointCount} endpoints</p>
+                    {parsedFiles.map((file, i) => {
+                      const isUploaded = uploading && i < uploadProgress;
+                      const isCurrently = uploading && i === uploadProgress - 1 && uploadProgress <= parsedFiles.length;
+                      const isPending = !uploading || i >= uploadProgress;
+                      return (
+                        <div key={`${file.name}-${i}`} className={`flex items-center gap-2 p-2.5 rounded-lg border border-border/50 ${isUploaded ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/30'}`}>
+                          {isUploaded ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                          ) : isCurrently ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                          ) : (
+                            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{file.detectedTitle}</p>
+                            <p className="text-xs text-muted-foreground">{file.name} • {file.endpointCount} endpoints</p>
+                          </div>
+                          <Select value={file.detectedType} onValueChange={(v) => updateFileType(i, v)} disabled={uploading}>
+                            <SelectTrigger className="w-[130px] h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFile(i)} disabled={uploading}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
-                        <Select value={file.detectedType} onValueChange={(v) => updateFileType(i, v)}>
-                          <SelectTrigger className="w-[130px] h-7 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-                              <SelectItem key={k} value={k}>{v}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFile(i)}>
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
@@ -423,7 +459,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
             <Button variant="outline" onClick={resetForm}>Cancelar</Button>
             <Button onClick={handleSubmitBatch} disabled={uploading || !effectiveVersion || parsedFiles.length === 0} className="gap-2">
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Enviar {parsedFiles.length > 0 ? `(${parsedFiles.length})` : ''}
+              {uploading ? `Enviando ${uploadProgress} de ${parsedFiles.length}...` : `Enviar ${parsedFiles.length > 0 ? `(${parsedFiles.length})` : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
