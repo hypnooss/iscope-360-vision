@@ -388,6 +388,10 @@ export default function TemplateDetailPage() {
           <TabsContent value="guides" className="mt-6">
             <CorrectionGuidesManagement deviceTypeId={id!} />
           </TabsContent>
+
+          <TabsContent value="api-docs" className="mt-6">
+            <ApiDocsManagement deviceTypeId={id!} />
+          </TabsContent>
         </Tabs>
       </div>
     </AppLayout>
