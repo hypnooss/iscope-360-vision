@@ -10,13 +10,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings, BookOpen } from 'lucide-react';
+import { Shield, Globe, Server, Layers, Workflow, FileCode, CheckCircle, Code2, Plus, ArrowLeft, Loader2, Settings, BookOpen, FileText } from 'lucide-react';
 import { BlueprintFlowVisualization } from '@/components/admin/BlueprintFlowVisualization';
 import { DraggableCategoryFlow } from '@/components/admin/DraggableCategoryFlow';
 import { ParsesManagement } from '@/components/admin/ParsesManagement';
 import { TemplateRulesManagement } from '@/components/admin/TemplateRulesManagement';
 import { TemplateBlueprintsManagement } from '@/components/admin/TemplateBlueprintsManagement';
 import { CorrectionGuidesManagement } from '@/components/admin/CorrectionGuidesManagement';
+import { ApiDocsManagement } from '@/components/admin/ApiDocsManagement';
 import { ComplianceRuleDB } from '@/types/complianceRule';
 
 // Map device codes to icons
@@ -141,6 +142,21 @@ export default function TemplateDetailPage() {
         .from('rule_correction_guides')
         .select('*, compliance_rules!inner(device_type_id)', { count: 'exact', head: true })
         .eq('compliance_rules.device_type_id', id);
+
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!user && !!id && (role === 'super_admin' || role === 'super_suporte'),
+  });
+
+  // Fetch API docs count for this template
+  const { data: apiDocsCount = 0 } = useQuery({
+    queryKey: ['api-docs-count', id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('device_type_api_docs' as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('device_type_id', id);
 
       if (error) throw error;
       return count || 0;
@@ -292,6 +308,13 @@ export default function TemplateDetailPage() {
                 {guidesCount}
               </Badge>
             </TabsTrigger>
+            <TabsTrigger value="api-docs" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Documentação API
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {apiDocsCount}
+              </Badge>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="blueprints" className="mt-6">
@@ -364,6 +387,10 @@ export default function TemplateDetailPage() {
 
           <TabsContent value="guides" className="mt-6">
             <CorrectionGuidesManagement deviceTypeId={id!} />
+          </TabsContent>
+
+          <TabsContent value="api-docs" className="mt-6">
+            <ApiDocsManagement deviceTypeId={id!} />
           </TabsContent>
         </Tabs>
       </div>
