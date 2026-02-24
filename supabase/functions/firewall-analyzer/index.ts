@@ -1025,36 +1025,62 @@ Deno.serve(async (req) => {
 
     console.log(`[firewall-analyzer] period window: ${periodStart.toISOString()} → ${periodEnd ? periodEnd.toISOString() : 'none'}`);
 
-    // ── Helper: filter logs by timestamp >= periodStart ──
-    function filterLogsByTime(logs: any[], cutoff: Date): any[] {
+    // ── Helper: extract timestamp in ms from a log entry ──
+    function extractTimestampMs(log: any): number | null {
+      if (log.eventtime) {
+        const et = Number(log.eventtime);
+        return et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
+      }
+      if (log.date) {
+        const timeStr = log.time || '00:00:00';
+        const parsed = new Date(`${log.date}T${timeStr}`);
+        if (!isNaN(parsed.getTime())) return parsed.getTime();
+      }
+      return null;
+    }
+
+    // ── Helper: filter logs by timestamp within [cutoffStart, cutoffEnd) ──
+    function filterLogsByTime(logs: any[], cutoffStart: Date, cutoffEnd: Date | null): any[] {
       if (!Array.isArray(logs) || logs.length === 0) return logs;
 
-      const cutoffMs = cutoff.getTime();
+      const startMs = cutoffStart.getTime();
+      const endMs = cutoffEnd ? cutoffEnd.getTime() : null;
+
       const filtered = logs.filter(log => {
-        // Try eventtime first (epoch in seconds or microseconds)
-        if (log.eventtime) {
-          const et = Number(log.eventtime);
-          // eventtime > 1e15 means microseconds, > 1e12 means milliseconds, else seconds
-          const ms = et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
-          return ms >= cutoffMs;
-        }
-        // Try date + time fields (FortiGate format: "2026-02-22" + "19:10:05")
-        if (log.date) {
-          const timeStr = log.time || '00:00:00';
-          const parsed = new Date(`${log.date}T${timeStr}`);
-          if (!isNaN(parsed.getTime())) {
-            return parsed.getTime() >= cutoffMs;
-          }
-        }
-        // If no timestamp field found, keep the log (don't discard unknowns)
+        const ms = extractTimestampMs(log);
+        if (ms === null) return true; // keep unknowns
+        if (ms < startMs) return false;
+        if (endMs && ms >= endMs) return false;
         return true;
       });
 
       if (filtered.length !== logs.length) {
-        console.log(`[firewall-analyzer] filterLogsByTime: ${logs.length} → ${filtered.length} (removed ${logs.length - filtered.length} outside period)`);
+        console.log(`[firewall-analyzer] filterLogsByTime: ${logs.length} → ${filtered.length} (removed ${logs.length - filtered.length} outside window)`);
       }
 
       return filtered;
+    }
+
+    // ── Helper: deduplicate logs by logid + eventtime ──
+    function deduplicateLogs(logs: any[]): any[] {
+      if (!Array.isArray(logs) || logs.length === 0) return logs;
+
+      const seen = new Set<string>();
+      const deduped = logs.filter(log => {
+        const key = log.logid && log.eventtime
+          ? `${log.logid}_${log.eventtime}`
+          : null;
+        if (!key) return true; // keep entries without logid
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (deduped.length !== logs.length) {
+        console.log(`[firewall-analyzer] deduplicateLogs: ${logs.length} → ${deduped.length} (removed ${logs.length - deduped.length} duplicates)`);
+      }
+
+      return deduped;
     }
 
     // Extract step data
