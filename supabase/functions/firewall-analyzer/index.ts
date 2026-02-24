@@ -1094,14 +1094,14 @@ Deno.serve(async (req) => {
     const rawAnomalyData = raw_data.anomaly_events?.data || raw_data.anomaly_events || [];
 
     // Apply time-based filtering to all log types
-    const deniedData = filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart);
-    const authData = filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart);
-    const vpnData = filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart);
-    const ipsData = filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart);
-    const configData = filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart);
-    const webfilterData = filterLogsByTime(Array.isArray(rawWebfilterData) ? rawWebfilterData : rawWebfilterData?.results || [], periodStart);
-    const appctrlData = filterLogsByTime(Array.isArray(rawAppctrlData) ? rawAppctrlData : rawAppctrlData?.results || [], periodStart);
-    const anomalyData = filterLogsByTime(Array.isArray(rawAnomalyData) ? rawAnomalyData : rawAnomalyData?.results || [], periodStart);
+    const deniedData = deduplicateLogs(filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart, periodEnd));
+    const authData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+    const vpnData = deduplicateLogs(filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart, periodEnd));
+    const ipsData = deduplicateLogs(filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart, periodEnd));
+    const configData = deduplicateLogs(filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart, periodEnd));
+    const webfilterData = deduplicateLogs(filterLogsByTime(Array.isArray(rawWebfilterData) ? rawWebfilterData : rawWebfilterData?.results || [], periodStart, periodEnd));
+    const appctrlData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAppctrlData) ? rawAppctrlData : rawAppctrlData?.results || [], periodStart, periodEnd));
+    const anomalyData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAnomalyData) ? rawAnomalyData : rawAnomalyData?.results || [], periodStart, periodEnd));
 
     const deniedLogs = deniedData;
 
