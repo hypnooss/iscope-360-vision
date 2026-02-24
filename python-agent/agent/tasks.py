@@ -288,6 +288,22 @@ class TaskExecutor:
                     step_data = result.get('data') if result.get('data') is not None else None
                     step_error = result.get('error') if result.get('error') else None
                     
+                    # Pre-filter config_changes: keep only logs with cfgpath (real config changes)
+                    # This must happen BEFORE truncation in _report_step_result
+                    if step_id == 'config_changes' and step_data and isinstance(step_data, dict):
+                        results_list = step_data.get('results', [])
+                        if isinstance(results_list, list) and results_list:
+                            original_count = len(results_list)
+                            filtered = [log for log in results_list if isinstance(log, dict) and log.get('cfgpath')]
+                            step_data = dict(step_data)
+                            step_data['results'] = filtered
+                            step_data['_pre_filtered'] = True
+                            step_data['_pre_filter_original'] = original_count
+                            self.logger.info(
+                                f"Step {step_id}: Pre-filtered config_changes: "
+                                f"{original_count} -> {len(filtered)} (kept only cfgpath logs)"
+                            )
+                    
                     # Support optional steps - failures become not_applicable
                     is_optional = step.get('config', {}).get('optional', False)
                     if result.get('error') and is_optional:
