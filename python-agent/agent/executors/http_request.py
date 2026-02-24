@@ -309,6 +309,32 @@ class HTTPRequestExecutor(BaseExecutor):
                 stopped_by = 'error'
                 break
 
+        # Filter out logs outside the time window BEFORE truncation
+        if period_start and all_results:
+            from datetime import datetime
+            ps_dt = datetime.fromisoformat(period_start.replace('Z', '+00:00'))
+            ps_epoch = ps_dt.timestamp()
+            original_count = len(all_results)
+
+            def is_in_window(log):
+                et = log.get('eventtime')
+                if et:
+                    et_f = float(et)
+                    if et_f > 1e15:
+                        et_f = et_f / 1e6
+                    elif et_f > 1e12:
+                        et_f = et_f / 1e3
+                    return et_f >= ps_epoch
+                return True  # keep if no timestamp
+
+            all_results = [log for log in all_results if is_in_window(log)]
+
+            if len(all_results) != original_count:
+                self.logger.info(
+                    f"Step {step_id}: Time filter: {original_count} -> {len(all_results)} "
+                    f"(removed {original_count - len(all_results)} outside window)"
+                )
+
         # Trim non-essential fields to reduce payload size
         all_results = self._trim_log_fields(all_results)
 
