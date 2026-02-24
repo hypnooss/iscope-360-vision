@@ -85,6 +85,13 @@ class TaskExecutor:
         
         context = self._build_context(target)
         
+        # Propagate period_start/period_end from task payload to executor context
+        # Used by HTTPRequestExecutor for paginated log collection cutoff
+        if payload.get('period_start'):
+            context['period_start'] = payload['period_start']
+        if payload.get('period_end'):
+            context['period_end'] = payload['period_end']
+        
         # Propagate DNS hostname to context for httpx (proper Host/SNI headers)
         if payload.get('source') == 'dns' and payload.get('label'):
             context['hostname'] = payload['label']

@@ -131,6 +131,8 @@ Deno.serve(async (req) => {
           firewall_name: firewall.name,
           device_type_id: firewall.device_type_id,
           snapshot_id: snapshot.id,
+          period_start: periodStart,
+          period_end: now,
         },
       })
       .select('id')
