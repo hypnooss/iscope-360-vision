@@ -1,53 +1,77 @@
 
 
-# Fix: Timezone dos Config Changes do Firewall Analyzer
+# Plan: Adicionar abas "Entrada Bloqueada" e "Entrada Permitida" nos cards de Trafego
 
-## Problema
+## Contexto
 
-Os horarios das alteracoes de configuracao estao sendo exibidos com **3 horas a menos** do que o horario real. Exemplo:
-- Horario real (BRT): **18:04** e **18:29**
-- Exibido na tela: **15:04** e **15:29**
+Atualmente, os cards "Top IPs - Trafego" e "Top Paises - Trafego" exibem apenas duas abas: "Saida Bloqueada" e "Saida Permitida". O usuario quer adicionar mais duas abas: "Entrada Bloqueada" e "Entrada Permitida".
 
-## Causa raiz
+## Dados disponiveis
 
-No arquivo `supabase/functions/firewall-analyzer/index.ts`, existem dois pontos onde o timestamp do FortiGate (que esta em horario local BRT, UTC-3) eh tratado como UTC:
+- **Entrada Bloqueada**: Ja existe parcialmente em `topBlockedIPs` / `topCountries` (de `analyzeDeniedTraffic`), porem esses rankings incluem TODOS os IPs negados (tanto externos quanto internos). Precisamos filtrar para incluir apenas trafego de entrada (src = IP publico → dst = IP privado/firewall).
+- **Entrada Permitida**: NAO existe. Os logs de `allowed_traffic` sao processados apenas para saida (private src → public dst). Precisamos processar o inverso (public src → private dst) para criar rankings de entrada permitida.
 
-**Linha 636** — Construcao do campo `date` no configChangeDetails:
+## Alteracoes necessarias
+
+### 1. Edge Function — `supabase/functions/firewall-analyzer/index.ts`
+
+**Separar trafego de entrada no `analyzeDeniedTraffic`:**
+- Filtrar logs onde `srcip` nao eh IP privado (entrada externa bloqueada)
+- Gerar metricas `topInboundBlockedIPs`, `topInboundBlockedCountries`, `inboundBlocked`
+
+**Processar entrada permitida no `analyzeOutboundTraffic` (ou funcao separada):**
+- Dos logs de `allowed_traffic`, filtrar onde src eh IP publico e dst eh IP privado (inbound allowed)
+- Gerar metricas `topInboundAllowedIPs`, `topInboundAllowedCountries`, `inboundAllowed`
+
+**Incluir novas metricas no objeto final `metrics` (~linha 1200).**
+
+### 2. Types — `src/types/analyzerInsights.ts`
+
+Adicionar ao `AnalyzerMetrics`:
 ```text
-date: `${log.date}T${log.time}`   // sem offset -> interpretado como UTC
+topInboundBlockedIPs: TopBlockedIP[];
+topInboundBlockedCountries: TopCountry[];
+inboundBlocked: number;
+topInboundAllowedIPs: TopBlockedIP[];
+topInboundAllowedCountries: TopCountry[];
+inboundAllowed: number;
 ```
 
-**Linha 1291** — Persistencia no banco:
+### 3. Aggregacao 24h — `src/hooks/useAnalyzerData.ts`
+
+Na funcao `aggregateSnapshots`, adicionar:
+- `sum('inboundBlocked')` e `sum('inboundAllowed')`
+- `mergeIPRankings` para `topInboundBlockedIPs` e `topInboundAllowedIPs`
+- `mergeCountryRankings` para `topInboundBlockedCountries` e `topInboundAllowedCountries`
+
+### 4. Dashboard — `src/pages/firewall/AnalyzerDashboardPage.tsx`
+
+**Card "Top IPs - Trafego" (~linha 800):**
+Adicionar duas abas ao `TabsList`:
 ```text
-changed_at: d.date ? new Date(d.date).toISOString() : ...
-// new Date("2026-02-24T18:29:15") em Deno (UTC) -> "2026-02-24T18:29:15.000Z"
-// Mas o horario real eh 18:29 BRT = 21:29 UTC
-// O browser exibe em BRT: 18:29Z - 3h = 15:29 BRT (ERRADO)
+Saida Bloqueada | Saida Permitida | Entrada Bloqueada | Entrada Permitida
 ```
+- "Entrada Bloqueada" → `<IPListWidget ips={m?.topInboundBlockedIPs ?? []} />`
+- "Entrada Permitida" → `<IPListWidget ips={m?.topInboundAllowedIPs ?? []} />`
 
-A funcao `extractTimestampMs` (linha ~1035) ja aplica corretamente o offset `-03:00` para os mesmos campos `date`/`time`, mas o processamento de config changes nao faz o mesmo.
-
-## Solucao
-
-Adicionar o offset `-03:00` na construcao do timestamp na **linha 636**:
-
+**Card "Top Paises - Trafego" (~linha 826):**
+Adicionar duas abas:
 ```text
-// Antes:
-date: (log.date && log.time) ? `${log.date}T${log.time}` : ...
-
-// Depois:
-date: (log.date && log.time) ? `${log.date}T${log.time}-03:00` : ...
+Saida Bloqueada | Saida Permitida | Entrada Bloqueada | Entrada Permitida
 ```
+- "Entrada Bloqueada" → `<CountryListWidget countries={m?.topInboundBlockedCountries ?? []} />`
+- "Entrada Permitida" → `<CountryListWidget countries={m?.topInboundAllowedCountries ?? []} />`
 
-Com isso, `new Date("2026-02-24T18:29:15-03:00").toISOString()` produzira `"2026-02-24T21:29:15.000Z"`, e o browser ao exibir em BRT mostrara corretamente **18:29**.
-
-## Arquivo a alterar
+## Arquivos a alterar
 
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/firewall-analyzer/index.ts` | Adicionar offset `-03:00` na linha 636 |
+| `supabase/functions/firewall-analyzer/index.ts` | Separar inbound blocked dos denied logs; processar inbound allowed dos allowed logs; incluir 6 novas metricas |
+| `src/types/analyzerInsights.ts` | Adicionar 6 novos campos ao `AnalyzerMetrics` |
+| `src/hooks/useAnalyzerData.ts` | Agregar as novas metricas na funcao `aggregateSnapshots` |
+| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Adicionar abas "Entrada Bloqueada" e "Entrada Permitida" nos dois cards de trafego |
 
 ## Nota
 
-Apos o deploy, sera necessario re-executar uma coleta para que os novos registros tenham o timestamp correto. Os registros existentes na tabela `analyzer_config_changes` continuarao com o horario errado (3h a menos).
+Apos o deploy da Edge Function, sera necessario re-executar uma coleta para que os novos campos de metricas sejam populados. Snapshots anteriores nao terao esses dados (fallback `?? []` garante que a UI nao quebra).
 
