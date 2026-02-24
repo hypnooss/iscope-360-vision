@@ -224,22 +224,50 @@ class HTTPRequestExecutor(BaseExecutor):
                 # Check period_start cutoff
                 if period_start and results:
                     oldest_log = results[-1]  # FortiGate returns newest first
-                    oldest_date = oldest_log.get('date', '')
-                    oldest_time = oldest_log.get('time', '')
-                    if oldest_date and oldest_time:
-                        oldest_ts = f"{oldest_date}T{oldest_time}"
-                    elif oldest_date:
-                        oldest_ts = oldest_date
-                    else:
-                        oldest_ts = oldest_log.get('eventtime', '')
                     
-                    if oldest_ts and oldest_ts < period_start:
-                        stopped_by = 'period_cutoff'
-                        self.logger.debug(
-                            f"Step {step_id}: Page {page + 1} oldest log ({oldest_ts}) "
-                            f"< period_start ({period_start}) - stopping"
+                    # Prefer eventtime (epoch, no timezone ambiguity)
+                    if oldest_log.get('eventtime'):
+                        from datetime import datetime, timezone
+                        et = float(oldest_log['eventtime'])
+                        # Normalize eventtime to seconds
+                        if et > 1e15:
+                            et = et / 1e6
+                        elif et > 1e12:
+                            et = et / 1e3
+                        ps_dt = datetime.fromisoformat(
+                            period_start.replace('Z', '+00:00')
                         )
-                        break
+                        if et < ps_dt.timestamp():
+                            stopped_by = 'period_cutoff'
+                            self.logger.debug(
+                                f"Step {step_id}: Page {page + 1} oldest eventtime "
+                                f"({et}) < period_start ({period_start}) - stopping"
+                            )
+                            break
+                    else:
+                        # Fallback: date+time as local BRT, add offset for UTC comparison
+                        oldest_date = oldest_log.get('date', '')
+                        oldest_time = oldest_log.get('time', '')
+                        if oldest_date and oldest_time:
+                            oldest_ts = f"{oldest_date}T{oldest_time}-03:00"
+                        elif oldest_date:
+                            oldest_ts = f"{oldest_date}T00:00:00-03:00"
+                        else:
+                            oldest_ts = None
+                        
+                        if oldest_ts:
+                            from datetime import datetime
+                            log_dt = datetime.fromisoformat(oldest_ts)
+                            ps_dt = datetime.fromisoformat(
+                                period_start.replace('Z', '+00:00')
+                            )
+                            if log_dt < ps_dt:
+                                stopped_by = 'period_cutoff'
+                                self.logger.debug(
+                                    f"Step {step_id}: Page {page + 1} oldest log "
+                                    f"({oldest_ts}) < period_start ({period_start}) - stopping"
+                                )
+                                break
 
                 if len(results) < rows:
                     stopped_by = 'partial_page'
