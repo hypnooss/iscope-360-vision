@@ -1,93 +1,99 @@
 
 
-# Correcao: period_start dinamico baseado no ultimo snapshot
+# Correcao: Filtrar config_changes no agente por cfgpath
 
 ## Problema
 
-O trigger `trigger-firewall-analyzer` sempre define `period_start = now - 1 hora`, independentemente de quando o ultimo snapshot foi concluido. Isso causa:
+O step `config_changes` coleta TODOS os eventos `subtype==system` do FortiGate, que incluem logins, VPN status, heartbeats e muito mais. No BAU-FW, isso gera ~370 eventos/min. Em uma janela de 1 hora, sao ~22.000 eventos, truncados para 1.500 (cobrindo apenas ~4 min). Alteracoes de configuracao reais (com `cfgpath`) sao uma fracao minima desses logs e acabam perdidas na truncagem.
 
-1. **Overlap com snapshots anteriores**: dados ja processados sao recoletados
-2. **Volume excessivo de logs**: janela larga demais faz steps como auth_events, vpn_events e config_changes atingirem o limite de 10.000 registros (max_pages=20), que sao truncados para 1.500 -- perda de ~85% dos dados
-3. **Ineficiencia**: reprocessa periodo ja coberto pelo snapshot anterior
-
-### Exemplo concreto (log do usuario)
-
-| Item | Valor |
-|---|---|
-| Ultimo snapshot period_end | 17:00 BRT (20:00 UTC) |
-| Trigger manual | 17:33 BRT (20:33 UTC) |
-| period_start calculado | 16:33 BRT (19:33 UTC) -- **1h atras** |
-| period_start ideal | 17:00 BRT (20:00 UTC) -- **ultimo period_end** |
-| Janela real | 1h (16:33 a 17:33) |
-| Janela ideal | 33min (17:00 a 17:33) |
+A edge function ja filtra por `cfgpath`, mas esse filtro acontece APOS a truncagem no agente -- tarde demais.
 
 ## Solucao
 
-Alterar o trigger `trigger-firewall-analyzer` para consultar o ultimo snapshot `completed` do firewall e usar seu `period_end` como `period_start` do novo snapshot. Manter o fallback de 1 hora caso nao exista snapshot anterior.
+Duas alteracoes complementares no agente Python:
 
-Mesma logica deve ser aplicada ao `trigger-firewall-analyzer` (o trigger do Analyzer, nao o de compliance).
+### 1. Filtro pos-coleta por `cfgpath` no step config_changes
 
-## Alteracoes
+No metodo `_paginated_request` (ou no processamento pos-coleta em `tasks.py`), para o step `config_changes`, manter apenas logs que possuam o campo `cfgpath` preenchido. Isso reduz drasticamente o volume antes da truncagem.
 
-### 1. `supabase/functions/trigger-firewall-analyzer/index.ts`
+**Estimativa de impacto**: de ~22.000 logs para provavelmente ~50-200 (apenas alteracoes reais de configuracao). Muito abaixo do limite de 1.500.
 
-Antes de criar o snapshot, consultar o ultimo snapshot completo:
+**Arquivo: `python-agent/agent/tasks.py`**
 
-```text
-// Buscar period_end do ultimo snapshot completado
-const { data: lastSnapshot } = await supabase
-  .from('analyzer_snapshots')
-  .select('period_end')
-  .eq('firewall_id', firewall_id)
-  .eq('status', 'completed')
-  .order('period_end', { ascending: false })
-  .limit(1)
-  .maybeSingle();
+Apos a execucao do step e antes de `_report_step_result`, adicionar logica de filtragem para steps especificos:
 
-const now = new Date().toISOString();
-// Usar period_end do ultimo snapshot, ou fallback 1h atras
-const periodStart = lastSnapshot?.period_end
-  ? lastSnapshot.period_end
-  : new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+```python
+# Apos executar o step, antes de reportar:
+if step_id == 'config_changes' and step_data and isinstance(step_data, dict):
+    results = step_data.get('results', [])
+    if isinstance(results, list):
+        original_count = len(results)
+        # Keep only logs with cfgpath (real config changes)
+        filtered = [log for log in results if isinstance(log, dict) and log.get('cfgpath')]
+        step_data = dict(step_data)
+        step_data['results'] = filtered
+        step_data['_pre_filtered'] = True
+        step_data['_pre_filter_original'] = original_count
+        self.logger.info(
+            f"Step {step_id}: Pre-filtered config_changes: "
+            f"{original_count} -> {len(filtered)} (kept only cfgpath logs)"
+        )
 ```
 
-Isso substitui a linha fixa:
-```text
-// REMOVER:
-const periodStart = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+### 2. Filtro temporal pre-truncagem (complementar, para todos os steps)
+
+Manter tambem a correcao original proposta: filtrar por `period_start` antes da truncagem. Isso beneficia outros steps de alto volume como `auth_events` e `vpn_events`, mesmo que nao resolva config_changes sozinho.
+
+**Arquivo: `python-agent/agent/executors/http_request.py`**
+
+No metodo `_paginated_request`, apos o loop de paginacao e antes de `_trim_log_fields`:
+
+```python
+# Filter logs outside the time window BEFORE truncation
+if period_start and all_results:
+    from datetime import datetime
+    ps_dt = datetime.fromisoformat(period_start.replace('Z', '+00:00'))
+    ps_epoch = ps_dt.timestamp()
+    original_count = len(all_results)
+    
+    def is_in_window(log):
+        et = log.get('eventtime')
+        if et:
+            et_f = float(et)
+            if et_f > 1e15:
+                et_f = et_f / 1e6
+            elif et_f > 1e12:
+                et_f = et_f / 1e3
+            return et_f >= ps_epoch
+        return True  # keep if no timestamp
+    
+    all_results = [log for log in all_results if is_in_window(log)]
+    
+    if len(all_results) != original_count:
+        self.logger.info(
+            f"Step {step_id}: Time filter: {original_count} -> {len(all_results)} "
+            f"(removed {original_count - len(all_results)} outside window)"
+        )
 ```
 
-### 2. Protecao contra janelas muito grandes
-
-Se o ultimo snapshot for muito antigo (ex: dias atras), a janela pode ficar enorme. Adicionar um cap maximo de 2 horas:
-
-```text
-const maxWindowMs = 2 * 60 * 60 * 1000; // 2 horas max
-const fallbackStart = new Date(Date.now() - maxWindowMs).toISOString();
-
-let periodStart: string;
-if (lastSnapshot?.period_end) {
-  // Usar o mais recente entre: ultimo period_end e (now - 2h)
-  const lastEnd = new Date(lastSnapshot.period_end).getTime();
-  const minStart = Date.now() - maxWindowMs;
-  periodStart = new Date(Math.max(lastEnd, minStart)).toISOString();
-} else {
-  periodStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-}
-```
-
-## Arquivo a alterar
+## Arquivos a alterar
 
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/trigger-firewall-analyzer/index.ts` | Consultar ultimo snapshot completed e usar seu period_end como period_start, com cap de 2h |
+| `python-agent/agent/tasks.py` | Filtro por `cfgpath` para step `config_changes` antes de `_report_step_result` |
+| `python-agent/agent/executors/http_request.py` | Filtro temporal por `period_start` apos coleta paginada, antes de `_trim_log_fields` |
 
-## Resultado esperado
+## Resultado esperado no cenario do usuario
 
-| Cenario | Antes | Depois |
+| Etapa | Antes | Depois |
 |---|---|---|
-| Snapshot manual 33min apos anterior | Janela de 1h, 10k+ logs truncados | Janela de 33min, volume proporcional |
-| Snapshot agendado (hourly) | Janela de 1h, overlap potencial | Janela exata desde ultimo period_end |
-| Primeiro snapshot (sem anterior) | 1h atras | 1h atras (fallback mantido) |
-| Ultimo snapshot > 2h atras | N/A | Cap de 2h para evitar janelas enormes |
+| Coleta (1h, config_changes) | 22.000 eventos system | 22.000 (sem mudanca) |
+| Filtro cfgpath (NOVO) | N/A | ~50-200 (so config reais) |
+| Truncagem 1.500 | 22.000 -> 1.500 (perde 93%) | ~200 (sem truncagem necessaria) |
+| Edge function recebe | 1.500 (maioria lixo) | ~200 (todos relevantes) |
+| Alteracao das 17:03 | PERDIDA | PRESERVADA |
+
+## Nota sobre escopo
+
+Esta alteracao afeta apenas o step `config_changes`. Os outros steps de alto volume (`auth_events`, `vpn_events`) se beneficiam do filtro temporal (item 2), mas podem precisar de filtros similares especificos no futuro se a truncagem causar perda de dados relevantes nesses contextos.
 
