@@ -92,8 +92,29 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Fetch last completed snapshot to determine period_start
+    const { data: lastSnapshot } = await supabase
+      .from('analyzer_snapshots')
+      .select('period_end')
+      .eq('firewall_id', firewall_id)
+      .eq('status', 'completed')
+      .order('period_end', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const maxWindowMs = 2 * 60 * 60 * 1000; // 2h cap
+    let periodStart: string;
+    if (lastSnapshot?.period_end) {
+      const lastEnd = new Date(lastSnapshot.period_end).getTime();
+      const minStart = Date.now() - maxWindowMs;
+      periodStart = new Date(Math.max(lastEnd, minStart)).toISOString();
+    } else {
+      periodStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    }
+
+    console.log(`[trigger-firewall-analyzer] period_start=${periodStart}, period_end=${now}, last_snapshot_end=${lastSnapshot?.period_end || 'none'}`);
+
     // Create analyzer snapshot in pending state
-    const periodStart = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
     const { data: snapshot, error: snapError } = await supabase
       .from('analyzer_snapshots')
       .insert({
