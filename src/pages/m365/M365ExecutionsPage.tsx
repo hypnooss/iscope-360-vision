@@ -347,6 +347,13 @@ export default function M365ExecutionsPage() {
         .eq('id', taskId)
         .in('status', ['pending', 'running']);
       if (error) throw error;
+
+      // Also cancel any associated snapshots (m365_posture_history)
+      await supabase
+        .from('m365_posture_history')
+        .update({ status: 'cancelled' })
+        .eq('agent_task_id', taskId)
+        .in('status', ['pending', 'running']);
     },
     onSuccess: async () => {
       toast.success('Tarefa cancelada com sucesso');

@@ -262,7 +262,7 @@ export function useAnalyzerProgress(firewallId?: string) {
 
       if (!data) return null;
       const snap = data as any;
-      if (snap.status === 'completed' || snap.status === 'failed') {
+      if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled') {
         return { status: snap.status as string, elapsed: null as number | null };
       }
       const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
