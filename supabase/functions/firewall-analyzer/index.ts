@@ -141,8 +141,9 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     ipMap[srcip].count++;
     if (dstport > 0) ipMap[srcip].ports.add(dstport);
 
-    // Inbound blocked: source is public IP (not private)
-    if (!isPrivateIP(srcip) && (!dstip || !isPrivateIP(dstip))) {
+    // Inbound blocked: source is public IP, dst is public IP, exclude management-plane traffic (subtype=local)
+    const subtype = (log.subtype || '').toLowerCase();
+    if (!isPrivateIP(srcip) && (!dstip || !isPrivateIP(dstip)) && subtype !== 'local') {
       inboundBlockedCount++;
       if (!inboundIPMap[srcip]) inboundIPMap[srcip] = { count: 0, ports: new Set(), country };
       inboundIPMap[srcip].count++;
@@ -924,6 +925,8 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
   const isInboundCandidate = (log: any) => {
     const src = log.srcip || log.src || '';
     const dst = log.dstip || log.dst || '';
+    const subtype = (log.subtype || '').toLowerCase();
+    if (subtype === 'local') return false;
     return src && !isPrivateIP(src) && dst && !isPrivateIP(dst);
   };
 
