@@ -581,10 +581,31 @@ class TaskExecutor:
         
         return {'step_results': step_results}
 
+    # Maximum number of records to send per step to avoid DB statement timeout
+    MAX_STEP_RECORDS = 1500
+
     def _report_step_result(self, task_id: str, step_id: str, status: str, 
                             data: Optional[Dict[str, Any]], error: Optional[str], 
                             duration_ms: int) -> None:
-        """Send result of a single step to the backend immediately."""
+        """Send result of a single step to the backend immediately.
+        
+        Truncates large result sets to MAX_STEP_RECORDS to prevent DB timeouts,
+        adding metadata about the original count.
+        """
+        # Truncate large result sets to prevent DB statement timeout
+        if data and isinstance(data, dict) and 'results' in data:
+            results = data['results']
+            if isinstance(results, list) and len(results) > self.MAX_STEP_RECORDS:
+                original_count = len(results)
+                data = dict(data)  # shallow copy to avoid mutating original
+                data['results'] = results[:self.MAX_STEP_RECORDS]
+                data['_truncated'] = True
+                data['_original_count'] = original_count
+                self.logger.info(
+                    f"Step {step_id}: Truncated results from {original_count} "
+                    f"to {self.MAX_STEP_RECORDS} records for upload"
+                )
+
         payload = {
             'task_id': task_id,
             'step_id': step_id,

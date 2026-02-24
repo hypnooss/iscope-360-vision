@@ -305,6 +305,34 @@ class HTTPRequestExecutor(BaseExecutor):
             'error': None
         }
 
+    # Unified set of essential fields across all FortiGate log types
+    _ESSENTIAL_FIELDS = frozenset({
+        # Common to all log types
+        'logid', 'eventtime', 'date', 'time', 'type', 'subtype', 'level', 'action',
+        # Traffic
+        'srcip', 'dstip', 'srcport', 'dstport', 'proto', 'service', 'policyid',
+        'sentbyte', 'rcvdbyte', 'srccountry', 'dstcountry', 'app', 'appcat',
+        'user', 'srcuser',
+        # Auth / VPN
+        'msg', 'logdesc', 'status', 'reason', 'remip', 'tunneltype', 'group', 'ui',
+        # Config changes
+        'cfgpath', 'cfgobj', 'cfgattr',
+        # IPS / Anomaly
+        'attack', 'severity', 'ref',
+        # Web filter / App control
+        'catdesc', 'cat', 'category', 'hostname', 'url',
+    })
+
+    def _trim_log_fields(self, results: list) -> list:
+        """Keep only essential fields from FortiGate logs to reduce payload size."""
+        if not results:
+            return results
+        return [
+            {k: v for k, v in log.items() if k in self._ESSENTIAL_FIELDS}
+            for log in results
+            if isinstance(log, dict)
+        ]
+
     def _interpolate(self, template: str, context: Dict[str, Any]) -> str:
         """
         Interpolate {{variable}} placeholders in a template string.
