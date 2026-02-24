@@ -1,77 +1,59 @@
 
 
-# Plan: Adicionar abas "Entrada Bloqueada" e "Entrada Permitida" nos cards de Trafego
+# Fix: Logica de Entrada Bloqueada e Entrada Permitida
 
-## Contexto
+## Problema
 
-Atualmente, os cards "Top IPs - Trafego" e "Top Paises - Trafego" exibem apenas duas abas: "Saida Bloqueada" e "Saida Permitida". O usuario quer adicionar mais duas abas: "Entrada Bloqueada" e "Entrada Permitida".
+A logica atual define trafego de entrada como "IP publico → IP privado", mas isso nunca ocorre nos logs do FortiGate. O firewall registra os IPs **antes do NAT**, entao trafego de entrada aparece como **IP publico (atacante) → IP publico (WAN do firewall)**. Por isso os dados estao sempre vazios.
 
-## Dados disponiveis
+## Fluxos corretos
 
-- **Entrada Bloqueada**: Ja existe parcialmente em `topBlockedIPs` / `topCountries` (de `analyzeDeniedTraffic`), porem esses rankings incluem TODOS os IPs negados (tanto externos quanto internos). Precisamos filtrar para incluir apenas trafego de entrada (src = IP publico → dst = IP privado/firewall).
-- **Entrada Permitida**: NAO existe. Os logs de `allowed_traffic` sao processados apenas para saida (private src → public dst). Precisamos processar o inverso (public src → private dst) para criar rankings de entrada permitida.
+| Direcao | Origem | Destino | Exemplo |
+|---|---|---|---|
+| **Saida** | Privado (RFC1918) | Publico | 172.16.10.5 → 8.8.8.8 |
+| **Entrada** | Publico | Publico (WAN do FW) | 45.33.22.11 → 200.150.10.1 |
 
-## Alteracoes necessarias
+Ou seja: **Entrada = ambos os IPs sao publicos** (src publico, dst publico).
 
-### 1. Edge Function — `supabase/functions/firewall-analyzer/index.ts`
+## Alteracao
 
-**Separar trafego de entrada no `analyzeDeniedTraffic`:**
-- Filtrar logs onde `srcip` nao eh IP privado (entrada externa bloqueada)
-- Gerar metricas `topInboundBlockedIPs`, `topInboundBlockedCountries`, `inboundBlocked`
+**Arquivo: `supabase/functions/firewall-analyzer/index.ts`**
 
-**Processar entrada permitida no `analyzeOutboundTraffic` (ou funcao separada):**
-- Dos logs de `allowed_traffic`, filtrar onde src eh IP publico e dst eh IP privado (inbound allowed)
-- Gerar metricas `topInboundAllowedIPs`, `topInboundAllowedCountries`, `inboundAllowed`
+### 1. `analyzeDeniedTraffic` (linha 145)
 
-**Incluir novas metricas no objeto final `metrics` (~linha 1200).**
-
-### 2. Types — `src/types/analyzerInsights.ts`
-
-Adicionar ao `AnalyzerMetrics`:
 ```text
-topInboundBlockedIPs: TopBlockedIP[];
-topInboundBlockedCountries: TopCountry[];
-inboundBlocked: number;
-topInboundAllowedIPs: TopBlockedIP[];
-topInboundAllowedCountries: TopCountry[];
-inboundAllowed: number;
+// Antes:
+if (!isPrivateIP(srcip) && (!dstip || isPrivateIP(dstip)))
+
+// Depois:
+if (!isPrivateIP(srcip) && (!dstip || !isPrivateIP(dstip)))
 ```
 
-### 3. Aggregacao 24h — `src/hooks/useAnalyzerData.ts`
+Entrada bloqueada = src publico E dst publico (ou sem dst).
 
-Na funcao `aggregateSnapshots`, adicionar:
-- `sum('inboundBlocked')` e `sum('inboundAllowed')`
-- `mergeIPRankings` para `topInboundBlockedIPs` e `topInboundAllowedIPs`
-- `mergeCountryRankings` para `topInboundBlockedCountries` e `topInboundAllowedCountries`
+### 2. `isInboundCandidate` em `analyzeOutboundTraffic` (linhas 923-928)
 
-### 4. Dashboard — `src/pages/firewall/AnalyzerDashboardPage.tsx`
-
-**Card "Top IPs - Trafego" (~linha 800):**
-Adicionar duas abas ao `TabsList`:
 ```text
-Saida Bloqueada | Saida Permitida | Entrada Bloqueada | Entrada Permitida
-```
-- "Entrada Bloqueada" → `<IPListWidget ips={m?.topInboundBlockedIPs ?? []} />`
-- "Entrada Permitida" → `<IPListWidget ips={m?.topInboundAllowedIPs ?? []} />`
+// Antes:
+return src && !isPrivateIP(src) && dst && isPrivateIP(dst);
 
-**Card "Top Paises - Trafego" (~linha 826):**
-Adicionar duas abas:
-```text
-Saida Bloqueada | Saida Permitida | Entrada Bloqueada | Entrada Permitida
+// Depois:
+return src && !isPrivateIP(src) && dst && !isPrivateIP(dst);
 ```
-- "Entrada Bloqueada" → `<CountryListWidget countries={m?.topInboundBlockedCountries ?? []} />`
-- "Entrada Permitida" → `<CountryListWidget countries={m?.topInboundAllowedCountries ?? []} />`
+
+Entrada permitida = src publico E dst publico.
+
+### 3. Ajustar filtro de `blockedLogs` para saida (outbound blocked)
+
+Atualmente os `blockedLogs` passados ao `analyzeOutboundTraffic` sao pre-filtrados externamente. Preciso verificar se esse filtro ja isola corretamente apenas saida (privado → publico), ou se tambem inclui entrada (publico → publico). Se necessario, garantir que o outbound blocked use apenas logs com src privado.
 
 ## Arquivos a alterar
 
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/firewall-analyzer/index.ts` | Separar inbound blocked dos denied logs; processar inbound allowed dos allowed logs; incluir 6 novas metricas |
-| `src/types/analyzerInsights.ts` | Adicionar 6 novos campos ao `AnalyzerMetrics` |
-| `src/hooks/useAnalyzerData.ts` | Agregar as novas metricas na funcao `aggregateSnapshots` |
-| `src/pages/firewall/AnalyzerDashboardPage.tsx` | Adicionar abas "Entrada Bloqueada" e "Entrada Permitida" nos dois cards de trafego |
+| `supabase/functions/firewall-analyzer/index.ts` | Corrigir condicao de inbound: `!isPrivateIP(dst)` ao inves de `isPrivateIP(dst)` em ambas as funcoes |
 
 ## Nota
 
-Apos o deploy da Edge Function, sera necessario re-executar uma coleta para que os novos campos de metricas sejam populados. Snapshots anteriores nao terao esses dados (fallback `?? []` garante que a UI nao quebra).
+Apos deploy, re-executar coleta para popular os dados corretamente.
 
