@@ -120,6 +120,14 @@ export interface AnalyzerMetrics {
   anomalyDropped: number;
   topAnomalySources: TopBlockedIP[];
   topAnomalyTypes: TopCategory[];
+  // Inbound traffic (blocked)
+  topInboundBlockedIPs: TopBlockedIP[];
+  topInboundBlockedCountries: TopCountry[];
+  inboundBlocked: number;
+  // Inbound traffic (allowed)
+  topInboundAllowedIPs: TopBlockedIP[];
+  topInboundAllowedCountries: TopCountry[];
+  inboundAllowed: number;
 }
 
 export interface AnalyzerSnapshot {

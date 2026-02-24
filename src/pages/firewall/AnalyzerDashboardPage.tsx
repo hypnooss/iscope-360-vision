@@ -798,15 +798,23 @@ export default function AnalyzerDashboardPage() {
             <CardContent>
               {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
                 <Tabs defaultValue="blocked">
-                  <TabsList className="mb-3">
+                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
                     <TabsTrigger value="blocked">Saída Bloqueada</TabsTrigger>
                     <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
+                    <TabsTrigger value="inbound_blocked">Entrada Bloqueada</TabsTrigger>
+                    <TabsTrigger value="inbound_allowed">Entrada Permitida</TabsTrigger>
                   </TabsList>
                   <TabsContent value="blocked">
                     <IPListWidget ips={m?.topOutboundBlockedIPs ?? []} />
                   </TabsContent>
                   <TabsContent value="allowed">
                     <IPListWidget ips={m?.topOutboundIPs ?? []} />
+                  </TabsContent>
+                  <TabsContent value="inbound_blocked">
+                    <IPListWidget ips={m?.topInboundBlockedIPs ?? []} />
+                  </TabsContent>
+                  <TabsContent value="inbound_allowed">
+                    <IPListWidget ips={m?.topInboundAllowedIPs ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
@@ -824,15 +832,23 @@ export default function AnalyzerDashboardPage() {
             <CardContent>
               {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
                 <Tabs defaultValue="outbound_blocked">
-                  <TabsList className="mb-3">
+                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
                     <TabsTrigger value="outbound_blocked">Saída Bloqueada</TabsTrigger>
                     <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
+                    <TabsTrigger value="inbound_blocked">Entrada Bloqueada</TabsTrigger>
+                    <TabsTrigger value="inbound_allowed">Entrada Permitida</TabsTrigger>
                   </TabsList>
                   <TabsContent value="outbound_blocked">
                     <CountryListWidget countries={m?.topOutboundBlockedCountries ?? []} />
                   </TabsContent>
                   <TabsContent value="outbound_allowed">
                     <CountryListWidget countries={m?.topOutboundCountries ?? []} />
+                  </TabsContent>
+                  <TabsContent value="inbound_blocked">
+                    <CountryListWidget countries={m?.topInboundBlockedCountries ?? []} />
+                  </TabsContent>
+                  <TabsContent value="inbound_allowed">
+                    <CountryListWidget countries={m?.topInboundAllowedCountries ?? []} />
                   </TabsContent>
                 </Tabs>
               )}
