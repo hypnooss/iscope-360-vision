@@ -281,6 +281,9 @@ class HTTPRequestExecutor(BaseExecutor):
                 stopped_by = 'error'
                 break
 
+        # Trim non-essential fields to reduce payload size
+        all_results = self._trim_log_fields(all_results)
+
         pagination_meta = {
             'pages_fetched': pages_fetched,
             'total_records': len(all_results),
