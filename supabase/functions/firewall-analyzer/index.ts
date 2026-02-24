@@ -637,7 +637,7 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
       category: cat.category,
       severity: cat.severity,
     };
-  }).slice(0, 200);
+  });
 
   return {
     insights,
