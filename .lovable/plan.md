@@ -1,82 +1,85 @@
 
 
-# Correcao de Logs Duplicados no Firewall Analyzer
+# Correcao do Timeout no Upload de Steps com Volume Alto
 
 ## Problema Identificado
 
-Com a paginacao implementada, o agente agora coleta mais logs do buffer de memoria do FortiGate. O problema e que a funcao `filterLogsByTime` (edge function `firewall-analyzer`) filtra apenas pelo limite inferior (`>= period_start`), sem aplicar um limite superior (`< period_end`).
+O log do edge function `agent-step-result` mostra:
 
-Isso causa dois tipos de duplicacao:
-
-1. **Sobreposicao de janela**: Logs no inicio da janela do snapshot B podem coincidir com logs no final da janela do snapshot A, pois o buffer de memoria do FortiGate nao e limpo entre coletas.
-2. **Duplicacao na agregacao 24h**: O frontend (`useAnalyzerData.ts`) soma metricas de todos os snapshots. Se o mesmo log aparece em dois snapshots adjacentes, os contadores ficam inflados.
-
-## Solucao
-
-### 1. Adicionar filtro por `period_end` (limite superior)
-
-**Arquivo:** `supabase/functions/firewall-analyzer/index.ts`
-
-Buscar `period_end` do snapshot (alem do `period_start` que ja e buscado) e alterar `filterLogsByTime` para aceitar dois limites:
-
-```text
-// De:
-.select('period_start')
-
-// Para:
-.select('period_start, period_end')
 ```
-
-Alterar a funcao `filterLogsByTime` para filtrar `>= periodStart AND < periodEnd`:
-
-```text
-function filterLogsByTime(logs: any[], cutoffStart: Date, cutoffEnd: Date | null): any[] {
-  return logs.filter(log => {
-    const ms = extractTimestampMs(log);
-    if (ms === null) return true; // keep unknowns
-    if (ms < cutoffStart.getTime()) return false;      // antes da janela
-    if (cutoffEnd && ms >= cutoffEnd.getTime()) return false; // apos a janela
-    return true;
-  });
+Failed to insert step result: {
+  code: "57014",
+  message: "canceling statement due to statement timeout"
 }
 ```
 
-Resultado: cada snapshot processa exclusivamente os logs da sua janela temporal `[period_start, period_end)`, sem sobreposicao.
+Com a paginacao ativa, o step `allowed_traffic` coletou **2059 registros** (5 paginas). O agente tenta enviar todos esses registros crus num unico POST para `agent-step-result`, que faz um upsert na tabela `task_step_results` com um JSON de varios MB na coluna `data`. O banco de dados nao consegue processar o upsert dentro do timeout padrao e cancela o statement.
 
-### 2. Deduplicacao por `logid` no processamento de cada coleta
+Isso tambem explica o delete ausente: o `firewall-analyzer` nao recebe os dados de `allowed_traffic` porque nunca foram persistidos.
 
-Adicionalmente, dentro de cada tipo de log processado, deduplicar por `logid` (identificador unico do FortiGate presente em cada registro):
+## Estrategia de Solucao
 
-```text
-function deduplicateLogs(logs: any[]): any[] {
-  const seen = new Set<string>();
-  return logs.filter(log => {
-    const key = log.logid && log.eventtime
-      ? `${log.logid}_${log.eventtime}`
-      : null;
-    if (!key) return true;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-```
+### 1. Limitar campos dos logs antes do envio (Agent Python)
 
-Aplicar apos o `filterLogsByTime` em cada colecao de logs.
+**Arquivo:** `python-agent/agent/executors/http_request.py`
 
-### 3. Deploy
+Para endpoints de log paginados, aplicar um filtro de campos antes de retornar os resultados. Cada log do FortiGate tem dezenas de campos, mas o `firewall-analyzer` usa apenas um subconjunto. Reduzir o payload mantendo apenas os campos necessarios:
 
-Fazer deploy da edge function `firewall-analyzer` com as correcoes.
+**Campos essenciais por tipo de coleta:**
+- Todos: `logid`, `eventtime`, `date`, `time`, `type`, `subtype`, `level`, `action`
+- Traffic: `srcip`, `dstip`, `srcport`, `dstport`, `proto`, `service`, `policyid`, `sentbyte`, `rcvdbyte`, `srccountry`, `dstcountry`, `app`, `appcat`, `user`, `srcuser`
+- Auth/VPN: `user`, `srcip`, `msg`, `logdesc`, `status`, `reason`, `remip`, `tunneltype`, `group`, `ui`
+- Config: `cfgpath`, `cfgobj`, `cfgattr`, `msg`, `logdesc`, `user`, `ui`
+- IPS: `srcip`, `dstip`, `attack`, `severity`, `msg`, `ref`
+- Web/App: `srcip`, `user`, `srcuser`, `catdesc`, `cat`, `category`, `hostname`, `url`, `app`, `appcat`
+- Anomaly: `srcip`, `dstip`, `msg`, `attack`, `ref`
+
+Implementar um metodo `_trim_log_fields` que mantenha um conjunto unificado desses campos (uniao de todos) e descarte o restante. Isso pode reduzir o payload em 60-70%.
+
+### 2. Chunked upload para steps grandes (Agent Python)
+
+**Arquivo:** `python-agent/agent/tasks.py`
+
+Adicionar logica no `_report_step_result` para dividir payloads grandes em chunks:
+
+- Se `data.results` tem mais de 500 registros, dividir em lotes de 500
+- Enviar o primeiro lote normalmente via upsert
+- Enviar lotes subsequentes com um mecanismo de append (ou enviar apenas o primeiro lote + metadata de paginacao, ja que o `firewall-analyzer` ira reprocessar)
+
+**Alternativa mais simples (preferida):** como o `firewall-analyzer` so precisa dos dados para processar e gerar metricas/insights (nao precisa dos dados brutos depois), podemos simplesmente truncar os resultados armazenados em `task_step_results` a um maximo seguro (ex: 1000 registros) e adicionar metadata `_truncated: true, _original_count: 2059`.
+
+O `firewall-analyzer` ja aplica `filterLogsByTime` + `deduplicateLogs` -- portanto, manter 1000 mais recentes (que ja estao ordenados por tempo pelo FortiGate) e suficiente para capturar a janela real.
+
+### 3. Abordagem combinada (recomendada)
+
+Combinar ambas as estrategias:
+
+1. **Trim de campos** no `http_request.py` -- reduz tamanho de cada registro
+2. **Limite de registros** no `_report_step_result` -- limita a 1500 registros por step, com metadata de contagem original
+3. Resultado: payloads muito menores que passam no timeout do DB
+
+### 4. Quanto ao delete ausente
+
+O delete pode ter sido perdido porque:
+- O step `config_changes` foi processado antes do `allowed_traffic` e pode ter sido enviado corretamente
+- Mas o delete pode ter ocorrido **depois** do `period_end` do snapshot (ou seja, fora da janela)
+- Precisa confirmar se o delete esta dentro da janela temporal do ultimo snapshot
+
+Uma vez corrigido o timeout, os proximos snapshots capturarao o delete normalmente.
+
+## Arquivos a Alterar
+
+| Arquivo | Alteracao |
+|---|---|
+| `python-agent/agent/executors/http_request.py` | Adicionar `_trim_log_fields()` para reduzir campos dos logs paginados |
+| `python-agent/agent/tasks.py` | Adicionar limite de registros em `_report_step_result` com metadata |
+| `python-agent/agent/version.py` | Bump para 1.3.1 |
 
 ## Resultado Esperado
 
 | Cenario | Antes | Depois |
 |---|---|---|
-| Logs na fronteira entre snapshots | Contados em ambos | Contados apenas no snapshot correto |
-| Metricas agregadas (24h) | Valores inflados por duplicatas | Valores precisos |
-| Config changes | Protegidos pelo upsert (sem duplicatas na tabela) | Mantido + filtragem temporal precisa no snapshot |
-
-## Arquivos Alterados
-
-- `supabase/functions/firewall-analyzer/index.ts` (filterLogsByTime + deduplicateLogs)
+| allowed_traffic com 2059 registros | Timeout no DB (payload ~5MB+) | Payload reduzido (~1MB) com campos trimados |
+| Steps com alto volume | Falha silenciosa, dados perdidos | Upload bem-sucedido com metadata de contagem |
+| Config changes/deletes | Podem ser perdidos indiretamente | Processados normalmente |
 
