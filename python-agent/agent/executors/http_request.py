@@ -230,10 +230,12 @@ class HTTPRequestExecutor(BaseExecutor):
                         from datetime import datetime, timezone
                         et = float(oldest_log['eventtime'])
                         # Normalize eventtime to seconds
-                        if et > 1e15:
-                            et = et / 1e6
-                        elif et > 1e12:
-                            et = et / 1e3
+                        if et > 1e17:
+                            et = et / 1e9   # nanoseconds
+                        elif et > 1e14:
+                            et = et / 1e6   # microseconds
+                        elif et > 1e11:
+                            et = et / 1e3   # milliseconds
                         ps_dt = datetime.fromisoformat(
                             period_start.replace('Z', '+00:00')
                         )
@@ -320,10 +322,14 @@ class HTTPRequestExecutor(BaseExecutor):
                 et = log.get('eventtime')
                 if et:
                     et_f = float(et)
-                    if et_f > 1e15:
-                        et_f = et_f / 1e6
-                    elif et_f > 1e12:
-                        et_f = et_f / 1e3
+                    # Normalize to seconds for comparison with ps_epoch
+                    if et_f > 1e17:
+                        et_f = et_f / 1e9    # nanoseconds -> seconds
+                    elif et_f > 1e14:
+                        et_f = et_f / 1e6    # microseconds -> seconds
+                    elif et_f > 1e11:
+                        et_f = et_f / 1e3    # milliseconds -> seconds
+                    # else: already seconds
                     return et_f >= ps_epoch
                 return True  # keep if no timestamp
 
