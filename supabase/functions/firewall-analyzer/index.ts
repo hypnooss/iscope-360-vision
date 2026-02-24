@@ -1033,7 +1033,7 @@ Deno.serve(async (req) => {
       }
       if (log.date) {
         const timeStr = log.time || '00:00:00';
-        const parsed = new Date(`${log.date}T${timeStr}`);
+        const parsed = new Date(`${log.date}T${timeStr}-03:00`);
         if (!isNaN(parsed.getTime())) return parsed.getTime();
       }
       return null;
