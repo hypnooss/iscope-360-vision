@@ -1028,8 +1028,13 @@ Deno.serve(async (req) => {
     // ── Helper: extract timestamp in ms from a log entry ──
     function extractTimestampMs(log: any): number | null {
       if (log.eventtime) {
-        const et = Number(log.eventtime);
-        return et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
+        let et = Number(log.eventtime);
+        // Normalize to milliseconds:
+        if (et > 1e17) et = et / 1e6;       // nanoseconds -> ms
+        else if (et > 1e14) et = et / 1e3;  // microseconds -> ms
+        else if (et < 1e12) et = et * 1e3;  // seconds -> ms
+        // else: already ms
+        return et;
       }
       if (log.date) {
         const timeStr = log.time || '00:00:00';
