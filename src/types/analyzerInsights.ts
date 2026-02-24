@@ -127,7 +127,7 @@ export interface AnalyzerSnapshot {
   firewall_id: string;
   client_id: string;
   agent_task_id?: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   period_start?: string;
   period_end?: string;
   score?: number;

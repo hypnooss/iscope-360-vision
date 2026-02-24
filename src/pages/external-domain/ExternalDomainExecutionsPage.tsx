@@ -429,6 +429,13 @@ export default function ExternalDomainExecutionsPage() {
         error_message: 'Cancelada pelo usuário'
       }).eq('id', taskId).in('status', ['pending', 'running']);
       if (error) throw error;
+
+      // Also cancel any associated analyzer snapshot
+      await supabase
+        .from('analyzer_snapshots' as any)
+        .update({ status: 'cancelled' })
+        .eq('agent_task_id', taskId)
+        .in('status', ['pending', 'processing']);
     },
     onSuccess: async () => {
       toast.success('Tarefa cancelada com sucesso');

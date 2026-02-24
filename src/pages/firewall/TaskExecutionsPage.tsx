@@ -228,10 +228,19 @@ export default function TaskExecutionsPage() {
         .in('status', ['pending', 'running']);
       
       if (error) throw error;
+
+      // Also cancel any associated analyzer snapshot
+      await supabase
+        .from('analyzer_snapshots' as any)
+        .update({ status: 'cancelled' })
+        .eq('agent_task_id', taskId)
+        .in('status', ['pending', 'processing']);
     },
     onSuccess: () => {
       toast.success('Tarefa cancelada com sucesso');
       queryClient.invalidateQueries({ queryKey: ['agent-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['analyzer-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['analyzer-latest'] });
     },
     onError: () => {
       toast.error('Erro ao cancelar tarefa');
