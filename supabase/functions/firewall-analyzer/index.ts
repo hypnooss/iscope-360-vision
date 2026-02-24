@@ -1008,10 +1008,10 @@ Deno.serve(async (req) => {
 
     await supabase.from('analyzer_snapshots').update({ status: 'processing' }).eq('id', snapshot_id);
 
-    // ── Fetch period_start from snapshot for time-based filtering ──
+    // ── Fetch period_start and period_end from snapshot for time-based filtering ──
     const { data: snapMeta } = await supabase
       .from('analyzer_snapshots')
-      .select('period_start')
+      .select('period_start, period_end')
       .eq('id', snapshot_id)
       .single();
 
@@ -1019,38 +1019,68 @@ Deno.serve(async (req) => {
       ? new Date(snapMeta.period_start)
       : new Date(Date.now() - 60 * 60 * 1000); // fallback: 1h ago
 
-    console.log(`[firewall-analyzer] period_start for filtering: ${periodStart.toISOString()}`);
+    const periodEnd = snapMeta?.period_end
+      ? new Date(snapMeta.period_end)
+      : null; // null = no upper bound (backward compat)
 
-    // ── Helper: filter logs by timestamp >= periodStart ──
-    function filterLogsByTime(logs: any[], cutoff: Date): any[] {
+    console.log(`[firewall-analyzer] period window: ${periodStart.toISOString()} → ${periodEnd ? periodEnd.toISOString() : 'none'}`);
+
+    // ── Helper: extract timestamp in ms from a log entry ──
+    function extractTimestampMs(log: any): number | null {
+      if (log.eventtime) {
+        const et = Number(log.eventtime);
+        return et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
+      }
+      if (log.date) {
+        const timeStr = log.time || '00:00:00';
+        const parsed = new Date(`${log.date}T${timeStr}`);
+        if (!isNaN(parsed.getTime())) return parsed.getTime();
+      }
+      return null;
+    }
+
+    // ── Helper: filter logs by timestamp within [cutoffStart, cutoffEnd) ──
+    function filterLogsByTime(logs: any[], cutoffStart: Date, cutoffEnd: Date | null): any[] {
       if (!Array.isArray(logs) || logs.length === 0) return logs;
 
-      const cutoffMs = cutoff.getTime();
+      const startMs = cutoffStart.getTime();
+      const endMs = cutoffEnd ? cutoffEnd.getTime() : null;
+
       const filtered = logs.filter(log => {
-        // Try eventtime first (epoch in seconds or microseconds)
-        if (log.eventtime) {
-          const et = Number(log.eventtime);
-          // eventtime > 1e15 means microseconds, > 1e12 means milliseconds, else seconds
-          const ms = et > 1e15 ? et / 1000 : et > 1e12 ? et : et * 1000;
-          return ms >= cutoffMs;
-        }
-        // Try date + time fields (FortiGate format: "2026-02-22" + "19:10:05")
-        if (log.date) {
-          const timeStr = log.time || '00:00:00';
-          const parsed = new Date(`${log.date}T${timeStr}`);
-          if (!isNaN(parsed.getTime())) {
-            return parsed.getTime() >= cutoffMs;
-          }
-        }
-        // If no timestamp field found, keep the log (don't discard unknowns)
+        const ms = extractTimestampMs(log);
+        if (ms === null) return true; // keep unknowns
+        if (ms < startMs) return false;
+        if (endMs && ms >= endMs) return false;
         return true;
       });
 
       if (filtered.length !== logs.length) {
-        console.log(`[firewall-analyzer] filterLogsByTime: ${logs.length} → ${filtered.length} (removed ${logs.length - filtered.length} outside period)`);
+        console.log(`[firewall-analyzer] filterLogsByTime: ${logs.length} → ${filtered.length} (removed ${logs.length - filtered.length} outside window)`);
       }
 
       return filtered;
+    }
+
+    // ── Helper: deduplicate logs by logid + eventtime ──
+    function deduplicateLogs(logs: any[]): any[] {
+      if (!Array.isArray(logs) || logs.length === 0) return logs;
+
+      const seen = new Set<string>();
+      const deduped = logs.filter(log => {
+        const key = log.logid && log.eventtime
+          ? `${log.logid}_${log.eventtime}`
+          : null;
+        if (!key) return true; // keep entries without logid
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (deduped.length !== logs.length) {
+        console.log(`[firewall-analyzer] deduplicateLogs: ${logs.length} → ${deduped.length} (removed ${logs.length - deduped.length} duplicates)`);
+      }
+
+      return deduped;
     }
 
     // Extract step data
@@ -1064,14 +1094,14 @@ Deno.serve(async (req) => {
     const rawAnomalyData = raw_data.anomaly_events?.data || raw_data.anomaly_events || [];
 
     // Apply time-based filtering to all log types
-    const deniedData = filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart);
-    const authData = filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart);
-    const vpnData = filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart);
-    const ipsData = filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart);
-    const configData = filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart);
-    const webfilterData = filterLogsByTime(Array.isArray(rawWebfilterData) ? rawWebfilterData : rawWebfilterData?.results || [], periodStart);
-    const appctrlData = filterLogsByTime(Array.isArray(rawAppctrlData) ? rawAppctrlData : rawAppctrlData?.results || [], periodStart);
-    const anomalyData = filterLogsByTime(Array.isArray(rawAnomalyData) ? rawAnomalyData : rawAnomalyData?.results || [], periodStart);
+    const deniedData = deduplicateLogs(filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart, periodEnd));
+    const authData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+    const vpnData = deduplicateLogs(filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart, periodEnd));
+    const ipsData = deduplicateLogs(filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart, periodEnd));
+    const configData = deduplicateLogs(filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart, periodEnd));
+    const webfilterData = deduplicateLogs(filterLogsByTime(Array.isArray(rawWebfilterData) ? rawWebfilterData : rawWebfilterData?.results || [], periodStart, periodEnd));
+    const appctrlData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAppctrlData) ? rawAppctrlData : rawAppctrlData?.results || [], periodStart, periodEnd));
+    const anomalyData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAnomalyData) ? rawAnomalyData : rawAnomalyData?.results || [], periodStart, periodEnd));
 
     const deniedLogs = deniedData;
 
@@ -1120,7 +1150,7 @@ Deno.serve(async (req) => {
 
     // Outbound traffic: separate allowed and blocked sources
     const rawAllowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-    const rawAllowedLogs = filterLogsByTime(Array.isArray(rawAllowedData) ? rawAllowedData : rawAllowedData?.results || [], periodStart);
+    const rawAllowedLogs = deduplicateLogs(filterLogsByTime(Array.isArray(rawAllowedData) ? rawAllowedData : rawAllowedData?.results || [], periodStart, periodEnd));
     // Fallback: check if denied_traffic has accept entries (some blueprints put all forward traffic there)
     const acceptedFromDenied = deniedLogs.filter((l: any) => {
       const action = (l.action || '').toLowerCase();
