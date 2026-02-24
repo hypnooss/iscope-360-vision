@@ -1,52 +1,32 @@
 
+# Correcao da Data/Hora nas Alteracoes de Configuracao
 
-# Usar Nome do Arquivo como Titulo da Documentacao API
+## Problema Identificado
 
-## Problema
+O FortiGate envia a data e hora em **campos separados**: `log.date` = `"2026-02-23"` e `log.time` = `"23:00:01"`. O codigo atual (linha 636 do `firewall-analyzer/index.ts`) usa apenas `log.date`, ignorando completamente o campo `time`.
 
-A funcao `buildDescriptiveTitle` tenta extrair informacoes do `basePath` do Swagger, mas isso gera titulos genericos e duplicados. Os arquivos JSON do FortiOS ja vem com nomes descritivos que identificam o conteudo.
+Isso faz com que `new Date("2026-02-23")` seja interpretado como meia-noite UTC (`2026-02-23T00:00:00Z`), que no fuso horario do Brasil (UTC-3) aparece como **22/02/2026, 21:00:00** -- exatamente o que voce esta vendo.
 
 ## Solucao
 
-Alterar a funcao `buildDescriptiveTitle` em `src/components/admin/ApiDocsManagement.tsx` para priorizar o nome do arquivo como titulo.
+**Arquivo:** `supabase/functions/firewall-analyzer/index.ts`
 
-### Logica
+Alterar a linha 636 para combinar `log.date` + `log.time` antes de gerar o timestamp:
 
-1. Pegar o nome do arquivo (ex: `monitor_webfilter.json`)
-2. Remover a extensao `.json`
-3. Substituir underscores e hifens por espacos
-4. Capitalizar as palavras para gerar um titulo legivel
-5. Manter fallback para `basePath` e `info.title` caso o nome do arquivo nao seja descritivo
+```text
+// De:
+date: log.date || log.eventtime || '',
 
-### Exemplo de resultado
-
-| Nome do arquivo | Titulo gerado |
-|---|---|
-| `monitor_webfilter.json` | Monitor Webfilter |
-| `cmdb_firewall_policy.json` | Cmdb Firewall Policy |
-| `log_disk_traffic.json` | Log Disk Traffic |
-
-### Alteracao tecnica
-
-**Arquivo:** `src/components/admin/ApiDocsManagement.tsx`
-
-Reescrever `buildDescriptiveTitle` (linhas 57-70):
-
-```typescript
-function buildDescriptiveTitle(content: any, fileName: string): string {
-  // Priorizar o nome do arquivo, que no FortiOS ja e descritivo
-  const nameWithoutExt = fileName.replace(/\.json$/i, '');
-  if (nameWithoutExt) {
-    // Substituir _ e - por espacos e capitalizar cada palavra
-    const formatted = nameWithoutExt
-      .replace(/[_-]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-    return formatted;
-  }
-  // Fallback
-  return content?.info?.title || fileName;
-}
+// Para:
+date: (log.date && log.time) ? `${log.date}T${log.time}` : log.date || log.eventtime || '',
 ```
 
-Uma unica funcao alterada, sem outras mudancas no componente.
+Isso gera o valor `"2026-02-23T23:00:01"` que sera corretamente interpretado como horario local do firewall.
 
+## Resultado Esperado
+
+| Antes | Depois |
+|---|---|
+| 22/02/2026, 21:00:00 | 23/02/2026, 23:00:01 |
+
+Uma unica linha alterada na edge function, sem mudancas no frontend.
