@@ -1008,10 +1008,10 @@ Deno.serve(async (req) => {
 
     await supabase.from('analyzer_snapshots').update({ status: 'processing' }).eq('id', snapshot_id);
 
-    // ── Fetch period_start from snapshot for time-based filtering ──
+    // ── Fetch period_start and period_end from snapshot for time-based filtering ──
     const { data: snapMeta } = await supabase
       .from('analyzer_snapshots')
-      .select('period_start')
+      .select('period_start, period_end')
       .eq('id', snapshot_id)
       .single();
 
@@ -1019,7 +1019,11 @@ Deno.serve(async (req) => {
       ? new Date(snapMeta.period_start)
       : new Date(Date.now() - 60 * 60 * 1000); // fallback: 1h ago
 
-    console.log(`[firewall-analyzer] period_start for filtering: ${periodStart.toISOString()}`);
+    const periodEnd = snapMeta?.period_end
+      ? new Date(snapMeta.period_end)
+      : null; // null = no upper bound (backward compat)
+
+    console.log(`[firewall-analyzer] period window: ${periodStart.toISOString()} → ${periodEnd ? periodEnd.toISOString() : 'none'}`);
 
     // ── Helper: filter logs by timestamp >= periodStart ──
     function filterLogsByTime(logs: any[], cutoff: Date): any[] {
