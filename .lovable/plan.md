@@ -1,62 +1,70 @@
 
-# Correcao do Desalinhamento de Timezone (UTC vs BRT)
+
+# Correcao: Snapshot travado em "pending" apos cancelamento de task
 
 ## Problema
 
-Os logs do FortiGate usam horario local (BRT, UTC-3) nos campos `date` e `time`. O sistema define `period_start`/`period_end` em UTC. Ao comparar diretamente, ha um deslocamento de 3 horas que faz logs legitimos serem descartados.
+Quando o usuario cancela uma task na pagina de Execucoes, apenas a `agent_tasks` e atualizada para `cancelled`. O `analyzer_snapshots` associado permanece em `status: pending`, fazendo com que a interface do Analyzer Dashboard mostre indefinidamente "Analise em andamento...".
 
-Exemplo: config change as 16:54 BRT = 19:54 UTC, mas o parser interpreta como 16:54 UTC, ficando fora da janela `[19:00 UTC, 20:00 UTC)`.
+Alem disso, o hook `useAnalyzerProgress` so reconhece `completed` e `failed` como estados finais -- `cancelled` nao e tratado.
 
-## Alteracoes
+## Correcao imediata (dados no banco)
 
-### 1. Edge Function `firewall-analyzer/index.ts`
+O snapshot `96c404d9-2061-459d-a792-417a9bd76a2d` precisa ser atualizado para `cancelled`. Isso sera feito via a logica do cancelamento corrigida.
 
-Alterar `extractTimestampMs` (linha 1029) para tratar `date`+`time` como horario local BRT (`-03:00`):
+**Acao manual necessaria**: Atualizar diretamente no Supabase Dashboard:
+```sql
+UPDATE analyzer_snapshots SET status = 'cancelled' WHERE id = '96c404d9-2061-459d-a792-417a9bd76a2d';
+```
+
+## Alteracoes no codigo
+
+### 1. `src/pages/firewall/TaskExecutionsPage.tsx` (cancelMutation)
+
+Apos cancelar a `agent_tasks`, tambem atualizar o `analyzer_snapshots` associado:
+
+```text
+// Dentro do cancelMutation.mutationFn, apos o update da agent_tasks:
+
+// Tambem cancelar o snapshot associado (se existir)
+await supabase
+  .from('analyzer_snapshots')
+  .update({ status: 'cancelled' })
+  .eq('agent_task_id', taskId)
+  .in('status', ['pending', 'processing']);
+```
+
+### 2. `src/hooks/useAnalyzerData.ts` (useAnalyzerProgress)
+
+Adicionar `cancelled` como estado final reconhecido (linha 265):
 
 ```text
 // De:
-const parsed = new Date(`${log.date}T${timeStr}`);
+if (snap.status === 'completed' || snap.status === 'failed') {
 
 // Para:
-const parsed = new Date(`${log.date}T${timeStr}-03:00`);
+if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled') {
 ```
 
-Isso converte corretamente para UTC ao criar o objeto Date.
+### 3. Mesma correcao nos outros pontos de cancelamento
 
-### 2. Agent Python `http_request.py`
+Aplicar a mesma propagacao para snapshot nos cancelamentos em:
+- `src/pages/m365/M365ExecutionsPage.tsx`
+- `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`
 
-Alterar a comparacao de cutoff (linhas 224-240) para priorizar `eventtime` (epoch, sem ambiguidade de timezone). Para o fallback `date`+`time`, converter para UTC adicionando offset `-03:00` antes de comparar com `period_start` (que ja esta em UTC):
+(Nesses casos, o snapshot pode nao existir, mas o update com filtro `eq('agent_task_id', taskId)` simplesmente nao afeta nenhuma linha.)
 
-```text
-# Priorizar eventtime (epoch Unix)
-if oldest_log.get('eventtime'):
-    from datetime import datetime, timezone
-    et = float(oldest_log['eventtime'])
-    # Normalizar para segundos
-    if et > 1e15: et = et / 1e6
-    elif et > 1e12: et = et / 1e3
-    ps_dt = datetime.fromisoformat(period_start.replace('Z', '+00:00'))
-    if et < ps_dt.timestamp():
-        stopped_by = 'period_cutoff'
-        break
-else:
-    # Fallback: date+time como BRT, converter para UTC para comparar
-    ...
-```
-
-**Sem bump de versao** -- aplicacao manual no agente.
-
-## Arquivos a Alterar
+## Arquivos a alterar
 
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/firewall-analyzer/index.ts` | `extractTimestampMs`: parsear `date+time` com offset `-03:00` |
-| `python-agent/agent/executors/http_request.py` | Comparacao de cutoff: usar `eventtime` epoch, fallback com offset |
+| `src/pages/firewall/TaskExecutionsPage.tsx` | cancelMutation: propagar cancelamento para analyzer_snapshots |
+| `src/hooks/useAnalyzerData.ts` | useAnalyzerProgress: reconhecer `cancelled` como estado final |
+| `src/pages/m365/M365ExecutionsPage.tsx` | cancelMutation: propagar cancelamento para snapshots |
+| `src/pages/external-domain/ExternalDomainExecutionsPage.tsx` | cancelMutation: propagar cancelamento para snapshots |
 
-## Resultado Esperado
+## Resultado esperado
 
-| Cenario | Antes | Depois |
-|---|---|---|
-| Config change 16:54 BRT | Parseado como 16:54 UTC, fora da janela | Parseado como 19:54 UTC, dentro da janela |
-| Cutoff no agent | Compara string local vs UTC (3h erro) | Compara epoch vs epoch (correto) |
-| Logs com `eventtime` | Ja funciona (epoch e UTC) | Sem alteracao |
+- Cancelar task tambem cancela o snapshot associado
+- Interface do Analyzer para de mostrar "Em andamento" apos cancelamento
+- Snapshot `96c404d9` precisa ser corrigido manualmente no banco (UPDATE direto)
