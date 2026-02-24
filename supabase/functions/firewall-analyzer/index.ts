@@ -633,7 +633,7 @@ function analyzeConfigChanges(logs: any[]): { insights: AnalyzerInsight[]; metri
       cfgobj: log.cfgobj || '',
       cfgattr: log.cfgattr || '',
       msg: log.msg || log.logdesc || '',
-      date: (log.date && log.time) ? `${log.date}T${log.time}` : log.date || log.eventtime || '',
+      date: (log.date && log.time) ? `${log.date}T${log.time}-03:00` : log.date || log.eventtime || '',
       category: cat.category,
       severity: cat.severity,
     };
