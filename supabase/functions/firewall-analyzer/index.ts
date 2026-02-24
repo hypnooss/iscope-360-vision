@@ -142,7 +142,7 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     if (dstport > 0) ipMap[srcip].ports.add(dstport);
 
     // Inbound blocked: source is public IP (not private)
-    if (!isPrivateIP(srcip) && (!dstip || isPrivateIP(dstip))) {
+    if (!isPrivateIP(srcip) && (!dstip || !isPrivateIP(dstip))) {
       inboundBlockedCount++;
       if (!inboundIPMap[srcip]) inboundIPMap[srcip] = { count: 0, ports: new Set(), country };
       inboundIPMap[srcip].count++;
@@ -920,11 +920,11 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
     return isPrivateIP(src) && dst && !isPrivateIP(dst);
   };
 
-  // Filter for inbound candidates (public src → private dst)
+  // Filter for inbound candidates (public src → public dst, i.e. hitting firewall WAN IP)
   const isInboundCandidate = (log: any) => {
     const src = log.srcip || log.src || '';
     const dst = log.dstip || log.dst || '';
-    return src && !isPrivateIP(src) && dst && isPrivateIP(dst);
+    return src && !isPrivateIP(src) && dst && !isPrivateIP(dst);
   };
 
   const filteredAllowed = (allowedLogs || []).filter(isOutboundCandidate);
