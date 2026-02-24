@@ -123,12 +123,16 @@ function categorizeCfgPath(cfgpath: string): { category: string; label: string; 
 
 function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { totalDenied: 0 } };
+  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { totalDenied: 0, topInboundBlockedIPs: [], topInboundBlockedCountries: [], inboundBlocked: 0 } };
 
   const ipMap: Record<string, { count: number; ports: Set<number>; country?: string }> = {};
+  // Separate inbound blocked: public src → private/firewall dst
+  const inboundIPMap: Record<string, { count: number; ports: Set<number>; country?: string }> = {};
+  let inboundBlockedCount = 0;
 
   for (const log of logs) {
     const srcip = log.srcip || log.src || log.source;
+    const dstip = log.dstip || log.dst || '';
     const dstport = parseInt(log.dstport || log.dst_port || log.service_port || '0');
     const country = log.srccountry || log.src_country || undefined;
     if (!srcip) continue;
@@ -136,6 +140,14 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
     if (!ipMap[srcip]) ipMap[srcip] = { count: 0, ports: new Set(), country };
     ipMap[srcip].count++;
     if (dstport > 0) ipMap[srcip].ports.add(dstport);
+
+    // Inbound blocked: source is public IP (not private)
+    if (!isPrivateIP(srcip) && (!dstip || isPrivateIP(dstip))) {
+      inboundBlockedCount++;
+      if (!inboundIPMap[srcip]) inboundIPMap[srcip] = { count: 0, ports: new Set(), country };
+      inboundIPMap[srcip].count++;
+      if (dstport > 0) inboundIPMap[srcip].ports.add(dstport);
+    }
   }
 
   const topBlockedIPs: TopBlockedIP[] = Object.entries(ipMap)
@@ -147,6 +159,26 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
       count: data.count,
       targetPorts: [...data.ports].sort((a, b) => a - b),
     }));
+
+  // Inbound blocked rankings
+  const topInboundBlockedIPs: TopBlockedIP[] = Object.entries(inboundIPMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([ip, data]) => ({
+      ip,
+      country: data.country,
+      count: data.count,
+      targetPorts: [...data.ports].sort((a, b) => a - b),
+    }));
+
+  const inboundCountryMap: Record<string, number> = {};
+  for (const data of Object.values(inboundIPMap)) {
+    if (data.country) inboundCountryMap[data.country] = (inboundCountryMap[data.country] || 0) + data.count;
+  }
+  const topInboundBlockedCountries = Object.entries(inboundCountryMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([country, count]) => ({ country, count }));
 
   // Port scans
   for (const [ip, data] of Object.entries(ipMap)) {
@@ -214,6 +246,9 @@ function analyzeDeniedTraffic(logs: any[]): { insights: AnalyzerInsight[]; metri
       totalDenied: logs.length,
       topBlockedIPs,
       topCountries,
+      topInboundBlockedIPs,
+      topInboundBlockedCountries,
+      inboundBlocked: inboundBlockedCount,
     },
   };
 }
@@ -873,7 +908,7 @@ function analyzeAnomalies(logs: any[], ipCountryMap: Record<string, string> = {}
 
 function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  const emptyResult = { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [], outboundBlocked: 0, topOutboundBlockedIPs: [], topOutboundBlockedCountries: [] } };
+  const emptyResult = { insights, metrics: { outboundConnections: 0, topOutboundIPs: [], topOutboundCountries: [], outboundBlocked: 0, topOutboundBlockedIPs: [], topOutboundBlockedCountries: [], inboundBlocked: 0, topInboundBlockedIPs: [], topInboundBlockedCountries: [], inboundAllowed: 0, topInboundAllowedIPs: [], topInboundAllowedCountries: [] } };
   if ((!Array.isArray(allowedLogs) || allowedLogs.length === 0) && (!Array.isArray(blockedLogs) || blockedLogs.length === 0)) return emptyResult;
 
   // Filter allowed logs for outbound candidates (private src → public dst)
@@ -885,8 +920,18 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
     return isPrivateIP(src) && dst && !isPrivateIP(dst);
   };
 
+  // Filter for inbound candidates (public src → private dst)
+  const isInboundCandidate = (log: any) => {
+    const src = log.srcip || log.src || '';
+    const dst = log.dstip || log.dst || '';
+    return src && !isPrivateIP(src) && dst && isPrivateIP(dst);
+  };
+
   const filteredAllowed = (allowedLogs || []).filter(isOutboundCandidate);
   // blockedLogs already pre-filtered externally (private src → public dst, deny action)
+
+  // Inbound allowed: from allowed logs, public src → private dst
+  const inboundAllowedLogs = (allowedLogs || []).filter(isInboundCandidate);
 
   // Helper: build IP and country rankings from destination
   const buildDstRankings = (subset: any[]) => {
@@ -916,8 +961,37 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
     return { topIPs, topCountries };
   };
 
+  // Helper: build IP and country rankings from source (for inbound traffic)
+  const buildSrcRankings = (subset: any[]) => {
+    const srcIPMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
+    const countryMap: Record<string, number> = {};
+
+    for (const log of subset) {
+      const srcip = log.srcip || log.src || '';
+      if (!srcip || isPrivateIP(srcip)) continue;
+      const country = log.srccountry || log.src_country || (srcip ? ipCountryMap[srcip] : undefined) || undefined;
+      const dstport = parseInt(log.dstport || '0');
+
+      if (!srcIPMap[srcip]) srcIPMap[srcip] = { count: 0, country, ports: new Set() };
+      srcIPMap[srcip].count++;
+      if (dstport > 0) srcIPMap[srcip].ports.add(dstport);
+      if (country) countryMap[country] = (countryMap[country] || 0) + 1;
+    }
+
+    const topIPs = Object.entries(srcIPMap)
+      .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+      .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [...data.ports].sort((a, b) => a - b) }));
+
+    const topCountries = Object.entries(countryMap)
+      .sort((a, b) => b[1] - a[1]).slice(0, 15)
+      .map(([country, count]) => ({ country, count }));
+
+    return { topIPs, topCountries };
+  };
+
   const allowedRank = buildDstRankings(filteredAllowed);
   const blockedRank = buildDstRankings(blockedLogs || []);
+  const inboundAllowedRank = buildSrcRankings(inboundAllowedLogs);
 
   // High-volume single destination insight (allowed)
   for (const ip of allowedRank.topIPs) {
@@ -957,6 +1031,10 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
       outboundBlocked: blockedLogs.length,
       topOutboundBlockedIPs: blockedRank.topIPs,
       topOutboundBlockedCountries: blockedRank.topCountries,
+      // Inbound allowed
+      inboundAllowed: inboundAllowedLogs.length,
+      topInboundAllowedIPs: inboundAllowedRank.topIPs,
+      topInboundAllowedCountries: inboundAllowedRank.topCountries,
     },
   };
 }
@@ -1226,6 +1304,13 @@ Deno.serve(async (req) => {
       outboundBlocked: outboundResult.metrics.outboundBlocked || 0,
       topOutboundBlockedIPs: outboundResult.metrics.topOutboundBlockedIPs || [],
       topOutboundBlockedCountries: outboundResult.metrics.topOutboundBlockedCountries || [],
+      // Inbound
+      topInboundBlockedIPs: deniedResult.metrics.topInboundBlockedIPs || [],
+      topInboundBlockedCountries: deniedResult.metrics.topInboundBlockedCountries || [],
+      inboundBlocked: deniedResult.metrics.inboundBlocked || 0,
+      topInboundAllowedIPs: outboundResult.metrics.topInboundAllowedIPs || [],
+      topInboundAllowedCountries: outboundResult.metrics.topInboundAllowedCountries || [],
+      inboundAllowed: outboundResult.metrics.inboundAllowed || 0,
       ipsEvents: ipsResult.metrics.ipsEvents || 0,
       configChanges: configResult.metrics.configChanges || 0,
       configChangeDetails: configResult.metrics.configChangeDetails || [],

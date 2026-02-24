@@ -64,6 +64,13 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       anomalyDropped: (metrics.anomalyDropped as number) ?? 0,
       topAnomalySources: (metrics.topAnomalySources as AnalyzerMetrics['topAnomalySources']) ?? [],
       topAnomalyTypes: (metrics.topAnomalyTypes as AnalyzerMetrics['topAnomalyTypes']) ?? [],
+      // Inbound traffic
+      topInboundBlockedIPs: (metrics.topInboundBlockedIPs as AnalyzerMetrics['topInboundBlockedIPs']) ?? [],
+      topInboundBlockedCountries: (metrics.topInboundBlockedCountries as AnalyzerMetrics['topInboundBlockedCountries']) ?? [],
+      inboundBlocked: (metrics.inboundBlocked as number) ?? 0,
+      topInboundAllowedIPs: (metrics.topInboundAllowedIPs as AnalyzerMetrics['topInboundAllowedIPs']) ?? [],
+      topInboundAllowedCountries: (metrics.topInboundAllowedCountries as AnalyzerMetrics['topInboundAllowedCountries']) ?? [],
+      inboundAllowed: (metrics.inboundAllowed as number) ?? 0,
     },
     created_at: row.created_at as string,
   };
@@ -209,6 +216,13 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topAnomalySources: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAnomalySources ?? [])),
     topAnomalyTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topAnomalyTypes ?? [])),
     configChangeDetails: snapshots.flatMap(s => s.metrics.configChangeDetails ?? []).slice(0, 50),
+    // Inbound traffic
+    topInboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedIPs ?? [])),
+    topInboundBlockedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedCountries ?? [])),
+    inboundBlocked: sum('inboundBlocked'),
+    topInboundAllowedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topInboundAllowedIPs ?? [])),
+    topInboundAllowedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topInboundAllowedCountries ?? [])),
+    inboundAllowed: sum('inboundAllowed'),
   };
 
   return {
