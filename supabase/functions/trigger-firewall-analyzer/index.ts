@@ -93,13 +93,14 @@ Deno.serve(async (req) => {
     }
 
     // Create analyzer snapshot in pending state
+    const periodStart = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
     const { data: snapshot, error: snapError } = await supabase
       .from('analyzer_snapshots')
       .insert({
         firewall_id,
         client_id: firewall.client_id,
         status: 'pending',
-        period_start: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+        period_start: periodStart,
         period_end: now,
       })
       .select('id')
