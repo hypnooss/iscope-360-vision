@@ -1150,7 +1150,7 @@ Deno.serve(async (req) => {
 
     // Outbound traffic: separate allowed and blocked sources
     const rawAllowedData = raw_data.allowed_traffic?.data || raw_data.allowed_traffic || [];
-    const rawAllowedLogs = filterLogsByTime(Array.isArray(rawAllowedData) ? rawAllowedData : rawAllowedData?.results || [], periodStart);
+    const rawAllowedLogs = deduplicateLogs(filterLogsByTime(Array.isArray(rawAllowedData) ? rawAllowedData : rawAllowedData?.results || [], periodStart, periodEnd));
     // Fallback: check if denied_traffic has accept entries (some blueprints put all forward traffic there)
     const acceptedFromDenied = deniedLogs.filter((l: any) => {
       const action = (l.action || '').toLowerCase();
