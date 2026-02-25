@@ -10,6 +10,7 @@ const corsHeaders = {
 interface HeartbeatRequest {
   status: string;
   agent_version: string;
+  supervisor_version?: string;
   certificate_thumbprint?: string;
   certificate_public_key?: string;
   capabilities?: string[];
@@ -31,6 +32,8 @@ interface HeartbeatSuccessResponse {
   has_pending_tasks: boolean;
   update_available: boolean;
   update_info?: UpdateInfo;
+  supervisor_update_available?: boolean;
+  supervisor_update_info?: UpdateInfo;
   azure_certificate_key_id?: string;
   check_components?: boolean;
   request_certificate?: boolean;
@@ -43,6 +46,16 @@ interface HeartbeatErrorResponse {
   code: 'TOKEN_EXPIRED' | 'INVALID_SIGNATURE' | 'INVALID_TOKEN' | 'BLOCKED' | 'UNREGISTERED' | 'INTERNAL_ERROR';
 }
 
+interface RpcHeartbeatResult {
+  success: boolean;
+  error?: string;
+  agent_id?: string;
+  jwt_secret?: string;
+  config_flag?: number;
+  has_pending_tasks?: boolean;
+  next_heartbeat_in?: number;
+}
+
 /**
  * Sanitize certificate thumbprint by removing prefixes, colons, and normalizing format
  * Handles formats like "sha1 Fingerprint=AA:BB:CC:..." or "SHA1:AA:BB:CC:..."
@@ -50,34 +63,24 @@ interface HeartbeatErrorResponse {
 function sanitizeThumbprint(thumbprint: string | null | undefined): string | null {
   if (!thumbprint) return null;
   let clean = thumbprint.trim();
-  // Remove OpenSSL prefixes like "sha1 Fingerprint=", "SHA1 Fingerprint=", etc.
   if (clean.includes('=')) {
     clean = clean.split('=').pop() || clean;
   }
-  // Remove colons (AA:BB:CC -> AABBCC)
   clean = clean.replace(/:/g, '');
   return clean.toUpperCase().trim();
 }
 
-/**
- * Convert hex string to Uint8Array
- */
 function fromHex(hex: string): Uint8Array {
   const matches = hex.match(/.{1,2}/g);
   if (!matches) return new Uint8Array();
   return new Uint8Array(matches.map(byte => parseInt(byte, 16)));
 }
 
-/**
- * Get encryption key from M365_ENCRYPTION_KEY (64-char hex = 32 bytes)
- */
 async function getEncryptionKey(): Promise<CryptoKey> {
   const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
   if (!keyHex) {
     throw new Error('M365_ENCRYPTION_KEY not configured');
   }
-  
-  // Convert hex string directly to bytes (no hashing needed)
   const keyBytes = fromHex(keyHex);
   return await crypto.subtle.importKey(
     'raw',
@@ -88,12 +91,7 @@ async function getEncryptionKey(): Promise<CryptoKey> {
   );
 }
 
-/**
- * Decrypt secret using AES-256-GCM
- * Supports legacy base64 format for backwards compatibility
- */
 async function decryptSecret(encrypted: string): Promise<string> {
-  // Legacy format (no colon) - try base64
   if (!encrypted.includes(':')) {
     try {
       return atob(encrypted);
@@ -102,7 +100,6 @@ async function decryptSecret(encrypted: string): Promise<string> {
     }
   }
 
-  // AES-GCM format: iv:ciphertext (hex encoded)
   try {
     const [ivHex, ciphertextHex] = encrypted.split(':');
     const iv = fromHex(ivHex);
@@ -122,10 +119,6 @@ async function decryptSecret(encrypted: string): Promise<string> {
   }
 }
 
-/**
- * Compare semantic versions (e.g., "1.0.0" vs "1.1.0")
- * Returns: -1 if a < b, 0 if a == b, 1 if a > b
- */
 function compareVersions(a: string, b: string): number {
   const partsA = a.split('.').map(n => parseInt(n, 10) || 0);
   const partsB = b.split('.').map(n => parseInt(n, 10) || 0);
@@ -139,45 +132,30 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-interface RpcHeartbeatResult {
-  success: boolean;
-  error?: string;
-  agent_id?: string;
-  jwt_secret?: string;
-  config_flag?: number;
-  has_pending_tasks?: boolean;
-  next_heartbeat_in?: number;
-}
-
 /**
- * Update agent version in database
+ * Update agent version (and optionally supervisor_version) in database
  */
-async function updateAgentVersion(supabase: any, agentId: string, version: string): Promise<void> {
+async function updateAgentVersion(supabase: any, agentId: string, version: string, supervisorVersion?: string): Promise<void> {
   if (!version || version === '0.0.0' || version === 'unknown') return;
   
   try {
+    const updateData: Record<string, string> = { agent_version: version };
+    if (supervisorVersion && supervisorVersion !== '0.0.0' && supervisorVersion !== 'unknown') {
+      updateData.supervisor_version = supervisorVersion;
+    }
     await supabase
       .from('agents')
-      .update({ agent_version: version })
+      .update(updateData)
       .eq('id', agentId);
   } catch (error) {
     console.error('Failed to update agent version:', error);
   }
 }
 
-/**
- * Upload certificate to App Registration in HOME Tenant using PATCH endpoint
- * Certificates registered on the App Registration work for ALL consented tenants
- * 
- * Flow:
- * 1. Get app_object_id and home_tenant_id from m365_global_config
- * 2. Get access token for the HOME tenant
- * 3. PATCH Application with new certificate
- */
 async function uploadCertificateToAppRegistration(
   homeTenantId: string,
   appId: string,
-  appObjectId: string,      // Application Object ID (from App Registration)
+  appObjectId: string,
   clientSecret: string,
   thumbprint: string,
   publicKey: string,
@@ -186,7 +164,6 @@ async function uploadCertificateToAppRegistration(
   try {
     console.log(`Uploading certificate to App Registration ${appObjectId.substring(0, 8)}... in Home Tenant ${homeTenantId.substring(0, 8)}...`);
     
-    // Get access token for the HOME tenant
     const tokenResponse = await fetch(
       `https://login.microsoftonline.com/${homeTenantId}/oauth2/v2.0/token`,
       {
@@ -210,7 +187,6 @@ async function uploadCertificateToAppRegistration(
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Fetch existing keyCredentials from App Registration
     const currentAppResponse = await fetch(
       `https://graph.microsoft.com/v1.0/applications/${appObjectId}?$select=keyCredentials`,
       {
@@ -232,12 +208,9 @@ async function uploadCertificateToAppRegistration(
       console.log(`  Key: ${k.displayName || 'unnamed'} | end: ${k.endDateTime} | type: ${k.type} | usage: ${k.usage}`);
     }
 
-    // Sanitize the new thumbprint
     const sanitizedNewThumbprint = sanitizeThumbprint(thumbprint);
 
-    // Check if this thumbprint is already registered
     for (const key of existingKeys) {
-      // Azure returns customKeyIdentifier as base64, decode to compare
       if (key.customKeyIdentifier) {
         try {
           const existingBytes = Uint8Array.from(atob(key.customKeyIdentifier), c => c.charCodeAt(0));
@@ -252,18 +225,14 @@ async function uploadCertificateToAppRegistration(
       }
     }
 
-    // Format certificate for Azure (base64 without headers)
     const certBase64 = publicKey
       .replace(/-----BEGIN CERTIFICATE-----/g, '')
       .replace(/-----END CERTIFICATE-----/g, '')
       .replace(/\s+/g, '');
 
-    // Convert thumbprint to base64 for customKeyIdentifier
     const thumbprintBytes = fromHex(sanitizedNewThumbprint || '');
     const customKeyIdentifier = btoa(String.fromCharCode(...thumbprintBytes));
 
-    // Create new key credential - let Azure extract dates from the certificate itself
-    // to avoid KeyCredentialsInvalidEndDate errors from date mismatches
     const newKeyCredential: Record<string, string> = {
       type: 'AsymmetricX509Cert',
       usage: 'Verify',
@@ -274,12 +243,10 @@ async function uploadCertificateToAppRegistration(
 
     console.log(`Adding certificate with displayName: ${newKeyCredential.displayName}`);
 
-    // Keep only keys from OTHER agents (different displayName prefix) that are not expired
     const now = new Date();
     const agentPrefix = `iScope-Agent-${agentId.substring(0, 8)}`;
     const cleanedExistingKeys = existingKeys
       .filter((key: any) => {
-        // Remove expired keys
         if (key.endDateTime) {
           const endDate = new Date(key.endDateTime);
           if (endDate < now) {
@@ -287,7 +254,6 @@ async function uploadCertificateToAppRegistration(
             return false;
           }
         }
-        // Remove old keys from THIS agent (we're replacing with the new cert)
         if (key.displayName === agentPrefix) {
           console.log(`Removing old key from same agent: ${key.displayName}`);
           return false;
@@ -304,7 +270,6 @@ async function uploadCertificateToAppRegistration(
         endDateTime: key.endDateTime,
       }));
 
-    // PATCH App Registration with all certificates (existing + new)
     const patchResponse = await fetch(
       `https://graph.microsoft.com/v1.0/applications/${appObjectId}`,
       {
@@ -333,13 +298,6 @@ async function uploadCertificateToAppRegistration(
   }
 }
 
-/**
- * Upload agent certificate to Azure App Registration
- * The certificate is registered in the App Registration (not Service Principal)
- * which makes it available for CBA authentication in ALL consented tenants
- * 
- * Returns the thumbprint if successful
- */
 async function uploadAgentCertificate(
   supabase: any,
   agentId: string,
@@ -349,7 +307,6 @@ async function uploadAgentCertificate(
   console.log(`Uploading certificate for agent ${agentId}, thumbprint: ${thumbprint.substring(0, 8)}...`);
   
   try {
-    // 1. Get global config with app_id, app_object_id, validation_tenant_id and client_secret
     const { data: globalConfig, error: configError } = await supabase
       .from('m365_global_config')
       .select('app_id, app_object_id, validation_tenant_id, client_secret_encrypted')
@@ -377,7 +334,6 @@ async function uploadAgentCertificate(
       return null;
     }
 
-    // 2. Decrypt the global client_secret
     let globalClientSecret: string;
     try {
       globalClientSecret = await decryptSecret(client_secret_encrypted);
@@ -386,7 +342,6 @@ async function uploadAgentCertificate(
       return null;
     }
 
-    // 3. Check if agent has linked tenants (for logging purposes)
     const { data: linkedTenants } = await supabase
       .from('m365_tenant_agents')
       .select('tenant_record_id')
@@ -395,11 +350,10 @@ async function uploadAgentCertificate(
 
     console.log(`Agent ${agentId} has ${linkedTenants?.length || 0} linked tenant(s)`);
 
-    // 4. Upload certificate to App Registration (works for ALL tenants)
     const result = await uploadCertificateToAppRegistration(
-      validation_tenant_id,   // Tenant onde o App Registration foi criado
+      validation_tenant_id,
       app_id,
-      app_object_id,          // Object ID do App Registration
+      app_object_id,
       globalClientSecret,
       thumbprint,
       publicKey,
@@ -407,7 +361,6 @@ async function uploadAgentCertificate(
     );
 
     if (result.success && result.keyId) {
-      // Update agent record with certificate info
       const sanitizedThumbprint = sanitizeThumbprint(thumbprint);
       await supabase
         .from('agents')
@@ -431,12 +384,10 @@ async function uploadAgentCertificate(
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Only accept POST requests
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -445,7 +396,6 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Extract Authorization header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       console.log('Missing or invalid Authorization header');
@@ -457,7 +407,6 @@ serve(async (req: Request) => {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Decode token without verification first to get the agent_id (sub claim)
     let payload: { sub?: string; exp?: number };
     try {
       const [, payloadBase64] = decode(token);
@@ -479,7 +428,6 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check token expiration BEFORE RPC call
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       console.log('Token has expired:', agentId);
       return new Response(
@@ -488,12 +436,10 @@ serve(async (req: Request) => {
       );
     }
 
-    // Create Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Call optimized RPC (1 round-trip instead of 3 queries)
     const { data: rpcResult, error: rpcError } = await supabase
       .rpc('rpc_agent_heartbeat', { p_agent_id: agentId });
 
@@ -507,7 +453,6 @@ serve(async (req: Request) => {
 
     const result = rpcResult as RpcHeartbeatResult;
 
-    // Handle RPC-level errors
     if (!result.success) {
       const errorCode = result.error || 'INTERNAL_ERROR';
       
@@ -538,7 +483,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Verify the token signature using jwt_secret from RPC result
+    // Verify the token signature
     try {
       const encoder = new TextEncoder();
       const keyData = encoder.encode(result.jwt_secret);
@@ -551,7 +496,6 @@ serve(async (req: Request) => {
       );
       await verify(token, cryptoKey);
     } catch (verifyError) {
-      // Check if the error is specifically about token expiration
       const errorMessage = String(verifyError);
       if (errorMessage.includes('expired') || errorMessage.includes('exp')) {
         console.log('Token expired during verification:', agentId);
@@ -568,7 +512,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Parse request body for logging
+    // Parse request body
     let body: HeartbeatRequest;
     try {
       body = await req.json();
@@ -577,9 +521,10 @@ serve(async (req: Request) => {
     }
 
     const agentVersion = body.agent_version || '0.0.0';
+    const supervisorVersion = body.supervisor_version || '';
 
-    // Update agent version in database (fire and forget)
-    await updateAgentVersion(supabase, agentId, agentVersion);
+    // Update agent version + supervisor_version in database
+    await updateAgentVersion(supabase, agentId, agentVersion, supervisorVersion);
 
     // Persist capabilities if provided
     if (Array.isArray(body.capabilities)) {
@@ -599,7 +544,6 @@ serve(async (req: Request) => {
     let checkComponents = false;
     let requestCertificate = false;
     
-    // Fetch agent data (certificate and check_components flag) in a single query
     const { data: agentData } = await supabase
       .from('agents')
       .select('azure_certificate_key_id, check_components, certificate_thumbprint, shell_session_active')
@@ -608,12 +552,10 @@ serve(async (req: Request) => {
 
     checkComponents = agentData?.check_components || false;
 
-    // Sanitize thumbprints for comparison
     const sanitizedInputThumbprint = sanitizeThumbprint(body.certificate_thumbprint);
     const sanitizedAgentThumbprint = sanitizeThumbprint(agentData?.certificate_thumbprint);
     
     if (body.certificate_public_key && sanitizedInputThumbprint) {
-      // Check if thumbprint changed (certificate was regenerated)
       const thumbprintChanged = sanitizedAgentThumbprint &&
         sanitizedAgentThumbprint !== sanitizedInputThumbprint;
 
@@ -635,8 +577,6 @@ serve(async (req: Request) => {
       }
     }
     
-    // Check if agent needs to send certificate
-    // Case: Agent has linked M365 tenants but hasn't sent certificate yet
     if (!sanitizedInputThumbprint && !agentData?.azure_certificate_key_id) {
       try {
         const { data: linkedTenants } = await supabase
@@ -664,21 +604,34 @@ serve(async (req: Request) => {
       console.log(`Reset check_components flag for agent ${agentId}`);
     }
 
-    // Check for available updates
+    // Check for available AGENT updates
     const { data: updateSettings } = await supabase
       .from('system_settings')
       .select('key, value')
-      .in('key', ['agent_latest_version', 'agent_update_checksum', 'agent_force_update']);
+      .in('key', [
+        'agent_latest_version', 'agent_update_checksum', 'agent_force_update',
+        'supervisor_latest_version', 'supervisor_update_checksum', 'supervisor_force_update',
+      ]);
 
+    // Agent update check
     const latestVersion = (updateSettings?.find(s => s.key === 'agent_latest_version')?.value as string || '1.0.0').replace(/"/g, '');
     const updateChecksum = (updateSettings?.find(s => s.key === 'agent_update_checksum')?.value as string || '').replace(/"/g, '');
     const forceUpdate = updateSettings?.find(s => s.key === 'agent_force_update')?.value === true || 
                         updateSettings?.find(s => s.key === 'agent_force_update')?.value === 'true';
 
-    // Compare versions to determine if update is available
     const updateAvailable = compareVersions(agentVersion, latestVersion) < 0;
 
-    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, latest=${latestVersion}, update=${updateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
+    // Supervisor update check
+    const supervisorLatestVersion = (updateSettings?.find(s => s.key === 'supervisor_latest_version')?.value as string || '1.0.0').replace(/"/g, '');
+    const supervisorUpdateChecksum = (updateSettings?.find(s => s.key === 'supervisor_update_checksum')?.value as string || '').replace(/"/g, '');
+    const supervisorForceUpdate = updateSettings?.find(s => s.key === 'supervisor_force_update')?.value === true ||
+                                  updateSettings?.find(s => s.key === 'supervisor_force_update')?.value === 'true';
+
+    const supervisorUpdateAvailable = supervisorVersion
+      ? compareVersions(supervisorVersion, supervisorLatestVersion) < 0
+      : false;
+
+    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, supervisor=${supervisorVersion || 'n/a'}, latest=${latestVersion}, sup_latest=${supervisorLatestVersion}, update=${updateAvailable}, sup_update=${supervisorUpdateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
 
     // Check for pending remote commands
     let hasPendingCommands = false;
@@ -704,39 +657,45 @@ serve(async (req: Request) => {
       update_available: updateAvailable,
     };
 
-    // Include certificate key ID if available
     if (azureCertificateKeyId) {
       response.azure_certificate_key_id = azureCertificateKeyId;
     }
 
-    // Include check_components flag if set
     if (checkComponents) {
       response.check_components = true;
     }
     
-    // Request certificate re-upload if linked tenants need it
     if (requestCertificate) {
       response.request_certificate = true;
       console.log(`Agent ${agentId}: requesting certificate re-upload for linked tenants`);
     }
 
-    // Include pending commands flag
     if (hasPendingCommands) {
       response.has_pending_commands = true;
     }
 
-    // Include start_realtime flag for on-demand WebSocket
     if (agentData?.shell_session_active) {
       response.start_realtime = true;
     }
 
-    // Include update info if available
+    // Include AGENT update info if available (Supervisor downloads this)
     if (updateAvailable) {
       response.update_info = {
         version: latestVersion,
         download_url: `${supabaseUrl}/storage/v1/object/public/agent-releases/iscope-agent-${latestVersion}.tar.gz`,
         checksum: updateChecksum,
         force: forceUpdate,
+      };
+    }
+
+    // Include SUPERVISOR update info if available (Worker/Agent downloads this)
+    if (supervisorUpdateAvailable) {
+      response.supervisor_update_available = true;
+      response.supervisor_update_info = {
+        version: supervisorLatestVersion,
+        download_url: `${supabaseUrl}/storage/v1/object/public/agent-releases/iscope-supervisor-${supervisorLatestVersion}.tar.gz`,
+        checksum: supervisorUpdateChecksum,
+        force: supervisorForceUpdate,
       };
     }
 

@@ -1,11 +1,10 @@
 """
-SupervisorUpdater — Orchestrates worker updates safely.
+SupervisorUpdater — Orchestrates WORKER updates safely.
 
-Unlike the old AutoUpdater (which ran inside the process it was updating),
-this updater runs in the Supervisor and can:
-1. Stop the Worker before touching any files
-2. Update files, reinstall deps, run system component checks
-3. Start the Worker with the new code
+This updater runs in the Supervisor and handles AGENT/Worker updates only.
+It does NOT touch supervisor/ files (cross-update principle).
+
+For Supervisor updates, see agent/supervisor_updater.py (Worker updates Supervisor).
 """
 
 import hashlib
@@ -21,7 +20,10 @@ from agent.components import ensure_system_components
 
 
 class SupervisorUpdater:
-    """Handles worker updates from the Supervisor process."""
+    """Handles worker/agent updates from the Supervisor process."""
+
+    # Files/dirs that belong to the Supervisor — never replaced during agent update
+    SUPERVISOR_PRESERVED = {"supervisor"}
 
     def __init__(self, logger, install_dir: Path):
         self.logger = logger
@@ -79,7 +81,7 @@ class SupervisorUpdater:
             # 6. Backup current
             self._backup_current()
 
-            # 7. Replace files
+            # 7. Replace files (excluding supervisor/)
             self._replace_files(extract_dir)
             shutil.rmtree(extract_dir)
 
@@ -94,9 +96,6 @@ class SupervisorUpdater:
                 ensure_system_components(self.logger)
             except Exception as e:
                 self.logger.warning(f"[Updater] Erro em componentes do sistema: {e}")
-
-            # 10.5. Reload agent.version module to break update loop
-            self._reload_version_module(version)
 
             self.logger.info(f"[Updater] Update para v{version} concluído")
 
@@ -117,7 +116,7 @@ class SupervisorUpdater:
             return False
 
     # ------------------------------------------------------------------
-    # Download / verify / extract (reused from old AutoUpdater)
+    # Download / verify / extract
     # ------------------------------------------------------------------
 
     def _download_package(self, url: str) -> Optional[str]:
@@ -185,7 +184,7 @@ class SupervisorUpdater:
         return True
 
     # ------------------------------------------------------------------
-    # File replacement
+    # File replacement — preserves supervisor/ directory
     # ------------------------------------------------------------------
 
     def _backup_current(self) -> None:
@@ -202,7 +201,8 @@ class SupervisorUpdater:
             if len(subdirs) == 1:
                 root = subdirs[0]
 
-        preserved = {"venv", "storage", "logs", ".env"}
+        # Preserve: venv, storage, logs, .env, AND supervisor/
+        preserved = {"venv", "storage", "logs", ".env", "supervisor"}
 
         for item in self.install_dir.iterdir():
             if item.name not in preserved:
@@ -220,7 +220,7 @@ class SupervisorUpdater:
             else:
                 shutil.copy2(item, dest)
 
-        self.logger.info("[Updater] Arquivos substituídos com sucesso")
+        self.logger.info("[Updater] Arquivos substituídos com sucesso (supervisor/ preservado)")
 
     def _fix_shell_line_endings(self) -> None:
         for sh_file in self.install_dir.glob("*.sh"):
@@ -247,37 +247,6 @@ class SupervisorUpdater:
                 self.logger.info("[Updater] Dependências atualizadas")
             except Exception as e:
                 self.logger.warning(f"[Updater] Erro ao atualizar dependências: {e}")
-
-    def _reload_version_module(self, expected_version: str) -> None:
-        """Reload agent.version so the Supervisor heartbeat reports the new version."""
-        import importlib
-
-        try:
-            import agent.version
-            importlib.reload(agent.version)
-            new_ver = agent.version.get_version()
-            self.logger.info(f"[Updater] Módulo agent.version recarregado: v{new_ver}")
-        except Exception as e:
-            self.logger.warning(f"[Updater] Falha ao recarregar agent.version: {e}")
-
-        # Belt-and-suspenders: verify against disk
-        disk_ver = self._get_disk_version()
-        if disk_ver and disk_ver != expected_version:
-            self.logger.warning(
-                f"[Updater] Versão em disco ({disk_ver}) difere da esperada ({expected_version})"
-            )
-
-    def _get_disk_version(self) -> Optional[str]:
-        """Read version directly from agent/version.py on disk, bypassing module cache."""
-        version_file = self.install_dir / "agent" / "version.py"
-        try:
-            content = version_file.read_text()
-            for line in content.splitlines():
-                if line.startswith("__version__"):
-                    return line.split("=")[1].strip().strip("\"'")
-        except Exception as e:
-            self.logger.warning(f"[Updater] Erro ao ler versão do disco: {e}")
-        return None
 
     def _restore_backup(self) -> None:
         if self.backup_dir.exists():

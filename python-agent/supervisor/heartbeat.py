@@ -3,9 +3,13 @@ Supervisor Heartbeat — Lightweight heartbeat loop.
 
 Reuses the agent's APIClient and AgentHeartbeat classes but runs
 independently in the Supervisor process.
+
+Sends supervisor_version alongside agent_version so the backend
+can track both and signal cross-updates.
 """
 
 from agent.heartbeat import AgentStopped
+from supervisor.version import get_version as get_supervisor_version
 
 
 class SupervisorHeartbeatLoop:
@@ -29,11 +33,15 @@ class SupervisorHeartbeatLoop:
                 self.logger.info("[Supervisor] Token próximo de expirar, renovando...")
                 self.auth.refresh_tokens()
 
-            result = self.heartbeat.send(status="running")
+            result = self.heartbeat.send(
+                status="running",
+                supervisor_version=get_supervisor_version(),
+            )
 
             self.logger.info(
                 f"[Supervisor] Heartbeat OK | "
                 f"update={result.get('update_available')} | "
+                f"sup_update={result.get('supervisor_update_available', False)} | "
                 f"next={result.get('next_heartbeat_in', '?')}s"
             )
 

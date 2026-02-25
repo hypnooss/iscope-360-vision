@@ -612,13 +612,20 @@ export default function AgentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {agent.agent_version ? (
-                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                              v{agent.agent_version}
-                            </code>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <div className="flex flex-col gap-0.5">
+                            {agent.agent_version ? (
+                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded w-fit">
+                                Agent v{agent.agent_version}
+                              </code>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {(agent as any).supervisor_version && (
+                              <code className="text-xs bg-muted/60 px-1.5 py-0.5 rounded w-fit text-muted-foreground">
+                                Sup v{(agent as any).supervisor_version}
+                              </code>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge

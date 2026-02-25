@@ -458,9 +458,17 @@ export default function AgentDetailPage() {
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Versão</span>
+                <span className="text-muted-foreground">Versão Agent</span>
                 {agent.agent_version ? (
                   <code className="text-sm bg-muted px-2 py-0.5 rounded">v{agent.agent_version}</code>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Versão Supervisor</span>
+                {(agent as any).supervisor_version ? (
+                  <code className="text-sm bg-muted px-2 py-0.5 rounded">v{(agent as any).supervisor_version}</code>
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}

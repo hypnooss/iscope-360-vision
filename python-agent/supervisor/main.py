@@ -6,13 +6,16 @@ Lightweight process that:
 2. Manages the Worker process lifecycle (start/stop/restart)
 3. Handles Worker updates (download, validate, replace, restart)
 4. Installs system components when requested
+5. Detects supervisor_restart.flag and exits for systemd restart (cross-update)
 
 This process is intentionally small and stable so it rarely needs
 a manual update itself.
 """
 
+import json
 import sys
 import time
+from pathlib import Path
 
 from supervisor.version import get_version as get_supervisor_version
 from supervisor.config import (
@@ -36,6 +39,10 @@ from agent.logger import setup_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from agent.realtime_commands import ShellCommandPoller
+
+# Cross-update paths
+SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
+PENDING_SUPERVISOR_UPDATE = Path("/var/lib/iscope-agent/pending_supervisor_update.json")
 
 
 def main():
@@ -83,6 +90,17 @@ def main():
     while True:
         interval = HEARTBEAT_INTERVAL
 
+        # --- Cross-update: check if Worker updated us ---
+        if SUPERVISOR_RESTART_FLAG.exists():
+            try:
+                new_version = SUPERVISOR_RESTART_FLAG.read_text().strip()
+                logger.info(f"[Supervisor] Restart flag detectada (v{new_version}). Encerrando para systemd reiniciar.")
+            except Exception:
+                logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
+            SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
+            worker.stop()
+            sys.exit(0)
+
         result = hb_loop.tick()
 
         if "error" in result:
@@ -100,9 +118,13 @@ def main():
             consecutive_errors = 0
             interval = result.get("next_heartbeat_in", HEARTBEAT_INTERVAL)
 
-            # Handle update
+            # Handle AGENT update (Supervisor updates the Worker)
             if result.get("update_available") and result.get("update_info"):
                 _handle_update(result, updater, worker, logger)
+
+            # Handle SUPERVISOR update signal (write pending file for Worker to apply)
+            if result.get("supervisor_update_available") and result.get("supervisor_update_info"):
+                _handle_supervisor_update_signal(result, logger)
 
             # Handle component check
             if result.get("check_components"):
@@ -156,17 +178,39 @@ def main():
 
 
 def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager, logger):
-    """Process an update signal from the heartbeat."""
+    """Process an AGENT update signal from the heartbeat (Supervisor updates Worker)."""
     update_info = result["update_info"]
     version = update_info.get("version", "?")
 
-    logger.info(f"[Supervisor] Update disponível: v{version}")
+    logger.info(f"[Supervisor] Agent update disponível: v{version}")
 
     success = updater.check_and_update(update_info, worker)
     if success:
         logger.info(f"[Supervisor] Worker atualizado para v{version} com sucesso")
     else:
         logger.error(f"[Supervisor] Falha ao atualizar Worker para v{version}")
+
+
+def _handle_supervisor_update_signal(result: dict, logger):
+    """Write pending_supervisor_update.json for the Worker to pick up and apply."""
+    sup_info = result["supervisor_update_info"]
+    version = sup_info.get("version", "?")
+
+    # Don't overwrite if already pending
+    if PENDING_SUPERVISOR_UPDATE.exists():
+        try:
+            existing = json.loads(PENDING_SUPERVISOR_UPDATE.read_text())
+            if existing.get("version") == version:
+                return  # Already pending same version
+        except Exception:
+            pass
+
+    logger.info(f"[Supervisor] Supervisor update v{version} disponível — escrevendo pending file para Worker aplicar")
+    try:
+        PENDING_SUPERVISOR_UPDATE.parent.mkdir(parents=True, exist_ok=True)
+        PENDING_SUPERVISOR_UPDATE.write_text(json.dumps(sup_info))
+    except Exception as e:
+        logger.error(f"[Supervisor] Erro ao escrever pending supervisor update: {e}")
 
 
 def _handle_check_components(logger, worker: WorkerManager):
@@ -181,7 +225,6 @@ def _handle_check_components(logger, worker: WorkerManager):
 
 def _check_component_flag(logger):
     """Check if a previous run left a component-check flag."""
-    from pathlib import Path
     flag = Path("/var/lib/iscope-agent/check_components.flag")
     if flag.exists():
         logger.info("[Supervisor] Flag de componentes encontrada, executando verificação...")

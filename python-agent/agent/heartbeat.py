@@ -80,7 +80,7 @@ class AgentHeartbeat:
             "certificate_public_key": public_key
         }
 
-    def send(self, status="running", version=None, force_certificate=False):
+    def send(self, status="running", version=None, force_certificate=False, supervisor_version=None):
         if version is None:
             version = get_version()
         self.logger.info(f"Enviando heartbeat (v{version})")
@@ -91,6 +91,10 @@ class AgentHeartbeat:
                 "status": status,
                 "agent_version": version
             }
+
+            # Include supervisor_version if provided (sent by Supervisor process)
+            if supervisor_version:
+                payload["supervisor_version"] = supervisor_version
             
             # Include capabilities if 12h interval elapsed
             send_caps = self._should_send_capabilities()
