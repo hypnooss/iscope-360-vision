@@ -95,6 +95,9 @@ class SupervisorUpdater:
             except Exception as e:
                 self.logger.warning(f"[Updater] Erro em componentes do sistema: {e}")
 
+            # 10.5. Reload agent.version module to break update loop
+            self._reload_version_module(version)
+
             self.logger.info(f"[Updater] Update para v{version} concluído")
 
             # 11. Start the worker with new code
@@ -244,6 +247,37 @@ class SupervisorUpdater:
                 self.logger.info("[Updater] Dependências atualizadas")
             except Exception as e:
                 self.logger.warning(f"[Updater] Erro ao atualizar dependências: {e}")
+
+    def _reload_version_module(self, expected_version: str) -> None:
+        """Reload agent.version so the Supervisor heartbeat reports the new version."""
+        import importlib
+
+        try:
+            import agent.version
+            importlib.reload(agent.version)
+            new_ver = agent.version.get_version()
+            self.logger.info(f"[Updater] Módulo agent.version recarregado: v{new_ver}")
+        except Exception as e:
+            self.logger.warning(f"[Updater] Falha ao recarregar agent.version: {e}")
+
+        # Belt-and-suspenders: verify against disk
+        disk_ver = self._get_disk_version()
+        if disk_ver and disk_ver != expected_version:
+            self.logger.warning(
+                f"[Updater] Versão em disco ({disk_ver}) difere da esperada ({expected_version})"
+            )
+
+    def _get_disk_version(self) -> Optional[str]:
+        """Read version directly from agent/version.py on disk, bypassing module cache."""
+        version_file = self.install_dir / "agent" / "version.py"
+        try:
+            content = version_file.read_text()
+            for line in content.splitlines():
+                if line.startswith("__version__"):
+                    return line.split("=")[1].strip().strip("\"'")
+        except Exception as e:
+            self.logger.warning(f"[Updater] Erro ao ler versão do disco: {e}")
+        return None
 
     def _restore_backup(self) -> None:
         if self.backup_dir.exists():
