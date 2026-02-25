@@ -1,84 +1,104 @@
 
+Objetivo: corrigir o comportamento do `Ctrl+C` no Terminal Remoto para interromper de fato `tail -f`, e eliminar o estado inconsistente onde o prompt reaparece enquanto ainda há comando em execução.
 
-## Ctrl+C (SIGINT) for the Remote Terminal
+1) Diagnóstico confirmado (com evidência)
+- O comando longo `tail -f` permanece `status='running'` na tabela `agent_commands` (sem `completed_at`).
+- Os comandos `__signal__ SIGINT` estão sendo gravados como `failed` com erro `/bin/sh: __signal__: command not found`.
+- Os comandos `__probe__ pwd` também falham com `/bin/sh: __probe__: command not found`.
+- No frontend, o prompt pode reaparecer mesmo com stream ativo porque `pendingCommandIds` não é sempre reidratado a partir de updates `running` (especialmente após reconexão/refresh).
 
-Since the browser intercepts `Ctrl+C` as "copy to clipboard," we cannot forward a raw SIGINT signal. Instead, we need a special command mechanism to kill the running process on the agent side.
+2) Causa raiz
+- No agente Python, o parsing usa `stripped = command_text.strip()`, mas a execução ainda chama `subprocess.Popen(command_text, ...)` em vez de `stripped`.  
+  Isso explica o `__probe__` virar comando shell literal.
+- Para `__signal__`, há dois problemas práticos:
+  - ambiente/versão pode estar sem o trecho de interceptação carregado;
+  - mesmo quando houver stream ativo recebido na UI, o frontend pode não manter o estado “pendente” daquele `command_id`, então o prompt reaparece indevidamente.
+- No frontend, `Ctrl+C` está duplicado (handler no input + handler no body), podendo enfileirar sinais repetidos.
 
-### Approach
+3) Plano de implementação
 
-**Frontend (`RemoteTerminal.tsx`):**
-- Intercept `Ctrl+C` in the `handleKeyDown` handler when a command is currently running (`pendingCommandIds.size > 0`)
-- Send a special command `__signal__ SIGINT` to the database
-- Display `^C` in the terminal output as visual feedback
-- The `Ctrl+C` handler fires even when the input form is hidden (during pending commands), so we need to attach a keydown listener to the terminal body `div` as well
+Fase A — Robustez no agente (`python-agent/agent/remote_commands.py`)
+- Ajustar execução de comando normal para usar `stripped`:
+  - log: `Executando: {stripped[:80]}...`
+  - `subprocess.Popen(stripped, shell=True, ...)`
+- Tornar detecção de sinal mais resiliente:
+  - aceitar `stripped.startswith("__signal__")` e parse do tipo de sinal (`SIGINT` por padrão).
+  - manter `SIGINT` como principal.
+- Evitar corrida de estado do processo ativo:
+  - no `finally`, limpar `self._running_proc`/`self._running_cmd_id` apenas se o `command_id` atual ainda for o mesmo ativo.
+- Incluir logs explícitos para confirmar path de sinal:
+  - “Signal command interceptado”
+  - “SIGINT enviado ao PID X”
+  - “Nenhum processo ativo para sinal”
+- Opcional de segurança operacional:
+  - fallback `proc.terminate()` se `send_signal` falhar.
 
-**Agent (`remote_commands.py`):**
-- Track the currently running `subprocess.Popen` process in an instance variable (`self._running_proc` and `self._running_cmd_id`)
-- When `__signal__ SIGINT` is received as a command, instead of executing it as a shell command, send `SIGINT` to `self._running_proc` via `proc.send_signal(signal.SIGINT)` (or `proc.terminate()` as fallback)
-- The streaming loop will then detect the process exited and report the final result naturally
-- Mark the signal command itself as `completed` immediately (it's not a real command)
+Fase B — Consistência do estado no frontend (`src/components/agents/RemoteTerminal.tsx`)
+- Reidratar pendência com base em updates em tempo real:
+  - ao receber `cmd.status === "running"`, garantir `cmd.id` em `pendingCommandIds`.
+  - ao receber status final (`completed|failed|timeout`), remover `cmd.id`.
+- Remover duplicidade do `Ctrl+C`:
+  - centralizar envio de sinal em um único caminho (`handleTerminalKeyDown`).
+  - adicionar guarda para não enviar múltiplos `__signal__` seguidos enquanto um sinal já está em trânsito (ex.: `signalInFlightRef`).
+- Evitar prompt falso durante stream:
+  - `hasPending` deve refletir “comando em execução” mesmo após reconexão.
+  - manter o prompt oculto enquanto houver qualquer `command_id` em running/pending.
+- Melhorar UX do `^C`:
+  - renderizar `^C` apenas quando o sinal for realmente enfileirado.
 
-### Changes
+Fase C — Compatibilidade com versão do agente em produção
+- Como o erro atual indica execução literal de `__signal__`, incluir no checklist de rollout:
+  - confirmar arquivo atualizado no host do agent;
+  - reiniciar serviço;
+  - validar nos logs que apareceu “Signal command interceptado”.
+- Se houver update automático por supervisor/worker, validar que o binário/instalação ativa realmente contém a nova versão de `remote_commands.py`.
 
-**`src/components/agents/RemoteTerminal.tsx`:**
-- In `handleKeyDown`, add a `Ctrl+C` handler: if `hasPending`, prevent default, append `^C` line, and call `sendCommand.mutate("__signal__ SIGINT")`
-- Move the keydown listener to the terminal body div (not just the input) so it works even when the input is hidden during pending commands
-- Add a `onKeyDown` handler to the terminal body div that checks for `Ctrl+C`
+4) Detalhes técnicos (para implementação)
 
-**`python-agent/agent/remote_commands.py`:**
-- Add `self._running_proc = None` and `self._running_cmd_id = None` instance variables
-- In `_execute_command`, before `Popen`, set `self._running_proc`; clear it in `finally`
-- Detect `__signal__ SIGINT` command: if `self._running_proc` is not None, call `self._running_proc.send_signal(signal.SIGINT)`; mark the signal command as `completed` immediately
-- Import `signal` module
+Arquivos impactados
+- `python-agent/agent/remote_commands.py`
+  - trocar `command_text` por `stripped` no bloco de execução Popen;
+  - robustecer parse de `__signal__`;
+  - proteção de limpeza de `_running_proc`.
+- `src/components/agents/RemoteTerminal.tsx`
+  - garantir add/remove de `pendingCommandIds` também no fluxo de updates `running`;
+  - deduplicar `Ctrl+C` e evitar flood de sinais.
 
-### Detailed Code Plan
+Fluxo esperado após correção
+```text
+Usuário roda tail -f
+  -> agent_commands: pending -> running
+  -> UI marca command_id como pending/running e esconde prompt
 
-#### `RemoteTerminal.tsx` — Ctrl+C handler
-
-In the terminal body div (around line 430), add `onKeyDown` and `tabIndex={0}` so it can receive keyboard events:
-
-```tsx
-<div
-  className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text"
-  onClick={focusInput}
-  onKeyDown={handleTerminalKeyDown}
-  tabIndex={0}
->
+Usuário pressiona Ctrl+C
+  -> UI envia __signal__ SIGINT (uma vez)
+  -> Agent intercepta sem shell
+  -> Agent envia SIGINT ao processo ativo
+  -> Comando original finaliza (failed/completed, tipicamente exit 130)
+  -> UI remove command_id pendente
+  -> Prompt reaparece
 ```
 
-New `handleTerminalKeyDown` function:
-```typescript
-const handleTerminalKeyDown = (e: React.KeyboardEvent) => {
-  if (e.ctrlKey && e.key === "c" && hasPending) {
-    e.preventDefault();
-    setLines((prev) => [...prev, { type: "system", text: "^C" }]);
-    sendCommand.mutate("__signal__ SIGINT");
-  }
-};
-```
+5) Plano de validação end-to-end
+- Teste 1: `tail -f /var/log/iscope-agent/agent.log`
+  - verificar stream contínuo.
+- Teste 2: pressionar `Ctrl+C`
+  - deve aparecer `^C`;
+  - stream deve parar em poucos segundos;
+  - prompt deve reaparecer apenas após status final do comando original.
+- Teste 3: reconexão com comando já em running
+  - não exibir prompt enquanto houver comando running;
+  - após finalização, prompt deve aparecer.
+- Teste 4: inspeção DB
+  - comando `__signal__ SIGINT` não deve mais retornar `command not found`;
+  - comando alvo deve sair de `running` para final.
+- Teste 5: logs do agent
+  - presença de logs de interceptação de sinal e envio de SIGINT.
 
-#### `remote_commands.py` — Signal handling
-
-In `__init__`, add:
-```python
-self._running_proc = None
-self._running_cmd_id = None
-```
-
-In `_execute_command`, detect signal commands early (after dedup, before probe strip):
-```python
-if command_text.strip() == "__signal__ SIGINT":
-    if self._running_proc and self._running_proc.poll() is None:
-        self._running_proc.send_signal(signal.SIGINT)
-        self.logger.info(f"[RemoteCmd] SIGINT enviado ao processo (cmd {self._running_cmd_id[:8]}...)")
-    self._report_result(command_id=command_id, stdout="", stderr="", exit_code=0, status="completed", cwd=self._cwd)
-    return
-```
-
-Set `self._running_proc = proc` right after `Popen()` call, and clear it in `finally`.
-
-| File | Change |
-|------|--------|
-| `RemoteTerminal.tsx` | Add `Ctrl+C` interception on terminal div; send `__signal__ SIGINT` command; show `^C` feedback |
-| `remote_commands.py` | Track running process; handle `__signal__ SIGINT` by sending SIGINT to active subprocess |
-
+6) Riscos e mitigação
+- Risco: sinal não derrubar processo filho quando `shell=True`.
+  - Mitigação: fallback `terminate()` e, se necessário, envio para grupo de processo (evolução futura).
+- Risco: múltiplos Ctrl+C em sequência.
+  - Mitigação: trava `signalInFlightRef`.
+- Risco: divergência entre código do repositório e código efetivamente instalado no host.
+  - Mitigação: checklist explícito de rollout + validação por logs/DB.
