@@ -1,35 +1,62 @@
 
 
-# Deploy da Edge Function agent-install
+# Remover serviço legado `iscope-agent` completamente durante instalação/update
 
-## Diagnóstico
+## Situação atual
 
-O código no repositório já está correto (SERVICE_NAME="iscope-supervisor", ExecStart com `supervisor.main`, mensagens atualizadas). Porém, a saída do servidor mostra claramente as mensagens antigas:
+O código já para e desabilita o serviço legado em dois pontos:
+- `stop_service_if_exists()` (linhas 611-620 no agent-install, equivalente no super-agent-install)
+- `start_service()` (linhas 1183-1195 no agent-install, 849-860 no super-agent-install)
 
-```
-Verificar status: systemctl status iscope-agent --no-pager
-```
+Porém, o **unit file** `/etc/systemd/system/iscope-agent.service` permanece no disco, o que pode causar confusão ou reativação acidental.
 
-Quando deveria mostrar:
+## Mudança
 
-```
-Supervisor instalado com sucesso!
-Verificar status: systemctl status iscope-supervisor --no-pager
-```
+Adicionar a remoção do unit file legado em `start_service()` de ambos os installers, logo após parar e desabilitar:
 
-**Causa**: A Edge Function `agent-install` não foi deployada no Supabase após as alterações no código.
-
-## Ação necessária
-
-Fazer deploy das Edge Functions atualizadas:
-
-1. **`agent-install`** — contém a migração para iscope-supervisor
-2. **`super-agent-install`** — mesmas alterações para consistência
-
-Após o deploy, re-executar o update no servidor:
 ```bash
-curl -sSL "https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install" | sudo bash -s -- --update
+rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
+systemctl daemon-reload
 ```
 
-A saída deve mostrar "Supervisor instalado com sucesso!" e o serviço `iscope-supervisor` será criado, habilitando heartbeats.
+## Arquivos afetados
+
+| Arquivo | Linhas | Mudança |
+|---------|--------|---------|
+| `supabase/functions/agent-install/index.ts` | 1183-1195 | Adicionar `rm -f` do unit file legado + `daemon-reload` |
+| `supabase/functions/super-agent-install/index.ts` | 849-860 | Mesma alteração |
+
+## Detalhe da alteração em `start_service()`
+
+De:
+```bash
+start_service() {
+  systemctl daemon-reload
+  if systemctl list-unit-files | grep -q "^${LEGACY_SERVICE_NAME}\.service"; then
+    echo "Desabilitando serviço legado ${LEGACY_SERVICE_NAME}..."
+    systemctl stop "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+    systemctl disable "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+  fi
+  systemctl enable --now "$SERVICE_NAME"
+}
+```
+
+Para:
+```bash
+start_service() {
+  systemctl daemon-reload
+  # Remove legacy iscope-agent service completely if it exists
+  if systemctl list-unit-files | grep -q "^${LEGACY_SERVICE_NAME}\.service"; then
+    echo "Removendo serviço legado ${LEGACY_SERVICE_NAME}..."
+    systemctl stop "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+    systemctl disable "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
+    systemctl daemon-reload
+    echo "Serviço legado removido."
+  fi
+  systemctl enable --now "$SERVICE_NAME"
+}
+```
+
+Após aplicar, será necessário fazer deploy das Edge Functions novamente.
 
