@@ -135,3 +135,6 @@ verify_jwt = false
 [functions.fortinet-hardware-eol]
 verify_jwt = false
 
+[functions.agent-commands]
+verify_jwt = false
+

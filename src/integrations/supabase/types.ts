@@ -56,6 +56,59 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_commands: {
+        Row: {
+          agent_id: string
+          command: string
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          exit_code: number | null
+          id: string
+          started_at: string | null
+          status: string
+          stderr: string | null
+          stdout: string | null
+          timeout_seconds: number
+        }
+        Insert: {
+          agent_id: string
+          command: string
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          exit_code?: number | null
+          id?: string
+          started_at?: string | null
+          status?: string
+          stderr?: string | null
+          stdout?: string | null
+          timeout_seconds?: number
+        }
+        Update: {
+          agent_id?: string
+          command?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          exit_code?: number | null
+          id?: string
+          started_at?: string | null
+          status?: string
+          stderr?: string | null
+          stdout?: string | null
+          timeout_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_commands_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_tasks: {
         Row: {
           agent_id: string

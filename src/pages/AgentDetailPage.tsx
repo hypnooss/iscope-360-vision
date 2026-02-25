@@ -54,6 +54,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AgentInstallInstructions } from "@/components/agents/AgentInstallInstructions";
+import { RemoteTerminal } from "@/components/agents/RemoteTerminal";
 
 interface Agent {
   id: string;
@@ -703,6 +704,10 @@ export default function AgentDetailPage() {
           </Card>
         </div>
 
+        {/* Remote Terminal - super_admin only */}
+        <div className="mt-6">
+          <RemoteTerminal agentId={agent.id} agentName={agent.name} />
+        </div>
         {/* Revoke Confirmation Dialog */}
         <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
           <AlertDialogContent>
