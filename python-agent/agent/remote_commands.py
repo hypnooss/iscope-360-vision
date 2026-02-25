@@ -72,14 +72,26 @@ class RemoteCommandHandler:
                         pgid = os.getpgid(pid)
                         os.killpg(pgid, signal.SIGINT)
                         self.logger.info(f"[RemoteCmd] SIGINT enviado ao grupo {pgid} (PID {pid}, cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
+
+                        # Escalonamento defensivo: se ainda estiver vivo após Ctrl+C, força término
+                        time.sleep(0.8)
+                        if self._running_proc.poll() is None:
+                            self.logger.warning(f"[RemoteCmd] Processo ainda ativo após SIGINT (grupo {pgid}), enviando SIGTERM")
+                            os.killpg(pgid, signal.SIGTERM)
+                            time.sleep(0.8)
+
+                        if self._running_proc.poll() is None:
+                            self.logger.warning(f"[RemoteCmd] Processo ainda ativo após SIGTERM (grupo {pgid}), enviando SIGKILL")
+                            os.killpg(pgid, signal.SIGKILL)
                     except Exception as sig_err:
-                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT ao grupo, tentando terminate(): {sig_err}")
+                        self.logger.warning(f"[RemoteCmd] Erro ao sinalizar grupo, tentando terminate()/kill(): {sig_err}")
                         try:
                             self._running_proc.terminate()
+                            time.sleep(0.5)
+                            if self._running_proc.poll() is None:
+                                self._running_proc.kill()
                         except Exception:
                             pass
-                else:
-                    self.logger.info("[RemoteCmd] Nenhum processo ativo para sinal")
 
                 self._report_result(
                     command_id=command_id,
