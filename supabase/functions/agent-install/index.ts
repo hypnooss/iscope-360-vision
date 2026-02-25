@@ -1183,11 +1183,14 @@ SUDOERS
 start_service() {
   systemctl daemon-reload
 
-  # Disable legacy iscope-agent service if it exists
+  # Remove legacy iscope-agent service completely if it exists
   if systemctl list-unit-files | grep -q "^\${LEGACY_SERVICE_NAME}\\.service"; then
-    echo "Desabilitando serviço legado \${LEGACY_SERVICE_NAME}..."
+    echo "Removendo serviço legado \${LEGACY_SERVICE_NAME}..."
     systemctl stop "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
     systemctl disable "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+    rm -f "/etc/systemd/system/\${LEGACY_SERVICE_NAME}.service"
+    systemctl daemon-reload
+    echo "Serviço legado removido."
   fi
 
   # Enable and start the Supervisor service
