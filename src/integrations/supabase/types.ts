@@ -63,6 +63,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           created_by: string
+          cwd: string | null
           exit_code: number | null
           id: string
           started_at: string | null
@@ -77,6 +78,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by: string
+          cwd?: string | null
           exit_code?: number | null
           id?: string
           started_at?: string | null
@@ -91,6 +93,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by?: string
+          cwd?: string | null
           exit_code?: number | null
           id?: string
           started_at?: string | null

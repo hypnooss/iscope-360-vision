@@ -1,14 +1,12 @@
 """
 Shell Command Poller — High-frequency HTTP polling for remote commands.
 
-Replaces the previous WebSocket-based RealtimeCommandListener with a simple
-HTTP polling loop that checks for pending commands every 2 seconds.
-
 Architecture:
 - Started on-demand when shell_session_active=true (via heartbeat flag)
 - Polls GET /agent-commands every 2 seconds
 - Reuses the existing RemoteCommandHandler for execution
 - Auto-stops after 120s of inactivity (no commands found)
+- Stops immediately when session_active=false in response
 - Supervisor manages lifecycle based on heartbeat response
 """
 
@@ -29,15 +27,22 @@ class ShellCommandPoller:
         self._stop_event = threading.Event()
         self._last_activity = time.time()
         self._timed_out = False
+        self._session_closed = False
 
     @property
     def timed_out(self):
         """Check if the poller stopped due to inactivity timeout."""
         return self._timed_out
 
+    @property
+    def session_closed(self):
+        """Check if the poller stopped because the GUI closed the session."""
+        return self._session_closed
+
     def start(self):
         """Start the poller in a daemon thread."""
         self._timed_out = False
+        self._session_closed = False
         self._last_activity = time.time()
         self._stop_event.clear()
         self._thread = threading.Thread(
@@ -52,7 +57,7 @@ class ShellCommandPoller:
         self.logger.info("[ShellPoll] Poller parado")
 
     def _poll_loop(self):
-        """Main polling loop. Exits on stop or inactivity timeout."""
+        """Main polling loop. Exits on stop, inactivity timeout, or session closed."""
         while not self._stop_event.is_set():
             # Check inactivity timeout
             if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
@@ -70,12 +75,23 @@ class ShellCommandPoller:
             except Exception as e:
                 self.logger.error(f"[ShellPoll] Erro no polling: {e}")
 
+            # Check if session was closed by GUI
+            if self._session_closed:
+                break
+
             self._stop_event.wait(timeout=POLL_INTERVAL)
 
     def _poll_once(self) -> bool:
         """Poll for commands once. Returns True if commands were found."""
         try:
             response = self.handler.api.get("/agent-commands")
+
+            # Check session_active flag from edge function
+            if not response.get("session_active", True):
+                self.logger.info("[ShellPoll] Sessão encerrada pelo GUI. Parando poller.")
+                self._session_closed = True
+                return False
+
             commands = response.get("commands", [])
 
             if not commands:
