@@ -1,0 +1,26 @@
+[Unit]
+Description=iScope 360 Supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/iscope-agent
+ExecStart=/opt/iscope-agent/venv/bin/python -m supervisor.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-supervisor
+
+# Environment
+EnvironmentFile=-/etc/iscope/agent.env
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
