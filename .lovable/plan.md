@@ -1,165 +1,127 @@
 
 
-## Comprehensive Agent & Edge Function Audit
+## Plan: On-Demand WebSocket Connection for Remote Terminal
 
-After reviewing all Python agent files, edge functions, and frontend components, here are all issues found, organized by severity.
+### Current Problem
+
+The agent maintains a **permanent 24/7 WebSocket connection** to Supabase Realtime, consuming resources and generating constant reconnect logs even when no one is using the Remote Terminal. This is wasteful, noisy, and less secure.
+
+### New Architecture
+
+```text
+USER clicks "Conectar"
+  → GUI sets agents.shell_session_active = true in DB
+  → Next Heartbeat (≤120s) returns start_realtime: true
+  → Supervisor starts WebSocket connection
+  → Commands flow in real-time
+
+USER disconnects (or 120s inactivity timeout)
+  → Agent detects no commands for 120s → closes WebSocket
+  → Agent sets agents.shell_session_active = false via heartbeat
+  (or)
+  → GUI sets agents.shell_session_active = false on disconnect
+```
+
+### Files to Modify
 
 ---
 
-### CRITICAL BUGS (causing immediate failures)
+#### 1. Database: Add column `shell_session_active` to `agents` table
 
-#### 1. Realtime WebSocket reconnect loop (the one you're seeing now)
-
-**Files**: `python-agent/agent/realtime_commands.py`
-
-Three problems combine into a tight reconnect loop (~2 connections/second):
-
-**a) Missing `access_token` in join payload** — Supabase Realtime requires the anon key as `access_token` in the Phoenix join message. Without it, the server accepts the WebSocket but immediately closes the channel after join.
-
-```python
-# Current (line 130-136):
-join_payload = {
-    "config": {
-        "broadcast": {"self": False},
-        "presence": {"key": ""},
-        "postgres_changes": []
-    }
-}
-
-# Fix — add access_token:
-join_payload = {
-    "config": {
-        "broadcast": {"self": False},
-        "presence": {"key": ""},
-        "postgres_changes": []
-    },
-    "access_token": self.supabase_key
-}
-```
-
-**b) "Channel joined" logged before server confirms** — The log at line 143 fires immediately after *sending* the join, not after receiving `phx_reply` with `status: "ok"`. This masks the real error (server rejecting the join).
-
-Fix: wait for the first `ws.recv()` after join, parse the `phx_reply`, and only proceed if `status == "ok"`. If rejected, raise an exception to trigger backoff.
-
-**c) Backoff never increases on rapid disconnects** — When `_connect_and_listen` returns normally (via `break` on `WebSocketConnectionClosedException`), `_listen_loop` resets `backoff = 2` (line 115). Since reconnect takes ~400ms, the effective wait is zero.
-
-Fix: track `connect_start = time.time()` before `_connect_and_listen()`. If elapsed < 5 seconds, treat as a failed connection and increase backoff instead of resetting.
+New migration adding:
+- `shell_session_active` (boolean, NOT NULL, default false)
 
 ---
 
-#### 2. Installer does not write `SUPABASE_URL` / `SUPABASE_ANON_KEY` to agent.env
+#### 2. Frontend: `src/components/agents/RemoteTerminal.tsx`
 
-**File**: `supabase/functions/agent-install/index.ts`, lines 780-787
+**On "Conectar" click:**
+- Set `agents.shell_session_active = true` in Supabase (direct update)
+- Existing logic continues (subscribe to postgres_changes for results)
 
-The `write_env_file()` function generates `/etc/iscope/agent.env` but does NOT include the two variables needed for Realtime:
+**On "Desconectar" (or component unmount):**
+- Set `agents.shell_session_active = false` in Supabase
 
-```bash
-# Current content:
-AGENT_API_BASE_URL=${API_BASE_URL}
-AGENT_POLL_INTERVAL=${POLL_INTERVAL}
-AGENT_STATE_FILE=${STATE_DIR}/state.json
-AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
-AGENT_ACTIVATION_CODE=${ACTIVATION_CODE}
-SUPERVISOR_HEARTBEAT_INTERVAL=120
-# Missing: SUPABASE_URL and SUPABASE_ANON_KEY
-```
-
-This means Realtime will never work on any newly installed agent. The `__init__` guard we added prevents the crash, but the feature is silently disabled.
-
-Fix: Add these two lines to the env file template:
-
-```
-SUPABASE_URL=https://${PROJECT_REF}.supabase.co
-SUPABASE_ANON_KEY=<anon_key>
-```
-
-The anon key is already public (it's in the installer URL), so including it is safe.
+This ensures the heartbeat picks up the flag on the next tick.
 
 ---
 
-#### 3. Duplicate `return null` in `agent-heartbeat` edge function
+#### 3. Edge Function: `supabase/functions/agent-heartbeat/index.ts`
 
-**File**: `supabase/functions/agent-heartbeat/index.ts`, lines 425-426
+**In the heartbeat response**, read `shell_session_active` from the `agents` table (already fetched at line 602) and include it:
 
 ```typescript
-    console.error(`Failed to upload certificate to App Registration: ${result.error}`);
-    return null;
-    return null;  // <-- dead code, unreachable
+// Add to the agents query (line 604):
+.select('azure_certificate_key_id, check_components, certificate_thumbprint, shell_session_active')
+
+// Add to response building:
+if (agentData?.shell_session_active) {
+  response.start_realtime = true;
+}
 ```
 
-Not a functional bug (dead code), but worth cleaning up.
+Also update `HeartbeatSuccessResponse` interface to include `start_realtime?: boolean`.
 
 ---
 
-### MODERATE ISSUES (functional but suboptimal)
+#### 4. Supervisor: `python-agent/supervisor/main.py`
 
-#### 4. Worker's `HeartbeatWorker` still references legacy `iscope-agent` service
-
-**File**: `python-agent/agent/heartbeat_worker.py`, line 107
+**Remove** the always-on Realtime startup (lines 72-80). Instead, manage the Realtime listener based on heartbeat response:
 
 ```python
-proc = subprocess.run(
-    ['sudo', 'systemctl', 'restart', 'iscope-agent'],  # Legacy name
-    ...
-)
+# Remove:
+realtime = RealtimeCommandListener(...)
+realtime.start()
+
+# In the main loop, after heartbeat result:
+if result.get("start_realtime") and not realtime_active:
+    realtime = RealtimeCommandListener(...)
+    realtime.start()
+    realtime_active = True
+elif not result.get("start_realtime") and realtime_active:
+    realtime.stop()
+    realtime_active = False
 ```
-
-Under the Supervisor architecture, the Worker should never restart itself. This code runs when `check_components` is flagged, but it tries to restart `iscope-agent` (which no longer exists). It should be `iscope-supervisor` or, better yet, not restart at all since the Supervisor handles this.
-
-**Fix**: Either change to `iscope-supervisor` or remove this block entirely (the Supervisor's `main.py` already handles `check_components` at line 108-111).
-
-#### 5. Worker's `AutoUpdater._request_restart` references `iscope-agent`
-
-**File**: `python-agent/agent/updater.py`, line 275
-
-```python
-result = subprocess.run(
-    ['systemctl', 'restart', 'iscope-agent'],  # Legacy name
-    ...
-)
-```
-
-Same issue — under Supervisor architecture, the Worker's own updater is unused (the `SupervisorUpdater` handles updates), but if it ever runs, it tries to restart a non-existent service.
-
-**Fix**: This class is effectively dead code now. Mark as deprecated or remove.
-
-#### 6. `supervisor/config.py` reads `SUPABASE_URL` from env but default path is `/etc/iscope/agent.env`
-
-**File**: `python-agent/supervisor/config.py` loads from `/etc/iscope/agent.env` (via `_load_env()`), but the installer writes to `$CONFIG_DIR/agent.env` which defaults to `/etc/iscope-agent/agent.env`.
-
-Wait — actually looking closer, the installer uses `CONFIG_DIR="/etc/iscope-agent"` (line 31 of the install script) but the Python config uses `/etc/iscope/agent.env`. These paths **don't match**.
-
-Let me re-check... The installer writes to `$CONFIG_DIR/agent.env` where `CONFIG_DIR="/etc/iscope-agent"`, producing `/etc/iscope-agent/agent.env`. But `supervisor/config.py` and `agent/config.py` both load from `/etc/iscope/agent.env`.
-
-Actually, looking at the install script more carefully: `CONFIG_DIR="/etc/iscope-agent"` is declared at line 30, but `--config-dir` flag (line 90) can override it. The default `/etc/iscope-agent` vs Python's `/etc/iscope/` — this is potentially a path mismatch. However, since dotenv also loads from `.env` in CWD and the agent seems to work, the env vars must be getting loaded somehow (perhaps the systemd unit sets `EnvironmentFile=`).
-
-This would need verification on the actual host: `cat /etc/systemd/system/iscope-supervisor.service` to confirm which env file it uses. Not blocking since the agent is working, but worth confirming.
 
 ---
 
-### LOW PRIORITY (code quality)
+#### 5. Agent Realtime: `python-agent/agent/realtime_commands.py`
 
-#### 7. `agent/auth.py` has duplicate capability detection
+**Add inactivity timeout (120 seconds):**
 
-Both `agent/auth.py` (`get_agent_capabilities()` at line 39) and `agent/heartbeat.py` (`_detect_capabilities()` at line 34) detect capabilities with different implementations. The heartbeat version uses `shutil.which()` for system binaries; the auth version checks Python imports. They could be consolidated.
+- Track `last_command_time` — updated whenever a command is received via broadcast
+- In the main listen loop, check elapsed time since last command
+- If `> 120s` with no command, log a message and break out of the connection loop (which causes `_listen_loop` to exit, and the Supervisor will see `start_realtime=false` on next heartbeat and not restart it)
 
-#### 8. Broadcast channel name mismatch potential
-
-Frontend broadcasts to channel `agent-cmd-${agentId}` (RemoteTerminal.tsx line 141), and the agent subscribes to `realtime:agent-cmd-${agentId}` (realtime_commands.py line 56). The `realtime:` prefix is the Phoenix topic prefix, which Supabase JS SDK adds automatically. This is correct — no issue here.
+Changes:
+- Add `self._last_activity = time.time()` in `__init__`
+- Update `self._last_activity` in `_handle_broadcast`
+- In `_connect_and_listen` timeout check: if `time.time() - self._last_activity > 120`, break
+- Modify `_listen_loop` to NOT auto-reconnect after inactivity timeout (add a `self._timed_out` flag)
 
 ---
 
-### SUMMARY — Files to modify
+#### 6. RPC function: `rpc_agent_heartbeat`
 
-| # | File | Change | Priority |
-|---|------|--------|----------|
-| 1a | `python-agent/agent/realtime_commands.py` | Add `access_token` to join payload | Critical |
-| 1b | `python-agent/agent/realtime_commands.py` | Wait for join confirmation before listening | Critical |
-| 1c | `python-agent/agent/realtime_commands.py` | Fix backoff on rapid disconnects | Critical |
-| 2 | `supabase/functions/agent-install/index.ts` | Add `SUPABASE_URL` and `SUPABASE_ANON_KEY` to env template | Critical |
-| 3 | `supabase/functions/agent-heartbeat/index.ts` | Remove duplicate `return null` | Low |
-| 4 | `python-agent/agent/heartbeat_worker.py` | Fix or remove legacy `iscope-agent` restart | Moderate |
-| 5 | `python-agent/agent/updater.py` | Mark as deprecated (dead code under Supervisor) | Low |
+Add `shell_session_active` to the returned JSON so the edge function can access it without an extra query. Actually, the edge function already queries the `agents` table directly (line 602), so no RPC change is needed.
 
-All changes in #1 are in the same file and can be done in one edit. Item #2 is a separate edge function deploy.
+---
+
+### Summary of Changes
+
+| File | Change |
+|------|--------|
+| New migration | Add `shell_session_active` boolean column to `agents` |
+| `src/components/agents/RemoteTerminal.tsx` | Set `shell_session_active` on connect/disconnect |
+| `supabase/functions/agent-heartbeat/index.ts` | Read `shell_session_active`, return `start_realtime` flag |
+| `python-agent/supervisor/main.py` | Start/stop Realtime based on heartbeat flag (not always-on) |
+| `python-agent/agent/realtime_commands.py` | Add 120s inactivity timeout, `_timed_out` flag to prevent auto-reconnect |
+
+### Behavior
+
+- **No terminal open**: Agent never connects to WebSocket. Zero resource usage.
+- **Terminal opened**: GUI flips flag → next heartbeat (≤120s) tells agent to connect → WebSocket established → real-time commands.
+- **120s no commands**: Agent auto-closes WebSocket, stops reconnecting.
+- **User disconnects**: GUI flips flag off → next heartbeat tells agent to stop (if not already timed out).
+- **Fallback**: `has_pending_commands` in heartbeat still works for polling-based execution regardless of WebSocket state.
 
