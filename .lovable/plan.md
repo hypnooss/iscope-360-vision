@@ -1,85 +1,35 @@
 
 
-# Hotfix: Installer configura apenas o Worker, sem Supervisor (sem heartbeat)
+# Deploy da Edge Function agent-install
 
-## Problema
+## Diagnóstico
 
-O script `agent-install` configura o serviço `iscope-agent.service` que executa `main.py` (Worker). O Worker **apenas processa tarefas** -- ele **não envia heartbeats**. Os heartbeats são responsabilidade do **Supervisor** (`supervisor/main.py`), que nunca é configurado pelo installer.
+O código no repositório já está correto (SERVICE_NAME="iscope-supervisor", ExecStart com `supervisor.main`, mensagens atualizadas). Porém, a saída do servidor mostra claramente as mensagens antigas:
 
-Resultado: o agent funciona (processa tarefas normalmente), mas o backend nunca recebe heartbeats, então mostra o agent como **Offline**.
-
-```text
-Arquitetura atual (no código):
-┌─────────────────┐     ┌─────────────────┐
-│   Supervisor    │────▸│     Worker      │
-│  - heartbeat    │     │  - tasks only   │
-│  - updates      │     │  - health file  │
-│  supervisor.main│     │  main.py        │
-└─────────────────┘     └─────────────────┘
-
-O que o installer faz hoje:
-                        ┌─────────────────┐
-                        │     Worker      │  ← sozinho, sem heartbeat
-                        │  main.py        │
-                        └─────────────────┘
+```
+Verificar status: systemctl status iscope-agent --no-pager
 ```
 
-## Solução
+Quando deveria mostrar:
 
-Alterar a Edge Function `agent-install` para:
+```
+Supervisor instalado com sucesso!
+Verificar status: systemctl status iscope-supervisor --no-pager
+```
 
-1. **Criar o serviço `iscope-supervisor`** em vez do `iscope-agent` como processo principal
-   - O Supervisor roda como `root` (precisa gerenciar subprocessos e componentes do sistema)
-   - O Supervisor inicia o Worker como subprocess automaticamente
-   - O Supervisor envia heartbeats e gerencia updates
+**Causa**: A Edge Function `agent-install` não foi deployada no Supabase após as alterações no código.
 
-2. **Na migração (--update)**: parar o serviço antigo `iscope-agent`, criar o novo `iscope-supervisor`, e desabilitar o antigo
+## Ação necessária
 
-3. **Manter backward compatibility**: se `iscope-agent` existia, desabilitá-lo e criar `iscope-supervisor`
+Fazer deploy das Edge Functions atualizadas:
 
-### Mudanças no `write_systemd_service()`
+1. **`agent-install`** — contém a migração para iscope-supervisor
+2. **`super-agent-install`** — mesmas alterações para consistência
 
-O unit file passa a ser `iscope-supervisor.service`:
-
+Após o deploy, re-executar o update no servidor:
 ```bash
-ExecStart=${INSTALL_DIR}/venv/bin/python -m supervisor.main
-User=root
+curl -sSL "https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install" | sudo bash -s -- --update
 ```
 
-Em vez de:
-
-```bash
-ExecStart=${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/main.py
-User=iscope
-```
-
-### Mudanças no `stop_service_if_exists()`
-
-Parar tanto `iscope-agent` quanto `iscope-supervisor` durante update.
-
-### Mudanças no `start_service()`
-
-Habilitar `iscope-supervisor` e desabilitar `iscope-agent` se existir.
-
-### Mudanças no `write_env_file()`
-
-Adicionar `SUPERVISOR_HEARTBEAT_INTERVAL` ao `agent.env`.
-
-## Arquivos afetados
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-install/index.ts` | Alterar `write_systemd_service()`, `stop_service_if_exists()`, `start_service()`, `write_env_file()`, e mensagens de sucesso para usar Supervisor |
-| `supabase/functions/super-agent-install/index.ts` | Mesmas alterações (consistência entre os dois installers) |
-
-## Detalhes da alteração no agent-install
-
-1. **`SERVICE_NAME`**: mudar de `"iscope-agent"` para `"iscope-supervisor"`
-2. **`write_systemd_service()`**: unit file aponta para `python -m supervisor.main`, roda como `root`
-3. **`stop_service_if_exists()`**: parar ambos `iscope-agent` e `iscope-supervisor`
-4. **`start_service()`**: habilitar `iscope-supervisor`, desabilitar `iscope-agent`
-5. **`write_env_file()`**: incluir `SUPERVISOR_HEARTBEAT_INTERVAL=120`
-6. **Mensagens finais**: ajustar para referenciar `iscope-supervisor`
-
-Após o deploy da Edge Function, basta re-executar `curl ... | sudo bash -s -- --update` no servidor e o Supervisor assumirá o controle, enviando heartbeats e gerenciando o Worker.
+A saída deve mostrar "Supervisor instalado com sucesso!" e o serviço `iscope-supervisor` será criado, habilitando heartbeats.
 
