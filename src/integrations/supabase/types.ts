@@ -1706,6 +1706,72 @@ export type Database = {
           },
         ]
       }
+      m365_tenant_licenses: {
+        Row: {
+          capability_status: string
+          client_id: string
+          collected_at: string
+          consumed_units: number
+          created_at: string
+          display_name: string
+          expires_at: string | null
+          id: string
+          sku_id: string
+          sku_part_number: string
+          suspended_units: number
+          tenant_record_id: string
+          total_units: number
+          warning_units: number
+        }
+        Insert: {
+          capability_status?: string
+          client_id: string
+          collected_at?: string
+          consumed_units?: number
+          created_at?: string
+          display_name: string
+          expires_at?: string | null
+          id?: string
+          sku_id: string
+          sku_part_number: string
+          suspended_units?: number
+          tenant_record_id: string
+          total_units?: number
+          warning_units?: number
+        }
+        Update: {
+          capability_status?: string
+          client_id?: string
+          collected_at?: string
+          consumed_units?: number
+          created_at?: string
+          display_name?: string
+          expires_at?: string | null
+          id?: string
+          sku_id?: string
+          sku_part_number?: string
+          suspended_units?: number
+          tenant_record_id?: string
+          total_units?: number
+          warning_units?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_tenant_licenses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_tenant_licenses_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_tenant_permissions: {
         Row: {
           created_at: string

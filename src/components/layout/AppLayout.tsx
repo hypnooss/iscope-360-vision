@@ -56,6 +56,7 @@ import {
   Globe,
   Database,
   Lock,
+  Key,
   Zap,
   Activity,
   Monitor,
@@ -212,8 +213,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setActiveModule('scope_cloud');
       setExpandedModules({ scope_cloud: true });
       setAdminMenuOpen(false);
-    } else if (path === '/environment') {
-      // Environment page: close all modules and admin
+    } else if (path === '/environment' || path === '/licensing-hub') {
+      // Environment/Licensing page: close all modules and admin
       setExpandedModules({});
       setAdminMenuOpen(false);
     } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents') {
@@ -658,6 +659,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Divider */}
       {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
+
+      {/* HUB de Licenciamento */}
+      {canAccessUsers && (
+        <SidebarLink 
+          to="/licensing-hub" 
+          icon={Key} 
+          label="HUB de Licenciamento" 
+          isActive={location.pathname === '/licensing-hub'} 
+        />
+      )}
 
       {/* Ambiente */}
       {canAccessUsers && (
