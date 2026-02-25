@@ -10,6 +10,8 @@ Architecture:
 - Frontend broadcasts command payload when inserting into agent_commands
 - Agent receives, executes, and reports result via REST API
 - Heartbeat remains as fallback for missed commands
+- Connection is ON-DEMAND: only started when GUI sets shell_session_active=true
+- Auto-closes after 120s of inactivity (no commands received)
 
 Protocol: Phoenix Channels over WebSocket
 - Connect to wss://<ref>.supabase.co/realtime/v1/websocket?apikey=<key>&vsn=1.0.0
@@ -26,19 +28,13 @@ try:
 except ImportError:
     HAS_WEBSOCKET = False
 
+INACTIVITY_TIMEOUT = 120  # seconds
+
 
 class RealtimeCommandListener:
     """Listens for commands via Supabase Realtime Broadcast channel."""
 
     def __init__(self, agent_id, supabase_url, supabase_key, command_handler, logger):
-        """
-        Args:
-            agent_id: UUID of this agent
-            supabase_url: Supabase project URL (https://xxx.supabase.co)
-            supabase_key: Supabase anon key
-            command_handler: RemoteCommandHandler instance (has _execute_command)
-            logger: Logger instance
-        """
         self.agent_id = agent_id
         self.supabase_url = supabase_url
         self.supabase_key = supabase_key
@@ -48,15 +44,20 @@ class RealtimeCommandListener:
         self._stop_event = threading.Event()
         self._ref_counter = 0
         self._ws = None
-        self._heartbeat_thread = None
+        self._last_activity = time.time()
+        self._timed_out = False
 
         # Build WebSocket URL
-        # Convert https:// to wss://
         self.ws_url = None
         self.topic = f"realtime:agent-cmd-{agent_id}"
         if supabase_url:
             ws_base = supabase_url.replace("https://", "wss://").replace("http://", "ws://")
             self.ws_url = f"{ws_base}/realtime/v1/websocket?apikey={supabase_key}&vsn=1.0.0"
+
+    @property
+    def timed_out(self):
+        """Check if the listener stopped due to inactivity timeout."""
+        return self._timed_out
 
     def start(self):
         """Start the listener in a daemon thread."""
@@ -74,6 +75,9 @@ class RealtimeCommandListener:
             )
             return
 
+        self._timed_out = False
+        self._last_activity = time.time()
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._listen_loop, daemon=True, name="realtime-cmd")
         self._thread.start()
         self.logger.info(f"[Realtime] Listener iniciado para agent {self.agent_id[:8]}...")
@@ -97,20 +101,31 @@ class RealtimeCommandListener:
         ws.send(msg)
 
     def _listen_loop(self):
-        """Main loop with automatic reconnection and exponential backoff."""
+        """Main loop with reconnection. Stops on inactivity timeout."""
         backoff = 2
         max_backoff = 60
 
         while not self._stop_event.is_set():
+            # Check inactivity before reconnecting
+            if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
+                self.logger.info(
+                    f"[Realtime] Nenhum comando em {INACTIVITY_TIMEOUT}s. "
+                    "Encerrando conexão por inatividade."
+                )
+                self._timed_out = True
+                break
+
             connect_start = time.time()
             try:
                 self._connect_and_listen()
             except Exception as e:
                 if self._stop_event.is_set():
                     break
+                # Check if we timed out inside _connect_and_listen
+                if self._timed_out:
+                    break
                 self.logger.warning(f"[Realtime] Conexão perdida: {e}. Reconectando em {backoff}s...")
 
-            # Smart backoff: only reset if connection was stable (>30s)
             elapsed = time.time() - connect_start
             if elapsed < 5:
                 backoff = min(backoff * 2, max_backoff)
@@ -125,16 +140,16 @@ class RealtimeCommandListener:
 
     def _connect_and_listen(self):
         """Connect to Supabase Realtime and listen for broadcasts."""
-        self.logger.info(f"[Realtime] Conectando ao Supabase Realtime...")
+        self.logger.info("[Realtime] Conectando ao Supabase Realtime...")
 
         ws = websocket.WebSocket()
-        ws.settimeout(40)  # Slightly longer than heartbeat interval (30s)
+        ws.settimeout(10)  # Short timeout to check inactivity frequently
         ws.connect(self.ws_url)
         self._ws = ws
 
         self.logger.info(f"[Realtime] Conectado. Joining channel {self.topic}")
 
-        # Join the broadcast channel (access_token required by Supabase Realtime)
+        # Join the broadcast channel
         join_ref = self._next_ref()
         join_payload = {
             "config": {
@@ -146,7 +161,7 @@ class RealtimeCommandListener:
         }
         self._send(ws, self.topic, "phx_join", join_payload, join_ref=join_ref)
 
-        # Wait for join confirmation before proceeding
+        # Wait for join confirmation
         try:
             raw = ws.recv()
             if raw:
@@ -177,20 +192,26 @@ class RealtimeCommandListener:
         self._start_phoenix_heartbeat(ws)
 
         while not self._stop_event.is_set():
+            # Check inactivity timeout
+            if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
+                self.logger.info(
+                    f"[Realtime] Timeout de inatividade ({INACTIVITY_TIMEOUT}s). Encerrando WebSocket."
+                )
+                self._timed_out = True
+                break
+
             try:
                 raw = ws.recv()
                 if not raw:
                     continue
 
                 msg = json.loads(raw)
-                # Phoenix message format: [join_ref, ref, topic, event, payload]
                 if not isinstance(msg, list) or len(msg) < 5:
                     continue
 
                 _, _, topic, event, payload = msg
 
                 if event == "phx_reply":
-                    # Heartbeat reply
                     status = payload.get("status", "")
                     if status == "ok":
                         continue
@@ -199,7 +220,6 @@ class RealtimeCommandListener:
                         break
 
                 elif event == "broadcast" and topic == self.topic:
-                    # Command received!
                     self._handle_broadcast(payload)
 
                 elif event == "phx_error":
@@ -211,7 +231,6 @@ class RealtimeCommandListener:
                     break
 
             except websocket.WebSocketTimeoutException:
-                # Timeout is expected, just continue (heartbeat keeps connection alive)
                 continue
             except websocket.WebSocketConnectionClosedException:
                 self.logger.warning("[Realtime] Conexão WebSocket fechada")
@@ -235,7 +254,6 @@ class RealtimeCommandListener:
                     self._send(ws, "phoenix", "heartbeat", {})
                 except Exception:
                     break
-                # Sleep in small increments to respond to stop quickly
                 for _ in range(30):
                     if self._stop_event.is_set():
                         return
@@ -262,6 +280,9 @@ class RealtimeCommandListener:
             if not cmd["id"] or not cmd["command"]:
                 self.logger.warning("[Realtime] Broadcast recebido sem id ou command")
                 return
+
+            # Reset inactivity timer on every command received
+            self._last_activity = time.time()
 
             self.logger.info(
                 f"[Realtime] Comando recebido em tempo real: "
