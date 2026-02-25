@@ -35,6 +35,7 @@ interface HeartbeatSuccessResponse {
   check_components?: boolean;
   request_certificate?: boolean;
   has_pending_commands?: boolean;
+  start_realtime?: boolean;
 }
 
 interface HeartbeatErrorResponse {
@@ -601,7 +602,7 @@ serve(async (req: Request) => {
     // Fetch agent data (certificate and check_components flag) in a single query
     const { data: agentData } = await supabase
       .from('agents')
-      .select('azure_certificate_key_id, check_components, certificate_thumbprint')
+      .select('azure_certificate_key_id, check_components, certificate_thumbprint, shell_session_active')
       .eq('id', agentId)
       .single();
 
@@ -722,6 +723,11 @@ serve(async (req: Request) => {
     // Include pending commands flag
     if (hasPendingCommands) {
       response.has_pending_commands = true;
+    }
+
+    // Include start_realtime flag for on-demand WebSocket
+    if (agentData?.shell_session_active) {
+      response.start_realtime = true;
     }
 
     // Include update info if available

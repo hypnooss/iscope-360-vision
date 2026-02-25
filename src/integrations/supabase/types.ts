@@ -204,6 +204,7 @@ export type Database = {
           last_seen: string | null
           name: string
           revoked: boolean
+          shell_session_active: boolean
         }
         Insert: {
           activation_code?: string | null
@@ -225,6 +226,7 @@ export type Database = {
           last_seen?: string | null
           name: string
           revoked?: boolean
+          shell_session_active?: boolean
         }
         Update: {
           activation_code?: string | null
@@ -246,6 +248,7 @@ export type Database = {
           last_seen?: string | null
           name?: string
           revoked?: boolean
+          shell_session_active?: boolean
         }
         Relationships: [
           {

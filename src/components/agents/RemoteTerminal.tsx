@@ -61,6 +61,19 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     if (connected) inputRef.current?.focus();
   }, [connected]);
 
+  // Cleanup shell_session_active on unmount
+  useEffect(() => {
+    return () => {
+      if (connected) {
+        // Fire-and-forget cleanup
+        (supabase
+          .from("agents" as any)
+          .update({ shell_session_active: false })
+          .eq("id", agentId) as any).then(() => {});
+      }
+    };
+  }, [connected, agentId]);
+
   // Handle realtime subscription for command results
   useEffect(() => {
     if (!connected || !isSuperAdminUser) return;
@@ -166,6 +179,16 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       { type: "system", text: "" },
     ]);
 
+    // Signal agent to start WebSocket connection
+    try {
+      await (supabase
+        .from("agents" as any)
+        .update({ shell_session_active: true })
+        .eq("id", agentId) as any);
+    } catch (e) {
+      console.error("Failed to set shell_session_active:", e);
+    }
+
     // Load recent commands as context
     try {
       const { data } = await (supabase
@@ -200,7 +223,17 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    // Signal agent to stop WebSocket connection
+    try {
+      await (supabase
+        .from("agents" as any)
+        .update({ shell_session_active: false })
+        .eq("id", agentId) as any);
+    } catch (e) {
+      console.error("Failed to clear shell_session_active:", e);
+    }
+
     setConnected(false);
     setLines([]);
     setCommandHistory([]);
