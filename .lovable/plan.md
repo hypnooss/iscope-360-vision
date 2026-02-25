@@ -1,57 +1,44 @@
 
-# Arquitetura Supervisor + Worker — Implementado
 
-## Estrutura final
+# Diagnóstico: Erro de TLS no Agent após update
 
-```text
-systemd
-  └── iscope-supervisor.service (root)
-        ├── Heartbeat (envia status ao backend)
-        ├── SupervisorUpdater (para Worker → atualiza → reinicia Worker)
-        ├── WorkerManager (start/stop/restart do Worker via subprocess)
-        └── Worker process (subprocess)
-              ├── Auth + Token refresh
-              ├── AgentScheduler → TaskExecutor
-              └── Escreve health file a cada tick
+## Causa raiz
+
+O erro é claro:
+
+```
+OSError: Could not find a suitable TLS CA certificate bundle, invalid path:
+/opt/iscope-agent/venv/lib64/python3.9/site-packages/certifi/cacert.pem
 ```
 
-## Arquivos criados
+O `requirements.txt` tem esta restrição:
 
-| Arquivo | Descrição |
-|---|---|
-| `supervisor/__init__.py` | Package init |
-| `supervisor/main.py` | Entrypoint do Supervisor |
-| `supervisor/config.py` | Configuração (lê mesmos envs do agent) |
-| `supervisor/version.py` | Versão independente (1.0.0) |
-| `supervisor/heartbeat.py` | Loop de heartbeat usando classes do agent |
-| `supervisor/updater.py` | Download, validação, para Worker, substitui, reinicia |
-| `supervisor/worker_manager.py` | Start/stop/restart do Worker via subprocess |
-| `systemd/iscope-supervisor.service` | Unit do Supervisor (root) |
-| `systemd/iscope-agent.service` | Unit do Worker (fallback/migração) |
-
-## Alterações no Worker (main.py)
-
-- Removidos: `HeartbeatWorker`, `AutoUpdater`, `AgentHeartbeat`
-- Worker agora foca exclusivamente em: auth, fetch tasks, execute tasks
-- Escreve `/var/lib/iscope-agent/worker.health` a cada tick para monitoramento
-
-## Migração
-
-Para migrar agents existentes, executar **uma última vez** o installer manual:
-
-```bash
-curl -fsSL <install-url> | sudo bash -s -- --update
+```
+certifi>=2024.2.2,<2026.0.0
 ```
 
-O installer precisa ser atualizado para:
-1. Instalar o Supervisor como serviço adicional
-2. Desativar o antigo `iscope-agent.service` (gerenciado pelo systemd)
-3. Ativar `iscope-supervisor.service` (que gerencia o Worker internamente)
+**Estamos em fevereiro de 2026.** O pacote `certifi` segue o padrão de versionamento por data (ex: `2024.2.2`, `2025.12.6`, `2026.2.2`). A versão mais recente disponível no PyPI agora é provavelmente `2026.x.x`, que é **excluída** pelo upper bound `<2026.0.0`.
 
-A partir daí, updates futuros do Worker são automáticos via Supervisor.
+Quando o installer executou `pip install -r requirements.txt`, o pip tentou encontrar uma versão de `certifi` compatível com `>=2024.2.2,<2026.0.0`. Dependendo do estado do cache e do resolver, pode ter instalado uma versão parcial ou corrompida, resultando no diretório `certifi/` existir mas sem o arquivo `cacert.pem`.
 
-## Próximos passos
+## Correção
 
-- [ ] Atualizar installer bash para instalar Supervisor
-- [ ] UI: Botão "Forçar Update" na página Super Agents
-- [ ] UI: Indicador de versão desatualizada + cores no Last Seen
+Remover o upper bound do `certifi` no `requirements.txt`:
+
+| Arquivo | De | Para |
+|---|---|---|
+| `python-agent/requirements.txt` | `certifi>=2024.2.2,<2026.0.0` | `certifi>=2024.2.2` |
+
+Isso permite que o pip instale a versão mais recente do `certifi` (2026.x.x), que inclui o bundle de certificados CA atualizado.
+
+## Por que o agent ainda mostra v1.3.1
+
+O installer `--update` baixou o pacote do bucket `agent-releases`. Se o pacote lá ainda é o da versão 1.3.1 (com o `requirements.txt` antigo contendo `<2026.0.0`), o agent vai continuar com esse problema. Após esta correção, será necessário gerar um novo `iscope-agent-1.3.2.tar.gz` e fazer upload ao bucket.
+
+## Detalhes técnicos
+
+- `certifi` usa versionamento baseado em data: `YYYY.M.D`
+- O upper bound `<2026.0.0` fazia sentido quando foi definido (em 2024/2025) como proteção contra breaking changes
+- Agora que estamos em 2026, esse bound impede a instalação de qualquer versão atual
+- O `requests` depende de `certifi` para localizar o bundle de CA certificates — sem ele, nenhuma requisição HTTPS funciona
+
