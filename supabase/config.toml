@@ -129,3 +129,6 @@ verify_jwt = false
 [functions.consolidate-attack-surface]
 verify_jwt = false
 
+[functions.m365-tenant-licenses]
+verify_jwt = false
+

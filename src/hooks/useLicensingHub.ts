@@ -1,0 +1,353 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { Json } from '@/integrations/supabase/types';
+
+// ====== TYPES ======
+
+export interface FirewallLicense {
+  firewallId: string;
+  firewallName: string;
+  workspaceName: string;
+  forticare: { status: string; expiresAt: string | null; daysLeft: number | null };
+  services: Array<{
+    name: string;
+    status: string;
+    expiresAt: string | null;
+    daysLeft: number | null;
+  }>;
+}
+
+export interface TlsCertificate {
+  ip: string;
+  port: number;
+  subjectCn: string;
+  issuer: string;
+  expiresAt: string | null;
+  daysLeft: number | null;
+  clientName: string;
+}
+
+export interface M365License {
+  tenantDomain: string;
+  tenantDisplayName: string;
+  skuPartNumber: string;
+  displayName: string;
+  capabilityStatus: string;
+  totalUnits: number;
+  consumedUnits: number;
+  expiresAt: string | null;
+  daysLeft: number | null;
+  collectedAt: string;
+}
+
+export type LicenseStatus = 'expired' | 'expiring' | 'active' | 'unknown';
+
+export function getLicenseStatus(daysLeft: number | null): LicenseStatus {
+  if (daysLeft === null) return 'unknown';
+  if (daysLeft <= 0) return 'expired';
+  if (daysLeft <= 30) return 'expiring';
+  return 'active';
+}
+
+export function getDaysLeft(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const expiry = new Date(dateStr);
+  if (isNaN(expiry.getTime())) return null;
+  const now = new Date();
+  return Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// ====== HOOK ======
+
+export function useLicensingHub() {
+  const { role } = useAuth();
+  const { effectiveRole } = useEffectiveAuth();
+  const displayRole = effectiveRole || role;
+  const isSuperRole = displayRole === 'super_admin' || displayRole === 'super_suporte';
+
+  // Fetch workspaces
+  const { data: workspaces } = useQuery({
+    queryKey: ['licensing-hub-workspaces'],
+    queryFn: async () => {
+      const { data } = await supabase.from('clients').select('id, name').order('name');
+      return data || [];
+    },
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces, isSuperRole);
+
+  // For non-super users, get their workspace
+  const { data: userWorkspaces } = useQuery({
+    queryKey: ['licensing-hub-user-workspaces'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      const { data } = await supabase.from('user_clients').select('client_id').eq('user_id', user.id);
+      return data?.map(uc => uc.client_id) || [];
+    },
+    enabled: !isSuperRole,
+  });
+
+  const activeClientIds = useMemo(() => {
+    if (isSuperRole && selectedWorkspaceId) return [selectedWorkspaceId];
+    if (!isSuperRole && userWorkspaces?.length) return userWorkspaces;
+    return [];
+  }, [isSuperRole, selectedWorkspaceId, userWorkspaces]);
+
+  // ====== FIREWALLS ======
+  const { data: firewallLicenses = [], isLoading: loadingFirewalls } = useQuery({
+    queryKey: ['licensing-hub-firewalls', activeClientIds],
+    queryFn: async () => {
+      if (!activeClientIds.length) return [];
+
+      // Get firewalls for the workspace(s)
+      const { data: firewalls } = await supabase
+        .from('firewalls')
+        .select('id, name, client_id')
+        .in('client_id', activeClientIds);
+
+      if (!firewalls?.length) return [];
+
+      // Get workspace names
+      const clientIds = [...new Set(firewalls.map(f => f.client_id))];
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', clientIds);
+      const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
+
+      // Get latest analysis for each firewall
+      const results: FirewallLicense[] = [];
+      for (const fw of firewalls) {
+        const { data: history } = await supabase
+          .from('analysis_history')
+          .select('report_data')
+          .eq('firewall_id', fw.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!history?.length) continue;
+
+        const reportData = history[0].report_data as any;
+        const categories = reportData?.categories || {};
+        const licensingChecks = categories['Licenciamento'] || [];
+
+        if (!licensingChecks.length) continue;
+
+        const forticareCheck = licensingChecks.find((c: any) => 
+          c.name?.toLowerCase().includes('forticare') || c.code?.toLowerCase().includes('forticare')
+        );
+
+        const services: FirewallLicense['services'] = [];
+        for (const check of licensingChecks) {
+          if (check === forticareCheck) continue;
+          const expDate = extractExpiryFromCheck(check);
+          const days = getDaysLeft(expDate);
+          services.push({
+            name: check.name || check.code || 'Unknown',
+            status: check.status || 'unknown',
+            expiresAt: expDate,
+            daysLeft: days,
+          });
+        }
+
+        const fcExpDate = extractExpiryFromCheck(forticareCheck);
+        results.push({
+          firewallId: fw.id,
+          firewallName: fw.name,
+          workspaceName: clientMap.get(fw.client_id) || '',
+          forticare: {
+            status: forticareCheck?.status || 'unknown',
+            expiresAt: fcExpDate,
+            daysLeft: getDaysLeft(fcExpDate),
+          },
+          services,
+        });
+      }
+
+      return results;
+    },
+    enabled: activeClientIds.length > 0,
+  });
+
+  // ====== TLS CERTIFICATES ======
+  const { data: tlsCertificates = [], isLoading: loadingTls } = useQuery({
+    queryKey: ['licensing-hub-tls', activeClientIds],
+    queryFn: async () => {
+      if (!activeClientIds.length) return [];
+
+      // Get workspace names
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', activeClientIds);
+      const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
+
+      const certs: TlsCertificate[] = [];
+
+      for (const clientId of activeClientIds) {
+        const { data: snapshots } = await supabase
+          .from('attack_surface_snapshots')
+          .select('results')
+          .eq('client_id', clientId)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!snapshots?.length) continue;
+
+        const results = snapshots[0].results as any;
+        if (!results) continue;
+
+        // results is keyed by IP
+        for (const [ip, ipData] of Object.entries(results as Record<string, any>)) {
+          const ports = ipData?.ports || ipData?.scan?.ports || [];
+          for (const port of ports) {
+            const cert = port?.tls?.certificate || port?.ssl?.certificate;
+            if (!cert) continue;
+
+            const expiresAt = cert.not_after || cert.validity?.not_after || null;
+            certs.push({
+              ip,
+              port: port.port || port.portid || 0,
+              subjectCn: cert.subject?.cn || cert.subject?.common_name || cert.subject_cn || ip,
+              issuer: cert.issuer?.cn || cert.issuer?.common_name || cert.issuer_cn || 'Unknown',
+              expiresAt,
+              daysLeft: getDaysLeft(expiresAt),
+              clientName: clientMap.get(clientId) || '',
+            });
+          }
+        }
+      }
+
+      return certs;
+    },
+    enabled: activeClientIds.length > 0,
+  });
+
+  // ====== M365 LICENSES ======
+  const { data: m365Licenses = [], isLoading: loadingM365, refetch: refetchM365 } = useQuery({
+    queryKey: ['licensing-hub-m365', activeClientIds],
+    queryFn: async () => {
+      if (!activeClientIds.length) return [];
+
+      const { data } = await supabase
+        .from('m365_tenant_licenses')
+        .select('*, m365_tenants!inner(tenant_domain, display_name)')
+        .in('client_id', activeClientIds)
+        .order('display_name');
+
+      if (!data?.length) return [];
+
+      return data.map((lic: any) => ({
+        tenantDomain: lic.m365_tenants?.tenant_domain || '',
+        tenantDisplayName: lic.m365_tenants?.display_name || lic.m365_tenants?.tenant_domain || '',
+        skuPartNumber: lic.sku_part_number,
+        displayName: lic.display_name,
+        capabilityStatus: lic.capability_status,
+        totalUnits: lic.total_units,
+        consumedUnits: lic.consumed_units,
+        expiresAt: lic.expires_at,
+        daysLeft: getDaysLeft(lic.expires_at),
+        collectedAt: lic.collected_at,
+      }));
+    },
+    enabled: activeClientIds.length > 0,
+  });
+
+  // ====== REFRESH M365 LICENSES ======
+  const [refreshingM365, setRefreshingM365] = useState(false);
+
+  const refreshM365Licenses = async () => {
+    if (!activeClientIds.length) return;
+    setRefreshingM365(true);
+    try {
+      // Get tenants for the active clients
+      const { data: tenants } = await supabase
+        .from('m365_tenants')
+        .select('id')
+        .in('client_id', activeClientIds);
+
+      if (tenants?.length) {
+        for (const tenant of tenants) {
+          await supabase.functions.invoke('m365-tenant-licenses', {
+            body: { tenant_record_id: tenant.id },
+          });
+        }
+        await refetchM365();
+      }
+    } catch (e) {
+      console.error('Failed to refresh M365 licenses:', e);
+    } finally {
+      setRefreshingM365(false);
+    }
+  };
+
+  // ====== SUMMARY COUNTS ======
+  const summary = useMemo(() => {
+    let expired = 0;
+    let expiring = 0;
+    let active = 0;
+
+    const countItem = (daysLeft: number | null) => {
+      const status = getLicenseStatus(daysLeft);
+      if (status === 'expired') expired++;
+      else if (status === 'expiring') expiring++;
+      else if (status === 'active') active++;
+    };
+
+    // Firewalls
+    for (const fw of firewallLicenses) {
+      countItem(fw.forticare.daysLeft);
+      for (const svc of fw.services) countItem(svc.daysLeft);
+    }
+
+    // TLS
+    for (const cert of tlsCertificates) countItem(cert.daysLeft);
+
+    // M365
+    for (const lic of m365Licenses) countItem(lic.daysLeft);
+
+    return { expired, expiring, active, total: expired + expiring + active };
+  }, [firewallLicenses, tlsCertificates, m365Licenses]);
+
+  return {
+    workspaces,
+    selectedWorkspaceId,
+    setSelectedWorkspaceId,
+    isSuperRole,
+    firewallLicenses,
+    tlsCertificates,
+    m365Licenses,
+    summary,
+    loading: loadingFirewalls || loadingTls || loadingM365,
+    refreshM365Licenses,
+    refreshingM365,
+  };
+}
+
+// ====== HELPERS ======
+
+function extractExpiryFromCheck(check: any): string | null {
+  if (!check) return null;
+  // Try evidence fields first
+  const evidence = check.evidence || check.details || {};
+  // Look for expiry-related fields
+  for (const key of Object.keys(evidence)) {
+    const lower = key.toLowerCase();
+    if (lower.includes('expir') || lower.includes('validade') || lower.includes('vencimento') || lower.includes('end_date')) {
+      const val = evidence[key];
+      if (typeof val === 'string' && val.match(/\d{4}/)) return val;
+    }
+  }
+  // Try description parsing
+  const desc = check.description || check.fail_description || '';
+  const dateMatch = desc.match(/(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) return dateMatch[1];
+
+  return null;
+}

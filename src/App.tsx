@@ -70,6 +70,7 @@ const AddExternalDomainPage = lazy(() => import("./pages/AddExternalDomainPage")
 const AddFirewallPage = lazy(() => import("./pages/environment/AddFirewallPage"));
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
+const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
 
 const queryClient = new QueryClient();
 
@@ -142,6 +143,9 @@ const App = () => (
                   <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
                   <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
                   <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
+
+                  {/* Licensing Hub */}
+                  <Route path="/licensing-hub" element={<LicensingHubPage />} />
 
                   {/* Environment */}
                   <Route path="/environment" element={<EnvironmentPage />} />
