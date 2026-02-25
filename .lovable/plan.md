@@ -1,127 +1,82 @@
 
 
-## Plan: On-Demand WebSocket Connection for Remote Terminal
+## Análise: SSH encapsulado em HTTPS via Edge Function
 
-### Current Problem
+### Por que SSH direto não funciona neste cenário
 
-The agent maintains a **permanent 24/7 WebSocket connection** to Supabase Realtime, consuming resources and generating constant reconnect logs even when no one is using the Remote Terminal. This is wasteful, noisy, and less secure.
-
-### New Architecture
+O conceito de "SSH tunelado por HTTPS" pressupõe que a Edge Function consegue **abrir uma conexão TCP direta ao agente**. Isso não é possível por três razões:
 
 ```text
-USER clicks "Conectar"
-  → GUI sets agents.shell_session_active = true in DB
-  → Next Heartbeat (≤120s) returns start_realtime: true
-  → Supervisor starts WebSocket connection
-  → Commands flow in real-time
-
-USER disconnects (or 120s inactivity timeout)
-  → Agent detects no commands for 120s → closes WebSocket
-  → Agent sets agents.shell_session_active = false via heartbeat
-  (or)
-  → GUI sets agents.shell_session_active = false on disconnect
+                    ┌──────────────┐
+  Browser ──HTTPS──▶│ Edge Function │──SSH──▶ Agent ???
+                    └──────────────┘
+                                         ▲
+                                         │
+                                    BLOQUEADO:
+                                    • Agent atrás de NAT/firewall
+                                    • Sem porta SSH exposta à internet
+                                    • Edge Function não suporta TCP raw
 ```
 
-### Files to Modify
+1. **O agente está atrás de NAT/firewall** — não aceita conexões de entrada. Toda a arquitetura foi desenhada com o agente fazendo conexões de SAÍDA (polling, heartbeat). Expor SSH do agente à internet seria um risco de segurança enorme.
 
----
+2. **Edge Functions não suportam conexões TCP raw** — rodam em Deno Deploy, que só permite HTTP/HTTPS outbound. Não é possível abrir um socket SSH.
 
-#### 1. Database: Add column `shell_session_active` to `agents` table
+3. **Edge Functions têm timeout de ~60 segundos** — uma sessão SSH interativa precisa ficar aberta indefinidamente.
 
-New migration adding:
-- `shell_session_active` (boolean, NOT NULL, default false)
+### O que realmente causa a lentidão atual
 
----
+O problema NÃO é a via de comunicação, é o **intervalo de polling**:
 
-#### 2. Frontend: `src/components/agents/RemoteTerminal.tsx`
+```text
+Fluxo atual (lento):
+  Comando inserido no DB
+    → Agent espera heartbeat (60s) para saber que tem comando
+    → Executa em ~1s
+    → Resultado volta ao DB
+    → Frontend recebe via postgres_changes (instantâneo)
 
-**On "Conectar" click:**
-- Set `agents.shell_session_active = true` in Supabase (direct update)
-- Existing logic continues (subscribe to postgres_changes for results)
-
-**On "Desconectar" (or component unmount):**
-- Set `agents.shell_session_active = false` in Supabase
-
-This ensures the heartbeat picks up the flag on the next tick.
-
----
-
-#### 3. Edge Function: `supabase/functions/agent-heartbeat/index.ts`
-
-**In the heartbeat response**, read `shell_session_active` from the `agents` table (already fetched at line 602) and include it:
-
-```typescript
-// Add to the agents query (line 604):
-.select('azure_certificate_key_id, check_components, certificate_thumbprint, shell_session_active')
-
-// Add to response building:
-if (agentData?.shell_session_active) {
-  response.start_realtime = true;
-}
+Gargalo: os 60 segundos de espera do heartbeat
 ```
 
-Also update `HeartbeatSuccessResponse` interface to include `start_realtime?: boolean`.
-
----
-
-#### 4. Supervisor: `python-agent/supervisor/main.py`
-
-**Remove** the always-on Realtime startup (lines 72-80). Instead, manage the Realtime listener based on heartbeat response:
-
-```python
-# Remove:
-realtime = RealtimeCommandListener(...)
-realtime.start()
-
-# In the main loop, after heartbeat result:
-if result.get("start_realtime") and not realtime_active:
-    realtime = RealtimeCommandListener(...)
-    realtime.start()
-    realtime_active = True
-elif not result.get("start_realtime") and realtime_active:
-    realtime.stop()
-    realtime_active = False
+Os logs comprovam: quando o agente **encontra** o comando, executa em ~1 segundo:
+```
+16:20:36,829 [RemoteCmd] 1 comando(s) pendente(s)
+16:20:36,830 [RemoteCmd] Executando: systemctl status iscope-supervisor...
+16:20:37,592 [RemoteCmd] Comando 27664088... finalizado (exit=0)
 ```
 
----
+### Solução já aprovada: polling rápido (2s)
 
-#### 5. Agent Realtime: `python-agent/agent/realtime_commands.py`
+O plano aprovado anteriormente (substituir WebSocket por polling HTTP de 2s) resolve o problema de forma simples e confiável:
 
-**Add inactivity timeout (120 seconds):**
+```text
+Fluxo com polling rápido:
+  Comando inserido no DB
+    → Agent descobre em ≤2s (poll rápido)
+    → Executa em ~1s
+    → Resultado volta ao DB
+    → Frontend recebe via postgres_changes (instantâneo)
+    
+Total: ~3 segundos (máximo)
+```
 
-- Track `last_command_time` — updated whenever a command is received via broadcast
-- In the main listen loop, check elapsed time since last command
-- If `> 120s` with no command, log a message and break out of the connection loop (which causes `_listen_loop` to exit, and the Supervisor will see `start_realtime=false` on next heartbeat and not restart it)
+- Usa a mesma infraestrutura REST que **já funciona perfeitamente**
+- Sem WebSocket, sem Phoenix protocol, sem problemas de join
+- O agente simplesmente chama `GET /agent-commands` a cada 2 segundos enquanto o shell está ativo
 
-Changes:
-- Add `self._last_activity = time.time()` in `__init__`
-- Update `self._last_activity` in `_handle_broadcast`
-- In `_connect_and_listen` timeout check: if `time.time() - self._last_activity > 120`, break
-- Modify `_listen_loop` to NOT auto-reconnect after inactivity timeout (add a `self._timed_out` flag)
+### Resumo
 
----
+| Abordagem | Latência | Viável? | Complexidade |
+|-----------|----------|---------|--------------|
+| SSH direto via Edge Function | ~0s | Não (NAT/firewall) | — |
+| WebSocket Realtime (atual) | ~1s | Não (join falha) | Alta |
+| **Polling rápido (2s)** | **≤3s** | **Sim** | **Baixa** |
+| HTTP Long-polling | ~1s | Possível | Média-alta |
 
-#### 6. RPC function: `rpc_agent_heartbeat`
+A abordagem de polling rápido (2s) é a mais pragmática. Se 3 segundos ainda for inaceitável no futuro, podemos evoluir para HTTP long-polling, mas isso adiciona complexidade significativa nas Edge Functions.
 
-Add `shell_session_active` to the returned JSON so the edge function can access it without an extra query. Actually, the edge function already queries the `agents` table directly (line 602), so no RPC change is needed.
+### Próximo passo
 
----
-
-### Summary of Changes
-
-| File | Change |
-|------|--------|
-| New migration | Add `shell_session_active` boolean column to `agents` |
-| `src/components/agents/RemoteTerminal.tsx` | Set `shell_session_active` on connect/disconnect |
-| `supabase/functions/agent-heartbeat/index.ts` | Read `shell_session_active`, return `start_realtime` flag |
-| `python-agent/supervisor/main.py` | Start/stop Realtime based on heartbeat flag (not always-on) |
-| `python-agent/agent/realtime_commands.py` | Add 120s inactivity timeout, `_timed_out` flag to prevent auto-reconnect |
-
-### Behavior
-
-- **No terminal open**: Agent never connects to WebSocket. Zero resource usage.
-- **Terminal opened**: GUI flips flag → next heartbeat (≤120s) tells agent to connect → WebSocket established → real-time commands.
-- **120s no commands**: Agent auto-closes WebSocket, stops reconnecting.
-- **User disconnects**: GUI flips flag off → next heartbeat tells agent to stop (if not already timed out).
-- **Fallback**: `has_pending_commands` in heartbeat still works for polling-based execution regardless of WebSocket state.
+Implementar o plano já aprovado: substituir o `RealtimeCommandListener` (WebSocket) por um `ShellCommandPoller` (HTTP polling 2s), adicionar loading state no frontend, e remover o broadcast.
 
