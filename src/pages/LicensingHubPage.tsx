@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLicensingHub, getLicenseStatus, LicenseStatus } from '@/hooks/useLicensingHub';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,16 +22,29 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
-const StatusBadge = ({ daysLeft }: { daysLeft: number | null }) => {
+// ====== Helpers ======
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('pt-BR');
+}
+
+// ====== Badges ======
+
+const ExpiryBadge = ({ daysLeft, expiresAt }: { daysLeft: number | null; expiresAt?: string | null }) => {
   const status = getLicenseStatus(daysLeft);
+  const dateStr = formatDate(expiresAt ?? null);
+
   if (status === 'expired') {
-    return <Badge className="bg-destructive/20 text-destructive border-destructive/30">Expirado</Badge>;
+    return <Badge className="bg-destructive/20 text-destructive border-destructive/30">{dateStr ? `${dateStr} (expirado)` : 'Expirado'}</Badge>;
   }
   if (status === 'expiring') {
-    return <Badge className="bg-warning/20 text-warning border-warning/30">{daysLeft}d restantes</Badge>;
+    return <Badge className="bg-warning/20 text-warning border-warning/30">{dateStr ? `${dateStr} (${daysLeft}d)` : `${daysLeft}d restantes`}</Badge>;
   }
   if (status === 'active') {
-    return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Ativo</Badge>;
+    return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{dateStr ? `${dateStr} (${daysLeft}d)` : 'Ativo'}</Badge>;
   }
   return <Badge variant="outline" className="text-muted-foreground">Sem data</Badge>;
 };
@@ -44,6 +58,15 @@ const CheckStatusBadge = ({ status }: { status: string }) => {
   }
   return <Badge variant="outline" className="text-muted-foreground">{status}</Badge>;
 };
+
+// ====== Filter helper ======
+
+function matchesFilter(daysLeft: number | null, filter: LicenseStatus | null): boolean {
+  if (!filter) return true;
+  return getLicenseStatus(daysLeft) === filter;
+}
+
+// ====== Page ======
 
 export default function LicensingHubPage() {
   const {
@@ -59,6 +82,31 @@ export default function LicensingHubPage() {
     refreshM365Licenses,
     refreshingM365,
   } = useLicensingHub();
+
+  const [activeFilter, setActiveFilter] = useState<LicenseStatus | null>(null);
+
+  const toggleFilter = (status: LicenseStatus) => {
+    setActiveFilter(prev => (prev === status ? null : status));
+  };
+
+  // Filtered data
+  const filteredFirewalls = useMemo(() => {
+    if (!activeFilter) return firewallLicenses;
+    return firewallLicenses.filter(fw => {
+      if (matchesFilter(fw.forticare.daysLeft, activeFilter)) return true;
+      return fw.services.some(svc => matchesFilter(svc.daysLeft, activeFilter));
+    });
+  }, [firewallLicenses, activeFilter]);
+
+  const filteredTls = useMemo(() => {
+    if (!activeFilter) return tlsCertificates;
+    return tlsCertificates.filter(cert => matchesFilter(cert.daysLeft, activeFilter));
+  }, [tlsCertificates, activeFilter]);
+
+  const filteredM365 = useMemo(() => {
+    if (!activeFilter) return m365Licenses;
+    return m365Licenses.filter(lic => matchesFilter(lic.daysLeft, activeFilter));
+  }, [m365Licenses, activeFilter]);
 
   return (
     <AppLayout>
@@ -89,9 +137,12 @@ export default function LicensingHubPage() {
           )}
         </div>
 
-        {/* Summary Cards */}
+        {/* Summary Cards (clickable filters) */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border-destructive/30 bg-destructive/5">
+          <Card
+            className={`cursor-pointer transition-all border-destructive/30 bg-destructive/5 ${activeFilter === 'expired' ? 'ring-2 ring-destructive' : 'hover:ring-1 hover:ring-destructive/50'}`}
+            onClick={() => toggleFilter('expired')}
+          >
             <CardContent className="p-4 flex items-center gap-3">
               <AlertCircle className="w-8 h-8 text-destructive" />
               <div>
@@ -100,7 +151,10 @@ export default function LicensingHubPage() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-warning/30 bg-warning/5">
+          <Card
+            className={`cursor-pointer transition-all border-warning/30 bg-warning/5 ${activeFilter === 'expiring' ? 'ring-2 ring-warning' : 'hover:ring-1 hover:ring-warning/50'}`}
+            onClick={() => toggleFilter('expiring')}
+          >
             <CardContent className="p-4 flex items-center gap-3">
               <AlertTriangle className="w-8 h-8 text-warning" />
               <div>
@@ -109,7 +163,10 @@ export default function LicensingHubPage() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <Card
+            className={`cursor-pointer transition-all border-emerald-500/30 bg-emerald-500/5 ${activeFilter === 'active' ? 'ring-2 ring-emerald-500' : 'hover:ring-1 hover:ring-emerald-500/50'}`}
+            onClick={() => toggleFilter('active')}
+          >
             <CardContent className="p-4 flex items-center gap-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
               <div>
@@ -128,6 +185,17 @@ export default function LicensingHubPage() {
             </CardContent>
           </Card>
         </div>
+
+        {activeFilter && (
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              Filtro: {activeFilter === 'expired' ? 'Expirados' : activeFilter === 'expiring' ? 'Expirando' : 'Ativos'}
+            </Badge>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setActiveFilter(null)}>
+              Limpar
+            </Button>
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="firewalls" className="space-y-4">
@@ -149,8 +217,8 @@ export default function LicensingHubPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : firewallLicenses.length === 0 ? (
-              <EmptyState message="Nenhum dado de licenciamento de firewall encontrado" />
+            ) : filteredFirewalls.length === 0 ? (
+              <EmptyState message={activeFilter ? 'Nenhum firewall corresponde ao filtro selecionado' : 'Nenhum dado de licenciamento de firewall encontrado'} />
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
                 <Table>
@@ -163,14 +231,14 @@ export default function LicensingHubPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {firewallLicenses.map(fw => (
+                    {filteredFirewalls.map(fw => (
                       <TableRow key={fw.firewallId}>
                         <TableCell className="font-medium">{fw.firewallName}</TableCell>
                         <TableCell className="text-muted-foreground">{fw.workspaceName}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <CheckStatusBadge status={fw.forticare.status} />
-                            <StatusBadge daysLeft={fw.forticare.daysLeft} />
+                            <ExpiryBadge daysLeft={fw.forticare.daysLeft} expiresAt={fw.forticare.expiresAt} />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -178,7 +246,7 @@ export default function LicensingHubPage() {
                             {fw.services.map((svc, i) => (
                               <div key={i} className="flex items-center gap-1">
                                 <span className="text-xs text-muted-foreground">{svc.name}:</span>
-                                <StatusBadge daysLeft={svc.daysLeft} />
+                                <ExpiryBadge daysLeft={svc.daysLeft} expiresAt={svc.expiresAt} />
                               </div>
                             ))}
                             {fw.services.length === 0 && (
@@ -200,8 +268,8 @@ export default function LicensingHubPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : tlsCertificates.length === 0 ? (
-              <EmptyState message="Nenhum certificado TLS encontrado nos scans de superfície" />
+            ) : filteredTls.length === 0 ? (
+              <EmptyState message={activeFilter ? 'Nenhum certificado corresponde ao filtro selecionado' : 'Nenhum certificado TLS encontrado nos scans de superfície'} />
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
                 <Table>
@@ -215,16 +283,16 @@ export default function LicensingHubPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tlsCertificates.map((cert, i) => (
+                    {filteredTls.map((cert, i) => (
                       <TableRow key={`${cert.ip}-${cert.port}-${i}`}>
                         <TableCell className="font-mono text-sm">{cert.ip}:{cert.port}</TableCell>
                         <TableCell className="font-medium">{cert.subjectCn}</TableCell>
                         <TableCell className="text-muted-foreground">{cert.issuer}</TableCell>
                         <TableCell className="text-sm">
-                          {cert.expiresAt ? new Date(cert.expiresAt).toLocaleDateString('pt-BR') : '—'}
+                          {cert.expiresAt ? formatDate(cert.expiresAt) : '—'}
                         </TableCell>
                         <TableCell>
-                          <StatusBadge daysLeft={cert.daysLeft} />
+                          <ExpiryBadge daysLeft={cert.daysLeft} expiresAt={cert.expiresAt} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -256,8 +324,8 @@ export default function LicensingHubPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : m365Licenses.length === 0 ? (
-              <EmptyState message="Nenhuma licença M365 coletada. Clique em 'Atualizar Licenças' para buscar os dados do tenant." />
+            ) : filteredM365.length === 0 ? (
+              <EmptyState message={activeFilter ? 'Nenhuma licença corresponde ao filtro selecionado' : "Nenhuma licença M365 coletada. Clique em 'Atualizar Licenças' para buscar os dados do tenant."} />
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
                 <Table>
@@ -272,14 +340,14 @@ export default function LicensingHubPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {m365Licenses.map((lic, i) => (
+                    {filteredM365.map((lic, i) => (
                       <TableRow key={`${lic.skuPartNumber}-${i}`}>
                         <TableCell className="text-muted-foreground">{lic.tenantDisplayName}</TableCell>
                         <TableCell className="font-medium">{lic.displayName}</TableCell>
                         <TableCell>
                           <Badge variant={lic.capabilityStatus === 'Enabled' ? 'default' : 'destructive'} className={
-                            lic.capabilityStatus === 'Enabled' 
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
+                            lic.capabilityStatus === 'Enabled'
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                               : ''
                           }>
                             {lic.capabilityStatus}
@@ -289,7 +357,7 @@ export default function LicensingHubPage() {
                         <TableCell className="text-right font-mono">{lic.consumedUnits.toLocaleString()}</TableCell>
                         <TableCell>
                           {lic.expiresAt ? (
-                            <StatusBadge daysLeft={lic.daysLeft} />
+                            <ExpiryBadge daysLeft={lic.daysLeft} expiresAt={lic.expiresAt} />
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
