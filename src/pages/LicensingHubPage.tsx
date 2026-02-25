@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useLicensingHub, getLicenseStatus, LicenseStatus } from '@/hooks/useLicensingHub';
+import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense } from '@/hooks/useLicensingHub';
+import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,7 +22,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
-import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info } from 'lucide-react';
 
 // ====== Helpers ======
 
@@ -81,6 +84,82 @@ function groupServicesByExpiry(services: { name: string; daysLeft: number | null
   return Array.from(groups.values());
 }
 
+// ====== EOL Hook ======
+
+interface EolData {
+  title: string;
+  endOfOrder: string | null;
+  lastServiceExtension: string | null;
+  endOfSupport: string | null;
+}
+
+function useFortinetEol(models: string[]) {
+  const uniqueModels = useMemo(() => [...new Set(models.filter(Boolean))], [models]);
+
+  return useQuery({
+    queryKey: ['fortinet-eol', uniqueModels],
+    queryFn: async () => {
+      const results: Record<string, EolData | null> = {};
+      await Promise.all(
+        uniqueModels.map(async (model) => {
+          try {
+            const { data, error } = await supabase.functions.invoke('fortinet-hardware-eol', {
+              body: { model },
+            });
+            results[model] = error ? null : data?.data ?? null;
+          } catch {
+            results[model] = null;
+          }
+        })
+      );
+      return results;
+    },
+    enabled: uniqueModels.length > 0,
+    staleTime: 30 * 60 * 1000, // 30 min
+  });
+}
+
+// ====== EOL Badge ======
+
+function EolBadges({ eol }: { eol: EolData | null | undefined }) {
+  if (eol === undefined) return <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />;
+  if (!eol) return <span className="text-xs text-muted-foreground">Sem dados de EOL</span>;
+
+  const items = [
+    { label: 'End of Order', date: eol.endOfOrder, abbr: 'EoO' },
+    { label: 'Last Svc Ext', date: eol.lastServiceExtension, abbr: 'LSE' },
+    { label: 'End of Support', date: eol.endOfSupport, abbr: 'EoS' },
+  ].filter(i => i.date);
+
+  if (!items.length) return <span className="text-xs text-muted-foreground">Sem datas de EOL</span>;
+
+  return (
+    <TooltipProvider>
+      <div className="flex flex-wrap gap-1">
+        {items.map(item => {
+          const d = new Date(item.date!);
+          const isPast = d < new Date();
+          return (
+            <Tooltip key={item.abbr}>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className={isPast
+                    ? 'bg-destructive/10 text-destructive border-destructive/30 text-[10px] px-1.5'
+                    : 'text-muted-foreground text-[10px] px-1.5'}
+                >
+                  {item.abbr}: {formatDate(item.date)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent><p>{item.label}: {item.date}</p></TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </TooltipProvider>
+  );
+}
+
 // ====== Page ======
 
 export default function LicensingHubPage() {
@@ -97,6 +176,9 @@ export default function LicensingHubPage() {
     refreshM365Licenses,
     refreshingM365,
   } = useLicensingHub();
+
+  const firewallModels = useMemo(() => firewallLicenses.map(fw => fw.model || ''), [firewallLicenses]);
+  const { data: eolMap, isLoading: loadingEol } = useFortinetEol(firewallModels);
 
   const [activeFilter, setActiveFilter] = useState<LicenseStatus | null>(null);
   const [activeTab, setActiveTab] = useState('firewalls');
@@ -177,8 +259,8 @@ export default function LicensingHubPage() {
               <Key className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">HUB de Licenciamento</h1>
-              <p className="text-sm text-muted-foreground">Controle centralizado de licenças e certificados</p>
+              <h1 className="text-2xl font-bold text-foreground">Gestão de Ativos</h1>
+              <p className="text-sm text-muted-foreground">Controle centralizado de ativos, licenças e certificados</p>
             </div>
           </div>
 
@@ -284,15 +366,18 @@ export default function LicensingHubPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Firewall</TableHead>
+                      <TableHead>Modelo</TableHead>
                       <TableHead>Workspace</TableHead>
                       <TableHead>FortiCare</TableHead>
                       <TableHead>Serviços FortiGuard</TableHead>
+                      <TableHead>Ciclo de Vida</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredFirewalls.map(fw => (
                       <TableRow key={fw.firewallId}>
                         <TableCell className="font-medium">{fw.firewallName}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{fw.model || '—'}</TableCell>
                         <TableCell className="text-muted-foreground">{fw.workspaceName}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -314,6 +399,9 @@ export default function LicensingHubPage() {
                               <span className="text-xs text-muted-foreground">Sem serviços</span>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <EolBadges eol={fw.model && eolMap ? eolMap[fw.model] : (loadingEol ? undefined : null)} />
                         </TableCell>
                       </TableRow>
                     ))}

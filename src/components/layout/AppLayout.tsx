@@ -660,12 +660,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Divider */}
       {sidebarOpen && <div className="border-t border-sidebar-border my-2" />}
 
-      {/* HUB de Licenciamento */}
+      {/* Gestão de Ativos */}
       {canAccessUsers && (
         <SidebarLink 
           to="/licensing-hub" 
           icon={Key} 
-          label="HUB de Licenciamento" 
+          label="Gestão de Ativos" 
           isActive={location.pathname === '/licensing-hub'} 
         />
       )}
