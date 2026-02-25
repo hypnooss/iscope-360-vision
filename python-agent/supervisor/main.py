@@ -128,11 +128,12 @@ def main():
             logger.warning("[Supervisor] Worker caiu! Reiniciando...")
             worker.start()
 
-        # Drain worker stdout to our log
+        # Drain worker stdout to our log (print to avoid double timestamp)
         output = worker.collect_output()
         if output:
             for line in output.split("\n"):
-                logger.info(f"[Worker] {line}")
+                if line.strip():
+                    print(f"[Worker] {line}", flush=True)
 
         time.sleep(interval)
 
