@@ -11,6 +11,7 @@ export interface FirewallLicense {
   firewallId: string;
   firewallName: string;
   workspaceName: string;
+  model: string | null;
   forticare: { status: string; expiresAt: string | null; daysLeft: number | null };
   services: Array<{
     name: string;
@@ -287,6 +288,7 @@ export function useLicensingHub() {
         if (!history?.length) continue;
 
         const reportData = history[0].report_data as any;
+        const model: string | null = reportData?.systemInfo?.model || reportData?.system_info?.model || null;
 
         // Try rawData from checks[] first (Unix timestamps)
         let rawExtracted: ReturnType<typeof extractFirewallFromRawData> = null;
@@ -310,6 +312,7 @@ export function useLicensingHub() {
             firewallId: fw.id,
             firewallName: fw.name,
             workspaceName: clientMap.get(fw.client_id) || '',
+            model,
             ...rawExtracted,
           });
           continue;
@@ -341,6 +344,7 @@ export function useLicensingHub() {
           firewallId: fw.id,
           firewallName: fw.name,
           workspaceName: clientMap.get(fw.client_id) || '',
+          model,
           forticare: {
             status: forticareCheck?.status || 'unknown',
             expiresAt: fcExpDate,

@@ -132,3 +132,6 @@ verify_jwt = false
 [functions.m365-tenant-licenses]
 verify_jwt = false
 
+[functions.fortinet-hardware-eol]
+verify_jwt = false
+
