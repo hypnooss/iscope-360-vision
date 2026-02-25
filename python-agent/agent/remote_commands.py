@@ -4,13 +4,15 @@ Remote Commands — Execute shell commands received from the backend.
 Flow:
 1. Heartbeat returns has_pending_commands=True
 2. Agent GETs /agent-commands → list of pending commands
-3. Executes each via subprocess.run(shell=True, timeout=N)
+3. Executes each via subprocess.Popen (with streaming support)
 4. POSTs result (stdout, stderr, exit_code, cwd) back
 """
 
 import os
 import subprocess
 import threading
+import time
+import select
 
 
 class RemoteCommandHandler:
@@ -104,40 +106,98 @@ class RemoteCommandHandler:
                     )
                 return
 
-            # Regular command — run in persistent cwd
+            # Regular command — use Popen for streaming support
             self.logger.info(f"[RemoteCmd] Executando: {command_text[:80]}... (timeout={timeout}s, cwd={self._cwd})")
 
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 command_text,
                 shell=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
                 cwd=self._cwd,
             )
 
+            # Wait briefly for fast commands (1 second)
+            try:
+                stdout, stderr = proc.communicate(timeout=1.0)
+                # Command finished quickly
+                self._report_result(
+                    command_id=command_id,
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=proc.returncode,
+                    status="completed" if proc.returncode == 0 else "failed",
+                    cwd=self._cwd,
+                )
+                self.logger.info(
+                    f"[RemoteCmd] Comando {command_id[:8]}... finalizado (exit={proc.returncode})"
+                )
+                return
+            except subprocess.TimeoutExpired:
+                pass  # Still running — switch to streaming mode
+
+            # ── Streaming mode ──
+            self.logger.info(f"[RemoteCmd] Comando {command_id[:8]}... entrando em modo streaming")
+            accumulated_stdout = ""
+            accumulated_stderr = ""
+            start_time = time.time()
+            STREAM_INTERVAL = 2  # seconds between partial reports
+
+            while proc.poll() is None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    proc.kill()
+                    proc.wait()
+                    self.logger.warning(f"[RemoteCmd] Comando {command_id[:8]}... timeout ({timeout}s)")
+                    self._report_result(
+                        command_id=command_id,
+                        stdout=accumulated_stdout,
+                        stderr=accumulated_stderr + f"\nCommand timed out after {timeout} seconds",
+                        exit_code=-1,
+                        status="timeout",
+                        cwd=self._cwd,
+                    )
+                    return
+
+                # Non-blocking read using select
+                partial_stdout = self._read_available(proc.stdout)
+                partial_stderr = self._read_available(proc.stderr)
+
+                if partial_stdout:
+                    accumulated_stdout += partial_stdout
+                if partial_stderr:
+                    accumulated_stderr += partial_stderr
+
+                if partial_stdout or partial_stderr:
+                    self._report_result(
+                        command_id=command_id,
+                        stdout=accumulated_stdout,
+                        stderr=accumulated_stderr,
+                        exit_code=None,
+                        status="running",
+                        cwd=self._cwd,
+                    )
+
+                time.sleep(STREAM_INTERVAL)
+
+            # Process finished — read any remaining output
+            remaining_stdout = proc.stdout.read() or ""
+            remaining_stderr = proc.stderr.read() or ""
+            accumulated_stdout += remaining_stdout
+            accumulated_stderr += remaining_stderr
+
             self._report_result(
                 command_id=command_id,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                exit_code=result.returncode,
-                status="completed" if result.returncode == 0 else "failed",
+                stdout=accumulated_stdout,
+                stderr=accumulated_stderr,
+                exit_code=proc.returncode,
+                status="completed" if proc.returncode == 0 else "failed",
                 cwd=self._cwd,
             )
 
             self.logger.info(
-                f"[RemoteCmd] Comando {command_id[:8]}... finalizado (exit={result.returncode})"
-            )
-
-        except subprocess.TimeoutExpired:
-            self.logger.warning(f"[RemoteCmd] Comando {command_id[:8]}... timeout ({timeout}s)")
-            self._report_result(
-                command_id=command_id,
-                stdout="",
-                stderr=f"Command timed out after {timeout} seconds",
-                exit_code=-1,
-                status="timeout",
-                cwd=self._cwd,
+                f"[RemoteCmd] Comando {command_id[:8]}... finalizado streaming (exit={proc.returncode})"
             )
 
         except Exception as e:
@@ -155,7 +215,24 @@ class RemoteCommandHandler:
             with self._lock:
                 self._running_ids.discard(command_id)
 
-    def _report_result(self, command_id: str, stdout: str, stderr: str, exit_code: int, status: str, cwd: str = "/"):
+    @staticmethod
+    def _read_available(pipe) -> str:
+        """Read available data from a pipe without blocking, using select."""
+        output = ""
+        try:
+            while True:
+                ready, _, _ = select.select([pipe], [], [], 0.05)
+                if not ready:
+                    break
+                line = pipe.readline()
+                if not line:
+                    break
+                output += line
+        except Exception:
+            pass
+        return output
+
+    def _report_result(self, command_id: str, stdout: str, stderr: str, exit_code, status: str, cwd: str = "/"):
         """Send command result back to the backend."""
         try:
             # Truncate output to avoid huge payloads (max 64KB each)
@@ -166,7 +243,7 @@ class RemoteCommandHandler:
                     "command_id": command_id,
                     "stdout": stdout[:max_len] if stdout else "",
                     "stderr": stderr[:max_len] if stderr else "",
-                    "exit_code": exit_code,
+                    "exit_code": exit_code if exit_code is not None else -1,
                     "status": status,
                     "cwd": cwd,
                 },
