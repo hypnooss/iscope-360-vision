@@ -84,6 +84,35 @@ export default function LicensingHubPage() {
   } = useLicensingHub();
 
   const [activeFilter, setActiveFilter] = useState<LicenseStatus | null>(null);
+  const [activeTab, setActiveTab] = useState('firewalls');
+
+  // Tab-specific summary
+  const displaySummary = useMemo(() => {
+    const countStatus = (items: { daysLeft: number | null }[]) => {
+      let expired = 0, expiring = 0, active = 0;
+      for (const item of items) {
+        const s = getLicenseStatus(item.daysLeft);
+        if (s === 'expired') expired++;
+        else if (s === 'expiring') expiring++;
+        else if (s === 'active') active++;
+      }
+      return { expired, expiring, active, total: items.length };
+    };
+
+    if (activeTab === 'firewalls') {
+      const allItems: { daysLeft: number | null }[] = [];
+      for (const fw of firewallLicenses) {
+        allItems.push({ daysLeft: fw.forticare.daysLeft });
+        fw.services.forEach(svc => allItems.push({ daysLeft: svc.daysLeft }));
+      }
+      return countStatus(allItems);
+    }
+    if (activeTab === 'tls') {
+      return countStatus(tlsCertificates);
+    }
+    // m365
+    return countStatus(m365Licenses);
+  }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses]);
 
   const toggleFilter = (status: LicenseStatus) => {
     setActiveFilter(prev => (prev === status ? null : status));
@@ -146,7 +175,7 @@ export default function LicensingHubPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <AlertCircle className="w-8 h-8 text-destructive" />
               <div>
-                <p className="text-2xl font-bold text-destructive">{summary.expired}</p>
+                <p className="text-2xl font-bold text-destructive">{displaySummary.expired}</p>
                 <p className="text-xs text-muted-foreground">Expirados</p>
               </div>
             </CardContent>
@@ -158,7 +187,7 @@ export default function LicensingHubPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <AlertTriangle className="w-8 h-8 text-warning" />
               <div>
-                <p className="text-2xl font-bold text-warning">{summary.expiring}</p>
+                <p className="text-2xl font-bold text-warning">{displaySummary.expiring}</p>
                 <p className="text-xs text-muted-foreground">Expirando</p>
               </div>
             </CardContent>
@@ -170,7 +199,7 @@ export default function LicensingHubPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
               <div>
-                <p className="text-2xl font-bold text-emerald-400">{summary.active}</p>
+                <p className="text-2xl font-bold text-emerald-400">{displaySummary.active}</p>
                 <p className="text-xs text-muted-foreground">Ativos</p>
               </div>
             </CardContent>
@@ -179,7 +208,7 @@ export default function LicensingHubPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <Key className="w-8 h-8 text-muted-foreground" />
               <div>
-                <p className="text-2xl font-bold text-foreground">{summary.total}</p>
+                <p className="text-2xl font-bold text-foreground">{displaySummary.total}</p>
                 <p className="text-xs text-muted-foreground">Total</p>
               </div>
             </CardContent>
@@ -198,7 +227,7 @@ export default function LicensingHubPage() {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="firewalls" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList>
             <TabsTrigger value="firewalls" className="gap-2">
               <Shield className="w-4 h-4" /> Firewalls
