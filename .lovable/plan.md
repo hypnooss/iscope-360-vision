@@ -1,44 +1,71 @@
 
 
-## Problem
+## Diagnóstico: Por que Ctrl+C não funciona
 
-When `shell=True` is used with `subprocess.Popen`, the SIGINT signal is sent only to the **shell process** (`/bin/sh`), not to the actual child process (`ping`, `tail -f`, etc.). The shell absorbs the signal and the child keeps running.
+O problema é **arquitetural**, não de código de sinalização. O fluxo atual:
 
-## Fix
-
-Use `os.setsid` as `preexec_fn` to create a new process group, then send SIGINT to the **entire process group** via `os.killpg()` instead of just the shell PID.
-
-### Changes in `python-agent/agent/remote_commands.py`
-
-1. **Add `os.setsid` to Popen** (line 149):
-```python
-proc = subprocess.Popen(
-    stripped,
-    shell=True,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
-    cwd=self._cwd,
-    preexec_fn=os.setsid,  # NEW: create process group
-)
+```text
+Poller thread (2s loop)
+  -> _poll_once()
+     -> GET /agent-commands  (retorna [curl ...])
+     -> _execute_command(curl)  ← BLOQUEIA AQUI por 60s+
+        -> while proc.poll() is None:  ← loop infinito de streaming
+           -> sleep(2)
+           -> (nunca retorna enquanto curl roda)
+  
+  // O poller NUNCA volta a fazer GET enquanto curl está rodando
+  // Então __signal__ SIGINT fica como "pending" no banco, sem ser lido
 ```
 
-2. **Change signal delivery** (line 72) from `proc.send_signal(signal.SIGINT)` to `os.killpg(os.getpgid(proc.pid), signal.SIGINT)` — this sends SIGINT to the entire process group (shell + ping/tail/etc.):
+O comando `__signal__ SIGINT` é inserido no DB, mas o poller está **travado** dentro do `_execute_command` do `curl`. Ele não consegue buscar novos comandos até o atual terminar. O sinal nunca chega.
+
+## Solução
+
+Executar cada comando em uma **thread separada** para que o poller continue livre para buscar novos comandos (incluindo sinais).
+
+### Mudanças
+
+**`python-agent/agent/realtime_commands.py`** — Executar comandos em threads:
+
 ```python
-if self._running_proc and self._running_proc.poll() is None:
-    try:
-        pid = self._running_proc.pid
-        pgid = os.getpgid(pid)
-        os.killpg(pgid, signal.SIGINT)
-        self.logger.info(f"[RemoteCmd] SIGINT enviado ao grupo {pgid} ...")
-    except Exception as sig_err:
-        # fallback: terminate
-        self._running_proc.terminate()
+for cmd in commands:
+    # Executa em thread para não bloquear o poller
+    t = threading.Thread(
+        target=self.handler._execute_command,
+        args=(cmd,),
+        daemon=True,
+        name=f"cmd-{cmd['id'][:8]}"
+    )
+    t.start()
 ```
 
-3. **Also update the timeout kill** (around line 191) to use `os.killpg` so timeouts also properly kill the entire process group.
+O dedup já existe (`_running_ids` com lock) no `RemoteCommandHandler`, então não há risco de executar o mesmo comando duas vezes.
 
-| File | Change |
-|------|--------|
-| `remote_commands.py` | Add `preexec_fn=os.setsid` to Popen; use `os.killpg` for SIGINT and timeout kill |
+**`python-agent/agent/remote_commands.py`** — Nenhuma mudança estrutural necessária. O código de sinal já funciona — ele só nunca era alcançado porque o poller estava bloqueado.
+
+**`src/components/agents/RemoteTerminal.tsx`** — Ao enviar `__signal__ SIGINT`, também limpar `pendingCommandIds` localmente após um timeout curto (3s), para que o prompt reapareça mesmo se o agente demorar para reportar o status final. Isso resolve o caso do "prompt sumiu para sempre".
+
+### Detalhes técnicos
+
+| Arquivo | Mudança |
+|---------|---------|
+| `realtime_commands.py` | Importar `threading`; executar `_execute_command` em thread daemon |
+| `RemoteTerminal.tsx` | Após Ctrl+C, forçar limpeza de `pendingCommandIds` após 3s como fallback |
+
+### Fluxo corrigido
+
+```text
+Poller thread (2s loop)
+  -> _poll_once()
+     -> GET /agent-commands  (retorna [curl ...])
+     -> Thread("cmd-abc12345") -> _execute_command(curl)  ← thread separada
+  -> sleep(2)
+  -> _poll_once()  ← poller volta imediatamente!
+     -> GET /agent-commands  (retorna [__signal__ SIGINT])
+     -> Thread("cmd-def67890") -> _execute_command(__signal__)
+        -> detecta __signal__
+        -> os.killpg(pgid, SIGINT)  ← mata curl
+        -> curl thread sai do streaming loop
+        -> reporta resultado final
+```
 
