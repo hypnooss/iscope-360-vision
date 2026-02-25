@@ -51,11 +51,40 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   // Track which command IDs have already had streaming lines added
   const streamedCommandIds = useRef<Set<string>>(new Set());
 
+  const probeCommandIds = useRef<Set<string>>(new Set());
+
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const prompt = `root@${agentName}:${currentCwd === "/" ? "/" : currentCwd}#`;
+
+  // Send a silent probe command to detect agent readiness + get cwd
+  const sendProbeCommand = useCallback(async () => {
+    try {
+      const { data, error } = await (supabase
+        .from("agent_commands" as any)
+        .insert({
+          agent_id: agentId,
+          command: "__probe__ pwd",
+          created_by: user?.id,
+          status: "pending",
+          timeout_seconds: 30,
+        })
+        .select()
+        .single() as any);
+
+      if (error) {
+        console.error("Failed to send probe command:", error);
+        return;
+      }
+      const cmd = data as AgentCommand;
+      probeCommandIds.current.add(cmd.id);
+      setPendingCommandIds((prev) => new Set(prev).add(cmd.id));
+    } catch (e) {
+      console.error("Probe command error:", e);
+    }
+  }, [agentId, user?.id]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -95,17 +124,18 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         },
         (payload: any) => {
           const cmd = payload.new as AgentCommand;
+          const isProbe = probeCommandIds.current.has(cmd.id);
 
           // Streaming partial output — status="running"
           if (cmd.status === "running") {
-            // Mark agent as ready on first sign of life
             if (!agentReady) setAgentReady(true);
-
             if (cmd.cwd) setCurrentCwd(cmd.cwd);
+
+            // Suppress probe output from terminal
+            if (isProbe) return;
 
             // Replace all previous streaming lines for this command with full accumulated output
             setLines((prev) => {
-              // Remove old streaming lines for this command
               const filtered = prev.filter(
                 (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
               );
@@ -128,15 +158,33 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           }
 
           if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
-            // Mark agent as ready
             if (!agentReady) setAgentReady(true);
-
-            // Update cwd from agent response
             if (cmd.cwd) setCurrentCwd(cmd.cwd);
+
+            // Handle probe result: show welcome, suppress output
+            if (isProbe) {
+              probeCommandIds.current.delete(cmd.id);
+              if (cmd.stdout) {
+                const cwd = cmd.stdout.trim();
+                if (cwd) setCurrentCwd(cwd);
+              }
+              setLines((prev) => [
+                ...prev,
+                { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
+                { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
+                { type: "system", text: "" },
+              ]);
+              setPendingCommandIds((prev) => {
+                const next = new Set(prev);
+                next.delete(cmd.id);
+                return next;
+              });
+              setTimeout(() => inputRef.current?.focus(), 100);
+              return;
+            }
 
             // Replace streaming lines with final output
             setLines((prev) => {
-              // Remove old streaming lines for this command
               const filtered = prev.filter(
                 (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
               );
@@ -174,11 +222,10 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           setLines((prev) => [
             ...prev,
             { type: "system", text: "Canal de comunicação estabelecido." },
-            { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
-            { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
-            { type: "system", text: "" },
+            { type: "system", text: "Aguardando agente responder..." },
           ]);
-          setTimeout(() => inputRef.current?.focus(), 100);
+          // Send silent probe to detect agent readiness + get cwd
+          sendProbeCommand();
         }
       });
 
@@ -259,6 +306,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     setInputValue("");
     setCurrentCwd("/");
     streamedCommandIds.current.clear();
+    probeCommandIds.current.clear();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
