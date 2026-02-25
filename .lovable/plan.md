@@ -1,37 +1,24 @@
 
 
-# Remover timestamp duplicado nos logs do Worker
+# Exibir código de ativação na página de detalhe do Agent
 
-## Problema
+## Situação atual
 
-Quando o Supervisor drena o stdout do Worker, ele usa `logger.info(f"[Worker] {line}")`, o que adiciona o timestamp do Supervisor **sobre** o timestamp que o Worker já escreveu. Resultado:
+O card "Código de Ativação" já existe na `AgentDetailPage` (linhas 624-666) e funciona corretamente:
+- Quando `activation_code` existe → mostra o código, botão copiar, expiração e instruções de instalação
+- Quando `activation_code` é null → mostra "Nenhum código ativo" + botão "Gerar novo código"
 
-```
-2026-02-25 11:26:29,592 [INFO] [Worker] 2026-02-25 11:24:31,607 [INFO] Início do loop...
-```
+O problema é que ao criar um Agent na `AgentsPage`, o código é exibido apenas no **dialog de criação**. O usuário precisa fechar o dialog e depois navegar manualmente para o Agent. Quando chega lá, o card já está com o código visível (se o agent ainda não registrou), mas o fluxo não é intuitivo.
 
-Dois timestamps + dois `[INFO]` na mesma linha = confusão.
+## Plano
 
-## Solução
+Após criar o Agent com sucesso na `AgentsPage`, **redirecionar automaticamente para a página de detalhe** (`/agents/{id}`) onde o card de ativação já exibe o código, as instruções de instalação e o botão de copiar — tudo pronto para uso.
 
-No `supervisor/main.py`, linhas 131-135, em vez de usar `logger.info()` (que injeta timestamp do Supervisor), usar `print()` direto para stdout. Como o Supervisor já roda via systemd/journald, o `print()` vai para o journal sem timestamp extra — o Worker já tem o seu próprio.
+### Mudança
 
-Alternativa mais limpa: manter `logger` mas com um handler separado sem formatter para as linhas do Worker. Porém o mais simples e eficaz é:
+| Arquivo | Descrição |
+|---|---|
+| `src/pages/AgentsPage.tsx` | Após criação bem-sucedida, chamar `navigate(\`/agents/${agentData.id}\`)` em vez de apenas mostrar o código no dialog |
 
-```python
-# Drain worker stdout to our log
-output = worker.collect_output()
-if output:
-    for line in output.split("\n"):
-        if line.strip():
-            print(f"[Worker] {line}", flush=True)
-```
-
-Isso mantém o prefixo `[Worker]` para identificação, mas preserva apenas o timestamp original do Worker.
-
-## Mudança
-
-| Arquivo | Linhas | Descrição |
-|---|---|---|
-| `python-agent/supervisor/main.py` | 131-135 | Trocar `logger.info()` por `print()` para linhas do Worker, evitando timestamp duplicado |
+Linhas ~279-281: após `setActivationCode(code)` e `toast.success`, adicionar `navigate(\`/agents/${agentData.id}\`)` e fechar o dialog. Remover o estado intermediário do dialog que exibe o código (já que o detalhe do agent faz isso melhor, com instruções completas).
 
