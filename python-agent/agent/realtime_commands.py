@@ -52,9 +52,11 @@ class RealtimeCommandListener:
 
         # Build WebSocket URL
         # Convert https:// to wss://
-        ws_base = supabase_url.replace("https://", "wss://").replace("http://", "ws://")
-        self.ws_url = f"{ws_base}/realtime/v1/websocket?apikey={supabase_key}&vsn=1.0.0"
+        self.ws_url = None
         self.topic = f"realtime:agent-cmd-{agent_id}"
+        if supabase_url:
+            ws_base = supabase_url.replace("https://", "wss://").replace("http://", "ws://")
+            self.ws_url = f"{ws_base}/realtime/v1/websocket?apikey={supabase_key}&vsn=1.0.0"
 
     def start(self):
         """Start the listener in a daemon thread."""
