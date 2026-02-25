@@ -269,7 +269,7 @@ class AutoUpdater:
         try:
             # Option 1: systemctl (requires sudo/polkit)
             result = subprocess.run(
-                ['systemctl', 'restart', 'iscope-agent'],
+                ['systemctl', 'restart', 'iscope-supervisor'],
                 capture_output=True,
                 timeout=30
             )
