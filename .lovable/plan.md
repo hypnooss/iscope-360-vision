@@ -1,62 +1,96 @@
 
 
-# Remover serviço legado `iscope-agent` completamente durante instalação/update
+# Auto-detectar e enviar capabilities no heartbeat (a cada 12h)
 
-## Situação atual
+## Resumo
 
-O código já para e desabilita o serviço legado em dois pontos:
-- `stop_service_if_exists()` (linhas 611-620 no agent-install, equivalente no super-agent-install)
-- `start_service()` (linhas 1183-1195 no agent-install, 849-860 no super-agent-install)
+O heartbeat atual envia apenas `status` e `agent_version`. As capabilities (ferramentas instaladas no servidor) nunca são reportadas, resultando em cards vazios na UI.
 
-Porém, o **unit file** `/etc/systemd/system/iscope-agent.service` permanece no disco, o que pode causar confusão ou reativação acidental.
+A solução adiciona detecção automática de capabilities no agente Python, enviadas a cada 12 horas (não em todo heartbeat), e o backend salva essas informações na coluna `capabilities` da tabela `agents`.
 
-## Mudança
+## Arquitetura
 
-Adicionar a remoção do unit file legado em `start_service()` de ambos os installers, logo após parar e desabilitar:
+```text
+Agent (Python)                          Edge Function (agent-heartbeat)
+┌─────────────────────┐                ┌──────────────────────────┐
+│ heartbeat.send()    │                │                          │
+│   ├─ status         │───POST────────▶│  body.capabilities?      │
+│   ├─ agent_version  │                │    → UPDATE agents SET   │
+│   └─ capabilities?  │                │      capabilities = [...] │
+│       (a cada 12h)  │                │                          │
+└─────────────────────┘                └──────────────────────────┘
 
-```bash
-rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
-systemctl daemon-reload
+Detecção (shutil.which / subprocess):
+  nmap, amass, pwsh, ssh, snmp, python3, openssl, masscan, curl, httpx
 ```
 
-## Arquivos afetados
+## Mudanças
 
-| Arquivo | Linhas | Mudança |
-|---------|--------|---------|
-| `supabase/functions/agent-install/index.ts` | 1183-1195 | Adicionar `rm -f` do unit file legado + `daemon-reload` |
-| `supabase/functions/super-agent-install/index.ts` | 849-860 | Mesma alteração |
+### 1. Python Agent — `python-agent/agent/heartbeat.py`
 
-## Detalhe da alteração em `start_service()`
+Adicionar método `_detect_capabilities()` que verifica quais ferramentas estão instaladas usando `shutil.which()`. Adicionar lógica de throttling: só incluir capabilities no payload se a última vez que foram enviadas foi há mais de 12h (usar `state.data["last_capabilities_sent"]`).
 
-De:
-```bash
-start_service() {
-  systemctl daemon-reload
-  if systemctl list-unit-files | grep -q "^${LEGACY_SERVICE_NAME}\.service"; then
-    echo "Desabilitando serviço legado ${LEGACY_SERVICE_NAME}..."
-    systemctl stop "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-    systemctl disable "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-  fi
-  systemctl enable --now "$SERVICE_NAME"
+```python
+import shutil
+import time
+
+CAPABILITIES_INTERVAL = 43200  # 12 horas em segundos
+
+CAPABILITY_CHECKS = [
+    ("nmap", "nmap"),
+    ("amass", "amass"),  
+    ("powershell", "pwsh"),
+    ("ssh", "ssh"),
+    ("snmp", "snmpwalk"),
+    ("python3", "python3"),
+    ("openssl", "openssl"),
+    ("masscan", "masscan"),
+    ("curl", "curl"),
+    ("httpx", "httpx"),
+    ("dns_query", "dig"),
+]
+```
+
+No método `send()`, verificar se `time.time() - last_capabilities_sent > 43200` e, se sim, incluir `capabilities` no payload e atualizar o timestamp no state.
+
+### 2. Edge Function — `supabase/functions/agent-heartbeat/index.ts`
+
+- Adicionar `capabilities?: string[]` à interface `HeartbeatRequest`
+- Após verificação do token, se `body.capabilities` existir e for um array, salvar na tabela `agents`:
+
+```typescript
+if (Array.isArray(body.capabilities)) {
+  await supabase
+    .from('agents')
+    .update({ capabilities: body.capabilities })
+    .eq('id', agentId);
 }
 ```
 
-Para:
-```bash
-start_service() {
-  systemctl daemon-reload
-  # Remove legacy iscope-agent service completely if it exists
-  if systemctl list-unit-files | grep -q "^${LEGACY_SERVICE_NAME}\.service"; then
-    echo "Removendo serviço legado ${LEGACY_SERVICE_NAME}..."
-    systemctl stop "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-    systemctl disable "${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-    rm -f "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service"
-    systemctl daemon-reload
-    echo "Serviço legado removido."
-  fi
-  systemctl enable --now "$SERVICE_NAME"
-}
-```
+### 3. Arquivos afetados
 
-Após aplicar, será necessário fazer deploy das Edge Functions novamente.
+| Arquivo | Mudança |
+|---------|---------|
+| `python-agent/agent/heartbeat.py` | Adicionar `_detect_capabilities()` + throttling 12h + incluir no payload |
+| `supabase/functions/agent-heartbeat/index.ts` | Aceitar e persistir `capabilities` do payload |
+
+### 4. Deploy
+
+A Edge Function será deployada automaticamente. O agente precisará de update (v1.3.3+) para começar a enviar capabilities.
+
+### Capabilities detectadas
+
+| Capability | Binário verificado | Uso |
+|---|---|---|
+| nmap | `nmap` | Scan de portas |
+| amass | `amass` | Enumeração de subdomínios |
+| powershell | `pwsh` | Análises M365 |
+| ssh | `ssh` | Conexão a firewalls |
+| snmp | `snmpwalk` | Coleta SNMP |
+| python3 | `python3` | Runtime do agent |
+| openssl | `openssl` | Certificados |
+| masscan | `masscan` | Scan massivo |
+| curl | `curl` | Requisições HTTP |
+| httpx | `httpx` | Fingerprinting web |
+| dns_query | `dig` | Consultas DNS |
 
