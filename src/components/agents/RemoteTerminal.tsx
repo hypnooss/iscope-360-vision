@@ -413,7 +413,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </div>
         )}
 
-        {!hasPending && inputReady && (
+        {!hasPending && inputReady && agentReady && (
           <form onSubmit={handleSubmit} className="flex leading-5">
             <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>
             <input

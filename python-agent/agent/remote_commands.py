@@ -141,12 +141,12 @@ class RemoteCommandHandler:
             self.logger.info(f"[RemoteCmd] Comando {command_id[:8]}... entrando em modo streaming")
             accumulated_stdout = ""
             accumulated_stderr = ""
-            start_time = time.time()
+            last_output_time = time.time()
             STREAM_INTERVAL = 2  # seconds between partial reports
 
             while proc.poll() is None:
-                elapsed = time.time() - start_time
-                if elapsed > timeout:
+                elapsed_since_last_output = time.time() - last_output_time
+                if elapsed_since_last_output > timeout:
                     proc.kill()
                     proc.wait()
                     self.logger.warning(f"[RemoteCmd] Comando {command_id[:8]}... timeout ({timeout}s)")
@@ -170,6 +170,7 @@ class RemoteCommandHandler:
                     accumulated_stderr += partial_stderr
 
                 if partial_stdout or partial_stderr:
+                    last_output_time = time.time()
                     self._report_result(
                         command_id=command_id,
                         stdout=accumulated_stdout,
