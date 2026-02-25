@@ -1,53 +1,49 @@
 
 
-## Two Fixes
+## Problem
 
-### Fix 1: Hide prompt until agent responds
+`agentReady` only becomes `true` when a command **result** arrives. But the prompt is hidden until `agentReady` is true. Since no command can be sent without the prompt, it's a deadlock — the user can never type a command to trigger the first result.
 
-The prompt input form shows when `inputReady` (`connected && realtimeConnected`) is true, but `realtimeConnected` just means the Supabase WebSocket subscription is active -- not that the agent is polling. The `agentReady` state already exists and is set to `true` on first command result, but it is not used to gate the prompt.
+## Fix
 
-**Change in `RemoteTerminal.tsx` line 416:**
-```
-// Before:
-{!hasPending && inputReady && (
+Send an automatic "probe" command (`pwd`) right after the realtime subscription is confirmed (`SUBSCRIBED`). This:
+1. Queues a `pwd` command in the DB immediately
+2. The agent picks it up on its next poll (~2s)
+3. The result arrives via postgres_changes → sets `agentReady = true` and updates `currentCwd`
+4. The prompt appears with the correct working directory
 
-// After:
-{!hasPending && inputReady && agentReady && (
-```
+The probe output won't clutter the terminal — we'll mark it as a hidden/system command and suppress its output in the terminal lines.
 
-This ensures the prompt only appears after the agent has responded to at least one command. The "Aguardando agente conectar..." banner (lines 379-386) already covers the waiting state.
+### Changes in `RemoteTerminal.tsx`
 
-### Fix 2: No timeout for streaming commands
+**In the `.subscribe()` callback (line 172-182)**, after the system lines are added, automatically send a probe command:
 
-The agent's `_execute_command` enforces a hard 60-second timeout in the streaming loop (line 149). For commands producing continuous output (like `tail -f`), the output IS being received every 2 seconds, but the elapsed time still hits 60s and kills the process.
-
-**Fix:** Reset the timeout timer whenever new output is received. If the command is actively producing output, it should never timeout. Only timeout after 60 seconds of **silence** (no new output).
-
-**Change in `remote_commands.py` streaming loop (lines 147-182):**
-```python
-while proc.poll() is None:
-    elapsed_since_last_output = time.time() - last_output_time
-    if elapsed_since_last_output > timeout:
-        proc.kill()
-        # ... timeout handling
-        return
-
-    partial_stdout = self._read_available(proc.stdout)
-    partial_stderr = self._read_available(proc.stderr)
-
-    if partial_stdout or partial_stderr:
-        last_output_time = time.time()  # Reset timeout on output
-        # ... accumulate and report
+```typescript
+if (isSubscribed) {
+  setConnecting(false);
+  setLines((prev) => [
+    ...prev,
+    { type: "system", text: "Canal de comunicação estabelecido." },
+    { type: "system", text: "Aguardando agente responder..." },
+  ]);
+  // Send silent probe to detect agent readiness + get cwd
+  sendProbeCommand();
+}
 ```
 
-This way `tail -f` will stream indefinitely as long as log lines keep coming. It only times out after 60 seconds of complete silence.
+**Add a `sendProbeCommand` function** that inserts a `pwd` command with a special marker (e.g., command text `__probe__ pwd`) so the result handler can:
+- Set `agentReady = true`
+- Update `currentCwd` from stdout
+- Suppress the output lines (don't show `pwd` result in terminal)
+- Show the welcome messages only after probe succeeds
 
----
-
-### Summary
+**In the postgres_changes handler**, when a result for a probe command arrives:
+- Set `agentReady = true`, update `currentCwd`
+- Add the welcome system lines ("Sessão remota iniciada...")
+- Don't display the stdout/stderr as terminal lines
+- Remove from pendingCommandIds
 
 | File | Change |
 |------|--------|
-| `RemoteTerminal.tsx` line 416 | Add `&& agentReady` to prompt visibility condition |
-| `remote_commands.py` lines 144-182 | Track `last_output_time`, reset on each output chunk, timeout only on silence |
+| `RemoteTerminal.tsx` | Add probe command on subscribe; filter probe results from display; show welcome messages after probe response |
 
