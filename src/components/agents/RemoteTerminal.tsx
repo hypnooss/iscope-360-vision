@@ -52,6 +52,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const streamedCommandIds = useRef<Set<string>>(new Set());
 
   const probeCommandIds = useRef<Set<string>>(new Set());
+  const signalInFlightRef = useRef(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,6 +131,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           if (cmd.status === "running") {
             if (!agentReady) setAgentReady(true);
             if (cmd.cwd) setCurrentCwd(cmd.cwd);
+
+            // Rehydrate pending state for running commands (e.g. after reconnect)
+            setPendingCommandIds((prev) => {
+              if (prev.has(cmd.id)) return prev;
+              return new Set(prev).add(cmd.id);
+            });
 
             // Suppress probe output from terminal
             if (isProbe) return;
@@ -307,6 +314,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     setCurrentCwd("/");
     streamedCommandIds.current.clear();
     probeCommandIds.current.clear();
+    signalInFlightRef.current = false;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -335,19 +343,18 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const handleTerminalKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === "c" && hasPending) {
       e.preventDefault();
+      if (signalInFlightRef.current) return; // Prevent flood
+      signalInFlightRef.current = true;
       setLines((prev) => [...prev, { type: "system", text: "^C" }]);
-      sendCommand.mutate("__signal__ SIGINT");
+      sendCommand.mutate("__signal__ SIGINT", {
+        onSettled: () => { signalInFlightRef.current = false; },
+      });
       return;
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && e.key === "c" && hasPending) {
-      e.preventDefault();
-      setLines((prev) => [...prev, { type: "system", text: "^C" }]);
-      sendCommand.mutate("__signal__ SIGINT");
-      return;
-    }
+    // Ctrl+C is handled by handleTerminalKeyDown on the container div
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
       setLines([]);
